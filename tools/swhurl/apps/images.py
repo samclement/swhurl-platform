@@ -1,9 +1,9 @@
 """Which image staging should run: the newest tag an app's ImagePolicy accepts, and its digest.
 
-Flux's ImagePolicy (in the instance's image-automation.yaml) picks the tag in the cluster, and its
-Alert starts the Deploy workflow (docs/apps.md#deploy-a-new-image). The workflow cannot ask the
-cluster, so it reads the registry here with the same filter: the tags matching ``filterTags.pattern``,
-ordered by the number ``extract`` names, the highest winning. The digest is the sha256 of the tag's
+Flux's rendered ImagePolicy picks the tag in the cluster, and its Alert starts the Deploy workflow
+(docs/apps.md#deploy-a-new-image). The workflow cannot ask the cluster, so it reads the registry here
+with the same platform tag contract and the repository in the Release record: matching tags ordered
+by the extracted run number, the highest winning. The digest is the sha256 of the tag's
 manifest as the registry stores it, which is what Flux records (``digestReflectionPolicy: Always``).
 
 Only public GHCR packages are read (an anonymous pull token). Nothing here edits an instance.
@@ -17,9 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from pathlib import Path
 
-from swhurl import yamlio
 from swhurl.apps.offers import Opener, _open
 
 REGISTRY = 'ghcr.io'
@@ -44,23 +42,6 @@ class Policy:
 class Image:
     tag: str
     digest: str
-
-
-def policy(path: Path) -> Policy:
-    """The ImagePolicy and its ImageRepository in an instance's image-automation.yaml."""
-    documents = [d for d in yamlio.load_all(path.read_text()) if isinstance(d, dict)]
-    found = {d.get('kind'): d for d in documents}
-    chosen, source = found.get('ImagePolicy'), found.get('ImageRepository')
-    if not chosen or not source:
-        raise ImageError(f'{path} has no ImagePolicy and ImageRepository')
-    spec, image = chosen.get('spec') or {}, str((source.get('spec') or {}).get('image', ''))
-    tags = spec.get('filterTags') or {}
-    if not image.startswith(REGISTRY + '/') or 'numerical' not in (spec.get('policy') or {}):
-        raise ImageError(f'{path}: only a numerical ImagePolicy on a {REGISTRY} image is read here')
-    if (spec['policy']['numerical'] or {}).get('order', 'asc') != 'asc':
-        raise ImageError(f'{path}: only the highest number wins (order: asc)')
-    return Policy(chosen['metadata']['name'], image.removeprefix(REGISTRY + '/'), re.compile(str(tags.get('pattern', ''))),
-                  str(tags.get('extract', '')).removeprefix('$'))
 
 
 def _get(opener: Opener, url: str, headers: dict[str, str], what: str) -> bytes:

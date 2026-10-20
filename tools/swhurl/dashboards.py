@@ -31,9 +31,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import app_alerts, clickstack, kube, statestore, yamlio
+from swhurl import app_alerts, clickstack, kube, statestore
 from swhurl.apps import helmrelease
-from swhurl.apps.instance import INSTANCE_ROOTS, NAME_RE, Instance, instances
+from swhurl.apps.instance import NAME_RE, Instance
+from swhurl.apps.model import store
 from swhurl.platform import ROOT
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -60,19 +61,15 @@ class App:
         return ', '.join(f"'{Instance(self.name, env).namespace}'" for env in self.envs)
 
 
-def apps(paths: list[Path] | None = None) -> list[App]:
-    """Apps in Git, from their instances' HelmReleases (a web app has a Service)."""
+def apps(root: Path = ROOT) -> list[App]:
+    """Apps in Git, from their Release and App records, including records not rendered yet."""
+    world, errors = store.world(root)
+    if errors:
+        raise ValueError('; '.join(errors))
     found: dict[str, dict] = {}
-    paths = paths if paths is not None else [each.folder(ROOT) for each in instances(ROOT / INSTANCE_ROOTS[0])]
-    for instance in paths:
-        release = yamlio.load((instance / 'helmrelease.yaml').read_text())
-        kind = helmrelease.kind(release)
-        entry = found.setdefault(instance.parent.name, {'kind': kind, 'envs': [], 'alerts': ''})
-        entry['envs'].append(instance.name)
-        namespace = instance / 'namespace.yaml'
-        if namespace.is_file():
-            annotations = (yamlio.load(namespace.read_text()).get('metadata') or {}).get('annotations') or {}
-            entry['alerts'] = entry['alerts'] or str(annotations.get(app_alerts.ANNOTATION, ''))
+    for each, record in world.items():
+        entry = found.setdefault(each.app, {'kind': record.release.kind, 'envs': [], 'alerts': record.app.alerts})
+        entry['envs'].append(each.env)
     return [App(name, entry['kind'], tuple(sorted(entry['envs'], key=lambda e: e != 'staging')), entry['alerts'])
             for name, entry in sorted(found.items())]
 
@@ -302,8 +299,13 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, report: Re
                              'HelmRelease left, and none when no app release is found')
     args = parser.parse_args(argv)
     runner = runner or Runner.from_environment()
-    wanted = cluster_apps(runner) if args.cluster else apps()
-    return sync(runner, report or Report(redact=runner.redact), wanted,
+    report = report or Report(redact=runner.redact)
+    try:
+        wanted = cluster_apps(runner) if args.cluster else apps()
+    except ValueError as error:
+        report.bad(str(error))
+        return 1
+    return sync(runner, report, wanted,
                 prune=bool(wanted) or not args.cluster, cluster=args.cluster)
 
 

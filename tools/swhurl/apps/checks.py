@@ -7,9 +7,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from swhurl import ROOT, yamlio
-from swhurl.apps import calling, contract, egress, events, helmrelease, hooks
-from swhurl.apps.instance import INSTANCE_ROOTS, instances
+from swhurl import ROOT
+from swhurl.apps import calling, contract, egress, events, hooks
+from swhurl.apps import policy as app_policy
+from swhurl.apps.instance import INSTANCE_ROOTS, Instance
+from swhurl.apps.model import store
 from swhurl.kube import ready_condition
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -30,6 +32,11 @@ def check_image_automation(runner: Runner, report: Report, root: Path = ROOT) ->
         report.bad("cannot read the apps' ImagePolicies, so no staging deploy can be checked "
                    '(kubectl -n flux-system get imagepolicies; is image-reflector-controller running? make flux-install)')
         return
+    world, errors = store.world(root)
+    if errors:
+        for error in errors:
+            report.bad(error)
+        return
     for policy in sorted(policies, key=lambda p: p['metadata']['name']):
         name = policy['metadata']['name']
         status, message = ready_condition(policy)
@@ -39,8 +46,9 @@ def check_image_automation(runner: Runner, report: Report, root: Path = ROOT) ->
             continue
         latest = ((policy.get('status') or {}).get('latestRef') or {}).get('tag', '')
         app = app_of(policy)
-        release = root / INSTANCE_ROOTS[0] / app / contract.AUTO_DEPLOY_ENV / 'helmrelease.yaml'
-        running = str(helmrelease.image(yamlio.load(release.read_text())).get('tag', '')) if release.is_file() else ''
+        release = root / INSTANCE_ROOTS[0] / app / contract.AUTO_DEPLOY_ENV / 'release.yaml'
+        entry = world.get(Instance.named(app, contract.AUTO_DEPLOY_ENV))
+        running = entry.release.image.tag if entry else ''
         if running == latest:
             report.ok(f'{name}: newest image {latest}, deployed')
         elif not running:
@@ -69,8 +77,13 @@ def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
         return
     known = contract.teams(root)
     live = {n['metadata']['name']: n['metadata'].get('labels') or {} for n in namespaces}
+    world, errors = store.world(root)
+    if errors:
+        for error in errors:
+            report.bad(error)
+        return
     complete = 0
-    for instance in instances(root / INSTANCE_ROOTS[0]):
+    for instance in world:
         app, name = instance.app, instance.namespace
         if name not in live:
             report.bad(f'{name}: the namespace does not exist, so the instance is not running '
@@ -148,9 +161,8 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
         report.bad(line)
     if declared and not waiting:
         report.ok(f'{len(declared)} declared stream(s) and consumer(s) exist in NATS')
-    wanted = events.users_file(root)
-    if wanted and (not wanted[0].is_file() or wanted[0].read_text() != wanted[1]):
-        report.bad(f'{events.USERS_FILE} is not what the instances declare: make app-sync, commit and push')
+    for problem in app_policy.check_event_users(root):
+        report.bad(problem.removeprefix('event-users: ') + ', commit and push')
 
 
 def check_egress(runner: Runner, report: Report, root: Path = ROOT) -> None:
@@ -175,7 +187,7 @@ def check_egress(runner: Runner, report: Report, root: Path = ROOT) -> None:
     for problem in found:
         report.bad(problem.removeprefix('egress-ports: ') + ', commit and push')
     if not found:
-        report.ok(f'{len(egress.ports(root))} instance(s) each have a port of their own')
+        report.ok(f'{len(store.recorded(root / INSTANCE_ROOTS[0]))} instance(s) each have a port of their own')
 
 
 def check_secrets(runner: Runner, report: Report, root: Path = ROOT) -> None:
@@ -183,10 +195,15 @@ def check_secrets(runner: Runner, report: Report, root: Path = ROOT) -> None:
     a value no name asks for is reported. Reads Git only: names from the release, keys from the Secret file."""
     from swhurl.apps.ops import MISSING, UNUSED, secret_states
     report.section('App secrets')
+    world, errors = store.world(root)
+    if errors:
+        for error in errors:
+            report.bad(error)
+        return
     found = False
-    for instance in instances(root / INSTANCE_ROOTS[0]):
-        folder = root / INSTANCE_ROOTS[0] / instance.app / instance.env
-        declared = contract.declared_secrets(yamlio.load((folder / 'helmrelease.yaml').read_text()))
+    for instance, entry in world.items():
+        folder = instance.folder(root)
+        declared = entry.release.secrets
         path = folder / contract.SECRET_FILE
         states = secret_states(declared, contract.stored_secrets(path.read_text()) if path.is_file() else [])
         if not states:
@@ -222,7 +239,12 @@ def check_image_webhooks(runner: Runner, report: Report, root: Path = ROOT) -> N
         report.bad(f'Flux receiver {name} is not Ready: {message} (make reconcile UNIT=platform-flux-webhook)')
     host = hooks.webhook_host(root)
     fallback = 'Flux finds its new images within the hour'
-    for app, repository in hooks.auto_deploy_repositories(root).items():
+    try:
+        repositories = hooks.auto_deploy_repositories(root)
+    except hooks.HookError as error:
+        report.bad(str(error))
+        return
+    for app, repository in repositories.items():
         try:
             hook = hooks.find(runner.json(['gh', 'api', f'repos/{repository}/hooks']), host)
         except CommandError as error:

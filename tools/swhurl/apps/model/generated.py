@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 from swhurl import yamlio
 from swhurl.apps import egress, events
 from swhurl.apps.contract import teams
@@ -90,8 +92,13 @@ def instance_problems(root: Path, each: Instance, world: World, platform: Platfo
         elif path not in rendered:
             found.append(f'{path}: committed, not rendered')
         else:
+            try:
+                documents = _documents(committed[path])
+            except (OSError, UnicodeError, yaml.YAMLError) as error:
+                found.append(f'{path}: cannot read committed YAML: {error}')
+                continue
             found += [f'{path}: {line}' for line in
-                      differences(_documents(committed[path]), [normal(doc) for doc in rendered[path]])]
+                      differences(documents, [normal(doc) for doc in rendered[path]])]
     return found
 
 

@@ -11,7 +11,7 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import channels, contract, derive, teams
+from swhurl.apps import channels, contract, edit, teams
 from swhurl.apps.model import generated
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import FakeRunner, Result
@@ -59,7 +59,7 @@ class TeamTests(unittest.TestCase):
         """hello belongs to ``team``: its App record, and what that renders."""
         path = self.root / 'apps/hello/app.yaml'
         path.write_text(path.read_text().replace('team: demo', f'team: {team}'))
-        self.quiet(derive.sync)
+        self.quiet(edit.sync)
 
     def test_a_rename_relabels_every_app_of_the_team(self):
         self.quiet(teams.remove, 'payments')
@@ -272,9 +272,9 @@ class TeamTests(unittest.TestCase):
         self.assertEqual(self.routes(), {'payments': ['payments-phone']})
 
     def test_an_app_naming_an_unregistered_team_is_found(self):
-        path = self.root / 'apps/hello/staging/namespace.yaml'
+        path = self.root / 'apps/hello/app.yaml'
         path.write_text(path.read_text().replace('team: demo', 'team: ghost'))
-        self.assertEqual(teams.apps_of(self.root), {'ghost': ['hello'], 'demo': ['hello']})
+        self.assertEqual(teams.apps_of(self.root), {'ghost': ['hello']})
         self.quiet(teams.add, 'ghost')  # registering it is one of the two ways out
         self.assertIn('ghost', self.registered())
 

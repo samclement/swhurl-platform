@@ -2,13 +2,14 @@
 import io
 import json
 import re
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 from test_clickstack import EMAIL, URI, b64
 
-from swhurl import app_alerts, clickstack, dashboards
+from swhurl import ROOT, app_alerts, clickstack, dashboards, yamlio
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -285,13 +286,20 @@ class DefinitionTests(unittest.TestCase):
         live['tiles'][0]['config']['groupBy'] = 'ServiceName'
         self.assertFalse(dashboards.same(live, wanted))
 
-    def test_apps_come_from_instances_with_web_meaning_a_service(self):
-        root = Path(tempfile.mkdtemp())
-        for app, env, values in (('a', 'prod', {'service': {}}), ('a', 'staging', {'service': {}}), ('b', 'staging', {})):
-            (root / app / env).mkdir(parents=True)
-            (root / app / env / 'helmrelease.yaml').write_text(json.dumps({'spec': {'values': values}}))
-        found = dashboards.apps(sorted(p.parent for p in root.glob('*/*/helmrelease.yaml')))
-        self.assertEqual(found, [dashboards.App('a', 'web', ('staging', 'prod')), dashboards.App('b', 'worker', ('staging',))])
+    def test_apps_come_from_records_even_without_valid_rendered_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shutil.copytree(ROOT / 'tests/fixtures/instance/apps', root / 'apps')
+            (root / 'apps/hello/staging/helmrelease.yaml').write_text('invalid: [')
+            (root / 'apps/hello/prod/helmrelease.yaml').unlink()
+            record = root / 'apps/hello/app.yaml'
+            doc = yamlio.load(record.read_text())
+            doc['alerts'] = 'none'
+            record.write_text(yamlio.dump(doc))
+            self.assertEqual(dashboards.apps(root), [dashboards.App('hello', 'web', ('staging', 'prod'), 'none')])
+            record.write_text('invalid: [')
+            with self.assertRaisesRegex(ValueError, 'cannot read its records'):
+                dashboards.apps(root)
 
 
 class AutomaticSyncTests(unittest.TestCase):

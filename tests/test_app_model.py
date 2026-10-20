@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT, yamlio
-from swhurl.apps import derive, edit, policy
+from swhurl.apps import edit, policy
 from swhurl.apps.contract import JOB_SCHEDULE
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated, render, store
@@ -224,7 +224,7 @@ class ShadowTests(unittest.TestCase):
         (self.root / 'platform/egress').mkdir(parents=True)
         shutil.copy(ROOT / 'platform/egress/proxy.yaml', self.root / 'platform/egress/proxy.yaml')
         with redirect_stdout(io.StringIO()):
-            derive.sync(self.root)  # every instance gets its egress port, as on the cluster
+            edit.sync(self.root)  # every instance gets its egress port, as on the cluster
             edit.expose(self.root, 'hello', 'prod', 'public', 'hello.example.com')
             edit.set_egress(self.root, 'hello', 'staging', add=['api.example.com', '*.example.org:8443'])
             edit.set_alerts(self.root, 'hello', {'errors': 'none', 'error-logs': '20'})
@@ -232,7 +232,7 @@ class ShadowTests(unittest.TestCase):
         settings = self.root / 'apps/hello/prod/instance.yaml'  # a reviewed exception, written in the record as documented
         settings.write_text(settings.read_text() + 'exceptions: no-escalation=needs raw sockets\n')
         with redirect_stdout(io.StringIO()):
-            derive.sync(self.root)
+            edit.sync(self.root)
         self.assertEqual(self.problems(), [])
         entries, _ = store.world(self.root)
         prod = entries[Instance('hello', 'prod')]
@@ -253,7 +253,7 @@ class ShadowTests(unittest.TestCase):
         registry.write_text(registry.read_text().replace('- app-hello-prod.yaml\n', ''))
         self.assertIn(Instance('hello', 'prod'), store.world(self.root)[0], 'found by its records')
         with redirect_stdout(io.StringIO()):
-            derive.sync(self.root)
+            edit.sync(self.root)
         self.assertTrue((prod / 'helmrelease.yaml').is_file())
         self.assertTrue(unit.is_file())
         self.assertIn('app-hello-prod.yaml', registry.read_text())
@@ -261,7 +261,7 @@ class ShadowTests(unittest.TestCase):
         registry.unlink()  # a tree without the registry (a test tree) gets no unit
         unit.unlink()
         with redirect_stdout(io.StringIO()):
-            derive.sync(self.root)
+            edit.sync(self.root)
         self.assertFalse(unit.exists())
 
     def test_arbitrary_merged_job_records_with_invalid_schedule_do_not_render_or_write(self):
@@ -350,7 +350,7 @@ class ShadowTests(unittest.TestCase):
                    description='A new release', apiPath='/openapi.json', resources={'memory': '64Mi'})
         record.write_text(yamlio.dump(doc))
         with redirect_stdout(io.StringIO()):
-            derive.sync(self.root)
+            edit.sync(self.root)
         self.assertEqual(self.problems(), [])
         world, problems = store.world(self.root)
         self.assertEqual(problems, [])

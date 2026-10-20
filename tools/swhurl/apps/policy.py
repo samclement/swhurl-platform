@@ -114,8 +114,8 @@ from swhurl.apps.contract import (
     teams,
 )
 from swhurl.apps.instance import INSTANCE_ROOTS, Instance
-from swhurl.apps.instance import instances as instances_under
-from swhurl.apps.model import generated
+from swhurl.apps.model import generated, store
+from swhurl.apps.model import render as model_render
 from swhurl.run import Runner
 
 EXCEPTIONS_KEY = EXCEPTIONS
@@ -464,13 +464,15 @@ def check_calls(instances: list[Path]) -> dict[Path, list[str]]:
 def check_event_users(root: Path = ROOT) -> list[str]:
     """Whether every instance has its NATS key and the NATS user list is what the instances generate
     (rule event-users)."""
-    wanted = events.users_file(root)
-    if not wanted:
+    world, errors = store.world(root)
+    if errors:
+        return [f'event-users: {error}' for error in errors]
+    users = model_render.shared(world, store.platform(root)).nats_users
+    if users is None:
         return []
-    problems = [f'event-users: {each.app}/{each.env} has no NATS key; make app-sync creates it'
-                for each in instances_under(root / INSTANCE_ROOTS[0])
-                if not helmrelease.variables(yamlio.load((each.folder(root) / 'helmrelease.yaml').read_text())).get(events.NKEY_VARIABLE)]
-    path, text = wanted
+    problems = [f'event-users: {each} has no NATS key; make app-sync creates it'
+                for each, entry in world.items() if not entry.settings.allocations.events_key]
+    path, text = root / events.USERS_FILE, events.users_configmap(users)
     if not (path.is_file() and path.read_text() == text):
         problems.append(f'event-users: {events.USERS_FILE} is not what the instances declare; make app-sync rewrites it')
     return problems

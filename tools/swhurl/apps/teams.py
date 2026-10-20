@@ -32,11 +32,11 @@ from pathlib import Path
 from ruamel.yaml.comments import CommentedMap
 
 from swhurl import ROOT
-from swhurl.apps import channels, derive, edit
-from swhurl.apps.contract import TEAM, TEAMS_FILE
-from swhurl.apps.instance import ENVIRONMENTS, instance_folder
+from swhurl.apps import channels, edit
+from swhurl.apps.contract import TEAMS_FILE
+from swhurl.apps.model import sync as model_sync
 from swhurl.apps.new import dump
-from swhurl.apps.yaml_file import EditError, YamlFile, mapping, read
+from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 from swhurl.run import CommandError, Runner
 
 NAME_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
@@ -51,10 +51,9 @@ def registry(root: Path) -> tuple[YamlFile, dict]:
 def apps_of(root: Path) -> dict[str, list[str]]:
     """Every team an app names in Git, with its apps: registered or not."""
     found: dict[str, set[str]] = {}
-    for env in ENVIRONMENTS:
-        for app in derive.instances_in(root, env):
-            labels = mapping(mapping(read(instance_folder(root, app, env) / 'namespace.yaml'), 'metadata'), 'labels')
-            found.setdefault(str(labels.get(TEAM, '')), set()).add(app)
+    world, _ = model_sync.read(root)
+    for each, entry in world.items():
+        found.setdefault(entry.app.team, set()).add(each.app)
     return {team: sorted(apps) for team, apps in found.items()}
 
 

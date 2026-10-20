@@ -12,9 +12,10 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT, yamlio
-from swhurl.apps import derive, edit, egress, events, new, policy, promotion
+from swhurl.apps import edit, egress, events, new, policy, promotion
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
+from swhurl.apps.model import sync as model_sync
 from swhurl.console import merge
 from swhurl.run import CommandError, FakeRunner, Result
 
@@ -215,7 +216,7 @@ class PromotionGateTests(GateCase):
 
     def sync(self):
         with contextlib.redirect_stdout(io.StringIO()):
-            derive.sync(self.root)
+            edit.sync(self.root)
 
     # Merged ----------------------------------------------------------------------------------------
 
@@ -409,7 +410,7 @@ class NewAppGateTests(GateCase):
 
     def sync(self):
         with contextlib.redirect_stdout(io.StringIO()):
-            derive.sync(self.root)
+            edit.sync(self.root)
 
     def events_key(self):
         return {'apiVersion': 'v1', 'kind': 'Secret',
@@ -471,7 +472,7 @@ class NewAppGateTests(GateCase):
         self.check(runner)
         self.assertTrue(self.pushes(runner))
         self.assertTrue((self.result / 'apps/fresh/staging/image-automation.yaml').is_file())
-        self.assertIn(Instance('fresh', 'staging'), egress.ports(self.result))
+        self.assertIn(Instance('fresh', 'staging'), {each: entry.settings.allocations.egress_port for each, entry in model_sync.read(self.result)[0].items()})
         self.assertLess(runner.calls.index(CHECKS), runner.calls.index(self.pushes(runner)[0]))
         self.assertFalse([c for c in runner.calls if 'app-new' in c], 'no CLI replay or source fetch')
 
@@ -520,7 +521,7 @@ class NewAppGateTests(GateCase):
         self.files = sorted(changed_files(self.base, self.head))
         self.pr['head']['ref'] = 'console/new-fresh-staging-aaaaaaa'
         self.check(self.runner())
-        ports = egress.ports(self.result)
+        ports = {each: entry.settings.allocations.egress_port for each, entry in model_sync.read(self.result)[0].items()}
         self.assertEqual(len(ports), len(set(ports.values())))
         self.assertIn(Instance('first', 'staging'), ports)
         self.assertIn(Instance('fresh', 'staging'), ports)
@@ -539,7 +540,7 @@ class NewAppGateTests(GateCase):
             self.check(runner)
         self.assertEqual(len(self.pushes(runner)), 2)
         self.assertTrue((self.result / 'NEWS.md').is_file())
-        ports = egress.ports(self.result)
+        ports = {each: entry.settings.allocations.egress_port for each, entry in model_sync.read(self.result)[0].items()}
         self.assertIn(Instance('fresh', 'staging'), ports)
         self.assertIn(Instance('raced', 'staging'), ports)
         self.assertEqual(len(ports), len(set(ports.values())))

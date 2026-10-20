@@ -14,8 +14,8 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from swhurl.apps import helmrelease, ops, promotion
-from swhurl.apps.instance import Instance, instance_folder
+from swhurl.apps import ops, promotion
+from swhurl.apps.instance import Instance
 from swhurl.apps.model import sync as model_sync
 from swhurl.apps.model.calls import admits
 from swhurl.apps.new import GenerationError
@@ -98,22 +98,21 @@ def rendered_diff(root: Path, app: str, image: str, runner: Runner) -> tuple[str
 
 
 def review(root: Path, app: str, status: ops.InstanceStatus, runner: Runner | None = None) -> dict:
-    source, target = promotion.read(root, app)
-    decision = promotion.decide(source, target)
+    world, _ = model_sync.read(root)
+    decision = promotion.select(root, world, app)
+    source, target = world[Instance(app, 'staging')], world.get(Instance(app, 'prod'))
     problem = promotion.source_problem(status, decision.image)
     if problem:
         raise ActionError(problem)
-    namespace = promotion.read_yaml(instance_folder(root, app, 'staging') / 'namespace.yaml')
-    exposure = namespace.get('metadata', {}).get('labels', {}).get(promotion.contract.EXPOSURE)
-    if exposure not in promotion.contract.EXPOSURES:
-        raise EditError('staging needs a supported exposure label')
+    exposure = source.settings.exposure
     first, admits = None, []
     if decision.outcome == 'create':
-        first = promotion.first_production(root, model_sync.read(root)[0], app, preview=True)
+        first = promotion.first_production(root, world, app, preview=True)
         admits = admitting(root, app)
     needs_host = decision.outcome == 'create' and exposure == 'public'
     if target:
-        addresses = helmrelease.hosts(target)
+        settings = target.settings
+        addresses = (settings.host or promotion.contract.default_host(app, 'prod'),) if settings.exposure != 'private' else ()
     elif first and first.host:
         addresses = (first.host,)
     else:
@@ -179,8 +178,9 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
     reasons, admits, first = [], [], []
 
     def change(root: Path):
-        source, target = promotion.read(root, app)
-        if target is None:
+        world, _ = model_sync.read(root)
+        decision = promotion.select(root, world, app)
+        if decision.outcome == 'create':
             first.append(True)
             admits.extend(admitting(root, app))
         before_files = {path: data for path, data in contents(root).items() if promotion.records(app, path)}

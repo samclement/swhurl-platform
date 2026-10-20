@@ -13,10 +13,11 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import calling, contract, derive, edit, new, ops, policy, promotion
+from swhurl.apps import calling, contract, edit, new, ops, policy, promotion
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated
+from swhurl.apps.model import sync as model_sync
 from swhurl.run import CommandError, FakeRunner
 
 NEW_DIGEST = 'sha256:' + 'b' * 64
@@ -73,7 +74,7 @@ class EditTests(unittest.TestCase):
         self.new_staging_image()
         record = self.staging.parent / 'release.yaml'
         record.write_text(record.read_text().replace('port: 8080', 'port: 9090'))
-        self.quiet(derive.sync, self.root)
+        self.quiet(edit.sync, self.root)
 
         def listens(env):
             release = yaml.safe_load((self.root / 'apps/hello' / env / 'helmrelease.yaml').read_text())['spec']['values']
@@ -99,24 +100,52 @@ class EditTests(unittest.TestCase):
             edit.promote(self.root, 'hello', 'staging', 'prod')
         with self.assertRaisesRegex(edit.EditError, 'must differ'):
             edit.promote(self.root, 'hello', 'prod', 'prod')
-        text = self.staging.read_text()
-        self.staging.write_text(text.replace('docker.io/nginxinc/nginx-unprivileged', 'ghcr.io/other/image'))
+        record = self.staging.parent / 'release.yaml'
+        original = record.read_text()
+        record.write_text(original.replace('docker.io/nginxinc/nginx-unprivileged', 'ghcr.io/other/image'))
         with self.assertRaisesRegex(edit.EditError, 'change the repository by hand'):
             edit.promote(self.root, 'hello', 'staging', 'prod')
-        self.staging.write_text('\n'.join(line for line in text.splitlines() if 'digest:' not in line) + '\n')
+        record.write_text('\n'.join(line for line in original.splitlines() if 'digest:' not in line) + '\n')
         with self.assertRaisesRegex(edit.EditError, 'no image digest'):
             edit.promote(self.root, 'hello', 'staging', 'prod')
 
     def test_promotion_refuses_a_source_that_moved_after_review_without_writing(self):
-        reviewed = ops.image_reference(derive.container(derive.load_release(self.staging.parent))['image'])
+        reviewed = ops.image_reference(yaml.safe_load(self.staging.read_text())['spec']['values']['controllers']['main']['containers']['main']['image'])
         self.new_staging_image()
         before = self.prod.read_bytes()
         with self.assertRaisesRegex(edit.EditError, 'changed since it was reviewed'):
             edit.promote(self.root, 'hello', 'staging', 'prod', expect_image=reviewed)
         self.assertEqual(self.prod.read_bytes(), before)
-        current = ops.image_reference(derive.container(derive.load_release(self.staging.parent))['image'])
+        current = ops.image_reference(yaml.safe_load(self.staging.read_text())['spec']['values']['controllers']['main']['containers']['main']['image'])
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod', expect_image=current)
         self.assertIn('tag: 1.28-alpine', self.prod.read_text())
+
+    def test_update_promotion_handles_malformed_production_output_without_writing(self):
+        from swhurl.console import promotion as console_promotion
+
+        self.new_staging_image()
+        self.prod.write_text('invalid: [')
+        world, _ = model_sync.read(self.root)
+        decision = promotion.select(self.root, world, 'hello')
+        self.assertEqual(decision.outcome, 'update', 'exercise the real update guard, not the same-image short circuit')
+        before = self.snapshot()
+        problem = 'apps/hello/prod/helmrelease.yaml: cannot read committed YAML'
+        with self.assertRaisesRegex(edit.EditError, problem):
+            edit.promote(self.root, 'hello')
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
+            code = edit.run(lambda: edit.promote(self.root, 'hello'), False)
+        self.assertEqual(code, 2)
+        self.assertIn(problem, err.getvalue())
+        self.assertEqual(self.snapshot(), before)
+        status = ops.InstanceStatus(Instance('hello', 'staging'), 'main@sha1:abc', 'main@sha1:abc',
+                                    ('True', ''), ('True', ''), decision.image,
+                                    ['docker.io/nginxinc/nginx-unprivileged@' + NEW_DIGEST],
+                                    [ops.Replicas('Deployment/hello', 1, 1)], [], [], [])
+        reviewed = console_promotion.review(self.root, 'hello', status, FakeRunner())
+        self.assertEqual(reviewed['outcome'], 'update')
+        self.assertIn(problem, reviewed['diff_problem'])
+        self.assertEqual(reviewed['diff_files'], 0)
+        self.assertEqual(self.snapshot(), before)
 
     def test_cli_promotion_checks_the_expected_image(self):
         before = self.prod.read_bytes()
@@ -173,7 +202,7 @@ class EditTests(unittest.TestCase):
 
     def state(self, env):
         instance = self.root / 'apps/hello' / env
-        values = derive.load_release(instance)['spec']['values']
+        values = yaml.safe_load((instance / 'helmrelease.yaml').read_text())['spec']['values']
         route = (values.get('ingress') or {}).get('main')
         namespace = yaml.safe_load((instance / 'namespace.yaml').read_text())
         unit = yaml.safe_load((self.root / f'clusters/home/app-hello-{env}.yaml').read_text())
@@ -260,7 +289,7 @@ class EditTests(unittest.TestCase):
             shutil.copy(self.root / 'apps/hello/app.yaml', self.root / 'apps' / name / 'app.yaml')
             for path in (self.root / 'apps' / name / env).glob('*.yaml'):
                 path.write_text(path.read_text().replace('hello', name).replace('port: 8080', f'port: {port}'))
-        self.quiet(derive.sync, self.root)
+        self.quiet(edit.sync, self.root)
 
     def test_calls_give_the_caller_an_address_and_token_and_the_callee_an_allowed_caller(self):
         self.second_app()
@@ -337,14 +366,14 @@ class EditTests(unittest.TestCase):
         hint = 'check calls on the caller and allows on the callee in instance.yaml, then run make app-sync'
         self.assertIn(f'calls: calls orders, which does not allow it; {hint}', problems[instances[0]])
         self.assertIn(f'calls: allows stranger, which does not declare a call to it; {hint}', problems[instances[1]])
-        self.quiet(derive.sync, self.root)
+        self.quiet(edit.sync, self.root)
         self.assertEqual(policy.check_calls(instances), {})
 
     def test_signing_keys_refresh_rewrites_the_file_and_every_web_app(self):
         from swhurl.apps import keys
         from swhurl.run import FakeRunner
         (self.root / 'apps/signing-keys.json').write_text('{"keys": [{"kid": "old"}]}')
-        self.quiet(derive.sync, self.root)
+        self.quiet(edit.sync, self.root)
         self.assertEqual(self.env('hello')['SWHURL_AUTH_KEYS'], '{"keys":[{"kid":"old"}]}')
         runner = FakeRunner().on(*keys.JWKS, stdout='{"keys": [{"kid": "new"}]}')
         code, out = self.quiet(keys.main, ['--root', str(self.root)], runner)
@@ -482,7 +511,7 @@ class EditTests(unittest.TestCase):
         self.assertEqual(sorted(map(str, edit.nats_keys(self.root, runner=runner))),
                          ['hello/prod', 'hello/staging', 'orders/prod', 'orders/staging'])
         self.assertEqual(edit.nats_keys(self.root, runner=runner), [], 'an instance keeps its key')
-        self.quiet(derive.sync, self.root)
+        self.quiet(edit.sync, self.root)
         self.assertEqual(policy.check_event_users(self.root), [])
         self.assertEqual(policy.check_events([], yaml.safe_load((self.root / 'apps/hello/prod/helmrelease.yaml').read_text()),
                                              {'platform.swhurl.com/environment': 'prod'}), [])
@@ -563,7 +592,7 @@ components:
                 path = self.root / 'apps' / app / env / name
                 path.write_text(path.read_text().replace('docker.io/nginxinc/nginx-unprivileged', f'ghcr.io/samclement/{app}')
                                 .replace('tag: 1.27-alpine', f'tag: {tag}' if env == 'staging' else 'tag: 6-0000000'))
-        self.quiet(derive.sync, self.root)  # a platform image's staging follows new images
+        self.quiet(edit.sync, self.root)  # a platform image's staging follows new images
 
     def test_offers_are_read_at_the_images_commit_and_say_what_the_app_publishes(self):
         from swhurl.apps import offers
@@ -781,7 +810,9 @@ components:
         self.assertEqual(found.declared, {'shout': {'type': 'boolean', 'description': 'Say hello in capitals', 'default': False, 'staging': True}})
         self.assertEqual(offers.problems(instance, [], 'abc1234'), [])
         staging = instance / 'helmrelease.yaml'
-        staging.write_text(staging.read_text().replace(staging.read_text().split('digest: ')[1].split('\n')[0], NEW_DIGEST))
+        record = staging.parent / 'release.yaml'
+        record.write_text(record.read_text().replace(yaml.safe_load(record.read_text())['image']['digest'], NEW_DIGEST))
+        self.quiet(edit.sync, self.root)
         self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod', runner=runner)
         self.assertEqual(offers.read(self.root / 'apps/orders/prod').declared, found.declared, 'production gets the image\'s flags')
         (instance / 'offers/flags.json').write_text(json.dumps({'shout': {'type': 'boolean', 'default': 'yes'}}))
@@ -1213,7 +1244,9 @@ components:
         self.quiet(intake.set_offers, self.root, 'orders', 'staging',
                    opener=self.repository({'swhurl.yaml': manifest, 'asyncapi.yaml': self.ASYNCAPI})[0], runner=runner)
         staging = self.root / 'apps/orders/staging/helmrelease.yaml'
-        staging.write_text(staging.read_text().replace(staging.read_text().split('digest: ')[1].split('\n')[0], NEW_DIGEST))
+        record = staging.parent / 'release.yaml'
+        record.write_text(record.read_text().replace(yaml.safe_load(record.read_text())['image']['digest'], NEW_DIGEST))
+        self.quiet(edit.sync, self.root)
         self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod', runner=runner)
         prod = self.root / 'apps/orders/prod'
         self.assertEqual(offers.read(prod).commit, 'abc1234')
@@ -1237,7 +1270,7 @@ components:
         doc = yaml.safe_load(record.read_text())
         doc['apiPath'] = '/openapi.json'
         record.write_text(yaml.safe_dump(doc, sort_keys=False))
-        self.quiet(derive.sync, self.root)
+        self.quiet(edit.sync, self.root)
         self.assertEqual(generated.problems(self.root), [],
                          'staging describes its API before production runs that image')
 
@@ -1279,6 +1312,73 @@ components:
             with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
                 edit.scale(self.root, 'hello', 'prod', **kwargs)
 
+    def snapshot(self):
+        return {p.relative_to(self.root): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+
+    def test_remove_refuses_waiting_and_granted_callers_before_any_write(self):
+        self.with_units()
+        self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
+        self.assertNotIn('SWHURL_SERVICE_ORDERS_URL', self.env('hello'), 'waiting calls render no connection')
+        for granted in (False, True):
+            if granted:
+                self.quiet(edit.set_allows, self.root, 'orders', 'staging', add=['hello'])
+            # A broken/missing render must not hide a caller. The records alone refuse removal.
+            rendered = self.root / 'apps/hello/staging/helmrelease.yaml'
+            original = rendered.read_bytes()
+            rendered.write_text('invalid: [')
+            before = self.snapshot()
+            with self.subTest(granted=granted), self.assertRaisesRegex(edit.EditError, 'is called by hello'):
+                edit.remove(self.root, 'orders', 'staging')
+            self.assertEqual(self.snapshot(), before)
+            rendered.unlink()
+            before = self.snapshot()
+            with self.assertRaisesRegex(edit.EditError, 'is called by hello'):
+                edit.remove(self.root, 'orders', 'staging')
+            self.assertEqual(self.snapshot(), before)
+            rendered.write_bytes(original)
+
+    def test_remove_refuses_record_only_subscriber_without_writing(self):
+        self.with_units()
+        settings = self.root / 'apps/hello/staging/instance.yaml'
+        doc = yaml.safe_load(settings.read_text())
+        doc['subscriptions'] = ['orders.created']
+        settings.write_text(yaml.safe_dump(doc))
+        (self.root / 'apps/hello/staging/helmrelease.yaml').unlink()
+        before = self.snapshot()
+        with self.assertRaisesRegex(edit.EditError, 'publishes events that hello subscribe to'):
+            edit.remove(self.root, 'orders', 'staging')
+        self.assertEqual(self.snapshot(), before)
+
+    def test_remove_ignores_self_and_other_environment_relations(self):
+        self.with_units()
+        # Self records go with the target; production's relations belong to production's target.
+        for app, env in (('orders', 'staging'), ('hello', 'prod')):
+            settings = self.root / f'apps/{app}/{env}/instance.yaml'
+            doc = yaml.safe_load(settings.read_text())
+            doc.update(calls=['orders'], subscriptions=['orders.created'])
+            settings.write_text(yaml.safe_dump(doc))
+        # Removal's existing writer syncs afterwards; valid production publications and keys let it render.
+        record = self.root / 'apps/orders/prod/release.yaml'
+        doc = yaml.safe_load(record.read_text())
+        doc['publishes'] = ['created']
+        record.write_text(yaml.safe_dump(doc))
+        for app in ('hello', 'orders'):
+            settings = self.root / f'apps/{app}/prod/instance.yaml'
+            doc = yaml.safe_load(settings.read_text())
+            doc['allocations'] = {'eventsKey': 'U' + app.upper()}
+            settings.write_text(yaml.safe_dump(doc))
+            (settings.parent / 'events.sops.yaml').write_text('sops: {}')
+        self.quiet(edit.remove, self.root, 'orders', 'staging')
+        self.assertFalse((self.root / 'apps/orders/staging').exists())
+        self.assertTrue((self.root / 'apps/orders/prod').exists())
+
+    def test_remove_invalid_world_is_cli_error_and_writes_nothing(self):
+        (self.prod.parent / 'instance.yaml').write_text('invalid: [')
+        before = self.snapshot()
+        code, _ = self.quiet(edit.main_remove, ['hello', 'staging', '--root', str(self.root)])
+        self.assertEqual(code, 2)
+        self.assertEqual(self.snapshot(), before)
+
     def test_remove_leaves_no_trace(self):
         reloader = self.root / 'platform/reloader/helmrelease.yaml'
         # Whatever the real list holds today (apps with secrets or events), start from a known one.
@@ -1296,8 +1396,10 @@ components:
         self.assertFalse((self.root / 'apps/hello').exists())
 
     def test_remove_warns_when_data_is_kept(self):
-        ns = self.root / 'apps/hello/prod/namespace.yaml'
-        ns.write_text(ns.read_text().replace('metadata:\n', 'metadata:\n  annotations:\n    kustomize.toolkit.fluxcd.io/prune: disabled\n'))
+        settings = self.root / 'apps/hello/prod/instance.yaml'
+        document = yaml.safe_load(settings.read_text())
+        document['allocations'] = {'database': {'size': '1Gi', 'storageClass': 'local-path-retain'}}
+        settings.write_text(yaml.safe_dump(document))
         _, out = self.quiet(edit.remove, self.root, 'hello', 'prod')
         self.assertIn('[WARN] hello-prod has a retained volume', out)
 
@@ -1309,9 +1411,8 @@ components:
 
     def test_promote_asks_what_changed_only_when_staging_is_behind(self):
         """Behind main by a commit: the caller's word, else this checkout's history, says whether it changed staging."""
-        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine')
-                                .replace(self.staging.read_text().split('digest: ')[1].split('\n')[0], NEW_DIGEST))
-        image = promotion.decide(*promotion.read(self.root, 'hello')).image
+        self.new_staging_image()
+        image = promotion.select(self.root, model_sync.read(self.root)[0], 'hello').image
         behind = ops.InstanceStatus(Instance('hello', 'staging'), 'main@sha1:def', 'main@sha1:abc', ('True', ''), ('True', ''),
                                     image, [image.split(':')[0] + '@' + NEW_DIGEST], [ops.Replicas('Deployment/hello', 1, 1)], [], [], [])
         diff = ('git', '-C', str(self.root.resolve()), 'diff', '--name-only', 'abc', 'def')

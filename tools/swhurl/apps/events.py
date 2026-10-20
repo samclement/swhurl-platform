@@ -1,7 +1,7 @@
 """Events between apps on NATS JetStream (docs/apps.md#events): names, permissions and manifests.
 
 An app publishes events under its own name and subscribes to other apps' events. Everything here
-is derived from two variables on each instance's HelmRelease, as calls are from their addresses:
+is rendered from Release.publishes and Settings.subscriptions into the instance variables:
 
     SWHURL_EVENTS_PUBLISH: created,cancelled            events this app publishes
     SWHURL_EVENTS_SUBSCRIBE: orders.created             <app>.<event> pairs it receives
@@ -14,7 +14,7 @@ On NATS, staging and production share one server and are kept apart by name and 
 
 Every instance signs in to NATS with its own nkey (apps/nkeys.py), whether or not it declares
 events: the public key is a variable on its HelmRelease and in the server's user list
-(platform/nats/users.yaml, generated here); the seed is in the app's own encrypted Secret. The same
+(platform/nats/users.yaml, rendered by apps/model/events.py); the seed is in the app's own encrypted Secret. The same
 identity reads the instance's feature flag overrides (docs/apps.md#feature-flags):
 
     bucket    flags-<env>                  NATS key-value store, one per environment (platform/flags)
@@ -29,8 +29,7 @@ import re
 from pathlib import Path
 
 from swhurl import yamlio
-from swhurl.apps import helmrelease
-from swhurl.apps.instance import ENVIRONMENTS, INSTANCE_ROOTS, Instance, instances
+from swhurl.apps.instance import ENVIRONMENTS, Instance
 
 NAMESPACE = 'messaging'
 UNIT = 'platform-nats'
@@ -165,23 +164,6 @@ def users_configmap(users: list[dict]) -> str:
             f'  name: nats-users\n  namespace: {NAMESPACE}\n'
             '  labels:\n    reconcile.fluxcd.io/watch: Enabled\n'
             'data:\n  values.yaml: |\n' + ''.join(f'    {line}\n' for line in values.splitlines()))
-
-
-def users_file(root: Path) -> tuple[Path, str] | None:
-    """The NATS user list for every instance under ``root`` as it is on disk, with its path; None
-    where this root has no NATS unit (the scratch roots of tests and template checks)."""
-    key_file = root / CONTROLLER_KEY_FILE
-    if not key_file.is_file():
-        return None
-    users = [controller_user(key_file.read_text().strip())]
-    if (root / CONSOLE_KEY_FILE).is_file():
-        users.append(console_user((root / CONSOLE_KEY_FILE).read_text().strip()))
-    found = instances(root / INSTANCE_ROOTS[0])
-    for each in (each for env in ENVIRONMENTS for each in found if each.env == env):  # one environment after the other
-        variables = helmrelease.variables(yamlio.load((each.folder(root) / 'helmrelease.yaml').read_text()))
-        if variables.get(NKEY_VARIABLE):
-            users.append(user(str(variables[NKEY_VARIABLE]), each.env, each.app, published(variables), subscribed(variables)))
-    return root / USERS_FILE, users_configmap(users)
 
 
 def manifests(app: str, env: str, publishes: list[str], subscribes: list[tuple[str, str]]) -> list[dict]:

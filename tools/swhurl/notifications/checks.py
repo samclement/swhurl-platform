@@ -9,9 +9,9 @@ import json
 import time
 from pathlib import Path
 
-from swhurl import ROOT, kube, yamlio
-from swhurl.apps import channels, contract, helmrelease
-from swhurl.apps.instance import INSTANCE_ROOTS, instances
+from swhurl import ROOT, kube
+from swhurl.apps import channels, helmrelease
+from swhurl.apps.model import store
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
@@ -23,6 +23,11 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
     report.section('Notification channels')
     wanted = channels.routes_file(root)
     if not wanted:
+        return
+    world, errors = store.world(root)
+    if errors:
+        for error in errors:
+            report.bad(error)
         return
     get = ['kubectl', '-n', channels.NAMESPACE, 'get']
     try:
@@ -47,10 +52,8 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
     elif known:
         report.ok(f'{len(known)} channel(s) have their Secret')
     owned: dict[str, set[str]] = {}  # each team's apps, from the instances in Git
-    for instance in instances(root / INSTANCE_ROOTS[0]):
-        path = instance.folder(root) / 'namespace.yaml'
-        labels = ((yamlio.load(path.read_text()) or {}).get('metadata') or {}).get('labels') or {} if path.is_file() else {}
-        owned.setdefault(str(labels.get(contract.TEAM, '')), set()).add(instance.app)
+    for each, entry in world.items():
+        owned.setdefault(entry.app.team, set()).add(each.app)
     for team, apps in sorted(owned.items()):
         if team and not routes.get(team):
             report.warn(f'team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '

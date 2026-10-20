@@ -86,13 +86,13 @@ def write_files(planned: dict[Path, str | None]) -> bool:
 
 
 def change_release(root: Path, each: Instance, operation: model_sync.Create | model_sync.Update, planned: dict[Path, str | None], *,
-                   runner: Runner | None = None) -> bool:
-    """Prepare a create or update, supplying its NATS key when needed, then write it and its offers.
+                   runner: Runner | None = None, keyed: bool = False) -> bool:
+    """Prepare a create or update, supplying a NATS key for events or explicit bootstrap, then write it and its offers.
     A planning refusal leaves the input files untouched. Returns whether anything changed."""
     entry = operation.entry if isinstance(operation, model_sync.Create) else operation.update(model_sync.read(root)[0][each])
     instance = each.folder(root)
     created = ''
-    if (events.has_nats(root) or entry.release.publishes or entry.settings.subscriptions) and not events_keyed(entry):
+    if (keyed or entry.release.publishes or entry.settings.subscriptions) and not events_keyed(entry):
         created = new_nats_key(instance, each.app, each.env, runner=runner)
         entry = replace(entry, settings=replace(entry.settings, allocations=replace(entry.settings.allocations, events_key=created)),
                         encrypted=entry.encrypted | {EVENTS_SECRET})

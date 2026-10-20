@@ -1,8 +1,6 @@
 # Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
 version: 1
 exposure: private
-egress:
-- example.com:443
 replicas: 1
 capacity:
   cpu: 10m

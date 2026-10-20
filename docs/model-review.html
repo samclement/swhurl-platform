@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>swhurl-platform: model, contracts and incidental complexity</title>
+<style>
+  :root {
+    --paper: oklch(97.5% 0.008 85);
+    --paper-2: oklch(94.5% 0.012 85);
+    --ink: oklch(24% 0.02 60);
+    --ink-dim: oklch(48% 0.02 60);
+    --rule: oklch(86% 0.015 80);
+    --rust: oklch(56% 0.15 40);
+    --rust-soft: oklch(56% 0.15 40 / .12);
+    --teal: oklch(52% 0.09 190);
+    --teal-soft: oklch(52% 0.09 190 / .12);
+    --ochre: oklch(68% 0.12 80);
+    --ochre-soft: oklch(68% 0.12 80 / .16);
+    --display: "Iowan Old Style", "Charter", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    --body: "Seravek", "Gill Sans Nova", "Ubuntu", "Segoe UI Variable", "Cantarell", sans-serif;
+    --mono: "Berkeley Mono", "JetBrains Mono", "Cascadia Code", "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: oklch(19% 0.012 70);
+      --paper-2: oklch(23% 0.014 70);
+      --ink: oklch(91% 0.012 85);
+      --ink-dim: oklch(70% 0.015 85);
+      --rule: oklch(34% 0.015 70);
+      --rust: oklch(70% 0.14 40);
+      --rust-soft: oklch(70% 0.14 40 / .14);
+      --teal: oklch(74% 0.09 190);
+      --teal-soft: oklch(74% 0.09 190 / .13);
+      --ochre: oklch(78% 0.11 80);
+      --ochre-soft: oklch(78% 0.11 80 / .14);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); color: var(--ink); }
+  body { margin: 0; font: 400 1.0625rem/1.6 var(--body); }
+  .wrap { max-width: 78rem; margin: 0 auto; padding: clamp(1.5rem, 4vw, 4rem) clamp(1rem, 4vw, 3rem) 6rem; display: grid; grid-template-columns: 14rem minmax(0, 1fr); gap: 3rem; }
+  nav { position: sticky; top: 2rem; align-self: start; font-size: .875rem; }
+  nav ol { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+  nav li { counter-increment: s; margin: .35rem 0; }
+  nav a { color: var(--ink-dim); text-decoration: none; }
+  nav a::before { content: counter(s, decimal-leading-zero) "  "; font-family: var(--mono); font-size: .75rem; color: var(--rust); }
+  nav a:hover { color: var(--ink); }
+  @media (max-width: 60rem) { .wrap { grid-template-columns: 1fr; } nav { position: static; } }
+
+  header { grid-column: 1 / -1; border-bottom: 2px solid var(--ink); padding-bottom: 2rem; margin-bottom: 1rem; }
+  .kicker { font: 600 .75rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--rust); }
+  h1 { font: 500 clamp(2.2rem, 5vw, 3.8rem)/1.02 var(--display); margin: .6rem 0 1rem; letter-spacing: -.01em; max-width: 18ch; }
+  .lede { font-size: 1.2rem; max-width: 60ch; color: var(--ink-dim); margin: 0; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+  .meta { margin-top: 1.25rem; font: .8rem var(--mono); color: var(--ink-dim); }
+
+  section { padding-top: 3.5rem; }
+  h2 { font: 500 clamp(1.6rem, 3vw, 2.2rem)/1.15 var(--display); margin: 0 0 .5rem; }
+  h2 .n { font: 600 .9rem var(--mono); color: var(--rust); vertical-align: .5em; margin-right: .5rem; }
+  h3 { font: 600 1.05rem/1.3 var(--body); margin: 2rem 0 .5rem; }
+  p { max-width: 68ch; }
+  .sub { color: var(--ink-dim); max-width: 68ch; margin-top: 0; }
+  code { font: .86em var(--mono); background: var(--paper-2); padding: .05em .3em; border-radius: 2px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; margin: 1rem 0; }
+  th { text-align: left; font: 600 .72rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim); border-bottom: 1.5px solid var(--ink); padding: .5rem .6rem .4rem 0; }
+  td { border-bottom: 1px solid var(--rule); padding: .55rem .6rem .55rem 0; vertical-align: top; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .tag { display: inline-block; font: 600 .68rem/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; padding: .28rem .4rem; border-radius: 2px; white-space: nowrap; }
+  .holds { background: var(--teal-soft); color: var(--teal); }
+  .leaks { background: var(--ochre-soft); color: var(--ochre); }
+  .broken { background: var(--rust-soft); color: var(--rust); }
+
+  figure { margin: 1.5rem 0 0; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font-size: .85rem; color: var(--ink-dim); margin-top: .6rem; max-width: 70ch; }
+  svg text { font-family: var(--body); fill: var(--ink); }
+  svg .lane { font: 600 11px var(--mono); letter-spacing: .1em; fill: var(--ink-dim); }
+  svg .box { fill: var(--paper-2); stroke: var(--ink); stroke-width: 1; }
+  svg .box.gen { fill: var(--paper); stroke-dasharray: 4 3; }
+  svg .box.hot { stroke: var(--rust); stroke-width: 1.6; }
+  svg .box.new { fill: var(--teal-soft); stroke: var(--teal); stroke-width: 1.4; }
+  svg .t { font-size: 13px; font-weight: 600; }
+  svg .s { font-size: 11px; fill: var(--ink-dim); }
+  svg .m { font: 11px var(--mono); fill: var(--ink-dim); }
+  svg .e { stroke: var(--ink-dim); stroke-width: 1.1; fill: none; marker-end: url(#a); }
+  svg .e.bad { stroke: var(--rust); stroke-dasharray: 5 3; marker-end: url(#ar); }
+  svg .e.good { stroke: var(--teal); marker-end: url(#at); }
+  svg .badge circle { fill: var(--rust); }
+  svg .badge text { fill: var(--paper); font: 700 11px var(--mono); text-anchor: middle; }
+  svg .zone { fill: none; stroke: var(--rule); stroke-width: 1; }
+
+  .finding { display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: 0 1rem; padding: 1.5rem 0; border-top: 1px solid var(--rule); }
+  .finding .num { font: 500 2rem/1 var(--display); color: var(--rust); }
+  .finding h3 { margin: 0 0 .4rem; font-size: 1.15rem; }
+  .finding .area { font: 600 .7rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim); }
+  .finding dl { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: .35rem 1rem; margin: .8rem 0 0; font-size: .95rem; }
+  .finding dt { font: 600 .72rem/1.9 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); }
+  .finding dd { margin: 0; }
+  .finding dd.fix { color: var(--teal); }
+  .finding dd.fix code { color: var(--ink); }
+
+  .strip { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: 1rem 0; font-size: .85rem; }
+  .strip span { border: 1px solid var(--rule); padding: .3rem .55rem; background: var(--paper-2); }
+  .strip span.src { border-color: var(--ink); font-weight: 600; }
+  .strip i { color: var(--ink-dim); font-style: normal; }
+
+  pre { font: .82rem/1.55 var(--mono); background: var(--paper-2); border-left: 2px solid var(--teal); padding: 1rem 1.2rem; overflow-x: auto; max-width: 100%; }
+  .options { counter-reset: o; list-style: none; padding: 0; }
+  .options > li { counter-increment: o; padding: 1rem 0 1rem 3rem; position: relative; border-top: 1px solid var(--rule); }
+  .options > li::before { content: counter(o); position: absolute; left: 0; top: .9rem; font: 500 1.6rem var(--display); color: var(--teal); }
+  .options .rec { font: 600 .7rem var(--mono); color: var(--teal); text-transform: uppercase; letter-spacing: .08em; margin-left: .5rem; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 0 2.5rem; }
+  .note { font-size: .9rem; color: var(--ink-dim); border-left: 2px solid var(--ochre); padding-left: 1rem; max-width: 68ch; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Architecture review · read-only · HEAD fb553653 · 20 Oct 2026</div>
+  <h1>The model is sound. Its edges are where the complexity is.</h1>
+  <p class="lede">The core of the platform is <strong>strict records → pure render → exact comparison → all-or-nothing write</strong>, and that pipeline is good. Most of the incidental complexity comes from <strong>code that goes around it</strong>: readers that treat rendered files as the truth, shared files with more than one writer, relations whose consent rules differ by kind, and the console, CI and status logic each rebuilding the same rule in their own way.</p>
+  <p class="meta">Sources: four parallel read-only reviews (model, relations, workflows and console, platform), each claim cited to file:line, with the main claims re-checked against the code. Nothing in the repository was changed apart from adding this file.</p>
+</header>
+
+<nav aria-label="Sections">
+  <ol>
+    <li><a href="#model">The model</a></li>
+    <li><a href="#actors">Actors and use cases</a></li>
+    <li><a href="#primitives">Primitives</a></li>
+    <li><a href="#contracts">Contracts</a></li>
+    <li><a href="#today">Component map today</a></li>
+    <li><a href="#findings">Awkward elements</a></li>
+    <li><a href="#proposal">Clearer primitives</a></li>
+    <li><a href="#order">Order of work</a></li>
+    <li><a href="#evidence">Evidence and gaps</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="model" style="padding-top:0">
+  <h2><span class="n">01</span>The model</h2>
+  <p class="sub">An app has two authors: its team, through <code>swhurl.yaml</code> in the app's own repository, and the platform, through records in this repository. Everything that Flux applies is rendered from those records.</p>
+  <table>
+    <thead><tr><th>Concept</th><th>Means</th><th>Source of truth</th><th>Written by</th></tr></thead>
+    <tbody>
+      <tr><td>Declaration</td><td>Identity, needs and offers of an app's image</td><td><code>swhurl.yaml</code> at the image's commit</td><td>Developer</td></tr>
+      <tr><td>Release</td><td>Image, needs and offers taken from the declaration; grants nothing</td><td><code>apps/&lt;app&gt;/&lt;env&gt;/release.yaml</code></td><td>Deploy workflow, promote, <code>app-offers</code></td></tr>
+      <tr><td>Settings</td><td><em>Grants</em> (calls, allows, subscriptions, egress), <em>choices</em> (scale, exposure, host) and <em>allocations</em> (egress port, nkey, volume) in one record</td><td><code>instance.yaml</code> (class <code>Settings</code>)</td><td>Operator, console, <code>app-sync</code> (allocations)</td></tr>
+      <tr><td>App</td><td>Team and alerts, shared by both environments</td><td><code>apps/&lt;app&gt;/app.yaml</code></td><td>Operator</td></tr>
+      <tr><td>Offers documents</td><td>OpenAPI, AsyncAPI and flags copied from the image's commit</td><td><code>offers/</code></td><td>Workflow only</td></tr>
+      <tr><td>World</td><td>Every instance's records in memory, the only input to rendering</td><td><code>store.world</code></td><td>Read from disk</td></tr>
+      <tr><td>Rendered files</td><td>Manifests, the unit and shared files; must equal the render byte for byte</td><td>Output of <code>render.instance</code> and <code>render.shared</code></td><td>The write pipeline (and, today, other writers)</td></tr>
+      <tr><td>State</td><td>The live verdict on an instance</td><td><code>state.verdict</code> over cluster facts</td><td>Never stored</td></tr>
+    </tbody>
+  </table>
+  <p>Three things make this model work: the instance name pins every path (<code>instance.py</code>), rendering is pure, and <code>generated.py</code> fails any drift between the committed files and the render. The findings below are the places where code doesn't yet rely on those guarantees.</p>
+</section>
+
+<section id="actors">
+  <h2><span class="n">02</span>Actors and use cases</h2>
+  <p class="sub">Six actors can write to <code>main</code>. Each use case below gives the path it takes and where its friction is.</p>
+  <table>
+    <thead><tr><th>Actor</th><th>May change</th><th>Path to main</th><th>Gate</th></tr></thead>
+    <tbody>
+      <tr><td>Developer</td><td>Their own repository and image; never this repository</td><td>Image → Flux ImagePolicy → Deploy workflow</td><td><code>check-apps</code> inside Deploy</td></tr>
+      <tr><td>Operator</td><td>Anything; <code>make app-*</code> writes records <em>and</em> rendered files</td><td>Direct push</td><td>Local <code>make check</code>; CI after the push</td></tr>
+      <tr><td>Console user</td><td>Grants and choices through PRs; Flux suspend and reconcile; flags in NATS KV</td><td><code>console/*</code> PR with records only</td><td>Auto-merge gate (<code>merge.py</code>)</td></tr>
+      <tr><td>Render workflow</td><td>Rendered files after a push that carries only records</td><td>Bot push</td><td><code>check-repo</code> + <code>check-apps</code></td></tr>
+      <tr><td>Deploy workflow</td><td>Staging Release and offers</td><td>Bot push, 5 retries</td><td><code>check-apps</code> only</td></tr>
+      <tr><td>Validate bot</td><td>The console image pin</td><td>Bot push</td><td>The whole Validate run</td></tr>
+      <tr><td>Renovate</td><td>Chart versions</td><td>PR</td><td>A person</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>Use case</th><th>Path</th><th>Friction</th></tr></thead>
+    <tbody>
+      <tr><td>Create an app</td><td>CLI: <code>app-repo</code> (gh and SSH) → <code>app-new</code>. Console: REST → <code>NewApp</code> → <code>app-new</code> in a clone → keep records only → gate renders again</td><td>Two transports for creating a repo and two ways of waiting for the first image; the clone's render is thrown away</td></tr>
+      <tr><td>A calls B</td><td><code>app-allows</code> on B, then <code>app-calls</code> on A, in either order</td><td>One relation shows up in 7 places; a "waiting" state exists for calls only</td></tr>
+      <tr><td>A publishes, B subscribes</td><td>AsyncAPI in A's repo → Deploy; then <code>app-events</code> on B</td><td>A missing publisher is a RenderError, where a missing callee renders nothing</td></tr>
+      <tr><td>Deploy staging</td><td>Image → dispatch → <code>app-deploy</code> → push</td><td>No <code>check-repo</code>, though Deploy also stages <code>clusters/home</code> and <code>users.yaml</code></td></tr>
+      <tr><td>Promote</td><td><code>decide</code> → <code>settled</code> → <code>source_problem</code> → <code>promote</code>; the console adds <code>held</code></td><td><code>source_problem</code> is called up to six times; console and gate pass <code>held</code> different <code>staged</code> inputs</td></tr>
+      <tr><td>Remove</td><td><code>edit.remove</code>: rmtree, edit the registry line by line, edit Reloader with a regex, then render</td><td>Goes around <code>prepare</code>; misses callers that are still waiting for consent</td></tr>
+      <tr><td>Rotate keys</td><td>Signing keys: <code>platform-signing-keys</code>. nkey: by hand</td><td>No command rotates an nkey</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="primitives">
+  <h2><span class="n">03</span>Primitives</h2>
+  <div class="cols">
+    <div>
+      <h3>Clear and used well</h3>
+      <table><tbody>
+        <tr><td><code>Instance</code></td><td>Names the namespace, unit, folder and unit file from <code>(app, env)</code></td></tr>
+        <tr><td>Records</td><td>Strict <code>parse</code>/<code>document</code> pairs, standard library only</td></tr>
+        <tr><td><code>Draft</code> + appliers</td><td>One <code>apply(draft, entry)</code> per capability</td></tr>
+        <tr><td><code>render</code></td><td>Pure: <code>(Instance, World, Platform) → files</code></td></tr>
+        <tr><td><code>sync.prepare</code></td><td>Guard, update and render everything, or write nothing</td></tr>
+        <tr><td><code>generated</code></td><td>Exact comparison with the render</td></tr>
+        <tr><td><code>Runner</code></td><td>Every external call, with dry runs and redaction</td></tr>
+        <tr><td><code>run_tool</code></td><td>The console runs <code>main</code>'s own CLI, so each rule exists once</td></tr>
+        <tr><td><code>InstanceStatus</code></td><td>One set of facts for the CLI and the console</td></tr>
+        <tr><td><code>Check</code> registry</td><td>Names the access each check needs; the docs table is kept equal to it</td></tr>
+      </tbody></table>
+    </div>
+    <div>
+      <h3>Strained or missing</h3>
+      <table><tbody>
+        <tr><td><code>Settings</code></td><td>Grants, choices and allocations in one record</td></tr>
+        <tr><td>Relation</td><td>Missing: calls, events and egress each have their own rule</td></tr>
+        <tr><td>Operation</td><td>Missing: create, update and remove are booleans (<code>adding</code>, <code>keyed</code>, <code>register</code>), and remove is outside the pipeline</td></tr>
+        <tr><td>Allocate step</td><td>Allocations are made in 5 places, outside <code>prepare</code></td></tr>
+        <tr><td><code>Change</code></td><td>Behaviour depends on <code>kind</code> and the first command's name; promotion goes around it</td></tr>
+        <tr><td>Console branch</td><td>Built in 1 place, parsed in 4, and the patterns disagree</td></tr>
+        <tr><td>Applied / current</td><td>Two meanings of "applied" (revision equality, render hash) across about six status models</td></tr>
+        <tr><td>Platform-to-app interface</td><td>Missing: the <code>SWHURL_*</code> variables and <code>platform.swhurl.com/*</code> labels are scattered constants</td></tr>
+        <tr><td><code>derive.py</code></td><td>Derives nothing: wrappers plus readers of rendered files</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+</section>
+
+<section id="contracts">
+  <h2><span class="n">04</span>Contracts</h2>
+  <p class="sub">Each contract is marked <span class="tag holds">holds</span> when the code keeps it everywhere, <span class="tag leaks">leaks</span> when some code goes around it, and <span class="tag broken">broken</span> when the stated contract is wrong.</p>
+  <table>
+    <thead><tr><th>Contract</th><th>Status</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td>Records round-trip strictly</td><td><span class="tag holds">holds</span></td><td><code>records.py:1-5</code></td></tr>
+      <tr><td>Rendering never allocates</td><td><span class="tag holds">holds</span></td><td><code>sync.py:3-5,93</code>; but allocation is spread across callers (F4)</td></tr>
+      <tr><td>Committed files equal the render</td><td><span class="tag holds">holds</span></td><td><code>generated.py:79-134</code></td></tr>
+      <tr><td>"Nothing reads a grant back from a rendered file"</td><td><span class="tag leaks">leaks</span></td><td><code>store.py:7</code> says so; <code>derive.callers_of</code>/<code>subscribers_of</code>, <code>set_events</code>, <code>promotion.read</code>, <code>events.users_file</code> and <code>egress.proxy_file</code> do</td></tr>
+      <tr><td>Every edit goes through <code>prepare</code></td><td><span class="tag leaks">leaks</span></td><td><code>edit.remove</code> (<code>edit.py:670-719</code>)</td></tr>
+      <tr><td>"The caller's <code>SWHURL_SERVICE_*</code> are the truth"</td><td><span class="tag broken">broken</span></td><td><code>AGENTS.md:64</code>, <code>calling.py:4-8</code>; the truth is <code>calls</code> + <code>allows</code> in <code>instance.yaml</code></td></tr>
+      <tr><td><code>promotion.held</code> is one rule for the console and the gate</td><td><span class="tag leaks">leaks</span></td><td>Same function, different <code>staged</code>: the tree (<code>console/promotion.py:199</code>) against history (<code>merge.py:250</code>)</td></tr>
+      <tr><td>Every bot push runs the full offline checks</td><td><span class="tag leaks">leaks</span></td><td>Render and the gate run <code>check-repo check-apps</code>; Deploy runs only <code>check-apps</code> (<code>deploy.yml:150</code>)</td></tr>
+      <tr><td>Grants change only in this repository</td><td><span class="tag holds">holds</span></td><td>The declaration refuses grant fields</td></tr>
+      <tr><td>A call carries a token only the callee accepts</td><td><span class="tag holds">holds</span></td><td>Rule <code>call-tokens</code></td></tr>
+      <tr><td>Substitution comes from 2 sources only</td><td><span class="tag holds">holds</span></td><td><code>validate.py:85-93</code></td></tr>
+      <tr><td>Platform-to-app variables and labels</td><td><span class="tag leaks">leaks</span></td><td>Enforced only by template checks and live tests</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="today">
+  <h2><span class="n">05</span>Component map today</h2>
+  <p class="sub">Solid arrows show the designed path. Dashed rust arrows are paths around it. The numbered badges point to the findings in section 06.</p>
+  <figure>
+  <svg viewBox="0 0 1200 640" role="img" aria-labelledby="t1">
+    <title id="t1">Current component diagram</title>
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" style="color:var(--ink-dim)"/></marker>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--rust)"/></marker>
+      <marker id="at" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--teal)"/></marker>
+    </defs>
+    <text class="lane" x="20" y="28">WRITERS</text>
+    <text class="lane" x="250" y="28">RECORDS (TRUTH)</text>
+    <text class="lane" x="510" y="28">MODEL</text>
+    <text class="lane" x="790" y="28">RENDERED (GIT)</text>
+    <text class="lane" x="1040" y="28">CLUSTER</text>
+
+    <!-- writers -->
+    <rect class="box" x="20" y="50" width="180" height="46"/><text class="t" x="32" y="70">Developer</text><text class="s" x="32" y="87">swhurl.yaml, AsyncAPI, image</text>
+    <rect class="box" x="20" y="116" width="180" height="46"/><text class="t" x="32" y="136">Operator CLI</text><text class="s" x="32" y="153">edit.py · 13 commands</text>
+    <rect class="box" x="20" y="182" width="180" height="46"/><text class="t" x="32" y="202">Console</text><text class="s" x="32" y="219">Change · clone · keep records</text>
+    <rect class="box hot" x="20" y="260" width="180" height="200"/><text class="t" x="32" y="282">Bots pushing to main</text>
+    <text class="m" x="32" y="308">auto-merge gate</text><text class="m" x="32" y="330">Render workflow</text><text class="m" x="32" y="352">Deploy workflow</text><text class="m" x="32" y="374">Validate deploy job</text><text class="m" x="32" y="396">GitHub Merge button</text>
+    <text class="s" x="32" y="424">each with its own retry loop,</text><text class="s" x="32" y="440">each rendering again</text>
+    <g class="badge"><circle cx="200" cy="260" r="11"/><text x="200" y="264">6</text></g>
+
+    <!-- records -->
+    <rect class="box" x="250" y="50" width="210" height="40"/><text class="t" x="262" y="75">app.yaml · teams.yaml</text>
+    <rect class="box" x="250" y="104" width="210" height="40"/><text class="t" x="262" y="129">release.yaml + offers/</text>
+    <rect class="box hot" x="250" y="158" width="210" height="104"/><text class="t" x="262" y="180">instance.yaml (Settings)</text>
+    <text class="m" x="262" y="202">grants   calls allows subs egress</text><text class="m" x="262" y="222">choices  scale exposure host</text><text class="m" x="262" y="242">allocs   port nkey volume</text>
+    <g class="badge"><circle cx="460" cy="158" r="11"/><text x="460" y="162">4</text></g>
+    <rect class="box" x="250" y="276" width="210" height="40"/><text class="t" x="262" y="301">*.sops.yaml (seed, secret)</text>
+    <rect class="box" x="250" y="330" width="210" height="40"/><text class="t" x="262" y="355">signing-keys.json</text>
+
+    <!-- model -->
+    <rect class="box" x="510" y="50" width="220" height="46"/><text class="t" x="522" y="70">store → World</text><text class="s" x="522" y="87">records in memory</text>
+    <rect class="box" x="510" y="116" width="220" height="46"/><text class="t" x="522" y="136">render (pure)</text><text class="s" x="522" y="153">instance + shared</text>
+    <rect class="box" x="510" y="182" width="220" height="46"/><text class="t" x="522" y="202">sync.prepare → apply</text><text class="s" x="522" y="219">guard · all or nothing</text>
+    <rect class="box" x="510" y="248" width="220" height="40"/><text class="t" x="522" y="273">generated (exact check)</text>
+    <rect class="box hot" x="510" y="320" width="220" height="104"/><text class="t" x="522" y="342">Readers of rendered files</text>
+    <text class="m" x="522" y="364">derive.callers_of/subscribers_of</text><text class="m" x="522" y="382">events.users_file</text><text class="m" x="522" y="400">egress.proxy_file/ports</text><text class="m" x="522" y="418">promotion.read · set_events</text>
+    <g class="badge"><circle cx="730" cy="320" r="11"/><text x="730" y="324">1</text></g>
+    <rect class="box hot" x="510" y="444" width="220" height="46"/><text class="t" x="522" y="464">edit.remove</text><text class="s" x="522" y="481">rmtree · line filter · regex</text>
+    <g class="badge"><circle cx="730" cy="444" r="11"/><text x="730" y="448">3</text></g>
+    <rect class="box" x="510" y="510" width="220" height="40"/><text class="t" x="522" y="535">derive.sync → routes</text>
+
+    <!-- outputs -->
+    <rect class="box gen" x="780" y="50" width="200" height="46"/><text class="t" x="792" y="70">instance manifests</text><text class="s" x="792" y="87">HelmRelease, NetPol, events</text>
+    <rect class="box gen" x="780" y="116" width="200" height="40"/><text class="t" x="792" y="141">unit file</text>
+    <rect class="box gen hot" x="780" y="176" width="200" height="190"/><text class="t" x="792" y="198">Shared platform files</text>
+    <text class="m" x="792" y="222">nats/users.yaml</text><text class="m" x="792" y="244">egress/proxy.yaml</text><text class="m" x="792" y="266">reloader namespaces</text><text class="m" x="792" y="288">units registry</text><text class="m" x="792" y="310">notify/routes.yaml</text>
+    <text class="s" x="792" y="336">rendered by 3 code paths,</text><text class="s" x="792" y="352">some can only add</text>
+    <g class="badge"><circle cx="980" cy="176" r="11"/><text x="980" y="180">2</text></g>
+
+    <!-- cluster -->
+    <rect class="box" x="1030" y="116" width="150" height="46"/><text class="t" x="1042" y="136">Flux</text><text class="s" x="1042" y="153">rendered files only</text>
+    <rect class="box" x="1030" y="200" width="150" height="46"/><text class="t" x="1042" y="220">Instances</text><text class="s" x="1042" y="237">pods, NATS, squid</text>
+    <rect class="box hot" x="1030" y="290" width="150" height="80"/><text class="t" x="1042" y="312">Status models</text><text class="s" x="1042" y="330">InstanceStatus, Target,</text><text class="s" x="1042" y="346">Rollout ×11, Track, Row</text>
+    <g class="badge"><circle cx="1180" cy="290" r="11"/><text x="1180" y="294">7</text></g>
+
+    <!-- edges -->
+    <path class="e" d="M200 73 C 225 73, 225 124, 250 124"/>
+    <path class="e" d="M200 139 C 225 139, 225 200, 250 200"/>
+    <path class="e" d="M200 205 C 225 205, 225 210, 250 210"/>
+    <path class="e" d="M200 352 C 225 352, 225 124, 250 124"/>
+    <path class="e" d="M460 73 L 510 73"/>
+    <path class="e" d="M460 210 C 485 210, 485 80, 510 80"/>
+    <path class="e" d="M620 96 L 620 116"/>
+    <path class="e" d="M620 162 L 620 182"/>
+    <path class="e" d="M730 205 C 755 205, 755 73, 780 73"/>
+    <path class="e" d="M730 205 C 755 205, 755 136, 780 136"/>
+    <path class="e" d="M730 205 C 755 205, 755 240, 780 240"/>
+    <path class="e" d="M980 136 L 1030 139"/>
+    <path class="e" d="M1105 162 L 1105 200"/>
+    <path class="e" d="M1105 246 L 1105 290"/>
+    <path class="e bad" d="M780 85 C 750 200, 760 330, 731 360"/>
+    <path class="e bad" d="M730 467 C 760 467, 760 290, 780 290"/>
+    <path class="e bad" d="M730 530 C 760 530, 760 310, 780 310"/>
+    <path class="e bad" d="M200 400 C 360 520, 480 500, 510 470"/>
+    <text class="s" x="740" y="600">dashed rust = goes around the pipeline</text>
+    <path class="e bad" d="M700 596 L 735 596"/>
+    <path class="e" d="M700 616 L 735 616"/><text class="s" x="740" y="620">designed path</text>
+    <g class="badge"><circle cx="460" cy="276" r="11"/><text x="460" y="280">5</text></g>
+  </svg>
+  <figcaption>Badge 5 marks allocation done at the edge of the records (the NATS key and volume are made in five places, outside <code>prepare</code>). The Records and Model columns are sound; the hotspots sit at the joins between columns.</figcaption>
+  </figure>
+</section>
+
+<section id="findings">
+  <h2><span class="n">06</span>Awkward elements</h2>
+  <p class="sub">Ranked by how much complexity each one causes. Each gives the evidence, what it costs, and a clearer primitive or contract to replace it.</p>
+
+  <article class="finding" id="f1"><div class="num">1</div><div>
+    <span class="area">Grants · relations · event registry</span>
+    <h3>Rendered files are read back as if they were the truth</h3>
+    <dl>
+      <dt>Evidence</dt><dd><code>derive.callers_of</code>/<code>subscribers_of</code> parse other apps' HelmReleases (<code>derive.py:70-86</code>). <code>events.users_file</code> and <code>egress.proxy_file</code>/<code>ports</code> rebuild the NATS users and the squid ports from HelmRelease variables, while <code>model/events.users</code> and <code>model/egress.proxy</code> build the same files from records. <code>checks.py:151,178</code> and policy rules use the first set; <code>generated</code> uses the second.</dd>
+      <dt>Cost</dt><dd>Two generators for each shared file. Docstrings that describe a source the code no longer uses. A real gap: a caller still waiting for consent renders nothing, so <code>remove</code> cannot see it, and a later app with the same name that allows it reconnects the call silently (inferred from the code, not exercised).</dd>
+      <dt>Clearer</dt><dd class="fix">Queries over the <code>World</code> only: <code>callers(world, i)</code>, <code>subscribers(world, i)</code>, <code>entry.release.image</code>. Live checks compare against <code>render.shared(world)</code>. Delete <code>users_file</code>, <code>proxy_file</code>, <code>ports</code>, <code>grants</code> and the <code>derive</code> readers.</dd>
+    </dl></div></article>
+
+  <article class="finding" id="f2"><div class="num">2</div><div>
+    <span class="area">Platform/app ownership</span>
+    <h3>Shared platform files have several writers, and some of them can only add</h3>
+    <dl>
+      <dt>Evidence</dt><dd><code>render.shared</code> computes the units and the Reloader namespaces. <code>sync.apply</code> only <em>adds</em> to them, through <code>new.register</code> and <code>new.watch_namespace</code>. <code>edit.unwatch_namespace</code> removes with a regex, and <code>generated._reloader</code> parses with another regex. The paths are written out four times (<code>sync.py:22</code>, <code>generated.py:22</code>, <code>edit.py:694,709</code>). Routes are written by <code>derive.sync</code>, outside the model.</dd>
+      <dt>Cost</dt><dd>When a namespace stops needing Reloader, <code>check-apps</code> fails and <code>app-sync</code> cannot fix it. Each app change also edits up to four platform units, so "the platform owns X" really means "the platform owns the template; apps own its contents".</dd>
+      <dt>Clearer</dt><dd class="fix">One <code>Shared</code> output that <code>plan</code> writes whole: users, proxy, Reloader list, units registry and routes. Its contract: <em>a shared file is a pure function of the World plus the platform inputs; one writer; the comparison is of text</em>. In <code>docs/architecture.md</code>, mark these files as "generated from <code>apps/</code>".</dd>
+    </dl></div></article>
+
+  <article class="finding" id="f3"><div class="num">3</div><div>
+    <span class="area">Operator · lifecycle</span>
+    <h3>Remove goes around the write pipeline, and variants are expressed as booleans</h3>
+    <dl>
+      <dt>Evidence</dt><dd><code>edit.remove</code> runs <code>rmtree</code>, then filters the registry by line, then edits Reloader with a regex, and only then renders (<code>edit.py:670-719</code>). Elsewhere the variants are booleans: <code>prepare(adding)</code>, <code>change_release(adding, keyed)</code>, <code>apply(register)</code>, and <code>set_alerts(changes, none, default)</code> with a <code>sum(...) != 1</code> check.</dd>
+      <dt>Cost</dt><dd>A RenderError after the deletion leaves a half-changed tree. Every new lifecycle step adds another flag.</dd>
+      <dt>Clearer</dt><dd class="fix"><code>prepare(root, {Instance: Create(entry) | Update(fn) | Remove})</code>. Removing an instance takes it out of the World and lets the render decide every deletion. The alert choice becomes a union type.</dd>
+    </dl></div></article>
+
+  <article class="finding" id="f4"><div class="num">4</div><div>
+    <span class="area">Grants · security keys</span>
+    <h3><code>Settings</code> holds three meanings, and allocation is scattered</h3>
+    <dl>
+      <dt>Evidence</dt><dd>Grants, choices and allocations share one record (<code>records.py:212-228</code>). The NATS key is made in <code>new.generate</code>, <code>change_release</code>, <code>set_events</code> and <code>nats_keys</code>; the volume in <code>take_release</code>, <code>new.records</code> and <code>first_production</code>; the port in <code>sync.allocate</code>. Commands edit <code>Entry.encrypted</code> so that a file they write later will be counted. No command rotates an nkey.</dd>
+      <dt>Cost</dt><dd>Promotion has to know, field by field, what to copy (Release), what to keep (choices), what never to copy (grants) and what to make fresh (allocations). The auto-merge gate re-derives the same split.</dd>
+      <dt>Clearer</dt><dd class="fix">Split the record into <code>Grants</code> (operator-only, never promoted), <code>Choices</code> (per environment) and <code>Allocations</code> (machine-owned, a sibling of the other two). Add one <code>allocate(world, platform)</code> step inside <code>prepare</code> that makes missing keys and volumes and rolls them back on refusal. Rotating a key then means dropping the allocation and syncing (<code>app-sync --rotate nkey</code>).</dd>
+    </dl></div></article>
+
+  <article class="finding" id="f5"><div class="num">5</div><div>
+    <span class="area">Grants · offers · event registry</span>
+    <h3>Each kind of relation has its own consent rules</h3>
+    <table>
+      <thead><tr><th>Relation</th><th>Consent</th><th>Target missing</th><th>Recorded in</th></tr></thead>
+      <tbody>
+        <tr><td>Call</td><td>Both sides (<code>calls</code> + <code>allows</code>)</td><td>Nothing renders, silently</td><td>Two records</td></tr>
+        <tr><td>Event</td><td>Subscriber only</td><td>RenderError</td><td>Publisher's Release + subscriber's Settings</td></tr>
+        <tr><td>Egress</td><td>Operator only</td><td>n/a</td><td>Settings + allocated port</td></tr>
+      </tbody>
+    </table>
+    <div class="strip"><span class="src">calls</span><span class="src">allows</span><i>→</i><span>caller URL env</span><span>token audience</span><span>ALLOWED_CALLERS</span><span>NetworkPolicy</span><span>policy rule <code>calls</code></span></div>
+    <dl>
+      <dt>Cost</dt><dd>Users have to learn three rule sets. The console needs a "waiting" state for calls only. <code>remove</code> blocks on subscribers but not on waiting callers. The <code>calls</code> policy rule checks again what <code>generated</code> already proves. The Consumer name <code>{publisher}-{event}</code> can collide: <code>a-b.c</code> and <code>a.b-c</code> both give <code>a-b-c</code> (<code>events.py:201</code>).</dd>
+      <dt>Clearer</dt><dd class="fix">One <code>Relation(kind, from, to, env)</code> primitive with one table of consent rules and a single state set: <code>pending | connected | refused</code>. A missing target is <code>pending</code> for every kind. Rendering, the console's map, <code>remove</code>'s guard and the docs all read that table. Name Consumers with a separator that cannot appear in names, or refuse a collision.</dd>
+    </dl></div></article>
+
+  <article class="finding" id="f6"><div class="num">6</div><div>
+    <span class="area">Operator · developer · promotions</span>
+    <h3>"<code>main</code> is rendered from its records" is enforced by five writers</h3>
+    <dl>
+      <dt>Evidence</dt><dd>The CLI writes records and rendered files. Console PRs keep records only, discarding the clone's render. The gate, Render and Deploy each render again and push with their own retry loop (3, 5, 5, 1 attempts). Deploy skips <code>check-repo</code>. The branch grammar is parsed in 4 places, and <code>stages.BRANCH</code> is looser than <code>merge.BRANCH</code>. The rule for encrypted files exists in both the console (<code>changes.py:390-404</code>) and the gate. <code>Change.open</code> picks its behaviour from <code>kind</code> and <code>commands[0].name</code>, and promotion goes around <code>Change</code>.</dd>
+      <dt>Cost</dt><dd>Each new console action needs edits in <code>changes</code>, <code>merge</code>, <code>stages</code> and <code>server</code>. <code>git pull --rebase</code> is needed before every push.</dd>
+      <dt>Clearer</dt><dd class="fix">An <code>Action</code> registry as the single source: <code>Action(kind, envs, owns(path), commands(form), rule(main, changed) → reason | None, branch)</code>. The console labels a PR with <code>rule</code>, and the gate re-judges it with the same <code>rule</code> and the same inputs. Promotion, new app and remove become entries; remove's rule is "always held". One <code>push_rendered(main)</code> helper is used by every bot.</dd>
+    </dl></div></article>
+
+  <article class="finding" id="f7"><div class="num">7</div><div>
+    <span class="area">Promotions · console</span>
+    <h3>About six status models and two meanings of "applied"</h3>
+    <dl>
+      <dt>Evidence</dt><dd><code>InstanceStatus.applied</code> means the revisions are equal (<code>ops.py:147</code>). <code>stages</code> treats a matching render hash as applied (<code>stages.py:180</code>), across 11 Rollout states. In between sit <code>Target</code>, <code>Track</code>, <code>pull_progress</code> strings and <code>AppRow</code>, joined inside the route layer (<code>server.change_rows</code>). <code>source_problem</code> runs up to six times for one console promotion.</dd>
+      <dt>Cost</dt><dd>The AGENTS.md lesson about <code>current</code> versus <code>settled</code> exists because of this. Each check costs kubectl reads and GitHub compare calls.</dd>
+      <dt>Clearer</dt><dd class="fix">One read model: <code>Progress(git: Target, live: InstanceStatus) → State</code>, where a matching render hash is the only proof of "applied". Judge the promotion precondition once per job and pass the result on. <code>settled</code> then serves only promotion.</dd>
+    </dl></div></article>
+
+  <article class="finding" id="f8"><div class="num">8</div><div>
+    <span class="area">API contracts · platform/app interface</span>
+    <h3>No single list of what the platform gives an app</h3>
+    <dl>
+      <dt>Evidence</dt><dd><code>SWHURL_*</code> names live in <code>calling.py:19-29</code> and <code>events.py:47</code>. Label keys are spread across <code>contract.py</code>, <code>app_alerts.py</code>, <code>backup_job.py</code> and <code>recovery.py</code>. Vocabularies are duplicated (<code>KINDS</code>, <code>EXPOSURES</code>, <code>DATABASES</code>, <code>NAME_RE</code> in 4 places). The S3 URI is in two constants. The host and cookie rules exist three times.</dd>
+      <dt>Cost</dt><dd>A rename breaks apps at runtime, not at validation. The templates in other repositories can only follow by convention.</dd>
+      <dt>Clearer</dt><dd class="fix">A standard-library <code>contract.INTERFACE</code>: one entry per variable or label, giving its name, who writes it, who reads it and its capability. A check keeps it equal to a table in <code>docs/apps.md</code> (as <code>verify.table()</code> does) and to the templates' helpers. Vocabularies are imported from <code>records.py</code> only.</dd>
+    </dl></div></article>
+
+  <article class="finding" id="f9"><div class="num">9</div><div>
+    <span class="area">Structure</span>
+    <h3>Overloaded names, an awkward import constraint and oversized modules</h3>
+    <dl>
+      <dt>Evidence</dt><dd><em>sync</em> has 5 meanings, <em>release</em> 5, and <em>instance</em> 3 (value, folder, <code>instance.yaml</code> holding Settings). <code>EditError</code> lives in <code>yaml_file.py</code>, which imports ruamel; that is part of why <code>policy.py</code> must avoid <code>edit</code> and <code>derive</code>. <code>edit.py</code> is 1011 lines with five jobs, <code>server.py</code> 1077, <code>changes.py</code> 881.</dd>
+      <dt>Clearer</dt><dd class="fix">Move the error types to a standard-library <code>apps/errors.py</code>. Rename <code>model/sync.py</code> to <code>model/write.py</code> and dissolve <code>derive.py</code>. Split <code>edit.py</code> into <code>cli.py</code> (argparse), <code>model/transitions.py</code> (pure <code>Entry → Entry</code>) and <code>operations.py</code>. Split <code>changes.py</code> into <code>github</code>, <code>proposal</code>, <code>forms</code> and <code>activity</code>.</dd>
+    </dl></div></article>
+
+  <article class="finding" id="f10"><div class="num">10</div><div>
+    <span class="area">Platform operations · notifications</span>
+    <h3>Five notification paths, and ClickStack state set outside Flux</h3>
+    <dl>
+      <dt>Evidence</dt><dd>The senders are: the Flux Alert to ntfy, the checker (inside the console release) to ntfy and notify, the host heartbeat, and two imperatively created HyperDX webhooks. The ntfy topic is stored in 2 SOPS files plus HyperDX. The ingestion key and the webhooks are set by make targets. Two separate switches suspend backups.</dd>
+      <dt>Clearer</dt><dd class="fix">A behaviour decision, not a refactor (see options in section 08): route the Flux and ClickStack alerts through notify <code>/v1/alert</code> and keep the heartbeat direct to ntfy; then fold the ingestion key and webhooks into the dashboard reconcile CronJob.</dd>
+    </dl></div></article>
+</section>
+
+<section id="proposal">
+  <h2><span class="n">07</span>Clearer primitives</h2>
+  <p class="sub">The target shape: the same pipeline, with every writer and reader going through it. Teal marks a new or reshaped primitive.</p>
+  <figure>
+  <svg viewBox="0 0 1200 520" role="img" aria-labelledby="t2">
+    <title id="t2">Proposed component diagram</title>
+    <text class="lane" x="20" y="28">INTENT</text>
+    <text class="lane" x="270" y="28">RECORDS</text>
+    <text class="lane" x="540" y="28">ONE PIPELINE</text>
+    <text class="lane" x="860" y="28">OUTPUTS</text>
+    <text class="lane" x="1060" y="28">READ</text>
+
+    <rect class="box new" x="20" y="50" width="200" height="120"/><text class="t" x="32" y="72">Action registry</text>
+    <text class="m" x="32" y="94">kind · owns(path)</text><text class="m" x="32" y="112">commands(form)</text><text class="m" x="32" y="130">rule(main, changed)</text><text class="m" x="32" y="148">branch.parse/format</text>
+    <text class="s" x="32" y="190">CLI · console · gate</text><text class="s" x="32" y="206">all use one entry</text>
+    <rect class="box" x="20" y="230" width="200" height="46"/><text class="t" x="32" y="250">Declaration</text><text class="s" x="32" y="267">swhurl.yaml at image commit</text>
+    <rect class="box new" x="20" y="300" width="200" height="66"/><text class="t" x="32" y="322">Interface registry</text><text class="s" x="32" y="340">SWHURL_* · labels</text><text class="s" x="32" y="356">checked against docs + templates</text>
+
+    <rect class="box" x="270" y="50" width="220" height="40"/><text class="t" x="282" y="75">App · Teams</text>
+    <rect class="box" x="270" y="104" width="220" height="40"/><text class="t" x="282" y="129">Release + offers</text>
+    <rect class="box new" x="270" y="158" width="220" height="62"/><text class="t" x="282" y="180">Grants</text><text class="m" x="282" y="200">Relation(kind,from,to)</text><text class="s" x="282" y="214">never promoted</text>
+    <rect class="box new" x="270" y="232" width="220" height="40"/><text class="t" x="282" y="257">Choices  (per environment)</text>
+    <rect class="box new" x="270" y="286" width="220" height="40"/><text class="t" x="282" y="311">Allocations  (machine-owned)</text>
+
+    <rect class="box new" x="540" y="50" width="260" height="60"/><text class="t" x="552" y="72">plan(ops)</text><text class="m" x="552" y="94">Create | Update | Remove</text>
+    <rect class="box new" x="540" y="128" width="260" height="46"/><text class="t" x="552" y="148">allocate(world)</text><text class="s" x="552" y="165">keys, ports, volumes; roll back on refusal</text>
+    <rect class="box" x="540" y="192" width="260" height="46"/><text class="t" x="552" y="212">render(world) — pure</text><text class="s" x="552" y="229">instances + Shared</text>
+    <rect class="box" x="540" y="256" width="260" height="46"/><text class="t" x="552" y="276">write · or nothing</text><text class="s" x="552" y="293">one push_rendered for every bot</text>
+    <rect class="box new" x="540" y="320" width="260" height="46"/><text class="t" x="552" y="340">queries(world)</text><text class="s" x="552" y="357">callers · subscribers · image · exists</text>
+
+    <rect class="box gen" x="850" y="50" width="170" height="46"/><text class="t" x="862" y="70">instance files</text><text class="s" x="862" y="87">+ unit</text>
+    <rect class="box gen new" x="850" y="116" width="170" height="120"/><text class="t" x="862" y="138">Shared (one writer)</text>
+    <text class="m" x="862" y="160">users · proxy</text><text class="m" x="862" y="180">reloader · registry</text><text class="m" x="862" y="200">routes</text><text class="s" x="862" y="222">text equality</text>
+
+    <rect class="box" x="1060" y="50" width="120" height="46"/><text class="t" x="1072" y="78">Flux</text>
+    <rect class="box new" x="1060" y="130" width="120" height="66"/><text class="t" x="1072" y="152">Progress</text><text class="s" x="1072" y="170">git target +</text><text class="s" x="1072" y="185">live → State</text>
+    <rect class="box new" x="1060" y="230" width="120" height="66"/><text class="t" x="1072" y="252">Relation</text><text class="t" x="1072" y="268">states</text><text class="s" x="1072" y="286">pending/connected</text>
+
+    <path class="e good" d="M220 110 C 245 110, 245 180, 270 180"/>
+    <path class="e good" d="M220 253 C 245 253, 245 124, 270 124"/>
+    <path class="e good" d="M490 70 C 515 70, 515 80, 540 80"/>
+    <path class="e good" d="M490 189 C 515 189, 515 85, 540 85"/>
+    <path class="e good" d="M490 306 C 515 306, 515 90, 540 90"/>
+    <path class="e good" d="M670 110 L 670 128"/>
+    <path class="e good" d="M670 174 L 670 192"/>
+    <path class="e good" d="M670 238 L 670 256"/>
+    <path class="e good" d="M540 151 C 505 151, 505 306, 490 306"/>
+    <path class="e good" d="M800 279 C 825 279, 825 73, 850 73"/>
+    <path class="e good" d="M800 279 C 825 279, 825 176, 850 176"/>
+    <path class="e good" d="M1020 73 L 1060 73"/>
+    <path class="e good" d="M1120 96 L 1120 130"/>
+    <path class="e good" d="M800 343 C 930 343, 980 263, 1060 263"/>
+
+    <text class="s" x="20" y="430">Contracts this shape makes enforceable:</text>
+    <text class="m" x="20" y="452">1  records are the only truth; nothing parses a rendered file to decide anything</text>
+    <text class="m" x="20" y="472">2  every change, including remove, is plan → allocate → render → write, or nothing</text>
+    <text class="m" x="20" y="492">3  every gate rule is one function with the same inputs on the console and in CI</text>
+    <text class="m" x="20" y="512">4  a shared platform file has exactly one writer and is a pure function of the World</text>
+  </svg>
+  <figcaption>No new framework: each teal box replaces several existing code paths. The render and the exact comparison stay as they are.</figcaption>
+  </figure>
+
+  <h3>Sketch of the reshaped record and relation</h3>
+<pre>Entry      = App, Release, Grants, Choices, Allocations, encrypted   # encrypted: a fact read from disk
+Grants     = relations: [Relation], team-scoped allows, exceptions
+Relation   = kind: call | event | host ; from: Instance ; to: App | team:&lt;t&gt; | host:port ; env
+CONSENT    = { call: "callee allows", event: "open within env", host: "operator grant" }
+state(r, world) -> pending | connected | refused          # one table drives render, console, remove
+promote(staging, prod) = prod with Release := staging.Release   # Grants, Choices, Allocations never move</pre>
+  <p class="note">This split keeps <code>instance.yaml</code> as one file on disk; only the parsed shape changes. A different file layout would mean migrating every app's records, and nothing in this review needs that.</p>
+</section>
+
+<section id="order">
+  <h2><span class="n">08</span>Order of work</h2>
+  <p class="sub">The steps are ordered by leverage per unit of risk. Steps 1 to 4 change no behaviour, and each one makes the next smaller.</p>
+  <ol class="options">
+    <li><strong>Fix the stated contracts</strong><span class="rec">do first</span><br>Reword <code>AGENTS.md:64</code> and the <code>calling.py</code>/<code>egress.py</code> docstrings to name <code>calls</code>/<code>allows</code> as the truth. Point the <code>policy.py:64</code> exceptions docstring at <code>instance.yaml</code>. Fix the <code>calls</code> fix hint. Add <code>check-repo</code> to <code>deploy.yml:150</code>. Add the missing <code>platform-backup</code> node to the architecture diagram. Hours, offline.</li>
+    <li><strong>Records-only readers</strong> (F1)<br>Add <code>queries(world)</code>; delete <code>users_file</code>, <code>proxy_file</code>, <code>ports</code>, <code>grants</code> and the <code>derive</code> readers. Closes the reconnect gap for waiting callers.</li>
+    <li><strong>One writer for Shared</strong> (F2), then <strong>remove as an operation</strong> (F3)<br>Together they delete <code>register</code>, <code>watch_namespace</code>, <code>unwatch_namespace</code>, the line filter and the regexes.</li>
+    <li><strong>Mechanical structure</strong> (F9)<br>Move the errors to the standard library, rename <code>sync</code> to <code>write</code>, split <code>edit.py</code>.</li>
+    <li><strong>Grants / Choices / Allocations and the allocate step</strong> (F4)<br>Promotion and the gate then read one split instead of re-deriving it. Adds nkey rotation almost for free.</li>
+    <li><strong>Relation primitive</strong> (F5)<br>Changes behaviour: a missing publisher becomes <em>pending</em> instead of a RenderError. Needs your call.</li>
+    <li><strong>Action registry and Progress read model</strong> (F6, F7)<br>The largest change and the biggest payoff for the console. Start by moving the branch grammar and the encrypted-file rule into <code>ACTIONS</code>, and giving <code>held</code> the same <code>staged</code> input on both sides.</li>
+    <li><strong>Notifications and ClickStack</strong> (F10)<br>A behaviour and trust decision; run <code>decision-brief</code> first.</li>
+  </ol>
+</section>
+
+<section id="evidence">
+  <h2><span class="n">09</span>Evidence and gaps</h2>
+  <div class="cols">
+    <div>
+      <h3>Re-checked against the code</h3>
+      <ul>
+        <li><code>calling.py:4-8</code> and <code>AGENTS.md:64</code> still describe the variables as the truth.</li>
+        <li><code>events.users_file</code>, <code>egress.proxy_file</code> and <code>ports</code> sit alongside <code>model/events.users</code> and <code>model/egress.proxy</code>; <code>checks.py:151,178</code> use the first set.</li>
+        <li><code>derive.callers_of</code> and <code>subscribers_of</code> parse rendered HelmReleases.</li>
+        <li><code>edit.remove</code> does rmtree, a line filter and a regex before rendering.</li>
+        <li>The Consumer is named <code>f'{publisher}-{event}'</code> (<code>events.py:201</code>).</li>
+        <li><code>stages.BRANCH</code> is looser than <code>merge.BRANCH</code>.</li>
+        <li><code>deploy.yml</code> runs only <code>check-apps</code>.</li>
+        <li><code>source_problem</code> is called at 6 sites.</li>
+        <li>The Reloader and registry paths are duplicated in <code>sync.py</code>, <code>generated.py</code> and <code>edit.py</code>.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Not verified</h3>
+      <ul>
+        <li>The silent reconnect after <code>remove</code> is inferred from the code, not exercised.</li>
+        <li>Whether concurrent console PRs actually conflict on shared files.</li>
+        <li>Whether Renovate can bump files under <code>apps/</code> that are rendered.</li>
+        <li>No tests or <code>make</code> targets were run; this was a read-only review.</li>
+      </ul>
+      <h3>Outside the design, but needs a decision</h3>
+      <p class="note"><code>profiles/secrets.env</code> exists. It is gitignored and nothing in the repository references it; the platform reviewer reports that it holds pre-SOPS plaintext credentials. Values were not printed. Deleting it and rotating any keys that are still live are confirm-first actions.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+</div>
+</body>
+</html>

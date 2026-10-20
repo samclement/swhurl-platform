@@ -2,14 +2,15 @@
 (platform/egress, docs/services.md#egress-proxy), on a port of its own, so the proxy knows which
 instance is asking without trusting anything the app sends.
 
-The port is kept in the instance's own HTTPS_PROXY variable, so regenerating never moves it: make
-app-sync (apps/model/sync.py) gives an instance without one the lowest free port, and writes
-platform/egress/proxy.yaml from every instance on disk: the proxy's configuration and Service ports
-(values for its HelmRelease) and the NetworkPolicy that admits each port only from its instance's
-namespace.
+The port is kept in instance.yaml as Settings.allocations.egressPort, so regenerating never
+moves it: make app-sync (apps/model/sync.py) gives an instance without one the lowest free port.
+It renders the instance's proxy variables (including HTTPS_PROXY) and platform/egress/proxy.yaml:
+the proxy's configuration and Service ports (values for its HelmRelease) and the NetworkPolicy
+that admits each port only from its instance's namespace.
 
-Grants (make app-egress) are the hosts an instance may reach, kept in its HelmRelease's
-platform.swhurl.com/egress annotation as ``host:port`` names, comma-separated; ``*.example.com`` is
+Grants (make app-egress) are the hosts an instance may reach, kept in instance.yaml as
+Settings.egress, not in the rendered HelmRelease annotation. make app-sync renders that
+platform.swhurl.com/egress annotation as comma-separated ``host:port`` names; ``*.example.com`` is
 any name under example.com, and example.com itself (Squid's ``.example.com``). For now the proxy still allows every host: it logs each request with the
 instance's name and whether a grant covers it (``granted=yes``, else ``-``), so refusing the rest
 (docs/plan.md section 21, stage 5, E3) can be judged from the log first.

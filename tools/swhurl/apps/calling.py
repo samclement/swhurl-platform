@@ -1,11 +1,13 @@
 """Calls between apps (docs/apps.md#calling-another-app): the variables, token files and
 names that follow from an app declaring which apps it calls.
 
-A caller's declaration is a variable on its HelmRelease, SWHURL_SERVICE_<APP>_URL, holding the
-callee's address. For each it also gets a short-lived service-account token only that callee
-accepts. Every instance is told who it is; a web app is also told who issues tokens, the
-cluster's public signing keys and who may call it. The generator, the derivation (derive.py) and
-the policy check all read these from here.
+The truth is calls on the caller and allows on the callee in instance.yaml. A pair connects
+only when both agree (allows may name the caller or its team). make app-sync renders the
+SWHURL_SERVICE_<APP>_URL variable, a short-lived service-account token only that callee accepts,
+the callee's allowed-callers variable and its NetworkPolicy. A call without a grant, a grant
+without a call or a call to an absent instance renders nothing for the pair. Every instance
+is told who it is; a web app also gets the token issuer and the cluster's public signing keys.
+This module defines the rendered variables, token files and names, not the input records.
 """
 from __future__ import annotations
 

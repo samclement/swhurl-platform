@@ -11,7 +11,7 @@ name: Deploy
 # run catch a lost dispatch. A push does not start it, so reverting a pin holds until the next run.
 #
 # The commit is pushed with GITHUB_TOKEN, which starts no workflows (so not this one again, and not
-# Validate): the app policy is therefore checked here before pushing. An image whose needs or offers
+# Validate): repository and app-policy checks therefore run here before pushing. An image whose needs or offers
 # the platform cannot use, or which drops an event another app still receives, fails this run and is
 # held: that app keeps its image and what it had; the others still deploy. A manual run with refresh
 # reads the images staging already runs again.
@@ -96,6 +96,17 @@ jobs:
           version: 'v3.19.0'
 
       - if: steps.compare.outputs.deploy == 'true'
+        name: Install flux-schema
+        run: |
+          set -Eeuo pipefail
+          curl -fsSLo "$RUNNER_TEMP/flux-schema.tar.gz" \
+            https://github.com/fluxcd/flux-schema/releases/download/v0.9.0/flux-schema_0.9.0_linux_amd64.tar.gz
+          echo "104b764a53bcec30ec856a6a3efaecd13abf606099f0b057932027d755313cdb  $RUNNER_TEMP/flux-schema.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/flux-schema.tar.gz" -C "$RUNNER_TEMP/bin" flux-schema
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - if: steps.compare.outputs.deploy == 'true'
         name: Install validation dependencies
         run: python3 -m pip install --group check
 
@@ -147,7 +158,7 @@ jobs:
               echo "Nothing changed." | tee -a "$GITHUB_STEP_SUMMARY"
               exit "$failed"
             fi
-            make check-apps
+            make --no-print-directory -j2 --output-sync=target check-repo check-apps
             moved=$(sed -n 's|^\[OK\] \([a-z0-9-]*\)/staging: image .*|\1|p' deployed.txt | paste -sd, - | sed 's/,/, /g')
             git add apps platform/nats/users.yaml platform/reloader/helmrelease.yaml clusters/home
             git commit --quiet -F - <<EOF

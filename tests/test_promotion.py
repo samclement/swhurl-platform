@@ -205,6 +205,8 @@ class FirstProductionTests(unittest.TestCase):
             args = new.parse_args([name, '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging',
                                    '--image', f'ghcr.io/example/{name}:2-abcdef0@' + DIGEST, '--no-auto-deploy', *extra])
             new.generate(args, self.root)
+            if name == 'orders':
+                edit.set_allows(self.root, 'orders', 'staging', add=['team:demo'])
         from swhurl.apps import offers
         from swhurl.apps import release as intake
         document = ('asyncapi: 3.0.0\ninfo: {title: orders, version: 1.0.0}\n'
@@ -231,7 +233,7 @@ class FirstProductionTests(unittest.TestCase):
         self.assertNotIn('SWHURL_EVENTS_SUBSCRIBE', env('reports', 'prod'), 'what it receives is declared in production')
         self.assertEqual(generated.problems(self.root), [])
         self.assertEqual(env('reports', 'prod')['SWHURL_SERVICE_ORDERS_URL'], env('reports', 'staging')['SWHURL_SERVICE_ORDERS_URL'])
-        self.assertEqual(env('orders', 'prod')['SWHURL_ALLOWED_CALLERS'], 'reports')
+        self.assertEqual(env('orders', 'prod')['SWHURL_ALLOWED_CALLERS'], 'reports', "staging's grant was promoted with orders")
         instances = [self.root / 'apps' / app / e for app in ('orders', 'reports') for e in ('staging', 'prod')]
         self.assertEqual(policy.check_calls(instances), {})
         self.assertEqual(generated.problems(self.root), [])

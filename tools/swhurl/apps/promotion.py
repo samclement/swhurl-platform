@@ -174,7 +174,7 @@ class FirstProduction:
 def first_production(root: Path, world: World, app: str, *, host: str | None = None,
                      preview: bool = False) -> FirstProduction:
     """Production from staging's records: the same release (the image and what it needs), staging's
-    team, alerts, exposure, issuer, calls, capacity, replicas, schedule and reviewed exceptions; its own
+    team, alerts, exposure, issuer, calls, allows (a proposal, reviewed in the held PR), capacity, replicas, schedule and reviewed exceptions; its own
     address, an empty database of the same size, and no subscriptions, egress grants or credentials of
     staging's (docs/apps.md#promote-to-production). ``preview``: a public app may have no --host yet."""
     staging = world[Instance(app, 'staging')]
@@ -203,7 +203,7 @@ def first_production(root: Path, world: World, app: str, *, host: str | None = N
             raise EditError('staging app Secret needs supported environment variable keys')
     database = staging.settings.allocations.database
     settings = Settings(exposure=exposure, host=(host or '') if exposure == 'public' else '', issuer=staging.settings.issuer,
-                        calls=staging.settings.calls, replicas=staging.settings.replicas, capacity=staging.settings.capacity,
+                        calls=staging.settings.calls, allows=staging.settings.allows, replicas=staging.settings.replicas, capacity=staging.settings.capacity,
                         schedule=staging.settings.schedule, exceptions=staging.settings.exceptions,
                         allocations=Allocations(database=Storage(database.size, contract.RETAINED_STORAGE_CLASS) if database else None))
     if exposure == 'public':

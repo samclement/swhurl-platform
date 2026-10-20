@@ -245,6 +245,7 @@ class PromotionGateTests(GateCase):
                                    '--no-auto-deploy', '--image', IMAGE.replace('example/app', 'example/caller'),
                                    '--calls', 'example'])
             new.generate(args, self.root)
+            edit.set_allows(self.root, 'example', 'prod', add=['caller'])
         self.sync()
         (self.root / 'tools/swhurl/apps').mkdir(parents=True)
         (self.root / 'tools/swhurl/apps/new.py').write_text('# changed generator\n')

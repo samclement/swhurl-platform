@@ -303,7 +303,7 @@ A job keeps no database (`database` is refused in its `swhurl.yaml` and by its t
 
 | Exposure | Route | Host |
 | --- | --- | --- |
-| `private` (the default for `make app-new` and for a worker) | None; only apps that [declare a call](#calling-another-app) to it can connect | — |
+| `private` (the default for `make app-new` and for a worker) | None; only apps [connected to call it](#calling-another-app) can connect | — |
 | `authenticated-web` (the default for a web app made from a stack) | Behind Google sign-in (the shared oauth2-proxy middleware) | Under `homelab.swhurl.com`; derived as `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) unless given |
 | `public` | No sign-in | `--host` **outside** `homelab.swhurl.com`, so the shared sign-in cookie never reaches it |
 
@@ -317,8 +317,9 @@ Manage teams on the console's **Teams** page or with `make team-add`, `make team
 
 | Change | What keeps apps from being orphaned |
 | --- | --- |
-| Rename a team | The same change relabels every app that belongs to it |
+| Rename a team | The same change relabels every app that belongs to it and rewrites every `team:<old>` [grant](#calling-another-app) |
 | Remove a team that owns apps | Refused, unless the same change moves them to another team (`--move-apps-to`) |
+| Remove a team an `allows` names | Refused, listing the instances; remove those grants first (`make app-allows`) |
 | An app already naming an unregistered team | Listed first on the Teams page; register the team or move the app with `make app-team` |
 
 Logs and traces already stored keep the team name they were written with; only new data carries a new name.
@@ -330,17 +331,37 @@ Each instance carries two generated files beside its HelmRelease:
 | File | What it does |
 | --- | --- |
 | `resourcequota.yaml` | Caps the namespace at 14 pods, 2 CPU and 2Gi of memory requested, and 4Gi of memory limits: the same for every instance. `make app-scale` refuses replicas or sizes that would not fit beside a backup pod and a certificate solver (rule `quota`) |
-| `networkpolicy.yaml` | Decides who may connect to the app's pods: the Traefik pods on the app's port when the instance has a route, plus the apps that [declare a call](#calling-another-app) to it. Any other pod, in another namespace or the same one, is refused. `make app-expose` and `make app-calls` rewrite it |
+| `networkpolicy.yaml` | Decides who may connect to the app's pods: the Traefik pods on the app's port when the instance has a route, plus the apps [connected to call it](#calling-another-app). Any other pod, in another namespace or the same one, is refused. `make app-expose`, `make app-calls` and `make app-allows` rewrite it |
 
 The policy selects the app's own pods (`app.kubernetes.io/instance: <app>`), never every pod in the namespace: cert-manager's HTTP-01 solver runs there on port 8089 and must stay reachable, as must the SQLite backup pod. Outbound connections are not restricted yet: each instance is pointed at the [egress proxy](services.md#egress-proxy), which logs which hosts it reaches and whether a [grant](#reaching-outside-the-cluster) covers each. Health probes come from the node and are not affected.
 
 ## Calling another app
 
-An app says which apps it calls, and the platform gives it their address and a credential, and tells each callee who may call it. For example, `demo-shop` calling `demo-orders`:
+A call needs both sides: the caller says which apps it calls (`calls`), and the callee says who may call it (`allows`, an app's name or `team:<team>`). When both agree, the pair is **connected**: the platform gives the caller the callee's address and a credential, and tells the callee who may call it. For example, `demo-shop` (team `demo`) calling `demo-orders`:
 
 ```
+make app-allows APP=demo-orders ENV=staging ARGS="--add team:demo"    # any demo app in staging may call it
 make app-calls APP=demo-shop ENV=staging ARGS="--add demo-orders"     # or the app page's Connect to an app; at creation, --calls or the New app form
 ```
+
+Both are kept in each instance's `instance.yaml`:
+
+```yaml
+# apps/demo-orders/staging/instance.yaml   (callee)
+allows:
+- team:demo          # every demo app in staging; an app's own team is never implicit
+# apps/demo-shop/staging/instance.yaml     (caller; its app.yaml says team: demo)
+calls: [demo-orders]
+```
+
+| State | What renders |
+| --- | --- |
+| Connected: the caller calls the callee, and the callee allows the caller or its current team | Everything in the table below |
+| A call without a grant | Nothing for the pair; `make app-calls` says it waits for the callee to allow it |
+| A grant without a call | Nothing; the grant is unused |
+| A call to an app with no instance in that environment | Nothing for the pair |
+
+None of these is an error. A team grant follows the caller's current team: moving an app to another team (`make app-team`) connects or disconnects it accordingly.
 
 ```mermaid
 flowchart LR
@@ -353,7 +374,7 @@ flowchart LR
   shop -- "Authorization: Bearer token" --> orders
 ```
 
-One command changes both instances in one commit:
+For a connected pair, rendering writes both instances:
 
 | Side | What is written | Why |
 | --- | --- | --- |
@@ -381,7 +402,7 @@ browser ─fetch('/api/orders')─▶ Traefik + oauth2-proxy ─x-auth-request-e
 
 **Finding what exists.** The console's **Catalogue** lists every API and event of an environment with what its app says about it (its routes, or its payload's fields and an example), who uses it and what each app uses in turn, and a choice of app to use it from. The **Deployments** list shows every app with its team and connections, its **Map** view draws who calls whom, and each app page has a **Connect** part: its address, its connections one per row (the same columns for a call, an event and a [host outside the cluster](#reaching-outside-the-cluster), whichever app declared it), **Connect to an app** to pick from the web apps and events its environment has, what another app adds to call it, and a link to its API description if it declares one (`provides: {api: /openapi.json}`; shown, not checked). A refused change reads the same in the console as from `make`, because the console runs the same commands.
 
-**Rules.** A callee must be a web app with an instance in the same environment. Calls are declared per environment, like replicas: declare them in staging, promote, then declare them in production. The first promotion of a caller is refused until every app it calls has a production instance, and it adds the caller to those apps' production instances; the first promotion is merged by a person, and `main` renders those apps when it is merged. `make app-remove` refuses an instance that others call. The variables above are the platform's: `make app-sync` rewrites them, and `make check-apps` fails when the two sides disagree (rules `calls`, `identity`, `call-tokens`).
+**Rules.** `make app-calls` and `make app-new --calls` refuse a callee with no instance in that environment, or one that is not a web app. Calls and grants are per environment, like replicas: no grant crosses environments. A first promotion copies staging's calls and its `allows` into production (the `allows` as a proposal: the first promotion is merged by a person); it is refused until every app it calls has a production instance, and a production callee that allows it gains it as a caller when `main` renders the merge. A `team:` entry must name a registered team (`make check-apps` rule `team`); an app name may name an app that does not exist yet. `make app-remove` refuses an instance that others are connected to. The variables above are the platform's: `make app-sync` rewrites them, and `make check-apps` fails when the two sides disagree (rules `calls`, `identity`, `call-tokens`).
 
 ## Events
 

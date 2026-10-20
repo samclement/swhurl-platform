@@ -19,7 +19,7 @@ import yaml
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import calling, channels, egress, helmrelease, new, ops, promotion, repo
+from swhurl.apps import channels, egress, new, ops, promotion, repo
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import sync as model_sync
@@ -1087,13 +1087,14 @@ class ChangeAppRouteTests(unittest.TestCase):
 
     def test_a_first_promotion_that_changes_the_apps_it_calls_is_merged_by_a_person(self):
         """The merge gate holds a promotion to its own app: one that edits its callees must not be labelled for it."""
-        release = yaml.safe_load(MAIN['apps/hello/staging/helmrelease.yaml'])
-        helmrelease.container(release).setdefault('env', {})[calling.callee_variable('orders')] = calling.callee_address('orders', 8080)
+        def record(rel, **fields):  # an instance.yaml with these settings added
+            return yaml.safe_dump({**yaml.safe_load(main[rel]), **fields}, sort_keys=False).encode()
         main = {rel: data for rel, data in MAIN.items() if 'hello/prod' not in rel and 'app-hello-prod' not in rel}
-        main['apps/hello/staging/helmrelease.yaml'] = yaml.safe_dump(release, sort_keys=False).encode()
+        main['apps/hello/staging/instance.yaml'] = record('apps/hello/staging/instance.yaml', calls=['orders'])
         for rel, data in MAIN.items():  # orders runs in production: hello's production files, renamed
             if 'hello/prod' in rel or 'app-hello-prod' in rel or rel == 'apps/hello/app.yaml':
                 main[rel.replace('hello', 'orders')] = data.replace(b'hello', b'orders')
+        main['apps/orders/prod/instance.yaml'] = record('apps/orders/prod/instance.yaml', allows=['hello'])
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(MAIN, main, clear=True):
             root = Path(tmp)
             for rel, data in main.items():
@@ -1103,7 +1104,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             review = console_promotion.review(root, 'hello', good)
             self.assertEqual((review['admits'], review['setup']), (['orders'], True))
             shutil.rmtree(root / 'apps/orders/prod')
-            self.assertEqual(console_promotion.admitting(root, 'hello', release), [], 'a callee with no production is not edited')
+            self.assertEqual(console_promotion.admitting(root, 'hello'), [], 'a callee with no production is not edited')
             c, jobs = self.client(tree_fake())
             page = c.get('/apps/hello/staging/promotion', headers=WHO).text
             self.assertIn('This also lets hello call orders in production', page)

@@ -1,6 +1,9 @@
 # Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
 version: 1
 exposure: authenticated-web
+allows:
+- swhurl-try-11
+- swhurl-try-12
 allocations:
   egressPort: 30113
   eventsKey: UBVLFIHPHB7BHIWSWZ62QXVTPYFQRJ7G4BHW3G5DT4HN7XTTJ7UAOH4V

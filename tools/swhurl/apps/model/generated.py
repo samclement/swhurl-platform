@@ -11,10 +11,11 @@ from pathlib import Path
 
 from swhurl import yamlio
 from swhurl.apps import egress, events
+from swhurl.apps.contract import teams
 from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import render, store
 from swhurl.apps.model.draft import Platform, RenderError, World
-from swhurl.apps.model.records import RECORD_FILES
+from swhurl.apps.model.records import RECORD_FILES, TEAM_GRANT
 
 FIXTURES = Path('tests/fixtures/apps')
 """The generated fixtures (tests/fixtures/apps.sh) are a root of their own."""
@@ -99,6 +100,11 @@ def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance]
     the whole world's records are still read and validated because they supply each other's dependencies."""
     world, found = store.world(root, base)
     platform = store.platform(root, base)
+    registered = teams(root)
+    found += [f'{each}: instance.yaml: allows {name}, which is not registered in apps/teams.yaml (rule team)'
+              for each, entry in sorted(world.items(), key=lambda item: str(item[0])) for name in entry.settings.allows
+              if name.startswith(TEAM_GRANT) and name.removeprefix(TEAM_GRANT) not in registered
+              and (only is None or each in only)]
     for each in world:
         if only is None or each in only:
             found += instance_problems(root, each, world, platform, base)

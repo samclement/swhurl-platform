@@ -68,6 +68,7 @@ class EditTests(unittest.TestCase):
         promotion copies B's release.yaml."""
         self.with_units()
         for env in ('staging', 'prod'):
+            self.quiet(edit.set_allows, self.root, 'hello', env, add=['orders'])
             self.quiet(edit.set_calls, self.root, 'orders', env, add=['hello'])
         self.new_staging_image()
         record = self.staging.parent / 'release.yaml'
@@ -263,6 +264,7 @@ class EditTests(unittest.TestCase):
 
     def test_calls_give_the_caller_an_address_and_token_and_the_callee_an_allowed_caller(self):
         self.second_app()
+        self.quiet(edit.set_allows, self.root, 'orders', 'staging', add=['hello'])
         self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
         self.assertEqual(self.env('hello')['SWHURL_SERVICE_ORDERS_URL'],
                          'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000')
@@ -304,8 +306,29 @@ class EditTests(unittest.TestCase):
         with self.assertRaisesRegex(edit.EditError, 'already calls orders'):
             edit.set_calls(self.root, 'hello', 'staging', add=['orders'])
 
+    def test_allows_refusals_change_nothing_and_a_call_waits_for_its_grant(self):
+        self.second_app()
+        before = (self.root / 'apps/orders/staging/instance.yaml').read_text()
+        cases = (({'add': ['orders']}, 'does not allow itself'), ({'add': ['team:nobody']}, "unknown team 'nobody'"),
+                 ({'add': ['*']}, 'not an app name or team:<team>'), ({'remove': ['hello']}, 'does not allow hello'),
+                 ({}, 'give --add and/or --remove'))
+        for kwargs, message in cases:
+            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
+                edit.set_allows(self.root, 'orders', 'staging', **kwargs)
+        self.assertEqual((self.root / 'apps/orders/staging/instance.yaml').read_text(), before)
+        out = self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
+        self.assertIn('hello -> orders waits for orders to allow it', str(out))
+        self.assertNotIn('SWHURL_SERVICE_ORDERS_URL', self.env('hello'), 'an ungranted call connects nothing')
+        self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.env('orders'))
+        self.quiet(edit.set_allows, self.root, 'orders', 'staging', add=['hello'])
+        self.assertIn('SWHURL_SERVICE_ORDERS_URL', self.env('hello'), 'the grant connects it')
+        self.assertEqual(self.env('orders')['SWHURL_ALLOWED_CALLERS'], 'hello')
+        with self.assertRaisesRegex(edit.EditError, 'already allows hello'):
+            edit.set_allows(self.root, 'orders', 'staging', add=['hello'])
+
     def test_one_sided_calls_are_policy_violations(self):
         self.second_app()
+        self.quiet(edit.set_allows, self.root, 'orders', 'staging', add=['hello'])
         self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
         orders = self.root / 'apps/orders/staging/helmrelease.yaml'
         orders.write_text(orders.read_text().replace('SWHURL_ALLOWED_CALLERS: hello', 'SWHURL_ALLOWED_CALLERS: stranger'))
@@ -917,6 +940,7 @@ components:
         self.built_from_a_repository()
         self.automatic()
         self.without_production()
+        self.quiet(edit.set_allows, self.root, 'orders', 'staging', add=['hello'])
         self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
         release = self.root / 'apps/orders/staging/helmrelease.yaml'
         manifest = ('version: 1\nstack: kotlin\nkind: web\nport: 9090\nhealthPath: /ready\nuid: 1000\ntelemetry: otlp\n'

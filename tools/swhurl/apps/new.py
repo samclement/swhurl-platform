@@ -182,6 +182,14 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
     if (instance.exists() and any(instance.iterdir())) or instance_unit_file(root, args.name, args.env).exists():
         raise GenerationError(f'{args.name}/{args.env} already exists; refusing to overwrite')
     entry, planned = records(args), {}
+    if entry.settings.calls:  # a call waits for the callee's grant, but the callee must exist and have an address
+        world, _ = model_sync.read(root)
+        for callee in entry.settings.calls:
+            found = world.get(Instance(callee, args.env))
+            if found is None:
+                raise GenerationError(f'{created} calls {callee}, which has no {args.env} instance')
+            if found.release.port is None:
+                raise GenerationError(f'{created} calls {callee}, a {found.release.kind}: it has no address to call')
     try:
         if getattr(args, 'offers', False) and args.from_repo:
             # The app describes its API or events (provides.apiFile, provides.eventsFile): keep the documents

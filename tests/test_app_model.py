@@ -113,9 +113,8 @@ class RenderTests(unittest.TestCase):
     def test_records_that_cannot_be_rendered_together_are_refused(self):
         orders, shop = Instance('orders', 'staging'), Instance('shop', 'staging')
         cases = (
-            ({orders: Entry(App('p'), web(), Settings(calls=('shop',)))}, orders, 'calls shop, which has no staging instance'),
             ({orders: Entry(App('p'), web(), Settings(calls=('shop',))),
-              shop: Entry(App('p'), Release(IMAGE, 'worker', 1), Settings())}, orders, 'a worker: it has no address'),
+              shop: Entry(App('p'), Release(IMAGE, 'worker', 1), Settings(allows=('orders',)))}, orders, 'a worker: it has no address'),
             ({orders: Entry(App('p'), web(), Settings(subscriptions=('shop.paid',))),
               shop: Entry(App('p'), web(), Settings())}, orders, 'subscribes to shop.paid, which shop/staging does not publish'),
             ({orders: Entry(App('p'), web(publishes=('created',)), Settings())}, orders, 'declares events but has no NATS key'),
@@ -126,6 +125,34 @@ class RenderTests(unittest.TestCase):
                 self.render(world, each)
         with self.assertRaisesRegex(RenderError, 'has no egress port allocated'):
             render.instance(orders, {orders: Entry(App('p'), web(), Settings())}, Platform())
+
+    def test_a_call_connects_only_when_the_callee_allows_the_caller_or_its_team(self):
+        shop, orders = Instance('shop', 'staging'), Instance('orders', 'staging')
+
+        def connection(world):
+            files = {each: self.render(world, each) for each in world}
+            caller = files[shop][Path('apps/shop/staging/helmrelease.yaml')][0]['spec']['values']
+            env = caller['controllers']['main']['containers']['main']['env']
+            audiences = [s['serviceAccountToken']['audience'] for s in caller['persistence']['tokens']['sources']]
+            callee = files.get(orders, {}).get(Path('apps/orders/staging/helmrelease.yaml'))
+            callers = callee[0]['spec']['values']['controllers']['main']['containers']['main']['env'].get('SWHURL_ALLOWED_CALLERS') if callee else None
+            return 'SWHURL_SERVICE_ORDERS_URL' in env, audiences, callers
+
+        def world(allows=(), team='demo', present=True):
+            found = {shop: Entry(App(team), web(), Settings(calls=('orders',)))}
+            if present:
+                found[orders] = Entry(App('demo'), web(), Settings(allows=allows))
+            return found
+        connected = (True, ['orders', 'notify'], 'shop')
+        self.assertEqual(connection(world(('shop',))), connected, 'granted to the app')
+        self.assertEqual(connection(world(('team:demo',))), connected, 'granted to its team')
+        self.assertEqual(connection(world(('team:demo',), team='payments')), (False, ['notify'], None),
+                         'the grant follows the caller\'s current team')
+        self.assertEqual(connection(world()), (False, ['notify'], None), 'a call without a grant waits')
+        self.assertEqual(connection(world(present=False)), (False, ['notify'], None), 'a call to an absent app renders nothing')
+        unused = {orders: Entry(App('demo'), web(), Settings(allows=('shop',)))}
+        self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.render(unused, orders)[Path('apps/orders/staging/helmrelease.yaml')][0]
+                         ['spec']['values']['controllers']['main']['containers']['main']['env'], 'a grant without a call is unused')
 
     def test_job_schedules_use_the_shared_validator_and_keep_the_default(self):
         each = Instance('nightly', 'staging')

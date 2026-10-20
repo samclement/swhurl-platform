@@ -68,10 +68,11 @@ from swhurl.apps.derive import (
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import sync as model_sync
 from swhurl.apps.model import workload
+from swhurl.apps.model.calls import admits
 from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry
 from swhurl.apps.model.events import keyed as events_keyed
 from swhurl.apps.model.exposure import ROUTED
-from swhurl.apps.model.records import APP_FILE, Image, Release, Resources, Storage
+from swhurl.apps.model.records import ALLOW_RE, APP_FILE, TEAM_GRANT, Image, Release, Resources, Storage
 from swhurl.apps.model.workload import DEFAULT_RESOURCES
 from swhurl.apps.new import (
     GenerationError,
@@ -100,7 +101,8 @@ MAX_REPLICAS = 10
 
 
 def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, remove: list[str] | None = None) -> Path:
-    """Change which apps ``app/env`` may call (its Settings); the callees' side is rendered with it."""
+    """Change which apps ``app/env`` calls (its Settings). A call connects once the callee allows it
+    (set_allows); until then it renders nothing and waits."""
     add, remove = add or [], remove or []
     if not add and not remove:
         raise EditError('give --add and/or --remove with app names')
@@ -123,7 +125,62 @@ def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, r
     now = tuple([callee for callee in current if callee not in remove] + add)
     model_sync.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(entry.settings, calls=now)))
     print(f'[OK] {app}/{env} calls: {", ".join(now) or "nothing"}')
+    team = world[Instance(app, env)].app.team
+    for callee in add:
+        if not admits(world[Instance(callee, env)], app, team):
+            print(f'[INFO] {app} -> {callee} waits for {callee} to allow it: make app-allows APP={callee} ENV={env} '
+                  f'ARGS="--add {app}" (or team:{team})')
     return instance
+
+
+def set_allows(root: Path, app: str, env: str, *, add: list[str] | None = None, remove: list[str] | None = None) -> Path:
+    """Change who may call ``app/env`` (its Settings): app names, or team:<team> for every app of a team.
+    A caller is connected when it also calls this app; the callers' side is rendered with it."""
+    add, remove = add or [], remove or []
+    if not add and not remove:
+        raise EditError('give --add and/or --remove with app names or team:<team>')
+    instance = instance_dir(root, app, env)
+    world, _ = model_sync.read(root)
+    current = list(world[Instance(app, env)].settings.allows)
+    registered = teams(root)
+    for name in add:
+        if not ALLOW_RE.match(name):
+            raise EditError(f'{name!r} is not an app name or team:<team>')
+        if name == app:
+            raise EditError('an app does not allow itself')
+        if name.startswith(TEAM_GRANT) and name.removeprefix(TEAM_GRANT) not in registered:
+            raise EditError(f'unknown team {name.removeprefix(TEAM_GRANT)!r}; registered in apps/teams.yaml: {", ".join(registered)}')
+        if name in current:
+            raise EditError(f'{app}/{env} already allows {name}')
+    for name in remove:
+        if name not in current:
+            raise EditError(f'{app}/{env} does not allow {name}')
+    now = tuple([name for name in current if name not in remove] + list(dict.fromkeys(add)))
+    model_sync.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(entry.settings, allows=now)))
+    print(f'[OK] {app}/{env} allows: {", ".join(now) or "nobody"}')
+    return instance
+
+
+def rename_team(root: Path, old: str, new: str) -> list[str]:
+    """Move every app of team ``old`` to ``new`` and rewrite every team:<old> grant, in one render (so no
+    connection through the team drops in between); return the apps moved."""
+    world, _ = model_sync.read(root)
+    before, after = f'{TEAM_GRANT}{old}', f'{TEAM_GRANT}{new}'
+    targets = sorted((each for each, entry in world.items() if entry.app.team == old or before in entry.settings.allows), key=str)
+
+    def update(entry: Entry) -> Entry:
+        allows = tuple(dict.fromkeys(after if name == before else name for name in entry.settings.allows))
+        return replace(entry, app=replace(entry.app, team=new) if entry.app.team == old else entry.app,
+                       settings=replace(entry.settings, allows=allows))
+    if targets:
+        model_sync.change(root, targets, update)
+    return sorted({each.app for each in targets if world[each].app.team == old})
+
+
+def team_grants(root: Path, team: str) -> list[str]:
+    """The instances whose ``allows`` names team:<team>."""
+    world, _ = model_sync.read(root)
+    return sorted(str(each) for each, entry in world.items() if f'{TEAM_GRANT}{team}' in entry.settings.allows)
 
 
 def set_egress(root: Path, app: str, env: str, *, add: list[str] | None = None, remove: list[str] | None = None) -> Path:
@@ -792,6 +849,19 @@ def main_calls(argv: list[str] | None = None) -> int:
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     return run(lambda: set_calls(args.root.resolve(), args.app, args.env, add=args.add, remove=args.remove), True)
+
+
+def main_allows(argv: list[str] | None = None) -> int:
+    def names(text: str) -> list[str]:
+        return [name.strip() for name in text.split(',') if name.strip()]
+    p = argparse.ArgumentParser(prog='swhurl app-allows', description='Change which apps may call an instance')
+    p.add_argument('app')
+    p.add_argument('env', choices=ENVIRONMENTS)
+    p.add_argument('--add', type=names, default=[], help='comma-separated app names or team:<team> to allow')
+    p.add_argument('--remove', type=names, default=[], help='comma-separated entries to stop allowing')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    return run(lambda: set_allows(args.root.resolve(), args.app, args.env, add=args.add, remove=args.remove), True)
 
 
 def main_egress(argv: list[str] | None = None) -> int:

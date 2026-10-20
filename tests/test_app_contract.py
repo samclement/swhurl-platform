@@ -158,6 +158,8 @@ class GeneratorTests(unittest.TestCase):
     def test_calls_at_creation_reach_both_sides_or_nothing_is_left(self):
         (self.tmp / 'platform/reloader').mkdir(parents=True)
         self.assertEqual(self.gen('orders', '--image', 'r/orders:1', '--health-path', '/h', '--port', '9000'), 0)
+        with redirect_stdout(io.StringIO()):
+            edit.set_allows(self.tmp, 'orders', 'staging', add=['team:demo'])
         self.assertEqual(self.gen('reports', '--image', 'r/reports:1', '--health-path', '/h', '--calls', 'orders'), 0)
 
         def values(app):

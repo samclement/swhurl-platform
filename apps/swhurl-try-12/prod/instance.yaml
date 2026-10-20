@@ -3,6 +3,8 @@ version: 1
 exposure: authenticated-web
 calls:
 - swhurl-try-10
+allows:
+- team:insights
 allocations:
   egressPort: 30115
   eventsKey: UB5OTUGYUKWSQVCUQUMY5RE4P6KGHTUAEBQ76SWYQJ42IGP44PJE3PDR

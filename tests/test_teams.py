@@ -97,6 +97,28 @@ class TeamTests(unittest.TestCase):
         self.quiet(teams.remove, 'demo')  # no team is special: one that owns nothing can go
         self.assertEqual(list(self.registered()), ['payments'])
 
+    def allows(self, env='staging'):
+        return yaml.safe_load((self.root / 'apps/hello' / env / 'instance.yaml').read_text()).get('allows')
+
+    def test_team_grants_follow_a_rename_block_a_removal_and_must_name_a_registered_team(self):
+        from swhurl.apps import edit
+        self.quiet(edit.set_allows, 'hello', 'staging', add=['team:payments', 'reports'])
+        self.quiet(teams.change, 'payments', rename='billing')
+        self.assertEqual(self.allows(), ['team:billing', 'reports'], 'the rename rewrites the grant in the same change')
+        self.assertIsNone(self.allows('prod'), 'production has its own grants')
+        self.assertEqual(generated.problems(self.root), [])
+        before = (self.root / 'apps/teams.yaml').read_text()
+        with self.assertRaisesRegex(EditError, 'team:billing is allowed to call hello/staging: remove those grants first'):
+            teams.remove(self.root, 'billing')
+        self.assertEqual((self.root / 'apps/teams.yaml').read_text(), before, 'a refused removal changes nothing')
+        self.quiet(edit.set_allows, 'hello', 'staging', remove=['team:billing'])
+        self.quiet(teams.remove, 'billing')
+        self.assertNotIn('billing', self.registered())
+        record = self.root / 'apps/hello/staging/instance.yaml'
+        record.write_text(record.read_text().replace('- reports', '- team:nobody'))
+        self.assertIn('hello/staging: instance.yaml: allows team:nobody, which is not registered in apps/teams.yaml (rule team)',
+                      generated.problems(self.root))
+
     def notify_unit(self):
         directory = self.root / channels.NOTIFY_DIR
         directory.mkdir(parents=True)

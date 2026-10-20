@@ -14,9 +14,10 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from swhurl.apps import calling, helmrelease, ops, promotion
+from swhurl.apps import helmrelease, ops, promotion
 from swhurl.apps.instance import Instance, instance_folder
 from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model.calls import admits
 from swhurl.apps.new import GenerationError
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import changes
@@ -59,11 +60,14 @@ def staging_status(runner: Runner, github: changes.GitHub | None, instance: Inst
     return settled_status(runner, github, ops.gather_status(runner, instance))
 
 
-def admitting(root: Path, app: str, source: dict) -> list[str]:
+def admitting(root: Path, app: str) -> list[str]:
     """The production apps a first promotion of ``app`` also changes once main renders it: each app staging
-    calls that already runs in production gains the new caller in its allowed callers and network policy."""
-    return [callee for callee in calling.declared_calls(helmrelease.variables(source))
-            if callee != app and instance_folder(root, callee, 'prod').is_dir()]
+    calls that runs in production and allows it there gains the new caller in its allowed callers and
+    network policy."""
+    world, _ = model_sync.read(root)
+    staging = world[Instance(app, 'staging')]
+    return [callee for callee in staging.settings.calls
+            if callee != app and (found := world.get(Instance(callee, 'prod'))) and admits(found, app, staging.app.team)]
 
 
 def contents(root: Path) -> dict[str, bytes]:
@@ -106,7 +110,7 @@ def review(root: Path, app: str, status: ops.InstanceStatus, runner: Runner | No
     first, admits = None, []
     if decision.outcome == 'create':
         first = promotion.first_production(root, model_sync.read(root)[0], app, preview=True)
-        admits = admitting(root, app, source)
+        admits = admitting(root, app)
     needs_host = decision.outcome == 'create' and exposure == 'public'
     if target:
         addresses = helmrelease.hosts(target)
@@ -178,7 +182,7 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
         source, target = promotion.read(root, app)
         if target is None:
             first.append(True)
-            admits.extend(admitting(root, app, source))
+            admits.extend(admitting(root, app))
         before_files = {path: data for path, data in contents(root).items() if promotion.records(app, path)}
         before = promotion.release_of(root, app, 'prod')
         argv = [app, f'--expect-image={image}']

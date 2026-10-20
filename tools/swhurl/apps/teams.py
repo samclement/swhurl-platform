@@ -109,7 +109,8 @@ def add(root: Path, name: str, description: str = '') -> None:
 
 def change(root: Path, name: str, description: str | None = None, rename: str | None = None,
            notify: list[str] | None = None) -> None:
-    """Change a team's description, name or channels. A rename relabels its apps in the same edit."""
+    """Change a team's description, name or channels. A rename relabels its apps and rewrites every
+    team:<old> grant in the same edit."""
     document, teams = registry(root)
     if name not in teams:
         raise EditError(f'no team {name}; registered: {", ".join(teams)}')
@@ -139,9 +140,9 @@ def change(root: Path, name: str, description: str | None = None, rename: str | 
             raise EditError(f'team {rename} already exists; to merge the two, remove {name} with --move-apps-to {rename}')
         position = list(teams).index(name)
         teams.insert(position, rename, teams.pop(name))
-        apps = apps_of(root).get(name, [])
     document.save()
-    relabel(root, apps, rename or name)
+    if rename and rename != name:
+        apps = edit.rename_team(root, name, rename)
     write_routes(root)
     print(f'[OK] team {name}' + (f' renamed to {rename}; relabelled {len(apps)} app(s)' if rename and rename != name else ' updated'))
 
@@ -157,6 +158,10 @@ def remove(root: Path, name: str, move_apps_to: str | None = None) -> None:
                         'or each with make app-team, then remove it')
     if move_apps_to is not None and (move_apps_to == name or move_apps_to not in teams):
         raise EditError(f'--move-apps-to must name another registered team: {", ".join(t for t in teams if t != name)}')
+    granted = edit.team_grants(root, name)
+    if granted:
+        raise EditError(f'team:{name} is allowed to call {", ".join(granted)}: remove those grants first '
+                        f'(make app-allows APP=<app> ENV=<env> ARGS="--remove team:{name}")')
     relabel(root, apps, move_apps_to or '')  # while the old team is still registered: nothing is ever unowned
     del teams[name]
     document.save()

@@ -3,6 +3,8 @@ version: 1
 exposure: authenticated-web
 calls:
 - demo-orders
+allows:
+- team:demo
 allocations:
   egressPort: 30103
   eventsKey: UA7ZLBBXHVDXOTNNDGOPVWCXCH4OBVFBR7TQFRDUKWJ3NAZVV64DXEV4

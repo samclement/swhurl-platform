@@ -512,7 +512,8 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
                 write_encrypted_secret(folder, app_secret(app), each.namespace, first.secret_keys, runner=runner)
             except GenerationError as error:
                 raise EditError(str(error)) from None
-        change_release(root, each, model_sync.Create(first.entry), staging_offers(root, app, staging, folder), runner=runner)
+        change_release(root, each, model_sync.Create(first.entry), staging_offers(root, app, staging, folder), runner=runner,
+                       keyed=events.has_nats(root))
     except Exception:
         shutil.rmtree(folder, ignore_errors=True)
         raise
@@ -930,7 +931,7 @@ def nats_keys(root: Path, *, runner: Runner | None = None) -> list[Instance]:
     world, _ = model_sync.read(root)
     found = [each for each, entry in world.items() if not events_keyed(entry)]
     for each in found:
-        change_release(root, each, model_sync.Update(lambda entry: entry), {}, runner=runner)
+        change_release(root, each, model_sync.Update(lambda entry: entry), {}, runner=runner, keyed=True)
     return found
 
 

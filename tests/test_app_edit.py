@@ -1361,6 +1361,14 @@ components:
             model_sync.sync(self.root)
         self.assertEqual(self.snapshot(), before)
 
+    def test_plain_release_update_does_not_allocate_a_nats_key_just_because_nats_exists(self):
+        self.with_units()
+        each = Instance('hello', 'staging')
+        with mock.patch.object(intake, 'new_nats_key', side_effect=AssertionError('unexpected encryption')) as key:
+            intake.change_release(self.root, each, model_sync.Update(lambda entry: entry), {})
+        key.assert_not_called()
+        self.assertFalse((each.folder(self.root) / 'events.sops.yaml').exists())
+
     def test_malformed_notification_inputs_clean_up_keys_on_failed_release_and_sync_planning(self):
         self.with_units()
         notify = self.root / 'platform/notify'
@@ -1375,7 +1383,7 @@ components:
                     if action == 'release':
                         with self.assertRaisesRegex(edit.EditError, 'notification route'):
                             intake.change_release(self.root, Instance('hello', 'staging'),
-                                                  model_sync.Update(lambda entry: entry), {}, runner=runner)
+                                                  model_sync.Update(lambda entry: entry), {}, runner=runner, keyed=True)
                     else:
                         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors:
                             with mock.patch.object(intake, 'Runner', return_value=runner):

@@ -5,8 +5,7 @@ metadata:
   namespace: swhurl-try-31-staging
   annotations:
     platform.swhurl.com/offers: fe154f7
-    platform.swhurl.com/egress: example.com:443
-    platform.swhurl.com/render: 6789b5e0f473332c17d5a1ac8ce3fa777eaa8b24616af8cd2a12cef542c0e55f
+    platform.swhurl.com/render: a8b2257d0a9cae2e36299250bc442f13adc56319beac58539661b54782a15964
 spec:
   interval: 30m
   timeout: 3m

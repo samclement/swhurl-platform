@@ -45,10 +45,10 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.instance import NAME_RE, Instance
 from swhurl.apps.model import store
-from swhurl.apps.model.records import SETTINGS_FILE, Settings
+from swhurl.apps.model.records import ALLOW_RE, SETTINGS_FILE, Settings
 from swhurl.apps.model.render import ANNOTATION
 from swhurl.console.actions import ActionError, Job
-from swhurl.console.merge import REFUSAL, REFUSAL_LIMIT, new_app_records
+from swhurl.console.merge import ACTIONS, INSTANCE_KINDS, REFUSAL, REFUSAL_LIMIT, new_app_records, settings_held
 from swhurl.console.stages import ABSENT, UNRENDERED, Target
 from swhurl.run import Runner
 
@@ -151,7 +151,7 @@ class PullRequest:
     refused: str = ''  # why the merge gate held it (its comment), when it did and the label is off
 
 
-GATE_BRANCHES = (f'{BRANCH_PREFIX}new-', f'{BRANCH_PREFIX}promote-')
+GATE_BRANCHES = tuple(f'{BRANCH_PREFIX}{action}-' for action in ACTIONS)
 """The console branches the merge gate takes; only these can carry its refusal."""
 
 
@@ -598,6 +598,17 @@ def removing(app: str, env: str, form: Mapping[str, str]) -> tuple[Command, ...]
     raise ActionError('no such connection to remove: only the app that declared one can remove it')
 
 
+def allow_flags(form: Mapping[str, str]) -> list[str]:
+    """``--add=`` and ``--remove=`` for app-allows, from the form's comma-separated ``add`` and ``remove``."""
+    chosen = {field: [name.strip() for name in form.get(field, '').split(',') if name.strip()] for field in ('add', 'remove')}
+    if bad := [name for names in chosen.values() for name in names if not ALLOW_RE.match(name)]:
+        raise ActionError(f'{", ".join(bad)}: an allowed caller is an app name or team:<team>')
+    flags = [f'--{field}={",".join(names)}' for field, names in chosen.items() if names]
+    if not flags:
+        raise ActionError('name an app or team:<team> to allow or stop allowing')
+    return flags
+
+
 def egress_hosts(form: Mapping[str, str]) -> list[str]:
     """The hosts a form grants (``hosts``, comma-separated), each as app-egress keeps it."""
     hosts = [egress.grant(name) for name in form.get('hosts', '').split(',') if name.strip()]
@@ -625,7 +636,7 @@ class Command:
 
 INSTANCE_CHANGES = {'scale': 'scale', 'schedule': 'change when it runs:', 'expose': 'change access to', 'connect': 'change the connections of',
                     'disconnect': 'change the connections of', 'egress': 'change the hosts outside the cluster of',
-                    'remove': 'remove'}
+                    'allow': 'change who may call', 'remove': 'remove'}
 """Each change the app page can propose for an instance, and its pull request's verb. A promotion
 is not among them: its pull request is built from a review (console/promotion.py)."""
 
@@ -654,7 +665,7 @@ class Change:
     def to_instance(cls, kind: str, instance: Instance, form: Mapping[str, str]) -> Change:
         """Scale, change access to, connect, disconnect or remove ``instance``. Only shapes are
         checked here; whether the change is allowed is the command's own rule, run in the clone."""
-        app, env, touches_others = instance.app, instance.env, False
+        app, env = instance.app, instance.env
         if kind == 'scale':
             commands: tuple[Command, ...] = (Command('app-scale', (app, env, *scale_flags(form))),)
         elif kind == 'schedule':
@@ -664,20 +675,20 @@ class Change:
             commands = (Command('app-schedule', (app, env, f'--schedule={when}')),)
         elif kind == 'expose':
             commands = (Command('app-expose', (app, env, *expose_flags(form))),)
-        elif kind == 'connect':
-            chosen = Connections.from_form(form)
-            commands, touches_others = chosen.adding(app, env), chosen.touches_others
+        elif kind == 'connect':  # only this instance's Settings: the other app's side is rendered on main
+            commands = Connections.from_form(form).adding(app, env)
         elif kind == 'disconnect':
             commands = removing(app, env, form)
         elif kind == 'egress':
             commands = (Command('app-egress', (app, env, f'--add={",".join(egress_hosts(form))}')),)
+        elif kind == 'allow':
+            commands = (Command('app-allows', (app, env, *allow_flags(form))),)
         elif kind == 'remove':
             commands = (Command('app-remove', (app, env)),)
         else:
             raise ActionError('no such change')
         return cls(kind, f'{app}/{env}', f'{kind}-{app}-{env}', f'apps: {INSTANCE_CHANGES[kind]} {app}/{env}', commands,
-                   ' && '.join(command.as_make() for command in commands), touches_others=touches_others,
-                   manual_merge_reason=chosen.manual_merge_reason if touches_others else '')
+                   ' && '.join(command.as_make() for command in commands))
 
     @classmethod
     def to_team(cls, action: str, form: Mapping[str, str]) -> Change:
@@ -739,18 +750,38 @@ class Change:
         """Open the pull request; returns its URL."""
         app = self.commands[0].argv[0]
         new_app = self.commands[0].name == 'app-new'
+        gated = self.kind in INSTANCE_KINDS  # its PR carries the instance's Settings alone; the gate's rule decides
+        env = self.commands[0].argv[1] if gated else ''
+        seen: dict[str, Settings | None] = {}
+
+        def settings_in(clone: Path) -> Settings | None:
+            path = clone / 'apps' / app / env / SETTINGS_FILE
+            return Settings.parse(yamlio.load(path.read_text())) if path.is_file() else None
+
+        def held() -> str:
+            return settings_held(env, seen['before'], seen['after']) if gated else ''
 
         def change(clone: Path) -> None:
+            if gated:
+                seen['before'] = settings_in(clone)
             self.apply(runner, job, clone)
+            if gated:
+                seen['after'] = settings_in(clone)
             if new_app:
                 path = clone / 'apps' / app / 'staging' / SETTINGS_FILE
                 settings = Settings.parse(yamlio.load(path.read_text()))
                 settings = replace(settings, allocations=replace(settings.allocations, egress_port=None))
                 path.write_text(store.text(settings.document()))
 
-        return open_pr(runner, github, job, slug=self.slug, title=self.title, body=self.body,
-                       change=change, auto_merge=self.auto_merge, manual_merge_reason=self.manual_merge_reason,
-                       keep=(lambda path: new_app_records(app, path)) if new_app else None)
+        if new_app:
+            keep = lambda path: new_app_records(app, path)  # noqa: E731
+        elif gated:
+            keep = lambda path: ACTIONS[self.kind].owns(app, env, path)  # noqa: E731
+        else:
+            keep = None
+        return open_pr(runner, github, job, slug=self.slug, title=self.title, body=self.body, change=change,
+                       auto_merge=(lambda: not held()) if gated else self.auto_merge,
+                       manual_merge_reason=held if gated else self.manual_merge_reason, keep=keep)
 
 
 NEW_APP = 'new-app'  # a job's resume record: the New app form's choices

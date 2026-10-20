@@ -711,6 +711,104 @@ class NewAppGateTests(GateCase):
         self.assertEqual(self.pushes(runner), [])
 
 
+class InstanceGateTests(GateCase):
+    """An instance change's PR carries the instance's Settings alone; the gate merges it onto the newest
+    main and applies settings_held: automatic for how staging runs, its calls and taking access away."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / 'main'
+        shutil.copytree(baseline(), self.root)
+        with contextlib.redirect_stdout(io.StringIO()):
+            args = new.parse_args(['caller', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'payments', '--env', 'staging',
+                                   '--no-auto-deploy', '--image', IMAGE.replace('example/app', 'example/caller')])
+            new.generate(args, self.root)
+        self.staged = []
+        self.branch('scale-example-staging')
+
+    def branch(self, name):
+        self.pr = {'state': 'open', 'head': {'ref': f'console/{name}-aaaaaaa', 'sha': HEAD, 'repo': {'full_name': REPO}},
+                   'base': {'ref': 'main'}, 'labels': [{'name': 'auto-merge'}], 'title': f'apps: {name}', 'body': ''}
+
+    def open(self, command, edit_head=None):
+        """The PR as the console opens it: the command run on main, only the instance's Settings kept."""
+        self.base = Path(self.tmp.name) / 'pr-base'
+        self.head = Path(self.tmp.name) / 'pr-head'
+        for path in (self.base, self.head):
+            shutil.rmtree(path, ignore_errors=True)
+            shutil.copytree(self.root, path)
+        with contextlib.redirect_stdout(io.StringIO()):
+            command(self.head)
+        for path in changed_files(self.base, self.head):
+            if not path.endswith('/instance.yaml'):  # the console leaves rendered files out
+                if (self.base / path).is_file():
+                    shutil.copyfile(self.base / path, self.head / path)
+                else:
+                    (self.head / path).unlink()
+        if edit_head:
+            edit_head(self.head)
+        self.files = sorted(changed_files(self.base, self.head))
+
+    def env(self, root, app):
+        release = yamlio.load((root / 'apps' / app / 'staging/helmrelease.yaml').read_text())
+        return release['spec']['values']['controllers']['main']['containers']['main'].get('env', {})
+
+    def test_a_staging_scale_merges_itself_and_main_renders_it(self):
+        self.open(lambda head: edit.scale(head, 'example', 'staging', replicas=2))
+        self.assertEqual(self.files, ['apps/example/staging/instance.yaml'], 'the PR carries the record alone')
+        runner = self.runner()
+        self.check(runner)
+        self.assertEqual(self.pushes(runner), [('git', 'push', 'origin', f'{COMMIT}:refs/heads/main')])
+        release = yamlio.load((self.result / 'apps/example/staging/helmrelease.yaml').read_text())
+        self.assertEqual(release['spec']['values']['controllers']['main']['replicas'], 2)
+
+    def test_the_same_scale_with_an_egress_host_and_a_production_scale_are_held(self):
+        def egress_too(head):
+            path = head / 'apps/example/staging/instance.yaml'
+            doc = yamlio.load(path.read_text())
+            doc['egress'] = ['api.stripe.com:443']
+            path.write_text(yamlio.dump(doc))
+        self.open(lambda head: edit.scale(head, 'example', 'staging', replicas=2), egress_too)
+        self.held('grants hosts outside the cluster: api.stripe.com:443')
+        self.branch('scale-example-prod')
+        self.open(lambda head: edit.scale(head, 'example', 'prod', replicas=2))
+        self.held('changes production settings')
+
+    def test_a_call_merges_itself_and_connects_only_once_the_callee_allows_it(self):
+        self.branch('connect-caller-staging')
+        self.open(lambda head: edit.set_calls(head, 'caller', 'staging', add=['example']))
+        runner = self.runner()
+        self.check(runner)
+        self.assertTrue(self.pushes(runner), 'a call uses only access already granted')
+        self.assertNotIn('SWHURL_SERVICE_EXAMPLE_URL', self.env(self.result, 'caller'), 'not granted: it waits')
+        self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.env(self.result, 'example'))
+
+        self.branch('allow-example-staging')
+        self.open(lambda head: edit.set_allows(head, 'example', 'staging', add=['caller']))
+        self.assertEqual(self.files, ['apps/example/staging/instance.yaml'])
+        self.held('allows caller to call it')
+
+    def test_taking_access_away_merges_itself(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            edit.set_allows(self.root, 'example', 'staging', add=['caller', 'team:demo'])
+        self.branch('allow-example-staging')
+        self.open(lambda head: edit.set_allows(head, 'example', 'staging', remove=['caller']))
+        runner = self.runner()
+        self.check(runner)
+        self.assertTrue(self.pushes(runner))
+
+    def test_an_events_key_or_another_instances_files_are_held_and_new_or_promote_never_name_production(self):
+        self.open(lambda head: edit.scale(head, 'example', 'staging', replicas=2),
+                  lambda head: (head / 'apps/example/staging/events.sops.yaml').write_text('encrypted\n'))
+        self.held('which are not example\'s instance records')
+        self.branch('connect-example-staging')
+        self.held('generated encrypted events key')
+        self.branch('new-example-prod')
+        with self.assertRaises(merge.Skip):
+            self.check(self.runner())
+
+
 class RefusalTests(unittest.TestCase):
     """A held PR loses its label and gets the reason, where Activity reads it; a failure keeps the label."""
 

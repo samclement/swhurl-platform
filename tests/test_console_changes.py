@@ -242,15 +242,16 @@ class ConsolePrProgressTests(unittest.TestCase):
 
     def test_review_label_precedes_auto_merge_and_missing_sha_needs_no_checks(self):
         cases = (
-            ((), HEAD, 'Awaiting setup or manual review'),
-            (('auto-merge',), '', 'Awaiting setup or manual review'),
+            # A scale PR is the gate's: without its label, the gate's refusal (if any) is read.
+            ((), HEAD, 'Awaiting setup or manual review', ['/pulls', '/actions/runs', '/pulls/7', '/issues/7/comments']),
+            (('auto-merge',), '', 'Awaiting setup or manual review', ['/pulls']),
         )
-        for labels, sha, expected in cases:
+        for labels, sha, expected, read in cases:
             with self.subTest(labels=labels, sha=sha):
                 pr, requests = self.listed(labels=labels, sha=sha)
                 self.assertEqual((pr.progress, pr.checks_url), (expected, pr.url + '/checks'))
                 # Validate is read whoever merges it (the stages on Activity), unless there is no head to read it for.
-                self.assertEqual(requests, ['/pulls', '/actions/runs', '/pulls/7'] if sha else ['/pulls'])
+                self.assertEqual(requests, read)
                 self.assertEqual(pr.checks, 'pending' if sha else '')
 
     def test_a_held_gate_pr_shows_the_gates_newest_reason_and_nobody_elses(self):
@@ -317,6 +318,8 @@ class TreeRunner(FakeRunner):
                 self.edit(Path(cwd))
             elif argv[3:4] == ('app-promote',):
                 promoted(Path(cwd))
+            elif argv[3] in SETTINGS_COMMANDS:
+                settings_edit(Path(cwd), argv[3:])
             elif argv[3:4] == ('app-new',):
                 app = argv[4]
                 for name in ('app.yaml', 'staging/release.yaml', 'staging/instance.yaml', 'staging/helmrelease.yaml'):
@@ -327,6 +330,39 @@ class TreeRunner(FakeRunner):
                 (Path(cwd) / 'apps/x').mkdir(parents=True, exist_ok=True)
                 (Path(cwd) / 'apps/x/helmrelease.yaml').write_text('new\n')
         return super()._execute(argv, input=input, env=env, cwd=cwd)
+
+
+SETTINGS_COMMANDS = {'app-scale': '', 'app-schedule': '', 'app-expose': '', 'app-calls': 'calls',
+                     'app-events': 'subscriptions', 'app-egress': 'egress', 'app-allows': 'allows'}
+"""The instance commands whose console PR carries only the instance's Settings, and the list each edits."""
+
+
+def settings_edit(tree: Path, argv: tuple[str, ...]) -> None:
+    """What an instance command writes that its PR carries: the instance's instance.yaml, changed by its flags."""
+    command, app, env, *flags = argv
+    path = tree / 'apps' / app / env / 'instance.yaml'
+    doc = yaml.safe_load(path.read_text())
+    for flag in flags:
+        name, _, value = flag.removeprefix('--').partition('=')
+        items = [item for item in value.split(',') if item]
+        if name == 'replicas':
+            doc['replicas'] = int(value)
+        elif name in ('cpu', 'memory', 'memory-limit'):
+            doc.setdefault('capacity', {})['memoryLimit' if name == 'memory-limit' else name] = value
+        elif name in ('exposure', 'host', 'schedule'):
+            doc[name] = value
+        elif name.startswith('add'):
+            doc[SETTINGS_COMMANDS[command]] = [*doc.get(SETTINGS_COMMANDS[command], []), *items]
+        elif name.startswith('remove'):
+            doc[SETTINGS_COMMANDS[command]] = [item for item in doc.get(SETTINGS_COMMANDS[command], []) if item not in items]
+    path.write_text(yaml.safe_dump(doc, sort_keys=False))
+
+
+def connected_main() -> dict[str, bytes]:
+    """MAIN with hello/staging already calling orders and receiving orders.created: something to disconnect."""
+    rel = 'apps/hello/staging/instance.yaml'
+    doc = {**yaml.safe_load(MAIN[rel]), 'calls': ['orders'], 'subscriptions': ['orders.created']}
+    return {rel: yaml.safe_dump(doc, sort_keys=False).encode()}
 
 
 def promoted(tree: Path) -> None:
@@ -477,8 +513,8 @@ class FormTests(unittest.TestCase):
         self.assertEqual(change.commands,
                          (changes.Command('app-calls', ('hello', 'staging', '--add=orders,billing')),
                           changes.Command('app-events', ('hello', 'staging', '--add-subscribe=orders.created'))))
-        self.assertTrue(change.touches_others, 'a call or a subscription changes the other app too')
-        self.assertEqual(change.manual_merge_reason, 'also changes existing app settings for billing, orders')
+        self.assertEqual((change.touches_others, change.manual_merge_reason), (False, ''),
+                         "records only: the other app's side is rendered on main; the gate's rule decides the merge")
         for form, message in (({}, 'choose an app to call'), ({'publish': '--root=/'}, 'edit asyncapi.yaml'),
                               ({'publish': ''}, 'edit asyncapi.yaml')):
             with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
@@ -1044,7 +1080,7 @@ class ChangeAppRouteTests(unittest.TestCase):
              'console/connect-hello-staging-abc1234', '[console] apps: change the connections of hello/staging'),
         )
         for path, form, command, target, branch, title in cases:
-            with self.subTest(path=path):
+            with self.subTest(path=path), mock.patch.dict(MAIN, connected_main()):
                 runner = tree_fake(staging=(staging_app('orders', {'SWHURL_EVENTS_PUBLISH': 'created'}),))
                 c, jobs = self.client(runner)
                 response = c.post(path, data=form, headers=WHO, follow_redirects=False)
@@ -1055,17 +1091,23 @@ class ChangeAppRouteTests(unittest.TestCase):
                 (payload,) = self.api.sent('POST /pulls')
                 self.assertEqual((payload['head'], payload['title']), (branch, title))
 
-    def test_scale_requires_review_and_promotion_auto_merge_is_default(self):
-        cases = (('/apps/hello/prod/scale', {'replicas': '2'}, False),
+    def test_instance_changes_merge_themselves_unless_they_touch_production_or_grant_access(self):
+        cases = (('/apps/hello/staging/scale', {'replicas': '2'}, True),
+                 ('/apps/hello/staging/schedule', {'schedule': '*/5 * * * *'}, True),
+                 ('/apps/hello/staging/connect', {'calls': 'orders'}, True),
+                 ('/apps/hello/staging/allow', {'remove': 'nobody', 'add': 'team:demo'}, False),
+                 ('/apps/hello/staging/egress', {'hosts': 'api.stripe.com'}, False),
+                 ('/apps/hello/staging/disconnect', {'role': 'reaches', 'event': 'api.stripe.com:443'}, True),
+                 ('/apps/hello/prod/scale', {'replicas': '2'}, False),
                  ('/apps/hello/prod/scale', {'replicas': '0', 'auto_merge': 'on'}, False),
                  ('/apps/hello/staging/promote', PROMOTION, True),
                  ('/apps/hello/staging/promote', {**PROMOTION, 'hold': 'on'}, False),
                  ('/apps/hello/staging/expose', {'exposure': 'public', 'host': 'hello.example.com'}, False),
-                 ('/apps/hello/staging/disconnect', {'role': 'calls', 'app': 'orders'}, False),
+                 ('/apps/hello/staging/disconnect', {'role': 'calls', 'app': 'orders'}, True),
                  ('/apps/hello/staging/remove', {'auto_merge': 'on'}, False))
         for path, form, merges in cases:
-            with self.subTest(path=path, form=form):
-                c, jobs = self.client(tree_fake())
+            with self.subTest(path=path, form=form), mock.patch.dict(MAIN, connected_main()):
+                c, jobs = self.client(tree_fake(staging=(staging_app('orders'),)))
                 c.post(path, data=form, headers=WHO)
                 self.assertEqual(jobs.get(1).state, 'succeeded')
                 self.assertEqual(self.api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}] if merges else [])

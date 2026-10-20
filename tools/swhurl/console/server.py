@@ -933,7 +933,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 for ticked in ('calls', 'subscribe'):  # one checkbox per app or event
                     form[ticked] = ','.join(value for value in fields.get(ticked, []) if value)
             proposed = changes.Change.to_instance(change, found, form)  # malformed: refused before reading the cluster
-            if change == 'connect' and proposed.touches_others:
+            if change == 'connect':  # only what the form offered: the environment's web apps and events
                 callable_apps, offered_events, problem = connectable(env, app)
                 if problem:
                     raise actions.ActionError(f'cannot check the apps and events chosen: {problem}')

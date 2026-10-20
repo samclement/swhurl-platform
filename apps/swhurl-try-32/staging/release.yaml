@@ -1,0 +1,13 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/swhurl-try-32
+  tag: 0-62c03d3
+  digest: sha256:a1a18224b70ff15e8719eb1d407a6d6c705c91c676bbbb69d53cef2887c52542
+kind: worker
+uid: 65532
+telemetry: true
+description: B3 concurrent records-only creation proof
+publishes:
+- worked
+offers: 62c03d3

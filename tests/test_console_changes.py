@@ -1,6 +1,7 @@
 """Console changes through GitHub: form to tooling argv, download, commit, branch, PR; offline, with
 FakeRunner for the tree's tooling and a fake GitHub API."""
 import base64
+import contextlib
 import io
 import json
 import shutil
@@ -18,11 +19,12 @@ import yaml
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import calling, channels, helmrelease, new, ops, promotion, repo
+from swhurl.apps import calling, channels, egress, helmrelease, new, ops, promotion, repo
+from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import sync as model_sync
 from swhurl.apps.state import State
-from swhurl.console import actions, changes, cluster, merge, server, stages
+from swhurl.console import actions, changes, cluster, server, stages
 from swhurl.console import promotion as console_promotion
 from swhurl.run import CommandError, FakeRunner, Result, Runner
 
@@ -158,6 +160,46 @@ class RenderTargetTests(unittest.TestCase):
         self.assertNotIn(progress.state, stages.REACHED, 'the old image must not persist a first-seen time')
 
 
+class NewAppRenderTargetTests(unittest.TestCase):
+    def test_manual_records_merge_then_port_allocation_is_creation_completion_not_replacement(self):
+        records = {path: data for path, data in MAIN.items() if path in (
+            'apps/hello/app.yaml', 'apps/hello/staging/release.yaml', 'apps/hello/staging/instance.yaml')}
+        settings = yaml.safe_load(records['apps/hello/staging/instance.yaml'])
+        settings.get('allocations', {}).pop('egressPort', None)
+        records['apps/hello/staging/instance.yaml'] = yaml.safe_dump(settings).encode()
+        with mock.patch.dict(MAIN, records, clear=True):
+            before = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/staging']
+        self.assertEqual(before.hash, stages.UNRENDERED)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for path, data in records.items():
+                (root / path).parent.mkdir(parents=True, exist_ok=True)
+                (root / path).write_bytes(data)
+            proxy = root / egress.PROXY_FILE
+            proxy.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT / egress.PROXY_FILE, proxy)
+            model_sync.sync(root)
+            rendered = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+        self.assertIn('egressPort', yaml.safe_load(rendered['apps/hello/staging/instance.yaml'])['allocations'])
+        with mock.patch.dict(MAIN, rendered, clear=True):
+            current = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/staging']
+        self.assertEqual(before.records, current.records, 'system port allocation is not a new request')
+        self.assertEqual(before.settings, current.settings)
+        for action in stages.NEW_APP_ACTIONS:
+            with self.subTest(action=action):
+                self.assertEqual(stages.aim(action, before, current), current)
+                result = stages.judge(action, State('healthy'), before, current, current.hash, True, True)
+                self.assertEqual(result.state, 'live')
+                # Even if the first read after Render sees its own build rather than the seed,
+                # the creation still follows it; a later operator setting does supersede it.
+                built = replace(current, hash='built', digest='own-build', records='new-release')
+                result = stages.judge(action, State('healthy'), before, built, 'built', True, True)
+                self.assertEqual((result.state, result.newer), ('live', 'own-build'))
+                changed = replace(current, hash='changed', settings='operator-change', records='operator-change')
+                result = stages.judge(action, State('healthy'), before, changed, 'changed', True, True)
+                self.assertEqual(result.state, 'superseded')
+
+
 class ConsolePrProgressTests(unittest.TestCase):
     def listed(self, *, labels=('auto-merge',), sha=HEAD, runs=(), mergeable='clean', fail=None, comments=(),
                branch='console/scale-hello-staging-abc1234'):
@@ -275,6 +317,12 @@ class TreeRunner(FakeRunner):
                 self.edit(Path(cwd))
             elif argv[3:4] == ('app-promote',):
                 promoted(Path(cwd))
+            elif argv[3:4] == ('app-new',):
+                app = argv[4]
+                for name in ('app.yaml', 'staging/release.yaml', 'staging/instance.yaml', 'staging/helmrelease.yaml'):
+                    path = Path(cwd) / 'apps' / app / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(MAIN[f'apps/hello/{name}'])
             else:
                 (Path(cwd) / 'apps/x').mkdir(parents=True, exist_ok=True)
                 (Path(cwd) / 'apps/x/helmrelease.yaml').write_text('new\n')
@@ -350,11 +398,7 @@ class FormTests(unittest.TestCase):
             commands=(changes.Command('app-scale', ('hello', 'staging', '--replicas=2', '--memory-limit=256Mi')),),
             make='make app-scale APP=hello ENV=staging ARGS="--replicas=2 --memory-limit=256Mi"'))
         self.assertEqual(change.body, 'Generated by the console with:\n\n'
-                         '    make app-scale APP=hello ENV=staging ARGS="--replicas=2 --memory-limit=256Mi"\n\n'
-                         '<!-- swhurl-request {"commands": [["app-scale", "hello", "staging", "--replicas=2", '
-                         '"--memory-limit=256Mi"]]} -->')
-        self.assertEqual(merge.request(change.body), [['app-scale', 'hello', 'staging', '--replicas=2', '--memory-limit=256Mi']],
-                         'what the merge gate replays')
+                         '    make app-scale APP=hello ENV=staging ARGS="--replicas=2 --memory-limit=256Mi"')
         self.assertFalse(change.auto_merge, 'a person merges it')
         removal = changes.Change.to_instance('remove', hello, {})
         self.assertEqual((removal.commands, removal.title, removal.make),
@@ -364,6 +408,55 @@ class FormTests(unittest.TestCase):
                                     ('promote', {}, 'no such change'), ('rename', {}, 'no such change')):
             with self.subTest(kind=kind, form=form), self.assertRaisesRegex(actions.ActionError, message):
                 changes.Change.to_instance(kind, hello, form)
+
+    def test_new_app_open_carries_real_input_records_offers_and_key_but_no_port_or_rendered_files(self):
+        public = 'U' + 'A' * 55
+        encrypted = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': 'weather-api-events',
+                     'namespace': 'weather-api-staging'}, 'type': 'Opaque',
+                     'stringData': {'SWHURL_EVENTS_SEED': 'ENC[x]'}, 'sops': {'age': [{'recipient': 'fixture'}]}}
+        def key(instance, *_args, **_kwargs):
+            (instance / 'events.sops.yaml').write_text(yaml.safe_dump(encrypted))
+            return public
+        api = FakeGitHub()
+        chosen = changes.NewApp.from_form({**NEW, 'team': 'demo'}, [], {'demo': ''})
+        image = 'ghcr.io/samclement/weather-api:0-abcdef0@sha256:' + 'd' * 64
+        change = chosen.change(image)
+        job = actions.Job(1, change.kind, change.target, 'sam@swhurl.com', None)
+        source = (ROOT / 'tests/fixtures/manifests/web.yaml').read_text() + (
+            'provides:\n  api: /openapi.json\n  apiFile: openapi.yaml\n  eventsFile: asyncapi.yaml\n'
+            'flags:\n  example: {type: boolean, default: false, description: Example}\n')
+        documents = {'swhurl.yaml': source, 'openapi.yaml': 'openapi: 3.0.3\npaths: {}\n',
+                     'asyncapi.yaml': 'asyncapi: 3.0.0\nchannels:\n  created: {address: created}\n'
+                                      'operations:\n  created: {action: send, channel: {$ref: "#/channels/created"}}\n'}
+        def opener(request):
+            path = request.full_url.split('/contents/', 1)[1].split('?', 1)[0]
+            return documents[path].encode()
+        def create(tree):
+            proxy = tree / egress.PROXY_FILE
+            proxy.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / egress.PROXY_FILE, proxy)
+            with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(intake, 'new_nats_key', side_effect=key):
+                self.assertEqual(new.main([*change.commands[0].argv, '--root', str(tree), '--no-policy-check'], opener), 0)
+            # Direct CLI output remains rendered, with its allocation.
+            self.assertIn('egressPort', yaml.safe_load((tree / 'apps/weather-api/staging/instance.yaml').read_text())['allocations'])
+            self.assertTrue((tree / 'apps/weather-api/staging/helmrelease.yaml').is_file())
+        runner = tree_fake(edit=create)
+        change.open(runner, api.github, job)
+        entries = api.sent('POST /git/trees')[0]['tree']
+        paths = {entry['path'] for entry in entries}
+        expected = {'apps/weather-api/app.yaml', 'apps/weather-api/staging/release.yaml',
+                    'apps/weather-api/staging/instance.yaml', 'apps/weather-api/staging/events.sops.yaml',
+                    *{f'apps/weather-api/staging/offers/{name}' for name in ('source.yaml', 'openapi.yaml', 'asyncapi.yaml', 'flags.json')}}
+        self.assertEqual(paths, expected)
+        blobs = {f'blob{i}': base64.b64decode(blob['content']) for i, blob in enumerate(api.sent('POST /git/blobs'))}
+        written = {entry['path']: blobs[entry['sha']] for entry in entries}
+        settings = yaml.safe_load(written['apps/weather-api/staging/instance.yaml'])
+        self.assertNotIn('egressPort', settings['allocations'])
+        self.assertEqual(settings['allocations']['eventsKey'], public)
+        self.assertEqual(yaml.safe_load(written['apps/weather-api/staging/events.sops.yaml']), encrypted)
+        self.assertEqual(yaml.safe_load(written['apps/weather-api/staging/release.yaml'])['publishes'], ['created'])
+        self.assertTrue(api.sent('POST /issues/7/labels'))
+        self.assertNotIn('swhurl-request', api.sent('POST /pulls')[0]['body'])
 
     def test_expose_form_becomes_app_expose_arguments(self):
         hello = Instance('hello', 'staging')
@@ -633,7 +726,7 @@ class OpenPrTests(unittest.TestCase):
         url, job, api = self.open(runner)
         self.assertEqual(url, '')
         self.assertEqual({r.method for r in api.requests}, {'GET'})
-        self.assertIn('Dry run: would commit 1 file(s) to console/new-weather-api-staging-abc1234; no PR opened', job.lines)
+        self.assertIn('Dry run: would commit 4 file(s) to console/new-weather-api-staging-abc1234; no PR opened', job.lines)
 
     def test_github_error_is_a_redacted_action_error(self):
         api = FakeGitHub(fail={'POST /git/refs': (422, f'Reference already exists (token {TOKEN})')})

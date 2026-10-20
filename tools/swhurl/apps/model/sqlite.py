@@ -11,6 +11,8 @@ PRUNE = 'kustomize.toolkit.fluxcd.io/prune'
 def apply(draft: Draft, entry: Entry) -> None:
     if entry.release.database != 'sqlite':
         return
+    if entry.release.kind != 'web':
+        raise RenderError(f'{draft.instance}: a {entry.release.kind} keeps no database')
     storage = entry.settings.allocations.database
     if storage is None:
         raise RenderError(f'{draft.instance} declares sqlite but has no database allocation')

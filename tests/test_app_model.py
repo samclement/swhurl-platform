@@ -11,6 +11,7 @@ from unittest import mock
 
 from swhurl import ROOT, yamlio
 from swhurl.apps import derive, edit, policy
+from swhurl.apps.contract import JOB_SCHEDULE
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated, render, store
 from swhurl.apps.model.draft import EVENTS_SECRET, Entry, Platform, RenderError
@@ -121,6 +122,37 @@ class RenderTests(unittest.TestCase):
         with self.assertRaisesRegex(RenderError, 'has no egress port allocated'):
             render.instance(orders, {orders: Entry(App('p'), web(), Settings())}, Platform())
 
+    def test_job_schedules_use_the_shared_validator_and_keep_the_default(self):
+        each = Instance('nightly', 'staging')
+        release = Release(IMAGE, 'job', 65532)
+        for schedule in ('', '*/10 * * * *', '@daily'):
+            with self.subTest(schedule=schedule):
+                entry = Entry(App('demo'), release, Settings.parse({'version': 1, 'schedule': schedule}))
+                files = self.render({each: entry}, each)
+                controller = files[Path('apps/nightly/staging/helmrelease.yaml')][0]['spec']['values']['controllers']['main']
+                self.assertEqual(controller['cronjob']['schedule'], schedule or JOB_SCHEDULE)
+        for kind, schedule in (('job', '99 99 * * *'), ('job', '*/0 * * * *'), ('job', 'not a cron schedule'),
+                               ('web', JOB_SCHEDULE), ('worker', JOB_SCHEDULE)):
+            with self.subTest(kind=kind, schedule=schedule), self.assertRaisesRegex(RenderError, 'schedule'):
+                entry = Entry(App('demo'), web() if kind == 'web' else dataclasses.replace(release, kind=kind),
+                              Settings.parse({'version': 1, 'schedule': schedule}))
+                self.render({each: entry}, each)
+
+    def test_arbitrary_secret_names_and_non_web_databases_preserve_creation_restrictions(self):
+        each = Instance('orders', 'staging')
+        for names in (('api-token',), ('HOST_IP',), ('SWHURL_PRIVATE',), ('TOKEN', 'TOKEN')):
+            with self.subTest(names=names), self.assertRaisesRegex(RenderError, 'secret|reserved'):
+                entry = Entry(App('demo'), Release.parse(web(secrets=names).document()), Settings())
+                self.render({each: entry}, each)
+        for kind in ('worker', 'job'):
+            with self.subTest(kind=kind), self.assertRaisesRegex(RenderError, 'keeps no database'):
+                release = Release.parse(Release(IMAGE, kind, 65532, database='sqlite').document())
+                # With no allocation, the kind restriction must fail first.
+                self.render({each: Entry(App('demo'), release, Settings())}, each)
+        entry = Entry(App('demo'), web(secrets=('API_TOKEN',)), Settings())
+        files = self.render({each: entry}, each)
+        self.assertIn('API_TOKEN', str(files[Path('apps/orders/staging/helmrelease.yaml')]))
+
     def test_a_publisher_and_its_subscriber_share_one_user_list(self):
         orders, shop = Instance('orders', 'staging'), Instance('shop', 'staging')
         key = frozenset({EVENTS_SECRET})
@@ -199,6 +231,38 @@ class ShadowTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             derive.sync(self.root)
         self.assertFalse(unit.exists())
+
+    def test_arbitrary_merged_job_records_with_invalid_schedule_do_not_render_or_write(self):
+        folder = self.root / 'apps/nightly/staging'
+        folder.mkdir(parents=True)
+        (folder.parent / 'app.yaml').write_text(store.text(App('demo').document()))
+        (folder / 'release.yaml').write_text(store.text(Release(IMAGE, 'job', 65532).document()))
+        (folder / 'instance.yaml').write_text(store.text({'version': 1, 'schedule': '99 99 * * *'}))
+        before = {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+        self.assertIn(Instance('nightly', 'staging'), store.world(self.root)[0], 'records parse; validation belongs to rendering')
+        with redirect_stdout(io.StringIO()), mock.patch('sys.stderr', new_callable=io.StringIO) as errors:
+            self.assertEqual(edit.main_sync(['--root', str(self.root)]), 2, 'the command Render runs must stop')
+        self.assertIn('minute', errors.getvalue())
+        self.assertEqual(before, {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob('*') if path.is_file()},
+                         'invalid records never reach the write phase, including the registry')
+
+    def test_manually_merged_records_cannot_bypass_secret_or_database_restrictions(self):
+        folder = self.root / 'apps/fresh/staging'
+        folder.mkdir(parents=True)
+        (folder.parent / 'app.yaml').write_text(store.text(App('demo').document()))
+        (folder / 'instance.yaml').write_text(store.text(Settings(
+            allocations=Allocations(database=Storage('1Gi', 'local-path-retain'))).document()))
+        for release in (web(secrets=('HOST_IP',)), web(secrets=('TOKEN', 'TOKEN')),
+                        Release(IMAGE, 'worker', 65532, database='sqlite'),
+                        Release(IMAGE, 'job', 65532, database='sqlite')):
+            with self.subTest(release=release):
+                (folder / 'release.yaml').write_text(store.text(release.document()))
+                self.assertIn(Instance('fresh', 'staging'), store.world(self.root)[0], 'strictly parsed arbitrary records')
+                before = {p.relative_to(self.root): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+                with redirect_stdout(io.StringIO()), mock.patch('sys.stderr', new_callable=io.StringIO):
+                    self.assertEqual(edit.main_sync(['--root', str(self.root)]), 2)
+                self.assertEqual(before, {p.relative_to(self.root): p.read_bytes() for p in self.root.rglob('*') if p.is_file()},
+                                 'no rendered files or registry update after refused records')
 
     def test_a_hand_edit_the_model_cannot_express_is_reported_by_path(self):
         release = self.root / 'apps/hello/staging/helmrelease.yaml'

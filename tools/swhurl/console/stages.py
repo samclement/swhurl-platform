@@ -151,7 +151,8 @@ def judge(action: str, live: State | str | None, target: Target | None, current:
         if current.hash == ABSENT or (target.records and current.records and not ours(target, current)
                                       and not follows(action, target, current)):
             return Rollout('replaced', reached) if reached else Rollout('superseded')
-        return Rollout('applying', 'main has not rendered it yet')
+        if current.hash == UNRENDERED:
+            return Rollout('applying', 'main has not rendered it yet')
     newer = ''
     if target.hash != current.hash:
         if not follows(action, target, current):

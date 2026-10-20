@@ -30,9 +30,10 @@ from swhurl.apps.contract import (
     network_policy,
     quantity,
     resource_quota,
+    schedule_problem,
 )
 from swhurl.apps.instance import Instance
-from swhurl.apps.model.draft import Draft, Entry, Platform
+from swhurl.apps.model.draft import Draft, Entry, Platform, RenderError
 from swhurl.apps.model.records import Resources
 
 DEFAULT_RESOURCES = Resources('10m', '32Mi', '128Mi')
@@ -88,12 +89,17 @@ def start(instance: Instance, entry: Entry, platform: Platform) -> Draft:
         container['probes'] = {'readiness': probe(), 'liveness': probe(), 'startup': startup}
     controller: dict = {'containers': {'main': container}}
     if release.kind == 'job':
+        schedule = entry.settings.schedule or JOB_SCHEDULE
+        if problem := schedule_problem(schedule):
+            raise RenderError(f'{instance}: {problem}')
         # One pod per run, never two at once; a failed run is not retried (the next scheduled one runs).
         controller['type'] = 'cronjob'
-        controller['cronjob'] = {'schedule': entry.settings.schedule or JOB_SCHEDULE, 'timeZone': JOB_TIME_ZONE,
+        controller['cronjob'] = {'schedule': schedule, 'timeZone': JOB_TIME_ZONE,
                                  'concurrencyPolicy': 'Forbid', 'startingDeadlineSeconds': JOB_START_DEADLINE_SECONDS,
                                  'activeDeadlineSeconds': JOB_DEADLINE_SECONDS, 'backoffLimit': 0,
                                  'successfulJobsHistory': 1, 'failedJobsHistory': 1}
+    elif entry.settings.schedule:
+        raise RenderError(f'{instance}: schedule applies to kind job only')
     if entry.settings.replicas is not None:
         controller['replicas'] = entry.settings.replicas
     values: dict = {

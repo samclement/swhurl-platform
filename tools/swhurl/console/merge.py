@@ -1,51 +1,39 @@
 """The merge gate: merge an eligible console PR onto the newest main, check the result and push it.
 
-A promotion PR carries only its app's records: the gate merges it onto the newest main, applies
-promotion's one rule (promotion.held), renders with app-sync, checks and pushes one commit, merging
-again when main moved first. A new-app PR is replayed on the newest main (replay_new_app) and compared
-with its request. A PR the gate holds loses its auto-merge label and gets a comment saying why; any
-other failure keeps the label, so the next run tries again.
+Promotion and new-app PRs carry only their input records. The gate merges them onto the newest
+main, applies the action's rule, renders with app-sync, checks and pushes one commit, merging again
+when main moved first. A PR the gate holds loses its auto-merge label and gets a comment saying why;
+any other failure keeps the label, so the next run tries again.
 """
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import os
 import re
-import shutil
 import sys
 import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
 
+import yaml
+
 from swhurl import ROOT, yamlio
-from swhurl.apps import declaration, egress, events, helmrelease, new, promotion
+from swhurl.apps import events, promotion
+from swhurl.apps.calling import NOTIFY
 from swhurl.apps.instance import instance_folder, instance_unit_file
-from swhurl.apps.model.records import APP_FILE, RELEASE_FILE, SETTINGS_FILE, Release
+from swhurl.apps.model.records import APP_FILE, RELEASE_FILE, SETTINGS_FILE, App, RecordError, Release, Settings
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
 
 VALIDATE_WAIT = 120  # seconds this run waits for Validate on the PR head, asking every VALIDATE_POLL
 VALIDATE_POLL = 5
 MERGE_CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
-ATTEMPTS = 3  # a promotion is merged again on a newer main this many times when its push loses a race
+ATTEMPTS = 3  # a PR is merged again on a newer main this many times when its push loses a race
 REFUSAL = 'Auto-merge refused: '  # starts the comment the gate leaves on a PR it holds; the console shows the rest
 REFUSAL_LIMIT = 300
 BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7,40}')
-# A new app's files outside its folder, generated from every instance's declaration (make app-sync): its
-# NATS user, its egress port, Reloader watching its namespace. The gate regenerates them on the merge result.
-REQUEST = re.compile(r'<!-- swhurl-request (\{[^\n]*\}) -->')
-"""What a console PR asks for, in its body: the commands its files came from (no standard input), which
-this gate replays on the newest main."""
-GATE_FLAGS = ('--root', '--manifest', '--no-register', '--no-policy-check', '--policy-check', '--events-key')
-"""app-new options a request may not set: where it writes, what it checks and the prepared key are the gate's."""
 PUBLIC_KEY = re.compile(r'U[A-Z2-7]{55}')  # an nkeys user public key
-DERIVED = ('platform/nats/users.yaml', 'platform/egress/proxy.yaml', 'platform/reloader/helmrelease.yaml')
-REGISTRY = 'clusters/home/kustomization.yaml'
-PROXY_VARIABLES = (egress.HTTP_VARIABLE, egress.HTTPS_VARIABLE, egress.JAVA_VARIABLE, egress.NODE_VARIABLE,
-                   egress.NO_PROXY_VARIABLE)
 GIT = ['git', '-c', 'user.name=swhurl auto-merge', '-c', 'user.email=console@users.noreply.github.com']
 
 
@@ -66,126 +54,59 @@ def recipients(root: Path, path: str) -> set[str]:
     return set()
 
 
-def request_marker(commands) -> str:
-    """The marker a console PR's body carries for its commands (each with ``name`` and ``argv``)."""
-    return '<!-- swhurl-request ' + json.dumps({'commands': [[c.name, *c.argv] for c in commands]}) + ' -->'
+def new_app_records(app: str, path: str) -> bool:
+    """The only inputs a new-app PR may add: its App, staging records, offers and events key."""
+    folder = f'apps/{app}/staging/'
+    return path == f'apps/{app}/{APP_FILE}' or (path.startswith(folder) and (
+        path.removeprefix(folder) in (RELEASE_FILE, SETTINGS_FILE, events.SECRET_FILE)
+        or path.startswith(f'{folder}offers/')))
 
 
-def request(body: str) -> list[list[str]]:
-    """The commands a console PR says its files came from (changes.request_marker)."""
-    match = REQUEST.search(body)
+def check_events_key(root: Path, app: str, settings: Settings) -> None:
+    """A new encrypted Secret containing only the NATS seed, to the repository's recipients alone.
+    The public half is an allocation in instance.yaml; neither half is made again by the gate."""
+    key = f'apps/{app}/staging/{events.SECRET_FILE}'
     try:
-        commands = json.loads(match[1])['commands'] if match else None
-    except (TypeError, ValueError, KeyError):
-        commands = None
-    if not (isinstance(commands, list) and commands
-            and all(isinstance(c, list) and c and all(isinstance(part, str) for part in c) for c in commands)):
-        raise Hold('the PR does not say what it was made with (no request); open a fresh one from the console')
-    return commands
+        doc = yamlio.load((root / key).read_text())
+        if not isinstance(doc, dict):
+            raise ValueError('not a Secret')
+        sops, values = doc.get('sops'), doc.get('stringData')
+        wanted = recipients(root, key)
+        if (doc.get('apiVersion') != 'v1' or doc.get('kind') != 'Secret' or 'data' in doc
+                or doc.get('metadata') != {'name': events.secret_name(app), 'namespace': f'{app}-staging'}
+                or not isinstance(values, dict) or set(values) != {events.SEED_VARIABLE}
+                or not isinstance(values[events.SEED_VARIABLE], str) or not values[events.SEED_VARIABLE].startswith('ENC[')
+                or not isinstance(sops, dict) or not wanted
+                or not isinstance(sops.get('age'), list)
+                or any(not isinstance(r, dict) or not isinstance(r.get('recipient'), str) for r in sops['age'])
+                or {r.get('recipient') for r in sops['age']} != wanted
+                or any(sops.get(other) for other in ('kms', 'gcp_kms', 'azure_kv', 'hc_vault', 'pgp'))):
+            raise ValueError('not the seed alone')
+    except (OSError, ValueError, yaml.YAMLError):
+        raise Hold("the events key is not the app's generated, encrypted NATS seed alone") from None
+    if not PUBLIC_KEY.fullmatch(settings.allocations.events_key):
+        raise Hold('the PR pairs its events key with no NATS public key')
 
 
-def check_events_key(base: Path, head: Path, app: str) -> str:
-    """A new app's events key, the one input the gate cannot make again: a new Secret holding its NATS seed
-    and nothing else, encrypted to this repository's recipients alone (no one, gate or reviewer, can read
-    it). Returns the public key the PR pairs it with."""
-    key = f'apps/{app}/staging/{events.SECRET_FILE}'
-    if (base / key).exists():
-        raise Hold('new-app PR replaces an existing events key')
-    doc = yamlio.load((head / key).read_text()) or {}
-    sops = doc.get('sops') or {}
-    values = doc.get('stringData') or {}
-    if (doc.get('kind') != 'Secret' or 'data' in doc
-            or doc.get('metadata') != {'name': events.secret_name(app), 'namespace': f'{app}-staging'}
-            or set(values) != {events.SEED_VARIABLE} or not str(values[events.SEED_VARIABLE]).startswith('ENC[')
-            or {r.get('recipient') for r in sops.get('age') or []} != recipients(base, key)
-            or any(sops.get(other) for other in ('kms', 'gcp_kms', 'azure_kv', 'hc_vault', 'pgp'))):
-        raise Hold("the events key is not the app's generated, encrypted NATS seed alone")
-    release = yamlio.load((head / f'apps/{app}/staging/helmrelease.yaml').read_text())
-    public = str(helmrelease.variables(release).get(events.NKEY_VARIABLE, ''))
-    if not PUBLIC_KEY.fullmatch(public):
-        raise Hold("the PR pairs its events key with no NATS public key")
-    return public
-
-
-def replay_new_app(base: Path, head: Path, work: Path, app: str, body: str, files: list[str],
-                   opener: declaration.Opener = declaration._open) -> None:
-    """The new app's request, run with main's tooling on the newest main (``work``): its egress port, unit
-    registration and the shared files are made there, whatever main gained since the PR was opened. Its
-    events key is the PR's own (check_events_key)."""
-    commands = request(body)
-    if len(commands) != 1 or commands[0][:2] != ['app-new', app]:
-        raise Hold('a new-app PR is one make app-new of its own app')
-    argv = commands[0][1:]
-    if any(arg.split('=')[0] in GATE_FLAGS for arg in argv):
-        raise Hold('the request sets options only the gate may set')
-    if instance_folder(base, app, 'staging').exists():
-        raise Hold('new-app PR overwrites an existing staging instance')
-    extra = []
-    key = f'apps/{app}/staging/{events.SECRET_FILE}'
-    if key in files:
-        extra = ['--events-key', check_events_key(base, head, app)]
-        (work / key).parent.mkdir(parents=True)
-        shutil.copyfile(head / key, work / key)
-    said = io.StringIO()
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(said):
-        problem = new.platform_origin_problem(new.parse_args(argv, opener))
-        code = 2 if problem else new.main([*argv, '--root', str(work), '--no-policy-check', *extra], opener)
-    if code:
-        reason = problem or ([line for line in said.getvalue().splitlines() if line.strip()] or ['it failed'])[-1]
-        raise Hold(f'the request does not replay on main: {reason}')
-
-
-def scope(base: Path, head: Path, work: Path, files: list[str], app: str, env: str) -> None:
-    """The replay may change only this instance, its unit and registration and the shared files derived
-    from every instance: a change to another app is that app's team's to review. The PR's own files must
-    be what the replay made; its copies of the shared files are made again (the replay wins)."""
-    folder, unit = f'apps/{app}/{env}/', instance_unit_file(Path(), app, env).as_posix()
-
-    def own(path: str) -> bool:
-        return path.startswith(folder) or path in (unit, f'apps/{app}/{APP_FILE}')
-    changed = changed_files(base, work)
-    others = sorted(path for path in changed if not own(path) and path not in (REGISTRY, *DERIVED))
-    if others:
-        raise Hold('it also changes ' + ', '.join(others[:5]) + ': a person reviews it')
-    extra = sorted(path for path in files if not own(path) and path not in (REGISTRY, *DERIVED))
-    if extra:
-        raise Hold('the PR changes files its request does not: ' + ', '.join(extra[:5]))
-    for path in sorted(set(changed) | set(files)):
-        if own(path) and not same_file(head / path, work / path, reallocated=path.endswith(('/helmrelease.yaml', f'/{SETTINGS_FILE}'))):
-            raise Hold(f'the PR differs from what its request makes on main: {path}')
-    made = sorted(path for path in changed if path.endswith('.sops.yaml') and path != f'{folder}{events.SECRET_FILE}')
-    if made:
-        raise Hold(f'the request makes an encrypted file, which a person reviews: {", ".join(made)}')
-
-
-def same_file(a: Path, b: Path, *, reallocated: bool = False) -> bool:
-    """Both absent, or the same bytes or the same YAML documents. ``reallocated``: a HelmRelease or Settings
-    record whose egress port the replay may have chosen again (another instance took the PR's meanwhile)."""
-    if not (a.is_file() and b.is_file()):
-        return a.is_file() == b.is_file()
-    if a.read_bytes() == b.read_bytes():
-        return True
-    def documents(path: Path) -> list:
-        found = list(yamlio.load_all(path.read_text()))
-        for doc in found if reallocated else ():
-            if isinstance(doc, dict) and doc.get('kind') == 'HelmRelease':
-                (doc.get('metadata', {}).get('annotations') or {}).pop('platform.swhurl.com/render', None)
-            if isinstance(doc, dict) and isinstance(doc.get('allocations'), dict):  # instance.yaml
-                doc['allocations'].pop('egressPort', None)
-            elif isinstance(doc, dict):
-                for key in PROXY_VARIABLES:
-                    (helmrelease.container(doc).get('env') or {}).pop(key, None)
-        return found
-    return documents(a) == documents(b)
-
-
-def changed_files(base: Path, work: Path) -> list[str]:
-    """Files that differ between two trees, by path from their root (no .git)."""
-    def files(root: Path) -> dict[str, bytes]:
-        return {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob('*')
-                if path.is_file() and '.git' not in path.relative_to(root).parts}
-    before, after = files(base), files(work)
-    return [path for path in before.keys() | after.keys() if before.get(path) != after.get(path)]
+def check_new_app(work: Path, app: str) -> None:
+    """Required, strict records; no port chosen on the PR branch and no grants to other apps."""
+    if app == NOTIFY:
+        raise Hold(f'{NOTIFY} is reserved for the platform notification service')
+    folder = instance_folder(work, app, 'staging')
+    try:
+        App.parse(yamlio.load((folder.parent / APP_FILE).read_text()))
+        release = Release.parse(yamlio.load((folder / RELEASE_FILE).read_text()))
+        settings = Settings.parse(yamlio.load((folder / SETTINGS_FILE).read_text()))
+    except (OSError, RecordError, yaml.YAMLError) as error:
+        raise Hold(f'the new app records cannot be read: {error}') from None
+    if settings.exceptions:
+        raise Hold('it sets policy exceptions: a person reviews it')
+    if settings.allocations.egress_port is not None:
+        raise Hold('a new-app PR must not preallocate an egress port')
+    if settings.calls or settings.subscriptions:
+        raise Hold('it calls or subscribes to another app: a person reviews it')
+    if events.has_nats(work) or release.publishes or settings.allocations.events_key or (folder / events.SECRET_FILE).exists():
+        check_events_key(work, app, settings)
 
 
 def eligible(pr: dict, sha: str, repo: str) -> tuple[str, str]:
@@ -244,16 +165,13 @@ def commit(runner: Runner, work: Path, base: str, sha: str, number: int, pr: dic
 
 
 def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
-          sleep: Callable[[float], None] = time.sleep, opener: declaration.Opener = declaration._open) -> None:
+          sleep: Callable[[float], None] = time.sleep) -> None:
     pr_path = f'repos/{repo}/pulls/{number}'
     pr = runner.json(['gh', 'api', pr_path])
     action, app = eligible(pr, sha, repo)
     validated(runner, sha, sleep)
     files = runner.output(['gh', 'pr', 'diff', str(number), '--repo', repo, '--name-only']).splitlines()
-    if action == 'promote':
-        merge_promotion(runner, root, number, sha, repo, pr, app, files)
-    else:
-        merge_new_app(runner, root, number, sha, repo, pr, app, files, opener)
+    merge_records(runner, root, number, sha, repo, pr, action, app, files)
     runner.run(['git', 'push', 'origin', '--delete', pr['head']['ref']], cwd=root, mutating=True, check=False)
 
 
@@ -272,12 +190,14 @@ def staged(runner: Runner, work: Path, app: str, release: Release) -> bool:
     return False
 
 
-def merge_promotion(runner: Runner, root: Path, number: int, sha: str, repo: str, pr: dict, app: str,
-                    files: list[str]) -> None:
-    """Merge the PR's records onto the newest main, render, check, apply promotion's rule and push; a push
+def merge_records(runner: Runner, root: Path, number: int, sha: str, repo: str, pr: dict, action: str,
+                  app: str, files: list[str]) -> None:
+    """Merge the PR's records onto the newest main, apply the action's rule, render, check and push; a push
     that loses to another writer is merged again on the newer main (ATTEMPTS times)."""
-    if other := sorted(path for path in files if not promotion.records(app, path)):
-        raise Hold(f"it changes {', '.join(other[:5])}, which are not {app}'s promotion records: a person reviews it")
+    kind = 'promotion' if action == 'promote' else 'new-app'
+    owns = promotion.records if action == 'promote' else new_app_records
+    if other := sorted(path for path in files if not owns(app, path)):
+        raise Hold(f"it changes {', '.join(other[:5])}, which are not {app}'s {kind} records: a person reviews it")
     for attempt in range(1, ATTEMPTS + 1):
         base = fetch(runner, root, number, sha)
         with tempfile.TemporaryDirectory(prefix='auto-merge-') as tmp:
@@ -285,21 +205,27 @@ def merge_promotion(runner: Runner, root: Path, number: int, sha: str, repo: str
             runner.run(['git', 'worktree', 'add', '--detach', str(work), base], cwd=root)
             try:
                 try:
-                    before = promotion.release_of(work, app, 'prod')
+                    before = promotion.release_of(work, app, 'prod') if action == 'promote' else None
+                    if action == 'new' and ((work / 'apps' / app).exists() or any(
+                            instance_unit_file(work, app, env).exists() for env in ('staging', 'prod'))):
+                        raise Hold('new-app PR overwrites an existing app or instance')
                 except EditError as error:
                     raise Hold(f"main's production release record cannot be read: {error}") from None
                 merged = runner.run([*GIT, 'merge', '--no-ff', '--no-commit', sha], cwd=work, check=False)
                 if merged.returncode:
                     conflicts = runner.output(['git', 'diff', '--name-only', '--diff-filter=U'], cwd=work)
                     if conflicts.strip():
-                        raise Hold('it conflicts with main: close it and promote again from the console')
+                        raise Hold(f'it conflicts with main: close it and {"promote" if action == "promote" else "create it"} again from the console')
                     raise CommandError(merged.args, runner.redact(merged.stderr or merged.stdout), merged.returncode)
-                try:
-                    after = promotion.release_of(work, app, 'prod')
-                except EditError as error:
-                    raise Hold(str(error)) from None
-                if reason := promotion.held(app, files, before, after, lambda release, work=work: staged(runner, work, app, release)):
-                    raise Hold(f'it {reason}: a person reviews it')
+                if action == 'new':
+                    check_new_app(work, app)
+                else:
+                    try:
+                        after = promotion.release_of(work, app, 'prod')
+                    except EditError as error:
+                        raise Hold(str(error)) from None
+                    if reason := promotion.held(app, files, before, after, lambda release, work=work: staged(runner, work, app, release)):
+                        raise Hold(f'it {reason}: a person reviews it')
                 runner.run([sys.executable, '-m', 'swhurl', 'app-sync'], cwd=work,
                            env={'PYTHONPATH': str(work / 'tools'), 'PYTHONDONTWRITEBYTECODE': '1'})
                 checked(runner, work)
@@ -314,30 +240,6 @@ def merge_promotion(runner: Runner, root: Path, number: int, sha: str, repo: str
             return
         print(f'#{number}: main moved before the push (attempt {attempt} of {ATTEMPTS}); merging again', flush=True)
     raise RuntimeError(f'main kept moving: {ATTEMPTS} pushes lost; the next run tries again')
-
-
-def merge_new_app(runner: Runner, root: Path, number: int, sha: str, repo: str, pr: dict, app: str,
-                  files: list[str], opener: declaration.Opener) -> None:
-    base_sha = fetch(runner, root, number, sha)
-    with tempfile.TemporaryDirectory(prefix='auto-merge-') as tmp:
-        base, head, work = Path(tmp) / 'base', Path(tmp) / 'candidate', Path(tmp) / 'work'
-        try:
-            for path, revision in ((base, base_sha), (head, sha), (work, base_sha)):
-                runner.run(['git', 'worktree', 'add', '--detach', str(path), revision], cwd=root)
-            replay_new_app(base, head, work, app, pr.get('body') or '', files, opener)
-            scope(base, head, work, files, app, 'staging')
-            checked(runner, work)
-            # Recheck the human's hold and the exact PR head after the potentially long validation.
-            eligible(runner.json(['gh', 'api', f'repos/{repo}/pulls/{number}']), sha, repo)
-            current = runner.output(['git', 'ls-remote', 'origin', 'refs/heads/main'], cwd=root).split()[0]
-            if current != base_sha:
-                raise Skip('main moved during validation; the next run replays it on the new base')
-            # Fast-forward rejects a concurrent main push (the next run replays again). No force push.
-            made = commit(runner, work, base_sha, sha, number, pr)
-            runner.run(['git', 'push', 'origin', f'{made}:refs/heads/main'], cwd=work, mutating=True)
-        finally:
-            for path in (work, head, base):
-                runner.run(['git', 'worktree', 'remove', '--force', str(path)], cwd=root, check=False)
 
 
 def refuse(runner: Runner, repo: str, number: int, reason: str) -> None:

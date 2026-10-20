@@ -152,7 +152,7 @@ Scale, schedule, who can reach it, connect, disconnect, reach a host outside and
 | Staging's exposure, host or issuer | never: it changes who can reach it |
 | `exceptions` or `allocations` | never |
 
-A held instance change is merged with GitHub's Merge button and rendered by the [Render workflow](../.github/workflows/render.yml), as for a promotion. Two changes to the same instance conflict in Git; close the second and make it again.
+On the app page, **Allow callers** (web apps only) adds to the instance's `allows`, and each allowed caller has a **Remove** button; a call recorded in Git that renders nothing yet is shown in the connections table as waiting for the other app to allow it, read from the instance's `instance.yaml` on `main`. A held instance change is merged with GitHub's Merge button and rendered by the [Render workflow](../.github/workflows/render.yml), as for a promotion. Two changes to the same instance conflict in Git; close the second and make it again.
 
 ### The gate
 

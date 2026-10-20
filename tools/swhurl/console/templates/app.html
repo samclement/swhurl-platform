@@ -74,17 +74,28 @@
   </div>
 </section>
 
-<section class="card" id="connect" style="--acts: {{ 2 if c.offers else 3 }}; --pitch: 11.5rem">
+<section class="card" id="connect" style="--acts: {{ 3 if c.address else 2 }}; --pitch: 11.5rem">
   <div class="card-head">
     <h2>Connect</h2>
     <p class="muted">How other apps reach it, and what it reaches, in {{ i.env }}. Calls, subscriptions and hosts outside the cluster are granted here, not in the app's repository.</p>
-    <details class="act" name="app-form" style="--slot: {{ 1 if c.offers else 2 }}; --wide: 11rem">
+    {% if c.address %}
+    <details class="act" name="app-form" style="--slot: 1; --wide: 11rem">
+      <summary class="button">{{ st.icon('plus') }} Allow callers</summary>
+      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/allow">
+        <fieldset>
+          {{ ui.text_field('allow_add', 'App or team', name='add', placeholder='team:' ~ (team or 'demo'), hint='An app name, or team:<team> for every app of that team (its own team too: nothing is implicit); several comma-separated. Allowed in ' ~ i.env ~ ' only. An app that calls ' ~ i.app ~ ' is connected once it is allowed.') }}
+        </fieldset>
+        {{ ui.submit('Open allow PR', 'It changes this instance only; granting access waits for you to merge it on GitHub.') }}
+      </form>
+    </details>
+    {% endif %}
+    <details class="act" name="app-form" style="--slot: {{ 2 if c.address else 1 }}; --wide: 11rem">
       <summary class="button">{{ st.icon('plus') }} Reach a host outside</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/egress">
         <fieldset>
           {{ ui.text_field('egress_hosts', 'Host', name='hosts', placeholder='api.stripe.com', hint='A host name, with :port when not 443; *.example.com is any name under example.com; several comma-separated. Granted in ' ~ i.env ~ ' only' ~ (': a promotion never grants it in production.' if i.env == 'staging' else '.')) }}
         </fieldset>
-        {{ ui.submit('Open egress PR', 'It changes this instance and the egress proxy; you review and merge it on GitHub.') }}
+        {{ ui.submit('Open egress PR', 'It changes this instance only; granting a host waits for you to merge it on GitHub.') }}
       </form>
     </details>
     <details class="act" name="app-form" style="--slot: 0; --wide: 11rem">
@@ -93,15 +104,20 @@
         <div class="rows">
           {{ links.choices(connectable[0], connectable[1], [], [], i.env, who=i.app, problem=connectable[2]) }}
         </div>
-        {{ ui.submit('Open connection PR', 'It changes this instance and each app chosen; you review and merge it on GitHub.') }}
+        {{ ui.submit('Open connection PR', 'It changes this instance only and merges itself; a call connects once the app called allows it.') }}
       </form>
     </details>
   </div>
   <div class="card-body">
     <dl class="plain">
       <dt>In the cluster</dt>
-      <dd>{% if c.address %}<code>{{ c.address }}</code> <span class="muted">for apps that declare the call</span>{% else %}<span class="muted">none: a worker cannot be called</span>{% endif %}</dd>
+      <dd>{% if c.address %}<code>{{ c.address }}</code> <span class="muted">for apps it allows that call it</span>{% else %}<span class="muted">none: a worker cannot be called</span>{% endif %}</dd>
       {% if c.offers %}<dt>Describes itself</dt><dd>Its API and events are read from <a href="https://github.com/{{ owner }}/{{ i.app }}/tree/{{ c.offers }}">its repository at <code>{{ c.offers }}</code></a>, the commit of the image it runs. <span class="muted">To publish a new event, add it to <code>asyncapi.yaml</code> there and push.</span></dd>{% endif %}
+      {% if c.address and allows is not none %}<dt>Allowed callers</dt>
+      <dd>{% for name in allows %}<span class="pill">{{ name }}</span>
+        <form class="inline" method="post" action="/apps/{{ i.app }}/{{ i.env }}/allow" data-confirm="Open a pull request so that {{ name }} may no longer call {{ i.app }}/{{ i.env }}? It merges itself." data-confirm-label="Open removal PR">
+          <input type="hidden" name="remove" value="{{ name }}"><button {{ 'disabled' if not github }} title="Open a pull request removing this grant">Remove</button></form>
+        {% else %}<span class="muted">nobody: no app may call it yet (Allow callers)</span>{% endfor %}</dd>{% endif %}
       {% if c.api %}<dt>API description</dt><dd>{% if c.api.startswith('https://') %}<a href="{{ c.api }}">{{ c.api }}</a>{% else %}<code>{{ c.api }}</code>{% endif %}</dd>{% endif %}
     </dl>
     {% if c.rows %}{{ links.table(c, i.app, i.env, remove=true) }}
@@ -109,8 +125,9 @@
     {% if c.address %}
     <details class="disclose help" id="how-to-call">
       <summary>{{ st.icon('info') }} <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>
-      <p class="muted">A call is granted on the platform. When you create your app, tick {{ i.app }} under <strong>Connections</strong> on the <a href="/new">New app</a> form; afterwards, your app page's <strong>Connect to an app</strong>, or:</p>
-      <pre><code>make app-calls APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add {{ i.app }}"</code></pre>
+      <p class="muted">A call needs both sides: your app calls {{ i.app }}, and {{ i.app }} allows your app or its team (<strong>Allow callers</strong> above). Tick {{ i.app }} under <strong>Connections</strong> on the <a href="/new">New app</a> form, or afterwards your app page's <strong>Connect to an app</strong>, or:</p>
+      <pre><code>make app-allows APP={{ i.app }} ENV={{ i.env }} ARGS="--add &lt;your app&gt;"
+make app-calls APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add {{ i.app }}"</code></pre>
       <p class="muted">Then, in your code (the stack templates' helper):</p>
       <pre><code>service("{{ i.app }}").fetch("/")        // TypeScript
 platform.call("{{ i.app }}", "/")        // Kotlin</code></pre>

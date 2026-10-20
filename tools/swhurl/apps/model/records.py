@@ -18,6 +18,9 @@ EXPOSURES = ('private', 'authenticated-web', 'public')
 DATABASES = ('sqlite',)
 NAME_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
 SUBSCRIPTION_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?\.[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
+TEAM_GRANT = 'team:'
+ALLOW_RE = re.compile(r'^(team:)?[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
+"""An ``allows`` entry: an app's name, or ``team:<team>`` for every app of that team (no wildcard)."""
 
 
 class RecordError(ValueError):
@@ -212,6 +215,7 @@ class Settings:
     host: str = ''  # '' is the platform's address for a signed-in app
     issuer: str = ''  # '' is the platform's certificate issuer
     calls: tuple[str, ...] = ()
+    allows: tuple[str, ...] = ()  # who may call it: <app> or team:<team>, this environment only
     subscriptions: tuple[str, ...] = ()  # <app>.<event>
     egress: tuple[str, ...] = ()  # host:port grants
     replicas: int | None = None
@@ -220,8 +224,8 @@ class Settings:
     exceptions: str = ''  # reviewed app-policy exceptions: '<rule>=<reason>', comma-separated (docs/apps.md#the-app-policy)
     allocations: Allocations = field(default_factory=Allocations)
 
-    FIELDS = ('exposure', 'host', 'issuer', 'calls', 'subscriptions', 'egress', 'replicas', 'capacity', 'schedule',
-              'exceptions', 'allocations')
+    FIELDS = ('exposure', 'host', 'issuer', 'calls', 'allows', 'subscriptions', 'egress', 'replicas', 'capacity',
+              'schedule', 'exceptions', 'allocations')
 
     @classmethod
     def parse(cls, doc: object, where: str = 'instance.yaml') -> Settings:
@@ -229,14 +233,14 @@ class Settings:
         _version(doc, where)
         return cls(_choice(_text(doc, 'exposure', where, 'private'), EXPOSURES, 'exposure', where),
                    _text(doc, 'host', where), _text(doc, 'issuer', where), _texts(doc, 'calls', where, NAME_RE),
-                   _texts(doc, 'subscriptions', where, SUBSCRIPTION_RE), _texts(doc, 'egress', where),
+                   _texts(doc, 'allows', where, ALLOW_RE), _texts(doc, 'subscriptions', where, SUBSCRIPTION_RE), _texts(doc, 'egress', where),
                    _number(doc, 'replicas', where), Resources.parse(doc.get('capacity', {}), f'{where}: capacity'),
                    _text(doc, 'schedule', where), _text(doc, 'exceptions', where), Allocations.parse(doc.get('allocations', {}), f'{where}: allocations'))
 
     def document(self) -> dict:
         return {'version': VERSION, **_compact({
             'exposure': self.exposure, 'host': self.host, 'issuer': self.issuer, 'calls': list(self.calls),
-            'subscriptions': list(self.subscriptions), 'egress': list(self.egress), 'replicas': self.replicas,
+            'allows': list(self.allows), 'subscriptions': list(self.subscriptions), 'egress': list(self.egress), 'replicas': self.replicas,
             'capacity': self.capacity.document(), 'schedule': self.schedule, 'exceptions': self.exceptions,
             'allocations': self.allocations.document()})}
 

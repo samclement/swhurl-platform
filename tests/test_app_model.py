@@ -39,9 +39,11 @@ class RecordTests(unittest.TestCase):
         release = web(stack='typescript', telemetry=True, resources=Resources('100m', '192Mi', '384Mi'), database='sqlite',
                       secrets=('API_TOKEN',), description='Records orders', api_path='/openapi.json',
                       publishes=('created',), offers='abcdef0')
-        settings = Settings('public', 'orders.example.com', 'letsencrypt-staging', ('inventory',), ('shop.visited',),
-                            ('api.example.com:443',), 2, Resources(memory='256Mi'), '', 'no-escalation=needs raw sockets',
-                            Allocations(30101, 'UDFZ', Storage('1Gi', 'local-path-retain')))
+        settings = Settings(exposure='public', host='orders.example.com', issuer='letsencrypt-staging', calls=('inventory',),
+                            allows=('team:payments', 'reporting'), subscriptions=('shop.visited',),
+                            egress=('api.example.com:443',), replicas=2, capacity=Resources(memory='256Mi'),
+                            exceptions='no-escalation=needs raw sockets',
+                            allocations=Allocations(30101, 'UDFZ', Storage('1Gi', 'local-path-retain')))
         app = App('payments', 'errors=none')
         self.assertEqual(Release.parse(release.document()), release)
         self.assertEqual(Settings.parse(settings.document()), settings)
@@ -65,6 +67,9 @@ class RecordTests(unittest.TestCase):
                 Release.parse({**base, **change})
         with self.assertRaisesRegex(RecordError, 'subscriptions: not allowed: shop'):
             Settings.parse({'version': 1, 'subscriptions': ['shop']})
+        for entry in ('*', 'team:*', 'team:', 'group:demo', 'Team:demo'):
+            with self.subTest(allows=entry), self.assertRaisesRegex(RecordError, 'allows: not allowed'):
+                Settings.parse({'version': 1, 'allows': [entry]})
 
 
 class RenderTests(unittest.TestCase):

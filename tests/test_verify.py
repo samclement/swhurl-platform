@@ -12,12 +12,12 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-import yaml
 from fakecluster import CONSOLE_TAG, KEY, TOKEN, b64, fresh_backup, healthy
 
 from swhurl import ROOT, clickstack, dashboards, images, platform, recovery, validate, verify
 from swhurl.apps import calling, channels, contract
 from swhurl.apps import checks as app_checks
+from swhurl.apps.model import store
 from swhurl.notifications import checks as notification_checks
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
@@ -221,7 +221,10 @@ class ConsoleTokenTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root)
         (root / 'apps/w/staging').mkdir(parents=True)
-        (root / 'apps/w/staging/helmrelease.yaml').write_text('')
+        source = ROOT / 'tests/fixtures/instance/apps/hello'
+        shutil.copy(source / 'app.yaml', root / 'apps/w/app.yaml')
+        for name in ('release.yaml', 'instance.yaml'):
+            shutil.copy(source / 'staging' / name, root / 'apps/w/staging' / name)
 
         def isolation(**overrides):
             report = Report(io.StringIO())
@@ -308,8 +311,10 @@ class ConsoleTokenTests(unittest.TestCase):
     def test_a_team_that_owns_apps_and_has_no_channel_is_named(self):
         _, report, text = run(healthy())
         owned = {}
-        for path in (ROOT / 'apps').glob('*/*/namespace.yaml'):
-            owned.setdefault(yaml.safe_load(path.read_text())['metadata']['labels'][contract.TEAM], set()).add(path.parent.parent.name)
+        world, errors = store.world(ROOT)
+        self.assertEqual(errors, [])
+        for each, entry in world.items():
+            owned.setdefault(entry.app.team, set()).add(each.app)
         routes = channels.team_channels(ROOT)
         for team, apps in owned.items():
             line = (f'[WARN] team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '

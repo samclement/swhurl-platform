@@ -19,9 +19,7 @@ import sys
 from pathlib import Path
 
 from swhurl import platform, yamlio
-from swhurl.apps.contract import (
-    IMAGE_AUTOMATION_FILE,
-)
+from swhurl.apps.model import store, workload
 from swhurl.run import CommandError, Runner
 
 ROOT = platform.ROOT
@@ -94,18 +92,12 @@ def ensure(runner: Runner, repository: str, token: str, host: str) -> str:
 
 
 def auto_deploy_repositories(root: Path = ROOT) -> dict[str, str]:
-    """``app: OWNER/REPO`` for each app with automatic deploys, from the image its ImageRepository scans.
-
-    The app's workflow publishes ``ghcr.io/OWNER/REPO`` from the repository of the same name, and
-    GitHub sends a package's events to the repository it is linked to.
-    """
-    found = {}
-    for path in sorted((root / 'apps').glob(f'*/*/{IMAGE_AUTOMATION_FILE}')):
-        for doc in yamlio.load_all(path.read_text()):
-            image = ((doc or {}).get('spec') or {}).get('image', '')
-            if (doc or {}).get('kind') == 'ImageRepository' and image.startswith(REGISTRY):
-                found[path.parts[-3]] = image.removeprefix(REGISTRY)
-    return found
+    """``app: OWNER/REPO`` for each platform app's staging Release (automatic deploys)."""
+    world, errors = store.world(root)
+    if errors:
+        raise HookError('; '.join(errors))
+    return {each.app: entry.release.image.repository.removeprefix(REGISTRY) for each, entry in world.items()
+            if each.env == 'staging' and entry.release.image.repository == workload.platform_image(each.app)}
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
@@ -115,11 +107,12 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     runner = runner or Runner.from_environment(cwd=ROOT)
     failed = 0
     try:
+        repositories = auto_deploy_repositories()
         token, host = read_token(runner), webhook_host()
     except HookError as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 1
-    for app, repository in auto_deploy_repositories().items():
+    for app, repository in repositories.items():
         try:
             state = ensure(runner, repository, token, host)
         except CommandError as error:

@@ -31,24 +31,25 @@ from pathlib import Path
 
 from swhurl import ROOT, app_alerts, platform
 from swhurl.apps import (
+    channels,
     declaration,
     egress,
     events,
-    helmrelease,
     images,
     offers,
     ops,
     promotion,
 )
 from swhurl.apps.contract import (
+    AUTO_DEPLOY_TAG_PATTERN,
     EXPOSURES,
-    IMAGE_AUTOMATION_FILE,
     JOB_SCHEDULE,
     JOB_TIME_ZONE,
     RETAINED_STORAGE_CLASS,
     SECRET_FILE,
     app_secret,
     default_host,
+    image_policy_name,
     in_cookie_domain,
     over_quota,
     quantity,
@@ -56,14 +57,6 @@ from swhurl.apps.contract import (
     secret_key_problem,
     stored_secrets,
     teams,
-)
-from swhurl.apps.derive import (
-    callers_of,
-    instance_dir,
-    instances_in,
-    subscribers_of,
-    sync,
-    sync_env,
 )
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import sync as model_sync
@@ -85,6 +78,7 @@ from swhurl.apps.release import (
     describe_offers,
     image_declaration,
     image_source,
+    instance_dir,
     new_nats_key,
     offer_files,
     offered,
@@ -94,7 +88,6 @@ from swhurl.apps.release import (
 from swhurl.apps.yaml_file import EditError, read
 from swhurl.run import CommandError, Runner
 
-PRUNE_DISABLED = 'kustomize.toolkit.fluxcd.io/prune'
 CPU_RE = re.compile(r'^\d+(\.\d+)?m?$')
 MEMORY_RE = re.compile(r'^\d+(Ki|Mi|Gi)$')
 MAX_REPLICAS = 10
@@ -193,9 +186,9 @@ def set_egress(root: Path, app: str, env: str, *, add: list[str] | None = None, 
     if problems:
         raise EditError('; '.join(problems))
     instance = instance_dir(root, app, env)
-    if egress.proxy_file(root) is None:
+    world, platform = model_sync.read(root)
+    if not platform.egress:
         raise EditError(f'{egress.PROXY_FILE} is missing: this tree has no egress proxy')
-    world, _ = model_sync.read(root)
     now = changed_list('hosts', list(world[Instance(app, env)].settings.egress), None, add, remove)
     within = egress.covered(now)
     if within:
@@ -227,8 +220,10 @@ def set_events(root: Path, app: str, env: str, *, subscribe: list[str] | None = 
                runner: Runner | None = None) -> Path:
     """Grant the ``<app>.<event>`` pairs ``app/env`` receives: replace the list, or add/remove names.
     Publications belong to the image's AsyncAPI document, never to this command."""
-    now = helmrelease.variables(read(instance_dir(root, app, env) / 'helmrelease.yaml'))
-    subscribe = changed_list('subscribe', ['.'.join(pair) for pair in events.subscribed(now)], subscribe,
+    instance, each = instance_dir(root, app, env), Instance(app, env)
+    world, _ = model_sync.read(root)
+    entry = world[each]
+    subscribe = changed_list('subscribe', list(entry.settings.subscriptions), subscribe,
                              add_subscribe or [], remove_subscribe or [])
     if subscribe is None:
         raise EditError('give --subscribe (an empty value clears it), --add-subscribe or --remove-subscribe; '
@@ -237,9 +232,6 @@ def set_events(root: Path, app: str, env: str, *, subscribe: list[str] | None = 
     if bad or len(set(subscribe)) != len(subscribe):
         raise EditError('subscriptions are <app>.<event> (orders.created), each once'
                         + (f': {", ".join(bad)}' if bad else ''))
-    instance, each = instance_dir(root, app, env), Instance(app, env)
-    world, _ = model_sync.read(root)
-    entry = world[each]
     subscribed = tuple(subscribe)
     created = ''
     if (entry.release.publishes or subscribed) and not events_keyed(entry):
@@ -255,16 +247,21 @@ def set_events(root: Path, app: str, env: str, *, subscribe: list[str] | None = 
         if created:
             (instance / events.SECRET_FILE).unlink(missing_ok=True)
         raise
-    now = helmrelease.variables(read(instance / 'helmrelease.yaml'))
-    print(f'[OK] {app}/{env} publishes: {", ".join(events.published(now)) or "nothing"}; '
-          f'subscribes to: {", ".join(".".join(pair) for pair in events.subscribed(now)) or "nothing"}')
+    print(f'[OK] {app}/{env} publishes: {", ".join(entry.release.publishes) or "nothing"}; '
+          f'subscribes to: {", ".join(subscribed) or "nothing"}')
     return instance
 
 
 def newest_image(root: Path, app: str, *, opener: offers.Opener = offers._open) -> images.Image:
     """The image ``app``'s staging ImagePolicy picks from the registry now."""
+    instance_dir(root, app, 'staging')
+    world, _ = model_sync.read(root)
+    image = world[Instance(app, 'staging')].release.image
+    if image.repository != workload.platform_image(app):
+        raise EditError(f'{app}/staging does not follow platform images')
     try:
-        return images.newest(images.policy(instance_dir(root, app, 'staging') / IMAGE_AUTOMATION_FILE), opener=opener)
+        return images.newest(images.Policy(image_policy_name(app), image.repository.removeprefix('ghcr.io/'),
+                                           re.compile(AUTO_DEPLOY_TAG_PATTERN), 'run'), opener=opener)
     except (images.ImageError, OSError) as error:
         raise EditError(str(error)) from None
 
@@ -501,13 +498,12 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
     from staging's (promotion.first_production)."""
     if (source, target) != ('staging', 'prod'):
         raise EditError('promotion must differ between environments and always goes staging → prod')
-    src, dst = promotion.read(root, app)
-    decision = promotion.decide(src, dst)
+    world, platform = model_sync.read(root)
+    decision = promotion.select(root, world, app)
     if expect_image is not None and decision.image != expect_image:
         raise EditError(f'{app}/staging image changed since it was reviewed; refresh staging and review it again')
     if decision.outcome == 'same':
         raise EditError(f'{app}/prod already runs this digest; same image in both')
-    world, platform = model_sync.read(root)
     staging, production = world[Instance(app, 'staging')], world.get(Instance(app, 'prod'))
     each, folder = Instance(app, 'prod'), instance_folder(root, app, 'prod')
     if decision.outcome == 'update':
@@ -669,16 +665,17 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
 
 def remove(root: Path, app: str, env: str) -> None:
     instance = instance_dir(root, app, env)
-    callers = callers_of(root, app, env)
+    world, _ = model_sync.read(root)
+    others = [(each.app, entry) for each, entry in world.items() if each.env == env and each.app != app]
+    callers = sorted(name for name, entry in others if app in entry.settings.calls)
     if callers:
         raise EditError(f'{app}/{env} is called by {", ".join(callers)}: remove those calls first '
                         f'(make app-calls APP=<caller> ENV={env} ARGS="--remove {app}")')
-    subscribers = subscribers_of(root, app, env)
+    subscribers = sorted(name for name, entry in others if any(publisher == app for publisher, _ in entry.settings.subscribed))
     if subscribers:
         raise EditError(f'{app}/{env} publishes events that {", ".join(subscribers)} subscribe to: '
                         f'remove those subscriptions first (make app-events APP=<subscriber> ENV={env})')
-    namespace_file = instance / 'namespace.yaml'
-    keeps_data = namespace_file.exists() and PRUNE_DISABLED in namespace_file.read_text()
+    keeps_data = world[Instance(app, env)].settings.allocations.database is not None
     unit_file = instance_unit_file(root, app, env)
     shutil.rmtree(instance)
     print(f'[OK] removed {instance.relative_to(root)}/')
@@ -698,7 +695,7 @@ def remove(root: Path, app: str, env: str) -> None:
         registry.write_text(''.join(kept))
         print(f'[OK] unregistered {unit_file.name} in clusters/home/kustomization.yaml')
     unwatch_namespace(root, Instance(app, env).namespace)
-    for path in sync_env(root, env):  # the apps it called no longer admit it
+    for path in model_sync.sync(root):  # the apps it called no longer admit it
         print(f'[OK] rewrote {path.relative_to(root)}')
     if keeps_data:
         print(f'[WARN] {app}-{env} has a retained volume: Flux keeps its namespace and claim after removal. '
@@ -755,8 +752,8 @@ def main_promote(argv: list[str] | None = None, runner: Runner | None = None) ->
 
     def change():
         root = args.root.resolve()
-        source, target = promotion.read(root, args.app)
-        decision = promotion.decide(source, target)
+        world, _ = model_sync.read(root)
+        decision = promotion.select(root, world, args.app)
         if args.expect_image and args.expect_image != decision.image:
             raise EditError('staging image changed since it was reviewed; refresh and review it again')
         if decision.outcome == 'same':
@@ -912,9 +909,16 @@ def main_offers(argv: list[str] | None = None, opener: offers.Opener = offers._o
         # A change is checked against the app policy: run() takes the instance's folder, not set_offers' answer.
         return run(lambda: set_offers(root, args.app, args.env, token=token, opener=opener) and instance_dir(root, args.app, args.env), True)
     failed = 0
-    for app in instances_in(root, args.all):
-        image = helmrelease.image(read(instance_folder(root, app, args.all) / 'helmrelease.yaml'))
-        if not str(image.get('repository', '')).startswith('ghcr.io/') or not offers.IMAGE_COMMIT.match(str(image.get('tag', ''))):
+    try:
+        world, _ = model_sync.read(root)
+    except EditError as error:
+        print(f'[ERROR] {error}', file=sys.stderr)
+        return 2
+    for each, entry in world.items():
+        if each.env != args.all:
+            continue
+        app, image = each.app, entry.release.image
+        if not image.repository.startswith('ghcr.io/') or not offers.IMAGE_COMMIT.match(image.tag):
             continue  # not built from an app repository (a fixture, a pinned third-party image)
         try:
             set_offers(root, app, args.all, token=token, opener=opener)
@@ -936,8 +940,13 @@ def main_deploy(argv: list[str] | None = None, opener: offers.Opener = offers._o
     if args.app:
         return run(lambda: deploy_staging(root, args.app, token=token, opener=opener, refresh=args.refresh)
                    and instance_dir(root, args.app, 'staging'), True)
-    deployed = [app for app in instances_in(root, 'staging')  # built from an app repository: not a fixture or a pinned image
-                if (instance_folder(root, app, 'staging') / IMAGE_AUTOMATION_FILE).is_file()]
+    try:
+        world, _ = model_sync.read(root)
+    except EditError as error:
+        print(f'[ERROR] {error}', file=sys.stderr)
+        return 2
+    deployed = [each.app for each, entry in world.items() if each.env == 'staging'
+                and entry.release.image.repository == workload.platform_image(each.app)]
 
     def newest(app: str) -> images.Image | EditError:
         try:
@@ -987,6 +996,18 @@ def nats_keys(root: Path, *, runner: Runner | None = None) -> list[Instance]:
     for each in found:
         change_release(root, each, world[each], {}, runner=runner, keyed=True)
     return found
+
+
+def sync(root: Path) -> None:
+    changed = model_sync.sync(root)
+    routes = channels.routes_file(root)
+    if routes and (not routes[0].is_file() or routes[0].read_text() != routes[1]):
+        routes[0].write_text(routes[1])
+        changed.append(routes[0])
+    for path in changed:
+        print(f'[OK] rewrote {path.relative_to(root)}')
+    if not changed:
+        print('[OK] every instance already has what the platform derives')
 
 
 def main_sync(argv: list[str] | None = None) -> int:

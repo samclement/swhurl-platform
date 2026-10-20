@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import checks, derive, edit, egress, helmrelease, promotion
+from swhurl.apps import checks, edit, egress, helmrelease, promotion
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import sync as model_sync
 from swhurl.apps.yaml_file import EditError
@@ -31,7 +31,7 @@ class EgressTests(unittest.TestCase):
 
     def sync(self):
         with redirect_stdout(io.StringIO()):
-            derive.sync(self.root)
+            edit.sync(self.root)
 
     def env(self, env):
         return helmrelease.variables(yaml.safe_load((self.root / f'apps/hello/{env}/helmrelease.yaml').read_text()))
@@ -104,10 +104,10 @@ class EgressTests(unittest.TestCase):
 
     def test_malformed_or_overlapping_grants_are_named(self):
         self.sync()
-        release = self.root / 'apps/hello/staging/helmrelease.yaml'
-        document = yaml.safe_load(release.read_text())
-        document['metadata'].setdefault('annotations', {})[egress.ANNOTATION] = 'example.com:443,*.example.com:443,x:1,example.com:443'
-        release.write_text(yaml.safe_dump(document))
+        settings = self.root / 'apps/hello/staging/instance.yaml'
+        document = yaml.safe_load(settings.read_text())
+        document['egress'] = ['example.com:443', '*.example.com:443', 'x:1', 'example.com:443']
+        settings.write_text(yaml.safe_dump(document))
         found = egress.problems(self.root)
         for problem in ('egress-grants: hello/staging: x:1: a grant is a host name',
                         'egress-grants: hello/staging grants example.com:443 twice',
@@ -126,11 +126,13 @@ class EgressTests(unittest.TestCase):
 
     def test_duplicate_or_missing_ports_are_named(self):
         self.sync()
-        release = self.root / 'apps/hello/prod/helmrelease.yaml'
-        release.write_text(release.read_text().replace(':30102', ':30101'))
-        self.assertIn('egress-ports: port 30101 is in hello/staging, hello/prod; remove HTTPS_PROXY from all but one '
+        release = self.root / 'apps/hello/prod/instance.yaml'
+        release.write_text(release.read_text().replace('egressPort: 30102', 'egressPort: 30101'))
+        self.assertIn('egress-ports: port 30101 is in hello/staging, hello/prod; remove allocations.egressPort from all but one instance.yaml '
                       'and run make app-sync', egress.problems(self.root))
-        release.write_text('\n'.join(line for line in release.read_text().splitlines() if 'HTTPS_PROXY' not in line) + '\n')
+        document = yaml.safe_load(release.read_text())
+        document['allocations'].pop('egressPort')
+        release.write_text(yaml.safe_dump(document))
         self.assertIn('egress-ports: hello/prod has no proxy port; make app-sync gives it one', egress.problems(self.root))
 
     def test_a_first_production_gets_its_own_port_not_stagings(self):

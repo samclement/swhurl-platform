@@ -8,18 +8,20 @@ import unittest
 from pathlib import Path
 
 from swhurl import ROOT, yamlio
-from swhurl.apps import contract, ops, promotion, state
+from swhurl.apps import contract, helmrelease, ops, promotion, state
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated
+from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model.draft import Entry
+from swhurl.apps.model.records import App, Image, Release, Settings
 from swhurl.apps.yaml_file import EditError, YamlFile
 
 DIGEST = 'sha256:' + 'a' * 64
 MANIFESTS = ROOT / 'tests/fixtures/manifests'
 
 
-def release(tag='2-abcdef0', digest=DIGEST):
-    return {'spec': {'values': {'controllers': {'main': {'containers': {'main': {
-        'image': {'repository': 'ghcr.io/example/app', 'tag': tag, 'digest': digest}}}}}}}}
+def release(tag='2-abcdef0', digest=DIGEST, repository='ghcr.io/example/app'):
+    return Entry(App('demo'), Release(Image(repository, tag, digest), 'web', 65532, port=8080), Settings())
 
 
 class PromotionTests(unittest.TestCase):
@@ -27,24 +29,57 @@ class PromotionTests(unittest.TestCase):
         for target, expected, rollback in [(None, 'create', False), (release('1-abcdef0'), 'same', False),
                                           (release('1-abcdef0', 'sha256:' + 'b' * 64), 'update', False),
                                           (release('3-abcdef0', 'sha256:' + 'b' * 64), 'update', True)]:
-            with self.subTest(expected=expected, rollback=rollback):
-                result = promotion.decide(release(), target)
+            with self.subTest(expected=expected, rollback=rollback), tempfile.TemporaryDirectory() as tmp:
+                world = {Instance('example', 'staging'): release()}
+                if target:
+                    world[Instance('example', 'prod')] = target
+                result = promotion.select(Path(tmp), world, 'example')
                 self.assertEqual((result.outcome, result.rollback), (expected, rollback))
 
-    def test_unpinned_and_ambiguous_image_refused(self):
-        for source in (release(digest=''), {'spec': {'values': {'controllers': {}}}}):
-            with self.assertRaises(EditError):
-                promotion.decide(source, None)
+    def test_unpinned_and_wrong_repository_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = {Instance('example', 'staging'): release(digest='')}
+            with self.assertRaisesRegex(EditError, 'no image digest'):
+                promotion.select(Path(tmp), world, 'example')
+            world[Instance('example', 'staging')] = release()
+            world[Instance('example', 'prod')] = release(repository='ghcr.io/other/app')
+            with self.assertRaisesRegex(EditError, 'different image repository'):
+                promotion.select(Path(tmp), world, 'example')
 
     def test_partial_production_is_not_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            shutil.copytree(ROOT / 'tests/fixtures/instance/apps/hello/staging', root / 'apps/hello/staging')
-            source, target = promotion.read(root, 'hello')
-            self.assertEqual(promotion.decide(source, target).outcome, 'create')
+            shutil.copytree(ROOT / 'tests/fixtures/instance/apps/hello', root / 'apps/hello')
+            shutil.rmtree(root / 'apps/hello/prod')
+            world, _ = model_sync.read(root)
+            self.assertEqual(promotion.select(root, world, 'hello').outcome, 'create')
+            unit = root / 'clusters/home/app-hello-prod.yaml'
+            unit.parent.mkdir(parents=True)
+            unit.write_text('partial')
+            with self.assertRaisesRegex(EditError, 'without complete records'):
+                promotion.select(root, world, 'hello')
+            unit.unlink()
             (root / 'apps/hello/prod').mkdir()
-            with self.assertRaises(EditError):
-                promotion.read(root, 'hello')
+            with self.assertRaisesRegex(EditError, 'without complete records'):
+                promotion.select(root, world, 'hello')
+
+    def test_selection_ignores_rendered_images_and_accepts_record_only_production(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shutil.copytree(ROOT / 'tests/fixtures/instance/apps/hello', root / 'apps/hello')
+            for env in ('staging', 'prod'):
+                (root / f'apps/hello/{env}/helmrelease.yaml').write_text('invalid: [')
+            world, _ = model_sync.read(root)
+            self.assertEqual(promotion.select(root, world, 'hello').outcome, 'same')
+            (root / 'apps/hello/prod/helmrelease.yaml').unlink()
+            world, _ = model_sync.read(root)
+            self.assertEqual(promotion.select(root, world, 'hello').outcome, 'same')
+            (root / 'apps/hello/prod/instance.yaml').unlink()
+            with self.assertRaisesRegex(EditError, 'cannot read its records'):
+                model_sync.read(root)
+            (root / 'apps/hello/prod/instance.yaml').write_text('invalid: [')
+            with self.assertRaisesRegex(EditError, 'cannot read its records'):
+                model_sync.read(root)
 
     def test_readiness_and_review_failures(self):
         image = 'ghcr.io/example/app:2-abcdef0@' + DIGEST
@@ -133,7 +168,7 @@ class FirstProductionTests(unittest.TestCase):
                                '--image', 'ghcr.io/example/app:2-abcdef0@' + DIGEST,
                                '--no-auto-deploy', *extra])
         new.generate(args, self.root)
-        return promotion.read(self.root, 'example')[0]
+        return yamlio.load((self.root / 'apps/example/staging/helmrelease.yaml').read_text())
 
     def promote(self, runner=None, **kwargs):
         import io
@@ -162,7 +197,7 @@ class FirstProductionTests(unittest.TestCase):
                 values = source['spec']['values']
                 dst = self.promote()
                 production = YamlFile(dst / 'helmrelease.yaml').data
-                self.assertEqual(promotion.image_of(production), promotion.image_of(source))
+                self.assertEqual(helmrelease.image(production), helmrelease.image(source))
                 self.assertEqual(production['metadata']['namespace'], 'example-prod')
                 expected = json.loads(json.dumps(values['controllers']['main']))
                 expected['containers']['main']['env']['SWHURL_ENV'] = 'prod'  # production's own identity

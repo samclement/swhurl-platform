@@ -10,8 +10,9 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-from swhurl import ROOT, backupset, platform, yamlio
-from swhurl.apps.instance import Instance, instances
+from swhurl import ROOT, backupset, platform
+from swhurl.apps.instance import Instance
+from swhurl.apps.model import store
 from swhurl.backupset import BackupSet
 from swhurl.report import Report
 from swhurl.run import Runner
@@ -30,8 +31,10 @@ def uri(namespace: str, env: Mapping[str, str] | None = None) -> str:
 
 def expected(root: Path = ROOT) -> list[Instance]:
     """The instances whose release declares a SQLite database: each must have backups."""
-    return [each for each in instances(root / 'apps')
-            if (yamlio.load((each.folder(root) / 'release.yaml').read_text()) or {}).get('database') == 'sqlite']
+    world, errors = store.world(root)
+    if errors:
+        raise ValueError('; '.join(errors))
+    return [each for each, entry in world.items() if entry.release.database == 'sqlite']
 
 
 def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
@@ -40,7 +43,11 @@ def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] 
     than BACKUP_MAX_AGE_HOURS (26)."""
     env = os.environ if env is None else env
     report.section('App SQLite backups')
-    databases = expected(root)
+    try:
+        databases = expected(root)
+    except ValueError as error:
+        report.bad(str(error))
+        return
     if not databases:
         report.ok('no app has a SQLite database')
         return

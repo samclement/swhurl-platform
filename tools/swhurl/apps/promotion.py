@@ -11,8 +11,7 @@ from swhurl.apps import contract, ops, state
 from swhurl.apps.instance import NAME_RE, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model.draft import APP_SECRET, Entry, World
 from swhurl.apps.model.records import RELEASE_FILE, Allocations, RecordError, Release, Settings, Storage
-from swhurl.apps.yaml_file import EditError, mapping
-from swhurl.apps.yaml_file import read as read_yaml
+from swhurl.apps.yaml_file import EditError
 from swhurl.yamlio import load
 
 
@@ -24,46 +23,37 @@ class Decision:
     rollback: bool = False
 
 
-def image_of(release: dict) -> dict:
-    values = mapping(mapping(release, 'spec'), 'values')
-    controller = mapping(mapping(values, 'controllers'), 'main')
-    return mapping(mapping(mapping(controller, 'containers'), 'main'), 'image')
+def select(root: Path, world: World, app: str) -> Decision:
+    """Select staging's Release for production; a partial production is never absence.
 
-
-def decide(source: dict, target: dict | None) -> Decision:
-    image = image_of(source)
-    if not image.get('digest'):
+    A merged first promotion with complete records is an existing production even before rendering.
+    ``world`` must have been checked for record errors by the caller.
+    """
+    if not NAME_RE.fullmatch(app):
+        raise EditError('APP must be a DNS label')
+    source = world.get(Instance(app, 'staging'))
+    if source is None:
+        raise EditError(f'no instance {app}/staging')
+    image = source.release.image
+    if not image.digest:
         raise EditError('staging has no image digest; promote only a digest-pinned image')
-    reference = ops.image_reference(image)
+    target = world.get(Instance(app, 'prod'))
     if target is None:
-        return Decision('create', reference)
-    previous = image_of(target)
-    if previous.get('repository') != image.get('repository'):
+        if instance_folder(root, app, 'prod').exists() or instance_unit_file(root, app, 'prod').exists():
+            raise EditError(f'{app}/prod exists without complete records; repair production before promoting')
+        return Decision('create', ops.image_reference(image.document()))
+    previous = target.release.image
+    if previous.repository != image.repository:
         raise EditError('production uses a different image repository; change the repository by hand')
-    if previous.get('digest') == image['digest']:
-        return Decision('same', reference, ops.image_reference(previous))
-    return Decision('update', reference, ops.image_reference(previous), older(image.get('tag', ''), previous.get('tag', '')))
+    if previous.digest == image.digest:
+        return Decision('same', ops.image_reference(image.document()), ops.image_reference(previous.document()))
+    return Decision('update', ops.image_reference(image.document()), ops.image_reference(previous.document()), older(image.tag, previous.tag))
 
 
 def older(tag: str, than: str) -> bool:
     """Whether image ``tag`` was built before ``than``: both ``<run>-<sha>`` tags, with an earlier run."""
     runs = [re.fullmatch(contract.AUTO_DEPLOY_TAG_PATTERN, each) for each in (tag, than)]
     return bool(all(runs) and int(runs[0]['run']) < int(runs[1]['run']))
-
-
-def read(root: Path, app: str) -> tuple[dict, dict | None]:
-    if not NAME_RE.fullmatch(app):
-        raise EditError('APP must be a DNS label')
-    base = root / 'apps' / app
-    source = read_yaml(base / 'staging/helmrelease.yaml')
-    target_dir = base / 'prod'
-    unit = instance_unit_file(root, app, 'prod')
-    if target_dir.exists() or unit.exists():
-        # A partial target is a problem to repair, never evidence that production is missing.
-        target = read_yaml(target_dir / 'helmrelease.yaml')
-    else:
-        target = None
-    return source, target
 
 
 def records(app: str, path: str) -> bool:

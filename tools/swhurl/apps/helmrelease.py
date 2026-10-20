@@ -1,8 +1,8 @@
 """Read an app instance's HelmRelease: the one place that knows where things are in its values.
 
-Every function takes the release as plain data (from Git or the cluster), tolerates a missing
-release or section, and returns the real nested object where one exists, so a caller that must
-change a copy can. Editing files in place, with comments kept, is edit.py's stricter accessors.
+For live cluster observations and validators examining rendered output, not Git semantics (those
+come from apps/model/store.py). Every function takes plain data, tolerates a missing release or
+section, and returns the real nested object where one exists.
 """
 from __future__ import annotations
 

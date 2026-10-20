@@ -15,7 +15,6 @@ from pathlib import Path
 
 from swhurl import yamlio
 from swhurl.apps import declaration, events, nkeys, offers
-from swhurl.apps.derive import instance_dir
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import sync as model_sync
 from swhurl.apps.model.draft import EVENTS_SECRET, Entry
@@ -23,6 +22,17 @@ from swhurl.apps.model.events import keyed as events_keyed
 from swhurl.apps.model.records import Image, Release
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
+
+
+def instance_dir(root: Path, app: str, env: str) -> Path:
+    """An existing instance's input folder, never inferred from rendered output."""
+    each = Instance.named(app, env)
+    if each is None:
+        raise EditError(f'no instance {app}/{env}: APP must be a DNS label and ENV one of staging, prod')
+    path = each.folder(root)
+    if not (path / 'release.yaml').is_file():
+        raise EditError(f'no instance {each} (missing {path.relative_to(root)}/release.yaml)')
+    return path
 
 
 def dump(docs) -> str:

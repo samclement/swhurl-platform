@@ -169,6 +169,19 @@ data:
               subscribe:
                 allow:
                 - _INBOX.staging.swhurl-try-30.>
+          - nkey: UAMZ4WQFANV4QSBMND66ESMQAA6ZVIG244H3TR3HUGHKE7CDHBNSSILG
+            permissions:
+              publish:
+                allow:
+                - $JS.API.INFO
+                - $JS.API.STREAM.INFO.KV_flags-staging
+                - $JS.API.CONSUMER.CREATE.KV_flags-staging.*.$KV.flags-staging.staging.swhurl-try-31.>
+                - $JS.API.CONSUMER.DELETE.KV_flags-staging.*
+                - $JS.API.CONSUMER.INFO.KV_flags-staging.*
+                - staging.swhurl-try-31.>
+              subscribe:
+                allow:
+                - _INBOX.staging.swhurl-try-31.>
           - nkey: UAYLR5I6357MJOSXJRXVBCHEBXJXECPGSJQSCQTFVGWYMFKTS5MLSWUV
             permissions:
               publish:

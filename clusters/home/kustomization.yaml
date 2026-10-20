@@ -20,3 +20,4 @@ resources:
   - app-swhurl-try-30-staging.yaml
   - app-swhurl-try-30-prod.yaml
   - app-swhurl-try-32-staging.yaml
+  - app-swhurl-try-31-staging.yaml

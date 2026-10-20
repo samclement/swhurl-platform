@@ -334,10 +334,9 @@ class EditTests(unittest.TestCase):
         orders.write_text(orders.read_text().replace('SWHURL_ALLOWED_CALLERS: hello', 'SWHURL_ALLOWED_CALLERS: stranger'))
         instances = [self.root / 'apps/hello/staging', self.root / 'apps/orders/staging']
         problems = policy.check_calls(instances)
-        self.assertIn('calls: calls orders, which does not allow it; make app-sync rewrites both sides',
-                      problems[instances[0]])
-        self.assertIn('calls: allows stranger, which does not declare a call to it; make app-sync rewrites both sides',
-                      problems[instances[1]])
+        hint = 'check calls on the caller and allows on the callee in instance.yaml, then run make app-sync'
+        self.assertIn(f'calls: calls orders, which does not allow it; {hint}', problems[instances[0]])
+        self.assertIn(f'calls: allows stranger, which does not declare a call to it; {hint}', problems[instances[1]])
         self.quiet(derive.sync, self.root)
         self.assertEqual(policy.check_calls(instances), {})
 

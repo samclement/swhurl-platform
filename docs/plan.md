@@ -1572,7 +1572,7 @@ Code is grouped by capability, not by layer. Each capability module owns its par
 1. **One writer per field.** Release fields come from the image; Settings fields from the platform. A release requests capabilities; it never grants exposure, callers, subscriptions or destinations.
 2. **Release is trusted.** Only intake writes it, after resolving the digest and source commit and reading the image's `swhurl.yaml` at that commit; CI refuses a `release.yaml` that intake did not write. Production's `release.yaml` must equal one staging has had. Render never calls GitHub or GHCR.
 3. **Generated means generated.** `make check-apps` fails when committed output differs from `render`; `make app-sync` regenerates. Nothing reads grants back from output.
-4. **A change is its request.** A PR is exactly what its operation produces from `main`; the gate proves it by replaying, never by inspecting the diff.
+4. **A change carries its inputs.** A records-only PR changes only the records and input files its operation owns. The gate merges them onto the newest `main`, applies the operation's merge rule, renders with `app-sync`, checks and pushes; it never replays the PR's request (decision B).
 5. **Unavailable is not absent.** A failed read fails the operation; it is never an empty grant set, a missing database or no minimum.
 6. **Allocations persist.** Storage size and class and the egress proxy port are chosen once by an operation and survive every render; a new app never renumbers another's port.
 7. **Capacity is a floor-respecting choice.** Effective resources are the larger of the Settings value and the release's minimum.
@@ -1635,15 +1635,15 @@ An operation is a pure function of a snapshot and a request. Requests are small 
 
 ### The gate: one merge path for every console PR
 
-The gate is one function for every operation, replacing the per-operation checks:
+Decision B's merge path takes records, not a request to replay. New apps, promotions and B4a's instance changes use it; removal, teams and channels still await B4b/B4c below.
 
-1. Read the request from the PR body and the prepared inputs from its files; check their shape (Secret shape without values).
-2. Run `main`'s tooling: replay the request against the newest `main`. A new app's port taken in the meantime is re-chosen here, because allocation belongs to the operation.
-3. Run `check` on the result.
-4. Apply the operation's merge rule to the result. A production release must have run Healthy in staging (`apps/state.py`). A review rule waits for the operator's approval of the PR on GitHub.
-5. Commit the replayed tree to `main` as a merge of the PR head, with a compare-and-swap ref update; GitHub shows the PR merged. A lost race replays again.
+1. Check that the PR changes only the records and input files its action owns (encrypted Secret shape without values where allowed).
+2. Merge the PR head onto the newest `main`. A same-record conflict is held: close the PR and reopen the change from the console.
+3. Apply the action's merge rule to the records before and after the merge. A promotion must use a digest staging has run; a first promotion, rollback or changed held need waits for a person. A held PR loses its `auto-merge` label and gets a comment explaining why.
+4. Render with `make app-sync`, allocating a new app's egress port on this `main`, then run `check-repo` and `check-apps` on the resulting tree.
+5. Commit the rendered tree as a merge of the PR head and push without force; GitHub shows the PR merged. A lost push race repeats the merge, rule, render and checks on the newer `main`.
 
-Because the gate replays rather than inspects, two concurrent creations, a promotion behind a newer `main` and an approved review PR are all the same case. Promotion fingerprints, `after_promotion`, the first-promotion replay and the hold and resume labels go. A PR merged with GitHub's button bypasses the replay; `make check-apps` on `main` still catches output that differs from `render`, and a ruleset requiring the gate is optional hardening.
+Two concurrent creations and a promotion behind a newer `main` use the same merge/render/check/push path, without request replay or fingerprints. A person merges a held records-only PR with GitHub's **Merge** button; the Render workflow then runs `app-sync` and the same checks on the newest `main` and pushes the rendered result (retrying a lost race). Records are not Flux resources: until that render commit, the previous generated resources remain desired. CLI commands keep writing records and their rendered files together.
 
 ### Activity: progress derived from the primitives
 
@@ -2038,7 +2038,7 @@ Each step: list the functions it deletes before writing anything, delete first a
 
 | Step | Work | Deletes (measured today) | Budget | Behaviour |
 | --- | --- | --- | --- | --- |
-| M0 | Fix stated contracts: `AGENTS.md:64` and the `calling.py`, `egress.py` docstrings name `calls`/`allows` as the truth; `policy.py:64` points at `instance.yaml` exceptions; the `calls` rule's fix hint; `check-repo` in `deploy.yml`; `platform-backup` in the architecture units diagram; section 24 rule 4 and "The gate" rewritten for decision B (merge records and render, not replay) | — | docs and one workflow line | none |
+| M0 | Fix stated contracts: `AGENTS.md:64` and the `calling.py`, `egress.py` docstrings name `calls`/`allows` as the truth; `policy.py:64` points at `instance.yaml` exceptions; the `calls` rule's fix hint; `check-repo` in `deploy.yml`; `platform-backup` in the architecture units diagram; section 24 rule 4 and "The gate" rewritten for decision B (merge records and render, not replay) | — | docs, one workflow check line and its pinned flux-schema install step | none |
 | M1 | F1 with B4b: remove's refusal and every reader on the World; refuse removal while any `calls` names the app, granted or not (proposed; operator to confirm) | `derive.py` (86), `users_file` (15), `proxy_file`/`ports`/`grants` (16), `promotion.read`/`decide` (26), most of `helmrelease.py` (66) | −100 to −150 | none, except the waiting-caller refusal |
 | M2 | F2 + F3, finishing B4b/B4c: shared files written whole by `plan`; remove as an operation | `register`, `watch_namespace` (27), `unwatch_namespace` (11), most of `remove` (36), add-only branches of `apply` (29), duplicate paths and regexes | −60 to −100 | none |
 | M3 | F6 and F7 in the console, with B5: branch grammar, encrypted-file rule and promotion as `ACTIONS` entries; one `staged` input; one Progress model; precondition once per job | Most of `Change` (140), `NewApp` (91), `open_pr` (104), half of `console/promotion.py` (224), `stages.py` 366 → ~150, `pull_progress` (34), part of `render_targets` (51) | −500 to −850 | none |

@@ -41,8 +41,9 @@ for an instance of this platform (under apps/; the test fixtures are exempt), fr
 
 across the instances of one environment (source manifests, not rendered):
 
-  calls               every declared call names a web app of the same environment at its real port,
-                      and an app allows exactly the callers that declare it (make app-sync rewrites both)
+  calls               every call in helmrelease.yaml names a web app of the same environment at its
+                      real port, and its allowed callers match those calls; instance.yaml's calls and
+                      allows are the inputs (make app-sync renders connected pairs)
   events              every subscription names an event that an app of the same environment publishes
 
 and, for the whole tree:
@@ -61,9 +62,10 @@ and, for the whole tree:
                       a release may be ahead in staging, but its kind and command agree across
                       environments. Encrypted Secrets are never compared
 
-A reviewed exception goes on the HelmRelease as
-  platform.swhurl.com/policy-exceptions: "rule-id=reason; other-rule=reason"
-Exceptions without a reason are rejected.
+A reviewed exception goes in Settings.exceptions in instance.yaml as
+  exceptions: "rule-id=reason; other-rule=reason"
+make app-sync renders the HelmRelease's platform.swhurl.com/policy-exceptions annotation;
+do not edit that annotation by hand. Exceptions without a reason are rejected.
 
     python3 -m swhurl check-apps [INSTANCE_DIR ...]   (default: every instance under
                                                 apps and tests/fixtures/apps)
@@ -450,7 +452,7 @@ def check_calls(instances: list[Path]) -> dict[Path, list[str]]:
             if caller not in peers or app not in declared_calls(helmrelease.variables(peers[caller])):
                 found.append(f'allows {caller}, which does not declare a call to it')
         if found:
-            problems[instance] = [f'calls: {problem}; make app-sync rewrites both sides' for problem in found]
+            problems[instance] = [f'calls: {problem}; check calls on the caller and allows on the callee in instance.yaml, then run make app-sync' for problem in found]
         missing = [f'{publisher}.{event}' for publisher, event in events.subscribed(helmrelease.variables(release))
                    if publisher not in peers or event not in events.published(helmrelease.variables(peers[publisher]))]
         if missing:

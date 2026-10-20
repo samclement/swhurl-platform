@@ -69,6 +69,7 @@ flowchart LR
   auth --> clickstack
   base --> otel[platform-otel]
   base --> reloader[platform-reloader]
+  base --> backup[platform-backup]
   base --> webhook[platform-flux-webhook]
   base --> imageauto[platform-image-automation]
   base --> alerts[platform-alerts]
@@ -82,6 +83,7 @@ flowchart LR
   imageauto -. if staging .-> app
   auth -. if signed-in .-> app
   nats -. where NATS exists .-> app
+  backup -. if SQLite .-> app
 ```
 
 | Unit | Owns (path) | Waits for | Inputs |

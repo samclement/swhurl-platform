@@ -98,9 +98,9 @@ Some console pull requests merge themselves once **Validate** passes; the rest w
 | Change | Merges itself |
 | --- | --- |
 | New app, staging, no app Secret | yes, unless it calls or subscribes to another app; its generated events key does not hold it |
-| Scale (staging or production) | never; review and merge it yourself |
+| Scale, schedule, connect, disconnect, reach a host outside, allow callers | in staging, when [the instance rule](#instance-changes) allows it: how staging runs, what it calls or receives, and taking access away merge themselves; granting access and anything in production wait for you |
 | Promote to production | a later promotion of an image staging ran, unless **Hold for manual review** is selected or [promotion's rule](#promotions) holds it; a first promotion never |
-| Who can reach it, Uninstall, anything else adding or changing a `*.sops.yaml` | never; New app creates staging only |
+| Uninstall, anything else adding or changing a `*.sops.yaml` | never; New app creates staging only |
 
 ```mermaid
 flowchart LR
@@ -136,11 +136,29 @@ Anything else waits for you, with the reason as the PR's **Merge plan** or the g
 
 **A held promotion is merged with GitHub's Merge button.** That puts the records on `main`; the [Render workflow](../.github/workflows/render.yml) renders them (a first promotion's unit is written and registered then), runs `make check-repo` and `make check-apps`, and pushes the rendered files as a second commit, usually within a minute. Until then the previous rendered files stay live. A first promotion's Secret values are set on the PR's branch before merging, with `make app-secret APP=<app> ENV=prod NAME=<name>` in your own terminal: on that branch it writes the encrypted file alone.
 
+### Instance changes
+
+Scale, schedule, who can reach it, connect, disconnect, reach a host outside and allow callers each open a PR carrying only the instance's `instance.yaml` (connecting may also add its generated events key, which holds it). Main renders the rest: the instance's files, the other app's allowed callers and NetworkPolicy, the NATS users and the egress proxy. For example, scaling `demo-shop/staging` to 2 replicas is one changed line, `replicas: 2`.
+
+**The instance rule** (`merge.settings_held`, one function, used by the console to label the PR and by the gate before it pushes) compares the instance's Settings on `main` with the PR's:
+
+| The PR changes | Merges itself |
+| --- | --- |
+| Production's Settings | never |
+| Staging's `replicas`, `capacity` or `schedule` | yes |
+| Staging's `calls` or `subscriptions` (added or removed) | yes: a call connects only once the callee allows it, and any app may receive a published event |
+| Staging's `allows` or `egress`, entries removed | yes: it takes access away |
+| Staging's `allows` or `egress`, entries added | never: it grants access |
+| Staging's exposure, host or issuer | never: it changes who can reach it |
+| `exceptions` or `allocations` | never |
+
+A held instance change is merged with GitHub's Merge button and rendered by the [Render workflow](../.github/workflows/render.yml), as for a promotion. Two changes to the same instance conflict in Git; close the second and make it again.
+
 ### The gate
 
 [The workflow](../.github/workflows/auto-merge.yml) uses trusted `main` tooling and verifies the current PR head passed Validate (the run the label starts waits up to two minutes for it, so the merge does not need a second runner start).
 
-For **promotions and new apps**, one path refuses files outside the action's input records, then: in a worktree at the newest `main`, `git merge` of the PR head; the action's rule; `make app-sync`; `make check-repo check-apps`; a recheck of the PR head and its label; one merge commit of the PR head, pushed to `main` without force. A confirmed Git conflict holds the PR. A push rejected because `main` moved is merged, rendered and checked again on the newer `main`, up to three times in the same run. Promotion uses [promotion's rule](#promotions).
+The gate's table (`merge.ACTIONS`) names each kind of PR it takes (new app, promotion and the instance changes), the environments its branch may name and the paths it may change; its branch pattern comes from the table. For every kind, one path refuses files outside the action's input records, then: in a worktree at the newest `main`, `git merge` of the PR head; the action's rule; `make app-sync`; `make check-repo check-apps`; a recheck of the PR head and its label; one merge commit of the PR head, pushed to `main` without force. A confirmed Git conflict holds the PR. A push rejected because `main` moved is merged, rendered and checked again on the newer `main`, up to three times in the same run. Promotion uses [promotion's rule](#promotions), an instance change [the instance rule](#instance-changes).
 
 For a **new app**, every PR file must be one of that new app's [inputs above](#new-apps), never another app's files, generated files or another encrypted Secret. The app and its instances must not already exist on `main`; all three records must parse strictly, with no preallocated egress port. Calls, subscriptions or any nonempty policy exceptions hold it for manual review even if someone adds `auto-merge`; a PR cannot grant itself a policy waiver. The reserved app name `notify` is held; the app policy requires the platform-owned image. Secret rendering refuses malformed, reserved or repeated secret names, and database rendering refuses worker/job databases, so manually merged records cannot bypass those existing creation restrictions. Its events key must be a new encrypted Secret containing only its NATS seed, encrypted to the recipients `.sops.yaml` names for it, paired with a NATS public key in `instance.yaml`'s `allocations.eventsKey`. Missing or malformed records or keys cannot merge. Workload rendering also validates a job's effective schedule with the shared cron validator and refuses explicit schedules on non-jobs, including when Render reads a manually merged record. The gate retains the encrypted key unchanged; it cannot decrypt it or prove that the encrypted seed matches the public key. Old new-app PRs carrying rendered files are held with a reason; close them and open a fresh PR rather than replaying them.
 

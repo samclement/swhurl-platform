@@ -1,8 +1,8 @@
 """The merge gate: merge an eligible console PR onto the newest main, check the result and push it.
 
-Promotion and new-app PRs carry only their input records. The gate merges them onto the newest
-main, applies the action's rule, renders with app-sync, checks and pushes one commit, merging again
-when main moved first. A PR the gate holds loses its auto-merge label and gets a comment saying why;
+Every gated console PR carries only input records: a new app's, a promotion's, or one instance's
+Settings (ACTIONS). The gate merges them onto the newest main, applies the action's rule, renders with
+app-sync, checks and pushes one commit, merging again when main moved first. A PR the gate holds loses its auto-merge label and gets a comment saying why;
 any other failure keeps the label, so the next run tries again.
 """
 from __future__ import annotations
@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -32,7 +33,6 @@ MERGE_CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
 ATTEMPTS = 3  # a PR is merged again on a newer main this many times when its push loses a race
 REFUSAL = 'Auto-merge refused: '  # starts the comment the gate leaves on a PR it holds; the console shows the rest
 REFUSAL_LIMIT = 300
-BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7,40}')
 PUBLIC_KEY = re.compile(r'U[A-Z2-7]{55}')  # an nkeys user public key
 GIT = ['git', '-c', 'user.name=swhurl auto-merge', '-c', 'user.email=console@users.noreply.github.com']
 
@@ -109,14 +109,86 @@ def check_new_app(work: Path, app: str) -> None:
         check_events_key(work, app, settings)
 
 
-def eligible(pr: dict, sha: str, repo: str) -> tuple[str, str]:
+INSTANCE_KINDS = ('scale', 'schedule', 'expose', 'connect', 'disconnect', 'egress', 'allow')
+"""The console's instance changes whose PR carries only the instance's Settings (console/changes.py)."""
+
+
+def instance_records(app: str, env: str, path: str) -> bool:
+    return path == f'apps/{app}/{env}/{SETTINGS_FILE}'
+
+
+@dataclass(frozen=True)
+class Action:
+    """One kind of gated PR: the environments its branch may name, the paths it may change, and what
+    the person does again after a conflict."""
+    envs: tuple[str, ...]
+    owns: Callable[[str, str, str], bool]  # (app, env, path)
+    kind: str  # in "which are not <app>'s <kind> records"
+    again: str  # in "close it and <again> from the console"
+
+
+_INSTANCE = Action(('staging', 'prod'), instance_records, 'instance', 'make the change again')
+ACTIONS: dict[str, Action] = {
+    'new': Action(('staging',), lambda app, _env, path: new_app_records(app, path), 'new-app', 'create it again'),
+    'promote': Action(('staging',), lambda app, _env, path: promotion.records(app, path), 'promotion', 'promote again'),
+    **{kind: _INSTANCE for kind in INSTANCE_KINDS},
+    # Subscribing may give an instance its first NATS key: that PR also carries the encrypted seed (held below).
+    'connect': Action(('staging', 'prod'), lambda app, env, path: instance_records(app, env, path)
+                      or path == f'apps/{app}/{env}/{events.SECRET_FILE}', 'instance', 'make the change again'),
+}
+"""The gate's table: each action's rule is in merge_records (new: check_new_app; promote: promotion.held;
+an instance change: settings_held)."""
+BRANCH = re.compile(rf'console/({"|".join(ACTIONS)})-([a-z][a-z0-9-]*)-(staging|prod)-[0-9a-f]{{7,40}}')
+
+
+def settings_of(root: Path, app: str, env: str) -> Settings | None:
+    """An instance's Settings in the tree at ``root``; None when it has none."""
+    path = instance_folder(root, app, env) / SETTINGS_FILE
+    if not path.is_file():
+        return None
+    try:
+        return Settings.parse(yamlio.load(path.read_text()), f'{app}/{env}: {SETTINGS_FILE}')
+    except (RecordError, yaml.YAMLError) as error:
+        raise Hold(f'the instance record cannot be read: {error}') from None
+
+
+def settings_held(env: str, before: Settings | None, after: Settings | None) -> str:
+    """An instance change's one rule: why a person merges it, or '' when it merges itself. ``before`` and
+    ``after``: the instance's Settings on main and with the change. Automatic when it changes only how
+    staging runs (replicas, capacity, schedule), what it calls or receives, or takes access away; held
+    when it touches production, grants access or changes what the platform allocated.
+    The words follow "this pull request" (console) and "Auto-merge refused: it" (the gate)."""
+    if before is None:
+        return 'changes an instance main does not have'
+    if after is None:
+        return "removes the instance's settings record"
+    if before == after:
+        return ''
+    if env != 'staging':
+        return 'changes production settings'
+    if after.allocations != before.allocations:
+        return 'changes what the platform allocated it (egress port, events key or database)'
+    if after.exceptions != before.exceptions:
+        return 'changes its app-policy exceptions'
+    if (after.exposure, after.host, after.issuer) != (before.exposure, before.host, before.issuer):
+        return 'changes who can reach it'
+    if added := [name for name in after.allows if name not in before.allows]:
+        return f'allows {", ".join(added)} to call it'
+    if added := [host for host in after.egress if host not in before.egress]:
+        return f'grants hosts outside the cluster: {", ".join(added)}'
+    return ''
+
+
+def eligible(pr: dict, sha: str, repo: str) -> tuple[str, str, str]:
+    """``(action, app, env)`` of a PR this run may merge."""
     match = BRANCH.fullmatch(pr.get('head', {}).get('ref', ''))
-    if (pr.get('state') != 'open' or not match or pr.get('base', {}).get('ref') != 'main'
+    if (pr.get('state') != 'open' or not match or match[3] not in ACTIONS[match[1]].envs
+            or pr.get('base', {}).get('ref') != 'main'
             or pr.get('head', {}).get('sha') != sha
             or pr.get('head', {}).get('repo', {}).get('full_name') != repo
             or 'auto-merge' not in {label['name'] for label in pr.get('labels', [])} or pr.get('draft')):
         raise Skip('PR is held, moved, closed, a fork, or outside the supported console branches')
-    return match[1], match[2]
+    return match[1], match[2], match[3]
 
 
 def validated(runner: Runner, sha: str, sleep: Callable[[float], None]) -> None:
@@ -168,10 +240,10 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
           sleep: Callable[[float], None] = time.sleep) -> None:
     pr_path = f'repos/{repo}/pulls/{number}'
     pr = runner.json(['gh', 'api', pr_path])
-    action, app = eligible(pr, sha, repo)
+    action, app, env = eligible(pr, sha, repo)
     validated(runner, sha, sleep)
     files = runner.output(['gh', 'pr', 'diff', str(number), '--repo', repo, '--name-only']).splitlines()
-    merge_records(runner, root, number, sha, repo, pr, action, app, files)
+    merge_records(runner, root, number, sha, repo, pr, action, app, files, env)
     runner.run(['git', 'push', 'origin', '--delete', pr['head']['ref']], cwd=root, mutating=True, check=False)
 
 
@@ -191,13 +263,15 @@ def staged(runner: Runner, work: Path, app: str, release: Release) -> bool:
 
 
 def merge_records(runner: Runner, root: Path, number: int, sha: str, repo: str, pr: dict, action: str,
-                  app: str, files: list[str]) -> None:
+                  app: str, files: list[str], env: str = 'staging') -> None:
     """Merge the PR's records onto the newest main, apply the action's rule, render, check and push; a push
     that loses to another writer is merged again on the newer main (ATTEMPTS times)."""
-    kind = 'promotion' if action == 'promote' else 'new-app'
-    owns = promotion.records if action == 'promote' else new_app_records
-    if other := sorted(path for path in files if not owns(app, path)):
-        raise Hold(f"it changes {', '.join(other[:5])}, which are not {app}'s {kind} records: a person reviews it")
+    rule = ACTIONS[action]
+    instance = action not in ('new', 'promote')
+    if other := sorted(path for path in files if not rule.owns(app, env, path)):
+        raise Hold(f"it changes {', '.join(other[:5])}, which are not {app}'s {rule.kind} records: a person reviews it")
+    if instance and any(path.endswith('.sops.yaml') for path in files):
+        raise Hold("it adds the instance's generated encrypted events key: a person reviews it")
     for attempt in range(1, ATTEMPTS + 1):
         base = fetch(runner, root, number, sha)
         with tempfile.TemporaryDirectory(prefix='auto-merge-') as tmp:
@@ -206,6 +280,7 @@ def merge_records(runner: Runner, root: Path, number: int, sha: str, repo: str, 
             try:
                 try:
                     before = promotion.release_of(work, app, 'prod') if action == 'promote' else None
+                    settings = settings_of(work, app, env) if instance else None
                     if action == 'new' and ((work / 'apps' / app).exists() or any(
                             instance_unit_file(work, app, env).exists() for env in ('staging', 'prod'))):
                         raise Hold('new-app PR overwrites an existing app or instance')
@@ -215,10 +290,13 @@ def merge_records(runner: Runner, root: Path, number: int, sha: str, repo: str, 
                 if merged.returncode:
                     conflicts = runner.output(['git', 'diff', '--name-only', '--diff-filter=U'], cwd=work)
                     if conflicts.strip():
-                        raise Hold(f'it conflicts with main: close it and {"promote" if action == "promote" else "create it"} again from the console')
+                        raise Hold(f'it conflicts with main: close it and {rule.again} from the console')
                     raise CommandError(merged.args, runner.redact(merged.stderr or merged.stdout), merged.returncode)
                 if action == 'new':
                     check_new_app(work, app)
+                elif instance:
+                    if reason := settings_held(env, settings, settings_of(work, app, env)):
+                        raise Hold(f'it {reason}: a person reviews it')
                 else:
                     try:
                         after = promotion.release_of(work, app, 'prod')

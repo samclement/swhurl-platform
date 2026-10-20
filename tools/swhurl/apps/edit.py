@@ -31,7 +31,6 @@ from pathlib import Path
 
 from swhurl import ROOT, app_alerts, platform
 from swhurl.apps import (
-    channels,
     declaration,
     egress,
     events,
@@ -58,14 +57,14 @@ from swhurl.apps.contract import (
     stored_secrets,
     teams,
 )
-from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
+from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder
 from swhurl.apps.model import sync as model_sync
 from swhurl.apps.model import workload
 from swhurl.apps.model.calls import admits
 from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry
 from swhurl.apps.model.events import keyed as events_keyed
 from swhurl.apps.model.exposure import ROUTED
-from swhurl.apps.model.records import ALLOW_RE, APP_FILE, TEAM_GRANT, Image, Release, Resources, Storage
+from swhurl.apps.model.records import ALLOW_RE, TEAM_GRANT, Image, Release, Resources, Storage
 from swhurl.apps.model.workload import DEFAULT_RESOURCES
 from swhurl.apps.new import (
     GenerationError,
@@ -152,28 +151,6 @@ def set_allows(root: Path, app: str, env: str, *, add: list[str] | None = None, 
     model_sync.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(entry.settings, allows=now)))
     print(f'[OK] {app}/{env} allows: {", ".join(now) or "nobody"}')
     return instance
-
-
-def rename_team(root: Path, old: str, new: str) -> list[str]:
-    """Move every app of team ``old`` to ``new`` and rewrite every team:<old> grant, in one render (so no
-    connection through the team drops in between); return the apps moved."""
-    world, _ = model_sync.read(root)
-    before, after = f'{TEAM_GRANT}{old}', f'{TEAM_GRANT}{new}'
-    targets = sorted((each for each, entry in world.items() if entry.app.team == old or before in entry.settings.allows), key=str)
-
-    def update(entry: Entry) -> Entry:
-        allows = tuple(dict.fromkeys(after if name == before else name for name in entry.settings.allows))
-        return replace(entry, app=replace(entry.app, team=new) if entry.app.team == old else entry.app,
-                       settings=replace(entry.settings, allows=allows))
-    if targets:
-        model_sync.change(root, targets, update)
-    return sorted({each.app for each in targets if world[each].app.team == old})
-
-
-def team_grants(root: Path, team: str) -> list[str]:
-    """The instances whose ``allows`` names team:<team>."""
-    world, _ = model_sync.read(root)
-    return sorted(str(each) for each, entry in world.items() if f'{TEAM_GRANT}{team}' in entry.settings.allows)
 
 
 def set_egress(root: Path, app: str, env: str, *, add: list[str] | None = None, remove: list[str] | None = None) -> Path:
@@ -369,7 +346,7 @@ def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Open
     updated, needed = with_needs(entry, image, declared, app)
     updated = replace(updated, release=offered(updated.release, commit, files, described, served))
     planned = offer_files(instance / offers.OFFERS_DIR, repository, commit, files)
-    changed = change_release(root, each, updated, planned, runner=runner)
+    changed = change_release(root, each, model_sync.Update(lambda _: updated), planned, runner=runner)
     describe_offers(app, 'staging', commit, files, described, declared, changed)
     if moved:
         print(f'[OK] {app}/staging: image {previous.tag} -> {found.tag}')
@@ -399,7 +376,7 @@ def set_secret(root: Path, app: str, env: str, name: str, value: str, *, runner:
     # Rendered before the value is written: the instance's files must be what its records render now. An
     # instance with records and no rendered files yet (a first promotion's branch, which carries only
     # records) gets the encrypted file alone: main renders it when the branch is merged.
-    prepared = model_sync.prepare(root, each, lambda entry: replace(entry, encrypted=entry.encrypted | {APP_SECRET})) \
+    prepared = model_sync.prepare(root, {each: model_sync.Update(lambda entry: replace(entry, encrypted=entry.encrypted | {APP_SECRET}))}) \
         if (instance / 'helmrelease.yaml').is_file() else None
     path, runner = instance / SECRET_FILE, runner or Runner()
     relative = path.relative_to(root).as_posix()  # .sops.yaml's rules match this path
@@ -516,7 +493,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
                             'never changes what a volume holds or who owns it (promote a newer image instead)')
         size = staging.settings.allocations.database.size if staging.settings.allocations.database else ''
         promoted, changed = take_release(production, staging.release, app, size, f'{app}/staging')
-        change_release(root, each, promoted, staging_offers(root, app, staging, folder), runner=runner)
+        change_release(root, each, model_sync.Update(lambda _: promoted), staging_offers(root, app, staging, folder), runner=runner)
         print(f'[OK] {app}/prod: image {decision.image} (from staging)' + (' [rollback]' if decision.rollback else ''))
         if changed:
             print(f'[OK] {app}/prod: {", ".join(changed)}')
@@ -535,8 +512,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
                 write_encrypted_secret(folder, app_secret(app), each.namespace, first.secret_keys, runner=runner)
             except GenerationError as error:
                 raise EditError(str(error)) from None
-        change_release(root, each, first.entry, staging_offers(root, app, staging, folder), runner=runner,
-                       adding=True, keyed=events.has_nats(root))
+        change_release(root, each, model_sync.Create(first.entry), staging_offers(root, app, staging, folder), runner=runner)
     except Exception:
         shutil.rmtree(folder, ignore_errors=True)
         raise
@@ -664,55 +640,15 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
 
 
 def remove(root: Path, app: str, env: str) -> None:
-    instance = instance_dir(root, app, env)
+    instance_dir(root, app, env)
     world, _ = model_sync.read(root)
-    others = [(each.app, entry) for each, entry in world.items() if each.env == env and each.app != app]
-    callers = sorted(name for name, entry in others if app in entry.settings.calls)
-    if callers:
-        raise EditError(f'{app}/{env} is called by {", ".join(callers)}: remove those calls first '
-                        f'(make app-calls APP=<caller> ENV={env} ARGS="--remove {app}")')
-    subscribers = sorted(name for name, entry in others if any(publisher == app for publisher, _ in entry.settings.subscribed))
-    if subscribers:
-        raise EditError(f'{app}/{env} publishes events that {", ".join(subscribers)} subscribe to: '
-                        f'remove those subscriptions first (make app-events APP=<subscriber> ENV={env})')
     keeps_data = world[Instance(app, env)].settings.allocations.database is not None
-    unit_file = instance_unit_file(root, app, env)
-    shutil.rmtree(instance)
-    print(f'[OK] removed {instance.relative_to(root)}/')
-    folder = root / 'apps' / app
-    if not any(path.is_dir() for path in folder.iterdir()):  # its last environment: the App record goes too
-        (folder / APP_FILE).unlink(missing_ok=True)
-        print(f'[OK] removed {(folder / APP_FILE).relative_to(root)}')
-        if not any(folder.iterdir()):
-            folder.rmdir()
-    if unit_file.exists():
-        unit_file.unlink()
-        print(f'[OK] removed {unit_file.relative_to(root)}')
-    registry = root / 'clusters/home/kustomization.yaml'
-    lines = registry.read_text().splitlines(keepends=True)
-    kept = [line for line in lines if line.strip() != f'- {unit_file.name}']
-    if kept != lines:
-        registry.write_text(''.join(kept))
-        print(f'[OK] unregistered {unit_file.name} in clusters/home/kustomization.yaml')
-    unwatch_namespace(root, Instance(app, env).namespace)
-    for path in model_sync.sync(root):  # the apps it called no longer admit it
-        print(f'[OK] rewrote {path.relative_to(root)}')
+    prepared = model_sync.prepare(root, {Instance(app, env): model_sync.Remove()})
+    for path in model_sync.apply(root, prepared):
+        print(f'[OK] changed {path.relative_to(root)}')
     if keeps_data:
         print(f'[WARN] {app}-{env} has a retained volume: Flux keeps its namespace and claim after removal. '
               'Delete the data only on purpose: make destroy-data (docs/operations.md#lifecycle)')
-
-
-def unwatch_namespace(root: Path, namespace: str) -> None:
-    path = root / 'platform/reloader/helmrelease.yaml'
-    if not path.exists():
-        return
-    text = path.read_text()
-    match = re.search(r'^(\s*namespaces:\s*)\[([^\]]*)\]', text, re.M)
-    current = [n.strip() for n in match[2].split(',') if n.strip()] if match else []
-    if namespace in current:
-        current.remove(namespace)
-        path.write_text(text[:match.start()] + f'{match[1]}[{", ".join(current)}]' + text[match.end():])
-        print(f'[OK] Reloader no longer watches {namespace}')
 
 
 def run(action, check_dir: bool) -> int:
@@ -994,16 +930,12 @@ def nats_keys(root: Path, *, runner: Runner | None = None) -> list[Instance]:
     world, _ = model_sync.read(root)
     found = [each for each, entry in world.items() if not events_keyed(entry)]
     for each in found:
-        change_release(root, each, world[each], {}, runner=runner, keyed=True)
+        change_release(root, each, model_sync.Update(lambda entry: entry), {}, runner=runner)
     return found
 
 
 def sync(root: Path) -> None:
     changed = model_sync.sync(root)
-    routes = channels.routes_file(root)
-    if routes and (not routes[0].is_file() or routes[0].read_text() != routes[1]):
-        routes[0].write_text(routes[1])
-        changed.append(routes[0])
     for path in changed:
         print(f'[OK] rewrote {path.relative_to(root)}')
     if not changed:

@@ -16,10 +16,12 @@ from unittest import mock
 
 import httpx
 import yaml
+from ci_changes import records_only
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import channels, egress, new, ops, promotion, repo
+from swhurl.apps import channels, egress, new, ops, promotion, repo, teams
+from swhurl.apps import edit as app_edit
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import sync as model_sync
@@ -143,6 +145,37 @@ class RenderTargetTests(unittest.TestCase):
         api.fail[f'GET /tarball/{HEAD}'] = (403, 'rate limited')
         with self.assertRaises(actions.ActionError):
             changes.render_targets(FakeRunner(), api.github, HEAD)
+
+    def test_records_only_removal_reaches_removed_after_render_and_live_absence(self):
+        unit = 'hello/prod'
+        merged = {path: text for path, text in MAIN.items()
+                  if path not in (f'apps/{unit}/release.yaml', f'apps/{unit}/instance.yaml')}
+        with mock.patch.dict(MAIN, merged, clear=True):
+            target = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD).get(unit, stages.Target(stages.ABSENT))
+        self.assertEqual(target.hash, stages.ABSENT, 'stale generated output is not the removal target')
+        self.assertEqual(stages.judge('remove', State('healthy'), target, target).state, 'removing')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for path, text in merged.items():
+                (root / path).parent.mkdir(parents=True, exist_ok=True)
+                (root / path).write_bytes(text)
+            model_sync.sync(root)
+            rendered = {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob('*') if path.is_file()}
+        with mock.patch.dict(MAIN, rendered, clear=True):
+            current = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD).get(unit, stages.Target(stages.ABSENT))
+        self.assertEqual(stages.judge('remove', State('healthy'), target, current).state, 'removing', 'Flux is still uninstalling')
+        self.assertEqual(stages.judge('remove', stages.ABSENT, target, current).state, 'removed')
+        merged[f'apps/{unit}/helmrelease.yaml'] = b'invalid: ['
+        with mock.patch.dict(MAIN, merged, clear=True):
+            self.assertNotIn(unit, changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD),
+                             'an absent instance does not require parsing its stale output')
+
+    def test_partial_records_are_not_an_absent_render_target(self):
+        for missing in ('release.yaml', 'instance.yaml'):
+            with self.subTest(missing=missing), mock.patch.dict(MAIN, clear=False):
+                del MAIN[f'apps/hello/prod/{missing}']
+                with self.assertRaises(actions.ActionError):
+                    changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)
 
     def test_held_later_promotion_waits_for_render_not_the_healthy_previous_image(self):
         record_path = 'apps/hello/prod/release.yaml'
@@ -326,6 +359,11 @@ class TreeRunner(FakeRunner):
                     path = Path(cwd) / 'apps' / app / name
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(MAIN[f'apps/hello/{name}'])
+            elif argv[3:4] == ('app-remove',):
+                shutil.rmtree(Path(cwd) / 'apps' / argv[4] / argv[5])
+            elif argv[3].startswith('team-'):
+                path = Path(cwd) / 'apps/teams.yaml'
+                path.write_text((path.read_text() if path.is_file() else 'teams: {}\n') + f'# {argv[3:]}\n')
             else:
                 (Path(cwd) / 'apps/x').mkdir(parents=True, exist_ok=True)
                 (Path(cwd) / 'apps/x/helmrelease.yaml').write_text('new\n')
@@ -605,6 +643,95 @@ class FormTests(unittest.TestCase):
         found = changes.github_from_env(runner, {'GITHUB_TOKEN': TOKEN, 'CONSOLE_REPO': 'me/repo'})
         self.assertEqual(found, changes.GitHub('me/repo', TOKEN))
         self.assertEqual(runner.redact(TOKEN), '<redacted>')
+
+
+class SharedInputPrTests(unittest.TestCase):
+    """Use the real offline edits: their full writes become input-only, held console PRs."""
+
+    def main(self, *, two_environments=True, channel=False):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        for name, text in MAIN.items():
+            if not two_environments and ('/prod/' in name or name.endswith('app-hello-prod.yaml')):
+                continue
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_bytes(text)
+        (root / 'apps/teams.yaml').write_text('teams:\n  demo: {}\n')
+        (root / 'clusters/home/kustomization.yaml').write_text('resources: [platform.yaml]\n')
+        notify = root / channels.NOTIFY_DIR
+        notify.mkdir(parents=True)
+        (notify / 'kustomization.yaml').write_text('resources: [namespace.yaml, routes.yaml]\n')
+        (root / channels.UNIT_FILE).write_text('spec:\n  path: ./platform/notify\n')
+        settings = root / 'apps/hello/staging/instance.yaml'
+        doc = yaml.safe_load(settings.read_text())
+        doc['allows'] = ['team:demo']
+        settings.write_text(yaml.safe_dump(doc))
+        folder = settings.parent
+        for name in ('events.sops.yaml', 'secret.sops.yaml'):
+            (folder / name).write_text('sops: {}\n')
+        (folder / 'offers').mkdir()
+        (folder / 'offers/source.yaml').write_text('api: openapi.json\n')
+        (folder / 'offers/openapi.json').write_text('{}\n')
+        if channel:
+            (root / 'apps/teams.yaml').write_text('teams:\n  demo: {notify: [phone]}\n')
+            (notify / 'channel-phone.sops.yaml').write_text('metadata:\n  name: channel-phone\n  labels:\n'
+                                                           '    platform.swhurl.com/notify-transport: ntfy\nsops: {}\n')
+        model_sync.sync(root)
+        return {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob('*') if path.is_file()}
+
+    def propose(self, change, operation, main):
+        runner, api = tree_fake(edit=operation), FakeGitHub()
+        job = actions.Job(1, change.kind, change.target, 'sam@swhurl.com', None)
+        with mock.patch.dict(MAIN, main, clear=True), contextlib.redirect_stdout(io.StringIO()):
+            change.open(runner, api.github, job)
+        self.assertEqual(api.sent('POST /issues/7/labels'), [], 'these changes stay held for review')
+        tree = api.sent('POST /git/trees')[0]['tree']
+        self.assertTrue(records_only([entry['path'] for entry in tree]), 'Validate must render the actual PR inputs')
+        return tree
+
+    def test_remove_pr_carries_only_input_deletions_for_one_or_last_environment(self):
+        for two in (True, False):
+            with self.subTest(two_environments=two):
+                main = self.main(two_environments=two)
+                main['apps/hello/staging/notes.yaml'] = b'keep: true\n'
+                change = changes.Change.to_instance('remove', Instance('hello', 'staging'), {})
+                tree = self.propose(change, lambda root: app_edit.remove(root, 'hello', 'staging'), main)
+                expected = {'apps/hello/staging/' + name for name in
+                            ('release.yaml', 'instance.yaml', 'secret.sops.yaml', 'events.sops.yaml',
+                             'offers/source.yaml', 'offers/openapi.json')}
+                if not two:
+                    expected.add('apps/hello/app.yaml')
+                self.assertEqual({entry['path'] for entry in tree}, expected)
+                self.assertTrue(all(entry['sha'] is None for entry in tree), 'only deletions, no generated updates')
+
+    def test_remove_filter_never_carries_input_additions_or_modifications(self):
+        def incomplete_remove(root):
+            folder = root / 'apps/hello/staging'
+            (folder / 'instance.yaml').unlink()
+            (folder / 'release.yaml').write_text('changed: true\n')
+            (folder / 'offers/new.json').write_text('{}\n')
+        change = changes.Change.to_instance('remove', Instance('hello', 'staging'), {})
+        tree = self.propose(change, incomplete_remove, self.main())
+        self.assertEqual(tree, [{'path': 'apps/hello/staging/instance.yaml', 'mode': '100644', 'type': 'blob', 'sha': None}])
+
+    def test_team_rename_pr_includes_ownership_and_team_grants_but_not_routes(self):
+        change = changes.Change.to_team('edit', {'name': 'demo', 'rename': 'core'})
+        tree = self.propose(change, lambda root: teams.change(root, 'demo', rename='core'), self.main(channel=True))
+        self.assertEqual({entry['path'] for entry in tree},
+                         {'apps/teams.yaml', 'apps/hello/app.yaml', 'apps/hello/staging/instance.yaml'})
+
+    def test_channel_pr_carries_encrypted_and_registry_inputs_not_generated_routes(self):
+        def encrypt(args, text):
+            doc = yaml.safe_load(text)
+            doc['stringData'] = {'address': 'ENC[...]'}
+            return Result(args, 0, yaml.safe_dump(doc) + 'sops: {}\n')
+        change = changes.Change.to_channel('set', {'name': 'demo', 'address': 'https://ntfy.sh/private'})
+        tree = self.propose(change, lambda root: teams.team_channel(root, 'demo', 'https://ntfy.sh/private',
+                            runner=FakeRunner().on('sops', handler=encrypt)), self.main())
+        self.assertEqual({entry['path'] for entry in tree},
+                         {'apps/teams.yaml', 'platform/notify/channel-demo.sops.yaml',
+                          'platform/notify/kustomization.yaml', 'clusters/home/platform-notify.yaml'})
 
 
 class OpenPrTests(unittest.TestCase):

@@ -216,8 +216,8 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
             allocations = replace(allocations, events_key=intake.new_nats_key(instance, args.name, args.env, runner=runner))
             encrypted.add(EVENTS_SECRET)
         entry = replace(entry, settings=replace(entry.settings, allocations=allocations), encrypted=frozenset(encrypted))
-        prepared = model_sync.prepare(root, created, lambda _: entry, adding=True)
-        written = model_sync.apply(root, prepared, register=args.register)
+        prepared = model_sync.prepare(root, {created: model_sync.Create(entry)}, register=args.register)
+        written = model_sync.apply(root, prepared)
         intake.write_files(planned)
     except (EditError, CommandError) as error:
         discard(instance)
@@ -247,37 +247,6 @@ def write_encrypted_secret(instance: Path, name: str, namespace: str, keys: list
         path.unlink()
         raise GenerationError(f'{path} was not encrypted; removed it')
     return path
-
-
-def register(root: Path, filename: str) -> None:
-    from swhurl.apps.yaml_file import EditError, YamlFile
-
-    try:
-        document = YamlFile(root / 'clusters/home/kustomization.yaml')
-        resources = document.data.get('resources')
-        if not isinstance(resources, list) or getattr(resources.yaml_anchor(), 'value', None):
-            raise EditError('unit registration needs an ordinary resources list')
-        if filename not in resources:
-            resources.append(filename)
-            resources.fa.set_block_style()
-            document.save()
-    except EditError as error:
-        raise GenerationError(str(error)) from None
-
-
-def watch_namespace(root: Path, namespace: str) -> None:
-    """Add the namespace to Reloader's scoped list so Secret changes restart the app."""
-    path = root / 'platform/reloader/helmrelease.yaml'
-    if not path.exists():
-        return
-    text = path.read_text()
-    match = re.search(r'^(\s*namespaces:\s*)\[([^\]]*)\]', text, re.M)
-    if not match:
-        raise GenerationError(f'cannot find reloader.namespaces list in {path}')
-    current = [n.strip() for n in match[2].split(',') if n.strip()]
-    if namespace not in current:
-        text = text[:match.start()] + f'{match[1]}[{", ".join(current + [namespace])}]' + text[match.end():]
-        path.write_text(text)
 
 
 REPO_RE = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')

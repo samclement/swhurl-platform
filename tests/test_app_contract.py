@@ -209,7 +209,7 @@ class GeneratorTests(unittest.TestCase):
     def test_secret_names_without_values_and_namespace_watched(self):
         reloader = self.tmp / 'platform/reloader/helmrelease.yaml'
         reloader.parent.mkdir(parents=True)
-        reloader.write_text('    reloader:\n      namespaces: [ingress, logging]\n')
+        reloader.write_text('spec:\n  values:\n    reloader:\n      namespaces: [ingress, logging]\n')
         self.assertEqual(self.gen('s', *WEB, '--secret-keys', 'A,B'), 0)
         self.assertFalse((self.tmp / 'apps/s/staging/secret.sops.yaml').exists(), 'values are set later, with make app-secret')
         release = yaml.safe_load((self.tmp / 'apps/s/staging/helmrelease.yaml').read_text())

@@ -6,7 +6,6 @@ make app-sync writes what the records render.
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import yaml
@@ -18,11 +17,10 @@ from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import render, store
 from swhurl.apps.model.draft import Platform, RenderError, World
 from swhurl.apps.model.records import RECORD_FILES, TEAM_GRANT
+from swhurl.apps.model.render import REGISTRY_FILE, RELOADER_FILE
 
 FIXTURES = Path('tests/fixtures/apps')
 """The generated fixtures (tests/fixtures/apps.sh) are a root of their own."""
-RELOADER_FILE = Path('platform/reloader/helmrelease.yaml')
-REGISTRY_FILE = UNITS / 'kustomization.yaml'
 SHOWN = 120
 
 
@@ -68,14 +66,6 @@ def _committed(root: Path, folder: Path, unit: Path) -> dict[Path, Path]:
     if unit.is_file():
         found[unit.relative_to(root)] = unit
     return found
-
-
-def _reloader(root: Path) -> set[str] | None:
-    path = root / RELOADER_FILE
-    if not path.is_file():
-        return None
-    match = re.search(r'^\s*namespaces:\s*\[([^\]]*)\]', path.read_text(), re.M)
-    return {name.strip() for name in (match[1] if match else '').split(',') if name.strip()}
 
 
 def instance_problems(root: Path, each: Instance, world: World, platform: Platform, base: Path = Path('apps')) -> list[str]:
@@ -128,14 +118,14 @@ def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance]
     if shared.egress_proxy is not None and (root / egress.PROXY_FILE).is_file():
         found += [f'{egress.PROXY_FILE}: {line}' for line in
                   differences(_documents(root / egress.PROXY_FILE), shared.egress_proxy)]
-    watched = _reloader(root)
-    if watched is not None:
+    if (root / RELOADER_FILE).is_file():
+        watched = set(yamlio.load((root / RELOADER_FILE).read_text())['spec']['values']['reloader']['namespaces'])
         apps_watched = {name for name in watched if Instance.of_namespace(name)}
         found += [f'{RELOADER_FILE}: {name} is watched, not rendered' for name in sorted(apps_watched - shared.reloaded)]
         found += [f'{RELOADER_FILE}: {name} is rendered, not watched' for name in sorted(shared.reloaded - apps_watched)]
     if (root / REGISTRY_FILE).is_file():
         registered = {str(name) for name in yamlio.load((root / REGISTRY_FILE).read_text()).get('resources') or []
-                      if str(name).startswith('app-')}
+                      if Instance.of_unit(str(name).removesuffix('.yaml'))}
         found += [f'{REGISTRY_FILE}: {name} is registered, not rendered' for name in sorted(registered - shared.units)]
         found += [f'{REGISTRY_FILE}: {name} is rendered, not registered' for name in sorted(shared.units - registered)]
     return found

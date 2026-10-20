@@ -44,9 +44,10 @@ def _load(path: Path) -> object:
 
 
 def recorded(folder: Path) -> list[Instance]:
-    """The instances under ``folder`` (``<root>/apps``): each ``<app>/<env>`` with a HelmRelease, Release or Settings
-    record, in order. A merged first promotion has its records before main renders it."""
-    paths = {path.parent for name in ('helmrelease.yaml', RELEASE_FILE, SETTINGS_FILE) for path in folder.glob(f'*/*/{name}')}
+    """The instances under ``folder`` (``<root>/apps``): each ``<app>/<env>`` with a Release or Settings
+    record, in order. Both absent means removed, even while old generated files remain; a merged first
+    promotion has its records before main renders it."""
+    paths = {path.parent for name in (RELEASE_FILE, SETTINGS_FILE) for path in folder.glob(f'*/*/{name}')}
     found = (Instance.named(path.parent.name, path.name) for path in sorted(paths))
     return [each for each in found if each]
 

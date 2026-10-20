@@ -11,16 +11,17 @@ import dataclasses
 from collections.abc import Callable
 from pathlib import Path
 
+import yaml
+
 from swhurl import yamlio
-from swhurl.apps import egress, events
+from swhurl.apps import channels, egress, events, offers
+from swhurl.apps.contract import SECRET_FILE
 from swhurl.apps.instance import ENVIRONMENTS, UNITS, Instance
 from swhurl.apps.model import generated, render, store
 from swhurl.apps.model.draft import Entry, Platform, RenderError, World
-from swhurl.apps.model.records import RECORD_FILES
-from swhurl.apps.yaml_file import EditError
-
-RELOADER_FILE = Path('platform/reloader/helmrelease.yaml')
-REGISTRY_FILE = UNITS / 'kustomization.yaml'
+from swhurl.apps.model.records import APP_FILE, RECORD_FILES
+from swhurl.apps.model.render import MANAGED_FILES, REGISTRY_FILE, RELOADER_FILE
+from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
 
 def allocate(world: World, platform: Platform) -> World:
@@ -48,37 +49,6 @@ def _same(path: Path, text: str) -> bool:
         return False
 
 
-def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance] = frozenset()) -> tuple[dict[Path, str], list[Path]]:
-    """``(files to write, files to delete)``, by absolute path. An ``added`` instance gets its unit file."""
-    writes: dict[Path, str] = {}
-    deletions: list[Path] = []
-    try:
-        for each in world:
-            rendered = render.instance(each, world, platform)
-            folder = root / platform.base / each.app / each.env
-            for path, documents in rendered.items():
-                target = root / path
-                if path.parts[:len(UNITS.parts)] == UNITS.parts and not target.is_file() and each not in added:
-                    continue  # a tree without its units (tests) has none to keep
-                text = render.text(documents)
-                if not _same(target, text):
-                    writes[target] = text
-            kept = {root / path for path in rendered} | {folder / name for name in RECORD_FILES}
-            deletions += [path for path in sorted(folder.glob('*.yaml'))
-                          if path not in kept and not path.name.endswith('.sops.yaml')]
-        shared = render.shared(world, platform)
-        for path, text in store.documents(world, platform.base).items():
-            if not ((root / path).is_file() and (root / path).read_text() == text):
-                writes[root / path] = text
-    except RenderError as error:
-        raise EditError(str(error)) from None
-    for path, text in ((events.USERS_FILE, shared.nats_users is not None and events.users_configmap(shared.nats_users)),
-                       (egress.PROXY_FILE, shared.egress_proxy is not None and egress.proxy_text(shared.egress_proxy))):
-        if text and not ((root / path).is_file() and (root / path).read_text() == text):
-            writes[root / path] = text
-    return writes, deletions
-
-
 @dataclasses.dataclass(frozen=True)
 class Prepared:
     """A rendered change not yet written: the records and every file to write or delete."""
@@ -86,48 +56,123 @@ class Prepared:
     platform: Platform
     writes: dict[Path, str]
     deletions: list[Path]
-    added: frozenset[Instance] = frozenset()  # new instances: their units are registered
 
 
-def render_all(root: Path, world: World, platform: Platform, added: frozenset[Instance] = frozenset()) -> Prepared:
+def check_removal(each: Instance, world: World) -> None:
+    """Explicit removals and merged orphan cleanup have the same relationship preconditions."""
+    others = [(other.app, entry) for other, entry in world.items() if other.env == each.env and other.app != each.app]
+    callers = sorted(name for name, entry in others if each.app in entry.settings.calls)
+    if callers:
+        raise EditError(f'{each} is called by {", ".join(callers)}: remove those calls first '
+                        f'(make app-calls APP=<caller> ENV={each.env} ARGS="--remove {each.app}")')
+    subscribers = sorted(name for name, entry in others if any(publisher == each.app for publisher, _ in entry.settings.subscribed))
+    if subscribers:
+        raise EditError(f'{each} publishes events that {", ".join(subscribers)} subscribe to: '
+                        f'remove those subscriptions first (make app-events APP=<subscriber> ENV={each.env})')
+
+
+def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance] = frozenset(), *,
+         register: bool = True, routes: dict | None = None) -> Prepared:
+    """Complete writes and managed deletions, by absolute path. Plan everything before applying anything.
+    Scratch roots keep existing units; creates always get a unit. With a registry, sync repairs missing units.
+    ``register=False`` leaves the registry alone, not the new unit (app-new --no-register)."""
+    units = {each: path for path in (root / UNITS).glob('app-*.yaml') if (each := Instance.of_unit(path.stem))}
+    stale = {each for folder in (root / platform.base).glob('*/*')
+             if (each := Instance.named(folder.parent.name, folder.name)) and folder.is_dir()
+             and any((folder / name).is_file() for name in MANAGED_FILES)}
+    removed = (stale | units.keys() | set(store.recorded(root / platform.base))) - world.keys()
+    for each in sorted(removed, key=str):
+        check_removal(each, world)
     world = allocate(world, platform)
-    return Prepared(world, platform, *plan(root, world, platform, added), added)
+    writes: dict[Path, str] = {}
+    deletions: list[Path] = []
+
+    def keep(path: Path, text: str) -> None:
+        path = root / path
+        if not path.is_file() or path.read_text() != text:
+            writes[path] = text
+
+    try:
+        for each in world:
+            rendered = render.instance(each, world, platform)
+            folder = each.folder(root, platform.base)
+            for path, documents in rendered.items():
+                target = root / path
+                if path.parent == UNITS and not target.is_file() and each not in added and not (root / REGISTRY_FILE).is_file():
+                    continue
+                text = render.text(documents)
+                if not _same(target, text):
+                    writes[target] = text
+            deletions += [folder / name for name in sorted(MANAGED_FILES)
+                          if folder / name not in {root / path for path in rendered} and (folder / name).is_file()]
+        shared = render.shared(world, platform)
+        for path, text in store.documents(world, platform.base).items():
+            keep(path, text)
+    except RenderError as error:
+        raise EditError(str(error)) from None
+    for path, text in ((events.USERS_FILE, shared.nats_users is not None and events.users_configmap(shared.nats_users)),
+                       (egress.PROXY_FILE, shared.egress_proxy is not None and egress.proxy_text(shared.egress_proxy))):
+        if text:
+            keep(path, text)
+    for path, wanted, key, managed in (
+            (REGISTRY_FILE, shared.units, 'resources', lambda name: Instance.of_unit(str(name).removesuffix('.yaml'))),
+            (RELOADER_FILE, shared.reloaded, 'namespaces', Instance.of_namespace)):
+        if not (root / path).is_file() or (path == REGISTRY_FILE and not register):
+            continue
+        document = YamlFile(root / path)
+        parent = document.data
+        if path == RELOADER_FILE:
+            for field in ('spec', 'values', 'reloader'):
+                parent = mapping(parent, field)
+        current = parent.get(key)
+        if (not isinstance(current, list) or getattr(current.yaml_anchor(), 'value', None)
+                or any(not isinstance(name, str) for name in current)):
+            raise EditError(f'{path}: expected an ordinary {key} list')
+        before = list(current)
+        for index in reversed(range(len(current))):
+            if managed(current[index]) and current[index] not in wanted:
+                del current[index]
+        current.extend(sorted(wanted - set(current)))
+        if list(current) != before:
+            keep(path, document.render())
+    try:
+        if (root / channels.NOTIFY_DIR).is_dir():
+            keep(channels.ROUTES_FILE, channels.routes_configmap(channels.routes(root) if routes is None else routes))
+    except (OSError, UnicodeError, yaml.YAMLError, AttributeError, TypeError) as error:
+        # Parser details can include Secret contents: report the input boundary, never their text.
+        raise EditError(f'cannot plan notification routes: invalid team/channel inputs ({type(error).__name__})') from None
+    # A merged record-only removal leaves old outputs behind. Only platform-owned names are removed;
+    # unrelated YAML, encrypted files, notes and data in the same directories are not ours.
+    for each in sorted(removed, key=str):
+        folder = each.folder(root, platform.base)
+        names = MANAGED_FILES | RECORD_FILES | {events.SECRET_FILE, SECRET_FILE}
+        deletions += [folder / name for name in sorted(names) if (folder / name).is_file()]
+        source = folder / offers.OFFERS_DIR / offers.SOURCE_FILE
+        if source.is_file():
+            try:
+                offered = offers.Source.parse(source.read_text())
+            except offers.OfferError as error:
+                raise EditError(f'{source}: {error}') from None
+            deletions += [source, *(source.parent / name for name in (offered.api, offered.events, offered.flags)
+                                    if name and '/' not in name and (source.parent / name).is_file())]
+    deletions += [units[each] for each in sorted(removed, key=str) if each in units]
+    deletions += [path for path in sorted((root / platform.base).glob(f'*/{APP_FILE}'))
+                  if not any(each.app == path.parent.name for each in world)]
+    return Prepared(world, platform, writes, list(dict.fromkeys(deletions)))
 
 
-def apply(root: Path, prepared: Prepared, *, register: bool = True) -> list[Path]:
-    """Write a prepared change, registering any new instance's unit unless not ``register``; return the files changed."""
-    from swhurl.apps.new import watch_namespace
-
+def apply(root: Path, prepared: Prepared) -> list[Path]:
+    """Write an already validated plan; no reading, parsing or rendering after writes begin."""
     for path, text in prepared.writes.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
     for path in prepared.deletions:
         path.unlink()
-    changed = [*prepared.writes, *prepared.deletions]
-    if register and (root / REGISTRY_FILE).is_file():
-        from swhurl.apps.new import GenerationError
-        from swhurl.apps.new import register as add_unit
-        for each in sorted(prepared.added, key=str):
-            before = (root / REGISTRY_FILE).read_text()
-            try:
-                add_unit(root, f'{each.unit}.yaml')
-            except GenerationError as error:
-                raise EditError(str(error)) from None
-            if (root / REGISTRY_FILE).read_text() != before:
-                changed.append(root / REGISTRY_FILE)
-    reloader = root / RELOADER_FILE
-    if reloader.is_file():
-        before = reloader.read_text()
-        for namespace in sorted(render.shared(prepared.world, prepared.platform).reloaded):
-            watch_namespace(root, namespace)
-        if reloader.read_text() != before:
-            changed.append(reloader)
-    return changed
-
-
-def write(root: Path, world: World, platform: Platform) -> list[Path]:
-    """Render ``world`` and write what changed, after every file has rendered; return the files changed."""
-    return apply(root, render_all(root, world, platform))
+    for folder in sorted({parent for path in prepared.deletions for parent in path.parents
+                          if root / prepared.platform.base in parent.parents}, reverse=True):
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
+    return [*prepared.writes, *prepared.deletions]
 
 
 def read(root: Path, base: Path = Path('apps')) -> tuple[World, Platform]:
@@ -138,12 +183,9 @@ def read(root: Path, base: Path = Path('apps')) -> tuple[World, Platform]:
 
 
 def sync(root: Path, base: Path = Path('apps')) -> list[Path]:
-    """Write what the platform derives for every instance under ``root``; return the files changed. In a
-    tree with the unit registry, an instance whose records exist and whose unit file does not (a merged
-    first promotion, which carries only records) is added: its unit is written and registered."""
+    """Reconcile records, including merged creates and removals, and all shared files."""
     world, platform = read(root, base)
-    added = frozenset(each for each in world if (root / REGISTRY_FILE).is_file() and not each.unit_file(root).is_file())
-    return apply(root, render_all(root, world, platform, added))
+    return apply(root, plan(root, world, platform))
 
 
 def guard(root: Path, world: World, platform: Platform, targets: list[Instance], base: Path = Path('apps')) -> None:
@@ -156,25 +198,47 @@ def guard(root: Path, world: World, platform: Platform, targets: list[Instance],
                         f'(make check-apps lists every difference): {shown}')
 
 
-def prepare(root: Path, targets: Instance | list[Instance], update: Callable[[Entry | None], Entry],
-            base: Path = Path('apps'), *, adding: bool = False) -> Prepared:
-    """One operation on some instances' records, rendered but not written: ``update`` applied to each
-    (given None for an instance being ``adding``). Refused when a target exists and its files are not
-    what its records render (guard), or when any instance fails to render."""
+@dataclasses.dataclass(frozen=True)
+class Create:
+    entry: Entry
+
+
+@dataclasses.dataclass(frozen=True)
+class Update:
+    update: Callable[[Entry], Entry]
+
+
+@dataclasses.dataclass(frozen=True)
+class Remove:
+    pass
+
+
+def prepare(root: Path, operations: dict[Instance, Create | Update | Remove], base: Path = Path('apps'), *,
+            register: bool = True, routes: dict | None = None) -> Prepared:
+    """Validate all targets, transform their records, then plan every output before writing.
+    Updates guard generated files against unrepresentable hand edits. Removal needs only valid records:
+    its managed outputs may already be stale, and unrelated files are retained."""
     world, platform = read(root, base)
-    targets = [targets] if isinstance(targets, Instance) else targets
-    for each in targets:
-        if adding and each in world:
+    for each, operation in operations.items():
+        if isinstance(operation, Create) and each in world:
             raise EditError(f'{each} already exists')
-        if not adding and each not in world:
+        if not isinstance(operation, Create) and each not in world:
             raise EditError(f'no instance {each}')
-    guard(root, world, platform, [each for each in targets if each in world], base)
-    for each in targets:
-        world[each] = update(world.get(each))
-    return render_all(root, world, platform, frozenset(targets) if adding else frozenset())
+    for each, operation in operations.items():
+        if isinstance(operation, Remove):
+            check_removal(each, world)
+    guard(root, world, platform, [each for each, op in operations.items() if isinstance(op, Update)], base)
+    for each, operation in operations.items():
+        if isinstance(operation, Remove):
+            del world[each]
+        else:
+            world[each] = operation.entry if isinstance(operation, Create) else operation.update(world[each])
+    added = frozenset(each for each, op in operations.items() if isinstance(op, Create))
+    return plan(root, world, platform, added, register=register, routes=routes)
 
 
 def change(root: Path, targets: Instance | list[Instance], update: Callable[[Entry], Entry],
            base: Path = Path('apps')) -> list[Path]:
     """``prepare``, then write what changed; return the files changed."""
-    return apply(root, prepare(root, targets, update, base))
+    targets = [targets] if isinstance(targets, Instance) else targets
+    return apply(root, prepare(root, {each: Update(update) for each in targets}, base))

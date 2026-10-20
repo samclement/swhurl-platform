@@ -27,6 +27,7 @@ import argparse
 import getpass
 import re
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from ruamel.yaml.comments import CommentedMap
@@ -35,6 +36,8 @@ from swhurl import ROOT
 from swhurl.apps import channels, edit
 from swhurl.apps.contract import TEAMS_FILE
 from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model.draft import Entry
+from swhurl.apps.model.records import TEAM_GRANT
 from swhurl.apps.new import dump
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 from swhurl.run import CommandError, Runner
@@ -46,15 +49,6 @@ MAX_DESCRIPTION = 200
 def registry(root: Path) -> tuple[YamlFile, dict]:
     document = YamlFile(root / TEAMS_FILE)
     return document, mapping(document.data, 'teams', create=True)
-
-
-def apps_of(root: Path) -> dict[str, list[str]]:
-    """Every team an app names in Git, with its apps: registered or not."""
-    found: dict[str, set[str]] = {}
-    world, _ = model_sync.read(root)
-    for each, entry in world.items():
-        found.setdefault(entry.app.team, set()).add(each.app)
-    return {team: sorted(apps) for team, apps in found.items()}
 
 
 def checked_name(name: str) -> str:
@@ -77,16 +71,17 @@ def entry(description: str) -> CommentedMap:
     return found
 
 
-def relabel(root: Path, apps: list[str], team: str) -> None:
-    for app in apps:
-        edit.set_team(root, app, team)
-
-
-def write_routes(root: Path) -> None:
-    """Regenerate the routes the checker reads, after the registry on disk changed."""
-    found = channels.routes_file(root)
-    if found and (not found[0].is_file() or found[0].read_text() != found[1]):
-        found[0].write_text(found[1])
+def prepare(root: Path, document: YamlFile | None = None, operations: dict | None = None,
+            known: dict[str, str] | None = None) -> model_sync.Prepared:
+    """Plan against the proposed team/channel registry, not yesterday's routes on disk."""
+    document = document or registry(root)[0]
+    wanted = {'channels': channels.channels(root) if known is None else known,
+              'teams': {team: list(value['notify']) for team, value in document.data['teams'].items()
+                        if (value or {}).get('notify')}}
+    planned = model_sync.prepare(root, operations or {}, routes=wanted if (root / channels.NOTIFY_DIR).is_dir() else None)
+    if document.path.read_text() != document.render():
+        planned.writes[document.path] = document.render()
+    return planned
 
 
 def checked_channels(root: Path, names: list[str]) -> list[str]:
@@ -102,7 +97,7 @@ def add(root: Path, name: str, description: str = '') -> None:
     if checked_name(name) in teams:
         raise EditError(f'team {name} already exists')
     teams[name] = entry(checked_description(description))
-    document.save()
+    model_sync.apply(root, prepare(root, document))
     print(f'[OK] added team {name}')
 
 
@@ -134,15 +129,23 @@ def change(root: Path, name: str, description: str | None = None, rename: str | 
             current.pop('description', None)
         teams[name] = current
     apps: list[str] = []
+    operations = {}
     if rename and rename != name:
         if checked_name(rename) in teams:
             raise EditError(f'team {rename} already exists; to merge the two, remove {name} with --move-apps-to {rename}')
         position = list(teams).index(name)
         teams.insert(position, rename, teams.pop(name))
-    document.save()
-    if rename and rename != name:
-        apps = edit.rename_team(root, name, rename)
-    write_routes(root)
+        world, _ = model_sync.read(root)
+        before, after = f'{TEAM_GRANT}{name}', f'{TEAM_GRANT}{rename}'
+
+        def update(value: Entry) -> Entry:
+            allows = tuple(dict.fromkeys(after if grant == before else grant for grant in value.settings.allows))
+            return replace(value, app=replace(value.app, team=rename) if value.app.team == name else value.app,
+                           settings=replace(value.settings, allows=allows))
+        operations = {each: model_sync.Update(update) for each, value in world.items()
+                      if value.app.team == name or before in value.settings.allows}
+        apps = sorted({each.app for each in operations if world[each].app.team == name})
+    model_sync.apply(root, prepare(root, document, operations))
     print(f'[OK] team {name}' + (f' renamed to {rename}; relabelled {len(apps)} app(s)' if rename and rename != name else ' updated'))
 
 
@@ -151,20 +154,21 @@ def remove(root: Path, name: str, move_apps_to: str | None = None) -> None:
     document, teams = registry(root)
     if name not in teams:
         raise EditError(f'no team {name}; registered: {", ".join(teams)}')
-    apps = apps_of(root).get(name, [])
+    world, _ = model_sync.read(root)
+    apps = sorted({each.app for each, value in world.items() if value.app.team == name})
     if apps and not move_apps_to:
         raise EditError(f'team {name} still owns {", ".join(apps)}: move them with --move-apps-to <team>, '
                         'or each with make app-team, then remove it')
     if move_apps_to is not None and (move_apps_to == name or move_apps_to not in teams):
         raise EditError(f'--move-apps-to must name another registered team: {", ".join(t for t in teams if t != name)}')
-    granted = edit.team_grants(root, name)
+    granted = sorted(str(each) for each, value in world.items() if f'{TEAM_GRANT}{name}' in value.settings.allows)
     if granted:
         raise EditError(f'team:{name} is allowed to call {", ".join(granted)}: remove those grants first '
                         f'(make app-allows APP=<app> ENV=<env> ARGS="--remove team:{name}")')
-    relabel(root, apps, move_apps_to or '')  # while the old team is still registered: nothing is ever unowned
+    operations = {each: model_sync.Update(lambda value: replace(value, app=replace(value.app, team=move_apps_to)))
+                  for each, value in world.items() if value.app.team == name}
     del teams[name]
-    document.save()
-    write_routes(root)
+    model_sync.apply(root, prepare(root, document, operations))
     print(f'[OK] removed team {name}' + (f'; moved {", ".join(apps)} to {move_apps_to}' if apps else ''))
 
 
@@ -176,25 +180,24 @@ def listed_channels(root: Path) -> tuple[YamlFile, list]:
     return document, resources
 
 
-def set_decryption(root: Path) -> None:
+def set_decryption(root: Path, prepared: model_sync.Prepared, encrypted: bool) -> None:
     """The notify unit decrypts exactly while it holds an encrypted file (make check-repo requires the two to agree)."""
     path = root / channels.UNIT_FILE
     if not path.is_file():
         return
     unit = YamlFile(path)
     spec = mapping(unit.data, 'spec')
-    wanted = any((root / channels.NOTIFY_DIR).glob('*.sops.yaml'))
-    if wanted and 'decryption' not in spec:
+    if encrypted and 'decryption' not in spec:
         spec.insert(list(spec).index('path') + 1, 'decryption', {'provider': 'sops', 'secretRef': {'name': 'sops-age'}})
-    elif not wanted and 'decryption' in spec:
+    elif not encrypted and 'decryption' in spec:
         del spec['decryption']
     else:
         return
-    unit.save()
+    prepared.writes[path] = unit.render()
 
 
 def channel_add(root: Path, name: str, address: str, transport: str = 'ntfy', replace: bool = False,
-                runner: Runner | None = None) -> None:
+                runner: Runner | None = None, *, registry_document: YamlFile | None = None) -> None:
     """Write a channel's encrypted Secret. Encrypt only: an existing channel is replaced whole, never read."""
     if not channels.NAME_RE.match(name or ''):
         raise EditError('a channel name is a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
@@ -208,48 +211,49 @@ def channel_add(root: Path, name: str, address: str, transport: str = 'ntfy', re
         raise EditError(f'no channel {name} to replace; channels: {", ".join(channels.channels(root)) or "none"}')
     document, resources = listed_channels(root)
     before = path.read_text() if path.exists() else None
-    # The address goes from memory into a file that sops encrypts in place: it is never printed.
-    path.write_text(dump([{'apiVersion': 'v1', 'kind': 'Secret',
-                           'metadata': {'name': f'{channels.SECRET_PREFIX}{name}', 'namespace': channels.NAMESPACE,
-                                        'labels': {channels.TRANSPORT: transport}},
-                           'type': 'Opaque', 'stringData': {channels.ADDRESS_KEY: address}}]))
-
-    def restore() -> None:
-        if before is None:
-            path.unlink(missing_ok=True)
-        else:
-            path.write_text(before)
-    try:
-        (runner or Runner()).run(['sops', '--encrypt', '--in-place', str(path)])
-    except CommandError:
-        restore()
-        raise EditError(f'could not SOPS-encrypt {path.name}; nothing was changed') from None
-    if 'sops:' not in path.read_text():
-        restore()
-        raise EditError(f'{path.name} was not encrypted; nothing was changed')
+    known = channels.channels(root) | {name: transport}
+    prepared = prepare(root, registry_document, known=known)
     if path.name not in resources:
         resources.append(path.name)
-        document.save()
-    set_decryption(root)
-    write_routes(root)
+        prepared.writes[document.path] = document.render()
+    set_decryption(root, prepared, True)
+    # Encrypt from stdin: neither the address nor an incomplete multi-file operation reaches disk.
+    text = dump([{'apiVersion': 'v1', 'kind': 'Secret',
+                  'metadata': {'name': f'{channels.SECRET_PREFIX}{name}', 'namespace': channels.NAMESPACE,
+                               'labels': {channels.TRANSPORT: transport}},
+                  'type': 'Opaque', 'stringData': {channels.ADDRESS_KEY: address}}])
+    try:
+        encrypted = (runner or Runner()).run(
+            ['sops', '--encrypt', '--filename-override', str(path.relative_to(root)), '--input-type', 'yaml',
+             '--output-type', 'yaml', '/dev/stdin'], input=text, cwd=root).stdout
+    except CommandError:
+        raise EditError(f'could not SOPS-encrypt {path.name}; nothing was changed') from None
+    if 'sops:' not in encrypted or 'ENC[' not in encrypted:
+        raise EditError(f'{path.name} was not encrypted; nothing was changed')
+    prepared.writes[path] = encrypted
+    model_sync.apply(root, prepared)
     print(f'[OK] channel {name} ({transport}) {"replaced" if before is not None else "added"}; its address is not shown again')
 
 
-def channel_remove(root: Path, name: str) -> None:
+def channel_remove(root: Path, name: str, *, registry_document: YamlFile | None = None) -> None:
     path = root / channels.channel_file(name)
     if not path.exists():
         raise EditError(f'no channel {name}; channels: {", ".join(channels.channels(root)) or "none"}')
-    users = [team for team, names in channels.team_channels(root).items() if name in names]
+    registry_document = registry_document or registry(root)[0]
+    users = [team for team, value in registry_document.data['teams'].items() if name in (value or {}).get('notify', [])]
     if users:
         raise EditError(f'channel {name} is notified by {", ".join(users)}: change those teams first '
                         '(make team-edit NAME=<team> ARGS="--notify <another channel>")')
     document, resources = listed_channels(root)
+    known = channels.channels(root)
+    del known[name]
+    prepared = prepare(root, registry_document, known=known)
     if path.name in resources:
         resources.remove(path.name)
-        document.save()
-    path.unlink()
-    set_decryption(root)
-    write_routes(root)
+        prepared.writes[document.path] = document.render()
+    prepared.deletions.append(path)
+    set_decryption(root, prepared, any(file != path for file in (root / channels.NOTIFY_DIR).glob('*.sops.yaml')))
+    model_sync.apply(root, prepared)
     print(f'[OK] removed channel {name}')
 
 
@@ -259,21 +263,25 @@ def team_channel(root: Path, team: str, address: str | None, transport: str = 'n
 
     The everyday command: the channel is named after the team, so nobody has to name or pick one. A
     channel another team also notifies stays when this team lets go of it."""
-    if team not in registry(root)[1]:
-        raise EditError(f'no team {team}; registered: {", ".join(registry(root)[1])}')
-    current = (channels.team_channels(root).get(team) or [None])[0]
+    document, registered = registry(root)
+    if team not in registered:
+        raise EditError(f'no team {team}; registered: {", ".join(registered)}')
+    current = ((registered[team] or {}).get('notify') or [None])[0]
     if address is None:
         if not current:
             raise EditError(f'team {team} has no channel to remove')
-        change(root, team, notify=[])
-        if not any(current in names for names in channels.team_channels(root).values()):
-            channel_remove(root, current)
-        return
-    if current:
-        channel_add(root, current, address, transport, replace=True, runner=runner)
-        return
-    channel_add(root, team, address, transport, replace=(root / channels.channel_file(team)).exists(), runner=runner)
-    change(root, team, notify=[team])
+        registered[team].pop('notify')
+        if any(current in (value or {}).get('notify', []) for value in registered.values()):
+            model_sync.apply(root, prepare(root, document))
+        else:
+            channel_remove(root, current, registry_document=document)
+    else:
+        chosen = current or team
+        if not current:
+            registered[team] = registered[team] or entry('')
+            registered[team]['notify'] = [chosen]
+        channel_add(root, chosen, address, transport, replace=(root / channels.channel_file(chosen)).exists(),
+                    runner=runner, registry_document=document)
 
 
 def read_address() -> str:

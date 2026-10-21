@@ -140,6 +140,8 @@ def progress(action: str, merged: Target | None, main: Target | None, live: AppR
     one replaces it. ``reached`` is when the change was first seen at its end: a replaced change still ran."""
     if merged is None:
         return Progress('unread', 'the target or current render could not be read')
+    if not merged.records and action != 'remove':  # its own merge has no records for it: from before records
+        return Progress('historical', 'its merge commit has no records for this instance')
     if main is not None and merged.records and merged.records == main.records:
         merged = main
     if merged.hash == '' and not merged.pending:

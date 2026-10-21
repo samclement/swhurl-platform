@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/swhurl-try-10
-  tag: 49-a4fdeeb
-  digest: sha256:af50f171ceef27081685741bfade323c46dac7782c2168a68d2c0572c88b574a
+  tag: 52-af4d55c
+  digest: sha256:47c6f4c7a0103ddf5ec4ba83900e9b135b09dcddb46fbcad8c4908797495302a
 kind: web
 uid: 65532
 stack: typescript
@@ -15,4 +15,4 @@ description: 'throwaway: team platform T2 callee (orders), delete me'
 apiPath: /openapi.json
 publishes:
 - visited
-offers: a4fdeeb
+offers: af4d55c

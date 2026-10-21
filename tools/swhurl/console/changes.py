@@ -17,11 +17,13 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import os
 import shutil
 import sys
 import tarfile
 import tempfile
+import time
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
@@ -104,9 +106,10 @@ class GitHubAPI:
             headers={'Authorization': f'Bearer {github.token}', 'Accept': 'application/vnd.github+json',
                      'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'swhurl-console'})
 
-    def call(self, method: str, path: str, body: dict[str, Any] | None = None, *, missing_ok: bool = False) -> httpx.Response:
+    def call(self, method: str, path: str, body: dict[str, Any] | None = None, *, missing_ok: bool = False,
+             headers: Mapping[str, str] | None = None) -> httpx.Response:
         try:
-            reply = self.client.request(method, path, json=body)
+            reply = self.client.request(method, path, json=body, headers=headers)
         except httpx.HTTPError as error:
             raise ActionError(f'GitHub {method} {path} failed: {self.runner.redact(str(error))}') from None
         if reply.status_code == 404 and missing_ok:
@@ -205,8 +208,15 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
     intended output, including Settings and other instances' relationships. Encrypted files contribute
     only their presence, never their contents. No records means absent even beside stale output."""
     api = GitHubAPI(runner, github)
+    started = time.monotonic()
+    downloaded = extracted = None
+    size = instances = 0
+    phase = 'download'
     try:
         content = api.call('GET', f'/tarball/{revision}').content
+        size = len(content)
+        downloaded = time.monotonic()
+        phase = 'extract'
         with tempfile.TemporaryDirectory(prefix='console-targets-') as tmp:
             root = Path(tmp)
             public = {calling.SIGNING_KEYS_FILE, events.CONTROLLER_KEY_FILE, events.CONSOLE_KEY_FILE, backup.MONGODB_JOB}
@@ -229,6 +239,8 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
                         target = root / path
                         target.parent.mkdir(parents=True, exist_ok=True)
                         target.write_bytes(b'' if encrypted else archive.extractfile(member).read())
+            extracted = time.monotonic()
+            phase = 'render'
             world, problems = store.world(root)
             if problems:
                 raise ValueError('; '.join(problems))
@@ -261,10 +273,19 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
                     digest(app, record, mine), digest(app, mine), entry.release.image.digest,
                     (release.get('metadata', {}).get('annotations') or {}).get(interface.RENDER_ANNOTATION, '') if release else None,
                     helmrelease.image(release).get('digest', '') if release else '', expected)
-            return found
+            instances = len(found)
+        phase = 'done'
+        return found
     except (tarfile.TarError, OSError, ValueError, AttributeError, TypeError, KeyError, yaml.YAMLError) as error:
         raise ActionError(f'cannot read render targets: {error}') from None
     finally:
+        finished = time.monotonic()
+        logging.getLogger('swhurl.console.timing').info(
+            'render targets revision=%s phase=%s bytes=%d instances=%d download_ms=%.1f extract_ms=%.1f render_ms=%.1f total_ms=%.1f',
+            revision[:12], phase, size, instances,
+            ((downloaded or finished) - started) * 1000,
+            ((extracted or finished) - downloaded) * 1000 if downloaded is not None else 0,
+            (finished - extracted) * 1000 if extracted is not None else 0, (finished - started) * 1000)
         api.client.close()
 
 

@@ -22,6 +22,7 @@ import re
 import sys
 import time
 from collections import Counter
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -57,6 +58,8 @@ from swhurl.console import (
     repos,
     stages,
 )
+from swhurl.console.reading import LOG as TIMING
+from swhurl.console.reading import Files
 from swhurl.run import CommandError, Runner, SharedReads
 
 IDENTITY_HEADER = 'X-Auth-Request-Email'
@@ -262,6 +265,12 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             document_source = local_file
         else:
             document_source = None
+    file_source = document_source
+    request_files: ContextVar[Files | None] = ContextVar('request_files', default=None)
+    if file_source is not None:
+        def document_source(path: str) -> str | None:
+            scoped = request_files.get()
+            return scoped(path) if scoped is not None else file_source(path)
     described = catalogue.Documents(document_source)
 
     def offer_text(row: cluster.AppRow, event: str = '') -> str:
@@ -331,6 +340,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         """A commit's render targets, or None when they could not be read (not kept: read again next time)."""
         if not commit or github is None:
             return None
+        TIMING.info('render targets cache=%s revision=%s', 'hit' if commit in renders else 'miss', commit[:12])
         if commit not in renders:
             try:
                 keep(renders, commit, changes.render_targets(runner, github, commit))
@@ -474,16 +484,18 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         summary = next((a for a in cluster.summaries(rows) if a.app == found.app), None)
         promotion_problem = gate.source_problem(promotion.settled_status(runner, github, status), status.desired_image) if found.env == 'staging' else ''
         row = summary.envs.get(found.env) if summary else None
-        flag_list, flag_problem = flag_rows(found, row.connections.offers if row else '')
-        settings = instance_settings(found)
         shown = row.connections if row else cluster.Connections()
-        relation_rows, relation_problem = links.intent(found, shown.rows, document_source)
+        files = request_files.get()
+        (flag_list, flag_problem), settings, (relation_rows, relation_problem), secrets, minimum = files.together(
+            lambda: flag_rows(found, shown.offers), lambda: instance_settings(found),
+            lambda: links.intent(found, shown.rows, document_source, together=files.together),
+            lambda: secret_states(found, status), lambda: image_minimum(found))
         shown = replace(shown, rows=relation_rows)
-        return page(request, 'app.html', status=status, secret_states=secret_states(found, status), flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
+        return page(request, 'app.html', status=status, secret_states=secrets, flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
                     flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
                     connections=shown, relation_problem=relation_problem, allows=settings.grants.allows if settings else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
-                    scale_fields=merge.SCALE_FIELDS, minimum=image_minimum(found), github=github,
+                    scale_fields=merge.SCALE_FIELDS, minimum=minimum, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
@@ -562,11 +574,17 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return RedirectResponse(f'/apps/{app}/{env}?flag={name}#flags', status_code=303)
 
     def app(request: Request) -> Response:
-        try:
-            with runner.once():
-                return read_app(request)
-        except (CommandError, cluster.ReadError, actions.ActionError, EditError) as error:
-            return page(request, 'error.html', status_code=502, error=str(error))
+        # Keep the reader alive through rendering: template offer descriptions read files too.
+        remote = file_source is platform_file
+        with Files(runner, github if remote else None, None if remote else file_source) as files:
+            token = request_files.set(files)
+            try:
+                with runner.once():
+                    return read_app(request)
+            except (CommandError, cluster.ReadError, actions.ActionError, EditError) as error:
+                return page(request, 'error.html', status_code=502, error=str(error))
+            finally:
+                request_files.reset(token)
 
     def platform(request: Request) -> Response:
         def read():
@@ -1007,11 +1025,15 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return await change_app(request)
 
     def activity(request: Request) -> Response:
-        with runner.once():
-            rows, prs_error = change_rows(jobs.recent(), others=True)
-        # What is still moving or waiting for someone comes first; then what ended, newest first.
-        return page(request, 'activity.html', moving=[row for row in rows if not row.track.settled],
-                    ended=[row for row in rows if row.track.settled], prs_error=prs_error)
+        started = time.monotonic()
+        try:
+            with runner.once():
+                rows, prs_error = change_rows(jobs.recent(), others=True)
+            # What is still moving or waiting for someone comes first; then what ended, newest first.
+            return page(request, 'activity.html', moving=[row for row in rows if not row.track.settled],
+                        ended=[row for row in rows if row.track.settled], prs_error=prs_error)
+        finally:
+            TIMING.info('activity elapsed_ms=%.1f', (time.monotonic() - started) * 1000)
 
     def healthz(_request: Request) -> Response:
         return PlainTextResponse('ok\n')

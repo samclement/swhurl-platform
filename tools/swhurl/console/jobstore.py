@@ -36,7 +36,7 @@ def record(job: Job, redact) -> str:
         raw = json.dumps({'id': job.id, 'action': job.action, 'unit': job.unit, 'identity': job.identity,
                           'started': job.started.isoformat(), 'finished': job.finished.isoformat() if job.finished else None,
                           'state': job.state, 'link': job.link, 'owner': job.owner, 'resume': job.resume,
-                          'target_hash': job.target_hash, 'reached': job.reached, 'lines': lines},
+                          'reached': job.reached, 'lines': lines},
                          ensure_ascii=False)
         if len(raw.encode()) <= RECORD_BYTES or len(lines) <= 1:
             return raw
@@ -52,7 +52,7 @@ def parse(raw: str) -> Job | None:
                     str(doc['state']), dt.datetime.fromisoformat(doc['finished']) if doc.get('finished') else None,
                     str(doc.get('link') or ''), str(doc.get('owner') or ''),
                     doc['resume'] if isinstance(doc.get('resume'), dict) else None,
-                    target_hash=str(doc.get('target_hash') or ''), reached=str(doc.get('reached') or ''))
+                    reached=str(doc.get('reached') or ''))
     except (ValueError, KeyError, TypeError):
         return None
     return found if found.state in ('running', 'succeeded', 'failed', 'interrupted') else None

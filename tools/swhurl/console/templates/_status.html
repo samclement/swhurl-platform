@@ -10,6 +10,8 @@
 {% macro items(list) %}<ul class="items">{% for p in list %}<li>{{ mark(p.level) }} {% if p.link %}<a href="{{ p.link }}">{{ p.text | short }}</a>{% else %}{{ p.text | short }}{% endif %}</li>{% endfor %}</ul>{% endmacro %}
 {# A job running on the thing a row is about: where the row's button was, linking to the job, and re-reading the page until it ends. #}
 {% macro running(j, refresh_url) %}<a class="started" href="/jobs/{{ j.id }}" {{ follow(refresh_url) }}>{{ mark('updating') }} {{ j.action }} · job #{{ j.id }}</a>{% endmacro %}
+{# How Validate went on an open console pull request's head (changes.PullRequest.checks). #}
+{% macro checks(pr) %}{{ {'passed': 'Checks passed', 'failed': 'Checks failed', 'running': 'Checks running', 'pending': 'Checks pending', 'conflict': 'Merge conflict'}.get(pr.checks, 'Checks on GitHub') }}{% endmacro %}
 {# How an open console pull request gets merged: by the merge gate, or by you and why. #}
 {% macro merging(pr) %}<span class="merging">{{ merge_mode(pr) }}</span>{% endmacro %}
 {# What a list page is for, one click away: the list itself starts right under the title. #}
@@ -44,7 +46,7 @@
       </div>
     </summary>
     <div class="panel">
-      {% if c.pr %}<p class="pull"><a href="{{ c.pr.url }}">Pull request #{{ c.pr.number }} {{ icon('external') }}</a> · <a href="{{ c.pr.checks_url or c.pr.url }}" title="Its checks on GitHub">{{ c.pr.progress }} {{ icon('external') }}</a></p>
+      {% if c.pr %}<p class="pull"><a href="{{ c.pr.url }}">Pull request #{{ c.pr.number }} {{ icon('external') }}</a> · <a href="{{ c.pr.checks_url or c.pr.url }}" title="Its checks on GitHub">{{ checks(c.pr) }} {{ icon('external') }}</a></p>
       <p>{{ merging(c.pr) }}</p>
       {% elif j and j.link %}<p class="pull"><a href="{{ j.link }}">Pull request {{ icon('external') }}</a></p>{% endif %}
       {% if j %}<pre>{% for line in j.lines %}{{ line | short }}

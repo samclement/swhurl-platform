@@ -1,27 +1,33 @@
-"""The stages a change goes through and where it ends, for Activity and a job's page.
+"""How far a change has got, for Activity, a job's page and an app's change list.
 
 A change is more than its job: a promotion's job ends when its pull request is open, and the
-change ends when production runs it. A ``Track`` is the whole path as labelled stages, the last
-one always the terminal stop (``Live in prod``, ``Applied``, ``Removed from staging``), drawn from
-the start so the outcome is known before it is reached.
+change ends when production runs it. ``progress`` is the one answer to how far a merged change to an
+instance has got, from Git's facts (``Target``, read by ``changes.render_targets``) and what the
+cluster shows (``cluster.AppRow``), read fresh every time. A matching render hash means the intended
+render reached the cluster; Ready at the current generation with the target image running means the
+rollout is complete. Proven absence, a render main has not made yet and a failed read are different
+facts: no failed read proves absence or completion. The one fact kept is when the change was first
+seen at its end (``Job.reached``), so a later change can replace it without unsaying that it ran.
 
-Progress is derived from the job, pull request, main's render, the live render hash and instance
-state. No stage or rollout verdict is persisted; the one fact kept is when the change was first seen
-at its end (``Job.reached``), so a later change can replace it without unsaying that it ran.
-Output stays with the job as one chronological log.
+A ``Track`` presents that answer as labelled stages, the last one always the terminal stop
+(``Live in prod``, ``Applied``, ``Removed from staging``), drawn from the start so the outcome is
+known before it is reached. Output stays with the job as one chronological log.
 """
 from __future__ import annotations
 
 import datetime as dt
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
-from swhurl.apps.state import State
+from swhurl.console import merge
 from swhurl.console.actions import Job
+
+if TYPE_CHECKING:
+    from swhurl.console.cluster import AppRow
 
 NEW_APP_JOB, FINISH_JOB = 'new app and repository', 'finish new app'
 NEW_APP_ACTIONS = (NEW_APP_JOB, FINISH_JOB, 'new')  # the jobs, and the action in their pull request's branch
-LABELS = {'validate': 'Reviewed', 'merge': 'Merged', 'rollout': 'Applied'}
 # A stage's state as the mark it is drawn with (_status.html) and the words a screen reader gets.
 MARKS = {'done': ('healthy', 'done'), 'running': ('updating', 'running now'), 'failed': ('failing', 'failed'),
          'waiting': ('suspended', 'waiting for you'), 'stopped': ('stopped', 'stopped'), 'todo': ('todo', 'not reached'),
@@ -32,9 +38,7 @@ STATUS = {'running': ('updating', 'In progress'), 'waiting': ('suspended', 'Wait
           # Failed, but not over: its pull request is still open, or the instance it reached is failing.
           'blocked': ('failing', 'Failed')}
 ABSENT = 'absent'  # an instance read from the cluster and not there
-UNRENDERED = 'unrendered'  # an instance with records in a tree and no HelmRelease yet (a merged first promotion)
 PULL = re.compile(r'/pull/(\d+)$')
-BRANCH = re.compile(r'console/([a-z]+)-(.+)-(staging|prod)-[0-9a-f]{7,40}')
 NOTE = 160
 
 
@@ -92,106 +96,112 @@ class Pull:
 
 @dataclass(frozen=True)
 class Target:
-    """An instance's render in a Git tree; 'absent' is proven missing instance records, 'unrendered' records
-    that main has not rendered yet."""
-    hash: str
-    digest: str = ''
+    """An instance in one Git tree, as facts. No records (the default) is proven absence once the tree was read."""
+    records: str = ''  # a hash of its own app.yaml, release.yaml and instance.yaml: the requested change
     settings: str = ''  # a hash of its instance.yaml and app.yaml: what the platform, not the image, decides
-    records: str = ''  # a hash of its app.yaml, release.yaml and instance.yaml: everything it is rendered from
+    digest: str = ''  # the image digest its release.yaml requests
+    hash: str | None = None  # its HelmRelease's render hash; None: no HelmRelease; '': one from before render hashes
+    rendered: str = ''  # the image digest its HelmRelease runs
+    expected: str = ''  # render hash from this tree's complete inputs; '' before an allocation is made
+
+    @property
+    def pending(self) -> bool:
+        """Records main has not rendered yet: a records-only merge before the Render workflow's commit. A held
+        promotion or Settings-only edit can leave a healthy old HelmRelease with the same image digest."""
+        return bool(self.records) and (self.hash is None or self.rendered != self.digest
+                                       or (bool(self.hash) and self.hash != self.expected))
+
+    def same(self, other: Target) -> bool:
+        """The same render: the same records while either is unrendered, else the same render hash."""
+        return self.records == other.records if self.pending or other.pending else self.hash == other.hash
 
 
 @dataclass(frozen=True)
-class Rollout:
-    state: str  # live, zero, removed, replaced, superseded, applying, creating, removing, failing, held, unread
-    detail: str = ''
-    word: str = ''
-    applied: bool = False
-    newer: str = ''  # followed to main's newer release: its image tag or digest, when that differs
+class Progress:
+    """How far a merged change to an instance has got; never saved."""
+    state: str  # REACHED; replaced, superseded, historical; rendering, creating, applying, removing; failing, held, unread
+    detail: str = ''  # for replaced: when it was first seen at its end
+    applied: bool = False  # Flux applied its render: the render hash matches and the HelmRelease is Ready at its generation
+    newer: str = ''  # carried by main's newer release: its image digest, or '-' when only the render differs
 
 
 REACHED = ('live', 'zero', 'removed')  # where a change ends; Job.reached records the first time it was seen there
 
 
-def ours(target: Target, current: Target) -> bool:
-    """Main's records for the instance are still the ones this change merged: whatever main renders from
-    them now is this change's render (a records-only merge rendered later, or another app's records
-    changing what the platform derives for it)."""
-    return bool(target.records) and target.records == current.records
+def progress(action: str, merged: Target | None, main: Target | None, live: AppRow | str | None,
+             reached: str = '') -> Progress:
+    """How far the change ``action`` merged has got. ``merged`` and ``main`` are the instance in the merge
+    commit's tree and in main's (``Target()`` when proven absent, None when the tree could not be read);
+    ``live`` is its cluster row, ABSENT when the cluster was read without it, None when it could not be read.
 
-
-def follows(action: str, target: Target, current: Target) -> bool:
-    """Main renders something else for the instance only because a newer release arrived (the Deploy
-    workflow): its settings are the ones this change made, so the change is still in force. A promotion
-    chooses the release itself, so a newer one replaces it."""
-    return action != 'promote' and bool(target.settings) and target.settings == current.settings
-
-
-def aim(action: str, target: Target, current: Target) -> Target:
-    """The render a change is judged against: main's when it is still this change's (ours) or carries
-    it (follows), else the merge commit's own."""
-    return current if ours(target, current) or follows(action, target, current) else target
-
-
-def judge(action: str, live: State | str | None, target: Target | None, current: Target | None,
-          applied_hash: str = '', ready: bool = False, image_matches: bool = False, reached: str = '') -> Rollout:
-    """Five fresh facts, never a saved verdict. Hash equality proves application independently of
-    unrelated Git commits. Absence must be proved in Git and on the cluster; a failed read is unknown.
-    ``reached`` is when the change was first seen at its end: a replaced change still ran."""
-    if target is None:
-        return Rollout('unread', 'the target or current render could not be read')
-    if current is not None and ours(target, current):
-        target = current  # main's render of this change's records, whatever the merge commit held
-    if not target.hash:
-        return Rollout('historical', 'this change predates render hashes')
-    if current is None:
-        return Rollout('unread', 'the target or current render could not be read')
-    if not current.hash:
-        return Rollout('unread', 'the current render has no hash')
-    if target.hash == UNRENDERED:
-        if current.hash == ABSENT or (target.records and current.records and not ours(target, current)
-                                      and not follows(action, target, current)):
-            return Rollout('replaced', reached) if reached else Rollout('superseded')
-        if current.hash == UNRENDERED:
-            return Rollout('applying', 'main has not rendered it yet')
+    Main's render is this change's while main keeps the records it merged (a records-only merge rendered
+    later, or another app's records changing what the platform derives for it), and carries it when only a
+    newer release arrived (same settings; the Deploy workflow). A promotion chooses its release, so a newer
+    one replaces it. ``reached`` is when the change was first seen at its end: a replaced change still ran."""
+    if merged is None:
+        return Progress('unread', 'the target or current render could not be read')
+    if main is not None and merged.records and merged.records == main.records:
+        merged = main
+    if merged.hash == '' and not merged.pending:
+        return Progress('historical', 'this change predates render hashes')
+    if main is None:
+        return Progress('unread', 'the target or current render could not be read')
+    if main.hash == '' and not main.pending:
+        return Progress('unread', 'the current render has no hash')
     newer = ''
-    if target.hash != current.hash:
-        if not follows(action, target, current):
-            return Rollout('replaced', reached) if reached else Rollout('superseded')
-        newer = current.digest if current.digest != target.digest else '-'
-        target = current
-    found = landing(action, live, target, applied_hash, ready, image_matches)
+    if not merged.same(main):
+        if action == 'promote' or not merged.settings or merged.settings != main.settings:
+            return Progress('replaced', reached) if reached else Progress('superseded')
+        newer = main.digest if main.digest != merged.digest else '-'
+        merged = main
+    found = landing(action, live, merged)
     if not newer:
         return found
     if reached and found.state not in REACHED:  # it ran; what happens to the newer release is not this change's
-        return Rollout('replaced', reached)
-    return Rollout(found.state, found.detail, found.word, found.applied, newer)
+        return Progress('replaced', reached)
+    return replace(found, newer=newer)
 
 
-def landing(action: str, live: State | str | None, target: Target, applied_hash: str, ready: bool,
-            image_matches: bool) -> Rollout:
-    """How far the instance has got to ``target``, main's render for it."""
+def landing(action: str, live: AppRow | str | None, target: Target) -> Progress:
+    """How far the cluster has got to ``target``, main's render of the change."""
+    if target.pending:
+        return Progress('rendering', 'main has not rendered it yet')
     if live is None:
-        return Rollout('unread', 'the cluster could not be read')
+        return Progress('unread', 'the cluster could not be read')
     if action == 'remove':
-        return Rollout('removed') if target.hash == ABSENT and live == ABSENT else Rollout('removing')
+        return Progress('removed') if not target.records and live == ABSENT else Progress('removing')
     if live == ABSENT:
-        return Rollout('creating', 'not created yet')
-    if applied_hash != target.hash:
-        return Rollout('applying', 'the target render is not applied yet')
-    applied = ready
-    if live.key == 'failing':
-        return Rollout('failing', live.detail, applied=applied)
-    if live.key in ('suspended',):
-        return Rollout('held', live.detail, live.key, applied)
+        return Progress('creating', 'not created yet')
+    if live.render_hash != target.hash:
+        return Progress('applying', 'the target render is not applied yet')
+    state, ready = live.render_state, live.render_ready
+    if state.key == 'failing':
+        return Progress('failing', state.detail, applied=ready)
+    if state.key == 'suspended':
+        return Progress('held', state.detail, applied=ready)
     if not ready:
-        return Rollout('applying', 'the HelmRelease is not Ready at its current generation')
-    if live.key == 'stopped':
-        return Rollout('zero', applied=True)
-    if live.key == 'healthy' and image_matches and target.digest:
-        return Rollout('live', applied=True)
-    if live.key == 'unknown':
-        return Rollout('unread', live.detail or 'the instance could not be read', applied=applied)
-    return Rollout('applying', live.detail or 'waiting for the target image to be Healthy', applied=True)
+        return Progress('applying', 'the HelmRelease is not Ready at its current generation')
+    if state.key == 'stopped':
+        return Progress('zero', applied=True)
+    if state.key == 'healthy' and target.digest and live.image_matches and live.digest == target.digest:
+        return Progress('live', applied=True)
+    if state.key == 'unknown':
+        return Progress('unread', state.detail or 'the instance could not be read', applied=True)
+    return Progress('applying', state.detail or 'waiting for the target image to be Healthy', applied=True)
+
+
+# How a merged change's Progress reads: (its status, the sentence under it, the note on its end once there or None).
+MERGED = {'live': ('done', '{target} runs it{newer}.', ''),
+          'zero': ('done', '{target} is applied and scaled to zero.', 'scaled to zero'),
+          'removed': ('done', '{target} is removed.', ''),
+          'replaced': ('done', '{end} from {seen}; a newer configuration has since replaced it.', 'then replaced'),
+          'removing': ('running', 'Merged; Flux is removing {target}.', None),
+          'creating': ('running', 'Merged; waiting for Flux to create {target}.', None),
+          'rendering': ('running', 'Merged; waiting for the Render workflow to render it for {target}.', None),
+          'applying': ('running', 'Merged; Flux is applying it to {target}.', None),
+          'failing': ('blocked', 'Merged, but {target} is failing: open its page.', None),
+          'held': ('waiting', 'Merged, but {target} is suspended: open its page.', None)}
+STAGE_OF = {'done': 'done', 'running': 'running', 'blocked': 'failed', 'waiting': 'waiting'}  # a status as a stage's state
 
 
 def number(job: Job) -> int | None:
@@ -224,6 +234,13 @@ def end_label(action: str, target: str) -> str:
     return f'Removed from {env}' if action == 'remove' else f'Live in {env}'
 
 
+def landing_stages(action: str, end: str) -> list[Stage]:
+    """The stages after a merge, not reached yet: Flux applying it and, unless it removes, the instance running it."""
+    if end == 'On main':
+        return []
+    return [Stage('rollout', 'Applied', 'todo'), *([] if action == 'remove' else [Stage('running', 'Running', 'todo')])]
+
+
 def seen(when: str) -> str:
     """When a change was first seen at its end, as words."""
     try:
@@ -232,7 +249,7 @@ def seen(when: str) -> str:
         return 'an earlier read'
 
 
-def after_pull(pull: Pull, action: str, target: str, landed: Rollout | None) -> tuple[list[Stage], str, str]:
+def after_pull(pull: Pull, action: str, target: str, landed: Progress | None) -> tuple[list[Stage], str, str]:
     """Validate, Merge, Flux applying it and the terminal stop: ``(stages, status, outcome)``.
     ``landed`` is how far a merged change to an instance has got; None when it was not judged."""
     end = end_label(action, target)
@@ -243,8 +260,7 @@ def after_pull(pull: Pull, action: str, target: str, landed: Rollout | None) -> 
               'running': Stage('validate', 'Reviewed', 'running', link=pull.checks_url),
               'pending': Stage('validate', 'Reviewed', 'running', 'queued', pull.checks_url),
               }.get(pull.checks, Stage('validate', 'Reviewed', 'todo', link=pull.checks_url))
-    rollout = ([Stage('rollout', 'Applied', 'todo'),
-                *([] if action == 'remove' else [Stage('running', 'Running', 'todo')])] if instance else [])
+    rollout = landing_stages(action, end)
     planned = Stage('end', end, 'planned')
 
     def track(merge: Stage, status: str, outcome: str, validate: Stage = checks, rest: list[Stage] | None = None):
@@ -270,46 +286,26 @@ def after_pull(pull: Pull, action: str, target: str, landed: Rollout | None) -> 
     done = Stage('validate', 'Reviewed', 'done', link=pull.checks_url)
     if pull.state == 'merged':
         merged = Stage('merge', 'Merged', 'done', f'merged {pull.when}'.strip(), pull.url)
-        reached = Stage('end', end, 'reached')
         if not instance:
-            return track(merged, 'done', f'Merged {pull.when}.'.replace(' .', '.'), done, [reached])
-        flux = 'Applied'
-        found = landed or Rollout('unread', 'it was not read')
-
+            return track(merged, 'done', f'Merged {pull.when}.'.replace(' .', '.'), done, [Stage('end', end, 'reached')])
+        found = landed or Progress('unread', 'it was not read')
         if found.state == 'historical':
             return track(merged, 'done', f'Merged {pull.when}; this change predates render hashes, so its rollout cannot be tracked.'.replace(' ;', ';'),
                          done, [Stage('end', 'Merged (historical)', 'reached')])
-
-        def applied(status: str, outcome: str, state: str, note: str = '', end: Stage = planned):
-            reached = found.applied or found.state in (*REACHED, 'replaced')
-            running = [] if action == 'remove' else [Stage('running', 'Running', state if reached else 'todo', note)]
-            return track(merged, status, outcome, done,
-                         [Stage('rollout', flux, 'done' if reached else state, '' if reached else note), *running, end])
-
-        if found.state == 'replaced':  # it ran; the instance is now a later change's doing
-            return applied('done', f'{end} from {seen(found.detail)}; a newer configuration has since replaced it.', 'done',
-                           end=Stage('end', end, 'reached', 'then replaced'))
         if found.state == 'superseded':
             return track(merged, 'done', f'Merged {pull.when}; a newer configuration of {target} replaced it before it was seen '
                          f'{end[0].lower()}{end[1:]}.'.replace(' ;', ';'), done, [Stage('end', 'Superseded', 'reached')])
-        if found.state == 'live':
-            with_newer = '' if not found.newer else ', with a newer image' if found.newer != '-' else ', with later changes from main'
-            return applied('done', f'{target} runs it{with_newer}.', 'done', end=reached)
-        if found.state == 'zero':
-            return applied('done', f'{target} is applied and scaled to zero.', 'done', end=Stage('end', end, 'reached', 'scaled to zero'))
-        if found.state == 'removed':
-            return applied('done', f'{target} is removed.', 'done', end=reached)
-        if found.state == 'removing':
-            return applied('running', f'Merged; Flux is removing {target}.', 'running')
-        if found.state == 'creating':
-            return applied('running', f'Merged; waiting for Flux to create {target}.', 'running', found.detail)
-        if found.state == 'applying':
-            return applied('running', f'Merged; Flux is applying it to {target}.', 'running', found.detail)
-        if found.state == 'failing':
-            return applied('blocked', f'Merged, but {target} is failing: open its page.', 'failed', found.detail)
-        if found.state == 'held':
-            return applied('waiting', f'Merged, but {target} is {found.word}: open its page.', 'waiting', found.detail)
-        return track(merged, 'unknown', f'Merged; whether {target} runs it is not known: {found.detail}.', done)
+        if found.state not in MERGED:
+            return track(merged, 'unknown', f'Merged; whether {target} runs it is not known: {found.detail}.', done)
+        status, said, there = MERGED[found.state]
+        ended = found.state in (*REACHED, 'replaced')
+        got = found.applied or ended  # Flux applied it, whatever has happened since
+        state, note = STAGE_OF[status], '' if ended else found.detail
+        running = [] if action == 'remove' else [Stage('running', 'Running', state if got else 'todo', note)]
+        newer = '' if not found.newer else ', with a newer image' if found.newer != '-' else ', with later changes from main'
+        return track(merged, status, said.format(target=target, end=end, seen=seen(found.detail), newer=newer), done,
+                     [Stage('rollout', 'Applied', 'done' if got else state, '' if got else note), *running,
+                      planned if there is None else Stage('end', end, 'reached', there)])
     if pull.state == 'closed':
         # A new app's repository and image were made before its pull request: closing that leaves them.
         left = ('no instance was added, but the repository and image made for it still exist'
@@ -321,7 +317,7 @@ def after_pull(pull: Pull, action: str, target: str, landed: Rollout | None) -> 
                  f'{name} could not be read from GitHub: open it there.')
 
 
-def track(job: Job, pull: Pull | None = None, rollout: Rollout | None = None) -> Track:
+def track(job: Job, pull: Pull | None = None, landed: Progress | None = None) -> Track:
     """The whole path of the change ``job`` started."""
     first = prepared(job)
     flux = job.action in ('reconcile', 'suspend', 'resume')
@@ -330,10 +326,8 @@ def track(job: Job, pull: Pull | None = None, rollout: Rollout | None = None) ->
     else:
         end = end_label(job.action, job.unit)
     # What follows the job, not reached while it runs or once it has failed.
-    after = [] if flux else [Stage(key, LABELS[key], 'todo') for key in
-                             ('validate', 'merge', *(['rollout'] if end != 'On main' else []))]
-    if not flux and end != 'On main' and job.action != 'remove':
-        after.append(Stage('running', 'Running', 'todo'))
+    after = [] if flux else [Stage('validate', 'Reviewed', 'todo'), Stage('merge', 'Merged', 'todo'),
+                             *landing_stages(job.action, end)]
     if job.state == 'running':
         ends = end if flux else f'{end}, once its pull request is merged'
         return Track((first, *after, Stage('end', end, 'planned')), 'running', f'Now: {first.label}. Ends: {ends}.')
@@ -346,17 +340,14 @@ def track(job: Job, pull: Pull | None = None, rollout: Rollout | None = None) ->
         return Track((first, Stage('end', end, 'reached', said.removeprefix('✔ applied revision '))), 'done', f'{end}.')
     if pull is None:  # a dry run, or a job that had nothing to propose
         return Track((first, Stage('end', 'No pull request opened', 'reached')), 'done', 'No pull request was opened.')
-    rest, status, outcome = after_pull(pull, job.action, job.unit, rollout)
+    rest, status, outcome = after_pull(pull, job.action, job.unit, landed)
     return Track((first, *rest), status, outcome)
 
 
 def target_of(branch: str) -> tuple[str, str]:
-    """``(action, target)`` of a console pull request, from its branch; the target is '' if it names no instance."""
-    found = BRANCH.fullmatch(branch)
-    if not found:
-        return '', ''
-    action, app, env = found.groups()
-    return action, f'{app}/{"prod" if action == "promote" else env}'
+    """``(action, target)`` of a console pull request, from its branch (merge.parse); ``('', '')`` for any other."""
+    found = merge.parse(branch)
+    return (found[0], merge.target(*found)) if found else ('', '')
 
 
 def pull_track(pull: Pull, branch: str) -> Track:

@@ -1,5 +1,6 @@
 """The merge gate merges what its rule allows onto the newest main, and never pushes a failed or held change."""
 import atexit
+import base64
 import contextlib
 import functools
 import io
@@ -10,6 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+from ci_changes import records_only
 
 from swhurl import ROOT, yamlio
 from swhurl.apps import edit, egress, events, new, policy, promotion
@@ -151,6 +154,9 @@ class GateCase(unittest.TestCase):
          .on('git', 'rev-parse', 'FETCH_HEAD', stdout=HEAD)
          .on('git', 'worktree', 'add', handler=worktree)
          .on('git', 'worktree', 'remove', handler=removed)
+         .on('git', 'diff', '--name-status', handler=lambda args, _: Result(args, stdout='\n'.join(
+             f'{"D" if not (self.head / p).exists() else "A" if not (self.base / p).exists() else "M"}\t{p}'
+             for p in self.files)))
          .on('git', 'log', handler=logged)
          .on('git', 'show', handler=shown)
          .on('git', 'diff', '--name-only', '--diff-filter=U', handler=lambda args, _: Result(args, stdout=self.conflicts))
@@ -272,6 +278,16 @@ class PromotionGateTests(GateCase):
         with self.assertRaisesRegex(RuntimeError, 'main kept moving'), contextlib.redirect_stdout(io.StringIO()):
             self.check(runner)
         self.assertEqual(len(self.pushes(runner)), merge.ATTEMPTS)
+
+    def test_history_and_encrypted_rules_are_rejudged_after_a_push_race(self):
+        self.open()
+        runner = self.runner(push_failures=1, on_push_race=self.staged.clear)
+        with mock.patch.object(merge, 'encrypted_reason', wraps=merge.encrypted_reason) as encrypted, \
+                self.assertRaisesRegex(merge.Hold, 'does not match staging.*history'), contextlib.redirect_stdout(io.StringIO()):
+            self.check(runner)
+        self.assertEqual(encrypted.call_count, 2)
+        self.assertEqual(sum(call[:2] == ('git', 'log') for call in runner.calls), 2)
+        self.assertEqual(len(self.pushes(runner)), 1, 'the newest-main hold prevents a second push')
 
     # Held ------------------------------------------------------------------------------------------
 
@@ -808,6 +824,283 @@ class InstanceGateTests(GateCase):
         self.branch('new-example-prod')
         with self.assertRaises(merge.Skip):
             self.check(self.runner())
+
+
+class ActionParityTests(GateCase):
+    """Identical input trees through console preparation/publication and the gate's real merge loop."""
+
+    def test_console_and_gate_reach_the_same_verdict_for_every_gated_action(self):
+        from test_console_changes import HEAD as CONSOLE_HEAD
+        from test_console_changes import IMAGE as CONSOLE_IMAGE
+        from test_console_changes import MAIN, FakeGitHub, settings_edit, staging_reads, tree_fake
+
+        from swhurl.apps import ops
+        from swhurl.console import actions, changes
+        from swhurl.console import promotion as review
+
+        # env, form, prior Settings, proposed Settings, automatic, optional encrypted-key status.
+        # For expose and egress, the automatic case normalizes an already satisfied choice: no new access is granted.
+        cases = {
+            'new': [('staging', {'repo': 'samclement/fresh', 'image': NEW_IMAGE, 'flags': ('--team=demo',)}, {}, {}, True),
+                    ('staging', {'repo': 'samclement/fresh', 'image': NEW_IMAGE, 'flags': ('--team=demo', '--calls=hello')},
+                     {}, {}, False)],
+            'promote': [('staging', {'image': CONSOLE_IMAGE}, {}, {}, True),
+                        ('staging', {'image': CONSOLE_IMAGE}, {}, {'healthPath': '/unselected'}, False)],
+            'scale': [('staging', {'replicas': '2'}, {}, {'replicas': 2}, True),
+                      ('prod', {'replicas': '2'}, {}, {'replicas': 2}, False)],
+            'schedule': [('staging', {'schedule': '*/5 * * * *'}, {}, {'schedule': '*/5 * * * *'}, True),
+                         ('prod', {'schedule': '*/5 * * * *'}, {}, {'schedule': '*/5 * * * *'}, False)],
+            'expose': [('staging', {'exposure': 'private'}, {'exposure': 'private'}, {'exposure': 'private'}, True),
+                       ('staging', {'exposure': 'private'}, {}, {'exposure': 'private'}, False)],
+            'connect': [('staging', {'calls': 'orders'}, {}, {'calls': ['orders']}, True),
+                        ('prod', {'calls': 'orders'}, {}, {'calls': ['orders']}, False),
+                        ('staging', {'calls': 'orders'}, {}, {'calls': ['orders']}, False, 'A'),
+                        ('staging', {'calls': 'orders'}, {}, {'calls': ['orders']}, False, 'M'),
+                        ('staging', {'calls': 'orders'}, {}, {'calls': ['orders']}, True, 'D')],
+            'disconnect': [('staging', {'role': 'calls', 'app': 'orders'}, {'calls': ['orders']}, {'calls': []}, True),
+                           ('prod', {'role': 'calls', 'app': 'orders'}, {'calls': ['orders']}, {'calls': []}, False)],
+            'egress': [('staging', {'hosts': 'api.stripe.com'}, {'egress': ['api.stripe.com:443']},
+                        {'egress': ['api.stripe.com:443']}, True),
+                       ('staging', {'hosts': 'api.stripe.com'}, {}, {'egress': ['api.stripe.com:443']}, False)],
+            'allow': [('staging', {'remove': 'orders'}, {'allows': ['orders']}, {'allows': []}, True),
+                      ('staging', {'add': 'orders'}, {}, {'allows': ['orders']}, False)],
+        }
+        self.assertEqual(set(cases), {action for action, entry in merge.ACTIONS.items() if entry.gated})
+        good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        tmp = self.tmp.name
+        for action, rows in cases.items():
+            for index, case in enumerate(rows):
+                env, form, prior, proposed, automatic = case[:5]
+                key_status = case[5] if len(case) > 5 else ''
+                with self.subTest(action=action, case=index, automatic=automatic):
+                    self.root = Path(tmp) / 'main'
+                    shutil.rmtree(self.root, ignore_errors=True)
+                    for path, content in MAIN.items():
+                        target = self.root / path
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(content)
+                    name = 'fresh' if action == 'new' else 'hello'
+                    entry = merge.ACTIONS[action]
+                    commands = entry.commands(name, env, form)
+                    record = f'apps/{name}/{env}/instance.yaml'
+                    if action in merge.INSTANCE_KINDS:
+                        path = self.root / record
+                        doc = yamlio.load(path.read_text())
+                        doc.update(prior)
+                        path.write_text(yamlio.dump(doc) + '# normalize this existing input\n')
+                    if action == 'schedule':
+                        for each in ('staging', 'prod'):
+                            path = self.root / f'apps/hello/{each}/release.yaml'
+                            doc = yamlio.load(path.read_text())
+                            doc.update(kind='job')
+                            doc.pop('port', None)
+                            doc.pop('healthPath', None)
+                            path.write_text(yamlio.dump(doc))
+                    key = f'apps/{name}/{env}/events.sops.yaml'
+                    if key_status in ('M', 'D'):
+                        (self.root / key).write_text('encrypted original fixture\n')
+                    inputs = {p.relative_to(self.root).as_posix(): p.read_bytes()
+                              for p in self.root.rglob('*') if p.is_file()}
+                    self.base, self.head = Path(tmp) / 'pr-base', Path(tmp) / 'pr-head'
+                    for tree in (self.base, self.head):
+                        shutil.rmtree(tree, ignore_errors=True)
+                        shutil.copytree(self.root, tree)
+                    self.staged = [(self.root / 'apps/hello/staging/release.yaml').read_text()]
+
+                    def prepare(tree, action=action, commands=commands, name=name, proposed=proposed,
+                                record=record, key=key, key_status=key_status):
+                        if action == 'new':
+                            self.assertEqual(new.main([*commands[0].argv, '--root', str(tree), '--no-policy-check'], github), 0)
+                        elif action == 'promote':
+                            edit.promote(tree, name, runner=FakeRunner())
+                            path = tree / 'apps/hello/prod/release.yaml'
+                            doc = yamlio.load(path.read_text())
+                            doc.update(proposed)
+                            path.write_text(yamlio.dump(doc))
+                        else:
+                            # Existing fake command implementation; adding an existing egress
+                            # grant is idempotent, not a second copy of that grant.
+                            for command in commands:
+                                settings_edit(tree, (command.name, *command.argv))
+                            path = tree / record
+                            doc = yamlio.load(path.read_text())
+                            doc.update(proposed)
+                            path.write_text(yamlio.dump(doc))
+                        if key_status in ('A', 'M'):
+                            (tree / key).write_text('encrypted updated fixture\n')
+                        elif key_status == 'D':
+                            (tree / key).unlink()
+
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        prepare(self.head)
+                    # The console keeps only owned inputs; new-app port normalization is part
+                    # of preparation, not a different semantic input for the gate.
+                    if action == 'new':
+                        path = self.head / 'apps/fresh/staging/instance.yaml'
+                        doc = yamlio.load(path.read_text())
+                        doc.get('allocations', {}).pop('egressPort', None)
+                        path.write_text(changes.store.text(changes.Settings.parse(doc).document()))
+                    for path in changed_files(self.base, self.head):
+                        if not entry.owns(name, env, path):
+                            if (self.base / path).is_file():
+                                shutil.copyfile(self.base / path, self.head / path)
+                            else:
+                                (self.head / path).unlink()
+                    self.files = sorted(changed_files(self.base, self.head))
+                    self.pr = {'state': 'open', 'head': {'ref': merge.branch(action, name, env, BASE[:7]),
+                               'sha': HEAD, 'repo': {'full_name': REPO}}, 'base': {'ref': 'main'},
+                               'labels': [{'name': 'auto-merge'}], 'title': entry.title.format(name=name, env=env)}
+                    api = FakeGitHub()
+                    # No earlier staging selections: both history readers see exactly the
+                    # current main Release, and exhaust successfully for the held promotion.
+                    api.also[f'GET /git/commits/{CONSOLE_HEAD}'] = {'tree': {'sha': 'tree0'}, 'parents': []}
+                    job = actions.Job(1, action, merge.target(action, name, env), 'sam@swhurl.com', None)
+                    with mock.patch.dict(MAIN, inputs, clear=True), \
+                            mock.patch.object(review, 'staging_status', return_value=good), \
+                            mock.patch.object(merge, 'encrypted_reason', wraps=merge.encrypted_reason) as encrypted, \
+                            contextlib.redirect_stdout(io.StringIO()):
+                        changes.open_action(tree_fake(edit=prepare), api.github, job, action, name, env, commands)
+                        runner = self.runner()
+                        reason = ''
+                        try:
+                            merge.merge_records(runner, self.root, 7, HEAD, REPO, self.pr, action, name, self.files, env)
+                        except merge.Hold as held:
+                            reason = str(held)
+                    statuses = [call.args[3] for call in encrypted.call_args_list]
+                    self.assertEqual(len(statuses), 2, 'each path checks encrypted statuses once')
+                    self.assertEqual(statuses[0], statuses[1])
+                    if key_status:
+                        self.assertEqual(statuses[0][key], key_status)
+                    entries = api.sent('POST /git/trees')[0]['tree']
+                    self.assertEqual([e['path'] for e in entries], self.files)
+                    blobs = {f'blob{i}': base64.b64decode(blob['content'])
+                             for i, blob in enumerate(api.sent('POST /git/blobs'))}
+                    for item in entries:
+                        if item['sha'] is None:
+                            self.assertFalse((self.head / item['path']).exists())
+                        else:
+                            self.assertEqual(blobs[item['sha']], (self.head / item['path']).read_bytes())
+                    labelled = bool(api.sent('POST /issues/7/labels'))
+                    self.assertEqual(labelled, automatic)
+                    self.assertEqual(labelled, bool(self.pushes(runner)))
+                    self.assertEqual(bool(reason), not automatic)
+                    if reason:
+                        manual = next(line.removeprefix('Merge plan: Manual merge required: this pull request ')
+                                      for line in job.lines if line.startswith('Merge plan:'))
+                        manual = manual.removesuffix('. Review the changes, then merge it yourself.')
+                        self.assertEqual(reason, f'it {manual}: a person reviews it')
+                        self.assertIn(manual, api.sent('POST /pulls')[0]['body'])
+
+class EncryptedInputTests(unittest.TestCase):
+    def test_one_exception_and_other_actions_additions_modifications_and_deletions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            key = 'apps/fresh/staging/events.sops.yaml'
+            folder = root / 'apps/fresh/staging'
+            folder.mkdir(parents=True)
+            (folder / 'instance.yaml').write_text(yamlio.dump({'version': 1, 'exposure': 'private',
+                'allocations': {'eventsKey': NewAppGateTests.PUBLIC}}))
+            (root / '.sops.yaml').write_text(f'creation_rules:\n  - path_regex: apps/.*\n    age: {NewAppGateTests.RECIPIENT}\n')
+            doc = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': 'fresh-events', 'namespace': 'fresh-staging'},
+                   'stringData': {'SWHURL_EVENTS_SEED': 'ENC[x]'}, 'sops': {'age': [{'recipient': NewAppGateTests.RECIPIENT}]}}
+            (root / key).write_text(yamlio.dump(doc))
+            for action in merge.ACTIONS:
+                for status in 'AMD':
+                    with self.subTest(action=action, status=status):
+                        reason = merge.encrypted_reason(action, 'fresh', 'staging', {key: status}, root)
+                        self.assertEqual(bool(reason), status != 'D' and (action != 'new' or status != 'A'))
+            for extra in ('apps/fresh/staging/secret.sops.yaml', 'apps/other/staging/events.sops.yaml'):
+                self.assertTrue(merge.encrypted_reason('new', 'fresh', 'staging', {key: 'A', extra: 'A'}, root))
+            doc['stringData']['EXTRA'] = 'ENC[x]'
+            (root / key).write_text(yamlio.dump(doc))
+            self.assertIn('seed alone', merge.encrypted_reason('new', 'fresh', 'staging', {key: 'A'}, root))
+
+
+class ActionTableTests(unittest.TestCase):
+    """Every console PR is one merge.ACTIONS entry: the console and the gate read its branch the same way."""
+
+    NAMES = {'new': ('fresh', 'staging'), 'promote': ('fresh', 'staging'), 'remove': ('fresh', 'prod'),
+             'team-add': ('payments', ''), 'team-edit': ('payments', ''), 'team-remove': ('payments', ''),
+             'team-channel-set': ('payments', ''), 'team-channel-remove': ('payments', ''),
+             **{kind: ('fresh', 'prod') for kind in merge.INSTANCE_KINDS}}
+    TARGETS = {'new': 'fresh/staging', 'promote': 'fresh/prod', 'remove': 'fresh/prod',
+               **{kind: 'fresh/prod' for kind in merge.INSTANCE_KINDS}}
+
+    def test_every_action_branch_round_trips_and_names_its_target(self):
+        self.assertEqual(set(self.NAMES), set(merge.ACTIONS))
+        for action, (name, env) in self.NAMES.items():
+            with self.subTest(action=action):
+                made = merge.branch(action, name, env, 'abc1234')
+                self.assertEqual(merge.parse(made), (action, name, env))
+                self.assertEqual(merge.target(action, name, env), self.TARGETS.get(action, f'team:{name}'))
+        # Byte-for-byte the branches the console has always opened, a promotion naming production as its target.
+        self.assertEqual(merge.branch('promote', 'hello', 'staging', 'abc1234'), 'console/promote-hello-staging-abc1234')
+        self.assertEqual(merge.branch('team-channel-set', 'payments', '', 'abc1234'), 'console/team-channel-set-payments-abc1234')
+        self.assertEqual(merge.branch('team-add', 'payments', '', 'abc1234'), 'console/team-add-payments-abc1234')
+        self.assertEqual(merge.parse('console/new-a-staging-staging-abc1234'), ('new', 'a-staging', 'staging'))
+        self.assertEqual(merge.parse('console/team-remove-core-staging-abc1234'), ('team-remove', 'core-staging', ''))
+
+    def test_invalid_environments_names_and_branches_are_refused(self):
+        for action, name, env in (('new', 'fresh', 'prod'), ('promote', 'fresh', 'prod'), ('scale', 'fresh', 'dev'),
+                                  ('scale', 'Fresh', 'staging'), ('scale', '../main', 'staging'), ('team-add', 'payments', 'staging'),
+                                  ('scale', 'x' * 41, 'staging')):
+            with self.subTest(action=action, name=name, env=env), self.assertRaises(ValueError):
+                merge.branch(action, name, env, 'abc1234')
+        for ref in ('console/new-fresh-prod-abc1234', 'console/rename-fresh-staging-abc1234', 'console/scale-fresh-staging-main',
+                    'console/scale-fresh-staging', 'renovate/x', 'console/scale--staging-abc1234', 'console/team-add-payments-staging'):
+            with self.subTest(ref=ref):
+                self.assertIsNone(merge.parse(ref))
+                self.assertFalse(merge.gated(ref))
+
+    def test_each_action_owns_only_its_inputs(self):
+        owns = {('new', 'apps/fresh/app.yaml'): True, ('new', 'apps/fresh/staging/events.sops.yaml'): True,
+                ('new', 'apps/fresh/staging/secret.sops.yaml'): False, ('new', 'apps/fresh/staging/helmrelease.yaml'): False,
+                ('promote', 'apps/fresh/prod/release.yaml'): True, ('promote', 'apps/fresh/prod/secret.sops.yaml'): True,
+                ('promote', 'apps/fresh/prod/helmrelease.yaml'): False, ('scale', 'apps/fresh/prod/instance.yaml'): True,
+                ('scale', 'apps/fresh/prod/events.sops.yaml'): False, ('connect', 'apps/fresh/prod/events.sops.yaml'): True,
+                ('scale', 'apps/other/prod/instance.yaml'): False, ('remove', 'apps/fresh/prod/offers/source.yaml'): True,
+                ('remove', 'apps/fresh/prod/helmrelease.yaml'): False, ('team-edit', 'apps/teams.yaml'): True,
+                ('team-edit', 'apps/fresh/staging/instance.yaml'): True, ('team-edit', 'platform/notify/routes.yaml'): False,
+                ('team-channel-set', 'platform/notify/channel-payments.sops.yaml'): True,
+                ('team-channel-set', 'platform/notify/routes.yaml'): False}
+        for (action, path), expected in owns.items():
+            name, env = self.NAMES[action]
+            with self.subTest(action=action, path=path):
+                self.assertEqual(merge.ACTIONS[action].owns(name, env, path), expected)
+                if expected:
+                    self.assertTrue(records_only([path]), 'Validate renders what the console carries')
+        for action in merge.INSTANCE_KINDS:
+            entry = merge.ACTIONS[action]
+            for env in entry.envs:
+                with self.subTest(action=action, env=env):
+                    self.assertTrue(entry.owns('fresh', env, f'apps/fresh/{env}/instance.yaml'))
+                    self.assertFalse(entry.owns('fresh', env, f'apps/fresh/{env}/helmrelease.yaml'))
+                    self.assertFalse(entry.owns('fresh', env, f'apps/other/{env}/instance.yaml'))
+        self.assertEqual(merge.ACTIONS['remove'].keeps, 'D', 'a removal carries deletions alone')
+
+    def test_promotion_and_creation_commands_come_from_the_table(self):
+        self.assertEqual(merge.ACTIONS['new'].commands('fresh', 'staging', {
+            'repo': 'example/fresh', 'image': IMAGE, 'flags': ('--team=demo',)}),
+            (merge.Command('app-new', ('fresh', '--from-repo=example/fresh', '--env=staging', f'--image={IMAGE}', '--team=demo')),))
+        self.assertEqual(merge.ACTIONS['promote'].commands('fresh', 'staging', {
+            'image': IMAGE, 'host': 'prod.example.com'}),
+            (merge.Command('app-promote', ('fresh', f'--expect-image={IMAGE}', '--prepare-only', '--host=prod.example.com')),))
+
+    def test_held_operations_are_never_merged_by_the_gate(self):
+        for action in ('remove', 'team-add', 'team-edit', 'team-remove', 'team-channel-set', 'team-channel-remove'):
+            name, env = self.NAMES[action]
+            ref = merge.branch(action, name, env, 'abc1234')
+            pr = {'state': 'open', 'head': {'ref': ref, 'sha': HEAD, 'repo': {'full_name': REPO}}, 'base': {'ref': 'main'},
+                  'labels': [{'name': 'auto-merge'}]}
+            with self.subTest(action=action):
+                self.assertFalse(merge.gated(ref))
+                with self.assertRaises(merge.Skip):
+                    merge.eligible(pr, HEAD, REPO)
+        for action in ('new', 'promote', *merge.INSTANCE_KINDS):
+            self.assertTrue(merge.gated(merge.branch(action, 'fresh', 'staging', 'abc1234')))
 
 
 class RefusalTests(unittest.TestCase):

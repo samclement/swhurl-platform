@@ -1282,7 +1282,8 @@ class ActionTests(unittest.TestCase):
         jobs._jobs[4] = actions.Job(4, 'remove', 'gone/staging', 'sam@swhurl.com', jobs.now(), [], 'succeeded', jobs.now(), url)
         c = client(runner, jobs=jobs, github=changes.GitHub('samclement/swhurl-platform', 'tok', transport=httpx.MockTransport(handle)))
         with mock.patch.object(changes, 'main_commit', return_value='main'), \
-                mock.patch.object(changes, 'render_targets', return_value={'web/prod': stages.Target('h', 'sha256:x')}), \
+                mock.patch.object(changes, 'render_targets',
+                                  return_value={'web/prod': stages.Target('records-1', 'settings-1', 'sha256:x', 'h', 'sha256:x', 'h')}), \
                 mock.patch.object(cluster, 'apps', return_value=[cluster.AppRow(Instance('web', 'prod'), state.State('healthy'), False, 'x',
                     digest='sha256:x', render_hash='h', render_ready=True, render_state=state.State('healthy'), image_matches=True)]):
             activity = c.get('/activity', headers=WHO).text

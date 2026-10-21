@@ -20,8 +20,8 @@ from swhurl.apps.model import sync as model_sync
 from swhurl.apps.model.calls import admits
 from swhurl.apps.new import GenerationError
 from swhurl.apps.yaml_file import EditError
-from swhurl.console import changes
-from swhurl.console.actions import ActionError, Job
+from swhurl.console import changes, merge
+from swhurl.console.actions import ActionError
 from swhurl.run import CommandError, Runner
 
 IMAGE_LINE = re.compile(r'(?m)^Promote the reviewed staging image `([^`\n]+)` to `[a-z0-9-]+/prod`\.')
@@ -133,8 +133,8 @@ def review(root: Path, app: str, status: ops.InstanceStatus, runner: Runner | No
             found['diff_problem'] = str(error)
         else:
             # Why a person would merge it (promotion.held), shown before the PR exists; staging runs this digest.
-            found['held'] = promotion.held(app, records, before, promotion.release_of(root, app, 'prod'),
-                                           lambda release: release == staged)
+            found['held'] = merge.judge('promote', app, 'staging', records, before,
+                                        merge.ACTIONS['promote'].read(root, app, 'staging'), lambda release: promotion.staged(release, [staged]))
     return found
 
 
@@ -149,7 +149,8 @@ def merge_mode(pr: changes.PullRequest) -> str:
 
 
 def matching(pr: changes.PullRequest, app: str) -> bool:
-    return re.fullmatch(rf'console/promote-{re.escape(app)}-staging-[0-9a-f]{{7,40}}', pr.branch) is not None
+    """Whether ``pr`` promotes ``app``'s staging to production (merge.parse)."""
+    return merge.parse(pr.branch) == ('promote', app, 'staging')
 
 
 def promoted_image(body: str) -> str:
@@ -164,61 +165,3 @@ def existing(runner: Runner, github: changes.GitHub, app: str, image: str) -> ch
                 raise ActionError(f'A promotion PR is already open: {pr.url}. Close it explicitly before reviewing a replacement image.')
             return pr
     return None
-
-
-def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: dict[str, str],
-            staging: ops.InstanceStatus | None = None) -> str:
-    """``staging``: the status the job has just judged. When its unit is behind main by commits that leave it
-    alone, the tool is told which two commits were compared: it reads staging again, in a tree with no history."""
-    image = form['image']
-    previous = existing(runner, github, app, image)
-    if previous:
-        job.lines.append('Reusing the existing promotion pull request')
-        return previous.url
-    reasons, admits, first = [], [], []
-
-    def change(root: Path):
-        world, _ = model_sync.read(root)
-        decision = promotion.select(root, world, app)
-        if decision.outcome == 'create':
-            first.append(True)
-            admits.extend(admitting(root, app))
-        before_files = {path: data for path, data in contents(root).items() if promotion.records(app, path)}
-        before = promotion.release_of(root, app, 'prod')
-        argv = [app, f'--expect-image={image}']
-        if staging and staging.unaffected:
-            argv.append(f'--source-unchanged={promotion.sha(staging.applied_revision)}..{promotion.sha(staging.desired_revision)}')
-        if form.get('host'):
-            argv.append(f'--host={form["host"]}')
-        changes.run_tool(runner, job, root, 'app-promote', argv)
-        after_files = {path: data for path, data in contents(root).items() if promotion.records(app, path)}
-        changed = [path for path in before_files.keys() | after_files.keys() if before_files.get(path) != after_files.get(path)]
-        staged = promotion.release_of(root, app, 'staging')
-        # Staging runs the reviewed digest now (source_problem), and its record says so on main.
-        reason = promotion.held(app, changed, before, promotion.release_of(root, app, 'prod'),
-                                lambda release: release == staged)
-        if reason:
-            reasons.append(reason)
-        if admits:
-            reasons.append(f'also changes the allowed callers and network policy for {", ".join(admits)} once main renders it')
-
-    def body(_root: Path) -> str:
-        instructions = ''
-        if first:
-            instructions += ('\n\nBefore merging, review the production hostname, and if Secret placeholders were created, set each value on this branch '
-                             f'with `make app-secret APP={app} ENV=prod NAME=<name>` (in your own terminal). Main renders production when this is merged.')
-        if admits:
-            instructions += (f"\n\nThis also lets `{app}` call {', '.join(f'`{callee}/prod`' for callee in admits)}: "
-                             "each gains it in `SWHURL_ALLOWED_CALLERS` and its network policy when main renders it.")
-        return f'Promote the reviewed staging image `{image}` to `{app}/prod`.' + instructions
-
-    def verify():
-        problem = promotion.source_problem(staging_status(runner, github, Instance(app, 'staging')), image)
-        if problem:
-            raise ActionError(problem)
-
-    return changes.open_pr(runner, github, job, slug=f'promote-{app}-staging',
-                           title=f'apps: promote {app}/staging to {app}/prod', body=body, change=change,
-                           auto_merge=lambda: form.get('hold') != 'on' and not reasons,
-                           manual_merge_reason=lambda: ' and '.join(reasons), verify=verify,
-                           keep=lambda path: promotion.records(app, path))

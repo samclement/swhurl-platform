@@ -20,13 +20,14 @@ from ci_changes import records_only
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import channels, egress, new, ops, promotion, repo, teams
+from swhurl.apps import calling, channels, egress, new, ops, promotion, repo, teams
 from swhurl.apps import edit as app_edit
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model.records import Release
 from swhurl.apps.state import State
-from swhurl.console import actions, changes, cluster, server, stages
+from swhurl.console import actions, changes, cluster, merge, server, stages
 from swhurl.console import promotion as console_promotion
 from swhurl.run import CommandError, FakeRunner, Result, Runner
 
@@ -37,7 +38,7 @@ NEW = {'name': 'weather-api', 'type': 'web-app', 'stack': 'typescript', 'team': 
 IMAGE = 'ghcr.io/me/hello:2.0@sha256:' + 'a' * 64
 REVISION = 'main@sha1:' + HEAD
 SAMPLE = ROOT / 'tests/fixtures/instance'  # frozen sample instance; see its README
-MAIN = {'README.md': b'# repo\n'}
+MAIN = {'README.md': b'# repo\n', calling.SIGNING_KEYS_FILE.as_posix(): (ROOT / calling.SIGNING_KEYS_FILE).read_bytes()}
 for env in ('staging', 'prod'):
     for path in (SAMPLE / 'apps/hello' / env).glob('*.yaml'):
         MAIN[path.relative_to(SAMPLE).as_posix()] = path.read_bytes()
@@ -124,6 +125,54 @@ class FakeGitHub:
                 and r.method == key.split(' ', 1)[0]]
 
 
+def rendered(hash, digest, settings, records):
+    """An instance a tree has records for and has rendered (stages.Target)."""
+    return stages.Target(records, settings, digest, hash, digest, hash)
+
+
+class StagingHistoryTests(unittest.TestCase):
+    def test_complete_releases_from_main_first_parents_only(self):
+        current = Release.parse(yaml.safe_load(MAIN['apps/hello/staging/release.yaml']))
+        previous = replace(current, health_path='/previous')
+        ancestor, missing, side = 'ancestor', 'missing', 'side'
+        api = FakeGitHub()
+        api.also.update({f'GET /git/commits/{HEAD}': {'parents': [{'sha': missing}, {'sha': side}]},
+                         f'GET /git/commits/{missing}': {'parents': [{'sha': ancestor}]},
+                         f'GET /git/commits/{ancestor}': {'parents': []}})
+        # GitHub contents answers use the immutable ref, not the moving main branch.
+        original = api.handle
+        def answer(request):
+            if request.url.params.get('ref') == ancestor:
+                api.requests.append(request)
+                return httpx.Response(200, json={'content': base64.b64encode(yaml.safe_dump(previous.document()).encode()).decode()})
+            return original(request)
+        api.github = replace(api.github, transport=httpx.MockTransport(answer))
+        client = changes.GitHubAPI(FakeRunner(), api.github)
+        self.addCleanup(client.client.close)
+        self.assertTrue(promotion.staged(previous, changes.staging_history(client, HEAD, 'hello', current)))
+        self.assertFalse(any(side in str(r.url) for r in api.requests), 'a side branch never authenticates a Release')
+        for tampered in (replace(previous, image=replace(previous.image, tag='retagged')),
+                         replace(previous, image=replace(previous.image, repository='ghcr.io/other/app')),
+                         replace(previous, image=replace(previous.image, digest='sha256:' + 'e' * 64)),
+                         replace(previous, telemetry=not previous.telemetry)):
+            with self.subTest(release=tampered):
+                self.assertFalse(promotion.staged(tampered, changes.staging_history(client, HEAD, 'hello', current)))
+
+    def test_failed_history_read_prevents_publication(self):
+        api = FakeGitHub(fail={f'GET /git/commits/{HEAD}': (503, 'history unavailable')})
+        def unselected(tree):
+            promoted(tree)
+            path = tree / 'apps/hello/prod/release.yaml'
+            doc = yaml.safe_load(path.read_text())
+            doc['healthPath'] = '/different'
+            path.write_text(yaml.safe_dump(doc))
+        job = actions.Job(1, 'promote', 'hello/prod', 'sam@swhurl.com', None)
+        commands = merge.ACTIONS['promote'].commands('hello', 'staging', {'image': IMAGE})
+        with self.assertRaisesRegex(actions.ActionError, 'history unavailable'):
+            changes.open_action(tree_fake(edit=unselected), api.github, job, 'promote', 'hello', 'staging', commands)
+        self.assertTrue(all(r.method == 'GET' for r in api.requests))
+
+
 class RenderTargetTests(unittest.TestCase):
     def test_complete_tree_reads_targets_without_turning_failed_reads_into_absence(self):
         api = FakeGitHub()
@@ -131,6 +180,7 @@ class RenderTargetTests(unittest.TestCase):
         self.assertIn('hello/staging', targets)
         self.assertEqual(targets['hello/staging'].digest, 'sha256:' + 'a' * 64)
         self.assertTrue(targets['hello/staging'].hash)
+        self.assertFalse(targets['hello/staging'].pending, 'its HelmRelease runs the digest its records request')
         self.assertEqual(len(targets['hello/staging'].settings), 16, 'its instance.yaml and app.yaml, hashed')
         self.assertEqual(len(targets['hello/staging'].records), 16, 'its app.yaml, release.yaml and instance.yaml, hashed')
         self.assertNotEqual(targets['hello/staging'].records, targets['hello/prod'].records)
@@ -139,21 +189,121 @@ class RenderTargetTests(unittest.TestCase):
                         for rel, data in MAIN.items() if rel.endswith(('hello/prod/release.yaml', 'hello/prod/instance.yaml', 'hello/app.yaml'))}
         with mock.patch.dict(MAIN, records_only):
             fresh = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['fresh/prod']
-        self.assertEqual((fresh.hash, fresh.digest), (stages.UNRENDERED, 'sha256:' + 'b' * 64),
+        self.assertEqual((fresh.hash, fresh.digest, fresh.pending), (None, 'sha256:' + 'b' * 64, True),
                          'a merged first promotion: records, not yet rendered')
         self.assertTrue(fresh.records)
         api.fail[f'GET /tarball/{HEAD}'] = (403, 'rate limited')
         with self.assertRaises(actions.ActionError):
             changes.render_targets(FakeRunner(), api.github, HEAD)
 
+    def test_settings_only_merge_waits_for_its_complete_render_and_not_the_old_healthy_output(self):
+        unit = 'hello/prod'
+        old = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)[unit]
+        path = f'apps/{unit}/instance.yaml'
+        doc = yaml.safe_load(MAIN[path])
+        doc['replicas'] = 0
+        pending = {**MAIN, path: yaml.safe_dump(doc).encode()}
+        with mock.patch.dict(MAIN, pending, clear=True):
+            merged = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)[unit]
+        live = cluster.AppRow(Instance('hello', 'prod'), State('healthy'), False, 'x', digest=old.digest,
+                              render_hash=old.hash, render_ready=True, render_state=State('healthy'), image_matches=True)
+        self.assertEqual(merged.digest, old.digest, 'Settings did not change the image')
+        self.assertEqual(merged.hash, old.hash, 'the old rendered output is still beside the records')
+        self.assertNotEqual(merged.expected, old.expected, 'the complete intended render did change')
+        self.assertEqual(stages.progress('scale', merged, merged, live).state, 'rendering')
+        doc['replicas'] = 2
+        with mock.patch.dict(MAIN, {**pending, path: yaml.safe_dump(doc).encode()}, clear=True):
+            replacement = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)[unit]
+        self.assertEqual(replacement.hash, merged.hash, 'both pending records sit beside the same stale output')
+        self.assertEqual(stages.progress('scale', merged, replacement, live).state, 'superseded')
+        self.assertEqual(stages.progress('scale', merged, replacement, live, 'earlier').state, 'replaced')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for path, data in pending.items():
+                (root / path).parent.mkdir(parents=True, exist_ok=True)
+                (root / path).write_bytes(data)
+            model_sync.sync(root)
+            complete = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+        with mock.patch.dict(MAIN, complete, clear=True):
+            current = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)[unit]
+        self.assertFalse(current.pending)
+        self.assertEqual(current.hash, current.expected)
+        self.assertEqual(stages.progress('scale', merged, current, live).state, 'applying')
+        stopped = replace(live, render_hash=current.hash, render_state=State('stopped'), state=State('stopped'))
+        self.assertEqual(stages.progress('scale', merged, current, stopped).state, 'zero', 'Render completes the same change')
+
+    def test_renderer_version_limitation_keeps_healthy_matching_digest_rendering_until_hashes_agree(self):
+        unit = 'hello/prod'
+        current = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)[unit]
+        path = f'apps/{unit}/helmrelease.yaml'
+        doc = yaml.safe_load(MAIN[path])
+        # Same records, different renderer version's committed fingerprint. The running
+        # console cannot prove that this healthy output is the render it would produce.
+        doc['metadata']['annotations']['platform.swhurl.com/render'] = 'f' * 16
+        live = cluster.AppRow(Instance('hello', 'prod'), State('healthy'), False, 'x', digest=current.digest,
+                              render_hash='f' * 16, render_ready=True, render_state=State('healthy'), image_matches=True)
+        runner = tree_fake()
+        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
+        jobs.submit('scale', unit, 'sam@swhurl.com',
+                    lambda job: setattr(job, 'link', 'https://github.com/x/pull/1'))
+        saved = mock.Mock()
+        jobs.store = saved
+        client = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github))
+        with mock.patch.dict(MAIN, {path: yaml.safe_dump(doc).encode()}), \
+                mock.patch.object(changes, 'console_prs', return_value=[]), \
+                mock.patch.object(changes, 'pull_state', return_value=('merged', '2026-10-21T10:00:00Z', HEAD)), \
+                mock.patch.object(cluster, 'apps', return_value=[live]):
+            skewed = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)[unit]
+            self.assertEqual((skewed.records, skewed.settings), (current.records, current.settings))
+            self.assertEqual(skewed.expected, current.expected)
+            self.assertNotEqual(skewed.hash, skewed.expected)
+            self.assertEqual(skewed.hash, live.render_hash)
+            self.assertEqual(skewed.digest, skewed.rendered)
+            self.assertEqual(skewed.digest, live.digest, 'digest equality must not bypass renderer evidence')
+            self.assertTrue(skewed.pending)
+            for reached in ('', 'previously-seen'):
+                with self.subTest(reached=reached):
+                    progress = stages.progress('scale', skewed, skewed, live, reached)
+                    self.assertEqual(progress.state, 'rendering')
+                    self.assertNotIn(progress.state, stages.REACHED)
+            page = client.get('/jobs/1', headers=WHO).text
+            activity = client.get('/activity', headers=WHO).text
+            self.assertIn('waiting for the Render workflow', page)
+            self.assertIn('waiting for the Render workflow', activity)
+            self.assertEqual(jobs.get(1).reached, '')
+            saved.save.assert_not_called()
+        agreeing = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)[unit]
+        self.assertEqual(agreeing.hash, agreeing.expected)
+        self.assertFalse(agreeing.pending)
+        matching_live = replace(live, render_hash=agreeing.hash)
+        self.assertEqual(stages.progress('scale', skewed, agreeing, matching_live).state, 'live')
+
+    def test_render_evidence_uses_public_inputs_and_encrypted_presence_not_secret_contents(self):
+        path = 'apps/hello/staging/secret.sops.yaml'
+        baseline = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/staging']
+        with mock.patch.dict(MAIN, {path: b'opaque contents, never parsed'}):
+            encrypted = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/staging']
+        self.assertNotEqual(baseline.expected, encrypted.expected, 'encrypted presence affects the generated resources')
+        with mock.patch.dict(MAIN, {path: b'different opaque contents'}):
+            same = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/staging']
+        self.assertEqual(encrypted, same, 'neither the reader nor its evidence consumes Secret values')
+        with mock.patch.dict(MAIN, {calling.SIGNING_KEYS_FILE.as_posix(): b'{"keys": []}'}):
+            keys = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/staging']
+        self.assertNotEqual(baseline.expected, keys.expected, 'public signing keys are part of the complete input')
+        self.assertTrue(keys.pending)
+        with mock.patch.dict(MAIN, {calling.SIGNING_KEYS_FILE.as_posix(): b'not json'}):
+            with self.assertRaises(actions.ActionError):
+                changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)
+
     def test_records_only_removal_reaches_removed_after_render_and_live_absence(self):
         unit = 'hello/prod'
         merged = {path: text for path, text in MAIN.items()
                   if path not in (f'apps/{unit}/release.yaml', f'apps/{unit}/instance.yaml')}
         with mock.patch.dict(MAIN, merged, clear=True):
-            target = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD).get(unit, stages.Target(stages.ABSENT))
-        self.assertEqual(target.hash, stages.ABSENT, 'stale generated output is not the removal target')
-        self.assertEqual(stages.judge('remove', State('healthy'), target, target).state, 'removing')
+            target = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD).get(unit, stages.Target())
+        self.assertEqual(target, stages.Target(), 'stale generated output is not the removal target')
+        live = cluster.AppRow(Instance('hello', 'prod'), State('healthy'), False, 'x', render_state=State('healthy'))
+        self.assertEqual(stages.progress('remove', target, target, live).state, 'removing')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for path, text in merged.items():
@@ -162,13 +312,27 @@ class RenderTargetTests(unittest.TestCase):
             model_sync.sync(root)
             rendered = {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob('*') if path.is_file()}
         with mock.patch.dict(MAIN, rendered, clear=True):
-            current = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD).get(unit, stages.Target(stages.ABSENT))
-        self.assertEqual(stages.judge('remove', State('healthy'), target, current).state, 'removing', 'Flux is still uninstalling')
-        self.assertEqual(stages.judge('remove', stages.ABSENT, target, current).state, 'removed')
+            current = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD).get(unit, stages.Target())
+        self.assertEqual(stages.progress('remove', target, current, live).state, 'removing', 'Flux is still uninstalling')
+        self.assertEqual(stages.progress('remove', target, current, stages.ABSENT).state, 'removed')
+        self.assertEqual(stages.progress('remove', target, current, None).state, 'unread', 'a failed cluster read is not absence')
         merged[f'apps/{unit}/helmrelease.yaml'] = b'invalid: ['
         with mock.patch.dict(MAIN, merged, clear=True):
             self.assertNotIn(unit, changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD),
                              'an absent instance does not require parsing its stale output')
+
+    def test_malformed_output_is_a_failed_read_but_hashless_output_is_historical(self):
+        path = 'apps/hello/prod/helmrelease.yaml'
+        for content in (b'', b'not a mapping', b'invalid: ['):
+            with self.subTest(content=content), mock.patch.dict(MAIN, {path: content}):
+                with self.assertRaises(actions.ActionError):
+                    changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)
+        old = yaml.safe_load(MAIN[path])
+        old['metadata']['annotations'].pop('platform.swhurl.com/render')
+        with mock.patch.dict(MAIN, {path: yaml.safe_dump(old).encode()}):
+            historical = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/prod']
+        self.assertEqual(historical.hash, '')
+        self.assertEqual(stages.progress('scale', historical, historical, None).state, 'historical')
 
     def test_partial_records_are_not_an_absent_render_target(self):
         for missing in ('release.yaml', 'instance.yaml'):
@@ -185,24 +349,26 @@ class RenderTargetTests(unittest.TestCase):
         # still run the previous image until Render pushes its follow-up commit.
         with mock.patch.dict(MAIN, {record_path: yaml.safe_dump(promoted).encode()}):
             target = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/prod']
-        self.assertEqual((target.hash, target.digest), (stages.UNRENDERED, 'sha256:' + 'a' * 64))
         old_hash = (yaml.safe_load(MAIN['apps/hello/prod/helmrelease.yaml'])['metadata']['annotations']
                     ['platform.swhurl.com/render'])
-        progress = stages.judge('promote', State('healthy'), target, target, old_hash, True, True)
-        self.assertEqual((progress.state, progress.detail), ('applying', 'main has not rendered it yet'))
+        self.assertEqual((target.hash, target.digest, target.pending), (old_hash, IMAGE.split('@')[1], True))
+        live = cluster.AppRow(Instance('hello', 'prod'), State('healthy'), False, 'x', digest=target.rendered, render_hash=old_hash,
+                              render_ready=True, render_state=State('healthy'), image_matches=True)
+        progress = stages.progress('promote', target, target, live)
+        self.assertEqual((progress.state, progress.detail), ('rendering', 'main has not rendered it yet'))
         self.assertNotIn(progress.state, stages.REACHED, 'the old image must not persist a first-seen time')
 
 
 class NewAppRenderTargetTests(unittest.TestCase):
     def test_manual_records_merge_then_port_allocation_is_creation_completion_not_replacement(self):
         records = {path: data for path, data in MAIN.items() if path in (
-            'apps/hello/app.yaml', 'apps/hello/staging/release.yaml', 'apps/hello/staging/instance.yaml')}
+            'apps/hello/app.yaml', 'apps/hello/staging/release.yaml', 'apps/hello/staging/instance.yaml', calling.SIGNING_KEYS_FILE.as_posix())}
         settings = yaml.safe_load(records['apps/hello/staging/instance.yaml'])
         settings.get('allocations', {}).pop('egressPort', None)
         records['apps/hello/staging/instance.yaml'] = yaml.safe_dump(settings).encode()
         with mock.patch.dict(MAIN, records, clear=True):
             before = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/staging']
-        self.assertEqual(before.hash, stages.UNRENDERED)
+        self.assertTrue(before.pending)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for path, data in records.items():
@@ -218,22 +384,24 @@ class NewAppRenderTargetTests(unittest.TestCase):
             current = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/staging']
         self.assertEqual(before.records, current.records, 'system port allocation is not a new request')
         self.assertEqual(before.settings, current.settings)
+        def live(target):
+            return cluster.AppRow(Instance('hello', 'staging'), State('healthy'), False, 'x', digest=target.digest,
+                                  render_hash=target.hash, render_ready=True, render_state=State('healthy'), image_matches=True)
         for action in stages.NEW_APP_ACTIONS:
             with self.subTest(action=action):
-                self.assertEqual(stages.aim(action, before, current), current)
-                result = stages.judge(action, State('healthy'), before, current, current.hash, True, True)
+                result = stages.progress(action, before, current, live(current))
                 self.assertEqual(result.state, 'live')
                 # Even if the first read after Render sees its own build rather than the seed,
                 # the creation still follows it; a later operator setting does supersede it.
-                built = replace(current, hash='built', digest='own-build', records='new-release')
-                result = stages.judge(action, State('healthy'), before, built, 'built', True, True)
+                built = replace(current, hash='built', expected='built', digest='own-build', rendered='own-build', records='new-release')
+                result = stages.progress(action, before, built, live(built))
                 self.assertEqual((result.state, result.newer), ('live', 'own-build'))
                 changed = replace(current, hash='changed', settings='operator-change', records='operator-change')
-                result = stages.judge(action, State('healthy'), before, changed, 'changed', True, True)
+                result = stages.progress(action, before, changed, live(changed))
                 self.assertEqual(result.state, 'superseded')
 
 
-class ConsolePrProgressTests(unittest.TestCase):
+class ConsolePrChecksTests(unittest.TestCase):
     def listed(self, *, labels=('auto-merge',), sha=HEAD, runs=(), mergeable='clean', fail=None, comments=(),
                branch='console/scale-hello-staging-abc1234'):
         requests = []
@@ -255,37 +423,35 @@ class ConsolePrProgressTests(unittest.TestCase):
 
     def test_validation_statuses_and_checks_urls(self):
         cases = (
-            ('success', 'completed', 'Checks passed; awaiting merge verification'),
-            ('failure', 'completed', 'Failed validation; unmerged'),
-            ('cancelled', 'completed', 'Failed validation; unmerged'),
-            ('timed_out', 'completed', 'Failed validation; unmerged'),
-            ('action_required', 'completed', 'Failed validation; unmerged'),
-            (None, 'in_progress', 'Checks running'),
-            (None, 'queued', 'Checks pending'),
-            ('neutral', 'completed', 'Checks pending'),
-            ('skipped', 'completed', 'Checks pending'),
+            ('success', 'completed', 'passed'),
+            ('failure', 'completed', 'failed'),
+            ('cancelled', 'completed', 'failed'),
+            ('timed_out', 'completed', 'failed'),
+            ('action_required', 'completed', 'failed'),
+            (None, 'in_progress', 'running'),
+            (None, 'queued', 'pending'),
+            ('neutral', 'completed', 'pending'),
+            ('skipped', 'completed', 'pending'),
         )
         for conclusion, status, expected in cases:
             with self.subTest(conclusion=conclusion, status=status):
                 run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': conclusion,
                        'status': status, 'html_url': 'https://github.com/x/actions/runs/9'}
                 pr, requests = self.listed(runs=(run,))
-                self.assertEqual((pr.progress, pr.checks_url), (expected, run['html_url']))
+                self.assertEqual((pr.checks, pr.checks_url, pr.refused), (expected, run['html_url'], ''))
                 self.assertEqual(requests, ['/pulls', '/actions/runs', '/pulls/7'])
 
-    def test_review_label_precedes_auto_merge_and_missing_sha_needs_no_checks(self):
+    def test_checks_are_read_whoever_merges_it_and_missing_sha_needs_no_checks(self):
         cases = (
-            # A scale PR is the gate's: without its label, the gate's refusal (if any) is read.
-            ((), HEAD, 'Awaiting setup or manual review', ['/pulls', '/actions/runs', '/pulls/7', '/issues/7/comments']),
-            (('auto-merge',), '', 'Awaiting setup or manual review', ['/pulls']),
+            # A scale PR is the gate's: without its label, the gate's refusal (if any) is read too.
+            ((), HEAD, 'pending', ['/pulls', '/actions/runs', '/pulls/7', '/issues/7/comments']),
+            (('auto-merge',), '', '', ['/pulls']),
         )
-        for labels, sha, expected, read in cases:
+        for labels, sha, checks, read in cases:
             with self.subTest(labels=labels, sha=sha):
                 pr, requests = self.listed(labels=labels, sha=sha)
-                self.assertEqual((pr.progress, pr.checks_url), (expected, pr.url + '/checks'))
-                # Validate is read whoever merges it (the stages on Activity), unless there is no head to read it for.
+                self.assertEqual((pr.checks, pr.checks_url, pr.refused), (checks, pr.url + '/checks', ''))
                 self.assertEqual(requests, read)
-                self.assertEqual(pr.checks, 'pending' if sha else '')
 
     def test_a_held_gate_pr_shows_the_gates_newest_reason_and_nobody_elses(self):
         """Without its label, a PR the gate takes shows why the gate held it, when it said so."""
@@ -293,20 +459,19 @@ class ConsolePrProgressTests(unittest.TestCase):
         said = [{'user': gate, 'body': 'Auto-merge refused: production changed after review\n\nReview the changes.'},
                 {'user': gate, 'body': 'Auto-merge refused: diff includes unrelated edits\n\nReview the changes.'},
                 {'user': person, 'body': 'Auto-merge refused: <b>trust me</b>'}, {'user': gate, 'body': 'another note'}]
-        waiting = 'Awaiting setup or manual review'
-        cases = ((said, None, 'Auto-merge refused: diff includes unrelated edits'),
-                 (said[2:], None, waiting), ((), None, waiting),
-                 ([{'user': gate, 'body': 'Auto-merge refused: ' + 'x' * 400}], None, 'Auto-merge refused: ' + 'x' * 300),
-                 (said, '/issues/7/comments', waiting))
+        cases = ((said, None, 'diff includes unrelated edits'), (said[2:], None, ''), ((), None, ''),
+                 ([{'user': gate, 'body': 'Auto-merge refused: ' + 'x' * 400}], None, 'x' * 300),
+                 (said, '/issues/7/comments', ''))
         for comments, fail, expected in cases:
             with self.subTest(expected=expected, fail=fail):
                 pr, requests = self.listed(labels=(), comments=comments, fail=fail,
                                            branch='console/promote-hello-staging-abc1234')
-                self.assertEqual((pr.progress, pr.checks_url), (expected, pr.url + '/checks'))
-                self.assertEqual(pr.refused, expected.removeprefix('Auto-merge refused: ') if expected != waiting else '')
+                self.assertEqual(pr.refused, expected)
                 self.assertEqual(requests, ['/pulls', '/actions/runs', '/pulls/7', '/issues/7/comments'])
         pr, requests = self.listed(labels=('auto-merge',), comments=said, branch='console/promote-hello-staging-abc1234')
         self.assertEqual((pr.refused, requests[-1]), ('', '/pulls/7'), 'a labelled PR is the gate\'s again: no comment read')
+        pr, requests = self.listed(labels=(), comments=said, branch='console/remove-hello-staging-abc1234')
+        self.assertEqual((pr.refused, requests[-1]), ('', '/pulls/7'), 'the gate never takes a held action: no comment read')
 
     def test_only_validate_for_this_sha_counts_and_first_matching_run_wins(self):
         run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': 'failure', 'html_url': 'matching'}
@@ -314,18 +479,18 @@ class ConsolePrProgressTests(unittest.TestCase):
                 {**run, 'name': 'Other', 'conclusion': 'success', 'html_url': 'wrong-name'},
                 run, {**run, 'conclusion': 'success', 'html_url': 'older-match'})
         pr, _requests = self.listed(runs=runs)
-        self.assertEqual((pr.progress, pr.checks_url), ('Failed validation; unmerged', 'matching'))
+        self.assertEqual((pr.checks, pr.checks_url), ('failed', 'matching'))
         pr, _requests = self.listed(runs=runs[:2])
-        self.assertEqual((pr.progress, pr.checks_url), ('Checks pending', pr.url + '/checks'))
+        self.assertEqual((pr.checks, pr.checks_url), ('pending', pr.url + '/checks'))
 
     def test_conflict_overrides_validation_status(self):
         for conclusion in ('success', 'failure', None):
             with self.subTest(conclusion=conclusion):
                 run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': conclusion, 'html_url': 'checks'}
                 pr, _requests = self.listed(runs=(run,), mergeable='dirty')
-                self.assertEqual((pr.progress, pr.checks_url), ('Merge conflict; review required', 'checks'))
+                self.assertEqual((pr.checks, pr.checks_url), ('conflict', 'checks'))
 
-    def test_read_failure_keeps_checks_url_available_at_that_point(self):
+    def test_read_failure_is_not_read_and_keeps_the_checks_url_available_at_that_point(self):
         run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': 'success', 'html_url': 'checks'}
         for fail, expected_url, expected_requests in (
             ('/actions/runs', 'https://github.com/x/pull/7/checks', ['/pulls', '/actions/runs']),
@@ -333,8 +498,7 @@ class ConsolePrProgressTests(unittest.TestCase):
         ):
             with self.subTest(fail=fail):
                 pr, requests = self.listed(runs=(run,), fail=fail)
-                self.assertEqual((pr.progress, pr.checks_url),
-                                 ('Merge requested; check progress on GitHub', expected_url))
+                self.assertEqual((pr.checks, pr.checks_url), ('', expected_url), 'a failed read is not a verdict')
                 self.assertEqual(requests, expected_requests)
 
 
@@ -359,6 +523,13 @@ class TreeRunner(FakeRunner):
                     path = Path(cwd) / 'apps' / app / name
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(MAIN[f'apps/hello/{name}'])
+                path = Path(cwd) / 'apps' / app / 'staging/instance.yaml'
+                doc = yaml.safe_load(path.read_text())
+                for flag in argv[5:]:
+                    key, _, value = flag.removeprefix('--').partition('=')
+                    if key in ('calls', 'subscribe'):
+                        doc['calls' if key == 'calls' else 'subscriptions'] = value.split(',')
+                path.write_text(yaml.safe_dump(doc))
             elif argv[3:4] == ('app-remove',):
                 shutil.rmtree(Path(cwd) / 'apps' / argv[4] / argv[5])
             elif argv[3].startswith('team-'):
@@ -455,33 +626,52 @@ def app_under_test(runner, **kwargs):
 
 
 class FormTests(unittest.TestCase):
-    def test_a_jobs_schedule_is_a_reviewed_change(self):
-        nightly = Instance('nightly', 'staging')
-        change = changes.Change.to_instance('schedule', nightly, {'schedule': '  */10  * * * * '})
-        self.assertEqual(change.commands, (changes.Command('app-schedule', ('nightly', 'staging', '--schedule=*/10 * * * *')),))
-        self.assertEqual(change.title, 'apps: change when it runs: nightly/staging')
-        self.assertFalse(change.auto_merge, 'a person merges it')
-        with self.assertRaisesRegex(actions.ActionError, 'is not five cron fields'):
-            changes.Change.to_instance('schedule', nightly, {'schedule': 'every day'})
-
-    def test_an_instance_change_is_a_value_with_its_commands_wording_and_job(self):
-        hello = Instance('hello', 'staging')
-        change = changes.Change.to_instance('scale', hello, {'replicas': '2', 'memory_limit': '256Mi'})
-        self.assertEqual(change, changes.Change(
-            kind='scale', target='hello/staging', slug='scale-hello-staging', title='apps: scale hello/staging',
-            commands=(changes.Command('app-scale', ('hello', 'staging', '--replicas=2', '--memory-limit=256Mi')),),
-            make='make app-scale APP=hello ENV=staging ARGS="--replicas=2 --memory-limit=256Mi"'))
-        self.assertEqual(change.body, 'Generated by the console with:\n\n'
-                         '    make app-scale APP=hello ENV=staging ARGS="--replicas=2 --memory-limit=256Mi"')
-        self.assertFalse(change.auto_merge, 'a person merges it')
-        removal = changes.Change.to_instance('remove', hello, {})
-        self.assertEqual((removal.commands, removal.title, removal.make),
-                         ((changes.Command('app-remove', ('hello', 'staging')),), 'apps: remove hello/staging',
-                          'make app-remove APP=hello ENV=staging'))
-        for kind, form, message in (('scale', {}, 'change at least one'), ('scale', {'cpu': '--root=/'}, 'not a number or quantity'),
-                                    ('promote', {}, 'no such change'), ('rename', {}, 'no such change')):
-            with self.subTest(kind=kind, form=form), self.assertRaisesRegex(actions.ActionError, message):
-                changes.Change.to_instance(kind, hello, form)
+    def test_action_builders_validate_shapes_and_produce_the_clones_commands(self):
+        cases = {
+            'scale': ({'replicas': '2', 'memory_limit': '256Mi'},
+                      (merge.Command('app-scale', ('hello', 'staging', '--replicas=2', '--memory-limit=256Mi')),)),
+            'schedule': ({'schedule': '  */10  * * * * '},
+                         (merge.Command('app-schedule', ('hello', 'staging', '--schedule=*/10 * * * *')),)),
+            'expose': ({'exposure': 'public', 'host': 'weather.example.com'},
+                       (merge.Command('app-expose', ('hello', 'staging', '--exposure=public', '--host=weather.example.com')),)),
+            'connect': ({'calls': 'orders, billing', 'subscribe': 'orders.created'},
+                        (merge.Command('app-calls', ('hello', 'staging', '--add=orders,billing')),
+                         merge.Command('app-events', ('hello', 'staging', '--add-subscribe=orders.created')))),
+            'disconnect': ({'role': 'calls', 'app': 'orders'}, (merge.Command('app-calls', ('hello', 'staging', '--remove=orders')),)),
+            'egress': ({'hosts': 'API.stripe.com, *.example.com:8443'},
+                       (merge.Command('app-egress', ('hello', 'staging', '--add=api.stripe.com:443,*.example.com:8443')),)),
+            'allow': ({'add': 'orders, team:demo'}, (merge.Command('app-allows', ('hello', 'staging', '--add=orders,team:demo')),)),
+            'remove': ({}, (merge.Command('app-remove', ('hello', 'staging')),)),
+        }
+        for action, (form, commands) in cases.items():
+            with self.subTest(action=action):
+                self.assertEqual(merge.ACTIONS[action].commands('hello', 'staging', form), commands)
+        bad = (('scale', {}, 'change at least one'), ('scale', {'cpu': '--root=/'}, 'not a number or quantity'),
+               ('schedule', {'schedule': 'every day'}, 'is not five cron fields'),
+               ('expose', {'exposure': 'open'}, 'exposure must'),
+               ('expose', {'exposure': 'public', 'host': '--root=/'}, 'not a DNS name'),
+               ('connect', {}, 'choose an app to call'), ('connect', {'publish': ''}, 'edit asyncapi.yaml'),
+               ('disconnect', {}, 'no such connection to remove'),
+               ('disconnect', {'role': 'called-by', 'app': 'orders'}, 'no such connection'),
+               ('disconnect', {'role': 'calls', 'app': '--root=/'}, 'no such connection'),
+               ('disconnect', {'role': 'subscribes', 'app': 'orders', 'event': 'a.b'}, 'no such connection'),
+               ('disconnect', {'role': 'reaches', 'event': '--root=/'}, 'no such connection'),
+               ('disconnect', {'role': 'publishes', 'event': 'seen'}, 'edit asyncapi.yaml'),
+               ('egress', {'hosts': ' '}, 'name a host'), ('egress', {'hosts': '10.0.0.1'}, 'a grant is a host name'),
+               ('egress', {'hosts': '--root=/'}, 'a grant is a host name'), ('allow', {'add': '--root=/'}, 'an allowed caller'))
+        for action, form, message in bad:
+            with self.subTest(action=action, form=form), self.assertRaisesRegex(actions.ActionError, message):
+                merge.ACTIONS[action].commands('hello', 'staging', form)
+        self.assertEqual(merge.ACTIONS['expose'].commands('hello', 'staging', {'exposure': 'private'}),
+                         (merge.Command('app-expose', ('hello', 'staging', '--exposure=private')),))
+        for form, expected in (({'role': 'subscribes', 'app': 'orders', 'event': 'created'},
+                                merge.Command('app-events', ('hello', 'staging', '--remove-subscribe=orders.created'))),
+                               ({'role': 'reaches', 'event': 'api.stripe.com:443'},
+                                merge.Command('app-egress', ('hello', 'staging', '--remove=api.stripe.com:443')))):
+            self.assertEqual(merge.ACTIONS['disconnect'].commands('hello', 'staging', form), (expected,))
+        for form in ({'calls': 'reports'}, {'subscribe': 'orders.paid'}):
+            with self.assertRaisesRegex(actions.ActionError, 'not a web app, or an event'):
+                merge.Connections.from_form(form).check_offered({'orders'}, {'orders.created'})
 
     def test_new_app_open_carries_real_input_records_offers_and_key_but_no_port_or_rendered_files(self):
         public = 'U' + 'A' * 55
@@ -494,8 +684,9 @@ class FormTests(unittest.TestCase):
         api = FakeGitHub()
         chosen = changes.NewApp.from_form({**NEW, 'team': 'demo'}, [], {'demo': ''})
         image = 'ghcr.io/samclement/weather-api:0-abcdef0@sha256:' + 'd' * 64
-        change = chosen.change(image)
-        job = actions.Job(1, change.kind, change.target, 'sam@swhurl.com', None)
+        commands = merge.ACTIONS['new'].commands(chosen.name, 'staging',
+                                                 {'repo': chosen.request.repo, 'image': image, 'flags': chosen.flags})
+        job = actions.Job(1, merge.ACTIONS['new'].job, chosen.target, 'sam@swhurl.com', None)
         source = (ROOT / 'tests/fixtures/manifests/web.yaml').read_text() + (
             'provides:\n  api: /openapi.json\n  apiFile: openapi.yaml\n  eventsFile: asyncapi.yaml\n'
             'flags:\n  example: {type: boolean, default: false, description: Example}\n')
@@ -510,12 +701,13 @@ class FormTests(unittest.TestCase):
             proxy.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / egress.PROXY_FILE, proxy)
             with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(intake, 'new_nats_key', side_effect=key):
-                self.assertEqual(new.main([*change.commands[0].argv, '--root', str(tree), '--no-policy-check'], opener), 0)
+                self.assertEqual(new.main([*commands[0].argv, '--root', str(tree), '--no-policy-check'], opener), 0)
             # Direct CLI output remains rendered, with its allocation.
             self.assertIn('egressPort', yaml.safe_load((tree / 'apps/weather-api/staging/instance.yaml').read_text())['allocations'])
             self.assertTrue((tree / 'apps/weather-api/staging/helmrelease.yaml').is_file())
         runner = tree_fake(edit=create)
-        change.open(runner, api.github, job)
+        with mock.patch.dict(MAIN, {'.sops.yaml': b'creation_rules: [{path_regex: "", age: fixture}]'}):
+            changes.open_new_app(runner, api.github, job, chosen, image)
         entries = api.sent('POST /git/trees')[0]['tree']
         paths = {entry['path'] for entry in entries}
         expected = {'apps/weather-api/app.yaml', 'apps/weather-api/staging/release.yaml',
@@ -532,86 +724,38 @@ class FormTests(unittest.TestCase):
         self.assertTrue(api.sent('POST /issues/7/labels'))
         self.assertNotIn('swhurl-request', api.sent('POST /pulls')[0]['body'])
 
-    def test_expose_form_becomes_app_expose_arguments(self):
-        hello = Instance('hello', 'staging')
-        change = changes.Change.to_instance('expose', hello, {'exposure': 'public', 'host': 'weather.example.com'})
-        self.assertEqual(change.commands, (changes.Command('app-expose', ('hello', 'staging', '--exposure=public',
-                                                                          '--host=weather.example.com')),))
-        self.assertEqual(change.title, 'apps: change access to hello/staging')
-        self.assertEqual(changes.Change.to_instance('expose', hello, {'exposure': 'private', 'host': ''}).commands,
-                         (changes.Command('app-expose', ('hello', 'staging', '--exposure=private')),))
-        for form, message in (({'exposure': 'open'}, 'exposure must'),
-                              ({'exposure': 'public', 'host': '--root=/'}, 'not a DNS name')):
-            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
-                changes.Change.to_instance('expose', hello, form)
-
-    def test_connections_are_added_and_removed_by_the_commands_make_runs(self):
-        hello, offered = Instance('hello', 'staging'), ({'orders', 'billing'}, {'orders.created'})
-        change = changes.Change.to_instance('connect', hello, {'calls': 'orders, billing', 'subscribe': 'orders.created'})
-        self.assertEqual(change.commands,
-                         (changes.Command('app-calls', ('hello', 'staging', '--add=orders,billing')),
-                          changes.Command('app-events', ('hello', 'staging', '--add-subscribe=orders.created'))))
-        self.assertEqual((change.touches_others, change.manual_merge_reason), (False, ''),
-                         "records only: the other app's side is rendered on main; the gate's rule decides the merge")
-        for form, message in (({}, 'choose an app to call'), ({'publish': '--root=/'}, 'edit asyncapi.yaml'),
-                              ({'publish': ''}, 'edit asyncapi.yaml')):
-            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
-                changes.Change.to_instance('connect', hello, form)
-        for form in ({'calls': 'reports'}, {'subscribe': 'orders.paid'}):
-            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, 'not a web app, or an event'):
-                changes.Connections.from_form(form).check_offered(*offered)
-        removed = {'calls': ({'role': 'calls', 'app': 'orders'}, changes.Command('app-calls', ('hello', 'staging', '--remove=orders'))),
-                   'subscribes': ({'role': 'subscribes', 'app': 'orders', 'event': 'created'},
-                                  changes.Command('app-events', ('hello', 'staging', '--remove-subscribe=orders.created'))),
-                   'reaches': ({'role': 'reaches', 'event': 'api.stripe.com:443'},
-                               changes.Command('app-egress', ('hello', 'staging', '--remove=api.stripe.com:443')))}
-        for role, (form, command) in removed.items():
-            with self.subTest(role=role):
-                self.assertEqual(changes.Change.to_instance('disconnect', hello, form).commands, (command,))
-        for form in ({}, {'role': 'called-by', 'app': 'orders'}, {'role': 'calls', 'app': '--root=/'},
-                     {'role': 'subscribes', 'app': 'orders', 'event': 'a.b'},
-                     {'role': 'reaches', 'event': '--root=/'}):
-            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, 'no such connection to remove'):
-                changes.Change.to_instance('disconnect', hello, form)
-        with self.assertRaisesRegex(actions.ActionError, 'edit asyncapi.yaml'):
-            changes.Change.to_instance('disconnect', hello, {'role': 'publishes', 'event': 'seen'})
-        both = changes.Change.to_instance('connect', hello, {'calls': 'orders', 'subscribe': 'orders.created'})
-        self.assertEqual(both.make, 'make app-calls APP=hello ENV=staging ARGS="--add=orders" && '
-                         'make app-events APP=hello ENV=staging ARGS="--add-subscribe=orders.created"')
-        self.assertEqual((both.title, both.slug), ('apps: change the connections of hello/staging', 'connect-hello-staging'))
-        granting = changes.Change.to_instance('egress', hello, {'hosts': 'API.stripe.com, *.example.com:8443'})
-        self.assertEqual((granting.commands, granting.touches_others), ((changes.Command(
-            'app-egress', ('hello', 'staging', '--add=api.stripe.com:443,*.example.com:8443')),), False))
-        for form, message in (({'hosts': ' '}, 'name a host'), ({'hosts': '10.0.0.1'}, 'a grant is a host name'),
-                              ({'hosts': '--root=/'}, 'a grant is a host name')):
-            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
-                changes.Change.to_instance('egress', hello, form)
-
-    def test_team_and_channel_changes_are_values_and_an_address_is_only_standard_input(self):
-        add = changes.Change.to_team('add', {'name': 'payments', 'description': ' Takes  money '})
-        self.assertEqual(add, changes.Change('team add', 'team:payments', 'team-add-payments', 'teams: add payments',
-                                             (changes.Command('team-add', ('payments', '--description=Takes money')),),
-                                             "make team-add NAME=payments DESCRIPTION='Takes money'"))
-        edit = changes.Change.to_team('edit', {'name': 'payments', 'description': 'x', 'rename': 'billing'})
-        self.assertEqual(edit.commands, (changes.Command('team-edit', ('payments', '--description=x', '--rename=billing')),))
-        remove = changes.Change.to_team('remove', {'name': 'payments', 'move_apps_to': 'platform'})
-        self.assertEqual((remove.commands, remove.make),
-                         ((changes.Command('team-remove', ('payments', '--move-apps-to=platform')),),
-                          'make team-remove NAME=payments ARGS="--move-apps-to platform"'))
-        for action, form, message in (('add', {'name': 'Payments'}, 'team name'), ('rename', {'name': 'payments'}, 'no such team change'),
-                                      ('add', {'name': 'payments', 'description': 'x' * 201}, 'at most 200')):
+    def test_team_channel_and_new_builders_have_no_parallel_change_metadata(self):
+        cases = {
+            'team-add': ({'description': ' Takes  money '}, merge.Command('team-add', ('payments', '--description=Takes money')),
+                         "make team-add NAME=payments DESCRIPTION='Takes money'"),
+            'team-edit': ({'description': 'x', 'rename': 'billing'},
+                          merge.Command('team-edit', ('payments', '--description=x', '--rename=billing')),
+                          'make team-edit NAME=payments ARGS="--description=x --rename=billing"'),
+            'team-remove': ({'move_apps_to': 'platform'}, merge.Command('team-remove', ('payments', '--move-apps-to=platform')),
+                            'make team-remove NAME=payments ARGS="--move-apps-to platform"'),
+            'team-channel-remove': ({}, merge.Command('team-channel', ('payments', '--remove')),
+                                    'make team-channel NAME=payments ARGS=--remove'),
+        }
+        for action, (form, command, make) in cases.items():
+            with self.subTest(action=action):
+                self.assertEqual(merge.ACTIONS[action].commands('payments', '', form), (command,))
+                self.assertEqual(command.as_make(), make)
+        for action, name, form, message in (('team-add', 'Payments', {}, 'team name'),
+                                            ('team-add', 'payments', {'description': 'x' * 201}, 'at most 200'),
+                                            ('team-edit', 'payments', {'rename': 'Bad'}, 'new name'),
+                                            ('team-remove', 'payments', {'move_apps_to': 'Bad'}, 'team to move'),
+                                            ('team-channel-set', 'Bad', {}, 'team name'),
+                                            ('team-channel-set', 'payments', {'address': ''}, 'channel address')):
             with self.subTest(action=action, form=form), self.assertRaisesRegex(actions.ActionError, message):
-                changes.Change.to_team(action, form)
+                merge.ACTIONS[action].commands(name, '', form)
         address = 'https://ntfy.sh/a-private-topic-0123456789'
-        channel = changes.Change.to_channel('set', {'name': 'payments', 'transport': 'ntfy', 'address': address})
-        (command,) = channel.commands
+        (command,) = merge.ACTIONS['team-channel-set'].commands('payments', '', {'address': address})
         self.assertEqual((command.name, command.argv, command.input), ('team-channel', ('payments', '--transport=ntfy'), address + '\n'))
-        self.assertNotIn(address, repr(channel) + channel.body + channel.title + channel.slug)
-        self.assertEqual((channel.kind, channel.target, channel.slug), ('channel set', 'team:payments', 'team-channel-set-payments'))
-        self.assertEqual(changes.Change.to_channel('remove', {'name': 'payments'}).commands,
-                         (changes.Command('team-channel', ('payments', '--remove')),))
-        with self.assertRaisesRegex(actions.ActionError, 'no such channel change'):
-            changes.Change.to_channel('rotate', {'name': 'payments'})
+        self.assertNotIn(address, repr(command) + command.as_make() + merge.ACTIONS['team-channel-set'].title)
+        commands = merge.ACTIONS['connect'].commands('hello', 'staging', {'calls': 'orders', 'subscribe': 'orders.created'})
+        self.assertEqual(' && '.join(c.as_make() for c in commands),
+                         'make app-calls APP=hello ENV=staging ARGS="--add=orders" && '
+                         'make app-events APP=hello ENV=staging ARGS="--add-subscribe=orders.created"')
 
     def test_the_clone_s_tooling_leaves_only_the_files_it_means_to(self):
         """A real interpreter on a small clone: without the setting, its bytecode would join the commit."""
@@ -625,16 +769,18 @@ class FormTests(unittest.TestCase):
                 'Path("out.txt").write_text(WORD + " " + " ".join(sys.argv[1:]))\nprint("[OK]", WORD)\n')
             before = changes.snapshot(clone)
             job = actions.Job(1, 'scale', 'hello/staging', 'sam@swhurl.com', None)
-            changes.Change.to_instance('scale', Instance('hello', 'staging'), {'replicas': '2'}).apply(Runner(), job, clone)
+            (command,) = merge.ACTIONS['scale'].commands('hello', 'staging', {'replicas': '2'})
+            changes.run_tool(Runner(), job, clone, command.name, list(command.argv), input=command.input)
             self.assertEqual(job.lines, ['[OK] edited'])
             self.assertEqual((clone / 'out.txt').read_text(), 'edited app-scale hello staging --replicas=2')
             self.assertEqual(sorted(changes.snapshot(clone).keys() - before.keys()), ['out.txt'])
 
     def test_only_console_branches(self):
-        self.assertEqual(changes.branch_name('new-weather-api-staging', 'abc1234'), 'console/new-weather-api-staging-abc1234')
-        for slug, rev in (('x', 'main'), ('../main', 'abc1234'), ('X', 'abc1234'), ('x y', 'abc1234')):
-            with self.subTest(slug=slug), self.assertRaises(actions.ActionError):
-                changes.branch_name(slug, rev)
+        api = FakeGitHub()
+        job = actions.Job(1, 'scale', 'hello/staging', 'sam@swhurl.com', None)
+        with self.assertRaisesRegex(actions.ActionError, 'only its own action branches'):
+            changes.open_action(FakeRunner(), api.github, job, 'scale', '../main', 'staging', ())
+        self.assertEqual([r.method for r in api.requests], ['GET'], 'refused before anything is downloaded or written')
 
     def test_token_from_environment(self):
         runner = FakeRunner()
@@ -680,23 +826,39 @@ class SharedInputPrTests(unittest.TestCase):
         model_sync.sync(root)
         return {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob('*') if path.is_file()}
 
-    def propose(self, change, operation, main):
+    def propose(self, action, operation, main, *, name='hello', env='staging', form=None):
         runner, api = tree_fake(edit=operation), FakeGitHub()
-        job = actions.Job(1, change.kind, change.target, 'sam@swhurl.com', None)
+        job = actions.Job(1, merge.ACTIONS[action].job or action, merge.target(action, name, env), 'sam@swhurl.com', None)
         with mock.patch.dict(MAIN, main, clear=True), contextlib.redirect_stdout(io.StringIO()):
-            change.open(runner, api.github, job)
+            commands = merge.ACTIONS[action].commands(name, env, form or {})
+            changes.open_action(runner, api.github, job, action, name, env, commands)
         self.assertEqual(api.sent('POST /issues/7/labels'), [], 'these changes stay held for review')
         tree = api.sent('POST /git/trees')[0]['tree']
         self.assertTrue(records_only([entry['path'] for entry in tree]), 'Validate must render the actual PR inputs')
         return tree
+
+    def test_failed_semantic_reads_before_or_after_preparation_make_no_github_writes(self):
+        for corrupt_before in (True, False):
+            with self.subTest(corrupt_before=corrupt_before):
+                main = self.main()
+                path = 'apps/hello/staging/instance.yaml'
+                if corrupt_before:
+                    main[path] = b'['
+                api = FakeGitHub()
+                runner = tree_fake(edit=lambda root, path=path: (root / path).write_text('['))
+                job = actions.Job(1, 'scale', 'hello/staging', 'sam@swhurl.com', None)
+                commands = merge.ACTIONS['scale'].commands('hello', 'staging', {'replicas': '2'})
+                with mock.patch.dict(MAIN, main, clear=True), self.assertRaisesRegex(merge.Hold, 'cannot be read'):
+                    changes.open_action(runner, api.github, job, 'scale', 'hello', 'staging', commands)
+                self.assertTrue(api.requests)
+                self.assertEqual({r.method for r in api.requests}, {'GET'})
 
     def test_remove_pr_carries_only_input_deletions_for_one_or_last_environment(self):
         for two in (True, False):
             with self.subTest(two_environments=two):
                 main = self.main(two_environments=two)
                 main['apps/hello/staging/notes.yaml'] = b'keep: true\n'
-                change = changes.Change.to_instance('remove', Instance('hello', 'staging'), {})
-                tree = self.propose(change, lambda root: app_edit.remove(root, 'hello', 'staging'), main)
+                tree = self.propose('remove', lambda root: app_edit.remove(root, 'hello', 'staging'), main)
                 expected = {'apps/hello/staging/' + name for name in
                             ('release.yaml', 'instance.yaml', 'secret.sops.yaml', 'events.sops.yaml',
                              'offers/source.yaml', 'offers/openapi.json')}
@@ -711,13 +873,12 @@ class SharedInputPrTests(unittest.TestCase):
             (folder / 'instance.yaml').unlink()
             (folder / 'release.yaml').write_text('changed: true\n')
             (folder / 'offers/new.json').write_text('{}\n')
-        change = changes.Change.to_instance('remove', Instance('hello', 'staging'), {})
-        tree = self.propose(change, incomplete_remove, self.main())
+        tree = self.propose('remove', incomplete_remove, self.main())
         self.assertEqual(tree, [{'path': 'apps/hello/staging/instance.yaml', 'mode': '100644', 'type': 'blob', 'sha': None}])
 
     def test_team_rename_pr_includes_ownership_and_team_grants_but_not_routes(self):
-        change = changes.Change.to_team('edit', {'name': 'demo', 'rename': 'core'})
-        tree = self.propose(change, lambda root: teams.change(root, 'demo', rename='core'), self.main(channel=True))
+        tree = self.propose('team-edit', lambda root: teams.change(root, 'demo', rename='core'), self.main(channel=True),
+                            name='demo', env='', form={'rename': 'core'})
         self.assertEqual({entry['path'] for entry in tree},
                          {'apps/teams.yaml', 'apps/hello/app.yaml', 'apps/hello/staging/instance.yaml'})
 
@@ -726,127 +887,93 @@ class SharedInputPrTests(unittest.TestCase):
             doc = yaml.safe_load(text)
             doc['stringData'] = {'address': 'ENC[...]'}
             return Result(args, 0, yaml.safe_dump(doc) + 'sops: {}\n')
-        change = changes.Change.to_channel('set', {'name': 'demo', 'address': 'https://ntfy.sh/private'})
-        tree = self.propose(change, lambda root: teams.team_channel(root, 'demo', 'https://ntfy.sh/private',
-                            runner=FakeRunner().on('sops', handler=encrypt)), self.main())
+        tree = self.propose('team-channel-set', lambda root: teams.team_channel(root, 'demo', 'https://ntfy.sh/private',
+                            runner=FakeRunner().on('sops', handler=encrypt)), self.main(),
+                            name='demo', env='', form={'address': 'https://ntfy.sh/private'})
         self.assertEqual({entry['path'] for entry in tree},
                          {'apps/teams.yaml', 'platform/notify/channel-demo.sops.yaml',
                           'platform/notify/kustomization.yaml', 'clusters/home/platform-notify.yaml'})
 
 
-class OpenPrTests(unittest.TestCase):
-    def open(self, runner, api=None, change=None):
+class OpenActionTests(unittest.TestCase):
+    def open(self, runner, api=None, *, name='weather-api'):
         api = api or FakeGitHub()
-        job = actions.Job(1, 'new app', 'weather-api/staging', 'sam@swhurl.com', None)
-        url = changes.open_pr(runner, api.github, job, slug='new-weather-api-staging', title='apps: add weather-api staging',
-                              body='body', change=change or (lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x'])))
+        job = actions.Job(1, 'new app', f'{name}/staging', 'sam@swhurl.com', None)
+        url = changes.open_action(runner, api.github, job, 'new', name, 'staging',
+                                  (merge.Command('app-new', (name,)),))
         return url, job, api
 
     def test_removing_an_encrypted_file_needs_review_without_credential_setup(self):
-        api, runner = FakeGitHub(), FakeRunner()
+        api, runner = FakeGitHub(), tree_fake()
         job = actions.Job(1, 'remove', 'hello/staging', 'sam@swhurl.com', None)
         path = 'apps/hello/staging/events.sops.yaml'
         with mock.patch.dict(MAIN, {path: b'kind: Secret\n'}):
-            changes.open_pr(runner, api.github, job, slug='remove-hello-staging', title='remove', body='body',
-                            change=lambda tree: (tree / path).unlink())
+            changes.open_action(runner, api.github, job, 'remove', 'hello', 'staging',
+                                merge.ACTIONS['remove'].commands('hello', 'staging', {}))
         body = api.sent('POST /pulls')[0]['body']
         self.assertIn('needs manual review', body)
-        self.assertNotIn('adds the app', body)
         self.assertNotIn('Secret values', body)
 
-    def test_auto_merge_labels_the_pr_unless_it_adds_a_secret(self):
-        api = FakeGitHub()
-        job = actions.Job(1, 'new app', 'weather-api/staging', 'sam@swhurl.com', None)
-        runner = tree_fake()
-        changes.open_pr(runner, api.github, job, slug='new-weather-api-staging', title='t', body='b', auto_merge=True,
-                        change=lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x']))
-        self.assertEqual(api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}])
-        self.assertIn('Labelled auto-merge: it merges itself when Validate passes', job.lines)
-
-        def with_secret(tree):
-            (tree / 'apps/x').mkdir(parents=True)
-            (tree / 'apps/x/secret.sops.yaml').write_text('sops: {}\n')
-        api, job, runner = FakeGitHub(), actions.Job(1, 'new app', 'x/staging', 'sam@swhurl.com', None), tree_fake(edit=with_secret)
-        changes.open_pr(runner, api.github, job, slug='new-x-staging', title='t', body='b', auto_merge=True,
-                        change=lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x']))
-        self.assertEqual(api.sent('POST /issues/7/labels'), [])
-        self.assertNotIn('Merges itself', api.sent('POST /pulls')[0]['body'])
-        self.assertIn('Manual merge required: this pull request needs Secret values to be set on the pull request branch.',
-                      api.sent('POST /pulls')[0]['body'])
-        self.assertTrue(any(line.startswith('Merge plan: Manual merge required') for line in job.lines))
-
-        def with_events_key(tree):  # an app that publishes or subscribes: its NATS key is generated whole
-            (tree / 'apps/x/prod').mkdir(parents=True)
-            (tree / 'apps/x/prod/events.sops.yaml').write_text('sops: {}\n')
-        api, job, runner = FakeGitHub(), actions.Job(1, 'promote', 'x/prod', 'sam@swhurl.com', None), tree_fake(edit=with_events_key)
-        changes.open_pr(runner, api.github, job, slug='promote-x-staging', title='t', body='b', auto_merge=True,
-                        change=lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x']))
-        self.assertEqual(api.sent('POST /issues/7/labels'), [], 'still reviewed by a person')
-        self.assertIn("Manual merge required: this pull request adds the app's generated encrypted events key.",
-                      api.sent('POST /pulls')[0]['body'])
-        self.assertFalse(any('set the Secret values' in line for line in job.lines))
-
-        def with_new_apps_events_key(tree):  # a new app's own key, generated whole: the merge gate checks it
-            (tree / 'apps/x/staging').mkdir(parents=True)
-            (tree / 'apps/x/staging/events.sops.yaml').write_text('sops: {}\n')
-        api, job, runner = FakeGitHub(), actions.Job(1, 'new app', 'x/staging', 'sam@swhurl.com', None), tree_fake(edit=with_new_apps_events_key)
-        changes.open_pr(runner, api.github, job, slug='new-x-staging', title='t', body='b', auto_merge=True,
-                        change=lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x']))
-        self.assertTrue(api.sent('POST /issues/7/labels'), "a new app's generated key does not hold the merge")
-        self.assertNotIn('Manual merge required', api.sent('POST /pulls')[0]['body'])
-
+    def test_auto_merge_labels_unless_encrypted_inputs_need_review(self):
+        for filename, reason in (('', ''), ('events.sops.yaml', "not the app's generated")):
+            with self.subTest(filename=filename):
+                def edit(tree, filename=filename):
+                    folder = tree / 'apps/weather-api/staging'
+                    for name in ('app.yaml', 'staging/release.yaml', 'staging/instance.yaml'):
+                        path = tree / 'apps/weather-api' / name
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(MAIN[f'apps/hello/{name}'])
+                    if filename:
+                        (folder / filename).write_text('sops: {}\n')
+                _, job, api = self.open(tree_fake(edit=edit))
+                self.assertEqual(bool(api.sent('POST /issues/7/labels')), not bool(filename))
+                if reason:
+                    self.assertIn(reason, api.sent('POST /pulls')[0]['body'])
+                    self.assertTrue(any(line.startswith('Merge plan: Manual merge required') for line in job.lines))
         api = FakeGitHub(fail={'POST /issues/7/labels': (403, 'Resource not accessible')})
-        job, runner = actions.Job(1, 'new app', 'x/staging', 'sam@swhurl.com', None), tree_fake()
-        url = changes.open_pr(runner, api.github, job, slug='new-x-staging', title='t', body='b', auto_merge=True,
-                              change=lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x']))
+        url, job, _ = self.open(tree_fake(), api)
         self.assertEqual(url, 'https://github.com/x/pull/7', 'a failed label leaves the PR for a person')
         self.assertTrue(any(line.startswith('Could not label it auto-merge') for line in job.lines))
 
-    def test_manual_merge_plan_names_existing_apps_changed_by_new_app_connections(self):
-        def connect_to_existing_app(tree):
-            path = tree / 'apps/demo-orders/staging/review-for-test.yaml'
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text('needs-review: true\n')
-
-        api, job = FakeGitHub(), actions.Job(1, 'new app', 'test-5/staging', 'sam@swhurl.com', None)
-        changes.open_pr(tree_fake(), api.github, job, slug='new-test-5-staging',
-                        title='apps: add test-5/staging', body='generated app', auto_merge=False,
-                        manual_merge_reason='also changes existing app settings for demo-orders',
-                        change=connect_to_existing_app)
-        body = api.sent('POST /pulls')[0]['body']
-        self.assertIn('**Merge plan:** Manual merge required:', body)
-        self.assertIn('also changes existing app settings for demo-orders', body)
-        self.assertTrue(any('also changes existing app settings for demo-orders' in line for line in job.lines))
-
-    def test_commits_exactly_the_changed_files_on_a_console_branch(self):
+    def test_commits_only_owned_changed_inputs_and_publisher_preserves_modes(self):
         def edit(tree):
             (tree / 'apps/hello/staging/helmrelease.yaml').write_text('kind: HelmRelease\nchanged: true\n')
             (tree / 'README.md').unlink()
-            (tree / 'apps/x').mkdir(parents=True)
-            (tree / 'apps/x/run.sh').write_text('#!/bin/sh\n')
-            (tree / 'apps/x/run.sh').chmod(0o755)
-        url, job, api = self.open(tree_fake(edit=edit))
-        self.assertEqual(url, 'https://github.com/x/pull/7')
-        blobs = [base64.b64decode(b['content']) for b in api.sent('POST /git/blobs')]
-        self.assertEqual(blobs, [b'kind: HelmRelease\nchanged: true\n', b'#!/bin/sh\n'])
-        (tree,) = api.sent('POST /git/trees')
+            path = tree / 'apps/hello/staging/instance.yaml'
+            doc = yaml.safe_load(path.read_text())
+            doc['replicas'] = 2
+            path.write_text(yaml.safe_dump(doc))
+            offers = path.parent / 'offers'
+            offers.mkdir()
+            (offers / 'run.sh').write_text('#!/bin/sh\n')
+            (offers / 'run.sh').chmod(0o755)
+        api, runner = FakeGitHub(), tree_fake(edit=edit)
+        job = actions.Job(1, 'scale', 'hello/staging', 'sam@swhurl.com', None)
+        changes.open_action(runner, api.github, job, 'scale', 'hello', 'staging',
+                            merge.ACTIONS['scale'].commands('hello', 'staging', {'replicas': '2'}))
+        tree = api.sent('POST /git/trees')[0]
         self.assertEqual(tree, {'base_tree': 'tree0', 'tree': [
-            {'path': 'README.md', 'mode': '100644', 'type': 'blob', 'sha': None},
-            {'path': 'apps/hello/staging/helmrelease.yaml', 'mode': '100644', 'type': 'blob', 'sha': 'blob0'},
-            {'path': 'apps/x/run.sh', 'mode': '100755', 'type': 'blob', 'sha': 'blob1'}]})
-        (commit,) = api.sent('POST /git/commits')
+            {'path': 'apps/hello/staging/instance.yaml', 'mode': '100644', 'type': 'blob', 'sha': 'blob0'}]})
+        commit = api.sent('POST /git/commits')[0]
         self.assertEqual((commit['parents'], commit['tree'], commit['author']['name']), ([HEAD], 'tree1', 'swhurl console'))
-        self.assertTrue(commit['message'].startswith('[console] apps: add weather-api staging'))
         self.assertIn('Requested-by: sam@swhurl.com', commit['message'])
-        self.assertEqual(api.sent('POST /git/refs'), [{'ref': 'refs/heads/console/new-weather-api-staging-abc1234',
-                                                       'sha': 'def5678' + '0' * 33}])
-        (pr,) = api.sent('POST /pulls')
+        self.assertEqual(api.sent('POST /git/refs'), [{'ref': 'refs/heads/console/scale-hello-staging-abc1234',
+                                                    'sha': 'def5678' + '0' * 33}])
+        pr = api.sent('POST /pulls')[0]
         self.assertEqual((pr['head'], pr['base'], pr['title']),
-                         ('console/new-weather-api-staging-abc1234', 'main', '[console] apps: add weather-api staging'))
-        self.assertEqual(job.lines[2:7], ['D README.md', 'M apps/hello/staging/helmrelease.yaml', 'A apps/x/run.sh',
-                                          'Merge plan: Manual merge required: this pull request needs manual review. Review the changes, then merge it yourself.',
-                                          'Committed def5678 [console] apps: add weather-api staging'])
-        self.assertIn('Opened https://github.com/x/pull/7', job.lines)
+                         ('console/scale-hello-staging-abc1234', 'main', '[console] apps: scale hello/staging'))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / 'offer.sh'
+            path.write_text('#!/bin/sh\n')
+            path.chmod(0o755)
+            client = changes.GitHubAPI(runner, api.github)
+            try:
+                changes.publish(client, job, root, {}, changes.snapshot(root), ['offer.sh'], HEAD,
+                                'console/new-x-staging-abc1234', 'test', 'body', False, 'review')
+            finally:
+                client.client.close()
+        self.assertEqual(api.sent('POST /git/trees')[-1]['tree'][0]['mode'], '100755')
 
     def test_token_only_in_the_authorization_header_and_never_sent_off_github(self):
         runner = tree_fake()
@@ -862,7 +989,9 @@ class OpenPrTests(unittest.TestCase):
         seen = []
         api = FakeGitHub()
         with self.assertRaisesRegex(actions.ActionError, 'no files changed'):
-            self.open(tree_fake(), api, change=seen.append)
+            changes.open_action(tree_fake(edit=seen.append), api.github,
+                                actions.Job(1, 'scale', 'hello/staging', 'sam@swhurl.com', None),
+                                'scale', 'hello', 'staging', (merge.Command('app-scale', ('hello', 'staging')),))
         self.assertFalse(seen[0].parent.exists())
         self.assertEqual([r.method for r in api.requests], ['GET', 'GET'])
 
@@ -881,7 +1010,7 @@ class OpenPrTests(unittest.TestCase):
         runner = tree_fake()
         self.open(runner)
         (call,) = [c for c in runner.calls if 'app-new' in c]
-        self.assertEqual(call, (sys.executable, '-m', 'swhurl', 'app-new', 'x'))
+        self.assertEqual(call, (sys.executable, '-m', 'swhurl', 'app-new', 'weather-api'))
 
     def test_dry_run_lists_the_change_and_writes_nothing(self):
         runner = tree_fake()
@@ -889,7 +1018,7 @@ class OpenPrTests(unittest.TestCase):
         url, job, api = self.open(runner)
         self.assertEqual(url, '')
         self.assertEqual({r.method for r in api.requests}, {'GET'})
-        self.assertIn('Dry run: would commit 4 file(s) to console/new-weather-api-staging-abc1234; no PR opened', job.lines)
+        self.assertIn('Dry run: would commit 3 file(s) to console/new-weather-api-staging-abc1234; no PR opened', job.lines)
 
     def test_github_error_is_a_redacted_action_error(self):
         api = FakeGitHub(fail={'POST /git/refs': (422, f'Reference already exists (token {TOKEN})')})
@@ -975,12 +1104,15 @@ class NewAppRouteTests(unittest.TestCase):
         chosen = changes.NewApp.from_form({**NEW, 'calls': 'orders,billing', 'subscribe': 'orders.created'}, [], teams, *offered)
         self.assertEqual(chosen.flags, ('--team=platform', '--exposure=authenticated-web', '--calls=orders,billing',
                                         '--subscribe=orders.created'))
-        self.assertTrue(chosen.touches_others)
         with self.assertRaisesRegex(actions.ActionError, 'edit asyncapi.yaml'):
             changes.NewApp.from_form({**NEW, 'publish': 'sent'}, [], teams, *offered)
-        stale = {**chosen.record, 'extra': [*chosen.flags, '--publish=sent']}
-        with self.assertRaisesRegex(actions.ActionError, 'start a new job'):
-            changes.NewApp.from_record(stale)
+        self.assertEqual(changes.NewApp.from_record(chosen.record), chosen, 'saved connections keep their flags')
+        for obsolete in ('--publish=sent', '--publish='):
+            stale = {**chosen.record, 'extra': [*chosen.flags, obsolete]}
+            with self.subTest(obsolete=obsolete), self.assertRaises(actions.ActionError) as refused:
+                changes.NewApp.from_record(stale)
+            self.assertEqual(str(refused.exception), 'publishing choices are no longer supported: edit asyncapi.yaml '
+                             'named by provides.eventsFile, then start a new job')
         self.assertEqual(changes.NewApp.from_form(NEW, [], teams, *offered).flags[2:], (), 'nothing chosen adds nothing')
         cases = (({'calls': 'stranger'}, 'not a web app, or an event, that staging has now'),
                  ({'subscribe': 'orders.cancelled'}, 'not a web app, or an event, that staging has now'),
@@ -990,26 +1122,21 @@ class NewAppRouteTests(unittest.TestCase):
             with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
                 changes.NewApp.from_form({**NEW, **form}, [], teams, *offered)
 
-    def test_a_new_app_is_a_value_a_job_keeps_and_its_pull_request_merges_itself_unless_it_changes_another_app(self):
+    def test_new_app_keeps_resumable_choices_and_the_table_builds_its_commands(self):
         teams, offered = {'platform': ''}, ({'orders'}, set())
         chosen = changes.NewApp.from_form({**NEW, 'description': ' Says  the weather '}, [], teams, *offered)
         self.assertEqual(changes.NewApp.from_record(json.loads(json.dumps(chosen.record))), chosen, 'what a job keeps reads back')
         self.assertEqual(chosen.record['kind'], changes.NEW_APP)
-        change = chosen.change(IMAGE)
-        self.assertEqual(change.commands, (changes.Command('app-new', (
+        self.assertEqual(changes.NewApp.from_record({**chosen.record, 'touches_others': True}), chosen,
+                         'obsolete review metadata in saved jobs is ignored')
+        self.assertNotIn('touches_others', chosen.record)
+        commands = merge.ACTIONS['new'].commands(chosen.name, 'staging',
+                                                 {'repo': chosen.request.repo, 'image': IMAGE, 'flags': chosen.flags})
+        self.assertEqual(commands, (merge.Command('app-new', (
             'weather-api', f'--from-repo={chosen.request.repo}', '--env=staging', f'--image={IMAGE}', '--team=platform',
             '--exposure=authenticated-web')),))
-        self.assertEqual((change.kind, change.target, change.slug, change.title),
-                         ('new app and repository', 'weather-api/staging', 'new-weather-api-staging', 'apps: add weather-api/staging'))
-        self.assertTrue(change.auto_merge)
-        self.assertTrue(change.body.startswith(f'The console created https://github.com/{chosen.request.repo} from ['))
-        self.assertIn(f'\n\nGenerated by the console with:\n\n    make app-new NAME=weather-api ARGS="--from-repo={chosen.request.repo} ', change.body)
-        calling = changes.NewApp.from_form({**NEW, 'calls': 'orders'}, [], teams, *offered).change(IMAGE)
-        self.assertFalse(calling.auto_merge, "the other team's review is its consent")
-        self.assertEqual(calling.manual_merge_reason, 'also changes existing app settings for orders')
-        subscribing = changes.NewApp.from_form({**NEW, 'subscribe': 'orders.created'}, [], teams,
-                                                {'orders'}, {'orders.created'}).change(IMAGE)
-        self.assertEqual(subscribing.manual_merge_reason, 'also changes existing app settings for orders')
+        self.assertEqual((merge.ACTIONS['new'].job, chosen.target, merge.ACTIONS['new'].title.format(name=chosen.name)),
+                         ('new app and repository', 'weather-api/staging', 'apps: add weather-api/staging'))
         for record in ({}, {**chosen.record, 'name': '../x'}, {**chosen.record, 'stack': 'cobol'},
                        {**chosen.record, 'extra': ['weather-api; rm']}, {**chosen.record, 'extra': None}):
             with self.subTest(record=record), self.assertRaises((KeyError, TypeError, ValueError)):
@@ -1041,9 +1168,7 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertEqual(c.get('/apps/weather/staging', headers=WHO).status_code, 404, 'another app\'s PR does not count')
         c, _ = self.client(runner, github=False)
         self.assertEqual(c.get('/apps/weather-api/staging', headers=WHO).status_code, 404, 'neither a PR nor a job')
-        pr = changes.PullRequest(1, 't', 'u', 'console/new-a-staging-staging-abc1234', '2026-10-02')
-        self.assertTrue(changes.creates_instance(pr, 'a-staging', 'staging'))
-        self.assertFalse(changes.creates_instance(pr, 'a', 'staging'))
+        self.assertEqual(stages.target_of('console/new-a-staging-staging-abc1234'), ('new', 'a-staging/staging'))
 
     def test_a_new_app_job_without_a_token_still_shows_on_its_page(self):
         runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout='')
@@ -1118,13 +1243,35 @@ class ChangeAppRouteTests(unittest.TestCase):
         return cluster.AppRow(Instance('hello', 'staging'), State(state), False, 'x:1', digest='sha256:a',
                               render_hash=applied, render_ready=True, render_state=State(state), image_matches=True)
 
-    def test_the_merge_tree_wins_over_a_prepared_hash_and_verdicts_are_always_fresh(self):
+    def test_actual_git_reader_never_persists_reached_for_stale_settings_output(self):
+        c, jobs = self.client(tree_fake())
+        jobs.submit('scale', 'hello/prod', 'sam@swhurl.com',
+                    lambda job: setattr(job, 'link', 'https://github.com/x/pull/1'))
+        store = mock.Mock()
+        jobs.store = store
+        old = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/prod']
+        live = cluster.AppRow(Instance('hello', 'prod'), State('healthy'), False, 'x', digest=old.digest,
+                              render_hash=old.hash, render_ready=True, render_state=State('healthy'), image_matches=True)
+        path = 'apps/hello/prod/instance.yaml'
+        doc = yaml.safe_load(MAIN[path])
+        doc['replicas'] = 0
+        with mock.patch.dict(MAIN, {path: yaml.safe_dump(doc).encode()}), \
+                mock.patch.object(changes, 'console_prs', return_value=[]), \
+                mock.patch.object(changes, 'pull_state', return_value=('merged', '2026-10-21T10:00:00Z', HEAD)), \
+                mock.patch.object(cluster, 'apps', return_value=[live]):
+            page = c.get('/jobs/1', headers=WHO).text
+            activity = c.get('/activity', headers=WHO).text
+            self.assertEqual(jobs.get(1).reached, '', 'stale output must never persist a first-seen completion')
+            store.save.assert_not_called()
+            self.assertIn('waiting for the Render workflow', page)
+            self.assertIn('waiting for the Render workflow', activity)
+
+    def test_the_merge_tree_is_authoritative_and_verdicts_are_always_fresh(self):
         c, jobs = self.client(tree_fake())
         read = self.merged(jobs)
-        jobs.get(2).target_hash = 'prepared-before-reallocation'
-        trees = {'merge1': {'hello/staging': stages.Target('render-a', 'sha256:a')},
-                 'merge2': {'hello/staging': stages.Target('render-b', 'sha256:a')},
-                 'main': {'hello/staging': stages.Target('render-b', 'sha256:a')}}
+        trees = {'merge1': {'hello/staging': rendered('render-a', 'sha256:a', 'settings-1', 'records-1')},
+                 'merge2': {'hello/staging': rendered('render-b', 'sha256:a', 'settings-2', 'records-2')},
+                 'main': {'hello/staging': rendered('render-b', 'sha256:a', 'settings-2', 'records-2')}}
         rows = [self.row()]
         with mock.patch.object(changes, 'console_prs', return_value=[]), mock.patch.object(changes, 'pull_state', read), \
                 mock.patch.object(changes, 'main_commit', return_value='main'), \
@@ -1141,8 +1288,8 @@ class ChangeAppRouteTests(unittest.TestCase):
 
     def test_a_change_seen_live_is_remembered_and_a_new_image_carries_it(self):
         c, jobs = self.client(tree_fake())
-        trees = {'merge1': {'hello/staging': stages.Target('render-a', 'sha256:a', 'settings-1')},
-                 'main': {'hello/staging': stages.Target('render-a', 'sha256:a', 'settings-1')}}
+        trees = {'merge1': {'hello/staging': rendered('render-a', 'sha256:a', 'settings-1', 'records-1')},
+                 'main': {'hello/staging': rendered('render-a', 'sha256:a', 'settings-1', 'records-1')}}
         rows = [self.row(applied='render-a')]
         with mock.patch.object(changes, 'console_prs', return_value=[]), \
                 mock.patch.object(changes, 'pull_state', self.merged(jobs, 1)), \
@@ -1152,10 +1299,10 @@ class ChangeAppRouteTests(unittest.TestCase):
             head = ['main']
             self.assertIn('hello/staging runs it.', c.get('/jobs/1', headers=WHO).text)
             self.assertTrue(jobs.get(1).reached, 'the first read at its end is recorded')
-            trees['deploy'] = {'hello/staging': stages.Target('render-b', 'sha256:b', 'settings-1')}
+            trees['deploy'] = {'hello/staging': rendered('render-b', 'sha256:b', 'settings-1', 'records-2')}
             head[0], rows[:] = 'deploy', [replace(self.row(applied='render-b'), digest='sha256:b')]
             self.assertIn('hello/staging runs it, with a newer image.', c.get('/jobs/1', headers=WHO).text)
-            trees['rescale'] = {'hello/staging': stages.Target('render-c', 'sha256:b', 'settings-2')}
+            trees['rescale'] = {'hello/staging': rendered('render-c', 'sha256:b', 'settings-2', 'records-3')}
             head[0] = 'rescale'
             page = c.get('/jobs/1', headers=WHO).text
             self.assertIn('a newer configuration has since replaced it', page)
@@ -1163,7 +1310,7 @@ class ChangeAppRouteTests(unittest.TestCase):
 
     def test_current_main_and_cluster_failures_never_complete_a_change(self):
         c, jobs = self.client(tree_fake())
-        trees = {'hello/staging': stages.Target('render-b', 'sha256:a')}
+        trees = {'hello/staging': rendered('render-b', 'sha256:a', 'settings-1', 'records-1')}
         rows = [self.row(applied='old')]
         with mock.patch.object(changes, 'console_prs', return_value=[]), \
                 mock.patch.object(changes, 'pull_state', self.merged(jobs, 1)), \
@@ -1192,7 +1339,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             ('/apps/hello/prod/scale', {'replicas': '2', 'memory_limit': '256Mi', 'cpu': ''},
              ('app-scale', 'hello', 'prod', '--replicas=2', '--memory-limit=256Mi'), 'hello/prod',
              'console/scale-hello-prod-abc1234', '[console] apps: scale hello/prod'),
-            ('/apps/hello/staging/promote', PROMOTION, ('app-promote', 'hello', f'--expect-image={IMAGE}'), 'hello/prod',
+            ('/apps/hello/staging/promote', PROMOTION, ('app-promote', 'hello', f'--expect-image={IMAGE}', '--prepare-only'), 'hello/prod',
              'console/promote-hello-staging-abc1234', '[console] apps: promote hello/staging to hello/prod'),
             ('/apps/hello/staging/remove', {}, ('app-remove', 'hello', 'staging'), 'hello/staging',
              'console/remove-hello-staging-abc1234', '[console] apps: remove hello/staging'),
@@ -1347,29 +1494,68 @@ class ChangeAppRouteTests(unittest.TestCase):
                 c, jobs = self.client(runner)
                 with mock.patch.object(ops, 'gather_status', return_value=status):
                     response = c.post('/apps/hello/staging/promote', data=form, headers=WHO)
-                self.assertEqual(response.status_code, 400)
-                self.assertIn(message, response.text)
-                self.assertEqual(jobs.recent(), [])
-                self.assertEqual(self.api.sent('POST /pulls'), [])
+                if not form:
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn(message, response.text)
+                    self.assertEqual(jobs.recent(), [])
+                else:
+                    self.assertEqual(jobs.get(1).state, 'failed')
+                    self.assertIn(message, jobs.get(1).lines[-1])
+                self.assertTrue(all(r.method == 'GET' for r in self.api.requests))
 
-    def test_promotion_rechecks_staging_when_the_background_job_starts(self):
+    def test_promotion_readiness_is_once_after_preparation_before_any_write(self):
         good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
-        c, jobs = self.client(tree_fake())
-        with mock.patch.object(ops, 'gather_status', side_effect=[good, replace(good, desired_image='new')]):
-            response = c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO, follow_redirects=False)
-        self.assertEqual(response.status_code, 303)
-        self.assertEqual(jobs.get(1).state, 'failed')
-        self.assertIn('changed', jobs.get(1).lines[-1])
-        self.assertEqual(self.api.sent('POST /pulls'), [])
+        prepared = []
+        def prepare(root):
+            self.assertEqual(read.call_count, 0)
+            promoted(root)
+            prepared.append(True)
+        c, jobs = self.client(tree_fake(edit=prepare))
+        def status(*_):
+            self.assertEqual(prepared, [True])
+            self.assertTrue(all(r.method == 'GET' for r in self.api.requests))
+            return good
+        with mock.patch.object(ops, 'gather_status', side_effect=status) as read:
+            c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+        self.assertEqual(read.call_count, 1)
+        self.assertEqual(jobs.get(1).state, 'succeeded', jobs.get(1).lines)
+        self.assertEqual(len(self.api.sent('POST /pulls')), 1)
 
-    def test_promotion_read_failure_is_a_502_and_opens_nothing(self):
+    def test_promotion_read_failure_fails_the_job_and_writes_nothing(self):
         c, jobs = self.client(tree_fake())
-        with mock.patch.object(ops, 'gather_status', side_effect=CommandError(['kubectl'], 'Forbidden')):
-            response = c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
-        self.assertEqual(response.status_code, 502)
-        self.assertIn('Forbidden', response.text)
-        self.assertEqual(jobs.recent(), [])
-        self.assertEqual(self.api.sent('POST /pulls'), [])
+        with mock.patch.object(ops, 'gather_status', side_effect=CommandError(['kubectl'], 'Forbidden')) as read:
+            c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+        self.assertEqual(read.call_count, 1)
+        self.assertEqual(jobs.get(1).state, 'failed')
+        self.assertIn('Forbidden', jobs.get(1).lines[-1])
+        self.assertTrue(all(r.method == 'GET' for r in self.api.requests))
+
+    def test_malformed_or_partial_production_stops_before_readiness_and_github_writes(self):
+        for path in ('apps/hello/prod/release.yaml', 'apps/hello/prod/instance.yaml'):
+            for invalid in (None, b'['):
+                with self.subTest(path=path, invalid=invalid):
+                    main = dict(MAIN)
+                    if invalid is None:
+                        del main[path]
+                    else:
+                        main[path] = invalid
+                    c, jobs = self.client(tree_fake())
+                    with mock.patch.dict(MAIN, main, clear=True), mock.patch.object(ops, 'gather_status') as read:
+                        c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+                    self.assertEqual(jobs.get(1).state, 'failed')
+                    read.assert_not_called()
+                    self.assertTrue(all(r.method == 'GET' for r in self.api.requests))
+
+    def test_failed_preparation_never_checks_readiness_or_writes_to_github(self):
+        def broken(_root):
+            raise actions.ActionError('failed preparation')
+        c, jobs = self.client(tree_fake(edit=broken))
+        with mock.patch.object(ops, 'gather_status') as read:
+            c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+        self.assertEqual(read.call_count, 0)
+        self.assertEqual(jobs.get(1).state, 'failed')
+        self.assertIn('failed preparation', jobs.get(1).lines[-1])
+        self.assertTrue(all(r.method == 'GET' for r in self.api.requests))
 
     def test_a_commit_elsewhere_does_not_hold_a_promotion_and_one_to_staging_does(self):
         """Staging's unit is one commit behind main: GitHub says which files that commit changed."""
@@ -1395,19 +1581,19 @@ class ChangeAppRouteTests(unittest.TestCase):
                 with mock.patch.object(ops, 'gather_status', return_value=behind):
                     review = c.get('/apps/hello/staging/promotion', headers=WHO)
                     page = c.get('/apps/hello/staging', headers=WHO)
-                    response = c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+                    c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
                 if problem:
-                    self.assertEqual((review.status_code, response.status_code), (409, 400))
+                    self.assertEqual(review.status_code, 409)
+                    self.assertEqual(jobs.get(1).state, 'failed')
                     self.assertIn(problem, review.text)
                     self.assertIn(problem, page.text)
-                    self.assertIn(problem, response.text)
-                    self.assertEqual((jobs.recent(), self.api.sent('POST /pulls')), ([], []))
+                    self.assertIn(problem, jobs.get(1).lines[-1])
+                    self.assertTrue(all(r.method == 'GET' for r in self.api.requests))
                 else:
                     self.assertEqual(review.status_code, 200, review.text)
                     self.assertIn('See exactly what would go to production', page.text)
                     self.assertEqual(jobs.get(1).state, 'succeeded', jobs.get(1).lines)
-                    self.assertIn(f'--source-unchanged={HEAD}..{newer}', self.tool_call(runner),
-                                  "the clone's own check is told what was compared: it has no history")
+                    self.assertIn('--prepare-only', self.tool_call(runner), 'the console owns the single late readiness check')
                     self.assertEqual(len(self.api.sent('POST /pulls')), 1)
         c, _ = self.client(tree_fake())
         with mock.patch.object(ops, 'gather_status', return_value=good):
@@ -1474,19 +1660,21 @@ class ChangeAppRouteTests(unittest.TestCase):
                                  'Promote the reviewed staging image `older` to `hello/prod`.')
         c, jobs = self.client(tree_fake())
         with mock.patch.object(changes, 'console_prs', return_value=[pr]):
-            response = c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('Close it explicitly', response.text)
-        self.assertEqual(jobs.recent(), [])
+            c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+        self.assertEqual(jobs.get(1).state, 'failed')
+        self.assertIn('Close it explicitly', jobs.get(1).lines[-1])
 
     def test_staging_movement_after_generation_still_opens_nothing(self):
         good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
-        c, jobs = self.client(tree_fake())
-        with mock.patch.object(ops, 'gather_status', side_effect=[good, good, replace(good, desired_image='new')]):
+        runner = tree_fake()
+        c, jobs = self.client(runner)
+        with mock.patch.object(ops, 'gather_status', return_value=replace(good, desired_image='new')) as read:
             c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
         self.assertEqual(jobs.get(1).state, 'failed')
         self.assertIn('changed', jobs.get(1).lines[-1])
-        self.assertEqual(self.api.sent('POST /git/refs'), [])
+        self.assertEqual(read.call_count, 1)
+        self.assertTrue(any(c[:4] == (sys.executable, '-m', 'swhurl', 'app-promote') for c in runner.calls))
+        self.assertTrue(all(r.method == 'GET' for r in self.api.requests))
 
 
 if __name__ == '__main__':

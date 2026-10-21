@@ -71,7 +71,7 @@ class AppRow:
     applied: str = ''  # the Git revision its Flux unit last applied
     render_hash: str = ''
     render_ready: bool = False
-    render_state: State = State('unknown')  # the verdict once render_hash is proved to be Git's target (stages.judge)
+    render_state: State = State('unknown')  # the verdict once render_hash is proved to be Git's target (stages.progress)
     image_matches: bool = False
 
 

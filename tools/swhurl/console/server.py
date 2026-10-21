@@ -52,6 +52,7 @@ from swhurl.console import (
     flagstore,
     jobstore,
     logconfig,
+    merge,
     promotion,
     repos,
     stages,
@@ -350,17 +351,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         except cluster.ReadError:
             return None
 
-    def rollout_of(job: actions.Job, tree: dict[str, stages.Target] | None, rows: dict[str, cluster.AppRow] | None,
-                   current: dict[str, stages.Target] | None) -> stages.Rollout:
-        absent = stages.Target(stages.ABSENT)
-        target = tree.get(job.unit, absent) if tree is not None else None
-        desired = current.get(job.unit, absent) if current is not None else None
-        row = rows.get(job.unit) if rows is not None else None
-        aim = stages.aim(job.action, target, desired) if target and desired else target
-        matches = bool(row and aim and row.digest == aim.digest and row.image_matches)
-        found = stages.judge(job.action, (row.render_state if row else stages.ABSENT) if rows is not None else None,
-                             target, desired, row.render_hash if row else '', row.render_ready if row else False, matches,
-                             job.reached)
+    def progress_of(job: actions.Job, merged: dict[str, stages.Target] | None, rows: dict[str, cluster.AppRow] | None,
+                    main: dict[str, stages.Target] | None) -> stages.Progress:
+        """How far ``job``'s merged change has got (stages.progress); records the first time it is seen at its end."""
+        def at(tree: dict[str, stages.Target] | None) -> stages.Target | None:
+            return None if tree is None else tree.get(job.unit, stages.Target())  # missing from a read tree: absent
+        live = None if rows is None else rows.get(job.unit, stages.ABSENT)
+        found = stages.progress(job.action, at(merged), at(main), live, job.reached)
         if found.state in stages.REACHED:
             jobs.reach(job)
         return found
@@ -396,8 +393,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         rows = []
         for job in found:
             pull = pulls.get(job.id)
-            rollout = rollout_of(job, trees.get(pull.commit), states, current) if lands(job) else None
-            track = stages.track(job, pull and replace(pull, when=ago(pull.when) if pull.when else ''), rollout)
+            landed = progress_of(job, trees.get(pull.commit), states, current) if lands(job) else None
+            track = stages.track(job, pull and replace(pull, when=ago(pull.when) if pull.when else ''), landed)
             rows.append(ChangeRow(f'job-{job.id}', track, job, is_open.get(proposed.get(job.id))))
         if others:
             covered = set(proposed.values())
@@ -466,8 +463,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             label = f'{found.app}/{found.env}'
             pending = [j for j in jobs.recent() if j.unit == label and j.action.startswith('new app')]
             prs, prs_error = open_prs()
-            prs = [pr for pr in prs if changes.creates_instance(pr, found.app, found.env)]
-            prs += [pr for pr in open_prs()[0] if found.env == 'prod' and promotion.matching(pr, found.app)]
+            prs = [pr for pr in prs if stages.target_of(pr.branch) in (('new', label), ('promote', label))]
             in_git = False
             if not pending and not prs and github:
                 in_git = promotion.main_tree(runner, github, lambda root: found.folder(root).exists())
@@ -485,7 +481,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
                     connections=shown, allows=settings.allows if settings else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
-                    scale_fields=changes.SCALE_FIELDS, minimum=image_minimum(found), github=github,
+                    scale_fields=merge.SCALE_FIELDS, minimum=image_minimum(found), github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
@@ -805,10 +801,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
         form = {k: v[0] for k, v in parse_qs((await request.body()).decode(), keep_blank_values=True).items()}
         try:
-            change = changes.Change.to_team(action, form)
+            key, name = f'team-{action}', form.get('name', '').strip()
+            if key not in merge.ACTIONS or action not in ('add', 'edit', 'remove'):
+                raise actions.ActionError('no such team change')
+            commands = merge.ACTIONS[key].commands(name, '', form)
         except actions.ActionError as error:
             return teams_page(request, 400, str(error))
-        return propose(request, change, then=(teams_cache, channels_cache))  # the next page reads the registry again
+        return propose(request, key, name, '', commands, then=(teams_cache, channels_cache))  # the next page reads the registry again
 
     async def change_channel(request: Request) -> Response:
         """Give a team its notification channel (or a new address for it), or remove it: a PR made by
@@ -820,10 +819,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         form = {k: v[0] for k, v in parse_qs((await request.body()).decode(), keep_blank_values=True).items()}
         runner.add_secret(form.get('address', '').strip())
         try:
-            change = changes.Change.to_channel(action, form)
+            key, name = f'team-channel-{action}', form.get('name', '').strip()
+            if key not in merge.ACTIONS:
+                raise actions.ActionError('no such channel change')
+            commands = merge.ACTIONS[key].commands(name, '', form)
         except actions.ActionError as error:
             return teams_page(request, 400, str(error))
-        return propose(request, change, then=(channels_cache,))
+        return propose(request, key, name, '', commands, then=(channels_cache,))
 
     def connectable(env: str = 'staging', app: str = '') -> tuple[list[cluster.AppRow], list[tuple[str, cluster.AppRow]], str]:
         """What an app can connect to in ``env``: the web apps it could call, each published
@@ -890,7 +892,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                          else repos.finish_app_repo(client, job, chosen.request, **opener))
             finally:
                 client.close()
-            job.link = chosen.change(image).open(runner, github, job)
+            job.link = changes.open_new_app(runner, github, job, chosen, image)
         return work
 
     def resumable(found: actions.Job) -> dict | None:
@@ -943,7 +945,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         """Promote, scale, change access to, change the connections of or remove an instance: a PR made by the clone's app-* commands."""
         app, env, change = (request.path_params[k] for k in ('app', 'env', 'change'))
         found = Instance.named(app, env)
-        if found is None or change != 'promote' and change not in changes.INSTANCE_CHANGES:
+        if found is None or change != 'promote' and change not in (*merge.INSTANCE_KINDS, 'remove'):
             return page(request, 'error.html', status_code=404, error='No such app instance or change.')
         if github is None:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
@@ -955,18 +957,18 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             if change == 'connect':
                 for ticked in ('calls', 'subscribe'):  # one checkbox per app or event
                     form[ticked] = ','.join(value for value in fields.get(ticked, []) if value)
-            proposed = changes.Change.to_instance(change, found, form)  # malformed: refused before reading the cluster
+            commands = merge.ACTIONS[change].commands(app, env, form)  # malformed: refused before reading the cluster
             if change == 'connect':  # only what the form offered: the environment's web apps and events
                 callable_apps, offered_events, problem = connectable(env, app)
                 if problem:
                     raise actions.ActionError(f'cannot check the apps and events chosen: {problem}')
-                changes.Connections.from_form(form).check_offered({row.instance.app for row in callable_apps},
+                merge.Connections.from_form(form).check_offered({row.instance.app for row in callable_apps},
                                                                   {name for name, _ in offered_events})
         except (actions.ActionError, EditError, new.GenerationError) as error:
             return page(request, 'error.html', status_code=400, error=str(error))
         except CommandError as error:
             return page(request, 'error.html', status_code=502, error=str(error))
-        return propose(request, proposed)
+        return propose(request, change, app, env, commands)
 
     def promote(request: Request, found: Instance, form: dict[str, str]) -> Response:
         """Open the pull request for a reviewed promotion, or point at the one already open for the same image."""
@@ -974,39 +976,32 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         if found.env != 'staging':
             raise actions.ActionError('promote from the staging instance')
         image = form.get('image', '')
-        changes.checked_host(form.get('host', ''))
+        merge.checked_host(form.get('host', ''))
         if not image:
             raise actions.ActionError('refresh the staging app page and review the image before promotion')
-        if not promotion.existing(runner, github, app, image):
-            problem = gate.source_problem(promotion.staging_status(runner, github, found), image)
-            if problem:
-                raise actions.ActionError(problem)
-
         def work(job: actions.Job) -> None:
             previous = promotion.existing(runner, github, app, image)
             if previous:
                 job.link = previous.url
                 job.lines.append('Reusing the existing promotion pull request')
                 return
-            staging = promotion.staging_status(runner, github, found)
-            problem = gate.source_problem(staging, image)
-            if problem:
-                raise actions.ActionError(problem)
-            job.link = promotion.open_pr(runner, github, job, app, form, staging)
+            job.link = changes.open_action(runner, github, job, 'promote', app, 'staging',
+                                           merge.ACTIONS['promote'].commands(app, 'staging', form),
+                                           auto_merge=form.get('hold') != 'on')
         try:
-            job = jobs.submit('promote', f'{app}/prod', request.state.identity, work)
+            job = jobs.submit('promote', merge.target('promote', app, 'staging'), request.state.identity, work)
         except actions.ActionError as error:
             return page(request, 'error.html', status_code=409, error=str(error))
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
-    def propose(request: Request, change: changes.Change, *, then: tuple = ()) -> Response:
-        """Run ``change`` as a job that opens its pull request, then clear the ``then`` caches it made stale."""
+    def propose(request: Request, action: str, name: str, env: str, commands: tuple[merge.Command, ...], *, then: tuple = ()) -> Response:
+        """Run the action as a job that opens its pull request, then clear the ``then`` caches it made stale."""
         def work(job: actions.Job) -> None:
-            job.link = change.open(runner, github, job)
+            job.link = changes.open_action(runner, github, job, action, name, env, commands)
             for cache in then:
                 cache.clear()
         try:
-            job = jobs.submit(change.kind, change.target, request.state.identity, work)
+            job = jobs.submit(merge.ACTIONS[action].job or action, merge.target(action, name, env), request.state.identity, work)
         except actions.ActionError as error:
             return page(request, 'error.html', status_code=409, error=str(error))
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)

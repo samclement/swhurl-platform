@@ -1454,7 +1454,7 @@ components:
         self.assertTrue((self.root / 'apps/hello/prod').exists())
 
     def test_promote_asks_what_changed_only_when_staging_is_behind(self):
-        """Behind main by a commit: the caller's word, else this checkout's history, says whether it changed staging."""
+        """Behind main by a commit: this checkout's history says whether it changed staging."""
         self.new_staging_image()
         image = promotion.select(self.root, model_sync.read(self.root)[0], 'hello').image
         behind = ops.InstanceStatus(Instance('hello', 'staging'), 'main@sha1:def', 'main@sha1:abc', ('True', ''), ('True', ''),
@@ -1472,11 +1472,26 @@ components:
             return err.getvalue(), runner.calls
         self.assertEqual(refusal(history=False)[1], [], 'a tree without history is not asked')
         self.assertIn('Flux is still applying', refusal(history=False)[0])
-        self.assertEqual(refusal(['--source-unchanged=abc..def'], history=False), ('', []))
-        self.assertIn('Flux is still applying', refusal(['--source-unchanged=abc..other'], history=False)[0], 'a word about other commits')
         self.assertEqual(refusal(git={'stdout': 'docs/apps.md\napps/hello/prod/helmrelease.yaml\n'}), ('', [diff]))
         self.assertIn('a change to staging is in Git', refusal(git={'stdout': 'apps/hello/staging/helmrelease.yaml\n'})[0])
         self.assertIn('Flux is still applying', refusal(git={'returncode': 128, 'stderr': 'bad object def'})[0], 'a commit not fetched here')
+
+    def test_console_preparation_skips_only_live_readiness_and_direct_cli_stays_guarded(self):
+        self.new_staging_image()
+        with mock.patch.object(ops, 'gather_status', return_value=None) as read, \
+                mock.patch.object(edit, 'promote', return_value=0) as write:
+            code, _ = self.quiet(edit.main_promote, ['hello', '--root', str(self.root), '--prepare-only'])
+            self.assertEqual(code, 0)
+            read.assert_not_called()
+            write.assert_called_once()
+            write.reset_mock()
+            code, _ = self.quiet(edit.main_promote, ['hello', '--root', str(self.root)])
+            self.assertEqual(code, 2)
+            read.assert_called_once()
+            write.assert_not_called()
+            code, _ = self.quiet(edit.main_promote, ['hello', '--root', str(self.root), '--prepare-only', '--expect-image=wrong'])
+            self.assertEqual(code, 2, 'preparation still pins the exact reviewed image')
+            write.assert_not_called()
 
     def test_cli_refusals_exit_2(self):
         code, _ = self.quiet(edit.main_scale, ['hello', 'prod', '--root', str(self.root)])

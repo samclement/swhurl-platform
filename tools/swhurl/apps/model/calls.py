@@ -8,7 +8,8 @@ nothing for that pair; none of them is an error.
 """
 from __future__ import annotations
 
-from swhurl.apps.calling import CALLERS_VARIABLE, TOKENS_VOLUME, callee_address, callee_variable, tokens_volume
+from swhurl import interface
+from swhurl.apps.calling import TOKENS_VOLUME, callee_address, tokens_volume
 from swhurl.apps.model.draft import Draft, Entry, RenderError, World, environment
 
 
@@ -31,7 +32,7 @@ def apply(draft: Draft, entry: Entry, world: World) -> None:
         found = others[callee]
         if found.release.port is None:
             raise RenderError(f'{app}/{env} calls {callee}, a {found.release.kind}: it has no address to call')
-        draft.env[callee_variable(callee)] = callee_address(callee, found.release.port)
+        draft.env[interface.callee_variable(callee)] = callee_address(callee, found.release.port)
     draft.values['persistence'][TOKENS_VOLUME] = tokens_volume(callees)
     draft.callers = sorted(other for other, each in others.items() if app in connected(other, each, others))
 
@@ -39,4 +40,4 @@ def apply(draft: Draft, entry: Entry, world: World) -> None:
 def admit(draft: Draft) -> None:
     """Tell a callee who may call it (after its events, where the files have always had it)."""
     if draft.callers:
-        draft.env[CALLERS_VARIABLE] = ','.join(draft.callers)
+        draft.env[interface.CALLERS_VARIABLE] = ','.join(draft.callers)

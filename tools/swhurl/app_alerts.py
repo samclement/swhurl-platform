@@ -3,7 +3,7 @@
 Each alert watches one tile of the app's ``App: <app>`` dashboard and calls the notify service's
 webhook, which sends it to the channel of the app's team. They are created, repaired and removed by
 the same job that keeps the dashboards (dashboards.py). Nothing has to be declared per app; an app
-that wants other thresholds, or none, says so in ``ANNOTATION`` on its namespaces (make app-alerts).
+that wants other thresholds, or none, says so in ``interface.ALERTS_ANNOTATION`` on its namespaces (make app-alerts).
 
 An alert is named ``swhurl:<app>:<preset>``. The name is how the notify service knows which app an
 alert is about, and how this module knows which alerts are its own: any other alert is left alone.
@@ -17,9 +17,6 @@ PREFIX = 'swhurl:'
 TAG = 'swhurl-app'
 """On every app dashboard and alert the platform keeps; an alert also carries its app's name as a tag,
 so the HyperDX alerts page filters to one app."""
-ANNOTATION = 'platform.swhurl.com/alerts'
-"""An app's own settings, the same on every environment's Namespace: ``none``, or ``<preset>=<n>`` and
-``<preset>=none`` separated by commas (``error-logs=20,errors=none``). Absent: the defaults."""
 OFF = 'none'  # not "off": YAML reads that as false, and an annotation or a swhurl.yaml field would stop being text
 MAX_THRESHOLD = 1_000_000
 NAME = re.compile(r'swhurl:(?P<app>[a-z][a-z0-9-]*):(?P<preset>[a-z][a-z0-9-]*)')

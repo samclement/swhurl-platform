@@ -10,12 +10,12 @@ Reads and rendering only (PyYAML): the app policy imports this. The commands are
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from swhurl import yamlio
-from swhurl.apps.contract import TEAMS_FILE, label
+from swhurl import interface, yamlio
+from swhurl.apps.contract import TEAMS_FILE
+from swhurl.apps.model import records
 
 NOTIFY_DIR = Path('platform/notify')
 ROUTES_FILE = NOTIFY_DIR / 'routes.yaml'
@@ -25,9 +25,8 @@ ROUTES_NAME = 'notification-routes'
 ROUTES_KEY = 'routes.json'
 SECRET_PREFIX = 'channel-'
 ADDRESS_KEY = 'address'
-TRANSPORT = label('notify-transport')
+TRANSPORT = interface.label('notify-transport')
 TRANSPORTS = ('ntfy',)
-NAME_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
 
 
 def channel_file(name: str) -> Path:
@@ -93,7 +92,7 @@ def problems(root: Path) -> list[str]:
     known = channels(root)
     listed = (yamlio.load((root / NOTIFY_DIR / 'kustomization.yaml').read_text()) or {}).get('resources') or []
     for name, transport in known.items():
-        if not NAME_RE.match(name) or transport not in TRANSPORTS:
+        if not records.NAME_RE.match(name) or transport not in TRANSPORTS:
             found.append(f'{channel_file(name)} is not a channel Secret named {SECRET_PREFIX}<name> with a supported '
                          f'{TRANSPORT} label ({", ".join(TRANSPORTS)})')
         if channel_file(name).name not in listed:

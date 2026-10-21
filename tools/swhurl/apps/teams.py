@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import getpass
-import re
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -36,14 +35,13 @@ from swhurl import ROOT
 from swhurl.apps import channels, cli
 from swhurl.apps.contract import TEAMS_FILE
 from swhurl.apps.errors import EditError
-from swhurl.apps.model import write
+from swhurl.apps.model import records, write
 from swhurl.apps.model.draft import Entry
 from swhurl.apps.model.records import TEAM_GRANT
 from swhurl.apps.new import dump
 from swhurl.apps.yaml_file import YamlFile, mapping
 from swhurl.run import CommandError, Runner
 
-NAME_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
 MAX_DESCRIPTION = 200
 
 
@@ -53,7 +51,7 @@ def registry(root: Path) -> tuple[YamlFile, dict]:
 
 
 def checked_name(name: str) -> str:
-    if not NAME_RE.match(name or ''):
+    if not records.NAME_RE.match(name or ''):
         raise EditError('a team name is a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
     return name
 
@@ -200,7 +198,7 @@ def set_decryption(root: Path, prepared: write.Prepared, encrypted: bool) -> Non
 def channel_add(root: Path, name: str, address: str, transport: str = 'ntfy', replace: bool = False,
                 runner: Runner | None = None, *, registry_document: YamlFile | None = None) -> None:
     """Write a channel's encrypted Secret. Encrypt only: an existing channel is replaced whole, never read."""
-    if not channels.NAME_RE.match(name or ''):
+    if not records.NAME_RE.match(name or ''):
         raise EditError('a channel name is a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
     problem = channels.address_problem(transport, address)
     if problem:

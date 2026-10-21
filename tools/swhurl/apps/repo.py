@@ -45,7 +45,7 @@ from swhurl.apps.contract import (
     STACKS,
     type_answers,
 )
-from swhurl.apps.instance import NAME_RE
+from swhurl.apps.model import records
 from swhurl.run import CommandError, Runner
 
 SEED_RUN = 0  # a seed's tag is 0-<sha>: below any run number, so the app's own first image replaces it
@@ -128,7 +128,7 @@ class Request:
         return f'ghcr.io/{self.owner.lower()}/{self.name}'
 
     def check(self) -> None:
-        if not NAME_RE.match(self.name):
+        if not records.NAME_RE.match(self.name):
             raise RepoError('NAME must be a DNS label (lowercase, digits, hyphens, max 40 chars)')
         if self.stack not in STACKS:
             raise RepoError(f'STACK must be one of {", ".join(sorted(STACKS))}')

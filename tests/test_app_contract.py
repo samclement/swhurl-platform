@@ -13,7 +13,7 @@ from unittest import mock
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, interface
 from swhurl.apps import calling, contract, declaration, edit
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
@@ -119,8 +119,8 @@ class GeneratorTests(unittest.TestCase):
 
         def load(app, name):
             return yaml.safe_load((self.tmp / 'apps' / app / 'staging' / name).read_text())
-        self.assertEqual(load('web', 'namespace.yaml')['metadata']['labels'][contract.TEAM], 'payments')
-        self.assertEqual(load('job', 'namespace.yaml')['metadata']['labels'][contract.TEAM], 'demo')
+        self.assertEqual(load('web', 'namespace.yaml')['metadata']['labels'][interface.TEAM], 'payments')
+        self.assertEqual(load('job', 'namespace.yaml')['metadata']['labels'][interface.TEAM], 'demo')
         for app in ('web', 'job'):
             self.assertEqual(load(app, 'resourcequota.yaml')['spec']['hard'], contract.QUOTA)
             self.assertLessEqual({'resourcequota.yaml', 'networkpolicy.yaml'}, set(load(app, 'kustomization.yaml')['resources']))
@@ -418,7 +418,7 @@ class PolicyTests(unittest.TestCase):
         resources = {'requests': {'cpu': '10m', 'memory': '16Mi'}, 'limits': {'memory': '32Mi'}}
         docs = [
             {'kind': 'Namespace', 'metadata': {'labels': {
-                app_policy.ENVIRONMENT: 'prod', app_policy.EXPOSURE: 'public', app_policy.TEAM: 'demo'}}},
+                interface.ENVIRONMENT: 'prod', interface.EXPOSURE: 'public', interface.TEAM: 'demo'}}},
             {'kind': 'Deployment', 'metadata': {'name': 'example'}, 'spec': {
                 'replicas': 2, 'template': {'spec': {
                     'hostPID': True, 'securityContext': {'runAsNonRoot': True},
@@ -535,7 +535,7 @@ class PolicyTests(unittest.TestCase):
 
     def test_team_quota_and_network_policy_rules(self):
         def unknown_team(d):
-            self.find(d, 'Namespace')['metadata']['labels'][contract.TEAM] = 'nobody'
+            self.find(d, 'Namespace')['metadata']['labels'][interface.TEAM] = 'nobody'
         def no_quota(d):
             d.remove(self.find(d, 'ResourceQuota'))
         def other_quota(d):
@@ -613,11 +613,11 @@ class PolicyTests(unittest.TestCase):
         docs = self.docs('smoke-worker/staging')
         self.container(docs)['securityContext']['privileged'] = True
         release = self.find(docs, 'HelmRelease')
-        release['metadata']['annotations'] = {app_policy.EXCEPTIONS_KEY: 'no-escalation=needs raw sockets'}
+        release['metadata']['annotations'] = {interface.EXCEPTIONS: 'no-escalation=needs raw sockets'}
         allowed, problems = app_policy.exceptions(docs)
         self.assertEqual(problems, [])
         self.assertIn('no-escalation', allowed)
-        release['metadata']['annotations'] = {app_policy.EXCEPTIONS_KEY: 'no-escalation'}
+        release['metadata']['annotations'] = {interface.EXCEPTIONS: 'no-escalation'}
         _, problems = app_policy.exceptions(docs)
         self.assertTrue(problems)
 

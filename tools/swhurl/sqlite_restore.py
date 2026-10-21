@@ -33,8 +33,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import backupset
-from swhurl.apps.contract import DATABASE_PATH_VARIABLE
+from swhurl import backupset, interface
 from swhurl.apps.instance import Instance
 from swhurl.backupset import BackupError
 from swhurl.run import CommandError, Runner
@@ -70,7 +69,7 @@ def database(runner: Runner, namespace: str) -> Database:
     for deploy in runner.json(['kubectl', '-n', namespace, 'get', 'deployments', '-o', 'json']).get('items') or []:
         spec = deploy['spec']['template']['spec']
         for container in spec.get('containers') or []:
-            path = {v.get('name'): v.get('value') for v in container.get('env') or []}.get(DATABASE_PATH_VARIABLE)
+            path = {v.get('name'): v.get('value') for v in container.get('env') or []}.get(interface.DATABASE_PATH_VARIABLE)
             if not path:
                 continue
             claims = {v['name']: v['persistentVolumeClaim']['claimName'] for v in spec.get('volumes') or []
@@ -79,7 +78,7 @@ def database(runner: Runner, namespace: str) -> Database:
                       if m['name'] in claims and path.startswith(m['mountPath'].rstrip('/') + '/')]
             if not mounts:
                 raise BackupError(f"{namespace}/{deploy['metadata']['name']}: "
-                                  f'{DATABASE_PATH_VARIABLE}={path} is not on a mounted claim')
+                                  f'{interface.DATABASE_PATH_VARIABLE}={path} is not on a mounted claim')
             uid = (spec.get('securityContext') or {}).get('runAsUser', 65532)
             found.append(Database(namespace, deploy['metadata']['name'], claims[mounts[0]['name']],
                                   mounts[0]['mountPath'], path, uid))

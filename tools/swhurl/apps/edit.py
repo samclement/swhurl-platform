@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from swhurl import app_alerts
-from swhurl.apps import declaration, egress, events, images, offers, promotion, transitions
+from swhurl.apps import declaration, egress, images, offers, promotion, transitions
 from swhurl.apps.contract import (
     AUTO_DEPLOY_TAG_PATTERN,
     JOB_SCHEDULE,
@@ -30,7 +30,7 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder
-from swhurl.apps.model import workload, write
+from swhurl.apps.model import records, workload, write
 from swhurl.apps.model.calls import admits
 from swhurl.apps.model.draft import APP_SECRET, Entry
 from swhurl.apps.model.exposure import ROUTED
@@ -154,7 +154,7 @@ def set_events(root: Path, app: str, env: str, *, subscribe: list[str] | None = 
     if subscribe is None:
         raise EditError('give --subscribe (an empty value clears it), --add-subscribe or --remove-subscribe; '
                         'to publish, edit asyncapi.yaml named by provides.eventsFile')
-    bad = [name for name in subscribe if not events.SUBSCRIPTION_RE.match(name)]
+    bad = [name for name in subscribe if not records.SUBSCRIPTION_RE.match(name)]
     if bad or len(set(subscribe)) != len(subscribe):
         raise EditError('subscriptions are <app>.<event> (orders.created), each once'
                         + (f': {", ".join(bad)}' if bad else ''))

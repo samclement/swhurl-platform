@@ -14,7 +14,7 @@ from unittest import mock
 
 from fakecluster import CONSOLE_TAG, KEY, TOKEN, b64, fresh_backup, healthy
 
-from swhurl import ROOT, clickstack, dashboards, images, platform, recovery, validate, verify
+from swhurl import ROOT, clickstack, dashboards, images, interface, platform, recovery, validate, verify
 from swhurl.apps import calling, channels, contract
 from swhurl.apps import checks as app_checks
 from swhurl.apps.model import store
@@ -231,7 +231,7 @@ class ConsoleTokenTests(unittest.TestCase):
             app_checks.check_isolation(healthy(**overrides), report, root)
             return report.lines
         present = {'items': [{'metadata': {'name': 'w-staging', 'labels': {
-            'platform.swhurl.com/app': 'w', contract.TEAM: 'demo'}}}]}
+            'platform.swhurl.com/app': 'w', interface.TEAM: 'demo'}}}]}
         good = {'app-namespaces': present,
                 'quotas': {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {'hard': contract.QUOTA}}]},
                 'network-policies': {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {

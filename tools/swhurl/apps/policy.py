@@ -79,14 +79,12 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, app_alerts, platform, yamlio
+from swhurl import ROOT, app_alerts, interface, platform, yamlio
 from swhurl.apps import channels, egress, events, helmrelease, offers
 from swhurl.apps.calling import (
-    ENVIRONMENT_VARIABLE,
     TOKEN_SECONDS,
     allowed_callers,
     callee_address,
-    callee_variable,
     declared_calls,
     identity_variables,
     signing_keys,
@@ -98,15 +96,10 @@ from swhurl.apps.contract import (
     AUTO_DEPLOY_ENV,
     BACKUP_LABEL,
     COOKIE_DOMAIN,
-    ENVIRONMENT,
-    EXCEPTIONS,
-    EXPOSURE,
     IMAGE_AUTOMATION_FILE,
-    OTLP_HOST_IP,
     QUOTA,
     QUOTA_HEADROOM,
     STORAGE_CLASSES,
-    TEAM,
     image_policy_name,
     in_cookie_domain,
     network_policy,
@@ -118,7 +111,6 @@ from swhurl.apps.model import generated, store
 from swhurl.apps.model import render as model_render
 from swhurl.run import Runner
 
-EXCEPTIONS_KEY = EXCEPTIONS
 CACHE = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'swhurl-platform/charts'
 WORKLOAD_KINDS = {'Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'}
 
@@ -180,7 +172,7 @@ def exceptions(docs: list[dict]) -> tuple[dict[str, str], list[str]]:
     for doc in docs:
         if doc['kind'] != 'HelmRelease':
             continue
-        raw = (doc['metadata'].get('annotations') or {}).get(EXCEPTIONS_KEY, '')
+        raw = (doc['metadata'].get('annotations') or {}).get(interface.EXCEPTIONS, '')
         for entry in filter(None, (e.strip() for e in raw.split(';'))):
             rule, _, reason = entry.partition('=')
             if not reason.strip():
@@ -202,13 +194,13 @@ def check_isolation(docs: list[dict], labels: dict, known_teams: dict[str, str])
     """The team, quota and network-policy rules for one rendered instance."""
     violations: list[tuple[str, str]] = []
     for doc in docs:
-        spec = (doc['metadata'].get('annotations') or {}).get(app_alerts.ANNOTATION) if doc['kind'] == 'Namespace' else None
+        spec = (doc['metadata'].get('annotations') or {}).get(interface.ALERTS_ANNOTATION) if doc['kind'] == 'Namespace' else None
         try:
             app_alerts.thresholds(str(spec or ''))
         except ValueError as error:
-            violations.append(('alerts', f'{app_alerts.ANNOTATION}: {error}; make app-alerts sets it'))
-    if labels.get(TEAM) not in known_teams:
-        violations.append(('team', f'Namespace team {labels.get(TEAM)!r} is not registered in apps/teams.yaml '
+            violations.append(('alerts', f'{interface.ALERTS_ANNOTATION}: {error}; make app-alerts sets it'))
+    if labels.get(interface.TEAM) not in known_teams:
+        violations.append(('team', f'Namespace team {labels.get(interface.TEAM)!r} is not registered in apps/teams.yaml '
                                    f'({", ".join(known_teams)}); set it with make app-team'))
     releases = [d for d in docs if d['kind'] == 'HelmRelease']
     if not releases:
@@ -232,7 +224,7 @@ def check_isolation(docs: list[dict], labels: dict, known_teams: dict[str, str])
         violations.append(('quota', f'replicas and sizes exceed the namespace quota for {", ".join(over)} '
                                     f'(allowed {QUOTA}, less {QUOTA_HEADROOM} kept free)'))
 
-    routed = labels.get(EXPOSURE) in ('authenticated-web', 'public')
+    routed = labels.get(interface.EXPOSURE) in ('authenticated-web', 'public')
     port = helmrelease.port(releases[0])
     callers = allowed_callers(helmrelease.variables(releases[0]))
     expected = network_policy(app, namespace, port if routed else None, port, callers)['spec']
@@ -255,7 +247,7 @@ def check_identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str,
     if not releases:
         return violations
     app, variables = releases[0]['metadata']['name'], helmrelease.variables(releases[0])
-    wanted = identity_variables(app, labels.get(ENVIRONMENT), helmrelease.port(releases[0]) is not None, keys)
+    wanted = identity_variables(app, labels.get(interface.ENVIRONMENT), helmrelease.port(releases[0]) is not None, keys)
     wrong = [key for key, value in wanted.items() if variables.get(key) != value]
     if wrong:
         violations.append(('identity', f'{", ".join(wrong)} missing or not what the platform sets; make app-sync writes them'))
@@ -273,10 +265,10 @@ def check_identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str,
             continue
         for container in spec['containers']:
             names = [var['name'] for var in container.get('env') or []]
-            uses = [var['name'] for var in container.get('env') or [] if f'$({ENVIRONMENT_VARIABLE})' in str(var.get('value', ''))]
-            late = [name for name in uses if ENVIRONMENT_VARIABLE not in names or names.index(ENVIRONMENT_VARIABLE) > names.index(name)]
+            uses = [var['name'] for var in container.get('env') or [] if f'$({interface.ENVIRONMENT_VARIABLE})' in str(var.get('value', ''))]
+            late = [name for name in uses if interface.ENVIRONMENT_VARIABLE not in names or names.index(interface.ENVIRONMENT_VARIABLE) > names.index(name)]
             if late:
-                violations.append(('identity', f'{where}: {", ".join(late)} uses $({ENVIRONMENT_VARIABLE}) before it is defined'))
+                violations.append(('identity', f'{where}: {", ".join(late)} uses $({interface.ENVIRONMENT_VARIABLE}) before it is defined'))
         expected = [{'audience': audience, 'expirationSeconds': TOKEN_SECONDS, 'path': f'{audience}/token'}
                     for audience in token_audiences(calls)]
         if tokens != expected:
@@ -289,17 +281,17 @@ def check_identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str,
 
 def check_events(docs: list[dict], release: dict, labels: dict) -> list[tuple[str, str]]:
     """The events rule for one rendered instance."""
-    app, env, variables = release['metadata']['name'], labels.get(ENVIRONMENT), helmrelease.variables(release)
+    app, env, variables = release['metadata']['name'], labels.get(interface.ENVIRONMENT), helmrelease.variables(release)
     publishes, subscribes = events.published(variables), events.subscribed(variables)
     declared = [d for d in docs if d['kind'] in ('Stream', 'Consumer')]
     referenced = events.secret_name(app) in helmrelease.secret_references(release)
     problems = []
-    identity = referenced or variables.get(events.URL_VARIABLE) or variables.get(events.NKEY_VARIABLE)
-    key = str(variables.get(events.NKEY_VARIABLE, ''))
-    if (identity or publishes or subscribes) and (variables.get(events.URL_VARIABLE) != events.URL
+    identity = referenced or variables.get(interface.URL_VARIABLE) or variables.get(interface.NKEY_VARIABLE)
+    key = str(variables.get(interface.NKEY_VARIABLE, ''))
+    if (identity or publishes or subscribes) and (variables.get(interface.URL_VARIABLE) != events.URL
                                                   or not (key.startswith('U') and len(key) == 56) or not referenced):
         # A NATS identity (every instance where the platform has NATS) is whole or absent.
-        problems.append(f'needs {events.URL_VARIABLE}, a public key in {events.NKEY_VARIABLE} and the {events.secret_name(app)} Secret reference')
+        problems.append(f'needs {interface.URL_VARIABLE}, a public key in {interface.NKEY_VARIABLE} and the {events.secret_name(app)} Secret reference')
     if not (publishes or subscribes):
         if declared:
             problems.append('declares no events but carries a stream or consumer')
@@ -332,11 +324,11 @@ def check_container(container: dict, pod_ctx: dict, where: str, env: str | None)
         violations.append(('no-escalation', f'{name} allows privilege escalation or extra capabilities'))
     defined: dict[str, dict] = {}
     for var in container.get('env') or []:
-        if f'$({OTLP_HOST_IP})' in str(var.get('value', '')):
-            source = defined.get(OTLP_HOST_IP, {}).get('valueFrom', {}).get('fieldRef', {}).get('fieldPath')
+        if f'$({interface.OTLP_HOST_IP})' in str(var.get('value', '')):
+            source = defined.get(interface.OTLP_HOST_IP, {}).get('valueFrom', {}).get('fieldRef', {}).get('fieldPath')
             if source != 'status.hostIP':
-                violations.append(('otlp-host-ip', f"{name} uses $({OTLP_HOST_IP}) in {var['name']} without "
-                                   f'defining {OTLP_HOST_IP} from status.hostIP before it'))
+                violations.append(('otlp-host-ip', f"{name} uses $({interface.OTLP_HOST_IP}) in {var['name']} without "
+                                   f'defining {interface.OTLP_HOST_IP} from status.hostIP before it'))
         defined[var['name']] = var
     res = container.get('resources') or {}
     if not {'cpu', 'memory'} <= set(res.get('requests') or {}) or 'memory' not in (res.get('limits') or {}):
@@ -406,8 +398,8 @@ def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str
     violations: list[tuple[str, str]] = []
     namespaces = [d for d in docs if d['kind'] == 'Namespace']
     labels = (namespaces[0]['metadata'].get('labels') or {}) if namespaces else {}
-    env = labels.get(ENVIRONMENT)
-    exposure = labels.get(EXPOSURE)
+    env = labels.get(interface.ENVIRONMENT)
+    exposure = labels.get(interface.EXPOSURE)
     if not env or not exposure:
         violations.append(('exposure', 'instance Namespace needs platform.swhurl.com/environment and /exposure labels'))
     violations += check_isolation(docs, labels, teams() if known_teams is None else known_teams)
@@ -444,8 +436,8 @@ def check_calls(instances: list[Path]) -> dict[Path, list[str]]:
             if target is None or helmrelease.port(target) is None:
                 found.append(f'calls {callee}, which is not a web app with a {env} instance')
                 continue
-            if helmrelease.variables(release)[callee_variable(callee)] != callee_address(callee, helmrelease.port(target)):
-                found.append(f"{callee_variable(callee)} is not {callee}'s address {callee_address(callee, helmrelease.port(target))}")
+            if helmrelease.variables(release)[interface.callee_variable(callee)] != callee_address(callee, helmrelease.port(target)):
+                found.append(f"{interface.callee_variable(callee)} is not {callee}'s address {callee_address(callee, helmrelease.port(target))}")
             if app not in allowed_callers(helmrelease.variables(target)):
                 found.append(f'calls {callee}, which does not allow it')
         for caller in allowed_callers(helmrelease.variables(release)):
@@ -506,7 +498,7 @@ def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
     root = instance.resolve().parents[2]  # <root>/apps/<app>/<env>
     release = yamlio.load((instance / 'helmrelease.yaml').read_text())
     problems += offers.problems(instance, events.published(helmrelease.variables(release)),
-                                str(((release.get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION, '')))
+                                str(((release.get('metadata') or {}).get('annotations') or {}).get(interface.OFFERS_ANNOTATION, '')))
     return problems + [f'{rule}: {message}' for rule, message in check(docs, teams(root), signing_keys(root))
                        if rule not in allowed]
 

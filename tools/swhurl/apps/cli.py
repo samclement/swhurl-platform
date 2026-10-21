@@ -9,10 +9,9 @@ from pathlib import Path
 
 from swhurl import ROOT, app_alerts, platform
 from swhurl.apps import edit, egress, images, offers, ops, promotion
-from swhurl.apps.contract import EXPOSURES
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, Instance
-from swhurl.apps.model import workload, write
+from swhurl.apps.model import records, workload, write
 from swhurl.apps.new import check_generated
 from swhurl.apps.release import instance_dir, set_offers
 from swhurl.run import CommandError, Runner
@@ -103,7 +102,7 @@ def main_expose(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog='swhurl app-expose', description='Change who can reach an app instance')
     p.add_argument('app')
     p.add_argument('env', choices=ENVIRONMENTS)
-    p.add_argument('--exposure', required=True, choices=EXPOSURES,
+    p.add_argument('--exposure', required=True, choices=records.EXPOSURES,
                    help='private: no route; authenticated-web: Google sign-in; public: no sign-in, host outside the domain')
     p.add_argument('--host', help='default for authenticated-web: the current host if signed-in, else the derived one')
     p.add_argument('--root', type=Path, default=ROOT)

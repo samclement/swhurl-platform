@@ -9,7 +9,7 @@ import datetime as dt
 import functools
 import json
 
-from swhurl import ROOT, clickstack, flux, platform, yamlio
+from swhurl import ROOT, clickstack, flux, interface, platform, yamlio
 from swhurl.apps import calling, channels, contract
 from swhurl.run import FakeRunner, Result
 
@@ -120,7 +120,7 @@ def apps_answers():
         'policies': {'items': [policy(app, staging_tag(app)) for app, env in INSTANCES
                                if env == 'staging' and (ROOT / 'apps' / app / env / contract.IMAGE_AUTOMATION_FILE).is_file()]},
         'app-namespaces': {'items': [{'metadata': {'name': f'{app}-{env}', 'labels': {
-            'platform.swhurl.com/app': app, contract.TEAM: 'demo'}}} for app, env in INSTANCES]},
+            'platform.swhurl.com/app': app, interface.TEAM: 'demo'}}} for app, env in INSTANCES]},
         'quotas': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {'hard': contract.QUOTA}}
                              for app, env in INSTANCES]},
         'network-policies': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {

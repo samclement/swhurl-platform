@@ -10,12 +10,11 @@ from __future__ import annotations
 import json
 import os
 
+from swhurl import interface
 from swhurl.livetests import LiveTest, Preflight, run_live_test
-from swhurl.platform import label
 
 UNWATCHED_NS = 'reloader-test'
-LABEL = label('reloader-test')
-RELOAD = 'secret.reloader.stakater.com/reload'
+LABEL = interface.label('reloader-test')
 
 
 def secret() -> dict:
@@ -26,7 +25,7 @@ def secret() -> dict:
 def deployment(name: str, opt_in: bool) -> dict:
     return {'apiVersion': 'apps/v1', 'kind': 'Deployment',
             'metadata': {'name': name, 'labels': {LABEL: 'true'},
-                         'annotations': {RELOAD: 'reloader-test'} if opt_in else {}},
+                         'annotations': {interface.RELOAD: 'reloader-test'} if opt_in else {}},
             'spec': {'replicas': 1, 'selector': {'matchLabels': {'app': name}},
                      'template': {'metadata': {'labels': {'app': name, LABEL: 'true'}},
                                   'spec': {'automountServiceAccountToken': False, 'containers': [{

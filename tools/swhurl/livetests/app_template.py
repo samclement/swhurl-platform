@@ -13,17 +13,13 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
-from swhurl import ROOT, yamlio
-from swhurl.apps.contract import (
-    APP,
-    COOKIE_DOMAIN,
-)
+from swhurl import ROOT, interface, yamlio
+from swhurl.apps.contract import COOKIE_DOMAIN
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 FIXTURES = Path('tests/fixtures/apps')
 INSTANCES = ('smoke-worker-staging', 'smoke-web-staging', 'smoke-data-prod')
 HOST = f'smoke-web.{COOKIE_DOMAIN}'
-APP_LABEL = APP
 
 
 def fixture_unit(instance: str) -> dict:
@@ -41,7 +37,7 @@ def cleanup(t: LiveTest) -> None:
     for instance in INSTANCES:
         t.quietly('-n', 'flux-system', 'delete', 'kustomization', f'app-{instance}', '--ignore-not-found',
                   '--wait=true')
-        t.delete_namespace_if_labelled(instance, APP_LABEL, instance.rsplit('-', 1)[0], wait=True)
+        t.delete_namespace_if_labelled(instance, interface.APP, instance.rsplit('-', 1)[0], wait=True)
         t.destroy_volumes_of(instance)
     t.report.info('Cleaned up app-template test instances')
 
@@ -102,8 +98,8 @@ def body(t: LiveTest) -> None:
     container = deploy.get('template', {}).get('spec', {}).get('containers', [{}])[0]
     t.check('@sha256:' in container.get('image', ''), 'prod image pinned by digest', 'prod image not digest-pinned')
     variables = {v.get('name'): v.get('value') for v in container.get('env') or []}
-    t.check(variables.get('DATABASE_PATH') == '/data/app.db', 'DATABASE_PATH points into the volume',
-            f"DATABASE_PATH is {variables.get('DATABASE_PATH')!r}")
+    t.check(variables.get(interface.DATABASE_PATH_VARIABLE) == interface.SQLITE_PATH, 'DATABASE_PATH points into the volume',
+            f"DATABASE_PATH is {variables.get(interface.DATABASE_PATH_VARIABLE)!r}")
     t.check(deploy.get('replicas') == 1 and (deploy.get('strategy') or {}).get('type') == 'Recreate',
             'one replica, stop-first updates (single writer)', f"replicas {deploy.get('replicas')}, strategy {deploy.get('strategy')}")
 

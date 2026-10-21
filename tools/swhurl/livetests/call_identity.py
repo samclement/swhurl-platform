@@ -18,12 +18,12 @@ from __future__ import annotations
 import json
 import os
 
+from swhurl import interface
 from swhurl.livetests import LiveTest, Preflight, run_live_test
-from swhurl.platform import label
 
 CALLER_NS = 'call-identity-caller'
 CALLEE_NS = 'call-identity-callee'
-LABEL = label('call-identity-test')
+LABEL = interface.label('call-identity-test')
 IMAGE = 'node:24-bookworm-slim'
 SUBJECT = f'system:serviceaccount:{CALLER_NS}:caller'
 TOKEN_SECONDS = 600  # the shortest the API server issues

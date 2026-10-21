@@ -14,16 +14,9 @@ import os
 import sys
 from dataclasses import dataclass, field
 
-from swhurl import ROOT
+from swhurl import ROOT, interface
 from swhurl.apps import helmrelease, policy
-from swhurl.apps.contract import (
-    AUTH_MIDDLEWARE,
-    SECRET_FILE,
-    TEAM,
-    app_secret,
-    declared_secrets,
-    stored_secrets,
-)
+from swhurl.apps.contract import AUTH_MIDDLEWARE, SECRET_FILE, app_secret, declared_secrets, stored_secrets
 from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.state import ready_reason, verdict
 from swhurl.kube import ready_condition
@@ -285,7 +278,7 @@ def team_of(runner: Runner, instance: Instance) -> str:
         namespace = get(runner, 'get', 'namespace', instance.namespace) or {}
     except CommandError:
         return ''
-    return ((namespace.get('metadata') or {}).get('labels') or {}).get(TEAM, '')
+    return ((namespace.get('metadata') or {}).get('labels') or {}).get(interface.TEAM, '')
 
 
 def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:

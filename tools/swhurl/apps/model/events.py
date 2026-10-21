@@ -2,6 +2,7 @@
 subscriber its consumers; the server's user list is generated from every instance."""
 from __future__ import annotations
 
+from swhurl import interface
 from swhurl.apps import events
 from swhurl.apps.instance import ENVIRONMENTS
 from swhurl.apps.model.draft import EVENTS_SECRET, Draft, Entry, Platform, RenderError, World, environment
@@ -23,11 +24,11 @@ def apply(draft: Draft, entry: Entry, world: World) -> None:
             raise RenderError(f'{app}/{env} declares events but has no NATS key')
         return
     if publishes:
-        draft.env[events.PUBLISH_VARIABLE] = ','.join(publishes)
+        draft.env[interface.PUBLISH_VARIABLE] = ','.join(publishes)
     if subscribes:
-        draft.env[events.SUBSCRIBE_VARIABLE] = ','.join(entry.settings.grants.subscriptions)
-    draft.env[events.NKEY_VARIABLE] = entry.settings.allocations.events_key
-    draft.env[events.URL_VARIABLE] = events.URL
+        draft.env[interface.SUBSCRIBE_VARIABLE] = ','.join(entry.settings.grants.subscriptions)
+    draft.env[interface.NKEY_VARIABLE] = entry.settings.allocations.events_key
+    draft.env[interface.URL_VARIABLE] = events.URL
     draft.env_from(events.secret_name(app))
     draft.reload(events.secret_name(app))
     draft.depend(events.UNIT)

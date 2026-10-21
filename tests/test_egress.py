@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, interface
 from swhurl.apps import checks, edit, egress, helmrelease, promotion
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
@@ -78,7 +78,7 @@ class EgressTests(unittest.TestCase):
         self.sync()
         self.assertIn('[OK] hello/staging may reach: api.stripe.com:443, *.example.com:8443',
                       self.grant(add=['API.Stripe.com', '*.example.com:8443']))
-        self.assertEqual(self.release('staging')['metadata']['annotations'][egress.ANNOTATION],
+        self.assertEqual(self.release('staging')['metadata']['annotations'][interface.EGRESS_ANNOTATION],
                          'api.stripe.com:443,*.example.com:8443')
         conf = self.proxy()[0]['configMaps']['config']['data']['squid.conf']
         self.assertIn('granted=%{granted}note', conf)
@@ -99,7 +99,7 @@ class EgressTests(unittest.TestCase):
                 self.grant(**change)
 
         self.grant(remove=['api.stripe.com', '*.example.com:8443'])
-        self.assertNotIn(egress.ANNOTATION, self.release('staging')['metadata'].get('annotations', {}))
+        self.assertNotIn(interface.EGRESS_ANNOTATION, self.release('staging')['metadata'].get('annotations', {}))
         self.assertNotIn('granted yes', self.proxy()[0]['configMaps']['config']['data']['squid.conf'])
 
     def test_malformed_or_overlapping_grants_are_named(self):

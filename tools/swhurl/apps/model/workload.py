@@ -2,30 +2,25 @@
 by kind (web, worker, job), and staging's image automation. Every other capability adds to what this starts."""
 from __future__ import annotations
 
+from swhurl import interface
 from swhurl.apps.calling import identity_variables
 from swhurl.apps.contract import (
-    APP,
     APP_OWNER,
     AUTO_DEPLOY_ENV,
     AUTO_DEPLOY_TAG_PATTERN,
     CHART,
     CHART_REPOSITORY,
     CHART_VERSION,
-    ENVIRONMENT,
-    EXCEPTIONS,
-    EXPOSURE,
     FAIL_AFTER,
     IMAGE_AUTOMATION_FILE,
     JOB_DEADLINE_SECONDS,
     JOB_SCHEDULE,
     JOB_START_DEADLINE_SECONDS,
     JOB_TIME_ZONE,
-    MANAGED,
     NETWORK_POLICY_FILE,
     QUOTA_FILE,
     STARTUP_PERIOD,
     STARTUP_SECONDS,
-    TEAM,
     image_policy_name,
     network_policy,
     quantity,
@@ -53,7 +48,7 @@ def resources(entry: Entry) -> dict:
 
 def image_automation(app: str, repository: str) -> list[dict]:
     """App-scoped Flux image resources: the policy whose report starts the Deploy workflow."""
-    labels = {MANAGED: 'true', APP: app}
+    labels = {interface.MANAGED: 'true', interface.APP: app}
     return [
         {'apiVersion': 'image.toolkit.fluxcd.io/v1', 'kind': 'ImageRepository',
          'metadata': {'name': app, 'namespace': 'flux-system', 'labels': labels},
@@ -111,7 +106,7 @@ def start(instance: Instance, entry: Entry, platform: Platform) -> Draft:
     }
     if web:
         values['service'] = {'main': {'controller': 'main', 'ports': {'http': {'port': release.port}}}}
-    labels = {MANAGED: 'true', APP: app, ENVIRONMENT: env, EXPOSURE: entry.settings.grants.exposure, TEAM: entry.app.team}
+    labels = {interface.MANAGED: 'true', interface.APP: app, interface.ENVIRONMENT: env, interface.EXPOSURE: entry.settings.grants.exposure, interface.TEAM: entry.app.team}
     namespace = {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': instance.namespace, 'labels': labels}}
     helm_release = {
         'apiVersion': 'helm.toolkit.fluxcd.io/v2', 'kind': 'HelmRelease',
@@ -150,7 +145,7 @@ def automation(draft: Draft, entry: Entry) -> None:
 def finish(draft: Draft, entry: Entry) -> dict[str, list[dict]]:
     """The instance's files by name, beside its unit (``unit``)."""
     if entry.settings.grants.exceptions:
-        draft.annotate(draft.release, EXCEPTIONS, entry.settings.grants.exceptions)
+        draft.annotate(draft.release, interface.EXCEPTIONS, entry.settings.grants.exceptions)
     app, namespace, port = draft.instance.app, draft.instance.namespace, entry.release.port
     files = {'namespace.yaml': [draft.namespace], 'helmrelease.yaml': [draft.release],
              QUOTA_FILE: [resource_quota(app, namespace)],

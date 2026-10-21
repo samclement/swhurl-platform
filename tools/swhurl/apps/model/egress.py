@@ -2,6 +2,7 @@
 grants are the hosts it may reach. The proxy's configuration is generated from every instance."""
 from __future__ import annotations
 
+from swhurl import interface
 from swhurl.apps import egress
 from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.model.draft import Draft, Entry, Platform, RenderError, World
@@ -15,7 +16,7 @@ def apply(draft: Draft, entry: Entry, platform: Platform) -> None:
         raise RenderError(f'{draft.instance} has no egress port allocated')
     draft.env.update(egress.variables(port))
     if entry.settings.grants.egress:
-        draft.annotate(draft.release, egress.ANNOTATION, ','.join(entry.settings.grants.egress))
+        draft.annotate(draft.release, interface.EGRESS_ANNOTATION, ','.join(entry.settings.grants.egress))
 
 
 def proxy(world: World, platform: Platform) -> list[dict] | None:

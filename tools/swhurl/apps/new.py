@@ -29,7 +29,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from swhurl import ROOT, app_alerts, yamlio
+from swhurl import ROOT, app_alerts, interface, yamlio
 from swhurl.apps import declaration, offers, policy
 from swhurl.apps.calling import (
     NOTIFY,
@@ -39,13 +39,9 @@ from swhurl.apps.contract import (
     AUTO_DEPLOY_ENV,
     AUTO_DEPLOY_TAG_PATTERN,
     COOKIE_DOMAIN,
-    DATABASE_PATH_VARIABLE,
-    DATABASES,
     DEFAULT_DATABASE_SIZE,
-    EXPOSURES,
     JOB_SCHEDULE,
     JOB_TIME_ZONE,
-    SQLITE_PATH,
     default_host,
     in_cookie_domain,
     schedule_problem,
@@ -53,7 +49,8 @@ from swhurl.apps.contract import (
     teams,
 )
 from swhurl.apps.errors import EditError
-from swhurl.apps.instance import ENVIRONMENTS, NAME_RE, Instance, instance_folder, instance_unit_file
+from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
+from swhurl.apps.model import records as app_records
 from swhurl.apps.model import workload
 from swhurl.apps.model.draft import Entry
 from swhurl.apps.model.exposure import DEFAULT_ISSUER
@@ -82,12 +79,12 @@ def parse_image(image: str) -> dict:
 
 def resolve(args) -> None:
     """Fill values derived from others: a signed-in app's host; a database's volume."""
-    if args.exposure == 'authenticated-web' and not args.host and NAME_RE.match(args.name):
+    if args.exposure == 'authenticated-web' and not args.host and app_records.NAME_RE.match(args.name):
         args.host = default_host(args.name, args.env)
 
 
 def validate(args, root: Path = ROOT) -> None:
-    if not NAME_RE.match(args.name):
+    if not app_records.NAME_RE.match(args.name):
         raise GenerationError('NAME must be a DNS label (lowercase, digits, hyphens, max 40 chars)')
     if args.name == NOTIFY:
         raise GenerationError(f'{NOTIFY} is the platform\'s notify service: every app carries a token for that name; choose another')
@@ -239,13 +236,13 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--env', default='staging', choices=ENVIRONMENTS, help='staging only; production is created by app-promote')
     p.add_argument('--image', required=True, help=f'ghcr.io/{APP_OWNER}/<name>:<run>-<sha>@sha256:... as the app repository publishes it '
                                                         '(any REPO:TAG or digest form under another --root)')
-    p.add_argument('--kind', choices=list(declaration.KINDS), default='web')
+    p.add_argument('--kind', choices=list(app_records.KINDS), default='web')
     p.add_argument('--schedule', default=JOB_SCHEDULE,
                    help=f'job only: when it runs, five cron fields in {JOB_TIME_ZONE} (default "{JOB_SCHEDULE}"; make app-schedule later)')
     p.add_argument('--alerts', default='', metavar='SPEC',
                    help='the app\'s own default-alert settings: none, or error-logs=20,errors=none (default: the platform\'s)')
     p.add_argument('--team', help='the owning team, a name in apps/teams.yaml (required, here or as team: in swhurl.yaml)')
-    p.add_argument('--exposure', choices=EXPOSURES, default='private',
+    p.add_argument('--exposure', choices=app_records.EXPOSURES, default='private',
                    help=f'private: no route; authenticated-web: shared sign-in on {COOKIE_DOMAIN}; '
                         f'public: no sign-in, host outside {COOKIE_DOMAIN}')
     p.add_argument('--host', help=f'default for authenticated-web: <name>.{COOKIE_DOMAIN} in prod, '
@@ -257,8 +254,8 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--cpu', default='10m')
     p.add_argument('--memory', default='32Mi')
     p.add_argument('--memory-limit', default='128Mi')
-    p.add_argument('--database', choices=DATABASES,
-                   help=f'sqlite: a retained volume with the database at {SQLITE_PATH}, passed as ${DATABASE_PATH_VARIABLE}; '
+    p.add_argument('--database', choices=app_records.DATABASES,
+                   help=f'sqlite: a retained volume with the database at {interface.SQLITE_PATH}, passed as ${interface.DATABASE_PATH_VARIABLE}; '
                         'one replica, stop-first updates')
     p.add_argument('--database-size', default=DEFAULT_DATABASE_SIZE, metavar='SIZE', help='the database volume (default %(default)s)')
     p.add_argument('--subscribe', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],

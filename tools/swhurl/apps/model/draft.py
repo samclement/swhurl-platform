@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from swhurl import interface
 from swhurl.apps.instance import Instance
 from swhurl.apps.model.records import App, Release, Settings
 
@@ -79,10 +80,8 @@ class Draft:
 
     def reload(self, secret: str) -> None:
         """Restart the app when this Secret changes (Reloader)."""
-        from swhurl.apps.contract import RELOAD
-
         annotations = self.controller.setdefault('annotations', {})
-        annotations[RELOAD] = ','.join([name for name in annotations.get(RELOAD, '').split(',') if name] + [secret])
+        annotations[interface.RELOAD] = ','.join([name for name in annotations.get(interface.RELOAD, '').split(',') if name] + [secret])
 
     def depend(self, unit: str) -> None:
         self.unit['spec']['dependsOn'].append({'name': unit})

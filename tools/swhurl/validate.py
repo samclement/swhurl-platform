@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, platform, yamlio
+from swhurl import ROOT, interface, platform, yamlio
 from swhurl.apps import contract
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -216,6 +216,24 @@ def check_unit_table(report: Report, root: Path = ROOT) -> None:
     report.ok(f'{platform.UNITS_DOC} lists the {len(shared)} shared Flux units and their inputs')
 
 
+def check_interface_table(report: Report, root: Path = ROOT) -> None:
+    """The canonical app interface table has exactly the registry's names and descriptions."""
+    doc = root / 'docs/apps.md'
+    if not doc.is_file():
+        return
+    section = doc.read_text().partition('<!-- app-interface -->')[2].partition('<!-- /app-interface -->')[0]
+    rows = re.findall(r'^\| `([^`]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$', section, re.M)
+    names = [row[0] for row in rows]
+    problems = [f'{name}: missing' for name in interface.ENTRIES.keys() - set(names)]
+    problems += [f'{name}: extra' for name in set(names) - interface.ENTRIES.keys()]
+    problems += [f'{name}: duplicate' for name in set(names) if names.count(name) > 1]
+    problems += [f'{name}: description differs' for name, *fields in rows
+                 if name in interface.ENTRIES and tuple(fields) != interface.ENTRIES[name]]
+    if problems:
+        fail('docs/apps.md app interface table differs from registry:\n  ' + '\n  '.join(sorted(problems)))
+    report.ok(f'docs/apps.md lists the {len(names)} app interface entries')
+
+
 def validate(runner: Runner, report: Report, root: Path = ROOT) -> int:
     """Run every check, recording failures instead of stopping at the first."""
     def attempt(check, *args):
@@ -227,6 +245,7 @@ def validate(runner: Runner, report: Report, root: Path = ROOT) -> int:
 
     attempt(check_doc_links, runner, report, root)
     attempt(check_unit_table, report, root)
+    attempt(check_interface_table, report, root)
     attempt(check_shell_syntax, runner, report)
     attempt(check_secrets, report, root)
     attempt(check_config, report, root)

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from swhurl.apps.calling import NOTIFY_VARIABLE
+from swhurl import interface
 from swhurl.apps.channels import address_problem
 from swhurl.run import CommandError, Runner
 
@@ -30,8 +30,6 @@ PRIORITIES = {'normal': 3, 'high': 4}
 PLATFORM_SECRET = ('console', 'notification-ntfy')
 PLATFORM_KEY = 'NTFY_PLATFORM_URL'
 """The platform topic's address: this key of that Secret, which the checker's pod gets as a variable of the same name."""
-SERVICE_URL = NOTIFY_VARIABLE  # the same variable every app instance gets
-TOKEN_FILE = '/var/run/swhurl/tokens/notify/token'
 
 
 @dataclass(frozen=True)
@@ -133,11 +131,11 @@ def forward(notice: Notice, app: str, env: str, key: str, *, transport: httpx.Ba
     """Hand a notice about an app to the notify service, which sends it to the channels of the app's team.
     The checker proves who it is with its service-account token for the audience ``notify``."""
     import httpx
-    url = os.environ.get(SERVICE_URL, '').rstrip('/')
+    url = os.environ.get(interface.NOTIFY_VARIABLE, '').rstrip('/')
     if not url:
-        raise NotificationError(f'{SERVICE_URL} is not set')
+        raise NotificationError(f'{interface.NOTIFY_VARIABLE} is not set')
     try:
-        token = Path(os.environ.get('SWHURL_NOTIFY_TOKEN_FILE', TOKEN_FILE)).read_text().strip()
+        token = Path(os.environ.get('SWHURL_NOTIFY_TOKEN_FILE', f'{interface.TOKENS_MOUNT}/notify/token')).read_text().strip()
     except OSError:
         raise NotificationError('no token file for the notify service') from None
     try:

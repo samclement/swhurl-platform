@@ -31,17 +31,17 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import app_alerts, clickstack, kube, statestore
+from swhurl import app_alerts, clickstack, interface, kube, statestore
 from swhurl.apps import helmrelease
-from swhurl.apps.instance import NAME_RE, Instance
-from swhurl.apps.model import store
+from swhurl.apps.instance import Instance
+from swhurl.apps.model import records, store
 from swhurl.platform import ROOT
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 TAG = app_alerts.TAG
 NAMESPACE = "ResourceAttributes['k8s.namespace.name']"
-APP_DASHBOARD = re.compile('App: ' + NAME_RE.pattern.strip('^$'))  # what the scheduled sync may delete
+APP_DASHBOARD = re.compile('App: ' + records.NAME_RE.pattern.strip('^$'))  # what the scheduled sync may delete
 IN_GIT, ON_CLUSTER = 'its app is not in Git', 'its app has no HelmRelease on the cluster'
 RECORD = {'namespace': 'console', 'name': 'app-dashboards', 'key': 'dashboards.json'}  # read by the console
 DASHBOARD_ID = re.compile(r'[0-9a-f]{24}')  # a MongoDB ObjectId: the only thing that may become part of a link
@@ -54,7 +54,7 @@ class App:
     name: str
     kind: str  # web, worker or job (helmrelease.kind)
     envs: tuple[str, ...]
-    alerts: str = ''  # its own alert settings (app_alerts.ANNOTATION); '' for the defaults
+    alerts: str = ''  # its own alert settings (interface.ALERTS_ANNOTATION); '' for the defaults
 
     @property
     def namespaces(self) -> str:
@@ -86,7 +86,7 @@ def cluster_apps(runner: Runner) -> list[App]:
     propagate before any API write.
     """
     found: dict[str, dict] = {}
-    settings = {n['metadata']['name']: str((n['metadata'].get('annotations') or {}).get(app_alerts.ANNOTATION, ''))
+    settings = {n['metadata']['name']: str((n['metadata'].get('annotations') or {}).get(interface.ALERTS_ANNOTATION, ''))
                 for n in runner.json(NAMESPACES)['items']}
     for release in runner.json(RELEASES)['items']:
         metadata = release['metadata']
@@ -222,7 +222,7 @@ def recorded(runner: Runner) -> dict[str, str]:
     if not isinstance(doc, dict):
         return {}
     return {app: ident for app, ident in doc.items()
-            if isinstance(app, str) and isinstance(ident, str) and NAME_RE.match(app) and DASHBOARD_ID.fullmatch(ident)}
+            if isinstance(app, str) and isinstance(ident, str) and records.NAME_RE.match(app) and DASHBOARD_ID.fullmatch(ident)}
 
 
 def record(runner: Runner, report: Report, ids: dict[str, str]) -> None:

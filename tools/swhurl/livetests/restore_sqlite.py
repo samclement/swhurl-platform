@@ -20,7 +20,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from swhurl import backup_job, backupset, platform
+from swhurl import backup_job, backupset, interface
 from swhurl.apps.contract import BACKUP_WRITER
 from swhurl.apps.model import backup
 from swhurl.backupset import BackupError
@@ -29,9 +29,9 @@ from swhurl.sqlite_backup import backups_in, uri
 from swhurl.sqlite_restore import IMAGE, database, restore
 
 NS = 'sqlite-restore-test'
-LABEL = platform.label('sqlite-restore-test')
+LABEL = interface.label('sqlite-restore-test')
 APP = 'notes'
-DB = '/data/app.db'
+DB = interface.SQLITE_PATH
 ROWS = 'SELECT group_concat(body) FROM (SELECT body FROM notes ORDER BY id);'
 
 
@@ -51,7 +51,7 @@ def helmrelease() -> dict:
                          'controllers': {'main': {'replicas': 1, 'strategy': 'Recreate', 'containers': {'main': {
                              'image': {'repository': repository, 'tag': tag, 'digest': digest},
                              'command': ['sleep', '3600000'],
-                             'env': {'DATABASE_PATH': DB},
+                             'env': {interface.DATABASE_PATH_VARIABLE: DB},
                              'resources': {'requests': {'cpu': '10m', 'memory': '32Mi'}, 'limits': {'memory': '128Mi'}},
                              'securityContext': {'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True,
                                                  'capabilities': {'drop': ['ALL']}}}}}},
@@ -59,7 +59,7 @@ def helmrelease() -> dict:
                              'tmp': {'type': 'emptyDir', 'globalMounts': [{'path': '/tmp'}]},
                              'data': {'type': 'persistentVolumeClaim', 'storageClass': 'local-path',
                                       'accessMode': 'ReadWriteOnce', 'size': '64Mi',
-                                      'globalMounts': [{'path': '/data'}]}}}}}
+                                      'globalMounts': [{'path': interface.DATA_MOUNT}]}}}}}
 
 
 def sql(t: LiveTest, statement: str, path: str = DB) -> str:

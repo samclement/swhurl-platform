@@ -31,21 +31,13 @@ from typing import Any
 import httpx
 import yaml
 
-from swhurl import platform, yamlio
+from swhurl import interface, platform, yamlio
 from swhurl.apps import calling, channels, egress, events, helmrelease, promotion, repo
-from swhurl.apps.contract import (
-    APP_OWNER,
-    APP_TYPES,
-    EXPOSURES,
-    STACKS,
-    TEAMS_FILE,
-    type_answers,
-)
-from swhurl.apps.instance import NAME_RE, Instance
-from swhurl.apps.model import render, store, write
+from swhurl.apps.contract import APP_OWNER, APP_TYPES, STACKS, TEAMS_FILE, type_answers
+from swhurl.apps.instance import Instance
+from swhurl.apps.model import records, render, store, write
 from swhurl.apps.model.draft import Platform
 from swhurl.apps.model.records import SETTINGS_FILE, Release, Settings
-from swhurl.apps.model.render import ANNOTATION
 from swhurl.console import merge
 from swhurl.console.actions import ActionError, Job
 from swhurl.console.merge import ACTIONS, REFUSAL, REFUSAL_LIMIT
@@ -261,10 +253,10 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
                 expected = ''
                 if not proxy or entry.settings.allocations.egress_port is not None:
                     output = render.instance(each, world, platform_inputs)[path.relative_to(root)][0]
-                    expected = output['metadata']['annotations'][ANNOTATION]
+                    expected = output['metadata']['annotations'][interface.RENDER_ANNOTATION]
                 found[str(each)] = Target(
                     digest(app, record, mine), digest(app, mine), entry.release.image.digest,
-                    (release.get('metadata', {}).get('annotations') or {}).get(ANNOTATION, '') if release else None,
+                    (release.get('metadata', {}).get('annotations') or {}).get(interface.RENDER_ANNOTATION, '') if release else None,
                     helmrelease.image(release).get('digest', '') if release else '', expected)
             return found
     except (tarfile.TarError, OSError, ValueError, AttributeError, TypeError, KeyError, yaml.YAMLError) as error:
@@ -515,7 +507,7 @@ class NewApp:
         outside them is refused."""
         name, stack = form.get('name', '').strip(), form.get('stack', '').strip()
         description = ' '.join(form.get('description', '').split())[:200]
-        if not NAME_RE.match(name):
+        if not records.NAME_RE.match(name):
             raise ActionError('name must be a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
         if stack not in STACKS:
             raise ActionError(f'stack must be one of {", ".join(sorted(STACKS))}')
@@ -540,8 +532,8 @@ class NewApp:
                 raise ActionError('a worker has no web address; leave Host empty')
         else:
             if exposure:
-                if exposure not in EXPOSURES:
-                    raise ActionError(f'exposure must be one of {", ".join(EXPOSURES)}')
+                if exposure not in records.EXPOSURES:
+                    raise ActionError(f'exposure must be one of {", ".join(records.EXPOSURES)}')
                 flags.append(f'--exposure={exposure}')
             if merge.checked_host(host):
                 flags.append(f'--host={host}')
@@ -554,7 +546,7 @@ class NewApp:
     def from_record(cls, record: Mapping[str, Any]) -> NewApp:
         """The choices a job kept; ``ValueError``, ``KeyError`` or ``TypeError`` if they cannot be used."""
         name, stack, flags = str(record['name']), str(record['stack']), tuple(str(flag) for flag in record['extra'])
-        if not NAME_RE.match(name) or stack not in STACKS or not all(flag.startswith('--') for flag in flags):
+        if not records.NAME_RE.match(name) or stack not in STACKS or not all(flag.startswith('--') for flag in flags):
             raise ValueError(name)
         if any(flag.startswith('--publish=') for flag in flags):
             raise ActionError('publishing choices are no longer supported: edit asyncapi.yaml named by '

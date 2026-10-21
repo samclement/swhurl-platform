@@ -24,8 +24,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import backupset, recovery, sqlite_backup
-from swhurl.apps.contract import DATABASE_PATH_VARIABLE
+from swhurl import backupset, interface, recovery, sqlite_backup
 from swhurl.backupset import BackupError
 from swhurl.run import CommandError, Runner
 
@@ -144,9 +143,9 @@ def _main(take: Callable[[Runner, JobSettings, Mapping[str, str]], Path], runner
 
 def sqlite_main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     def take(runner: Runner, settings: JobSettings, env: Mapping[str, str]) -> Path:
-        if not env.get(DATABASE_PATH_VARIABLE):
-            raise BackupError(f'{DATABASE_PATH_VARIABLE} must be set')
-        return backup_sqlite(runner, settings, Path(env[DATABASE_PATH_VARIABLE]))
+        if not env.get(interface.DATABASE_PATH_VARIABLE):
+            raise BackupError(f'{interface.DATABASE_PATH_VARIABLE} must be set')
+        return backup_sqlite(runner, settings, Path(env[interface.DATABASE_PATH_VARIABLE]))
     return _main(take, runner)
 
 
@@ -161,7 +160,7 @@ def mongodb_main(argv: list[str] | None = None, runner: Runner | None = None) ->
 
 # Running them now (make backup-sqlite, make backup-mongodb) ----------------------------------------------
 
-LABEL_SELECTOR = 'platform.swhurl.com/backup=true'
+LABEL_SELECTOR = f'{interface.label("backup")}=true'
 MONGODB = ('observability', 'backup-mongodb')
 WAIT_SECONDS = 900  # the jobs' own activeDeadlineSeconds
 

@@ -39,9 +39,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
 
-from swhurl import app_alerts, statestore
+from swhurl import app_alerts, interface, statestore
 from swhurl.apps import channels
-from swhurl.apps.contract import TEAM
 from swhurl.apps.instance import Instance
 from swhurl.console.logconfig import CONFIG
 from swhurl.run import CommandError, Runner
@@ -205,7 +204,7 @@ def team_channels(runner: Runner, app: str, env: str) -> list[str]:
                        if c['metadata']['name'] == channels.ROUTES_NAME), {})
     except (CommandError, KeyError, TypeError, ValueError):
         raise Refused(503, 'cannot read the team routes') from None
-    team = ((namespace.get('metadata') or {}).get('labels') or {}).get(TEAM)
+    team = ((namespace.get('metadata') or {}).get('labels') or {}).get(interface.TEAM)
     return list(routes.get('teams', {}).get(team, []))
 
 

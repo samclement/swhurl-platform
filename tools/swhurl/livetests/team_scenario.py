@@ -17,9 +17,10 @@ import json
 import os
 import secrets
 
-from swhurl import clickstack
-from swhurl.apps import calling, contract, events, helmrelease
-from swhurl.apps.instance import NAME_RE, Instance
+from swhurl import clickstack, interface
+from swhurl.apps import calling, events, helmrelease
+from swhurl.apps.instance import Instance
+from swhurl.apps.model import records
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 
@@ -32,7 +33,7 @@ def release(t: LiveTest, app: str, env: str) -> dict:
 
 def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> None:
     for name in (caller, callee, subscriber):
-        if not NAME_RE.match(name or ''):
+        if not records.NAME_RE.match(name or ''):
             raise Preflight('give CALLER, CALLEE and SUBSCRIBER (app names) and optionally ENV')
     releases = {app: release(t, app, env) for app in (caller, callee, subscriber)}
     if callee not in calling.declared_calls(helmrelease.variables(releases[caller])):
@@ -87,7 +88,7 @@ def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> No
             f'{callee} published {callee}.{event} and {subscriber} processed it, in the same trace',
             f'no publish span from {callee} or no "process {callee}.{event}" span from {subscriber}')
     for app in (caller, callee, subscriber):
-        wanted = t.label(t.get('get', 'namespace', Instance(app, env).namespace), contract.TEAM) or ''
+        wanted = t.label(t.get('get', 'namespace', Instance(app, env).namespace), interface.TEAM) or ''
         found = sorted({span[1] for span in spans if span[0] == app})
         t.check(bool(wanted) and found == [wanted], f"{app}'s spans carry its team: {wanted}",
                 f"{app}'s spans carry team {found or 'none'}, its namespace says {wanted or 'none'}")

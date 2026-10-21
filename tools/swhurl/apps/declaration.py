@@ -32,12 +32,12 @@ from dataclasses import dataclass
 import yaml
 
 from swhurl import yamlio
-from swhurl.apps.contract import DATABASES, DEFAULT_DATABASE_SIZE, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
+from swhurl.apps.contract import DEFAULT_DATABASE_SIZE, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
 from swhurl.apps.instance import ENVIRONMENTS
+from swhurl.apps.model import records
 
 FILE = 'swhurl.yaml'
 VERSION = 1
-KINDS = ('web', 'worker', 'job')
 TELEMETRY = ('otlp', 'none')
 MAX_BYTES = 512 * 1024
 MAX_DESCRIPTION = 200
@@ -246,9 +246,9 @@ def of(doc: object, source: str = FILE) -> Declaration:
             raise fail(f'{key} must be one of {", ".join(choices)}')
         return value
 
-    kind = field('kind', str, KINDS)
+    kind = field('kind', str, records.KINDS)
     if not kind:
-        raise fail(f'kind is required ({", ".join(KINDS)})')
+        raise fail(f'kind is required ({", ".join(records.KINDS)})')
     description = field('description', str) or ''
     if len(description) > MAX_DESCRIPTION or description != ' '.join(description.split()):
         raise fail(f'description is one line of at most {MAX_DESCRIPTION} characters, without leading, trailing or repeated spaces')
@@ -270,7 +270,7 @@ def of(doc: object, source: str = FILE) -> Declaration:
             raise fail('healthPath is required for kind web (the app\'s readiness endpoint)')
     elif any(doc.get(k) is not None for k in ('port', 'healthPath')):
         raise fail('port and healthPath apply to kind web only')
-    if field('database', str, DATABASES):
+    if field('database', str, records.DATABASES):
         if kind != 'web':
             raise fail(f'database applies to kind web only: a {kind} keeps what it needs in an API it calls '
                        '(docs/apps.md#app-types)')

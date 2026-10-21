@@ -10,7 +10,7 @@ from unittest import mock
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, interface
 from swhurl.apps import channels, contract, edit, teams
 from swhurl.apps.errors import EditError
 from swhurl.apps.model import generated
@@ -38,7 +38,7 @@ class TeamTests(unittest.TestCase):
         return contract.teams(self.root)
 
     def team_of(self, env):
-        return yaml.safe_load((self.root / 'apps/hello' / env / 'namespace.yaml').read_text())['metadata']['labels'][contract.TEAM]
+        return yaml.safe_load((self.root / 'apps/hello' / env / 'namespace.yaml').read_text())['metadata']['labels'][interface.TEAM]
 
     def test_add_and_describe(self):
         self.quiet(teams.add, 'insights', '  Reporting\n and  dashboards ')

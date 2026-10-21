@@ -24,7 +24,8 @@ from pathlib import Path
 
 import yaml
 
-from swhurl.apps.contract import OTLP_HOST_IP, otlp_variables
+from swhurl import interface
+from swhurl.apps.contract import otlp_variables
 from swhurl.apps.instance import Instance
 
 NAMESPACE = NAME = 'egress'
@@ -33,15 +34,12 @@ HOST = f'{NAME}.{NAMESPACE}.svc.cluster.local'
 FIRST_PORT = 30101
 HEALTH_PORT = 3128  # probes only: the NetworkPolicy admits no pod to it
 
-HTTPS_VARIABLE, HTTP_VARIABLE, NO_PROXY_VARIABLE = 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'
-NODE_VARIABLE, JAVA_VARIABLE = 'NODE_USE_ENV_PROXY', 'JAVA_TOOL_OPTIONS'
 # The chart writes env in name order, and Kubernetes expands $(HOST_IP) only after HOST_IP is defined:
 # every name here that uses it sorts after it.
-VARIABLES = (OTLP_HOST_IP, HTTP_VARIABLE, HTTPS_VARIABLE, JAVA_VARIABLE, NODE_VARIABLE, NO_PROXY_VARIABLE)
+VARIABLES = (interface.OTLP_HOST_IP, interface.HTTP_VARIABLE, interface.HTTPS_VARIABLE, interface.JAVA_VARIABLE, interface.NODE_VARIABLE, interface.NO_PROXY_VARIABLE)
 # Inside the cluster and the node (the OTLP collector listens on the node's address): never the proxy.
-DIRECT = ('localhost', '127.0.0.1', '.svc', '.cluster.local', f'$({OTLP_HOST_IP})')
+DIRECT = ('localhost', '127.0.0.1', '.svc', '.cluster.local', f'$({interface.OTLP_HOST_IP})')
 PORT = re.compile(rf'^http://{re.escape(HOST)}:(\d+)$')
-ANNOTATION = 'platform.swhurl.com/egress'
 DEFAULT_PORT = 443
 # A DNS name with at least two labels and a top label of letters (no IP address), optionally *. first.
 GRANT_RE = re.compile(r'^(\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}:(\d{1,5})$')
@@ -57,13 +55,13 @@ def variables(port: int) -> dict:
     clients read (JAVA_TOOL_OPTIONS: the templates' images set no options of their own there)."""
     java_direct = '|'.join(f'*{host}' if host.startswith('.') else host.replace('127.0.0.1', '127.*') for host in DIRECT)
     return {
-        OTLP_HOST_IP: otlp_variables('')[OTLP_HOST_IP],
-        HTTP_VARIABLE: address(port),
-        HTTPS_VARIABLE: address(port),
-        JAVA_VARIABLE: ' '.join([f'-Dhttp.proxyHost={HOST}', f'-Dhttp.proxyPort={port}', f'-Dhttps.proxyHost={HOST}',
+        interface.OTLP_HOST_IP: otlp_variables('')[interface.OTLP_HOST_IP],
+        interface.HTTP_VARIABLE: address(port),
+        interface.HTTPS_VARIABLE: address(port),
+        interface.JAVA_VARIABLE: ' '.join([f'-Dhttp.proxyHost={HOST}', f'-Dhttp.proxyPort={port}', f'-Dhttps.proxyHost={HOST}',
                                  f'-Dhttps.proxyPort={port}', f'-Dhttp.nonProxyHosts={java_direct}']),
-        NODE_VARIABLE: '1',
-        NO_PROXY_VARIABLE: ','.join(DIRECT),
+        interface.NODE_VARIABLE: '1',
+        interface.NO_PROXY_VARIABLE: ','.join(DIRECT),
     }
 
 
@@ -83,7 +81,7 @@ def grant_problem(text: str) -> str:
 
 def granted(release: dict) -> list[str]:
     """The hosts an instance may reach, as its release's annotation names them."""
-    value = str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(ANNOTATION, ''))
+    value = str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(interface.EGRESS_ANNOTATION, ''))
     return [name for name in value.split(',') if name]
 
 
@@ -96,7 +94,7 @@ def covered(names: list[str]) -> list[str]:
 
 def port_of(env: dict) -> int | None:
     """The instance's proxy port, from its HTTPS_PROXY variable."""
-    found = PORT.match(str(env.get(HTTPS_VARIABLE, '')))
+    found = PORT.match(str(env.get(interface.HTTPS_VARIABLE, '')))
     return int(found[1]) if found else None
 
 

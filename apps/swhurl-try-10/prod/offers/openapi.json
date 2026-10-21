@@ -33,6 +33,10 @@
                   "string",
                   "null"
                 ]
+              },
+              "user": {
+                "type": "string",
+                "description": "For an app: the signed-in person it is calling for"
               }
             },
             "required": [

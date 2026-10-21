@@ -202,6 +202,21 @@ push → Validate: checks (≈1 min) and, alongside them, build and push the ima
 
 A commit that changes none of the image's inputs has the same hash: nothing to deploy. How the image and workflow are built: [contributing](contributing.md#operator-tooling).
 
+## Read performance
+
+An app-details request owns one GitHub client for its platform-file reads and closes it after rendering the HTML. Its first file read resolves `main` once; settings, Release minimums, secret key names, related apps' records and any uncached offer documents then use that commit. Each path is fetched at most once per request, including missing files and failed reads. Independent reads run concurrently, with at most four file reads in flight per page. Local development and injected document readers use the same request deduplication without a GitHub lookup. Existing offer-document caching remains in place.
+
+Missing files and unavailable evidence are different: a failed file or commit lookup never becomes absence, consent or a successful rollout, and never falls back to moving `main`. File answers are discarded after the page, so file-read failures are retried on the next request, except offer descriptions: their existing cache keeps failures for five minutes. This pins platform-file evidence, not an atomic snapshot of Git, cluster and feature flags. PR checks, promotion checks and Activity's archive reads retain their own readers.
+
+The `swhurl.console.timing` logger emits diagnostic counts and milliseconds, never credentials or file contents:
+
+- `page files`: unique `files`, duplicate `hits`, failed read operations (`failed`, including commit resolution), `resolve_ms`, cumulative file-read time `file_ms`, and whole app-handler/render lifetime `elapsed_ms`. Concurrent file durations overlap, so `file_ms` is not page wall time. A file read that cannot start because commit resolution failed has no file-read duration.
+- `render targets cache`: `hit` or `miss` for an immutable commit's in-memory render-target cache. Concurrent misses can still duplicate work; failures are not retained across requests.
+- `render targets`: commit prefix, archive `bytes`, rendered `instances`, `download_ms`, `extract_ms`, `render_ms` and `total_ms`. `phase=done` means successful evidence acquisition, not a completed rollout. On failure, `phase=download`, `extract` or `render` identifies the unfinished phase; its duration includes the failed attempt. Render time includes model loading and temporary-tree cleanup.
+- `activity`: the complete Activity handler/render `elapsed_ms`.
+
+Activity and an app's Changes list still wait for their required historical evidence. The immutable render cache lives in the process and is lost on restart; there is no persistent cache or deferred rollout section. Use these diagnostics to distinguish routine file-read latency from cold historical-evidence work before choosing the next optimisation.
+
 ## GitHub tokens
 
 Two fine-grained tokens in [`platform/console/secret.sops.yaml`](../platform/console/secret.sops.yaml), both owned by you, so everything they do appears as you, and one value that is not a GitHub credential:

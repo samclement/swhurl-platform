@@ -173,6 +173,45 @@ class StagingHistoryTests(unittest.TestCase):
 
 
 class RenderTargetTests(unittest.TestCase):
+    def test_timing_identifies_success_and_each_failed_phase_without_logging_inputs(self):
+        for phase in ('done', 'download', 'extract', 'render'):
+            with self.subTest(phase=phase):
+                api = FakeGitHub()
+                marker = b'private-file-content-not-for-logs'
+                if phase == 'download':
+                    api.fail[f'GET /tarball/{HEAD}'] = (503, 'unavailable')
+                elif phase == 'extract':
+                    api.also[f'GET /tarball/{HEAD}'] = b'not an archive'
+                record = b'version: [' if phase == 'render' else MAIN['apps/hello/staging/instance.yaml']
+                with mock.patch.dict(MAIN, {'apps/hello/staging/secret.sops.yaml': marker,
+                                           'apps/hello/staging/instance.yaml': record}), \
+                        self.assertLogs('swhurl.console.timing', 'INFO') as logs:
+                    if phase == 'done':
+                        self.assertTrue(changes.render_targets(FakeRunner(), api.github, HEAD))
+                    else:
+                        with self.assertRaises(actions.ActionError):
+                            changes.render_targets(FakeRunner(), api.github, HEAD)
+                self.assertEqual(len(logs.output), 1)
+                message = logs.output[0]
+                self.assertIn(f'phase={phase}', message)
+                for name in ('download_ms', 'extract_ms', 'render_ms', 'total_ms'):
+                    self.assertRegex(message, rf'{name}=\d+\.\d+')
+                self.assertNotIn(TOKEN, message)
+                self.assertNotIn(marker.decode(), message)
+
+    def test_failed_temporary_tree_cleanup_is_not_logged_as_success(self):
+        class BrokenCleanup(changes.tempfile.TemporaryDirectory):
+            def __exit__(self, *args):
+                super().__exit__(*args)
+                raise OSError('cleanup failed')
+
+        with mock.patch.object(changes.tempfile, 'TemporaryDirectory', BrokenCleanup), \
+                self.assertLogs('swhurl.console.timing', 'INFO') as logs, \
+                self.assertRaisesRegex(actions.ActionError, 'cleanup failed'):
+            changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)
+        self.assertIn('phase=render', logs.output[0])
+        self.assertNotIn('phase=done', logs.output[0])
+
     def test_targets_read_the_backup_switch_as_store_platform_does(self):
         from swhurl.apps.model import backup, render
         seen = []

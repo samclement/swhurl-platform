@@ -61,8 +61,8 @@ def rows(calls: Iterable[str] = (), callers: Iterable[str] = (), publishes: Iter
     return tuple(found)
 
 
-def intent(each: Instance, live: tuple[Connection, ...], source: Callable[[str], str | None] | None
-           ) -> tuple[tuple[Connection, ...], str]:
+def intent(each: Instance, live: tuple[Connection, ...], source: Callable[[str], str | None] | None,
+           *, together: Callable[..., list[Entry | None]] | None = None) -> tuple[tuple[Connection, ...], str]:
     """Overlay outgoing Git declarations on live rows. Failed reads never imply absent consent.
 
     Read only this instance and its declared targets, not a second live inventory. Both target records
@@ -86,10 +86,11 @@ def intent(each: Instance, live: tuple[Connection, ...], source: Callable[[str],
         if entry is None:
             raise ValueError('no records')
         world = {each: entry}
-        for relation in relations.declarations(each, entry):
-            target = Instance(relation.target, each.env)
-            if target not in world and (found := load(target)) is not None:
-                world[target] = found
+        targets = list(dict.fromkeys(Instance(relation.target, each.env) for relation in relations.declarations(each, entry)
+                                     if Instance(relation.target, each.env) != each))
+        reads = [lambda target=target: load(target) for target in targets]
+        entries = together(*reads) if together else [read() for read in reads]
+        world.update((target, found) for target, found in zip(targets, entries, strict=True) if found is not None)
         evaluated = relations.evaluate(each, world)
     except Exception:  # noqa: BLE001 (Git failure or invalid records: preserve observations, not a false verdict)
         return live, 'Git relation records unavailable; showing live connections only.'

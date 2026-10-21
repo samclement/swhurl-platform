@@ -12,8 +12,8 @@ import yaml
 
 from swhurl import ROOT
 from swhurl.apps import channels, contract, edit, teams
+from swhurl.apps.errors import EditError
 from swhurl.apps.model import generated
-from swhurl.apps.yaml_file import EditError
 from swhurl.run import FakeRunner, Result
 
 SAMPLE = ROOT / 'tests/fixtures/instance'  # one app, hello, in staging and prod, team demo

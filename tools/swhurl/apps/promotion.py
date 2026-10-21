@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl.apps import contract, ops, state
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import NAME_RE, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model.draft import APP_SECRET, Entry, World
 from swhurl.apps.model.records import RELEASE_FILE, Allocations, RecordError, Release, Settings, Storage
-from swhurl.apps.yaml_file import EditError
 from swhurl.yamlio import load
 
 

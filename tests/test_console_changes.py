@@ -24,7 +24,7 @@ from swhurl.apps import calling, channels, egress, new, ops, promotion, repo, te
 from swhurl.apps import edit as app_edit
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model import write as model_sync
 from swhurl.apps.model.records import Release
 from swhurl.apps.state import State
 from swhurl.console import actions, changes, cluster, merge, server, stages

@@ -24,6 +24,7 @@ from swhurl import ROOT, yamlio
 from swhurl.apps import channels, egress, events, promotion
 from swhurl.apps.calling import NOTIFY
 from swhurl.apps.contract import EXPOSURES, SECRET_FILE, TEAMS_FILE, schedule_problem
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import NAME_RE, instance_folder, instance_unit_file
 from swhurl.apps.model.records import (
     ALLOW_RE,
@@ -36,7 +37,6 @@ from swhurl.apps.model.records import (
     Release,
     Settings,
 )
-from swhurl.apps.yaml_file import EditError
 from swhurl.console.actions import ActionError
 from swhurl.run import CommandError, Runner
 

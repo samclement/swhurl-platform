@@ -11,9 +11,9 @@ import yaml
 
 from swhurl import ROOT
 from swhurl.apps import checks, edit, egress, helmrelease, promotion
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import sync as model_sync
-from swhurl.apps.yaml_file import EditError
+from swhurl.apps.model import write as model_sync
 from swhurl.report import Report
 from swhurl.run import FakeRunner
 

@@ -6,7 +6,7 @@
 
 ``render`` builds an instance's files, and the shared files, from the records of every instance. Each
 capability (workload, exposure, calls, events, egress, sqlite, secrets, telemetry, offers) is one
-module that adds its part. ``store`` reads and writes the records, ``sync`` is how a command changes
+module that adds its part. ``store`` reads and writes the records, ``write`` is how a command changes
 them and writes what follows, and ``generated`` is make check-apps' proof that every committed file is
 what the records render.
 """

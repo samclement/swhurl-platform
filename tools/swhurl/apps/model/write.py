@@ -1,4 +1,4 @@
-"""Sync: what the platform derives, written from the records (make app-sync and every edit command).
+"""Prepare, plan and write what the platform derives from records (app-sync and every edit command).
 
 Reads every instance's records (store.py), gives an instance without an egress port the lowest free
 one (allocation is an operation's, never rendering's), renders, and writes the records and each file
@@ -16,12 +16,13 @@ import yaml
 from swhurl import yamlio
 from swhurl.apps import channels, egress, events, offers
 from swhurl.apps.contract import SECRET_FILE
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, UNITS, Instance
 from swhurl.apps.model import generated, render, store
 from swhurl.apps.model.draft import Entry, Platform, RenderError, World
 from swhurl.apps.model.records import APP_FILE, RECORD_FILES
 from swhurl.apps.model.render import MANAGED_FILES, REGISTRY_FILE, RELOADER_FILE
-from swhurl.apps.yaml_file import EditError, YamlFile, mapping
+from swhurl.apps.yaml_file import YamlFile, mapping
 
 
 def allocate(world: World, platform: Platform) -> World:

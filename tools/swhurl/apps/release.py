@@ -2,7 +2,7 @@
 
 ``change_release`` is how an operation's result reaches the files: it makes any NATS key the records
 now need (an effect before rendering, never undone on success), renders every instance
-(apps/model/sync.py), lets the operation refuse the rendered result, then writes the files and the
+(apps/model/write.py), lets the operation refuse the rendered result, then writes the files and the
 offers documents beside them. ``set_offers`` and its helpers read what an image declares and offers
 from its repository at the commit it was built from (docs/apps.md#swhurlyaml).
 """
@@ -15,12 +15,12 @@ from pathlib import Path
 
 from swhurl import yamlio
 from swhurl.apps import declaration, events, nkeys, offers
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model import write
 from swhurl.apps.model.draft import EVENTS_SECRET
 from swhurl.apps.model.events import keyed as events_keyed
 from swhurl.apps.model.records import Image, Release
-from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
 
 
@@ -85,11 +85,11 @@ def write_files(planned: dict[Path, str | None]) -> bool:
     return bool(planned)
 
 
-def change_release(root: Path, each: Instance, operation: model_sync.Create | model_sync.Update, planned: dict[Path, str | None], *,
+def change_release(root: Path, each: Instance, operation: write.Create | write.Update, planned: dict[Path, str | None], *,
                    runner: Runner | None = None, keyed: bool = False) -> bool:
     """Prepare a create or update, supplying a NATS key for events or explicit bootstrap, then write it and its offers.
     A planning refusal leaves the input files untouched. Returns whether anything changed."""
-    entry = operation.entry if isinstance(operation, model_sync.Create) else operation.update(model_sync.read(root)[0][each])
+    entry = operation.entry if isinstance(operation, write.Create) else operation.update(write.read(root)[0][each])
     instance = each.folder(root)
     created = ''
     if (keyed or entry.release.publishes or entry.settings.subscriptions) and not events_keyed(entry):
@@ -97,13 +97,13 @@ def change_release(root: Path, each: Instance, operation: model_sync.Create | mo
         entry = replace(entry, settings=replace(entry.settings, allocations=replace(entry.settings.allocations, events_key=created)),
                         encrypted=entry.encrypted | {EVENTS_SECRET})
     try:
-        prepared = model_sync.prepare(root, {each: model_sync.Create(entry) if isinstance(operation, model_sync.Create)
-                                             else model_sync.Update(lambda _: entry)})
+        prepared = write.prepare(root, {each: write.Create(entry) if isinstance(operation, write.Create)
+                                        else write.Update(lambda _: entry)})
     except EditError:
         if created:
             (instance / events.SECRET_FILE).unlink(missing_ok=True)
         raise
-    return bool(model_sync.apply(root, prepared)) | write_files(planned)
+    return bool(write.apply(root, prepared)) | write_files(planned)
 
 
 def offered(release: Release, commit: str, files: dict[str, str], described: list[offers.Event] | None,
@@ -124,13 +124,13 @@ def write_offers(root: Path, app: str, env: str, repository: str, commit: str, f
     and the note of their commit go; without an events document, publications clear. A refusal (an event another
     app still receives is gone) writes nothing."""
     each = Instance(app, env)
-    world, _ = model_sync.read(root)
+    world, _ = write.read(root)
     if each not in world:
         instance_dir(root, app, env)  # says which instance is missing
     entry = world[each]
     planned = offer_files(each.folder(root) / offers.OFFERS_DIR, repository, commit, files)
     release = offered(entry.release, commit, files, described, api_path)
-    return change_release(root, each, model_sync.Update(lambda _: replace(entry, release=release)), planned, runner=runner)
+    return change_release(root, each, write.Update(lambda _: replace(entry, release=release)), planned, runner=runner)
 
 
 def image_source(image: Image, app: str, env: str) -> tuple[str, str]:
@@ -195,7 +195,7 @@ def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offer
     """Read what ``app/env`` offers from its repository, at the commit its image was built from: the
     documents its swhurl.yaml names (provides, the file's live field: declaration.py). Returns whether
     anything changed."""
-    world, _ = model_sync.read(root)
+    world, _ = write.read(root)
     if Instance(app, env) not in world:
         instance_dir(root, app, env)  # says which instance is missing
     image = world[Instance(app, env)].release.image

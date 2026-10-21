@@ -9,12 +9,13 @@ from pathlib import Path
 
 from swhurl import ROOT, yamlio
 from swhurl.apps import contract, helmrelease, ops, promotion, state
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated
-from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model import write as model_sync
 from swhurl.apps.model.draft import Entry
 from swhurl.apps.model.records import App, Image, Release, Settings
-from swhurl.apps.yaml_file import EditError, YamlFile
+from swhurl.apps.yaml_file import YamlFile
 
 DIGEST = 'sha256:' + 'a' * 64
 MANIFESTS = ROOT / 'tests/fixtures/manifests'
@@ -301,7 +302,7 @@ class FirstProductionTests(unittest.TestCase):
         self.assertIn('example-prod', (self.root / 'platform/reloader/helmrelease.yaml').read_text())
 
     def test_public_host_refusals(self):
-        from swhurl.apps.model import sync as model_sync
+        from swhurl.apps.model import write as model_sync
         self.staging('web', '--exposure', 'public', '--host', 'staging.example.com')
         world, _ = model_sync.read(self.root)
         with self.assertRaisesRegex(EditError, 'distinct production'):

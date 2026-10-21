@@ -222,8 +222,8 @@ class RenderedJobTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from swhurl.apps.model import render, sync
-        cls.world, cls.platform = sync.read(ROOT)
+        from swhurl.apps.model import render, write
+        cls.world, cls.platform = write.read(ROOT)
         cls.render = staticmethod(lambda app, env: render.instance(Instance(app, env), cls.world, cls.platform))
 
     def test_a_sqlite_instance_gets_a_nightly_job_as_its_app_with_the_key_substituted(self):

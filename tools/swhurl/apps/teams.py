@@ -33,13 +33,14 @@ from pathlib import Path
 from ruamel.yaml.comments import CommentedMap
 
 from swhurl import ROOT
-from swhurl.apps import channels, edit
+from swhurl.apps import channels, cli
 from swhurl.apps.contract import TEAMS_FILE
-from swhurl.apps.model import sync as model_sync
+from swhurl.apps.errors import EditError
+from swhurl.apps.model import write
 from swhurl.apps.model.draft import Entry
 from swhurl.apps.model.records import TEAM_GRANT
 from swhurl.apps.new import dump
-from swhurl.apps.yaml_file import EditError, YamlFile, mapping
+from swhurl.apps.yaml_file import YamlFile, mapping
 from swhurl.run import CommandError, Runner
 
 NAME_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
@@ -72,13 +73,13 @@ def entry(description: str) -> CommentedMap:
 
 
 def prepare(root: Path, document: YamlFile | None = None, operations: dict | None = None,
-            known: dict[str, str] | None = None) -> model_sync.Prepared:
+            known: dict[str, str] | None = None) -> write.Prepared:
     """Plan against the proposed team/channel registry, not yesterday's routes on disk."""
     document = document or registry(root)[0]
     wanted = {'channels': channels.channels(root) if known is None else known,
               'teams': {team: list(value['notify']) for team, value in document.data['teams'].items()
                         if (value or {}).get('notify')}}
-    planned = model_sync.prepare(root, operations or {}, routes=wanted if (root / channels.NOTIFY_DIR).is_dir() else None)
+    planned = write.prepare(root, operations or {}, routes=wanted if (root / channels.NOTIFY_DIR).is_dir() else None)
     if document.path.read_text() != document.render():
         planned.writes[document.path] = document.render()
     return planned
@@ -97,7 +98,7 @@ def add(root: Path, name: str, description: str = '') -> None:
     if checked_name(name) in teams:
         raise EditError(f'team {name} already exists')
     teams[name] = entry(checked_description(description))
-    model_sync.apply(root, prepare(root, document))
+    write.apply(root, prepare(root, document))
     print(f'[OK] added team {name}')
 
 
@@ -135,17 +136,17 @@ def change(root: Path, name: str, description: str | None = None, rename: str | 
             raise EditError(f'team {rename} already exists; to merge the two, remove {name} with --move-apps-to {rename}')
         position = list(teams).index(name)
         teams.insert(position, rename, teams.pop(name))
-        world, _ = model_sync.read(root)
+        world, _ = write.read(root)
         before, after = f'{TEAM_GRANT}{name}', f'{TEAM_GRANT}{rename}'
 
         def update(value: Entry) -> Entry:
             allows = tuple(dict.fromkeys(after if grant == before else grant for grant in value.settings.allows))
             return replace(value, app=replace(value.app, team=rename) if value.app.team == name else value.app,
                            settings=replace(value.settings, allows=allows))
-        operations = {each: model_sync.Update(update) for each, value in world.items()
+        operations = {each: write.Update(update) for each, value in world.items()
                       if value.app.team == name or before in value.settings.allows}
         apps = sorted({each.app for each in operations if world[each].app.team == name})
-    model_sync.apply(root, prepare(root, document, operations))
+    write.apply(root, prepare(root, document, operations))
     print(f'[OK] team {name}' + (f' renamed to {rename}; relabelled {len(apps)} app(s)' if rename and rename != name else ' updated'))
 
 
@@ -154,7 +155,7 @@ def remove(root: Path, name: str, move_apps_to: str | None = None) -> None:
     document, teams = registry(root)
     if name not in teams:
         raise EditError(f'no team {name}; registered: {", ".join(teams)}')
-    world, _ = model_sync.read(root)
+    world, _ = write.read(root)
     apps = sorted({each.app for each, value in world.items() if value.app.team == name})
     if apps and not move_apps_to:
         raise EditError(f'team {name} still owns {", ".join(apps)}: move them with --move-apps-to <team>, '
@@ -165,10 +166,10 @@ def remove(root: Path, name: str, move_apps_to: str | None = None) -> None:
     if granted:
         raise EditError(f'team:{name} is allowed to call {", ".join(granted)}: remove those grants first '
                         f'(make app-allows APP=<app> ENV=<env> ARGS="--remove team:{name}")')
-    operations = {each: model_sync.Update(lambda value: replace(value, app=replace(value.app, team=move_apps_to)))
+    operations = {each: write.Update(lambda value: replace(value, app=replace(value.app, team=move_apps_to)))
                   for each, value in world.items() if value.app.team == name}
     del teams[name]
-    model_sync.apply(root, prepare(root, document, operations))
+    write.apply(root, prepare(root, document, operations))
     print(f'[OK] removed team {name}' + (f'; moved {", ".join(apps)} to {move_apps_to}' if apps else ''))
 
 
@@ -180,7 +181,7 @@ def listed_channels(root: Path) -> tuple[YamlFile, list]:
     return document, resources
 
 
-def set_decryption(root: Path, prepared: model_sync.Prepared, encrypted: bool) -> None:
+def set_decryption(root: Path, prepared: write.Prepared, encrypted: bool) -> None:
     """The notify unit decrypts exactly while it holds an encrypted file (make check-repo requires the two to agree)."""
     path = root / channels.UNIT_FILE
     if not path.is_file():
@@ -231,7 +232,7 @@ def channel_add(root: Path, name: str, address: str, transport: str = 'ntfy', re
     if 'sops:' not in encrypted or 'ENC[' not in encrypted:
         raise EditError(f'{path.name} was not encrypted; nothing was changed')
     prepared.writes[path] = encrypted
-    model_sync.apply(root, prepared)
+    write.apply(root, prepared)
     print(f'[OK] channel {name} ({transport}) {"replaced" if before is not None else "added"}; its address is not shown again')
 
 
@@ -253,7 +254,7 @@ def channel_remove(root: Path, name: str, *, registry_document: YamlFile | None 
         prepared.writes[document.path] = document.render()
     prepared.deletions.append(path)
     set_decryption(root, prepared, any(file != path for file in (root / channels.NOTIFY_DIR).glob('*.sops.yaml')))
-    model_sync.apply(root, prepared)
+    write.apply(root, prepared)
     print(f'[OK] removed channel {name}')
 
 
@@ -272,7 +273,7 @@ def team_channel(root: Path, team: str, address: str | None, transport: str = 'n
             raise EditError(f'team {team} has no channel to remove')
         registered[team].pop('notify')
         if any(current in (value or {}).get('notify', []) for value in registered.values()):
-            model_sync.apply(root, prepare(root, document))
+            write.apply(root, prepare(root, document))
         else:
             channel_remove(root, current, registry_document=document)
     else:
@@ -295,7 +296,7 @@ def main_add(argv: list[str] | None = None) -> int:
     p.add_argument('--description', default='')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return edit.run(lambda: add(args.root.resolve(), args.name, args.description), False)
+    return cli.run(lambda: add(args.root.resolve(), args.name, args.description), False)
 
 
 def main_edit(argv: list[str] | None = None) -> int:
@@ -307,7 +308,7 @@ def main_edit(argv: list[str] | None = None) -> int:
                    help='the channel that gets its apps\' lifecycle messages; an empty value clears it')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return edit.run(lambda: change(args.root.resolve(), args.name, args.description, args.rename, args.notify), False)
+    return cli.run(lambda: change(args.root.resolve(), args.name, args.description, args.rename, args.notify), False)
 
 
 def main_team_channel(argv: list[str] | None = None, runner: Runner | None = None) -> int:
@@ -318,7 +319,7 @@ def main_team_channel(argv: list[str] | None = None, runner: Runner | None = Non
     p.add_argument('--transport', default='ntfy', choices=channels.TRANSPORTS)
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return edit.run(lambda: team_channel(args.root.resolve(), args.name, None if args.remove else read_address(),
+    return cli.run(lambda: team_channel(args.root.resolve(), args.name, None if args.remove else read_address(),
                                          args.transport, runner), False)
 
 
@@ -330,7 +331,7 @@ def main_channel_add(argv: list[str] | None = None, runner: Runner | None = None
     p.add_argument('--replace', action='store_true', help='give an existing channel a new address')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return edit.run(lambda: channel_add(args.root.resolve(), args.name, read_address(), args.transport,
+    return cli.run(lambda: channel_add(args.root.resolve(), args.name, read_address(), args.transport,
                                         args.replace, runner), False)
 
 
@@ -339,7 +340,7 @@ def main_channel_remove(argv: list[str] | None = None) -> int:
     p.add_argument('name')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return edit.run(lambda: channel_remove(args.root.resolve(), args.name), False)
+    return cli.run(lambda: channel_remove(args.root.resolve(), args.name), False)
 
 
 def main_remove(argv: list[str] | None = None) -> int:
@@ -348,4 +349,4 @@ def main_remove(argv: list[str] | None = None) -> int:
     p.add_argument('--move-apps-to', metavar='TEAM')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return edit.run(lambda: remove(args.root.resolve(), args.name, args.move_apps_to), False)
+    return cli.run(lambda: remove(args.root.resolve(), args.name, args.move_apps_to), False)

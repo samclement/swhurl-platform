@@ -56,12 +56,12 @@ from swhurl.apps.contract import (
     secret_key_problem,
     teams,
 )
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, NAME_RE, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import workload
 from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry
 from swhurl.apps.model.exposure import DEFAULT_ISSUER
 from swhurl.apps.model.records import Allocations, App, Image, Release, Resources, Settings, Storage
-from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
 
 IMAGE_RE = re.compile(r'^(?P<repo>[a-z0-9][a-z0-9._/:-]*?)(?::(?P<tag>[A-Za-z0-9._-]+))?(?:@(?P<digest>sha256:[0-9a-f]{64}))?$')
@@ -173,7 +173,7 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
     for an app that describes itself, what it offers read from its repository at the image's commit.
     Nothing is left behind when a step fails."""
     from swhurl.apps import release as intake
-    from swhurl.apps.model import sync as model_sync
+    from swhurl.apps.model import write
 
     resolve(args)
     validate(args, root)
@@ -183,7 +183,7 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
         raise GenerationError(f'{args.name}/{args.env} already exists; refusing to overwrite')
     entry, planned = records(args), {}
     if entry.settings.calls:  # a call waits for the callee's grant, but the callee must exist and have an address
-        world, _ = model_sync.read(root)
+        world, _ = write.read(root)
         for callee in entry.settings.calls:
             found = world.get(Instance(callee, args.env))
             if found is None:
@@ -216,8 +216,8 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
             allocations = replace(allocations, events_key=intake.new_nats_key(instance, args.name, args.env, runner=runner))
             encrypted.add(EVENTS_SECRET)
         entry = replace(entry, settings=replace(entry.settings, allocations=allocations), encrypted=frozenset(encrypted))
-        prepared = model_sync.prepare(root, {created: model_sync.Create(entry)}, register=args.register)
-        written = model_sync.apply(root, prepared)
+        prepared = write.prepare(root, {created: write.Create(entry)}, register=args.register)
+        written = write.apply(root, prepared)
         intake.write_files(planned)
     except (EditError, CommandError) as error:
         discard(instance)

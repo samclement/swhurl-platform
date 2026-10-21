@@ -173,6 +173,10 @@ class RenderProgressTests(unittest.TestCase):
         historical = self.progress(merged=before_hashes)
         self.assertEqual(historical.state, 'historical')
         self.assertEqual(stages.progress('promote', before_hashes, None, None).state, 'historical')
+        for main in (ABSENT, None):  # a new app merged before records, its instance since removed
+            with self.subTest(main=main):
+                self.assertEqual(stages.progress('new', ABSENT, main, stages.ABSENT).state, 'historical',
+                                 'a merge with no records of its own is never waiting for Flux to create it')
         track = stages.track(job(), stages.Pull(9, URL, state='merged'), historical)
         self.assertTrue(track.settled)
         self.assertEqual(track.label, 'Merged (historical)')

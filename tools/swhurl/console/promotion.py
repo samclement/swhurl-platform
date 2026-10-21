@@ -17,8 +17,8 @@ from pathlib import Path
 from swhurl.apps import ops, promotion
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import write
-from swhurl.apps.model.calls import admits
+from swhurl.apps.model import relations, write
+from swhurl.apps.model.draft import RenderError
 from swhurl.apps.new import GenerationError
 from swhurl.console import changes, merge
 from swhurl.console.actions import ActionError
@@ -65,9 +65,12 @@ def admitting(root: Path, app: str) -> list[str]:
     calls that runs in production and allows it there gains the new caller in its allowed callers and
     network policy."""
     world, _ = write.read(root)
-    staging = world[Instance(app, 'staging')]
-    return [callee for callee in staging.settings.grants.calls
-            if callee != app and (found := world.get(Instance(callee, 'prod'))) and admits(found, app, staging.app.team)]
+    target = Instance(app, 'prod')
+    world[target] = promotion.first_production(root, world, app, preview=True).entry
+    try:
+        return [r.target for r in relations.evaluate(target, world) if r.role == 'calls' and not r.pending]
+    except RenderError as error:
+        raise EditError(str(error)) from None
 
 
 def contents(root: Path) -> dict[str, bytes]:

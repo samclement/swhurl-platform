@@ -120,8 +120,9 @@
         {% else %}<span class="muted">nobody: no app may call it yet (Allow callers)</span>{% endfor %}</dd>{% endif %}
       {% if c.api %}<dt>API description</dt><dd>{% if c.api.startswith('https://') %}<a href="{{ c.api }}">{{ c.api }}</a>{% else %}<code>{{ c.api }}</code>{% endif %}</dd>{% endif %}
     </dl>
+    {% if relation_problem %}<p class="warn">{{ relation_problem }}</p>{% endif %}
     {% if c.rows %}{{ links.table(c, i.app, i.env, remove=true) }}
-    {% else %}<p class="muted">No connections: it calls nothing, nothing calls it, it publishes and receives no events, and it is granted no host outside the cluster.</p>{% endif %}
+    {% else %}<p class="muted">No connections observed live or read from Git.</p>{% endif %}
     {% if c.address %}
     <details class="disclose help" id="how-to-call">
       <summary>{{ st.icon('info') }} <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>

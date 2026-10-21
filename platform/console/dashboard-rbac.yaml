@@ -91,3 +91,55 @@ subjects:
   - kind: ServiceAccount
     name: dashboard-sync
     namespace: console
+---
+# Read fresh webhook credentials on every run; no list or write access to Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-dashboard-webhooks
+  namespace: console
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [notification-ntfy]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-dashboard-webhooks
+  namespace: console
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-dashboard-webhooks
+subjects:
+  - kind: ServiceAccount
+    name: dashboard-sync
+    namespace: console
+---
+# Read fresh webhook credentials on every run; no list or write access to Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-dashboard-webhooks
+  namespace: notify
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [notify-alerts]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-dashboard-webhooks
+  namespace: notify
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-dashboard-webhooks
+subjects:
+  - kind: ServiceAccount
+    name: dashboard-sync
+    namespace: console

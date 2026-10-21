@@ -255,22 +255,41 @@ class ConnectionsTests(unittest.TestCase):
             next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == 'reports-staging')))
         runner.on('kubectl', '-n', 'reports-staging', 'get', stdout=json.dumps({'items': []}))
         runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
-        record = 'version: 1\ncalls: [orders, billing]\nallows: [team:demo, shop]\n'
-        text = client(runner, documents={'apps/reports/staging/instance.yaml': record}.get).get('/apps/reports/staging', headers=WHO).text
+        record = 'version: 1\ncalls: [orders, billing]\nsubscriptions: [gone.created]\nallows: [team:demo, shop]\n'
+        documents = {
+            'apps/reports/staging/instance.yaml': record,
+            'apps/reports/app.yaml': 'version: 1\nteam: demo\n',
+            **{f'apps/{app}/staging/release.yaml': 'version: 1\nimage: {repository: example/app}\nkind: web\nuid: 1000\nport: 8080\nhealthPath: /\n'
+               for app in ('reports', 'orders', 'billing')},
+            **{f'apps/{app}/app.yaml': f'version: 1\nteam: {team}\n' for app, team in (('orders', 'payments'), ('billing', 'finance'))},
+            'apps/orders/staging/instance.yaml': 'version: 1\nallows: [reports]\n',
+            'apps/billing/staging/instance.yaml': 'version: 1\n',
+        }
+        text = client(runner, documents=documents.get).get('/apps/reports/staging', headers=WHO).text
         table = re.search(r'<table class="compact connections">.*?</table>', text, re.S)[0]
         listed = [tuple(re.sub(r'<[^>]+>', '', cell).strip() for cell in re.findall(r'<td>.*?</td>', row, re.S))
                   for row in re.findall(r'<tr>.*?</tr>', table, re.S)]
-        self.assertIn(('→ outgoing', 'call', 'billing', 'its API, waiting for billing to allow it', 'unknown'), listed,
+        self.assertIn(('→ outgoing', 'call', 'billing', 'its API, waiting for billing to allow it', 'finance'), listed,
                       'a call recorded in Git that renders nothing yet')
         self.assertIn(('→ outgoing', 'call', 'orders', 'its API', 'payments'), listed, 'the live one is shown once')
         self.assertEqual(len([row for row in listed if row[1:3] == ('call', 'orders')]), 1)
         self.assertIn('<input type="hidden" name="role" value="calls"><input type="hidden" name="app" value="billing">', text,
                       'a waiting call can be removed')
+        self.assertIn('receives, waiting for gone/staging to exist', text)
+        self.assertIn('<input type="hidden" name="role" value="subscribes"><input type="hidden" name="app" value="gone"><input type="hidden" name="event" value="created">', text)
+        documents['apps/billing/staging/instance.yaml'] = 'version: 1\nallows: [reports]\n'
+        lagging = client(runner, documents=documents.get).get('/apps/reports/staging', headers=WHO).text
+        self.assertIn('connected in Git, not yet observed live', lagging)
+        self.assertNotIn('waiting for billing to allow it', lagging)
+        del documents['apps/billing/staging/instance.yaml'], documents['apps/billing/staging/release.yaml']
+        pending = client(runner, documents=documents.get).get('/apps/reports/staging', headers=WHO).text
+        self.assertIn('waiting for billing/staging to exist', pending)
         self.assertIn('Allow callers</summary>', text)
         for name in ('team:demo', 'shop'):
             self.assertIn(f'<input type="hidden" name="remove" value="{name}">', text)
         unread = client(runner, documents=lambda path: None).get('/apps/reports/staging', headers=WHO).text
         self.assertNotIn('Allowed callers', unread, 'Git unreadable: only what runs is shown')
+        self.assertIn('Git relation records unavailable', unread)
 
     def test_an_app_that_describes_its_events_declares_them_in_its_repository(self):
         runner = self.cluster()
@@ -877,7 +896,7 @@ class AppDetailTests(unittest.TestCase):
         self.assertEqual(text.count('action="/apps/web/prod/connect"'), 1, 'only subscription and call grants')
         self.assertNotIn('name="publish"', text, 'publications come only from the app document')
         self.assertNotIn('<table class="compact connections">', text, 'nothing to list')
-        self.assertIn('No connections: it calls nothing', text)
+        self.assertIn('No connections observed live or read from Git.', text)
         self.assertLess(text.index('>Use</h2>'), text.index('>Connect</h2>'))
         self.assertLess(text.index('>Connect</h2>'), text.index('>Operate</h2>'))
         self.assertEqual(text.count('<h1>web '), 1, 'the app is named once, with its language; the environment is the tab')

@@ -70,7 +70,7 @@ make clickstack-bootstrap
 
 It waits for the HyperDX API, registers the admin account from SOPS (HyperDX then closes registration) and writes `CLICKSTACK_INGESTION_KEY` into the team, so the collectors' data is accepted within a minute. Until it runs, the ClickStack UI (behind Google sign-in) offers open registration. To keep an old team, users and dashboards, restore a MongoDB backup first ([backups and recovery](operations.md#backups-and-recovery)), then run it.
 
-Then `make clickstack-notify-webhook`, once: it creates the HyperDX webhook that hands every app's [default alerts](apps.md#alerts) to the notify service. The apps' dashboards and alerts follow by themselves within a minute.
+After explicit bootstrap, the existing dashboard job creates or repairs both [platform-owned HyperDX webhooks](services.md#clickstack-and-otel) and the apps' dashboards and [default alerts](apps.md#alerts) within a minute. Run `make clickstack-dashboards` to reconcile them by hand; it does not bootstrap accounts or change the ingestion key.
 
 ## 6. Verify and back up
 

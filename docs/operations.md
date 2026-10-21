@@ -35,7 +35,7 @@ A unit showing `DependencyNotReady` is waiting for another unit; fix that one fi
 | `sqlite-backups` | Each instance whose release declares a SQLite database has a backup in S3 as young | this host |
 | `push-webhook` | Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise) | Cluster (read), this host |
 | `image-webhooks` | The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise) | Cluster (read), this host |
-| `dashboards` | The dashboard and alert sync succeeded within five minutes | Cluster (read) |
+| `dashboards` | The platform webhook, dashboard and alert sync succeeded within five minutes | Cluster (read) |
 | `notifications` | The notification checker succeeded within five minutes | Cluster (read) |
 | `notification-heartbeat` | The host heartbeat timer is active and its service's last run succeeded within 15 minutes | this host |
 | `console` | The console image is built from this checkout's tooling (warns otherwise) and its job record exists | Cluster (read), this host |
@@ -100,7 +100,23 @@ Rotate the image webhook token ([what it is](services.md#image-webhook)); until 
 
 Replace a [notification channel](services.md#notification-channels)'s address when it may have leaked or was lost: in your own terminal, `make team-channel NAME=<team>` (it prompts without showing the address), then `make check-apps`, commit, push and `make flux-reconcile`; subscribe to the new topic and unsubscribe from the old.
 
-Rotate the ntfy topic ([alerts](services.md#alerts)) when it may have leaked: in your own terminal, `sops platform/alerts/secret-platform.sops.yaml` and replace the topic (`swhurl-` and 24 hex characters, for example from `openssl rand -hex 12`) in `address`. In `platform/console/notification-secret.sops.yaml`, set `NTFY_PLATFORM_URL` to the same topic URL without the rendering query string. Then `make check-secrets`, commit, push, `make flux-reconcile` (both consumers must update) and `make clickstack-ntfy-webhook`; subscribe to the new topic in the ntfy app and unsubscribe from the old.
+Rotate the ntfy topic ([alerts](services.md#alerts)) when it may have leaked: in your own terminal, `sops platform/alerts/secret-platform.sops.yaml` and replace the topic (`swhurl-` and 24 hex characters, for example from `openssl rand -hex 12`) in `address`. In `platform/console/notification-secret.sops.yaml`, set `NTFY_PLATFORM_URL` to the same topic URL without the rendering query string. Then `make check-secrets`, commit, push, `make flux-reconcile` (both consumers must update) and wait for the next successful dashboard job (or run `make clickstack-dashboards`); subscribe to the new topic in the ntfy app and unsubscribe from the old.
+
+**Test webhook reconciliation without sending a notification.** Run with `!`:
+
+```bash
+DRY_RUN=true make clickstack-dashboards
+```
+
+This reads live credentials and previews repairs to the two [platform-owned webhooks](services.md#clickstack-and-otel), dashboards and alerts without writing or sending a message. To inspect the scheduled owner, run with `!`:
+
+```bash
+make verify-platform
+kubectl -n console get jobs --sort-by=.metadata.creationTimestamp
+kubectl -n console logs job/<newest-console-dashboards-job>
+```
+
+Look for a recent successful job and both reserved names reported up to date or repaired; do not print webhook bodies or Secret values. A duplicate reserved name, conflicting service type or truncated API listing needs investigation before retrying: the job refuses all webhook writes in those cases. A successful repair proves configuration, not end-to-end alert delivery. Manual reconciliation is `make clickstack-dashboards`; bootstrap remains `make clickstack-bootstrap` and is never automatic.
 
 ### Signing keys
 
@@ -188,7 +204,7 @@ The [incident reviewer](services.md#incident-reviewer) and its namespace are rem
 | --- | --- | --- |
 | Manifests and encrypted Secrets | Irreplaceable | GitHub |
 | age private key | Irreplaceable | Encrypted off-host copy (location kept outside Git) |
-| ClickStack MongoDB (team, users, sources, dashboards) | Irreplaceable | Nightly backup job to S3 (`clickstack-mongodb/`); data volume on `local-path-retain` |
+| ClickStack MongoDB (team, users, sources, dashboards, alerts, webhooks) | Irreplaceable | Nightly backup job to S3 (`clickstack-mongodb/`); data volume on `local-path-retain` |
 | App SQLite databases (`--database sqlite`) | Irreplaceable | Nightly backup job per database to S3 (`app-sqlite/<namespace>/`); data volume on `local-path-retain` |
 | ClickHouse telemetry | Expendable | Expires after 30 days; ClickHouse's own logs after 7 |
 | Cluster state (k3s SQLite datastore, `/var/lib/rancher/k3s/server/db`) | Reconstructible | Rebuilt from Git by Flux ([bootstrap](bootstrap.md)); not backed up |

@@ -9,11 +9,28 @@ from pathlib import Path
 
 from test_clickstack import EMAIL, URI, b64
 
-from swhurl import ROOT, app_alerts, clickstack, dashboards, interface, yamlio
+from swhurl import ROOT, app_alerts, clickstack, clickstack_ntfy, dashboards, interface, yamlio
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
 ACCESS_KEY = 'admin-access-key-0123'
+TOPIC = 'swhurl-test-private-topic-012345'
+ALERT_SECRET = 'private-alert-secret'
+
+
+def credentials(runner):
+    return (runner.on('kubectl', '-n', 'console', 'get', 'secret', 'notification-ntfy', stdout=json.dumps({'data': {
+                'NTFY_PLATFORM_URL': b64(f'https://ntfy.sh/{TOPIC}')}}))
+            .on('kubectl', '-n', 'notify', 'get', 'secret', 'notify-alerts',
+                stdout=json.dumps({'data': {'secret': b64(ALERT_SECRET)}})))
+
+
+def owned_webhooks():
+    runner = credentials(FakeRunner())
+    return [{'id': 'w0', **clickstack_ntfy.destination(runner)},
+            {'id': 'w1', **clickstack_ntfy.notify_destination(runner)}]
+
+
 SOURCES = [{'id': 't1', 'kind': 'trace', 'from': {'tableName': 'otel_traces'}},
            {'id': 'l1', 'kind': 'log', 'from': {'tableName': 'otel_logs'}},
            {'id': 'm1', 'kind': 'metric', 'from': {'tableName': ''}}]
@@ -24,9 +41,11 @@ class HyperDX:
     """Scripted external API and MongoDB; records each API call as (method, path, body)."""
 
     def __init__(self, dashboards_live=(), key=ACCESS_KEY, recorded=None, writable=True,
-                 webhooks=({'id': 'w1', 'name': app_alerts.WEBHOOK},), alerts=(), namespaces=()):
+                 webhooks=None, alerts=(), namespaces=(), total=None, failure=None):
         self.live, self.key, self.calls = list(dashboards_live), key, []
-        self.webhooks, self.alerts, self.namespaces = list(webhooks), list(alerts), list(namespaces)
+        self.mongo_programs = []
+        self.webhooks, self.alerts, self.namespaces = list(owned_webhooks() if webhooks is None else webhooks), list(alerts), list(namespaces)
+        self.total, self.failure = total, failure
         self.recorded, self.writable, self.patches = recorded, writable, []  # the console's record (a ConfigMap)
 
     def patch(self, argv, patch):
@@ -34,18 +53,22 @@ class HyperDX:
         return Result(argv, 0 if self.writable else 1, '', '' if self.writable else 'forbidden')
 
     def runner(self, dry_run=False):
-        return (FakeRunner(dry_run=dry_run)
+        return (credentials(FakeRunner(dry_run=dry_run))
                 .on('kubectl', '-n', 'observability', 'get', 'secret', clickstack.INPUTS_SECRET,
                     stdout=json.dumps({'data': {'CLICKSTACK_ADMIN_EMAIL': b64(EMAIL)}}))
                 .on('kubectl', '-n', 'observability', 'get', 'secret', clickstack.MONGO_URI_SECRET,
                     stdout=json.dumps({'data': {'connectionString.standard': b64(URI)}}))
                 .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.MONGO_POD,
-                    stdout='RESULT ' + json.dumps({'key': self.key}))
+                    handler=self.mongo)
                 .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.APP, handler=self.api)
                 .on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards',
                     stdout=json.dumps({'data': {'dashboards.json': self.recorded}} if self.recorded else {}))
                 .on('kubectl', '-n', 'console', 'patch', 'configmap', 'app-dashboards', handler=self.patch)
                 .on(*dashboards.NAMESPACES, stdout=json.dumps({'items': self.namespaces})))
+
+    def mongo(self, argv, program):
+        self.mongo_programs.append(program)
+        return Result(argv, 0, 'RESULT ' + json.dumps({'key': self.key}), '')
 
     def api(self, argv, program):
         url, request = re.search(r'fetch\(("[^"]*"), (\{.*\})\);', program).groups()
@@ -54,8 +77,18 @@ class HyperDX:
         body = json.loads(request['body']) if 'body' in request else None
         self.calls.append((request['method'], path, body))
         answer = {('GET', '/sources'): {'data': SOURCES}, ('GET', '/dashboards'): {'data': self.live},
-                  ('GET', '/webhooks'): {'data': self.webhooks}, ('GET', '/alerts'): {'data': self.alerts}}.get(
+                  ('GET', '/webhooks'): {'data': self.webhooks, 'meta': {'total': self.total if self.total is not None else len(self.webhooks)}}, ('GET', '/alerts'): {'data': self.alerts}}.get(
             (request['method'], path), {'data': {}})
+        if self.failure and (request['method'], path) == self.failure[:2]:
+            return Result(argv, 0, 'RESULT ' + json.dumps({'status': 503, 'body': self.failure[2]}), '')
+        # HyperDX @hyperdx/api@2.39.1 (6db385c), external-api/v2/webhooks.ts:
+        # POST returns {data: webhook}, including id; PUT preserves id and readable fields.
+        if (request['method'], path) == ('POST', '/webhooks'):
+            created = {'id': f'created-{len(self.webhooks)}', **body}
+            self.webhooks.append(created)
+            answer = {'data': created}
+        elif request['method'] == 'PUT' and path.startswith('/webhooks/'):
+            self.webhooks[:] = [{**w, **body} if w['id'] == path.rsplit('/', 1)[1] else w for w in self.webhooks]
         return Result(argv, 0, 'RESULT ' + json.dumps({'status': 200, 'body': answer}), '')
 
     def writes(self):
@@ -76,7 +109,7 @@ def with_ids(dashboard, ident):
 
 class AlertTests(unittest.TestCase):
     """Every app's default alerts follow its dashboard, through the notify service's webhook."""
-    HOOK = [{'id': 'w1', 'name': app_alerts.WEBHOOK}, {'id': 'w0', 'name': 'ntfy: platform'}]
+    HOOK = owned_webhooks()
 
     def alert(self, app, preset, tile, dashboard='d1', **changes):
         return {'id': f'a-{app}-{preset}', 'name': f'swhurl:{app}:{preset}', 'tags': ['swhurl-app', app], 'source': 'tile',
@@ -124,11 +157,15 @@ class AlertTests(unittest.TestCase):
         self.assertEqual(api.writes(), [])
         self.assertIn('[OK] 1 app(s) have their default alerts', out)
 
-    def test_without_the_webhook_nothing_is_created_and_it_says_how_to_make_it(self):
-        api = HyperDX([with_ids(dashboards.dashboard(WEB, 't1', 'l1'), 'd1')], webhooks=self.HOOK[1:])
+    def test_missing_notify_webhook_is_created_before_alerts_using_its_new_id(self):
+        api = HyperDX([with_ids(dashboards.dashboard(WEB, 't1', 'l1'), 'd1')], webhooks=self.HOOK[:1])
         code, out = run(api, [WEB])
-        self.assertEqual((code, api.writes()), (1, []), 'a failure: the job\'s check then shows that no app has alerts')
-        self.assertIn('[BAD] no "swhurl notify" webhook in HyperDX, so apps have no default alerts: make clickstack-notify-webhook', out)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(api.writes(), [('POST', '/webhooks'), ('POST', '/alerts'), ('POST', '/alerts')])
+        created = next(w for w in api.webhooks if w['name'] == app_alerts.WEBHOOK)
+        self.assertTrue(all(body['channel']['webhookId'] == created['id']
+                            for method, path, body in api.calls if (method, path) == ('POST', '/alerts')))
+        self.assertEqual(sum((m, p) == ('GET', '/webhooks') for m, p, _ in api.calls), 1)
 
     def test_a_dry_run_and_a_cluster_with_no_app_change_nothing(self):
         live = [self.alert('gone', 'errors', 'Errors', dashboard='d9')]
@@ -372,9 +409,180 @@ class AutomaticSyncTests(unittest.TestCase):
         self.assertEqual(api.writes(), [])
 
     def test_discovery_failure_stops_before_api_writes(self):
-        from swhurl.run import CommandError
         api = HyperDX()
         runner = api.runner().on(*dashboards.RELEASES, returncode=1, stderr='discovery failed')
-        with self.assertRaises(CommandError):
-            dashboards.main(['--cluster'], runner, Report(io.StringIO()))
+        self.assertEqual(dashboards.main(['--cluster'], runner, Report(io.StringIO())), 1)
         self.assertEqual(api.calls, [])
+
+
+class PlatformWebhookTests(unittest.TestCase):
+    def cluster(self, api, *, dry_run=False, runner=None):
+        runner = runner or api.runner(dry_run)
+        runner.on(*dashboards.RELEASES, stdout=json.dumps({'items': []}))
+        out = io.StringIO()
+        code = dashboards.main(['--cluster'], runner, Report(out, redact=runner.redact))
+        return code, out.getvalue(), runner
+
+    def test_create_repair_noop_stable_ids_and_unrelated_bytes(self):
+        manual = {'id': 'manual', 'name': 'my webhook', 'service': 'generic', 'body': 'unchanged', 'extra': ['kept']}
+        before = json.dumps(manual)
+        api = HyperDX(webhooks=[manual])
+        code, out, runner = self.cluster(api)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(api.writes(), [('POST', '/webhooks'), ('POST', '/webhooks')])
+        self.assertEqual([w['name'] for w in api.webhooks], ['my webhook', 'ntfy: platform', 'swhurl notify'])
+        ids = [w['id'] for w in api.webhooks]
+        self.assertEqual(json.dumps(api.webhooks[0]), before)
+        for w in api.webhooks[1:]:
+            w.update(body='UI edit', url='https://wrong.example/', description='wrong')
+        api.calls.clear()
+        self.assertEqual(self.cluster(api)[0], 0)
+        self.assertEqual(api.writes(), [('PUT', f'/webhooks/{ident}') for ident in ids[1:]])
+        self.assertEqual([w['id'] for w in api.webhooks], ids)
+        self.assertEqual(json.dumps(api.webhooks[0]), before)
+        api.calls.clear()
+        code, out, _ = self.cluster(api)
+        self.assertEqual((code, api.writes()), (0, []), out)
+        self.assertEqual(out.count('is up to date'), 2)
+        self.assertTrue(all(s not in out + ' '.join(runner.echoed) for s in (TOPIC, ALERT_SECRET, ACCESS_KEY, URI)))
+
+    def test_both_reserved_names_are_preflighted_before_any_webhook_write(self):
+        for index in (0, 1):
+            for conflict in ('duplicate', 'mixed', 'wrong-service', 'missing-id'):
+                with self.subTest(index=index, conflict=conflict):
+                    hooks = owned_webhooks()
+                    # The first object needs repair; a conflict on the second must still prevent that PUT.
+                    hooks[0]['body'] = 'stale'
+                    if conflict in ('duplicate', 'mixed'):
+                        hooks.append({**hooks[index], 'id': 'duplicate',
+                                      'service': 'generic' if conflict == 'duplicate' else 'slack'})
+                    elif conflict == 'wrong-service':
+                        hooks[index]['service'] = 'slack'
+                    else:
+                        del hooks[index]['id']
+                    api = HyperDX(webhooks=hooks)
+                    before = json.dumps(api.webhooks)
+                    code, out, _ = self.cluster(api)
+                    self.assertEqual((code, api.writes()), (1, []), out)
+                    self.assertIn('no change made', out)
+                    self.assertEqual(json.dumps(api.webhooks), before)
+                    self.assertEqual([(m, p) for m, p, _ in api.calls], [('GET', '/webhooks')])
+
+    def test_truncated_listing_prevents_create_and_repair_for_both_names(self):
+        for hooks in ([], owned_webhooks()):
+            if hooks:
+                hooks[0]['body'] = 'stale'
+            api = HyperDX(webhooks=hooks, total=len(hooks) + 1)
+            code, out, _ = self.cluster(api)
+            self.assertEqual((code, api.writes()), (1, []), out)
+            self.assertIn('truncated webhook list', out)
+
+    def test_empty_discovery_repairs_webhooks_without_pruning_dashboards_alerts_or_record(self):
+        board = {'id': 'old-board', 'name': 'App: gone', 'tags': [dashboards.TAG]}
+        alert = {'id': 'old-alert', 'name': 'swhurl:gone:errors'}
+        hooks = owned_webhooks()
+        hooks[1]['body'] = 'stale'
+        api = HyperDX([board], webhooks=hooks, alerts=[alert])
+        before = json.dumps([api.live, api.alerts])
+        code, out, _ = self.cluster(api)
+        self.assertEqual((code, api.writes(), api.patches), (0, [('PUT', '/webhooks/w1')], []), out)
+        self.assertEqual(json.dumps([api.live, api.alerts]), before)
+
+    def test_first_run_uses_one_authentication_and_list_before_alerts(self):
+        api = HyperDX([with_ids(dashboards.dashboard(WEB, 't1', 'l1'), 'd1')], webhooks=[])
+        runner, out = api.runner(), io.StringIO()
+        self.assertEqual(dashboards.sync(runner, Report(out, redact=runner.redact), [WEB]), 0, out.getvalue())
+        self.assertEqual(api.writes(), [('POST', '/webhooks'), ('POST', '/webhooks'), ('POST', '/alerts'), ('POST', '/alerts')])
+        self.assertEqual(sum((m, p) == ('GET', '/webhooks') for m, p, _ in api.calls), 1)
+        self.assertEqual(sum(clickstack.MONGO_POD in call for call in runner.calls), 1)
+        self.assertEqual(sum(clickstack.INPUTS_SECRET in call for call in runner.calls), 1)
+        notify = next(w['id'] for w in api.webhooks if w['name'] == app_alerts.WEBHOOK)
+        self.assertTrue(all(body['channel']['webhookId'] == notify for m, p, body in api.calls if p == '/alerts' and m == 'POST'))
+        self.assertTrue(all(call[:1] == ('kubectl',) for call in runner.calls))
+        self.assertEqual(len(api.mongo_programs), 1)
+        program = api.mongo_programs[0]
+        self.assertIn(dashboards.ADMIN_KEY, program)
+        self.assertNotIn('updateOne', program)
+        self.assertNotIn('apiKey', program)
+        self.assertTrue(all(m == 'GET' or p in ('/webhooks', '/alerts') for m, p, _ in api.calls))
+
+    def test_dry_run_missing_and_changed_webhooks_are_redacted_and_write_nothing(self):
+        for hooks in ([], [{**w, 'body': 'stale'} for w in owned_webhooks()]):
+            api = HyperDX([with_ids(dashboards.dashboard(WEB, 't1', 'l1'), 'd1')], webhooks=hooks)
+            runner, out = api.runner(dry_run=True), io.StringIO()
+            before = json.dumps(api.webhooks)
+            code = dashboards.sync(runner, Report(out, redact=runner.redact), [WEB])
+            self.assertEqual((code, api.writes(), api.patches), (0, [], []), out.getvalue())
+            self.assertEqual(json.dumps(api.webhooks), before)
+            self.assertIn('would create swhurl:web:errors', out.getvalue())
+            self.assertIn('would update' if hooks else 'would create ntfy: platform', out.getvalue())
+            for secret in (TOPIC, ALERT_SECRET, ACCESS_KEY, URI):
+                self.assertNotIn(secret, out.getvalue() + ' '.join(runner.echoed))
+
+    def test_missing_empty_or_invalid_credentials_stop_without_webhook_writes(self):
+        for ns, name, field in (('console', 'notification-ntfy', 'NTFY_PLATFORM_URL'),
+                                ('notify', 'notify-alerts', 'secret'),
+                                ('observability', clickstack.INPUTS_SECRET, 'CLICKSTACK_ADMIN_EMAIL'),
+                                ('observability', clickstack.MONGO_URI_SECRET, 'connectionString.standard')):
+            for failure in ('missing', 'empty', 'invalid'):
+                with self.subTest(name=name, failure=failure):
+                    api = HyperDX(webhooks=[])
+                    runner = api.runner()
+                    prefix = ('kubectl', '-n', ns, 'get', 'secret', name)
+                    runner._rules = [(p, response) for p, response in runner._rules if p != prefix]
+                    if failure == 'missing':
+                        runner.on('kubectl', '-n', ns, 'get', 'secret', name, returncode=1, stderr='forbidden private-response')
+                    else:
+                        value = '' if failure == 'empty' else 'not-base64!'
+                        runner.on('kubectl', '-n', ns, 'get', 'secret', name, stdout=json.dumps({'data': {field: value}}))
+                    code, out, _ = self.cluster(api, runner=runner)
+                    self.assertEqual((code, api.writes()), (1, []), out)
+                    self.assertNotIn('private-response', out)
+                    self.assertTrue(all(secret not in out for secret in (TOPIC, ALERT_SECRET, ACCESS_KEY, URI)))
+        api = HyperDX(key='', webhooks=[])
+        code, out, _ = self.cluster(api)
+        self.assertEqual((code, api.calls), (1, []), out)
+        self.assertIn('make clickstack-bootstrap', out)
+
+    def test_invalid_topic_is_not_echoed_and_stops_before_webhook_writes(self):
+        api = HyperDX(webhooks=[])
+        runner = FakeRunner().on('kubectl', '-n', 'console', 'get', 'secret', 'notification-ntfy',
+                                 stdout=json.dumps({'data': {'NTFY_PLATFORM_URL': b64('https://ntfy.sh/bad/topic')}}))
+        runner._rules.extend(api.runner()._rules)
+        code, out, _ = self.cluster(api, runner=runner)
+        self.assertEqual((code, api.calls), (1, []), out)
+        self.assertNotIn('bad/topic', out)
+
+    def test_api_errors_fail_redacted_without_later_reconciliation(self):
+        for method, path in (('GET', '/webhooks'), ('PUT', '/webhooks/w0'), ('POST', '/webhooks')):
+            with self.subTest(method=method):
+                hooks = [] if method == 'POST' else [{**w, 'body': 'stale'} for w in owned_webhooks()]
+                api = HyperDX(webhooks=hooks, failure=(method, path, {'error': [TOPIC, ALERT_SECRET, ACCESS_KEY, URI]}))
+                code, out, runner = self.cluster(api)
+                self.assertEqual(code, 1, out)
+                self.assertIn('HTTP 503', out)
+                self.assertEqual([(m, p) for m, p, _ in api.calls][-1], (method, path))
+                for secret in (TOPIC, ALERT_SECRET, ACCESS_KEY, URI):
+                    self.assertNotIn(secret, out + ' '.join(runner.echoed))
+
+    def test_job_keeps_its_bound_image_and_exact_secret_rbac(self):
+        docs = list(yamlio.load_all((ROOT / 'platform/console/dashboard-rbac.yaml').read_text()))
+        roles = [d for d in docs if d['kind'] == 'Role' and d['metadata']['name'] == 'platform-dashboard-webhooks']
+        self.assertEqual(len(roles), 2)
+        for role, namespace, name in zip(roles, ('console', 'notify'), ('notification-ntfy', 'notify-alerts'), strict=True):
+            self.assertEqual(role['metadata']['namespace'], namespace)
+            self.assertEqual(role['rules'], [{'apiGroups': [''], 'resources': ['secrets'], 'resourceNames': [name], 'verbs': ['get']}])
+            binding = next(d for d in docs if d['kind'] == 'RoleBinding' and d['metadata']['name'] == role['metadata']['name']
+                           and d['metadata']['namespace'] == namespace)
+            self.assertEqual(binding['roleRef'], {'apiGroup': 'rbac.authorization.k8s.io', 'kind': 'Role', 'name': role['metadata']['name']})
+            self.assertEqual(binding['subjects'], [{'kind': 'ServiceAccount', 'name': 'dashboard-sync', 'namespace': 'console'}])
+        secret_rules = [rule for d in docs if d['kind'] in ('Role', 'ClusterRole') for rule in d['rules'] if 'secrets' in rule['resources']]
+        self.assertEqual(len(secret_rules), 3)  # the two new ones plus existing ClickStack auth
+        self.assertTrue(all(rule['verbs'] == ['get'] and rule['resourceNames'] for rule in secret_rules))
+        controllers = yamlio.load((ROOT / 'platform/console/helmrelease.yaml').read_text())['spec']['values']['controllers']
+        job = controllers['dashboards']
+        self.assertEqual(job['serviceAccount']['name'], 'dashboard-sync')
+        self.assertEqual(job['cronjob']['schedule'], '* * * * *')
+        self.assertEqual(job['cronjob']['concurrencyPolicy'], 'Forbid')
+        self.assertEqual(job['containers']['main']['command'], ['timeout', '50', 'python', '-m', 'swhurl', 'clickstack-dashboards', '--cluster'])
+        self.assertEqual(job['containers']['main']['image'], controllers['main']['containers']['main']['image'])

@@ -15,6 +15,9 @@ The scheduled sync (``--cluster``) takes the apps from the cluster's HelmRelease
 narrowly: only a tagged dashboard named exactly ``App: <app name>`` whose app has no HelmRelease left, and
 nothing at all when it finds no app releases (a cluster still being restored).
 
+Each run first creates or repairs the two reserved platform webhooks, even with no apps.
+Bootstrap of accounts and ingestion keys remains explicit (``make clickstack-bootstrap``).
+
 Each run also records which dashboard belongs to which app (``{"<app>": "<dashboard id>"}``) in the
 ``console/app-dashboards`` ConfigMap, so the console can link to an app's dashboard without a HyperDX key
 of its own. It is written only when it changed, and holds nothing that the next run cannot rebuild.
@@ -31,10 +34,11 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import app_alerts, clickstack, interface, kube, statestore
+from swhurl import app_alerts, clickstack, clickstack_ntfy, interface, kube, statestore
 from swhurl.apps import helmrelease
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import records, store
+from swhurl.notifications.errors import NotificationError
 from swhurl.platform import ROOT
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -237,6 +241,47 @@ def record(runner: Runner, report: Report, ids: dict[str, str]) -> None:
         report.bad(f'could not record dashboard addresses in {RECORD["namespace"]}/{RECORD["name"]}: {error}')
 
 
+def webhooks(api: HyperDX, runner: Runner, report: Report) -> str:
+    """Preflight both reserved names before writes; repair in place and return notify's id.
+
+    A same-name object of another service is a conflict, not an unrelated object.
+    An empty id is allowed only for a dry-run create (alerts are also previewed).
+    """
+    report.section('ClickStack platform webhooks')
+    wanted = [clickstack_ntfy.destination(runner), clickstack_ntfy.notify_destination(runner)]
+    result = api.call('GET', '/webhooks')
+    live = result.get('data', [])
+    if result.get('meta', {}).get('total', len(live)) > len(live):
+        raise ValueError('ClickStack returned a truncated webhook list; no change made')
+    current = {}
+    for body in wanted:
+        name = body['name']
+        found = [w for w in live if w.get('name') == name]
+        if len(found) > 1 or (found and found[0].get('service') != body['service']):
+            raise ValueError(f'ClickStack webhook {name}: duplicate name or conflicting service; no change made')
+        current[name] = found[0] if found else None
+        if found and not found[0].get('id'):
+            raise ValueError(f'ClickStack webhook {name} has no id; no change made')
+    ids = {}
+    for body in wanted:
+        name, existing = body['name'], current[body['name']]
+        ids[name] = existing['id'] if existing else ''
+        action = 'update' if existing else 'create'
+        if existing and all(existing.get(k) == v for k, v in body.items()):
+            report.ok(f'{name} is up to date')
+        elif runner.dry_run:
+            report.info(f'would {action} {name}')
+        elif existing:
+            api.call('PUT', f"/webhooks/{existing['id']}", body)
+            report.ok(f'updated {name}')
+        else:
+            ids[name] = api.call('POST', '/webhooks', body)['data']['id']
+            if not ids[name]:
+                raise ValueError(f'ClickStack created webhook {name} without an id')
+            report.ok(f'created {name}')
+    return ids[app_alerts.WEBHOOK]
+
+
 def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool = True, cluster: bool = False) -> int:
     """Create, update and (with ``prune``) delete; ``cluster`` narrows deletion to dashboards named for an app."""
     report.section('ClickStack app dashboards')
@@ -251,6 +296,7 @@ def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool 
         report.bad(f'{email} has no access key in HyperDX; sign in once, or run make clickstack-bootstrap')
         return report.exit_code()
     api = HyperDX(runner, key)
+    webhook = webhooks(api, runner, report)
     traces, logs = sources(api)
     live = {d['name']: d for d in api.call('GET', '/dashboards').get('data', []) if TAG in (d.get('tags') or [])}
     ids: dict[str, str] = {}
@@ -286,7 +332,7 @@ def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool 
     # created or updated dashboard has new tile ids.
     current = {d['name']: d for d in api.call('GET', '/dashboards').get('data', []) if TAG in (d.get('tags') or [])}
     app_alerts.reconcile(api, report, {app.name: current[f'App: {app.name}'] for app in wanted_apps
-                                       if f'App: {app.name}' in current}, prune=prune, dry_run=runner.dry_run,
+                                       if f'App: {app.name}' in current}, prune=prune, dry_run=runner.dry_run, webhook=webhook,
                           specs={app.name: app.alerts for app in wanted_apps})
     return report.exit_code()
 
@@ -302,16 +348,16 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, report: Re
     report = report or Report(redact=runner.redact)
     try:
         wanted = cluster_apps(runner) if args.cluster else apps()
-    except ValueError as error:
-        report.bad(str(error))
-        return 1
-    return sync(runner, report, wanted,
-                prune=bool(wanted) or not args.cluster, cluster=args.cluster)
+        return sync(runner, report, wanted,
+                    prune=bool(wanted) or not args.cluster, cluster=args.cluster)
+    except (CommandError, KeyError, ValueError, TypeError, NotificationError) as error:
+        report.bad(runner.redact(str(error)))
+        return report.exit_code()
 
 
 def check_dashboards(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
-    """A successful minute-by-minute sync of every app's dashboard and default alerts must be recent, and
-    scheduling enabled. The job also fails while HyperDX lacks the webhook the alerts need."""
+    """The minute-by-minute sync of platform webhooks, app dashboards and alerts must be recent,
+    and scheduling enabled. Missing credentials or ambiguous webhooks also fail the job."""
     report.section('App dashboards and alerts')
     try:
         state = kube.cronjob_run(runner, 'console', 'console-dashboards', now)
@@ -323,7 +369,7 @@ def check_dashboards(runner: Runner, report: Report, now: dt.datetime | None = N
                    'kubectl -n console patch cronjob console-dashboards -p \'{"spec":{"suspend":false}}\'')
     elif state == 'stale':
         report.bad('dashboard and alert sync has not succeeded in 5 minutes (kubectl -n console get jobs; kubectl -n '
-                   'console logs job/<newest console-dashboards-...>). No "swhurl notify" webhook: make '
-                   'clickstack-notify-webhook; no new jobs at all: docs/operations.md#troubleshooting')
+                   'console logs job/<newest console-dashboards-...>). To repair platform webhooks, dashboards and alerts: make '
+                   'clickstack-dashboards; no new jobs at all: docs/operations.md#troubleshooting')
     else:
         report.ok('dashboard and alert sync succeeded in the last 5 minutes')

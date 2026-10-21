@@ -21,7 +21,7 @@ OFF = 'none'  # not "off": YAML reads that as false, and an annotation or a swhu
 MAX_THRESHOLD = 1_000_000
 NAME = re.compile(r'swhurl:(?P<app>[a-z][a-z0-9-]*):(?P<preset>[a-z][a-z0-9-]*)')
 WEBHOOK = 'swhurl notify'
-"""The HyperDX webhook that reaches the notify service (make clickstack-notify-webhook creates it)."""
+"""The HyperDX webhook that reaches the notify service (the dashboard job keeps it)."""
 
 
 @dataclass(frozen=True)
@@ -96,17 +96,13 @@ def same(live: dict, want: dict) -> bool:
     return all(live.get(key) == value for key, value in want.items())
 
 
-def reconcile(api, report, dashboards: dict[str, dict], *, prune: bool, dry_run: bool,
+def reconcile(api, report, dashboards: dict[str, dict], *, prune: bool, dry_run: bool, webhook: str,
               specs: dict[str, str] | None = None) -> None:
     """Create each app's missing alerts, update the ones that differ in place (a rebuilt dashboard has
     new tile ids, an app changed its thresholds), and, with ``prune``, delete the alerts of apps that
-    are gone or switched theirs off. ``dashboards`` maps each app to its live dashboard, ``specs`` to its settings."""
+    are gone or switched theirs off. ``dashboards`` maps each app to its live dashboard, ``specs`` to its settings.
+    ``webhook`` is the id already resolved by the dashboard job (empty only in a dry-run create)."""
     report.section('ClickStack app alerts')
-    webhook = next((w.get('id') for w in api.call('GET', '/webhooks').get('data', []) if w.get('name') == WEBHOOK), None)
-    if not webhook:
-        # A failure, so the job's check (make verify-platform, the console) shows it: without the webhook no app has alerts.
-        report.bad(f'no "{WEBHOOK}" webhook in HyperDX, so apps have no default alerts: make clickstack-notify-webhook')
-        return
     live: dict[str, list[dict]] = {}
     for alert in api.call('GET', '/alerts').get('data', []):
         if str(alert.get('name', '')).startswith(PREFIX):

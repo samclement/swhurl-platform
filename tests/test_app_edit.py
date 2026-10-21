@@ -86,15 +86,15 @@ class EditTests(unittest.TestCase):
                     *(port['port'] for rule in network['spec']['ingress'] for port in rule['ports']),
                     int(self.env('orders', env)['SWHURL_SERVICE_HELLO_URL'].rsplit(':', 1)[1])}
         self.assertEqual((listens('staging'), listens('prod')), ({9090}, {8080}))
-        self.assertEqual(generated.problems(self.root), [], 'staging may run a newer release')
+        self.assertEqual(generated.problems(self.root, only=frozenset(model_sync.read(self.root)[0])), [], 'staging may run a newer release')
 
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
         self.assertEqual(listens('prod'), {9090})
         self.assertIn('tag: 1.28-alpine', self.prod.read_text(), 'in the same commit as the image')
         self.assertEqual(yaml.safe_load((self.prod.parent / 'release.yaml').read_text()), yaml.safe_load(record.read_text()))
-        self.assertEqual(generated.problems(self.root), [])
+        self.assertEqual(generated.problems(self.root, only=frozenset(model_sync.read(self.root)[0])), [])
         instances = [self.root / 'apps' / app / env for app in ('hello', 'orders') for env in ('staging', 'prod')]
-        self.assertEqual(policy.check_calls(instances), {})
+        self.assertEqual(generated.problems(self.root, only=frozenset(Instance(p.parent.name, p.name) for p in instances)), [])
 
     def test_promote_refusals(self):
         with self.assertRaisesRegex(edit.EditError, 'already runs'):
@@ -308,7 +308,7 @@ class EditTests(unittest.TestCase):
             'ports': [{'port': 9000, 'protocol': 'TCP'}]}])
         self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.env('orders', 'prod'), 'production is its own decision')
         instances = [self.root / 'apps' / app / env for app in ('hello', 'orders') for env in ('staging', 'prod')]
-        self.assertEqual(policy.check_calls(instances), {})
+        self.assertEqual(generated.problems(self.root, only=frozenset(Instance(p.parent.name, p.name) for p in instances)), [])
         self.assertEqual(generated.problems(self.root), [], 'calls may differ between environments')
         self.assertEqual(policy.evaluate(self.root / 'apps/hello/staging') + policy.evaluate(self.root / 'apps/orders/staging'), [])
 
@@ -326,7 +326,7 @@ class EditTests(unittest.TestCase):
     def test_calls_refusals_change_nothing(self):
         self.second_app()
         before = self.staging.read_text()
-        cases = (({'add': ['hello']}, 'does not declare calls to itself'), ({'add': ['nowhere']}, 'no instance nowhere/staging'),
+        cases = (({'add': ['hello']}, 'does not declare calls to itself'), ({'add': ['Bad']}, 'malformed calls'),
                  ({'remove': ['orders']}, 'does not call orders'), ({}, 'give --add and/or --remove'))
         for kwargs, message in cases:
             with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
@@ -363,12 +363,10 @@ class EditTests(unittest.TestCase):
         orders = self.root / 'apps/orders/staging/helmrelease.yaml'
         orders.write_text(orders.read_text().replace('SWHURL_ALLOWED_CALLERS: hello', 'SWHURL_ALLOWED_CALLERS: stranger'))
         instances = [self.root / 'apps/hello/staging', self.root / 'apps/orders/staging']
-        problems = policy.check_calls(instances)
-        hint = 'check calls on the caller and allows on the callee in instance.yaml, then run make app-sync'
-        self.assertIn(f'calls: calls orders, which does not allow it; {hint}', problems[instances[0]])
-        self.assertIn(f'calls: allows stranger, which does not declare a call to it; {hint}', problems[instances[1]])
+        problems = generated.problems(self.root)
+        self.assertTrue(any('SWHURL_ALLOWED_CALLERS' in p and 'stranger' in p for p in problems), problems)
         model_sync.apply(self.root, model_sync.prepare(self.root, {}))
-        self.assertEqual(policy.check_calls(instances), {})
+        self.assertEqual(generated.problems(self.root, only=frozenset(Instance(p.parent.name, p.name) for p in instances)), [])
 
     def test_signing_keys_refresh_rewrites_the_file_and_every_web_app(self):
         from swhurl.apps import keys
@@ -474,11 +472,10 @@ class EditTests(unittest.TestCase):
                                   '$JS.API.STREAM.INFO.staging-orders']},  # the Java client asks before it binds
             'subscribe': {'allow': ['_INBOX.staging.hello.>']}})
         self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders', 'prod'), 'production is its own decision')
-        self.assertEqual(generated.problems(self.root), [])
         instances = [self.root / 'apps' / app / 'staging' for app in ('hello', 'orders')]
-        self.assertEqual(policy.check_calls(instances), {})
-        self.assertCountEqual(policy.check_event_users(self.root), [  # every instance needs its own key
-            f'event-users: {app}/prod has no NATS key; make app-sync creates it' for app in ('hello', 'orders')])
+        self.assertEqual(generated.problems(self.root, only=frozenset(Instance(p.parent.name, p.name) for p in instances)), [])
+        self.assertCountEqual(generated.problems(self.root), [  # every instance needs its own key
+            f'{app}/prod: has no NATS key; make app-sync creates it' for app in ('hello', 'orders')])
 
         with self.assertRaisesRegex(edit.EditError, 'publishes events that hello subscribe to'):
             edit.remove(self.root, 'orders', 'staging')
@@ -511,7 +508,7 @@ class EditTests(unittest.TestCase):
         self.quiet(edit.sync, self.root, runner=runner)
         self.assertEqual(len(runner.calls), 4)
         self.assertEqual(model_sync.sync(self.root, runner=FakeRunner()), [], 'an instance keeps its key')
-        self.assertEqual(policy.check_event_users(self.root), [])
+        self.assertEqual(generated.problems(self.root), [])
         self.assertEqual(policy.check_events([], yaml.safe_load((self.root / 'apps/hello/prod/helmrelease.yaml').read_text()),
                                              {'platform.swhurl.com/environment': 'prod'}), [])
         users = yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data']['values.yaml'])
@@ -991,7 +988,7 @@ components:
         self.assertTrue(self.env('hello')['SWHURL_SERVICE_ORDERS_URL'].endswith(':9090'), "the caller follows the port")
         network = yaml.safe_load((release.parent / contract.NETWORK_POLICY_FILE).read_text())
         self.assertEqual({p['port'] for rule in network['spec']['ingress'] for p in rule['ports']}, {9090})
-        self.assertEqual(policy.check_calls([self.root / 'apps/hello/staging', release.parent]), {})
+        self.assertEqual(generated.problems(self.root, only=frozenset((Instance('hello', 'staging'), Instance('orders', 'staging')))), [])
         self.assertEqual(yaml.safe_load((release.parent / 'release.yaml').read_text())['stack'], 'kotlin',
                          'the record says what the image says it is built with')
 
@@ -1048,7 +1045,7 @@ components:
         def values(env):
             return yaml.safe_load((self.root / 'apps/orders' / env / 'helmrelease.yaml').read_text())['spec']['values']
         self.assertNotIn('data', values('prod')['persistence'], 'production keeps the old release until the promotion')
-        self.assertEqual(generated.problems(self.root), [], 'staging may run a newer release')
+        self.assertEqual(generated.problems(self.root, only=frozenset(model_sync.read(self.root)[0])), [], 'staging may run a newer release')
 
         _, out = self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod')
         for change in ('port 9000 -> 9090', 'database sqlite on a new 1Gi volume', 'secret names +API_TOKEN'):
@@ -1060,7 +1057,7 @@ components:
         self.assertEqual(values('prod')['persistence']['data']['storageClass'], 'local-path-retain', 'its own volume')
         self.assertEqual(values('prod')['service']['main']['ports']['http']['port'], 9090)
         self.assertTrue((prod / contract.BACKUP_FILE).is_file(), 'nightly backups of its own')
-        self.assertEqual(generated.problems(self.root), [])
+        self.assertEqual(generated.problems(self.root, only=frozenset(model_sync.read(self.root)[0])), [])
 
     def test_a_rollback_never_crosses_a_database_change(self):
         self.with_units()
@@ -1093,7 +1090,7 @@ components:
                     main['env'].get('OTEL_SERVICE_NAME'), main['resources']['requests']['memory'])
         self.assertEqual(runs('staging'), ({'/ready'}, 1000, 'orders', '64Mi'))
         self.assertEqual(runs('prod'), ({'/'}, 101, None, '32Mi'), 'production keeps the old release until the promotion')
-        self.assertEqual(generated.problems(self.root), [], 'needs move with the image')
+        self.assertEqual(generated.problems(self.root, only=frozenset(model_sync.read(self.root)[0])), [], 'needs move with the image')
 
         _, out = self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod')
         self.assertIn("[OK] orders/prod: health path / -> /ready, uid 101 -> 1000, telemetry otlp, requests.memory 32Mi -> 64Mi "
@@ -1253,7 +1250,7 @@ components:
         self.assertEqual(self.env('orders', 'prod')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'no second declaration for production')
         self.assertEqual(len(self.seeds), 2, 'production has its own key')
         self.assertEqual(offers.problems(prod, ['created', 'paid'], 'abc1234'), [])
-        self.assertEqual(generated.problems(self.root), [], 'offers follow each image')
+        self.assertEqual(generated.problems(self.root, only=frozenset(model_sync.read(self.root)[0])), [], 'offers follow each image')
         # A first promotion carries them too: production is made from staging's release, then given the documents.
         shutil.rmtree(prod)
         (self.root / 'clusters/home/app-orders-prod.yaml').unlink()
@@ -1270,7 +1267,7 @@ components:
         doc['apiPath'] = '/openapi.json'
         record.write_text(yaml.safe_dump(doc, sort_keys=False))
         model_sync.apply(self.root, model_sync.prepare(self.root, {}))
-        self.assertEqual(generated.problems(self.root), [],
+        self.assertEqual(generated.problems(self.root, only=frozenset(model_sync.read(self.root)[0])), [],
                          'staging describes its API before production runs that image')
 
     def test_event_refusals_change_nothing(self):

@@ -12,9 +12,9 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT, dashboards, sqlite_backup, yamlio
-from swhurl.apps import channels, checks, cli, edit, egress, events, hooks, policy, teams
+from swhurl.apps import channels, checks, cli, edit, egress, events, hooks, teams
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import render, store
+from swhurl.apps.model import generated, render, store
 from swhurl.apps.model.records import Image
 from swhurl.notifications import checks as notification_checks
 from swhurl.report import Report
@@ -50,7 +50,7 @@ class RecordReaderTests(unittest.TestCase):
 
     def test_shared_checks_use_records_and_preserve_user_and_port_order(self):
         self.break_rendered()
-        self.assertEqual(policy.check_event_users(self.root), [])
+        self.assertEqual([p for p in generated.problems(self.root) if p.startswith(str(events.USERS_FILE))], [])
         self.assertEqual(egress.problems(self.root), [])
         world, _ = store.world(self.root)
         shared = render.shared(world, store.platform(self.root))
@@ -63,12 +63,12 @@ class RecordReaderTests(unittest.TestCase):
         doc['allocations']['eventsKey'] = 'UCHANGED'
         doc['egress'] = ['api.example.com:443']
         settings.write_text(yamlio.dump(doc))
-        self.assertTrue(any('not what the instances declare' in p for p in policy.check_event_users(self.root)))
+        self.assertTrue(any(str(events.USERS_FILE) in p for p in generated.problems(self.root)))
         self.assertTrue(any('not what the instances declare' in p for p in egress.problems(self.root)))
 
     def test_invalid_world_becomes_existing_policy_report_and_cli_errors(self):
         (self.root / 'apps/hello/prod/instance.yaml').write_text('invalid: [')
-        for problems in (policy.check_event_users(self.root), egress.problems(self.root)):
+        for problems in (generated.problems(self.root), egress.problems(self.root)):
             self.assertTrue(any('cannot read its records' in line for line in problems), problems)
         runner = (FakeRunner().on('kubectl', '-n', 'egress', 'get', stdout=json.dumps({'spec': {}, 'status': {'readyReplicas': 1}}))
                   .on('kubectl', '-n', 'messaging', 'get', stdout=json.dumps({'status': {'readyReplicas': 1}}))

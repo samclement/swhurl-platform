@@ -9,9 +9,10 @@ from pathlib import Path
 
 from swhurl import ROOT, interface
 from swhurl.apps import calling, contract, egress, events, hooks
-from swhurl.apps import policy as app_policy
 from swhurl.apps.instance import INSTANCE_ROOTS, Instance
-from swhurl.apps.model import store
+from swhurl.apps.model import events as model_events
+from swhurl.apps.model import generated, store
+from swhurl.apps.model.draft import RenderError
 from swhurl.kube import ready_condition
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -161,8 +162,14 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
         report.bad(line)
     if declared and not waiting:
         report.ok(f'{len(declared)} declared stream(s) and consumer(s) exist in NATS')
-    for problem in app_policy.check_event_users(root):
-        report.bad(problem.removeprefix('event-users: ') + ', commit and push')
+    world, problems = store.world(root)
+    if not problems:
+        try:
+            problems = generated.nats_problems(root, world, model_events.users(world, store.platform(root)))
+        except RenderError as error:
+            problems = [str(error)]
+    for problem in problems:
+        report.bad(problem + ', commit and push')
 
 
 def check_egress(runner: Runner, report: Report, root: Path = ROOT) -> None:

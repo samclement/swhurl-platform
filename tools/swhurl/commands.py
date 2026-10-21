@@ -131,12 +131,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command('flux-bootstrap', 'Apply the root units and sources (Flux must already be installed)', CLUSTER),
         Command('clickstack-bootstrap', 'Register the ClickStack admin and set the team ingestion key from SOPS (idempotent)', CLUSTER,
                 'swhurl.clickstack:main', dry_run=READS),
-        Command('clickstack-dashboards', "A ClickStack dashboard per app in Git: create, update, delete removed apps' ones", CLUSTER,
+        Command('clickstack-dashboards', "Keep platform webhooks and app dashboards and alerts in ClickStack; delete removed apps' ones", CLUSTER,
                 'swhurl.dashboards:main', dry_run=READS),
-        Command('clickstack-notify-webhook', "Create or update the ClickStack webhook that hands every app's default alerts to the notify service",
-                CLUSTER, 'swhurl.clickstack_ntfy:main_notify', dry_run=READS),
-        Command('clickstack-ntfy-webhook', "Create or update ClickStack's reusable webhook to the platform ntfy topic", CLUSTER,
-                'swhurl.clickstack_ntfy:main', dry_run=READS),
     )),
     ('Apps', (
         Command('app-repo', "Create the app's GitHub repository from a stack template; wait for its first image", GITHUB,

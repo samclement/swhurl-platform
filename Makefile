@@ -11,7 +11,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help reconcile verify-platform notifications-check notifications-heartbeat verify-logs flux-install \
-	clickstack-bootstrap clickstack-dashboards clickstack-notify-webhook clickstack-ntfy-webhook \
+	clickstack-bootstrap clickstack-dashboards \
 	app-repo app-hooks app-new app-expose team-add team-edit team-remove team-channel channel-add channel-remove \
 	app-team app-alerts platform-signing-keys app-calls app-allows app-egress app-events app-offers app-deploy app-secret app-sync app-promote \
 	app-status app-logs app-reconcile app-check app-scale app-schedule app-remove console-image console-dev \

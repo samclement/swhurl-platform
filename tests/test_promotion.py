@@ -234,10 +234,10 @@ class FirstProductionTests(unittest.TestCase):
         self.assertEqual(yaml.safe_load((dst / 'resourcequota.yaml').read_text())['metadata']['namespace'], 'example-prod')
         self.assertEqual(generated.problems(self.root), [])
 
-    def test_first_promotion_of_a_caller_needs_its_callee_in_production_and_links_them_there(self):
+    def test_first_promotion_of_a_caller_waits_for_its_callee_in_production_then_links_them(self):
         import yaml
 
-        from swhurl.apps import edit, new, policy
+        from swhurl.apps import edit, new
         for name, extra in (('orders', []), ('reports', ['--calls', 'orders'])):
             args = new.parse_args([name, '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging',
                                    '--image', f'ghcr.io/example/{name}:2-abcdef0@' + DIGEST, '--no-auto-deploy', *extra])
@@ -257,22 +257,20 @@ class FirstProductionTests(unittest.TestCase):
         def env(app, environment):
             release = yaml.safe_load((self.root / 'apps' / app / environment / 'helmrelease.yaml').read_text())
             return release['spec']['values']['controllers']['main']['containers']['main']['env']
-        with self.assertRaisesRegex(EditError, 'reports calls orders, which has no production instance: promote that first'):
-            edit.promote(self.root, 'reports', runner=self.encrypting())
-        self.assertFalse((self.root / 'apps/reports/prod').exists())
+        edit.promote(self.root, 'reports', runner=self.encrypting())
+        self.assertNotIn('SWHURL_SERVICE_ORDERS_URL', env('reports', 'prod'), 'absent production callee is pending')
         edit.promote(self.root, 'orders', runner=self.encrypting())
-        self.assertNotIn('SWHURL_ALLOWED_CALLERS', env('orders', 'prod'), 'nobody calls it in production yet')
+        self.assertEqual(env('orders', 'prod')['SWHURL_ALLOWED_CALLERS'], 'reports', 'arrival connects the pending call')
         self.assertEqual(env('orders', 'prod')['SWHURL_EVENTS_PUBLISH'], 'created',
                          'it publishes what its image does, with a NATS key of its own')
         self.assertNotEqual(env('orders', 'prod')['SWHURL_EVENTS_NKEY'], env('orders', 'staging')['SWHURL_EVENTS_NKEY'])
-        edit.promote(self.root, 'reports', runner=self.encrypting())
         self.assertEqual(env('reports', 'prod')['SWHURL_ENV'], 'prod')
         self.assertNotIn('SWHURL_EVENTS_SUBSCRIBE', env('reports', 'prod'), 'what it receives is declared in production')
         self.assertEqual(generated.problems(self.root), [])
         self.assertEqual(env('reports', 'prod')['SWHURL_SERVICE_ORDERS_URL'], env('reports', 'staging')['SWHURL_SERVICE_ORDERS_URL'])
         self.assertEqual(env('orders', 'prod')['SWHURL_ALLOWED_CALLERS'], 'reports', "staging's grant was promoted with orders")
         instances = [self.root / 'apps' / app / e for app in ('orders', 'reports') for e in ('staging', 'prod')]
-        self.assertEqual(policy.check_calls(instances), {})
+        self.assertEqual(generated.problems(self.root, only=frozenset(Instance(p.parent.name, p.name) for p in instances)), [])
         self.assertEqual(generated.problems(self.root), [])
 
     def test_a_staging_the_model_cannot_express_writes_nothing(self):

@@ -4,6 +4,7 @@
     Release    apps/<app>/<env>/release.yaml   what the selected image is and needs; written by intake only
     Settings   apps/<app>/<env>/instance.yaml  what the platform grants this environment, and its allocations
 
+``relations`` evaluates calls and subscriptions from records, including pending declarations.
 ``render`` builds an instance's files, and the shared files, from the records of every instance. Each
 capability (workload, exposure, calls, events, egress, sqlite, secrets, telemetry, offers) is one
 module that adds its part. ``store`` reads and writes the records, ``write`` is how a command changes

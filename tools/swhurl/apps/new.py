@@ -166,14 +166,6 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
     if (instance.exists() and any(instance.iterdir())) or instance_unit_file(root, args.name, args.env).exists():
         raise GenerationError(f'{args.name}/{args.env} already exists; refusing to overwrite')
     entry, planned = records(args), {}
-    if entry.settings.grants.calls:  # a call waits for the callee's grant, but the callee must exist and have an address
-        world, _ = write.read(root)
-        for callee in entry.settings.grants.calls:
-            found = world.get(Instance(callee, args.env))
-            if found is None:
-                raise GenerationError(f'{created} calls {callee}, which has no {args.env} instance')
-            if found.release.port is None:
-                raise GenerationError(f'{created} calls {callee}, a {found.release.kind}: it has no address to call')
     try:
         if getattr(args, 'offers', False) and args.from_repo:
             # The app describes its API or events (provides.apiFile, provides.eventsFile): keep the documents
@@ -263,7 +255,7 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--description', metavar='TEXT', help="one line saying what the app does (swhurl.yaml's description): "
                    'SWHURL_DESCRIPTION, which the templates serve in their API description')
     p.add_argument('--calls', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
-                   help='comma-separated apps this one calls: each must already have this environment (make app-calls later)')
+                   help='comma-separated apps this one calls: absent apps or consent wait without access')
     p.add_argument('--secret-keys', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated secret variable names the app reads; values set later with make app-secret')
     p.add_argument('--otlp', action=argparse.BooleanOptionalAction, default=False,

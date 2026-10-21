@@ -42,6 +42,14 @@ class SpecTests(unittest.TestCase):
         self.assertEqual(make['COMMANDS'], {name for name, command in TARGETS.items() if command.run},
                          'COMMANDS in the Makefile is every target with a function; the others have a recipe')
 
+    def test_platform_webhooks_have_only_the_dashboard_command_path(self):
+        for obsolete in ('clickstack-notify-webhook', 'clickstack-ntfy-webhook'):
+            self.assertNotIn(obsolete, COMMANDS)
+            self.assertNotIn(obsolete, database()['COMMANDS'])
+        from swhurl import clickstack_ntfy
+        for obsolete in ('sync', 'main', 'main_notify'):
+            self.assertFalse(hasattr(clickstack_ntfy, obsolete))
+
     def test_every_function_exists(self):
         for name, command in COMMANDS.items():
             if command.run:

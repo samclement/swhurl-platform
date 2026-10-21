@@ -22,7 +22,7 @@ from swhurl.run import CommandError, Runner
 
 from .errors import NotificationError
 
-if TYPE_CHECKING:  # imported where a notice is sent: the ClickStack webhook commands run without httpx
+if TYPE_CHECKING:  # imported where a notice is sent: the dashboard command runs without httpx
     import httpx
 
 PRIORITIES = {'normal': 3, 'high': 4}

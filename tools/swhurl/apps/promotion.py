@@ -185,9 +185,6 @@ def first_production(root: Path, world: World, app: str, *, host: str | None = N
     staging = world[Instance(app, 'staging')]
     if not staging.app.team:
         raise EditError('staging names no team (its namespace label); set it with make app-team before promoting')
-    missing = [callee for callee in staging.settings.grants.calls if Instance(callee, 'prod') not in world]
-    if missing:
-        raise EditError(f'{app} calls {", ".join(missing)}, which has no production instance: promote that first')
     exposure = staging.settings.grants.exposure
     if host and exposure != 'public':
         raise EditError('--host applies only to first promotion of a public app')

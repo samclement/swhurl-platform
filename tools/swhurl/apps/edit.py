@@ -30,8 +30,7 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder
-from swhurl.apps.model import records, workload, write
-from swhurl.apps.model.calls import admits
+from swhurl.apps.model import records, relations, workload, write
 from swhurl.apps.model.draft import APP_SECRET, Entry
 from swhurl.apps.model.exposure import ROUTED
 from swhurl.apps.model.records import ALLOW_RE, TEAM_GRANT, Resources
@@ -64,15 +63,8 @@ def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, r
     world, _ = write.read(root)
     current = list(world[Instance(app, env)].settings.grants.calls)
     for callee in add:
-        if callee == app:
-            raise EditError('an app does not declare calls to itself')
         if callee in current:
             raise EditError(f'{app}/{env} already calls {callee}')
-        found = world.get(Instance.named(callee, env))
-        if found is None:
-            instance_dir(root, callee, env)  # says which instance is missing
-        if found.release.port is None:
-            raise EditError(f'{callee} is a worker: it has no address to call')
     for callee in remove:
         if callee not in current:
             raise EditError(f'{app}/{env} does not call {callee}')
@@ -80,11 +72,10 @@ def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, r
     write.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(
         entry.settings, grants=replace(entry.settings.grants, calls=now))))
     print(f'[OK] {app}/{env} calls: {", ".join(now) or "nothing"}')
-    team = world[Instance(app, env)].app.team
-    for callee in add:
-        if not admits(world[Instance(callee, env)], app, team):
-            print(f'[INFO] {app} -> {callee} waits for {callee} to allow it: make app-allows APP={callee} ENV={env} '
-                  f'ARGS="--add {app}" (or team:{team})')
+    world, _ = write.read(root)
+    for relation in relations.evaluate(Instance(app, env), world):
+        if relation.target in add and relation.pending:
+            print(f'[INFO] {app} -> {relation.target} {relation.pending.replace("waiting", "waits", 1)}')
     return instance
 
 

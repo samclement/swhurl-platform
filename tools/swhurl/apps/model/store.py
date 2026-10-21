@@ -4,7 +4,7 @@
     apps/<app>/<env>/release.yaml    Release: the image and what it needs and offers
     apps/<app>/<env>/instance.yaml   Settings: what the platform grants this environment, and allocations
 
-Commands change these and render the rest (sync.py); nothing reads a grant back from a rendered file.
+Commands change these and render the rest (write.py); nothing reads a grant back from a rendered file.
 None of the three is listed in a kustomization.yaml, so Flux never applies them.
 """
 from __future__ import annotations

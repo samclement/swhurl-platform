@@ -42,8 +42,7 @@ from swhurl.apps.contract import (
     type_answers,
 )
 from swhurl.apps.instance import NAME_RE, Instance
-from swhurl.apps.model import render, store
-from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model import render, store, write
 from swhurl.apps.model.draft import Platform
 from swhurl.apps.model.records import SETTINGS_FILE, Release, Settings
 from swhurl.apps.model.render import ANNOTATION
@@ -429,7 +428,7 @@ def open_action(runner: Runner, github: GitHub, job: Job, action: str, name: str
         first, admits = False, []
         if action == 'promote':
             from swhurl.console import promotion as review
-            world, _ = model_sync.read(tree)
+            world, _ = write.read(tree)
             first = promotion.select(tree, world, name).outcome == 'create'
             if first:
                 admits = review.admitting(tree, name)

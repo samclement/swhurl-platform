@@ -10,11 +10,12 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT, yamlio
-from swhurl.apps import edit, policy
+from swhurl.apps import cli, edit, policy
 from swhurl.apps.contract import JOB_SCHEDULE
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated, render, store
-from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model import write as model_sync
 from swhurl.apps.model.draft import EVENTS_SECRET, Entry, Platform, RenderError
 from swhurl.apps.model.records import (
     Allocations,
@@ -26,7 +27,6 @@ from swhurl.apps.model.records import (
     Settings,
     Storage,
 )
-from swhurl.apps.yaml_file import EditError
 
 SAMPLE = ROOT / 'tests/fixtures/instance'  # frozen sample instance; see its README
 IMAGE = Image('ghcr.io/samclement/orders', '12-abcdef0', 'sha256:' + 'a' * 64)
@@ -488,7 +488,7 @@ class ShadowTests(unittest.TestCase):
         before = {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
         self.assertIn(Instance('nightly', 'staging'), store.world(self.root)[0], 'records parse; validation belongs to rendering')
         with redirect_stdout(io.StringIO()), mock.patch('sys.stderr', new_callable=io.StringIO) as errors:
-            self.assertEqual(edit.main_sync(['--root', str(self.root)]), 2, 'the command Render runs must stop')
+            self.assertEqual(cli.main_sync(['--root', str(self.root)]), 2, 'the command Render runs must stop')
         self.assertIn('minute', errors.getvalue())
         self.assertEqual(before, {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob('*') if path.is_file()},
                          'invalid records never reach the write phase, including the registry')
@@ -507,7 +507,7 @@ class ShadowTests(unittest.TestCase):
                 self.assertIn(Instance('fresh', 'staging'), store.world(self.root)[0], 'strictly parsed arbitrary records')
                 before = {p.relative_to(self.root): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
                 with redirect_stdout(io.StringIO()), mock.patch('sys.stderr', new_callable=io.StringIO):
-                    self.assertEqual(edit.main_sync(['--root', str(self.root)]), 2)
+                    self.assertEqual(cli.main_sync(['--root', str(self.root)]), 2)
                 self.assertEqual(before, {p.relative_to(self.root): p.read_bytes() for p in self.root.rglob('*') if p.is_file()},
                                  'no rendered files or registry update after refused records')
 

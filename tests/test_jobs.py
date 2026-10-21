@@ -10,7 +10,7 @@ import yaml
 
 from swhurl import ROOT
 from swhurl.apps import contract, declaration, edit, helmrelease, new
-from swhurl.apps.yaml_file import EditError
+from swhurl.apps.errors import EditError
 
 MANIFESTS = ROOT / 'tests/fixtures/manifests'
 IMAGE = 'ghcr.io/example/nightly:2-abcdef0@sha256:' + 'a' * 64

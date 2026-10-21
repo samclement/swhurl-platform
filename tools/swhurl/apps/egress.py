@@ -3,7 +3,7 @@
 instance is asking without trusting anything the app sends.
 
 The port is kept in instance.yaml as Settings.allocations.egressPort, so regenerating never
-moves it: make app-sync (apps/model/sync.py) gives an instance without one the lowest free port.
+moves it: make app-sync (apps/model/write.py) gives an instance without one the lowest free port.
 It renders the instance's proxy variables (including HTTPS_PROXY) and platform/egress/proxy.yaml:
 the proxy's configuration and Service ports (values for its HelmRelease) and the NetworkPolicy
 that admits each port only from its instance's namespace.

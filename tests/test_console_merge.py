@@ -15,10 +15,10 @@ from unittest import mock
 from ci_changes import records_only
 
 from swhurl import ROOT, yamlio
-from swhurl.apps import edit, egress, events, new, policy, promotion
+from swhurl.apps import cli, edit, egress, events, new, policy, promotion
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model import write as model_sync
 from swhurl.console import merge
 from swhurl.run import CommandError, FakeRunner, Result
 
@@ -144,7 +144,7 @@ class GateCase(unittest.TestCase):
                 if sync_failure:
                     return Result(argv, sync_failure, '', 'temporary render tool failure')
                 with contextlib.redirect_stdout(io.StringIO()):
-                    return Result(argv, edit.main_sync(['--root', str(cwd)]))
+                    return Result(argv, cli.main_sync(['--root', str(cwd)]))
             return real(argv, input=input, env=env, cwd=cwd)
         runner._execute = execute
         (runner.on('gh', 'api', f'repos/{REPO}/pulls/7', handler=pr)

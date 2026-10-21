@@ -40,10 +40,10 @@ from swhurl import ROOT, dashboards, kube, yamlio
 from swhurl.apps import connections as links
 from swhurl.apps import contract, declaration, new, ops, repo
 from swhurl.apps import promotion as gate
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.model import records
 from swhurl.apps.state import verdict
-from swhurl.apps.yaml_file import EditError
 from swhurl.console import (
     actions,
     catalogue,

@@ -15,10 +15,7 @@ from ruamel.yaml.error import YAMLError
 from ruamel.yaml.util import load_yaml_guess_indent
 
 from swhurl import yamlio
-
-
-class EditError(Exception):
-    pass
+from swhurl.apps.errors import EditError
 
 
 class YamlFile:

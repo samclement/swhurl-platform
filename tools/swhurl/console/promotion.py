@@ -15,11 +15,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from swhurl.apps import ops, promotion
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model import write
 from swhurl.apps.model.calls import admits
 from swhurl.apps.new import GenerationError
-from swhurl.apps.yaml_file import EditError
 from swhurl.console import changes, merge
 from swhurl.console.actions import ActionError
 from swhurl.run import CommandError, Runner
@@ -64,7 +64,7 @@ def admitting(root: Path, app: str) -> list[str]:
     """The production apps a first promotion of ``app`` also changes once main renders it: each app staging
     calls that runs in production and allows it there gains the new caller in its allowed callers and
     network policy."""
-    world, _ = model_sync.read(root)
+    world, _ = write.read(root)
     staging = world[Instance(app, 'staging')]
     return [callee for callee in staging.settings.calls
             if callee != app and (found := world.get(Instance(callee, 'prod'))) and admits(found, app, staging.app.team)]
@@ -98,7 +98,7 @@ def rendered_diff(root: Path, app: str, image: str, runner: Runner) -> tuple[str
 
 
 def review(root: Path, app: str, status: ops.InstanceStatus, runner: Runner | None = None) -> dict:
-    world, _ = model_sync.read(root)
+    world, _ = write.read(root)
     decision = promotion.select(root, world, app)
     source, target = world[Instance(app, 'staging')], world.get(Instance(app, 'prod'))
     problem = promotion.source_problem(status, decision.image)

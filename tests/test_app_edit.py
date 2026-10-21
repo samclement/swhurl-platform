@@ -13,11 +13,11 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import calling, contract, edit, new, ops, policy, promotion
+from swhurl.apps import calling, cli, contract, edit, new, ops, policy, promotion
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated
-from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model import write as model_sync
 from swhurl.run import CommandError, FakeRunner
 
 NEW_DIGEST = 'sha256:' + 'b' * 64
@@ -133,7 +133,7 @@ class EditTests(unittest.TestCase):
         with self.assertRaisesRegex(edit.EditError, problem):
             edit.promote(self.root, 'hello')
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
-            code = edit.run(lambda: edit.promote(self.root, 'hello'), False)
+            code = cli.run(lambda: edit.promote(self.root, 'hello'), False)
         self.assertEqual(code, 2)
         self.assertIn(problem, err.getvalue())
         self.assertEqual(self.snapshot(), before)
@@ -149,7 +149,7 @@ class EditTests(unittest.TestCase):
 
     def test_cli_promotion_checks_the_expected_image(self):
         before = self.prod.read_bytes()
-        code, _ = self.quiet(edit.main_promote, ['hello', '--root', str(self.root), '--expect-image=x:1'])
+        code, _ = self.quiet(cli.main_promote, ['hello', '--root', str(self.root), '--expect-image=x:1'])
         self.assertEqual(code, 2)
         self.assertEqual(self.prod.read_bytes(), before)
 
@@ -176,7 +176,7 @@ class EditTests(unittest.TestCase):
 
     def test_requested_policy_failure_is_nonzero_after_edit(self):
         with mock.patch.object(new.policy, 'evaluate', side_effect=CommandError(['helm'], 'helm unavailable')):
-            code, out = self.quiet(edit.main_scale, ['hello', 'prod', '--memory-limit=256Mi', '--root', str(self.root)])
+            code, out = self.quiet(cli.main_scale, ['hello', 'prod', '--memory-limit=256Mi', '--root', str(self.root)])
         self.assertEqual(code, 1)
         self.assertIn('Files remain for review', out)
         self.assertNotIn('Next: commit', out)
@@ -260,7 +260,7 @@ class EditTests(unittest.TestCase):
             with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
                 edit.set_alerts(self.root, 'hello', **kwargs)
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            self.assertEqual(edit.main_alerts(['hello', '--errors', 'none', '--error-logs', '9', '--root', str(self.root)]), 0)
+            self.assertEqual(cli.main_alerts(['hello', '--errors', 'none', '--error-logs', '9', '--root', str(self.root)]), 0)
         self.assertEqual(self.alert_settings('prod'), 'error-logs=9,errors=none')
 
     def test_team_moves_every_environment(self):
@@ -784,7 +784,7 @@ components:
         for flag in ('--publish=created', '--add-publish=created', '--remove-publish=created'):
             error = io.StringIO()
             with self.subTest(flag=flag), redirect_stderr(error), self.assertRaises(SystemExit) as raised:
-                edit.main_events(['hello', 'staging', '--root', str(self.root), flag])
+                cli.main_events(['hello', 'staging', '--root', str(self.root), flag])
             self.assertEqual(raised.exception.code, 2)
             self.assertIn('provides.eventsFile', error.getvalue())
         with redirect_stderr(io.StringIO()):
@@ -869,7 +869,7 @@ components:
                 raise urllib.error.HTTPError(request.full_url, 500, 'Server Error', {}, None)
             return b'version: 1\nkind: web\nhealthPath: /healthz\n'
         with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
-            code = edit.main_offers(['--all', 'staging', '--root', str(self.root)], opener=opener)
+            code = cli.main_offers(['--all', 'staging', '--root', str(self.root)], opener=opener)
         self.assertEqual(code, 1)
         self.assertIn('[OK] orders/staging at abc1234 offers nothing', out.getvalue())
         self.assertIn('[ERROR] billing/staging: could not read swhurl.yaml from samclement/billing@abc1234: 500', err.getvalue())
@@ -878,8 +878,8 @@ components:
         # One instance: a change is checked against the app policy, on the instance's folder.
         manifest = b'version: 1\nkind: web\nhealthPath: /healthz\nflags: {shout: {type: boolean, default: false}}\n'
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err, \
-                mock.patch.object(edit, 'check_generated', return_value=0) as checked:
-            code = edit.main_offers(['orders', 'staging', '--root', str(self.root)], opener=lambda request: manifest)
+                mock.patch.object(cli, 'check_generated', return_value=0) as checked:
+            code = cli.main_offers(['orders', 'staging', '--root', str(self.root)], opener=lambda request: manifest)
         self.assertEqual((code, err.getvalue()), (0, ''))
         checked.assert_called_once_with(self.root.resolve() / 'apps/orders/staging')
 
@@ -953,7 +953,7 @@ components:
             return self.registry('orders', [*tags, '12-2222222'], files)(request)
         import urllib.error
         with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
-            code = edit.main_deploy(['--root', str(self.root)], opener=opener)
+            code = cli.main_deploy(['--root', str(self.root)], opener=opener)
         self.assertEqual(code, 1)
         self.assertIn('[OK] orders/staging: image 10-def5678 -> 12-2222222', out.getvalue())
         self.assertIn('[ERROR] billing/staging: could not read a pull token for samclement/billing: 503', err.getvalue())
@@ -1027,9 +1027,9 @@ components:
         self.quiet(edit.scale, self.root, 'orders', 'staging', replicas=2)
         self.assertEqual(record.read_bytes(), kept, "a scale changes Settings only: the image's minimum stays")
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err, \
-                mock.patch.object(edit, 'check_generated', return_value=0), \
+                mock.patch.object(cli, 'check_generated', return_value=0), \
                 mock.patch('urllib.request.urlopen', side_effect=AssertionError('app-scale reads no network')):
-            code = edit.main_scale(['orders', 'staging', '--memory', '8Mi', '--root', str(self.root)])
+            code = cli.main_scale(['orders', 'staging', '--memory', '8Mi', '--root', str(self.root)])
         self.assertEqual(code, 2)
         self.assertIn('--memory 8Mi (at least 16Mi)', err.getvalue())
 
@@ -1387,7 +1387,7 @@ components:
                     else:
                         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors:
                             with mock.patch.object(intake, 'Runner', return_value=runner):
-                                self.assertEqual(edit.main_sync(['--root', str(self.root)]), 2)
+                                self.assertEqual(cli.main_sync(['--root', str(self.root)]), 2)
                         self.assertIn('notification route', errors.getvalue())
                     self.assertTrue(runner.calls, 'a key was actually generated/encrypted before planning refused')
                     self.assertEqual(self.snapshot(), before, 'new encrypted inputs are removed on planning refusal')
@@ -1419,7 +1419,7 @@ components:
     def test_remove_invalid_world_is_cli_error_and_writes_nothing(self):
         (self.prod.parent / 'instance.yaml').write_text('invalid: [')
         before = self.snapshot()
-        code, _ = self.quiet(edit.main_remove, ['hello', 'staging', '--root', str(self.root)])
+        code, _ = self.quiet(cli.main_remove, ['hello', 'staging', '--root', str(self.root)])
         self.assertEqual(code, 2)
         self.assertEqual(self.snapshot(), before)
 
@@ -1468,7 +1468,7 @@ components:
                 runner.on('git', **git)
             with mock.patch.object(ops, 'gather_status', return_value=behind), mock.patch.object(edit, 'promote', return_value=None), \
                     redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
-                edit.main_promote(['hello', '--root', str(self.root), *argv], runner=runner)
+                cli.main_promote(['hello', '--root', str(self.root), *argv], runner=runner)
             return err.getvalue(), runner.calls
         self.assertEqual(refusal(history=False)[1], [], 'a tree without history is not asked')
         self.assertIn('Flux is still applying', refusal(history=False)[0])
@@ -1480,23 +1480,23 @@ components:
         self.new_staging_image()
         with mock.patch.object(ops, 'gather_status', return_value=None) as read, \
                 mock.patch.object(edit, 'promote', return_value=0) as write:
-            code, _ = self.quiet(edit.main_promote, ['hello', '--root', str(self.root), '--prepare-only'])
+            code, _ = self.quiet(cli.main_promote, ['hello', '--root', str(self.root), '--prepare-only'])
             self.assertEqual(code, 0)
             read.assert_not_called()
             write.assert_called_once()
             write.reset_mock()
-            code, _ = self.quiet(edit.main_promote, ['hello', '--root', str(self.root)])
+            code, _ = self.quiet(cli.main_promote, ['hello', '--root', str(self.root)])
             self.assertEqual(code, 2)
             read.assert_called_once()
             write.assert_not_called()
-            code, _ = self.quiet(edit.main_promote, ['hello', '--root', str(self.root), '--prepare-only', '--expect-image=wrong'])
+            code, _ = self.quiet(cli.main_promote, ['hello', '--root', str(self.root), '--prepare-only', '--expect-image=wrong'])
             self.assertEqual(code, 2, 'preparation still pins the exact reviewed image')
             write.assert_not_called()
 
     def test_cli_refusals_exit_2(self):
-        code, _ = self.quiet(edit.main_scale, ['hello', 'prod', '--root', str(self.root)])
+        code, _ = self.quiet(cli.main_scale, ['hello', 'prod', '--root', str(self.root)])
         self.assertEqual(code, 2)
-        code, _ = self.quiet(edit.main_promote, ['hello', '--root', str(self.root)])
+        code, _ = self.quiet(cli.main_promote, ['hello', '--root', str(self.root)])
         self.assertEqual(code, 2)
 
 

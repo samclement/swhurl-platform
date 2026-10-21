@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT, dashboards, sqlite_backup, yamlio
-from swhurl.apps import channels, checks, edit, egress, events, hooks, policy, teams
+from swhurl.apps import channels, checks, cli, edit, egress, events, hooks, policy, teams
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import render, store
 from swhurl.apps.model.records import Image
@@ -80,9 +80,9 @@ class RecordReaderTests(unittest.TestCase):
                 check(runner, report, self.root)
             self.assertTrue(any('cannot read its records' in line for line in report.lines), report.lines)
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
-            self.assertEqual(edit.main_offers(['--all', 'staging', '--root', str(self.root)]), 2)
-            self.assertEqual(edit.main_promote(['hello', '--root', str(self.root)], runner), 2)
-            self.assertEqual(edit.main_deploy(['--root', str(self.root)]), 2)
+            self.assertEqual(cli.main_offers(['--all', 'staging', '--root', str(self.root)]), 2)
+            self.assertEqual(cli.main_promote(['hello', '--root', str(self.root)], runner), 2)
+            self.assertEqual(cli.main_deploy(['--root', str(self.root)]), 2)
             self.assertEqual(teams.main_remove(['demo', '--root', str(self.root)]), 2)
         self.assertIn('cannot read its records', err.getvalue())
         with mock.patch.object(hooks, 'ROOT', self.root), mock.patch.object(hooks, 'auto_deploy_repositories',
@@ -110,8 +110,8 @@ class RecordReaderTests(unittest.TestCase):
         entry = world[Instance('hello', 'staging')]
         record.write_text(store.text(replace(entry.release, image=Image('ghcr.io/example/hello', '7-abcdef0', entry.release.image.digest)).document()))
         self.break_rendered()
-        with mock.patch.object(edit, 'set_offers') as offered:
-            self.assertEqual(edit.main_offers(['--all', 'staging', '--root', str(self.root)]), 0)
+        with mock.patch.object(cli, 'set_offers') as offered:
+            self.assertEqual(cli.main_offers(['--all', 'staging', '--root', str(self.root)]), 0)
         self.assertEqual(offered.call_args.args[:3], (self.root, 'hello', 'staging'))
         report = Report(io.StringIO())
         runner = FakeRunner().on('kubectl', stdout=json.dumps({'items': [{
@@ -137,7 +137,7 @@ class RecordReaderTests(unittest.TestCase):
         self.assertIsNotNone(chosen.pattern.fullmatch('7-abcdef0'))
         self.assertIsNone(chosen.pattern.fullmatch('latest'))
         with mock.patch.object(edit, 'newest_image', return_value=selected), mock.patch.object(edit, 'deploy_staging') as deploy:
-            self.assertEqual(edit.main_deploy(['--root', str(self.root)]), 0)
+            self.assertEqual(cli.main_deploy(['--root', str(self.root)]), 0)
         self.assertEqual(deploy.call_args.args[:2], (self.root, 'hello'))
 
     def test_settings_only_instance_is_an_error_not_absence(self):
@@ -201,6 +201,14 @@ class RecordReaderTests(unittest.TestCase):
                 self.assertTrue(any('cannot read its records' in line for line in report.lines), report.lines)
                 self.assertFalse(any('no app has a SQLite database' in line or 'has no notification channel' in line
                                      for line in report.lines), report.lines)
+
+    def test_edit_error_import_uses_only_the_standard_library(self):
+        result = subprocess.run([sys.executable, '-S', '-c',
+                                 'import sys; from swhurl.apps.errors import EditError; '
+                                 'assert issubclass(EditError, Exception); '
+                                 'assert not any(n.startswith(("ruamel", "yaml")) for n in sys.modules)'],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_policy_dependency_graph_does_not_import_ruamel(self):
         result = subprocess.run([sys.executable, '-c',

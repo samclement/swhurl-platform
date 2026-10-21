@@ -32,9 +32,9 @@ from swhurl.apps.contract import (
     teams,
     type_answers,
 )
+from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, instance_folder
 from swhurl.apps.model import generated
-from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 

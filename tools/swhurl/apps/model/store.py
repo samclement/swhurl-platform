@@ -18,6 +18,7 @@ from swhurl.apps import egress, events
 from swhurl.apps.calling import signing_keys
 from swhurl.apps.contract import SECRET_FILE
 from swhurl.apps.instance import Instance
+from swhurl.apps.model import backup
 from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry, Platform, World
 from swhurl.apps.model.records import (
     APP_FILE,
@@ -36,7 +37,7 @@ def platform(root: Path, base: Path = Path('apps')) -> Platform:
     def key(path: Path) -> str:
         return (root / path).read_text().strip() if (root / path).is_file() else ''
     return Platform(signing_keys(root), (root / egress.PROXY_FILE).parent.is_dir(),
-                    key(events.CONTROLLER_KEY_FILE), key(events.CONSOLE_KEY_FILE), base)
+                    key(events.CONTROLLER_KEY_FILE), key(events.CONSOLE_KEY_FILE), base, backup.suspended(root))
 
 
 def _load(path: Path) -> object:

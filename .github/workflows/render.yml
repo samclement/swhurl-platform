@@ -94,31 +94,8 @@ jobs:
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        # tools/swhurl/bots.py: a fresh worktree of the newest main, app-sync, checks, one commit, a
+        # non-forced push; a push lost to another writer renders again on the newer main.
         run: |
           set -Eeuo pipefail
-          for attempt in 1 2 3 4 5; do
-            git fetch --quiet origin main
-            git checkout --quiet --detach origin/main
-            git reset --quiet --hard origin/main
-            git clean --quiet -fd apps platform clusters
-            PYTHONPATH=tools python3 -m swhurl app-sync
-            if [ -z "$(git status --porcelain -- apps platform clusters)" ]; then
-              echo "main is rendered (another writer rendered it); nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            make --no-print-directory -j2 --output-sync=target check-repo check-apps
-            git add apps platform clusters
-            rendered=$(git diff --cached --name-only | sed -n 's|^apps/\([^/]*\)/.*|\1|p' | sort -u | paste -sd, - | sed 's/,/, /g')
-            git commit --quiet -F - <<EOF
-          render: ${rendered:-shared files} (render workflow)
-
-          $(git diff --cached --name-only)
-          EOF
-            if git push --quiet origin HEAD:main; then
-              git show --stat --format='%h %s' HEAD | tee -a "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            echo "main moved; rendering again (attempt $attempt)"
-          done
-          echo "main kept moving; the next push renders it" >&2
-          exit 1
+          PYTHONPATH=tools python3 -m swhurl bot-render | tee -a "$GITHUB_STEP_SUMMARY"

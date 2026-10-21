@@ -10,6 +10,7 @@ metadata:
 spec:
   schedule: "30 3 * * *"
   timeZone: Etc/UTC
+  # The one backup switch: make app-sync copies it to every SQLite backup job (docs/operations.md).
   suspend: false
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600

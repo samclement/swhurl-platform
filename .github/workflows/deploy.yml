@@ -143,34 +143,9 @@ jobs:
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        # tools/swhurl/bots.py: the console and operators also push to main, so each attempt starts from
+        # its head in a fresh worktree and a push lost to another writer deploys again on the newer main.
+        # An app that fails is held and the run fails, after the others are pushed.
         run: |
           set -Eeuo pipefail
-          # The console and operators also push to main: start from its head, and start again if it moved.
-          for attempt in 1 2 3 4 5; do
-            git fetch --quiet origin main
-            git checkout --quiet --detach origin/main
-            git reset --quiet --hard origin/main
-            git clean --quiet -fd apps platform
-            failed=0
-            PYTHONPATH=tools python3 -m swhurl app-deploy $REFRESH > deployed.txt 2>&1 || failed=1
-            tee -a "$GITHUB_STEP_SUMMARY" < deployed.txt
-            if [ -z "$(git status --porcelain -- apps platform clusters)" ]; then
-              echo "Nothing changed." | tee -a "$GITHUB_STEP_SUMMARY"
-              exit "$failed"
-            fi
-            make --no-print-directory -j2 --output-sync=target check-repo check-apps
-            moved=$(sed -n 's|^\[OK\] \([a-z0-9-]*\)/staging: image .*|\1|p' deployed.txt | paste -sd, - | sed 's/,/, /g')
-            git add apps platform/nats/users.yaml platform/reloader/helmrelease.yaml clusters/home
-            git commit --quiet -F - <<EOF
-          deploy: ${moved:-what the staging apps need and offer} (deploy workflow)
-
-          $(grep -E '^\[OK\] [a-z0-9-]+/staging(: image | needs: )' deployed.txt || true)
-          EOF
-            if git push --quiet origin HEAD:main; then
-              git show --stat --format='%h %s' HEAD | tee -a "$GITHUB_STEP_SUMMARY"
-              exit "$failed"
-            fi
-            echo "main moved; deploying again (attempt $attempt)"
-          done
-          echo "main kept moving; the next image or the hourly run deploys again" >&2
-          exit 1
+          PYTHONPATH=tools python3 -m swhurl bot-deploy $REFRESH 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"

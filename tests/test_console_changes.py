@@ -173,6 +173,23 @@ class StagingHistoryTests(unittest.TestCase):
 
 
 class RenderTargetTests(unittest.TestCase):
+    def test_targets_read_the_backup_switch_as_store_platform_does(self):
+        from swhurl.apps.model import backup, render
+        seen = []
+        real = render.instance
+        def instance(each, world, platform):
+            seen.append(platform.backups_suspended)
+            return real(each, world, platform)
+        job = (ROOT / backup.MONGODB_JOB).read_text()
+        suspended = job.replace('  suspend: false\n', '  suspend: true\n')
+        with mock.patch.dict(MAIN, {backup.MONGODB_JOB.as_posix(): suspended.encode()}), \
+                mock.patch.object(render, 'instance', instance):
+            changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)
+        self.assertTrue(seen and all(seen), 'the console expects suspended SQLite jobs, as app-sync renders them')
+        with mock.patch.dict(MAIN, {backup.MONGODB_JOB.as_posix(): job.replace('suspend: false', 'suspend: maybe').encode()}), \
+                self.assertRaises(actions.ActionError):
+            changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)
+
     def test_complete_tree_reads_targets_without_turning_failed_reads_into_absence(self):
         api = FakeGitHub()
         targets = changes.render_targets(FakeRunner(), api.github, HEAD)

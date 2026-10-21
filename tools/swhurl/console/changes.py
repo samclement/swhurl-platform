@@ -35,7 +35,7 @@ from swhurl import interface, platform, yamlio
 from swhurl.apps import calling, channels, egress, events, helmrelease, promotion, repo
 from swhurl.apps.contract import APP_OWNER, APP_TYPES, STACKS, TEAMS_FILE, type_answers
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import records, render, store, write
+from swhurl.apps.model import backup, records, render, store, write
 from swhurl.apps.model.draft import Platform
 from swhurl.apps.model.records import SETTINGS_FILE, Release, Settings
 from swhurl.console import merge
@@ -209,7 +209,7 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
         content = api.call('GET', f'/tarball/{revision}').content
         with tempfile.TemporaryDirectory(prefix='console-targets-') as tmp:
             root = Path(tmp)
-            public = {calling.SIGNING_KEYS_FILE, events.CONTROLLER_KEY_FILE, events.CONSOLE_KEY_FILE}
+            public = {calling.SIGNING_KEYS_FILE, events.CONTROLLER_KEY_FILE, events.CONSOLE_KEY_FILE, backup.MONGODB_JOB}
             proxy = False
             with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
                 for member in archive.getmembers():
@@ -217,6 +217,8 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
                     if path.is_absolute() or '..' in path.parts:
                         raise ValueError('invalid archive path')
                     proxy |= path == egress.PROXY_FILE or egress.PROXY_FILE.parent in path.parents
+                    if path == backup.MONGODB_JOB.parent or backup.MONGODB_JOB.parent in path.parents:
+                        (root / backup.MONGODB_JOB.parent).mkdir(parents=True, exist_ok=True)  # present: its file must be read
                     if not member.isfile():
                         continue
                     instance = len(path.parts) == 4 and path.parts[0] == 'apps'
@@ -235,7 +237,8 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
             keys = text(calling.SIGNING_KEYS_FILE)
             # Do not use store.platform here: its scratch-root signing-key fallback is not a Git fact.
             platform_inputs = Platform(json.dumps(json.loads(keys), sort_keys=True, separators=(',', ':')) if keys else '',
-                                       proxy, text(events.CONTROLLER_KEY_FILE), text(events.CONSOLE_KEY_FILE))
+                                       proxy, text(events.CONTROLLER_KEY_FILE), text(events.CONSOLE_KEY_FILE),
+                                       backups_suspended=backup.suspended(root))
             def digest(*parts: bytes) -> str:
                 return hashlib.sha256(b'\0'.join(parts)).hexdigest()[:16]
             found = {}

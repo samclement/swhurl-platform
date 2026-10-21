@@ -14,7 +14,7 @@ from unittest import mock
 
 from ci_changes import records_only
 
-from swhurl import ROOT, yamlio
+from swhurl import ROOT, bots, yamlio
 from swhurl.apps import cli, edit, egress, events, new, policy, promotion
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
@@ -691,8 +691,8 @@ class NewAppGateTests(GateCase):
         def checked(_, work):
             problems = policy.platform_image(work / 'apps/fresh/staging')
             self.assertTrue(any('not ghcr.io/samclement/fresh' in p for p in problems))
-            raise CommandError(['make', *merge.MERGE_CHECKS], 'platform-image: refused')
-        with mock.patch.object(merge, 'checked', side_effect=checked), self.assertRaises(CommandError):
+            raise CommandError(['make', *bots.CHECKS], 'platform-image: refused')
+        with mock.patch.object(bots, 'checked', side_effect=checked), self.assertRaises(CommandError):
             self.check(runner)
         self.assertEqual(self.pushes(runner), [])
 

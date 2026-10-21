@@ -10,8 +10,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import sys
-import tempfile
 import time
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -20,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, interface, yamlio
+from swhurl import ROOT, bots, interface, yamlio
 from swhurl.apps import channels, egress, events, promotion
 from swhurl.apps.calling import NOTIFY
 from swhurl.apps.contract import SECRET_FILE, TEAMS_FILE, schedule_problem
@@ -43,7 +41,6 @@ from swhurl.run import CommandError, Runner
 
 VALIDATE_WAIT = 120  # seconds this run waits for Validate on the PR head, asking every VALIDATE_POLL
 VALIDATE_POLL = 5
-MERGE_CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
 ATTEMPTS = 3  # a PR is merged again on a newer main this many times when its push loses a race
 REFUSAL = 'Auto-merge refused: '  # starts the comment the gate leaves on a PR it holds; the console shows the rest
 REFUSAL_LIMIT = 300
@@ -571,28 +568,11 @@ def validated(runner: Runner, sha: str, sleep: Callable[[float], None]) -> None:
         waited += VALIDATE_POLL
 
 
-def fetch(runner: Runner, root: Path, number: int, sha: str) -> str:
-    """Fetch main and the PR head (separately: together, FETCH_HEAD is main's); main's commit."""
-    runner.run(['git', 'fetch', 'origin', 'main'], cwd=root)
+def fetch_head(runner: Runner, root: Path, number: int, sha: str) -> None:
+    """Fetch the PR head (apart from main: together, FETCH_HEAD is main's); it must still be ``sha``."""
     runner.run(['git', 'fetch', 'origin', f'pull/{number}/head'], cwd=root)
-    base = runner.output(['git', 'rev-parse', 'origin/main'], cwd=root).strip()
     if runner.output(['git', 'rev-parse', 'FETCH_HEAD'], cwd=root).strip() != sha:
         raise Skip('PR head changed during fetch')
-    return base
-
-
-def checked(runner: Runner, work: Path) -> None:
-    """check-repo renders the registered units; tooling tests read frozen fixtures, and templates and
-    OTel are unchanged by a console PR. A failed command keeps the label so a later run can retry."""
-    runner.run(['make', *MERGE_CHECKS], cwd=work)
-
-
-def commit(runner: Runner, work: Path, base: str, sha: str, number: int, pr: dict) -> str:
-    """The tree in ``work`` as a merge of the PR head into ``base``: GitHub shows the PR merged."""
-    runner.run(['git', 'add', '-A'], cwd=work)
-    tree = runner.output(['git', 'write-tree'], cwd=work).strip()
-    return runner.output([*GIT, 'commit-tree', tree, '-p', base, '-p', sha,
-                          '-m', f'Merge pull request #{number}: {pr.get("title", "")}'], cwd=work).strip()
 
 
 def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
@@ -618,46 +598,38 @@ def staging_history(runner: Runner, work: Path, app: str) -> Iterator[Release]:
 
 def merge_records(runner: Runner, root: Path, number: int, sha: str, repo: str, pr: dict, action: str,
                   app: str, files: list[str], env: str = 'staging') -> None:
-    """Merge the PR's records onto the newest main, apply the action's rule, render, check and push; a push
-    that loses to another writer is merged again on the newer main (ATTEMPTS times)."""
+    """Merge the PR's records onto the newest main, apply the action's rule, render, check and push as a
+    merge of the PR head (bots.push_main: a push lost to another writer is merged again, ATTEMPTS times)."""
     rule = ACTIONS[action]
     if other := sorted(path for path in files if not rule.owns(app, env, path)):
         raise Hold(f"it changes {', '.join(other[:5])}, which are not {app}'s {rule.kind} records: a person reviews it")
-    for attempt in range(1, ATTEMPTS + 1):
-        base = fetch(runner, root, number, sha)
-        with tempfile.TemporaryDirectory(prefix='auto-merge-') as tmp:
-            work = Path(tmp) / 'work'
-            runner.run(['git', 'worktree', 'add', '--detach', str(work), base], cwd=root)
-            try:
-                before = rule.read(work, app, env)
-                merged = runner.run([*GIT, 'merge', '--no-ff', '--no-commit', sha], cwd=work, check=False)
-                if merged.returncode:
-                    conflicts = runner.output(['git', 'diff', '--name-only', '--diff-filter=U'], cwd=work)
-                    if conflicts.strip():
-                        raise Hold(f'it conflicts with main: close it and {rule.again} from the console')
-                    raise CommandError(merged.args, runner.redact(merged.stderr or merged.stdout), merged.returncode)
-                after = rule.read(work, app, env)
-                statuses = dict(line.split('\t', 1)[::-1] for line in runner.output(
-                    ['git', 'diff', '--name-status', '--no-renames', base], cwd=work).splitlines())
-                if reason := encrypted_reason(action, app, env, statuses, work):
-                    raise Hold(f'it {reason}: a person reviews it')
-                if reason := judge(action, app, env, files, before, after,
-                                   lambda release, work=work: promotion.staged(release, staging_history(runner, work, app))):
-                    raise Hold(f'it {reason}: a person reviews it')
-                runner.run([sys.executable, '-m', 'swhurl', 'app-sync'], cwd=work,
-                           env={'PYTHONPATH': str(work / 'tools'), 'PYTHONDONTWRITEBYTECODE': '1'})
-                checked(runner, work)
-                # Recheck the person's hold and the exact PR head after the checks.
-                eligible(runner.json(['gh', 'api', f'repos/{repo}/pulls/{number}']), sha, repo)
-                made = commit(runner, work, base, sha, number, pr)
-                # Not forced: a main that moved since the fetch refuses it, and the merge is made again.
-                pushed = runner.run(['git', 'push', 'origin', f'{made}:refs/heads/main'], cwd=work, mutating=True, check=False)
-            finally:
-                runner.run(['git', 'worktree', 'remove', '--force', str(work)], cwd=root, check=False)
-        if not pushed.returncode:
-            return
-        print(f'#{number}: main moved before the push (attempt {attempt} of {ATTEMPTS}); merging again', flush=True)
-    raise RuntimeError(f'main kept moving: {ATTEMPTS} pushes lost; the next run tries again')
+
+    def change(work: Path, base: str) -> bots.Commit:
+        fetch_head(runner, root, number, sha)
+        before = rule.read(work, app, env)
+        merged = runner.run([*GIT, 'merge', '--no-ff', '--no-commit', sha], cwd=work, check=False)
+        if merged.returncode:
+            conflicts = runner.output(['git', 'diff', '--name-only', '--diff-filter=U'], cwd=work)
+            if conflicts.strip():
+                raise Hold(f'it conflicts with main: close it and {rule.again} from the console')
+            raise CommandError(merged.args, runner.redact(merged.stderr or merged.stdout), merged.returncode)
+        after = rule.read(work, app, env)
+        statuses = dict(line.split('\t', 1)[::-1] for line in runner.output(
+            ['git', 'diff', '--name-status', '--no-renames', base], cwd=work).splitlines())
+        if reason := encrypted_reason(action, app, env, statuses, work):
+            raise Hold(f'it {reason}: a person reviews it')
+        if reason := judge(action, app, env, files, before, after,
+                           lambda release: promotion.staged(release, staging_history(runner, work, app))):
+            raise Hold(f'it {reason}: a person reviews it')
+        bots.swhurl(runner, work, 'app-sync')
+        # GitHub shows the PR merged: its head is the commit's second parent.
+        return bots.Commit(f'Merge pull request #{number}: {pr.get("title", "")}', (sha,))
+
+    def ready() -> None:
+        """Recheck the person's hold and the exact PR head after the checks."""
+        eligible(runner.json(['gh', 'api', f'repos/{repo}/pulls/{number}']), sha, repo)
+
+    bots.push_main(runner, root, change, attempts=ATTEMPTS, ready=ready, git=GIT)
 
 
 def refuse(runner: Runner, repo: str, number: int, reason: str) -> None:

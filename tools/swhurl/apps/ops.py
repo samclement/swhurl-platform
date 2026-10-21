@@ -145,6 +145,8 @@ class InstanceStatus:
 
     @property
     def applied(self) -> bool:
+        """Revision equality: its unit last applied Git's newest revision. Any commit to main makes this False for a
+        while; whether this instance's intended render reached the cluster is a render hash (console.stages.progress)."""
         return bool(self.desired_revision) and self.desired_revision == self.applied_revision
 
     @property

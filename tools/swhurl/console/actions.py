@@ -124,7 +124,6 @@ class Job:
     owner: str = ''  # the pod running it
     resume: dict | None = None  # what a later job needs to finish this one, if it can be finished (never a secret)
     live: bool = True  # False for a record read from the store: another pod's job, or one from before a restart
-    target_hash: str = ''  # prepared render hash; 'absent' for a removal
     reached: str = ''  # when its change was first seen at its end (Live, scaled to zero, removed), ISO 8601
 
 
@@ -258,10 +257,10 @@ class Jobs:
 
     def _keep(self, job: Job) -> None:
         """Write a running job's record as its output grows, so another pod can show it."""
-        seen = (len(job.lines), job.link, job.target_hash)
+        seen = (len(job.lines), job.link)
         while job.state == 'running':
             self.sleep(SAVE_EVERY)
-            now = (len(job.lines), job.link, job.target_hash)
+            now = (len(job.lines), job.link)
             if now != seen and job.state == 'running':
                 self.store.save(job)
                 seen = now

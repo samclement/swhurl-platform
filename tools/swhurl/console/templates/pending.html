@@ -10,7 +10,7 @@
 {% if prs %}
 <h2>Pull request</h2>
 <ul class="items">
-  {% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">{{ pr.progress }}</span> <a href="{{ pr.checks_url or pr.url }}">Checks</a> <span class="muted">opened {{ pr.opened }}</span></li>{% endfor %}
+  {% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">{{ st.merging(pr) }}</span> <a href="{{ pr.checks_url or pr.url }}">{{ st.checks(pr) }}</a> <span class="muted">opened {{ pr.opened }}</span></li>{% endfor %}
 </ul>
 {% elif prs_error %}<p class="muted">{{ prs_error }}</p>{% endif %}
 {% if jobs %}

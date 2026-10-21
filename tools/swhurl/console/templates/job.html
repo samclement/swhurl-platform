@@ -12,7 +12,7 @@
 {# The whole change, not only this job: re-read while something after the job is still moving (checks, the merge, Flux). #}
 <div id="track"{% if job.state != 'running' %} hx-get="/jobs/{{ job.id }}" hx-trigger="every 30s" hx-select="#track" hx-target="#track" hx-swap="outerHTML"{% endif %}>
 {{ st.track(track) }}
-{% if pr %}<p class="pull"><a href="{{ pr.url }}">Pull request #{{ pr.number }} {{ st.icon('external') }}</a> · <a href="{{ pr.checks_url or pr.url }}" title="Its checks on GitHub">{{ pr.progress }} {{ st.icon('external') }}</a></p>
+{% if pr %}<p class="pull"><a href="{{ pr.url }}">Pull request #{{ pr.number }} {{ st.icon('external') }}</a> · <a href="{{ pr.checks_url or pr.url }}" title="Its checks on GitHub">{{ st.checks(pr) }} {{ st.icon('external') }}</a></p>
 <p>{{ st.merging(pr) }}</p>{% endif %}
 </div>
 <p id="job-link"{% if not job.link or pr %} hidden{% endif %}><a id="job-link-anchor" href="{{ job.link }}">{{ job.link }}</a></p>

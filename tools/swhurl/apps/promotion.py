@@ -86,6 +86,13 @@ REVIEWED = (('publishes', 'publishes', 'what it publishes'), ('port', 'port', 'i
 """The Release fields production must be ready for: a promotion that changes one is reviewed."""
 
 
+def staged(release: Release, history: Iterable[Release]) -> bool:
+    """Whether main selected this complete Release, not just its digest. Readers supply only
+    first-parent snapshots; failed reads propagate rather than becoming an unstaged verdict.
+    """
+    return any(selected == release for selected in history)
+
+
 def held(app: str, changed: Iterable[str], before: Release | None, after: Release | None,
          staged: Callable[[Release], bool]) -> str:
     """Promotion's one rule: why a person merges this promotion of ``app``, or '' when it merges itself.

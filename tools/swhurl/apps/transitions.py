@@ -4,11 +4,11 @@ from __future__ import annotations
 from dataclasses import replace
 
 from swhurl.apps import declaration
-from swhurl.apps.contract import RETAINED_STORAGE_CLASS, over_quota, quantity
+from swhurl.apps.contract import over_quota, quantity
 from swhurl.apps.errors import EditError
 from swhurl.apps.model import workload
 from swhurl.apps.model.draft import Entry
-from swhurl.apps.model.records import Image, Release, Resources, Storage
+from swhurl.apps.model.records import Image, Release, Resources
 
 RESOURCE_FIELDS = (('cpu', 'requests', 'cpu'), ('memory', 'requests', 'memory'), ('memory_limit', 'limits', 'memory'))
 """Each resource the image may need at least (declaration.RESOURCES) and where it is in the container."""
@@ -32,7 +32,7 @@ def changed_list(what: str, current: list[str], replace: list[str] | None, add: 
 
 def with_needs(entry: Entry, image: Image, declared: declaration.Declaration, app: str) -> tuple[Entry, list[str]]:
     """The records with a new image and what it needs: its port and health path (web), the user it runs as,
-    telemetry, a new database's volume, the secret names it reads (a new one arrives without a value),
+    telemetry, a new database need, the secret names it reads (a new one arrives without a value),
     resources at its minimum or the instance's capacity, whichever is larger, its description and its stack. Returns them and what changed.
     A need the instance cannot take is refused (EditError)."""
     needs, old = declared.needs, entry.release
@@ -49,8 +49,8 @@ def with_needs(entry: Entry, image: Image, declared: declaration.Declaration, ap
 
 def take_release(entry: Entry, release: Release, app: str, database_size: str, said: str) -> tuple[Entry, list[str]]:
     """``entry`` running ``release``, an image and what it needs (a new staging image's, or staging's for a
-    promotion), with what that changes in the instance's Settings: a new database gets a retained volume of
-    ``database_size`` and one writer. Returns the records and what changed. Refused (EditError, naming
+    promotion), retaining volume safety checks. A new database requests ``database_size`` and one writer;
+    preparation allocates the volume. Returns the records and what changed. Refused (EditError, naming
     ``said``, where the need was declared): a database the instance would lose, a volume of another size, and a
     new uid for files already on a volume."""
     old, settings = entry.release, entry.settings
@@ -66,10 +66,9 @@ def take_release(entry: Entry, release: Release, app: str, database_size: str, s
         changes.append(f'uid {old.uid} -> {release.uid}')
     if release.telemetry != old.telemetry:
         changes.append(f'telemetry {"otlp" if release.telemetry else "none"}')
-    allocations, replicas = settings.allocations, settings.replicas
+    allocations, replicas = settings.allocations, settings.choices.replicas
     if release.database and not old.database:
         # As app-new makes it: a retained volume, one writer, stop-first updates (rule single-writer).
-        allocations = replace(allocations, database=Storage(database_size, RETAINED_STORAGE_CLASS))
         replicas = None
         changes.append(f'database {release.database} on a new {database_size} volume')
     elif old.database and not release.database:
@@ -84,7 +83,7 @@ def take_release(entry: Entry, release: Release, app: str, database_size: str, s
     if release.description != old.description:
         changes.append('description')
     # The instance's own capacity stays: resources render as the larger of it and the image's minimum.
-    found = replace(entry, release=release, settings=replace(settings, replicas=replicas, allocations=allocations))
+    found = replace(entry, release=release, settings=replace(settings, choices=replace(settings.choices, replicas=replicas)))
     changes += at_minimum(entry, found)
     return found, changes
 
@@ -98,7 +97,7 @@ def at_minimum(before: Entry, after: Entry) -> list[str]:
     request, limit = resources['requests']['memory'], resources['limits']['memory']
     if quantity(request) > quantity(limit):
         raise EditError(f'resources: a memory request of {request} is above the memory limit {limit}; declare memoryLimit too')
-    count = 1 if after.settings.replicas is None else after.settings.replicas
+    count = 1 if after.settings.choices.replicas is None else after.settings.choices.replicas
     if over := over_quota([(count + (not after.release.database), [resources])]):
         minimum = {field: value for field, _, _ in RESOURCE_FIELDS if (value := getattr(after.release.resources, field))}
         raise EditError(f"resources: the image's minimum {minimum} at {count} replica(s) "

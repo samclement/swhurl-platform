@@ -99,7 +99,7 @@ def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance]
     platform = store.platform(root, base)
     registered = teams(root)
     found += [f'{each}: instance.yaml: allows {name}, which is not registered in apps/teams.yaml (rule team)'
-              for each, entry in sorted(world.items(), key=lambda item: str(item[0])) for name in entry.settings.allows
+              for each, entry in sorted(world.items(), key=lambda item: str(item[0])) for name in entry.settings.grants.allows
               if name.startswith(TEAM_GRANT) and name.removeprefix(TEAM_GRANT) not in registered
               and (only is None or each in only)]
     for each in world:

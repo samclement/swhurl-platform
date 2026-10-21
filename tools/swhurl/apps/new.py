@@ -25,13 +25,12 @@ import argparse
 import os
 import re
 import shlex
-import shutil
 import sys
 from dataclasses import replace
 from pathlib import Path
 
 from swhurl import ROOT, app_alerts, yamlio
-from swhurl.apps import declaration, events, offers, policy
+from swhurl.apps import declaration, offers, policy
 from swhurl.apps.calling import (
     NOTIFY,
 )
@@ -46,10 +45,7 @@ from swhurl.apps.contract import (
     EXPOSURES,
     JOB_SCHEDULE,
     JOB_TIME_ZONE,
-    RETAINED_STORAGE_CLASS,
-    SECRET_FILE,
     SQLITE_PATH,
-    app_secret,
     default_host,
     in_cookie_domain,
     schedule_problem,
@@ -59,9 +55,9 @@ from swhurl.apps.contract import (
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, NAME_RE, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import workload
-from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry
+from swhurl.apps.model.draft import Entry
 from swhurl.apps.model.exposure import DEFAULT_ISSUER
-from swhurl.apps.model.records import Allocations, App, Image, Release, Resources, Settings, Storage
+from swhurl.apps.model.records import App, Choices, Grants, Image, Release, Resources, Settings
 from swhurl.run import CommandError, Runner
 
 IMAGE_RE = re.compile(r'^(?P<repo>[a-z0-9][a-z0-9._/:-]*?)(?::(?P<tag>[A-Za-z0-9._-]+))?(?:@(?P<digest>sha256:[0-9a-f]{64}))?$')
@@ -153,25 +149,16 @@ def records(args) -> Entry:
         secrets=tuple(args.secret_keys or ()), description=args.description or '',
         api_path=getattr(args, 'api_path', '') if web else '')  # provides.api only (--from-repo, --manifest)
     settings = Settings(
-        exposure=args.exposure, host=args.host if args.host and args.host != default_host(args.name, args.env) else '',
-        issuer='' if args.issuer == DEFAULT_ISSUER else args.issuer, calls=tuple(args.calls or ()),
-        subscriptions=tuple(args.subscribe or ()), schedule='' if args.schedule == JOB_SCHEDULE else args.schedule,
-        allocations=Allocations(database=Storage(args.database_size, RETAINED_STORAGE_CLASS) if args.database else None))
+        grants=Grants(exposure=args.exposure, calls=tuple(args.calls or ()), subscriptions=tuple(args.subscribe or ())),
+        choices=Choices(host=args.host if args.host and args.host != default_host(args.name, args.env) else '',
+                        issuer='' if args.issuer == DEFAULT_ISSUER else args.issuer,
+                        schedule='' if args.schedule == JOB_SCHEDULE else args.schedule))
     return Entry(App(args.team, args.alerts or ''), release, settings)
 
 
-def discard(instance: Path) -> None:
-    """Remove an instance being created, and its app's folder if nothing else is in it."""
-    shutil.rmtree(instance, ignore_errors=True)
-    if instance.parent.is_dir() and not any(instance.parent.iterdir()):
-        instance.parent.rmdir()
-
-
 def generate(args, root: Path, runner: Runner | None = None, *, opener: declaration.Opener | None = None) -> list[Path]:
-    """Create the instance: its records rendered with every other instance's (apps/model), after its own
-    credentials are made (a NATS key where there is NATS; a first production's Secret placeholders) and,
-    for an app that describes itself, what it offers read from its repository at the image's commit.
-    Nothing is left behind when a step fails."""
+    """Prepare a new instance, allocations, encrypted credentials and offers with every other instance's
+    derived files, then apply the complete plan. Planning failures leave the checkout unchanged."""
     from swhurl.apps import release as intake
     from swhurl.apps.model import write
 
@@ -182,9 +169,9 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
     if (instance.exists() and any(instance.iterdir())) or instance_unit_file(root, args.name, args.env).exists():
         raise GenerationError(f'{args.name}/{args.env} already exists; refusing to overwrite')
     entry, planned = records(args), {}
-    if entry.settings.calls:  # a call waits for the callee's grant, but the callee must exist and have an address
+    if entry.settings.grants.calls:  # a call waits for the callee's grant, but the callee must exist and have an address
         world, _ = write.read(root)
-        for callee in entry.settings.calls:
+        for callee in entry.settings.grants.calls:
             found = world.get(Instance(callee, args.env))
             if found is None:
                 raise GenerationError(f'{created} calls {callee}, which has no {args.env} instance')
@@ -203,50 +190,16 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
             planned = intake.offer_files(instance / offers.OFFERS_DIR, repository, commit, files)
     except EditError as error:
         raise GenerationError(f'what the app offers could not be read: {error}') from None
-    instance.mkdir(parents=True, exist_ok=True)
     try:
-        encrypted = set()
-        if args.secret_keys and args.env == 'prod':
-            # A first production never runs without a value: make check-secrets refuses the placeholders.
-            write_encrypted_secret(instance, app_secret(args.name), created.namespace, args.secret_keys, runner=runner)
-            encrypted.add(APP_SECRET)
-        allocations = entry.settings.allocations
-        if events.has_nats(root) or entry.release.publishes or entry.settings.subscriptions:
-            # Every instance signs in to NATS as itself: its feature flag overrides, and events if it declares them.
-            allocations = replace(allocations, events_key=intake.new_nats_key(instance, args.name, args.env, runner=runner))
-            encrypted.add(EVENTS_SECRET)
-        entry = replace(entry, settings=replace(entry.settings, allocations=allocations), encrypted=frozenset(encrypted))
-        prepared = write.prepare(root, {created: write.Create(entry)}, register=args.register)
-        written = write.apply(root, prepared)
-        intake.write_files(planned)
-    except (EditError, CommandError) as error:
-        discard(instance)
+        prepared = write.prepare(root, {created: write.Create(entry, args.database_size)}, register=args.register, runner=runner)
+        prepared.writes.update(planned)
+        return sorted(write.apply(root, prepared))
+    except EditError as error:
         raise GenerationError(str(error)) from None
-    except Exception:
-        discard(instance)
-        raise
-    return sorted({*written, *(instance / name for name in ('events.sops.yaml', SECRET_FILE) if (instance / name).is_file()),
-                   *planned})
 
 
 def dump(docs) -> str:
     return yamlio.dump_all(docs)
-
-
-def write_encrypted_secret(instance: Path, name: str, namespace: str, keys: list[str], *, runner: Runner | None = None) -> Path:
-    path = instance / SECRET_FILE
-    secret = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': name, 'namespace': namespace},
-              'type': 'Opaque', 'stringData': {k: 'REPLACE_ME' for k in keys}}
-    path.write_text(dump([secret]))
-    try:
-        (runner or Runner()).run(['sops', '--encrypt', '--in-place', str(path)])
-    except CommandError as error:
-        path.unlink(missing_ok=True)
-        raise GenerationError(f'could not SOPS-encrypt {path} (is there a .sops.yaml rule?): {error}') from error
-    if 'sops:' not in path.read_text():
-        path.unlink()
-        raise GenerationError(f'{path} was not encrypted; removed it')
-    return path
 
 
 REPO_RE = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')

@@ -20,6 +20,8 @@ from swhurl.apps.model.draft import EVENTS_SECRET, Entry, Platform, RenderError
 from swhurl.apps.model.records import (
     Allocations,
     App,
+    Choices,
+    Grants,
     Image,
     RecordError,
     Release,
@@ -41,11 +43,7 @@ class RecordTests(unittest.TestCase):
         release = web(stack='typescript', telemetry=True, resources=Resources('100m', '192Mi', '384Mi'), database='sqlite',
                       secrets=('API_TOKEN',), description='Records orders', api_path='/openapi.json',
                       publishes=('created',), offers='abcdef0')
-        settings = Settings(exposure='public', host='orders.example.com', issuer='letsencrypt-staging', calls=('inventory',),
-                            allows=('team:payments', 'reporting'), subscriptions=('shop.visited',),
-                            egress=('api.example.com:443',), replicas=2, capacity=Resources(memory='256Mi'),
-                            exceptions='no-escalation=needs raw sockets',
-                            allocations=Allocations(30101, 'UDFZ', Storage('1Gi', 'local-path-retain')))
+        settings = Settings(grants=Grants(exposure='public', calls=('inventory',), allows=('team:payments', 'reporting'), subscriptions=('shop.visited',), egress=('api.example.com:443',), exceptions='no-escalation=needs raw sockets'), choices=Choices(host='orders.example.com', issuer='letsencrypt-staging', replicas=2, capacity=Resources(memory='256Mi')), allocations=Allocations(30101, 'UDFZ', Storage('1Gi', 'local-path-retain')))
         app = App('payments', 'errors=none')
         self.assertEqual(Release.parse(release.document()), release)
         self.assertEqual(Settings.parse(settings.document()), settings)
@@ -109,15 +107,15 @@ class RenderTests(unittest.TestCase):
         floor = Resources('100m', '192Mi', '384Mi')
         self.assertEqual(resources(web(), Settings()),
                          {'requests': {'cpu': '10m', 'memory': '32Mi'}, 'limits': {'memory': '128Mi'}}, 'the default')
-        self.assertEqual(resources(web(resources=floor), Settings(capacity=Resources(memory='256Mi', cpu='50m'))),
+        self.assertEqual(resources(web(resources=floor), Settings(choices=Choices(capacity=Resources(memory='256Mi', cpu='50m')))),
                          {'requests': {'cpu': '100m', 'memory': '256Mi'}, 'limits': {'memory': '384Mi'}})
 
     def test_records_that_cannot_be_rendered_together_are_refused(self):
         orders, shop = Instance('orders', 'staging'), Instance('shop', 'staging')
         cases = (
-            ({orders: Entry(App('p'), web(), Settings(calls=('shop',))),
-              shop: Entry(App('p'), Release(IMAGE, 'worker', 1), Settings(allows=('orders',)))}, orders, 'a worker: it has no address'),
-            ({orders: Entry(App('p'), web(), Settings(subscriptions=('shop.paid',))),
+            ({orders: Entry(App('p'), web(), Settings(grants=Grants(calls=('shop',)))),
+              shop: Entry(App('p'), Release(IMAGE, 'worker', 1), Settings(grants=Grants(allows=('orders',))))}, orders, 'a worker: it has no address'),
+            ({orders: Entry(App('p'), web(), Settings(grants=Grants(subscriptions=('shop.paid',)))),
               shop: Entry(App('p'), web(), Settings())}, orders, 'subscribes to shop.paid, which shop/staging does not publish'),
             ({orders: Entry(App('p'), web(publishes=('created',)), Settings())}, orders, 'declares events but has no NATS key'),
             ({orders: Entry(App('p'), web(database='sqlite'), Settings())}, orders, 'declares sqlite but has no database allocation'),
@@ -141,9 +139,9 @@ class RenderTests(unittest.TestCase):
             return 'SWHURL_SERVICE_ORDERS_URL' in env, audiences, callers
 
         def world(allows=(), team='demo', present=True):
-            found = {shop: Entry(App(team), web(), Settings(calls=('orders',)))}
+            found = {shop: Entry(App(team), web(), Settings(grants=Grants(calls=('orders',))))}
             if present:
-                found[orders] = Entry(App('demo'), web(), Settings(allows=allows))
+                found[orders] = Entry(App('demo'), web(), Settings(grants=Grants(allows=allows)))
             return found
         connected = (True, ['orders', 'notify'], 'shop')
         self.assertEqual(connection(world(('shop',))), connected, 'granted to the app')
@@ -152,7 +150,7 @@ class RenderTests(unittest.TestCase):
                          'the grant follows the caller\'s current team')
         self.assertEqual(connection(world()), (False, ['notify'], None), 'a call without a grant waits')
         self.assertEqual(connection(world(present=False)), (False, ['notify'], None), 'a call to an absent app renders nothing')
-        unused = {orders: Entry(App('demo'), web(), Settings(allows=('shop',)))}
+        unused = {orders: Entry(App('demo'), web(), Settings(grants=Grants(allows=('shop',))))}
         self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.render(unused, orders)[Path('apps/orders/staging/helmrelease.yaml')][0]
                          ['spec']['values']['controllers']['main']['containers']['main']['env'], 'a grant without a call is unused')
 
@@ -191,8 +189,7 @@ class RenderTests(unittest.TestCase):
         orders, shop = Instance('orders', 'staging'), Instance('shop', 'staging')
         key = frozenset({EVENTS_SECRET})
         world = {orders: Entry(App('p'), web(publishes=('created',)), Settings(allocations=Allocations(events_key='UORDERS')), key),
-                 shop: Entry(App('p'), web(), Settings(subscriptions=('orders.created',),
-                                                       allocations=Allocations(events_key='USHOP')), key)}
+                 shop: Entry(App('p'), web(), Settings(grants=Grants(subscriptions=('orders.created',)), allocations=Allocations(events_key='USHOP')), key)}
         users = render.shared(world, dataclasses.replace(self.platform, controller_key='UCONTROL')).nats_users
         self.assertEqual([user['nkey'] for user in users], ['UCONTROL', 'UORDERS', 'USHOP'])
         self.assertIn('$JS.ACK.staging-orders.shop_created.>', users[2]['permissions']['publish']['allow'])
@@ -238,9 +235,9 @@ class ShadowTests(unittest.TestCase):
         self.assertEqual(self.problems(), [])
         entries, _ = store.world(self.root)
         prod = entries[Instance('hello', 'prod')]
-        self.assertEqual((prod.settings.exposure, prod.settings.host), ('public', 'hello.example.com'))
-        self.assertEqual(prod.settings.exceptions, 'no-escalation=needs raw sockets')
-        self.assertEqual(entries[Instance('hello', 'staging')].settings.replicas, 2)
+        self.assertEqual((prod.settings.grants.exposure, prod.settings.choices.host), ('public', 'hello.example.com'))
+        self.assertEqual(prod.settings.grants.exceptions, 'no-escalation=needs raw sockets')
+        self.assertEqual(entries[Instance('hello', 'staging')].settings.choices.replicas, 2)
         self.assertEqual(prod.app.alerts, entries[Instance('hello', 'staging')].app.alerts)
 
     def test_records_without_a_render_or_unit_are_rendered_and_registered(self):
@@ -330,9 +327,9 @@ class ShadowTests(unittest.TestCase):
                     shutil.copytree(self.root, root)
                     if granted:
                         model_sync.change(root, target, lambda entry: dataclasses.replace(
-                            entry, settings=dataclasses.replace(entry.settings, allows=('caller',))))
+                            entry, settings=dataclasses.replace(entry.settings, grants=dataclasses.replace(entry.settings.grants, allows=('caller',)))))
                     model_sync.apply(root, model_sync.prepare(root, {
-                        caller: model_sync.Create(Entry(App('demo'), web(), Settings(calls=('hello',))))}))
+                        caller: model_sync.Create(Entry(App('demo'), web(), Settings(grants=Grants(calls=('hello',)))))}))
                     for name in ('release.yaml', 'instance.yaml'):
                         (target.folder(root) / name).unlink()
                     if marker == 'folder':
@@ -348,7 +345,7 @@ class ShadowTests(unittest.TestCase):
     def test_waiting_calls_to_arbitrary_absent_apps_are_not_orphan_removals(self):
         caller = Instance('caller', 'staging')
         model_sync.apply(self.root, model_sync.prepare(self.root, {
-            caller: model_sync.Create(Entry(App('demo'), web(), Settings(calls=('missing',))))}))
+            caller: model_sync.Create(Entry(App('demo'), web(), Settings(grants=Grants(calls=('missing',)))))}))
         unrelated = self.root / 'apps/missing/staging/notes.yaml'
         unrelated.parent.mkdir(parents=True)
         unrelated.write_text('keep: true\n')

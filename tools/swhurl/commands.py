@@ -177,7 +177,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
               Var('APP', '<app>', required=False), args('"--refresh"', required=False)),
         _edit('app-secret', 'cli:main_secret', 'Set one secret value of an instance, read from standard input or asked for '
               'without echo (needs the age key: run it in your own terminal)', APP, ENV, Var('NAME', '<VARIABLE>')),
-        _edit('app-sync', 'cli:main_sync', 'Rewrite what the platform derives in every instance: identity, signing keys, allowed callers'),
+        _edit('app-sync', 'cli:main_sync', 'Rewrite derived files; bootstrap missing identities or explicitly rotate one NATS key',
+              args('"--rotate-nkey demo-orders/staging"', required=False)),
         _edit('app-promote', 'cli:main_promote', 'Create production from staging or update its image',
               APP, args('"--expect-image=... | --host=..."', required=False)),
         Command('app-status', 'Its state, whether Git is applied, the running image, replicas, route and certificate', READ,

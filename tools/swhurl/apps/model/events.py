@@ -8,12 +8,12 @@ from swhurl.apps.model.draft import EVENTS_SECRET, Draft, Entry, Platform, Rende
 
 
 def keyed(entry: Entry) -> bool:
-    return bool(entry.settings.allocations.events_key) and EVENTS_SECRET in entry.encrypted
+    return bool(entry.settings.allocations.events_key) and (EVENTS_SECRET in entry.encrypted or EVENTS_SECRET in entry.pending)
 
 
 def apply(draft: Draft, entry: Entry, world: World) -> None:
     app, env = draft.instance.app, draft.instance.env
-    publishes, subscribes = entry.release.publishes, entry.settings.subscribed
+    publishes, subscribes = entry.release.publishes, entry.settings.grants.subscribed
     others = environment(world, env)
     for publisher, event in subscribes:
         if publisher not in others or event not in others[publisher].release.publishes:
@@ -25,7 +25,7 @@ def apply(draft: Draft, entry: Entry, world: World) -> None:
     if publishes:
         draft.env[events.PUBLISH_VARIABLE] = ','.join(publishes)
     if subscribes:
-        draft.env[events.SUBSCRIBE_VARIABLE] = ','.join(entry.settings.subscriptions)
+        draft.env[events.SUBSCRIBE_VARIABLE] = ','.join(entry.settings.grants.subscriptions)
     draft.env[events.NKEY_VARIABLE] = entry.settings.allocations.events_key
     draft.env[events.URL_VARIABLE] = events.URL
     draft.env_from(events.secret_name(app))
@@ -48,5 +48,5 @@ def users(world: World, platform: Platform) -> list[dict] | None:
         for app, entry in sorted(environment(world, env).items()):
             if keyed(entry):
                 found.append(events.user(entry.settings.allocations.events_key, env, app, list(entry.release.publishes),
-                                         entry.settings.subscribed))
+                                         entry.settings.grants.subscribed))
     return found

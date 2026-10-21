@@ -183,11 +183,12 @@ class FirstProductionTests(unittest.TestCase):
         """sops as a FakeRunner: marks the file encrypted, and the placeholders never hold a staging value."""
         from swhurl.run import FakeRunner, Result
 
-        def encrypt(args, _):
-            path = Path(args[-1])
-            self.assertNotIn('staging-value', path.read_text())
-            path.write_text(path.read_text().replace('REPLACE_ME', 'ENC[new-placeholder]') + 'sops: {}\n')
-            return Result(args)
+        def encrypt(args, given):
+            self.assertNotIn('staging-value', given)
+            values = yamlio.load(given)['stringData']
+            for value in values.values():
+                given = given.replace(value, 'ENC[new-placeholder]')
+            return Result(args, stdout=given + 'sops: {}\n')
         return FakeRunner().on('sops', handler=encrypt)
 
     def test_web_worker_and_sqlite_conversion_preserves_settings(self):

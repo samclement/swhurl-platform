@@ -1,4 +1,5 @@
 """app-promote, app-scale, app-remove: Git edits of generated instances, offline on a copy of the sample instance."""
+import dataclasses
 import difflib
 import io
 import json
@@ -74,7 +75,7 @@ class EditTests(unittest.TestCase):
         self.new_staging_image()
         record = self.staging.parent / 'release.yaml'
         record.write_text(record.read_text().replace('port: 8080', 'port: 9090'))
-        self.quiet(edit.sync, self.root)
+        model_sync.apply(self.root, model_sync.prepare(self.root, {}))
 
         def listens(env):
             release = yaml.safe_load((self.root / 'apps/hello' / env / 'helmrelease.yaml').read_text())['spec']['values']
@@ -289,7 +290,7 @@ class EditTests(unittest.TestCase):
             shutil.copy(self.root / 'apps/hello/app.yaml', self.root / 'apps' / name / 'app.yaml')
             for path in (self.root / 'apps' / name / env).glob('*.yaml'):
                 path.write_text(path.read_text().replace('hello', name).replace('port: 8080', f'port: {port}'))
-        self.quiet(edit.sync, self.root)
+        model_sync.apply(self.root, model_sync.prepare(self.root, {}))
 
     def test_calls_give_the_caller_an_address_and_token_and_the_callee_an_allowed_caller(self):
         self.second_app()
@@ -366,14 +367,14 @@ class EditTests(unittest.TestCase):
         hint = 'check calls on the caller and allows on the callee in instance.yaml, then run make app-sync'
         self.assertIn(f'calls: calls orders, which does not allow it; {hint}', problems[instances[0]])
         self.assertIn(f'calls: allows stranger, which does not declare a call to it; {hint}', problems[instances[1]])
-        self.quiet(edit.sync, self.root)
+        model_sync.apply(self.root, model_sync.prepare(self.root, {}))
         self.assertEqual(policy.check_calls(instances), {})
 
     def test_signing_keys_refresh_rewrites_the_file_and_every_web_app(self):
         from swhurl.apps import keys
         from swhurl.run import FakeRunner
         (self.root / 'apps/signing-keys.json').write_text('{"keys": [{"kid": "old"}]}')
-        self.quiet(edit.sync, self.root)
+        model_sync.apply(self.root, model_sync.prepare(self.root, {}))
         self.assertEqual(self.env('hello')['SWHURL_AUTH_KEYS'], '{"keys":[{"kid":"old"}]}')
         runner = FakeRunner().on(*keys.JWKS, stdout='{"keys": [{"kid": "new"}]}')
         code, out = self.quiet(keys.main, ['--root', str(self.root)], runner)
@@ -391,11 +392,10 @@ class EditTests(unittest.TestCase):
         """A runner whose sops marks the file encrypted, as the real one does, and hides the seed."""
         from swhurl.run import FakeRunner, Result
 
-        def encrypt(args, _input):
-            path = Path(args[-1])
-            self.seeds.append(yaml.safe_load(path.read_text())['stringData']['SWHURL_EVENTS_SEED'])
-            path.write_text(path.read_text().replace(self.seeds[-1], 'ENC[...]') + 'sops:\n  age: []\n')
-            return Result(args, 0, '')
+        def encrypt(args, given):
+            self.assertEqual(args[-1], '/dev/stdin')
+            self.seeds.append(yaml.safe_load(given)['stringData']['SWHURL_EVENTS_SEED'])
+            return Result(args, 0, given.replace(self.seeds[-1], 'ENC[...]') + 'sops:\n  age: []\n')
         self.seeds = []
         return FakeRunner().on('sops', handler=encrypt)
 
@@ -508,10 +508,9 @@ class EditTests(unittest.TestCase):
         self.with_units()
         (self.root / events.CONSOLE_KEY_FILE).write_text('UCONSOLE\n')
         runner = self.sops()
-        self.assertEqual(sorted(map(str, edit.nats_keys(self.root, runner=runner))),
-                         ['hello/prod', 'hello/staging', 'orders/prod', 'orders/staging'])
-        self.assertEqual(edit.nats_keys(self.root, runner=runner), [], 'an instance keeps its key')
-        self.quiet(edit.sync, self.root)
+        self.quiet(edit.sync, self.root, runner=runner)
+        self.assertEqual(len(runner.calls), 4)
+        self.assertEqual(model_sync.sync(self.root, runner=FakeRunner()), [], 'an instance keeps its key')
         self.assertEqual(policy.check_event_users(self.root), [])
         self.assertEqual(policy.check_events([], yaml.safe_load((self.root / 'apps/hello/prod/helmrelease.yaml').read_text()),
                                              {'platform.swhurl.com/environment': 'prod'}), [])
@@ -592,7 +591,7 @@ components:
                 path = self.root / 'apps' / app / env / name
                 path.write_text(path.read_text().replace('docker.io/nginxinc/nginx-unprivileged', f'ghcr.io/samclement/{app}')
                                 .replace('tag: 1.27-alpine', f'tag: {tag}' if env == 'staging' else 'tag: 6-0000000'))
-        self.quiet(edit.sync, self.root)  # a platform image's staging follows new images
+        model_sync.apply(self.root, model_sync.prepare(self.root, {}))  # a platform image's staging follows new images
 
     def test_offers_are_read_at_the_images_commit_and_say_what_the_app_publishes(self):
         from swhurl.apps import offers
@@ -812,7 +811,7 @@ components:
         staging = instance / 'helmrelease.yaml'
         record = staging.parent / 'release.yaml'
         record.write_text(record.read_text().replace(yaml.safe_load(record.read_text())['image']['digest'], NEW_DIGEST))
-        self.quiet(edit.sync, self.root)
+        model_sync.apply(self.root, model_sync.prepare(self.root, {}))
         self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod', runner=runner)
         self.assertEqual(offers.read(self.root / 'apps/orders/prod').declared, found.declared, 'production gets the image\'s flags')
         (instance / 'offers/flags.json').write_text(json.dumps({'shout': {'type': 'boolean', 'default': 'yes'}}))
@@ -1246,7 +1245,7 @@ components:
         staging = self.root / 'apps/orders/staging/helmrelease.yaml'
         record = staging.parent / 'release.yaml'
         record.write_text(record.read_text().replace(yaml.safe_load(record.read_text())['image']['digest'], NEW_DIGEST))
-        self.quiet(edit.sync, self.root)
+        model_sync.apply(self.root, model_sync.prepare(self.root, {}))
         self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod', runner=runner)
         prod = self.root / 'apps/orders/prod'
         self.assertEqual(offers.read(prod).commit, 'abc1234')
@@ -1270,7 +1269,7 @@ components:
         doc = yaml.safe_load(record.read_text())
         doc['apiPath'] = '/openapi.json'
         record.write_text(yaml.safe_dump(doc, sort_keys=False))
-        self.quiet(edit.sync, self.root)
+        model_sync.apply(self.root, model_sync.prepare(self.root, {}))
         self.assertEqual(generated.problems(self.root), [],
                          'staging describes its API before production runs that image')
 
@@ -1364,7 +1363,7 @@ components:
     def test_plain_release_update_does_not_allocate_a_nats_key_just_because_nats_exists(self):
         self.with_units()
         each = Instance('hello', 'staging')
-        with mock.patch.object(intake, 'new_nats_key', side_effect=AssertionError('unexpected encryption')) as key:
+        with mock.patch.object(model_sync, 'encrypt_secret', side_effect=AssertionError('unexpected encryption')) as key:
             intake.change_release(self.root, each, model_sync.Update(lambda entry: entry), {})
         key.assert_not_called()
         self.assertFalse((each.folder(self.root) / 'events.sops.yaml').exists())
@@ -1383,10 +1382,11 @@ components:
                     if action == 'release':
                         with self.assertRaisesRegex(edit.EditError, 'notification route'):
                             intake.change_release(self.root, Instance('hello', 'staging'),
-                                                  model_sync.Update(lambda entry: entry), {}, runner=runner, keyed=True)
+                                                  model_sync.Update(lambda entry: dataclasses.replace(
+                                                      entry, release=dataclasses.replace(entry.release, publishes=('created',)))), {}, runner=runner)
                     else:
                         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors:
-                            with mock.patch.object(intake, 'Runner', return_value=runner):
+                            with mock.patch.object(model_sync, 'Runner', return_value=runner):
                                 self.assertEqual(cli.main_sync(['--root', str(self.root)]), 2)
                         self.assertIn('notification route', errors.getvalue())
                     self.assertTrue(runner.calls, 'a key was actually generated/encrypted before planning refused')

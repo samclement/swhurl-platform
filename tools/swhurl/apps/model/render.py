@@ -80,6 +80,6 @@ class Shared:
 
 def shared(world: World, platform: Platform) -> Shared:
     reloaded = frozenset(each.namespace for each, entry in world.items()
-                         if events.keyed(entry) or entry.release.secrets or APP_SECRET in entry.encrypted)
+                         if events.keyed(entry) or entry.release.secrets or (APP_SECRET in entry.encrypted or APP_SECRET in entry.pending))
     return Shared(events.users(world, platform), egress.proxy(world, platform), reloaded,
                   frozenset(f'{each.unit}.yaml' for each in world))

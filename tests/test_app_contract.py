@@ -352,7 +352,7 @@ class GeneratorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=FIXTURES.parent) as tmp:
             fake = Path(tmp) / 'bin'
             fake.mkdir()
-            (fake / 'sops').write_text('#!/bin/sh\nfor f; do :; done\nprintf "sops: {}\\n" >> "$f"\n')
+            (fake / 'sops').write_text("#!/bin/sh\nsed 's/REPLACE_ME/ENC[placeholder]/g'\nprintf 'sops: {}\\n'\n")
             (fake / 'sops').chmod(0o755)
             env = dict(os.environ, FIXTURE_ROOT=str(Path(tmp) / 'out'), PATH=f'{fake}:{os.environ["PATH"]}')
             result = subprocess.run([str(FIXTURES.parent / 'apps.sh')], env=env, capture_output=True, text=True)

@@ -66,7 +66,7 @@ def admitting(root: Path, app: str) -> list[str]:
     network policy."""
     world, _ = write.read(root)
     staging = world[Instance(app, 'staging')]
-    return [callee for callee in staging.settings.calls
+    return [callee for callee in staging.settings.grants.calls
             if callee != app and (found := world.get(Instance(callee, 'prod'))) and admits(found, app, staging.app.team)]
 
 
@@ -104,7 +104,7 @@ def review(root: Path, app: str, status: ops.InstanceStatus, runner: Runner | No
     problem = promotion.source_problem(status, decision.image)
     if problem:
         raise ActionError(problem)
-    exposure = source.settings.exposure
+    exposure = source.settings.grants.exposure
     first, admits = None, []
     if decision.outcome == 'create':
         first = promotion.first_production(root, world, app, preview=True)
@@ -112,15 +112,14 @@ def review(root: Path, app: str, status: ops.InstanceStatus, runner: Runner | No
     needs_host = decision.outcome == 'create' and exposure == 'public'
     if target:
         settings = target.settings
-        addresses = (settings.host or promotion.contract.default_host(app, 'prod'),) if settings.exposure != 'private' else ()
+        addresses = (settings.choices.host or promotion.contract.default_host(app, 'prod'),) if settings.grants.exposure != 'private' else ()
     elif first and first.host:
         addresses = (first.host,)
     else:
         addresses = ()
-    database = first.entry.settings.allocations.database if first else None
     found = {'app': app, 'outcome': decision.outcome, 'image': decision.image, 'previous': decision.previous,
              'rollback': decision.rollback, 'needs_host': needs_host,
-             'secrets': first.secret_keys if first else [], 'storage': database.size if database else None,
+             'secrets': first.secret_keys if first else [], 'storage': first.database_size if first and first.database_size else None,
              'admits': admits,
              'address': ', '.join('https://' + address for address in addresses) or
              ('private (no route)' if not needs_host else ''),

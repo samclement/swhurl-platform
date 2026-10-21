@@ -479,7 +479,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         shown = with_waiting(found, row.connections if row else cluster.Connections(), settings, rows)
         return page(request, 'app.html', status=status, secret_states=secret_states(found, status), flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
                     flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
-                    connections=shown, allows=settings.allows if settings else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
+                    connections=shown, allows=settings.grants.allows if settings else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
                     scale_fields=merge.SCALE_FIELDS, minimum=image_minimum(found), github=github,
                     promotion_problem=promotion_problem,
@@ -744,7 +744,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     def with_waiting(found: Instance, shown: cluster.Connections, settings: records.Settings | None,
                      rows: list[cluster.AppRow]) -> cluster.Connections:
         """Add the calls recorded in Git that render nothing yet (the callee does not allow them)."""
-        waiting = [app for app in (settings.calls if settings else ()) if app not in shown.calls]
+        waiting = [app for app in (settings.grants.calls if settings else ()) if app not in shown.calls]
         if not waiting:
             return shown
         teams = {row.instance.app: row.team for row in rows if row.instance.env == found.env}

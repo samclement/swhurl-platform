@@ -209,19 +209,36 @@ class Allocations:
 
 
 @dataclass(frozen=True)
-class Settings:
-    """``instance.yaml``: what the platform grants one environment, its explicit choices and allocations."""
+class Grants:
+    """Reviewed permissions for this environment; relations retain their existing semantics."""
     exposure: str = 'private'
-    host: str = ''  # '' is the platform's address for a signed-in app
-    issuer: str = ''  # '' is the platform's certificate issuer
     calls: tuple[str, ...] = ()
-    allows: tuple[str, ...] = ()  # who may call it: <app> or team:<team>, this environment only
+    allows: tuple[str, ...] = ()  # <app> or team:<team>, this environment only
     subscriptions: tuple[str, ...] = ()  # <app>.<event>
     egress: tuple[str, ...] = ()  # host:port grants
+    exceptions: str = ''  # reviewed '<rule>=<reason>', comma-separated (docs/apps.md#the-app-policy)
+
+    @property
+    def subscribed(self) -> list[tuple[str, str]]:
+        """``(publishing app, event)`` pairs."""
+        return [tuple(item.split('.', 1)) for item in self.subscriptions]  # type: ignore[misc]
+
+
+@dataclass(frozen=True)
+class Choices:
+    """Explicit environment configuration, independent of the selected Release."""
+    host: str = ''  # '' is the platform's address for a signed-in app
+    issuer: str = ''  # '' is the platform's certificate issuer
     replicas: int | None = None
-    capacity: Resources = Resources()  # an explicit choice; the image's minimum still wins when higher
+    capacity: Resources = Resources()  # the image's minimum still wins when higher
     schedule: str = ''  # a job's; '' is the platform's default
-    exceptions: str = ''  # reviewed app-policy exceptions: '<rule>=<reason>', comma-separated (docs/apps.md#the-app-policy)
+
+
+@dataclass(frozen=True)
+class Settings:
+    """``instance.yaml``: parsed parts, serialized in the existing flat version-1 document."""
+    grants: Grants = field(default_factory=Grants)
+    choices: Choices = field(default_factory=Choices)
     allocations: Allocations = field(default_factory=Allocations)
 
     FIELDS = ('exposure', 'host', 'issuer', 'calls', 'allows', 'subscriptions', 'egress', 'replicas', 'capacity',
@@ -231,20 +248,18 @@ class Settings:
     def parse(cls, doc: object, where: str = 'instance.yaml') -> Settings:
         doc = _fields(doc, where, ('version',), cls.FIELDS)
         _version(doc, where)
-        return cls(_choice(_text(doc, 'exposure', where, 'private'), EXPOSURES, 'exposure', where),
-                   _text(doc, 'host', where), _text(doc, 'issuer', where), _texts(doc, 'calls', where, NAME_RE),
-                   _texts(doc, 'allows', where, ALLOW_RE), _texts(doc, 'subscriptions', where, SUBSCRIPTION_RE), _texts(doc, 'egress', where),
-                   _number(doc, 'replicas', where), Resources.parse(doc.get('capacity', {}), f'{where}: capacity'),
-                   _text(doc, 'schedule', where), _text(doc, 'exceptions', where), Allocations.parse(doc.get('allocations', {}), f'{where}: allocations'))
+        return cls(Grants(_choice(_text(doc, 'exposure', where, 'private'), EXPOSURES, 'exposure', where),
+                          _texts(doc, 'calls', where, NAME_RE), _texts(doc, 'allows', where, ALLOW_RE),
+                          _texts(doc, 'subscriptions', where, SUBSCRIPTION_RE), _texts(doc, 'egress', where),
+                          _text(doc, 'exceptions', where)),
+                   Choices(_text(doc, 'host', where), _text(doc, 'issuer', where), _number(doc, 'replicas', where),
+                           Resources.parse(doc.get('capacity', {}), f'{where}: capacity'), _text(doc, 'schedule', where)),
+                   Allocations.parse(doc.get('allocations', {}), f'{where}: allocations'))
 
     def document(self) -> dict:
+        grants, choices = self.grants, self.choices
         return {'version': VERSION, **_compact({
-            'exposure': self.exposure, 'host': self.host, 'issuer': self.issuer, 'calls': list(self.calls),
-            'allows': list(self.allows), 'subscriptions': list(self.subscriptions), 'egress': list(self.egress), 'replicas': self.replicas,
-            'capacity': self.capacity.document(), 'schedule': self.schedule, 'exceptions': self.exceptions,
-            'allocations': self.allocations.document()})}
-
-    @property
-    def subscribed(self) -> list[tuple[str, str]]:
-        """``(publishing app, event)`` pairs."""
-        return [tuple(item.split('.', 1)) for item in self.subscriptions]  # type: ignore[misc]
+            'exposure': grants.exposure, 'host': choices.host, 'issuer': choices.issuer, 'calls': list(grants.calls),
+            'allows': list(grants.allows), 'subscriptions': list(grants.subscriptions), 'egress': list(grants.egress),
+            'replicas': choices.replicas, 'capacity': choices.capacity.document(), 'schedule': choices.schedule,
+            'exceptions': grants.exceptions, 'allocations': self.allocations.document()})}

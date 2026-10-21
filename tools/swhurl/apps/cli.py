@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from swhurl import ROOT, app_alerts, platform
-from swhurl.apps import edit, egress, events, images, offers, ops, promotion
+from swhurl.apps import edit, egress, images, offers, ops, promotion
 from swhurl.apps.contract import EXPOSURES
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, Instance
@@ -292,14 +292,15 @@ def main_secret(argv: list[str] | None = None, runner: Runner | None = None) -> 
 def main_sync(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog='swhurl app-sync', description='Rewrite what the platform derives in every instance')
     p.add_argument('--root', type=Path, default=ROOT)
+    p.add_argument('--rotate-nkey', metavar='APP/ENV', help='replace one existing complete NATS identity (may interrupt connections)')
     args = p.parse_args(argv)
-    def keys_then_sync():
-        root = args.root.resolve()
-        if events.has_nats(root):  # every instance has its own NATS key; one made before that gets it here
-            for each in edit.nats_keys(root):
-                print(f'[OK] {each}: created its NATS key ({events.SECRET_FILE})')
-        return edit.sync(root)
-    return run(keys_then_sync, False)
+    target = None
+    if args.rotate_nkey is not None:
+        parts = args.rotate_nkey.split('/')
+        target = Instance.named(*parts) if len(parts) == 2 else None
+        if target is None:
+            p.error('--rotate-nkey requires one app/env target (demo-orders/staging)')
+    return run(lambda: edit.sync(args.root.resolve(), rotate=target), False)
 
 
 def main_remove(argv: list[str] | None = None) -> int:

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -33,19 +32,16 @@ from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder
 from swhurl.apps.model import workload, write
 from swhurl.apps.model.calls import admits
-from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry
-from swhurl.apps.model.events import keyed as events_keyed
+from swhurl.apps.model.draft import APP_SECRET, Entry
 from swhurl.apps.model.exposure import ROUTED
 from swhurl.apps.model.records import ALLOW_RE, TEAM_GRANT, Resources
 from swhurl.apps.model.workload import DEFAULT_RESOURCES
-from swhurl.apps.new import GenerationError, dump, write_encrypted_secret
 from swhurl.apps.release import (
     change_release,
     describe_offers,
     image_declaration,
     image_source,
     instance_dir,
-    new_nats_key,
     offer_files,
     offered,
     read_offers,
@@ -66,7 +62,7 @@ def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, r
         raise EditError('give --add and/or --remove with app names')
     instance = instance_dir(root, app, env)
     world, _ = write.read(root)
-    current = list(world[Instance(app, env)].settings.calls)
+    current = list(world[Instance(app, env)].settings.grants.calls)
     for callee in add:
         if callee == app:
             raise EditError('an app does not declare calls to itself')
@@ -81,7 +77,8 @@ def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, r
         if callee not in current:
             raise EditError(f'{app}/{env} does not call {callee}')
     now = tuple([callee for callee in current if callee not in remove] + add)
-    write.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(entry.settings, calls=now)))
+    write.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(
+        entry.settings, grants=replace(entry.settings.grants, calls=now))))
     print(f'[OK] {app}/{env} calls: {", ".join(now) or "nothing"}')
     team = world[Instance(app, env)].app.team
     for callee in add:
@@ -99,7 +96,7 @@ def set_allows(root: Path, app: str, env: str, *, add: list[str] | None = None, 
         raise EditError('give --add and/or --remove with app names or team:<team>')
     instance = instance_dir(root, app, env)
     world, _ = write.read(root)
-    current = list(world[Instance(app, env)].settings.allows)
+    current = list(world[Instance(app, env)].settings.grants.allows)
     registered = teams(root)
     for name in add:
         if not ALLOW_RE.match(name):
@@ -114,7 +111,8 @@ def set_allows(root: Path, app: str, env: str, *, add: list[str] | None = None, 
         if name not in current:
             raise EditError(f'{app}/{env} does not allow {name}')
     now = tuple([name for name in current if name not in remove] + list(dict.fromkeys(add)))
-    write.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(entry.settings, allows=now)))
+    write.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(
+        entry.settings, grants=replace(entry.settings.grants, allows=now))))
     print(f'[OK] {app}/{env} allows: {", ".join(now) or "nobody"}')
     return instance
 
@@ -132,12 +130,13 @@ def set_egress(root: Path, app: str, env: str, *, add: list[str] | None = None, 
     world, platform = write.read(root)
     if not platform.egress:
         raise EditError(f'{egress.PROXY_FILE} is missing: this tree has no egress proxy')
-    now = transitions.changed_list('hosts', list(world[Instance(app, env)].settings.egress), None, add, remove)
+    now = transitions.changed_list('hosts', list(world[Instance(app, env)].settings.grants.egress), None, add, remove)
     within = egress.covered(now)
     if within:
         raise EditError(f'a wildcard grant already covers {", ".join(within)}')
     write.change(root, Instance(app, env),
-                      lambda entry: replace(entry, settings=replace(entry.settings, egress=tuple(now))))
+                 lambda entry: replace(entry, settings=replace(
+                     entry.settings, grants=replace(entry.settings.grants, egress=tuple(now)))))
     print(f'[OK] {app}/{env} may reach: {", ".join(now) or "nothing outside the cluster"}')
     return instance
 
@@ -150,7 +149,7 @@ def set_events(root: Path, app: str, env: str, *, subscribe: list[str] | None = 
     instance, each = instance_dir(root, app, env), Instance(app, env)
     world, _ = write.read(root)
     entry = world[each]
-    subscribe = transitions.changed_list('subscribe', list(entry.settings.subscriptions), subscribe,
+    subscribe = transitions.changed_list('subscribe', list(entry.settings.grants.subscriptions), subscribe,
                              add_subscribe or [], remove_subscribe or [])
     if subscribe is None:
         raise EditError('give --subscribe (an empty value clears it), --add-subscribe or --remove-subscribe; '
@@ -160,20 +159,8 @@ def set_events(root: Path, app: str, env: str, *, subscribe: list[str] | None = 
         raise EditError('subscriptions are <app>.<event> (orders.created), each once'
                         + (f': {", ".join(bad)}' if bad else ''))
     subscribed = tuple(subscribe)
-    created = ''
-    if (entry.release.publishes or subscribed) and not events_keyed(entry):
-        created = new_nats_key(instance, app, env, runner=runner)
-
-    def update(entry: Entry) -> Entry:
-        allocations = replace(entry.settings.allocations, events_key=created) if created else entry.settings.allocations
-        return replace(entry, settings=replace(entry.settings, subscriptions=subscribed, allocations=allocations),
-                       encrypted=entry.encrypted | ({EVENTS_SECRET} if created else set()))
-    try:
-        write.change(root, each, update)
-    except EditError:
-        if created:
-            (instance / events.SECRET_FILE).unlink(missing_ok=True)
-        raise
+    write.change(root, each, lambda entry: replace(entry, settings=replace(
+        entry.settings, grants=replace(entry.settings.grants, subscriptions=subscribed))), runner=runner)
     print(f'[OK] {app}/{env} publishes: {", ".join(entry.release.publishes) or "nothing"}; '
           f'subscribes to: {", ".join(subscribed) or "nothing"}')
     return instance
@@ -216,7 +203,7 @@ def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Open
     updated, needed = transitions.with_needs(entry, image, declared, app)
     updated = replace(updated, release=offered(updated.release, commit, files, described, served))
     planned = offer_files(instance / offers.OFFERS_DIR, repository, commit, files)
-    changed = change_release(root, each, write.Update(lambda _: updated), planned, runner=runner)
+    changed = change_release(root, each, write.Update(lambda _: updated, declared.needs.database_size), planned, runner=runner)
     describe_offers(app, 'staging', commit, files, described, declared, changed)
     if moved:
         print(f'[OK] {app}/staging: image {previous.tag} -> {found.tag}')
@@ -246,24 +233,20 @@ def set_secret(root: Path, app: str, env: str, name: str, value: str, *, runner:
     # Rendered before the value is written: the instance's files must be what its records render now. An
     # instance with records and no rendered files yet (a first promotion's branch, which carries only
     # records) gets the encrypted file alone: main renders it when the branch is merged.
-    prepared = write.prepare(root, {each: write.Update(lambda entry: replace(entry, encrypted=entry.encrypted | {APP_SECRET}))}) \
-        if (instance / 'helmrelease.yaml').is_file() else None
     path, runner = instance / SECRET_FILE, runner or Runner()
     relative = path.relative_to(root).as_posix()  # .sops.yaml's rules match this path
+    pending = {} if path.is_file() else {APP_SECRET: write.encrypt_secret(
+        root, path, app_secret(app), each.namespace, {name: value}, runner)}
+    prepared = write.prepare(root, {each: write.Update(lambda entry: replace(entry, pending=pending))}) \
+        if (instance / 'helmrelease.yaml').is_file() else None
+    runner.add_secret(value)
     try:
         if path.is_file():
             if 'stringData' not in read(path):
                 raise EditError(f'{relative} keeps its values under data, not stringData: set {name} with sops by hand')
             runner.run(['sops', 'set', '--value-stdin', relative, f'["stringData"]["{name}"]'], input=json.dumps(value), cwd=root)
-        else:
-            text = dump([{'apiVersion': 'v1', 'kind': 'Secret',
-                          'metadata': {'name': app_secret(app), 'namespace': Instance(app, env).namespace},
-                          'type': 'Opaque', 'stringData': {name: value}}])
-            encrypted = runner.run(['sops', '--encrypt', '--filename-override', relative, '--input-type', 'yaml',
-                                    '--output-type', 'yaml', '/dev/stdin'], input=text, cwd=root).stdout
-            if 'sops:' not in encrypted or 'ENC[' not in encrypted:
-                raise EditError(f'sops did not encrypt {relative}; nothing was written')
-            path.write_text(encrypted)
+        elif prepared is None:  # records-only branch: main renders once it is merged
+            path.write_text(pending[APP_SECRET])
     except CommandError as error:
         raise EditError(f'sops could not set {name} in {relative} (it needs the age key: age.agekey or SOPS_AGE_KEY_FILE): '
                         f'{error}') from None
@@ -363,7 +346,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
                             'never changes what a volume holds or who owns it (promote a newer image instead)')
         size = staging.settings.allocations.database.size if staging.settings.allocations.database else ''
         promoted, changed = transitions.take_release(production, staging.release, app, size, f'{app}/staging')
-        change_release(root, each, write.Update(lambda _: promoted), staging_offers(root, app, staging, folder), runner=runner)
+        change_release(root, each, write.Update(lambda _: promoted, size), staging_offers(root, app, staging, folder), runner=runner)
         print(f'[OK] {app}/prod: image {decision.image} (from staging)' + (' [rollback]' if decision.rollback else ''))
         if changed:
             print(f'[OK] {app}/prod: {", ".join(changed)}')
@@ -374,19 +357,13 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
         return folder
     first = promotion.first_production(root, world, app, host=host)
     write.guard(root, world, platform, [Instance(app, 'staging')])
-    # Production's own credentials, made before rendering: placeholders for the Secret, and its NATS key.
-    folder.mkdir(parents=True)
-    try:
-        if first.secret_keys:
-            try:
-                write_encrypted_secret(folder, app_secret(app), each.namespace, first.secret_keys, runner=runner)
-            except GenerationError as error:
-                raise EditError(str(error)) from None
-        change_release(root, each, write.Create(first.entry), staging_offers(root, app, staging, folder), runner=runner,
-                       keyed=events.has_nats(root))
-    except Exception:
-        shutil.rmtree(folder, ignore_errors=True)
-        raise
+    # Prepare placeholders in memory too: a later key/render/routes refusal leaves no files behind.
+    entry = first.entry
+    if first.secret_keys:
+        ciphertext = write.encrypt_secret(root, folder / SECRET_FILE, app_secret(app), each.namespace,
+                                          dict.fromkeys(first.secret_keys, 'REPLACE_ME'), runner or Runner())
+        entry = replace(entry, pending={APP_SECRET: ciphertext})
+    change_release(root, each, write.Create(entry, first.database_size), staging_offers(root, app, staging, folder), runner=runner)
     print(f'[OK] created {app}/prod from reviewed staging settings (independent storage and credentials)')
     if first.secret_keys:
         print(f'[INFO] Set production secrets before merging, in your own terminal: make app-secret APP={app} ENV=prod NAME=<name> '
@@ -397,7 +374,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
 
 def egress_difference(app: str, staging: Entry, production: Entry) -> None:
     """Say which hosts staging may reach and production may not: a promotion never grants them."""
-    missing = [name for name in staging.settings.egress if name not in production.settings.egress]
+    missing = [name for name in staging.settings.grants.egress if name not in production.settings.grants.egress]
     if missing:
         print(f'[INFO] staging may reach {", ".join(missing)}; production may not. A promotion never widens that: '
               f'make app-egress APP={app} ENV=prod ARGS="--add {",".join(missing)}"')
@@ -438,11 +415,11 @@ def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: s
     effective = {'cpu': running['requests']['cpu'], 'memory': running['requests']['memory'],
                  'memory_limit': running['limits']['memory']}
     changes = []
-    current_replicas = 1 if entry.settings.replicas is None else entry.settings.replicas
+    current_replicas = 1 if entry.settings.choices.replicas is None else entry.settings.choices.replicas
     if replicas is not None and replicas != current_replicas:
         changes.append(f'replicas {replicas}')
     else:
-        replicas = entry.settings.replicas
+        replicas = entry.settings.choices.replicas
     labels = {'cpu': 'requests.cpu', 'memory': 'requests.memory', 'memory_limit': 'limits.memory'}
     changes += [f'{labels[field]} {value}' for field, value in requested.items() if value and value != effective[field]]
     if not changes:
@@ -450,7 +427,7 @@ def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: s
     # The capacity chosen here; resources render as the larger of it and the image's minimum (or the default).
     capacity = Resources(*(requested[field] or effective[field] for field in requested))
     write.change(root, each, lambda entry: replace(
-        entry, settings=replace(entry.settings, replicas=replicas, capacity=capacity)))
+        entry, settings=replace(entry.settings, choices=replace(entry.settings.choices, replicas=replicas, capacity=capacity))))
     print(f'[OK] {app}/{env}: {", ".join(changes)}')
     return instance
 
@@ -464,11 +441,11 @@ def schedule(root: Path, app: str, env: str, when: str) -> Path:
     entry = world[each]
     if entry.release.kind != 'job':
         raise EditError(f'{app}/{env} is not a job: only a job runs on a schedule')
-    previous = entry.settings.schedule or JOB_SCHEDULE
+    previous = entry.settings.choices.schedule or JOB_SCHEDULE
     if previous == when:
         raise EditError(f'{app}/{env} already runs on {when!r}')
     write.change(root, each, lambda entry: replace(
-        entry, settings=replace(entry.settings, schedule='' if when == JOB_SCHEDULE else when)))
+        entry, settings=replace(entry.settings, choices=replace(entry.settings.choices, schedule='' if when == JOB_SCHEDULE else when))))
     print(f'[OK] {app}/{env}: schedule {previous!r} -> {when!r} ({JOB_TIME_ZONE})')
     return instance
 
@@ -496,16 +473,17 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
     instance, each = instance_dir(root, app, env), Instance(app, env)
     world, _ = write.read(root)
     entry = world[each]
-    current = entry.settings.exposure
+    current = entry.settings.grants.exposure
     if exposure != 'private' and entry.release.kind != 'web':
         raise EditError(f'{app}/{env} is a {entry.release.kind} (no Service): it can only be private')
-    current_host = (entry.settings.host or default_host(app, env)) if current in ROUTED else None
+    current_host = (entry.settings.choices.host or default_host(app, env)) if current in ROUTED else None
     host = resolve_host(app, env, exposure, host, current_host)
     if (exposure, host) == (current, current_host):
         raise EditError(f'{app}/{env} is already {exposure}' + (f' at {host}' if host else ''))
     stored = '' if host in (None, default_host(app, env)) else host
     write.change(root, each, lambda entry: replace(entry, settings=replace(
-        entry.settings, exposure=exposure, host=stored, issuer=entry.settings.issuer if host else '')))
+        entry.settings, grants=replace(entry.settings.grants, exposure=exposure),
+        choices=replace(entry.settings.choices, host=stored, issuer=entry.settings.choices.issuer if host else ''))))
     print(f'[OK] {app}/{env}: {current} -> {exposure}' + (f' at https://{host}' if host else ' (no route)'))
     return instance
 
@@ -522,17 +500,8 @@ def remove(root: Path, app: str, env: str) -> None:
               'Delete the data only on purpose: make destroy-data (docs/operations.md#lifecycle)')
 
 
-def nats_keys(root: Path, *, runner: Runner | None = None) -> list[Instance]:
-    """Give every instance without one its own NATS key (docs/apps.md#events); the instances that got one."""
-    world, _ = write.read(root)
-    found = [each for each, entry in world.items() if not events_keyed(entry)]
-    for each in found:
-        change_release(root, each, write.Update(lambda entry: entry), {}, runner=runner, keyed=True)
-    return found
-
-
-def sync(root: Path) -> None:
-    changed = write.sync(root)
+def sync(root: Path, *, rotate: Instance | None = None, runner: Runner | None = None) -> None:
+    changed = write.sync(root, rotate=rotate, runner=runner)
     for path in changed:
         print(f'[OK] rewrote {path.relative_to(root)}')
     if not changed:

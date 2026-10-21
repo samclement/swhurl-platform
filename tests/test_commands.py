@@ -128,6 +128,8 @@ class MakeTests(unittest.TestCase):
                 ('team-add', {'NAME': 'a', 'DESCRIPTION': 'what it owns'}, ['a', '--description', 'what it owns']),
                 ('team-add', {'NAME': 'a'}, ['a']),
                 ('app-offers', {'ARGS': '--all staging'}, ['--all', 'staging']),
+                ('app-sync', {}, []),
+                ('app-sync', {'ARGS': '--rotate-nkey demo-orders/staging'}, ['--rotate-nkey', 'demo-orders/staging']),
                 ('verify-logs', {}, ['--minutes', '15']),
                 ('verify-logs', {'MINUTES': '60'}, ['--minutes', '60']),
                 ('notifications-check', {}, ['--dry-run']),

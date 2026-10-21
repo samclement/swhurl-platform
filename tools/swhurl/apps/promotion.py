@@ -11,7 +11,13 @@ from swhurl.apps import contract, ops, state
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import NAME_RE, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model.draft import APP_SECRET, Entry, World
-from swhurl.apps.model.records import RELEASE_FILE, Allocations, RecordError, Release, Settings, Storage
+from swhurl.apps.model.records import (
+    RELEASE_FILE,
+    Grants,
+    RecordError,
+    Release,
+    Settings,
+)
 from swhurl.yamlio import load
 
 
@@ -165,6 +171,7 @@ class FirstProduction:
     """What a first promotion creates production with, before its own key and placeholders exist."""
     entry: Entry
     secret_keys: list[str]  # each gets a REPLACE_ME placeholder: production never runs without a value
+    database_size: str  # explicit allocation request; never a Release field
     host: str  # its address, '' for a private app (or a public one still without --host, in a preview)
 
 
@@ -177,14 +184,14 @@ def first_production(root: Path, world: World, app: str, *, host: str | None = N
     staging = world[Instance(app, 'staging')]
     if not staging.app.team:
         raise EditError('staging names no team (its namespace label); set it with make app-team before promoting')
-    missing = [callee for callee in staging.settings.calls if Instance(callee, 'prod') not in world]
+    missing = [callee for callee in staging.settings.grants.calls if Instance(callee, 'prod') not in world]
     if missing:
         raise EditError(f'{app} calls {", ".join(missing)}, which has no production instance: promote that first')
-    exposure = staging.settings.exposure
+    exposure = staging.settings.grants.exposure
     if host and exposure != 'public':
         raise EditError('--host applies only to first promotion of a public app')
     if exposure == 'public':
-        staged = staging.settings.host
+        staged = staging.settings.choices.host
         if host and contract.in_cookie_domain(host):
             raise EditError(f'public hosts must be outside {contract.default_host("x", "prod")[2:]}: '
                             'the sign-in cookie would reach them')
@@ -199,13 +206,12 @@ def first_production(root: Path, world: World, app: str, *, host: str | None = N
         if not keys or contract.secret_key_problem(keys):
             raise EditError('staging app Secret needs supported environment variable keys')
     database = staging.settings.allocations.database
-    settings = Settings(exposure=exposure, host=(host or '') if exposure == 'public' else '', issuer=staging.settings.issuer,
-                        calls=staging.settings.calls, allows=staging.settings.allows, replicas=staging.settings.replicas, capacity=staging.settings.capacity,
-                        schedule=staging.settings.schedule, exceptions=staging.settings.exceptions,
-                        allocations=Allocations(database=Storage(database.size, contract.RETAINED_STORAGE_CLASS) if database else None))
+    settings = Settings(
+        grants=Grants(exposure=exposure, calls=staging.settings.grants.calls, allows=staging.settings.grants.allows,
+                      exceptions=staging.settings.grants.exceptions),
+        choices=dataclasses.replace(staging.settings.choices, host=(host or '') if exposure == 'public' else ''))
     if exposure == 'public':
         address = host or ''
     else:
         address = contract.default_host(app, 'prod') if exposure != 'private' else ''
-    return FirstProduction(Entry(staging.app, staging.release, settings, frozenset({APP_SECRET}) if keys else frozenset()),
-                           keys, address)
+    return FirstProduction(Entry(staging.app, staging.release, settings), keys, database.size if database else '', address)

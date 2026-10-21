@@ -1,20 +1,16 @@
-"""Keep ClickStack's two webhooks: the operator's ntfy destination on the platform topic, and the one
-that hands every app's default alerts to the notify service.
+"""The two reserved HyperDX webhook definitions, reconciled by the dashboard job.
 
-The topic and the notify service's alert secret come from live Secrets. Neither is printed or
-written to Git by this command; each webhook is stored in ClickStack's MongoDB.
+Destination credentials come from live Secrets; templates stay in HyperDX's MongoDB.
 """
 from __future__ import annotations
 
 import base64
 import json
 
-from swhurl import app_alerts, clickstack, dashboards
+from swhurl import app_alerts
 from swhurl.apps import calling, channels
-from swhurl.notifications.errors import NotificationError
 from swhurl.notifications.notice import ntfy_target, platform_topic
-from swhurl.report import Report
-from swhurl.run import CommandError, Runner
+from swhurl.run import Runner
 
 NAME = 'ntfy: platform'
 DESCRIPTION = 'ClickStack alerts to the platform ntfy topic'
@@ -39,7 +35,7 @@ def notify_destination(runner: Runner) -> dict:
     """The webhook every app alert uses: the notify service, with the shared secret it asks for in the
     body (a HyperDX webhook cannot carry a header or a token that rotates)."""
     secrets = runner.json(['kubectl', '-n', channels.NAMESPACE, 'get', 'secret', ALERT_SECRET, '-o', 'json'], secret_output=True)
-    secret = base64.b64decode(secrets['data']['secret']).decode()
+    secret = base64.b64decode(secrets['data']['secret'], validate=True).decode()
     runner.add_secret(secret)
     if not secret:
         raise ValueError(f'{channels.NAMESPACE}/{ALERT_SECRET} holds no secret')
@@ -48,57 +44,3 @@ def notify_destination(runner: Runner) -> dict:
     runner.add_secret(body)
     return {'name': app_alerts.WEBHOOK, 'service': 'generic', 'url': f'{calling.NOTIFY_URL}/v1/alert',
             'description': 'Default app alerts, to the notify service and on to the app\'s team', 'body': body}
-
-
-def sync(runner: Runner, report: Report, destination=destination, section: str = 'ClickStack ntfy webhook') -> int:
-    report.section(section)
-    try:
-        wanted = destination(runner)
-        name = wanted['name']
-        inputs = clickstack.read_secret(runner, clickstack.INPUTS_SECRET)
-        email = inputs.get('CLICKSTACK_ADMIN_EMAIL', '')
-        uri = clickstack.read_secret(runner, clickstack.MONGO_URI_SECRET).get('connectionString.standard', '')
-        if not (email and uri):
-            report.bad('no ClickStack admin email or MongoDB connection string; run make clickstack-bootstrap')
-            return report.exit_code()
-        key = clickstack.mongo(runner, uri, f'const EMAIL = {json.dumps(email)}; {dashboards.ADMIN_KEY}')['key']
-        if not key:
-            report.bad('the ClickStack admin has no access key; sign in once or run make clickstack-bootstrap')
-            return report.exit_code()
-        api = dashboards.HyperDX(runner, key)
-        result = api.call('GET', '/webhooks')
-        found = [w for w in result.get('data', []) if w.get('name') == name and w.get('service') == 'generic']
-        if result.get('meta', {}).get('total', len(result.get('data', []))) > len(result.get('data', [])):
-            report.bad('ClickStack returned a truncated webhook list; no change made')
-            return report.exit_code()
-        current = found[0] if found else None
-        if current and all(current.get(k) == v for k, v in wanted.items()):
-            report.ok(f'{name} is up to date')
-            return report.exit_code()
-        action = 'update' if current else 'create'
-        if runner.dry_run:
-            report.info(f'would {action} {name}')
-            return report.exit_code()
-        if current:
-            api.call('PUT', f"/webhooks/{current['id']}", wanted)
-        else:
-            api.call('POST', '/webhooks', wanted)
-        report.ok(f'{action}d {name}')
-        return report.exit_code()
-    except (CommandError, KeyError, ValueError, NotificationError) as exc:
-        report.bad(runner.redact(str(exc)))
-        return report.exit_code()
-
-
-def main(argv: list[str] | None = None, runner: Runner | None = None, report: Report | None = None) -> int:
-    if argv:
-        raise ValueError('clickstack-ntfy-webhook takes no arguments')
-    runner = runner or Runner.from_environment()
-    return sync(runner, report or Report(redact=runner.redact))
-
-
-def main_notify(argv: list[str] | None = None, runner: Runner | None = None, report: Report | None = None) -> int:
-    if argv:
-        raise ValueError('clickstack-notify-webhook takes no arguments')
-    runner = runner or Runner.from_environment()
-    return sync(runner, report or Report(redact=runner.redact), notify_destination, 'ClickStack notify webhook')

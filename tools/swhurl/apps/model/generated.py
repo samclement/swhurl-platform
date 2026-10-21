@@ -15,7 +15,7 @@ from swhurl.apps import egress, events
 from swhurl.apps.contract import teams
 from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import render, store
-from swhurl.apps.model.draft import Platform, RenderError, World
+from swhurl.apps.model.draft import EVENTS_SECRET, Platform, RenderError, World
 from swhurl.apps.model.records import RECORD_FILES, TEAM_GRANT
 from swhurl.apps.model.render import REGISTRY_FILE, RELOADER_FILE
 
@@ -92,6 +92,24 @@ def instance_problems(root: Path, each: Instance, world: World, platform: Platfo
     return found
 
 
+def nats_problems(root: Path, world: World, users: list[dict] | None) -> list[str]:
+    """The NATS shared output and required identities; also used by the live verifier."""
+    found = []
+    if users is not None:
+        found += [f'{each}: has no NATS key; make app-sync creates it' for each, entry in world.items()
+                  if not entry.settings.allocations.events_key or EVENTS_SECRET not in entry.encrypted]
+        path = root / events.USERS_FILE
+        if not path.is_file():
+            found.append(f'{events.USERS_FILE}: rendered, not committed')
+        else:
+            wanted = [normal(doc) for doc in yamlio.load_all(events.users_configmap(users))]
+            try:
+                found += [f'{events.USERS_FILE}: {line}' for line in differences(_documents(path), wanted)]
+            except (OSError, UnicodeError, yaml.YAMLError):
+                found.append(f'{events.USERS_FILE}: cannot read committed YAML')
+    return found
+
+
 def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance] | None = None) -> list[str]:
     """Validate the records and their rendered files. ``only`` selects instance files, not shared files;
     the whole world's records are still read and validated because they supply each other's dependencies."""
@@ -111,10 +129,7 @@ def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance]
         shared = render.shared(world, platform)
     except RenderError as error:
         return [*found, f'shared files: cannot render: {error}']
-    if shared.nats_users is not None and (root / events.USERS_FILE).is_file():
-        configmap = yamlio.load((root / events.USERS_FILE).read_text())
-        committed_users = yamlio.load(configmap['data']['values.yaml'])['config']['merge']['authorization']['users']
-        found += [f'{events.USERS_FILE}: {line}' for line in differences(committed_users, shared.nats_users)]
+    found += nats_problems(root, world, shared.nats_users)
     if shared.egress_proxy is not None and (root / egress.PROXY_FILE).is_file():
         found += [f'{egress.PROXY_FILE}: {line}' for line in
                   differences(_documents(root / egress.PROXY_FILE), shared.egress_proxy)]

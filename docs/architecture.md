@@ -37,11 +37,11 @@ Teams deploy apps that find and call each other, publish and receive events, kee
 | Capability | `swhurl.yaml` says, or the platform grants | The platform derives | Built on |
 | --- | --- | --- | --- |
 | [Team and isolation](apps.md#teams-and-isolation) | `--team` (a grant) | Namespace label, quota, a NetworkPolicy admitting Traefik and declared callers; `swhurl.team` on telemetry | Kubernetes |
-| [Calling another app](apps.md#calling-another-app) | `--calls orders` (a grant) | The callee's address, a short-lived token only it accepts, the callee's allowed callers and network rule | Kubernetes DNS and service-account tokens |
-| [Events](apps.md#events) | `events: {publish}` or `provides.eventsFile` (an offer); `--subscribe` (a grant) | A key, a stream or consumers, and a NATS user limited to those events | [NATS JetStream](services.md#nats) |
+| [Calling another app](apps.md#calling-another-app) | `--calls orders` (a grant) | For a connected pair: the callee's address, a short-lived token only it accepts, the callee's allowed callers and network rule | Kubernetes DNS and service-account tokens |
+| [Events](apps.md#events) | `events: {publish}` or `provides.eventsFile` (an offer); `--subscribe` (a grant) | A key, a publisher stream or connected subscription consumers, and a NATS user limited to that access | [NATS JetStream](services.md#nats) |
 | [Data](apps.md#stacks-and-features) | `database: sqlite` | A retained volume, one writer, nightly backups | local-path storage |
 | [Telemetry](apps.md#telemetry) | `telemetry: otlp` | The collector address; pod, namespace and team on every signal | OTel collectors, ClickStack |
-| Finding what exists | nothing | The console's [Deployments](console.md#use-it) list and map, and each app page's Connect part, read from what runs | The console |
+| Finding what exists | nothing | The console's [Deployments](console.md#use-it) list and map, and each app page's Connect part: live observations with [Git intent](console.md#instance-changes) on the app page | The console |
 
 ```mermaid
 flowchart LR
@@ -175,7 +175,7 @@ About 2 seconds from push to fetch ([push webhook](services.md#push-webhook)); w
 | `make suspend`, `make resume`, the console's **Suspend**/**Resume** | Stop or restart Flux applying Git for one unit or release ([lifecycle](operations.md#lifecycle)) |
 | `make destroy-data` | Deletes a volume and its data, which Flux never does ([lifecycle](operations.md#lifecycle)) |
 | `make clickstack-bootstrap` | Writes the admin account and team key into ClickStack's database, which has no setting for them ([services](services.md#clickstack-and-otel)) |
-| The `console-dashboards` CronJob, and `make clickstack-dashboards` by hand | Write app dashboards through HyperDX's API; HyperDX keeps dashboards in its database, not in files Flux could apply ([apps](apps.md#dashboards)) |
+| The `console-dashboards` CronJob, and `make clickstack-dashboards` by hand | Create/repair the two reserved platform webhooks, then app dashboards and alerts through one authenticated HyperDX API client; HyperDX keeps these objects in MongoDB, not in files Flux could apply ([apps](apps.md#dashboards)) |
 | `make host-dns`, `make host-heartbeat` | systemd units on the host, not in the cluster ([commands](commands.md#host)) |
 
 ## C4 views

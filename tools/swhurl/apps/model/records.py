@@ -211,18 +211,13 @@ class Allocations:
 
 @dataclass(frozen=True)
 class Grants:
-    """Reviewed permissions for this environment; relations retain their existing semantics."""
+    """Reviewed permissions for this environment, including its call/event declarations."""
     exposure: str = 'private'
     calls: tuple[str, ...] = ()
     allows: tuple[str, ...] = ()  # <app> or team:<team>, this environment only
     subscriptions: tuple[str, ...] = ()  # <app>.<event>
     egress: tuple[str, ...] = ()  # host:port grants
     exceptions: str = ''  # reviewed '<rule>=<reason>', comma-separated (docs/apps.md#the-app-policy)
-
-    @property
-    def subscribed(self) -> list[tuple[str, str]]:
-        """``(publishing app, event)`` pairs."""
-        return [tuple(item.split('.', 1)) for item in self.subscriptions]  # type: ignore[misc]
 
 
 @dataclass(frozen=True)

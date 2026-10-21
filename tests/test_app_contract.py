@@ -155,7 +155,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(env('job'), {'SWHURL_APP': 'job', 'SWHURL_ENV': 'staging', 'SWHURL_NOTIFY_URL': 'http://notify.notify.svc.cluster.local:8080'},
                          'a worker receives no calls')
 
-    def test_calls_at_creation_reach_both_sides_or_nothing_is_left(self):
+    def test_calls_at_creation_connect_wait_or_refuse_invalid_targets_without_writes(self):
         (self.tmp / 'platform/reloader').mkdir(parents=True)
         self.assertEqual(self.gen('orders', '--image', 'r/orders:1', '--health-path', '/h', '--port', '9000'), 0)
         with redirect_stdout(io.StringIO()):
@@ -170,12 +170,15 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(caller['persistence']['tokens'], calling.tokens_volume(['orders']))
         self.assertEqual(values('orders')['controllers']['main']['containers']['main']['env']['SWHURL_ALLOWED_CALLERS'],
                          'reports')
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(self.gen('waiting', '--image', 'r/waiting:1', '--kind', 'worker', '--calls', 'nowhere'), 0)
+        self.assertEqual(values('waiting')['persistence']['tokens'], calling.tokens_volume([]))
+        before = {p: p.read_bytes() for p in self.tmp.rglob('*') if p.is_file()}
         err = io.StringIO()
         with redirect_stderr(err), redirect_stdout(io.StringIO()):
-            self.assertEqual(self.gen('lost', '--image', 'r/lost:1', '--kind', 'worker', '--calls', 'nowhere'), 2)
-        self.assertIn('lost/staging calls nowhere, which has no staging instance', err.getvalue())
-        self.assertFalse((self.tmp / 'apps/lost').exists())
-        self.assertFalse((self.tmp / 'clusters/home/app-lost-staging.yaml').exists())
+            self.assertEqual(self.gen('lost', '--image', 'r/lost:1', '--kind', 'worker', '--calls', 'waiting'), 2)
+        self.assertIn('a worker: it has no address to call', err.getvalue())
+        self.assertEqual({p: p.read_bytes() for p in self.tmp.rglob('*') if p.is_file()}, before)
 
     def test_an_unregistered_team_is_refused_before_writing(self):
         (self.tmp / 'apps').mkdir()

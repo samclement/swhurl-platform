@@ -39,17 +39,12 @@ for an instance of this platform (under apps/; the test fixtures are exempt), fr
                       image its repository publishes, and staging deploys new images
                       automatically (its ImagePolicy in image-automation.yaml). No exceptions
 
-across the instances of one environment (source manifests, not rendered):
-
-  calls               every call in helmrelease.yaml names a web app of the same environment at its
-                      real port, and its allowed callers match those calls; instance.yaml's calls and
-                      allows are the inputs (make app-sync renders connected pairs)
-  events              every subscription names an event that an app of the same environment publishes
-
 and, for the whole tree:
 
-  event-users         every instance has its own NATS key, and platform/nats/users.yaml is what the
-                      instances generate
+  app relations       one record evaluator checks calls and subscriptions: absent apps or consent
+                      are pending without access; present unsupported targets and missing events fail.
+                      Exact generated comparisons check variables, tokens, policies, Consumers and NATS
+                      permissions, including required identities and the users file
   egress-ports        every instance has its own port on the egress proxy, and platform/egress/proxy.yaml
                       is what the instances generate (make app-sync rewrites it)
   egress-grants       each host an instance may reach (make app-egress) is a host name or *.domain with
@@ -84,7 +79,6 @@ from swhurl.apps import channels, egress, events, helmrelease, offers
 from swhurl.apps.calling import (
     TOKEN_SECONDS,
     allowed_callers,
-    callee_address,
     declared_calls,
     identity_variables,
     signing_keys,
@@ -107,8 +101,7 @@ from swhurl.apps.contract import (
     teams,
 )
 from swhurl.apps.instance import INSTANCE_ROOTS, Instance
-from swhurl.apps.model import generated, store
-from swhurl.apps.model import render as model_render
+from swhurl.apps.model import generated
 from swhurl.run import Runner
 
 CACHE = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'swhurl-platform/charts'
@@ -421,55 +414,6 @@ def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str
     return violations
 
 
-def check_calls(instances: list[Path]) -> dict[Path, list[str]]:
-    """Problems with the calls declared among the instances of each environment (rule calls), by instance."""
-    releases = {instance: yamlio.load((instance / 'helmrelease.yaml').read_text())
-                for instance in instances}
-    problems: dict[Path, list[str]] = {}
-    for instance, release in releases.items():
-        app, env = instance.parent.name, instance.name
-        peers = {other.parent.name: doc for other, doc in releases.items()
-                 if other.name == env and other.parent.parent == instance.parent.parent}
-        found = []
-        for callee in declared_calls(helmrelease.variables(release)):
-            target = peers.get(callee)
-            if target is None or helmrelease.port(target) is None:
-                found.append(f'calls {callee}, which is not a web app with a {env} instance')
-                continue
-            if helmrelease.variables(release)[interface.callee_variable(callee)] != callee_address(callee, helmrelease.port(target)):
-                found.append(f"{interface.callee_variable(callee)} is not {callee}'s address {callee_address(callee, helmrelease.port(target))}")
-            if app not in allowed_callers(helmrelease.variables(target)):
-                found.append(f'calls {callee}, which does not allow it')
-        for caller in allowed_callers(helmrelease.variables(release)):
-            if caller not in peers or app not in declared_calls(helmrelease.variables(peers[caller])):
-                found.append(f'allows {caller}, which does not declare a call to it')
-        if found:
-            problems[instance] = [f'calls: {problem}; check calls on the caller and allows on the callee in instance.yaml, then run make app-sync' for problem in found]
-        missing = [f'{publisher}.{event}' for publisher, event in events.subscribed(helmrelease.variables(release))
-                   if publisher not in peers or event not in events.published(helmrelease.variables(peers[publisher]))]
-        if missing:
-            problems.setdefault(instance, []).append(
-                f'events: subscribes to {", ".join(missing)}, which no app of {env} publishes')
-    return problems
-
-
-def check_event_users(root: Path = ROOT) -> list[str]:
-    """Whether every instance has its NATS key and the NATS user list is what the instances generate
-    (rule event-users)."""
-    world, errors = store.world(root)
-    if errors:
-        return [f'event-users: {error}' for error in errors]
-    users = model_render.shared(world, store.platform(root)).nats_users
-    if users is None:
-        return []
-    problems = [f'event-users: {each} has no NATS key; make app-sync creates it'
-                for each, entry in world.items() if not entry.settings.allocations.events_key]
-    path, text = root / events.USERS_FILE, events.users_configmap(users)
-    if not (path.is_file() and path.read_text() == text):
-        problems.append(f'event-users: {events.USERS_FILE} is not what the instances declare; make app-sync rewrites it')
-    return problems
-
-
 def platform_image(instance: Path) -> list[str]:
     """Why ``<app>/<env>`` is not an app made from a stack template (rule platform-image)."""
     app, env = instance.parent.name, instance.name
@@ -506,12 +450,10 @@ def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     paths = [Path(a).resolve() for a in argv or []] or instances()
     failed = 0
-    call_problems = check_calls(paths)
     with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:  # each render is kustomize and helm processes
         evaluated = list(pool.map(lambda instance: evaluate(instance, runner), paths))
-    for instance, found in zip(paths, evaluated, strict=True):
+    for instance, problems in zip(paths, evaluated, strict=True):
         label = instance.relative_to(ROOT) if instance.is_relative_to(ROOT) else instance
-        problems = found + call_problems.get(instance, [])
         if problems:
             failed += 1
             print(f'[BAD] {label}')
@@ -531,12 +473,6 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 for problem in problems:
                     print(f'       {problem}')
     else:  # the whole tree
-        problems = check_event_users()
-        if problems:
-            failed += 1
-            print(f'[BAD] {events.USERS_FILE}')
-            for problem in problems:
-                print(f'       {problem}')
         problems = egress.problems(ROOT)
         if problems:
             failed += 1

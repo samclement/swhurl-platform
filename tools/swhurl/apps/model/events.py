@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from swhurl import interface
 from swhurl.apps import events
-from swhurl.apps.instance import ENVIRONMENTS
+from swhurl.apps.instance import ENVIRONMENTS, Instance
+from swhurl.apps.model import relations
 from swhurl.apps.model.draft import EVENTS_SECRET, Draft, Entry, Platform, RenderError, World, environment
 
 
@@ -14,19 +15,17 @@ def keyed(entry: Entry) -> bool:
 
 def apply(draft: Draft, entry: Entry, world: World) -> None:
     app, env = draft.instance.app, draft.instance.env
-    publishes, subscribes = entry.release.publishes, entry.settings.grants.subscribed
-    others = environment(world, env)
-    for publisher, event in subscribes:
-        if publisher not in others or event not in others[publisher].release.publishes:
-            raise RenderError(f'{app}/{env} subscribes to {publisher}.{event}, which {publisher}/{env} does not publish')
+    publishes = entry.release.publishes
+    subscribes = [(r.target, r.event) for r in relations.evaluate(draft.instance, world)
+                  if r.role == 'subscribes' and not r.pending]
     if not keyed(entry):
-        if publishes or subscribes:
+        if publishes or entry.settings.grants.subscriptions:
             raise RenderError(f'{app}/{env} declares events but has no NATS key')
         return
     if publishes:
         draft.env[interface.PUBLISH_VARIABLE] = ','.join(publishes)
     if subscribes:
-        draft.env[interface.SUBSCRIBE_VARIABLE] = ','.join(entry.settings.grants.subscriptions)
+        draft.env[interface.SUBSCRIBE_VARIABLE] = ','.join(f'{publisher}.{event}' for publisher, event in subscribes)
     draft.env[interface.NKEY_VARIABLE] = entry.settings.allocations.events_key
     draft.env[interface.URL_VARIABLE] = events.URL
     draft.env_from(events.secret_name(app))
@@ -47,7 +46,9 @@ def users(world: World, platform: Platform) -> list[dict] | None:
         found.append(events.console_user(platform.console_key))
     for env in ENVIRONMENTS:
         for app, entry in sorted(environment(world, env).items()):
+            subscribes = [(r.target, r.event) for r in relations.evaluate(Instance(app, env), world)
+                          if r.role == 'subscribes' and not r.pending]
             if keyed(entry):
                 found.append(events.user(entry.settings.allocations.events_key, env, app, list(entry.release.publishes),
-                                         entry.settings.grants.subscribed))
+                                         subscribes))
     return found

@@ -18,7 +18,7 @@ from swhurl.apps import channels, egress, events, nkeys, offers
 from swhurl.apps.contract import RETAINED_STORAGE_CLASS, SECRET_FILE
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, UNITS, Instance
-from swhurl.apps.model import generated, render, store
+from swhurl.apps.model import generated, relations, render, store
 from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry, Platform, RenderError, World
 from swhurl.apps.model.records import APP_FILE, RECORD_FILES, Storage
 from swhurl.apps.model.render import MANAGED_FILES, REGISTRY_FILE, RELOADER_FILE
@@ -105,12 +105,16 @@ class Prepared:
 
 def check_removal(each: Instance, world: World) -> None:
     """Explicit removals and merged orphan cleanup have the same relationship preconditions."""
-    others = [(other.app, entry) for other, entry in world.items() if other.env == each.env and other.app != each.app]
-    callers = sorted(name for name, entry in others if each.app in entry.settings.grants.calls)
+    try:
+        others = [(other.app, relations.declarations(other, entry)) for other, entry in world.items()
+                  if other.env == each.env and other.app != each.app]
+    except RenderError as error:
+        raise EditError(str(error)) from None
+    callers = sorted(name for name, entry in others if any(r.role == 'calls' and r.target == each.app for r in entry))
     if callers:
         raise EditError(f'{each} is called by {", ".join(callers)}: remove those calls first '
                         f'(make app-calls APP=<caller> ENV={each.env} ARGS="--remove {each.app}")')
-    subscribers = sorted(name for name, entry in others if any(publisher == each.app for publisher, _ in entry.settings.grants.subscribed))
+    subscribers = sorted(name for name, entry in others if any(r.role == 'subscribes' and r.target == each.app for r in entry))
     if subscribers:
         raise EditError(f'{each} publishes events that {", ".join(subscribers)} subscribe to: '
                         f'remove those subscriptions first (make app-events APP=<subscriber> ENV={each.env})')
@@ -289,6 +293,11 @@ def prepare(root: Path, operations: dict[Instance, Create | Update | Remove], ba
     added = frozenset(each for each, op in operations.items() if isinstance(op, Create))
     removed = removals(root, world, platform)
     sizes = {each: op.database_size for each, op in operations.items() if not isinstance(op, Remove)}
+    try:
+        for each in world:
+            relations.evaluate(each, world)
+    except RenderError as error:
+        raise EditError(str(error)) from None
     world = allocate(root, world, platform, sizes, frozenset(world) if bootstrap and rotate is None else added,
                      rotate, runner or Runner())
     return plan(root, world, platform, added, register=register, routes=routes, removed=removed)

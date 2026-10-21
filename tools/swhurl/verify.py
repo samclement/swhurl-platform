@@ -94,7 +94,7 @@ CHECKS = (
              "Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise)"),
     Check.of('image-webhooks', 'cluster host', apps.check_image_webhooks,
              "The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise)"),
-    Check.of('dashboards', 'cluster', dashboards.check_dashboards, 'The dashboard and alert sync succeeded within five minutes'),
+    Check.of('dashboards', 'cluster', dashboards.check_dashboards, 'The platform webhook, dashboard and alert sync succeeded within five minutes'),
     Check.of('notifications', 'cluster', notifications.check_notifications, 'The notification checker succeeded within five minutes'),
     Check.of('notification-heartbeat', 'host', notifications.check_notification_heartbeat,
              "The host heartbeat timer is active and its service's last run succeeded within 15 minutes"),

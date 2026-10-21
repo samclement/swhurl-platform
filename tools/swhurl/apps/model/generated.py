@@ -114,7 +114,10 @@ def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance]
     """Validate the records and their rendered files. ``only`` selects instance files, not shared files;
     the whole world's records are still read and validated because they supply each other's dependencies."""
     world, found = store.world(root, base)
-    platform = store.platform(root, base)
+    try:
+        platform = store.platform(root, base)
+    except RenderError as error:
+        return [*found, f'platform inputs: {error}']
     registered = teams(root)
     found += [f'{each}: instance.yaml: allows {name}, which is not registered in apps/teams.yaml (rule team)'
               for each, entry in sorted(world.items(), key=lambda item: str(item[0])) for name in entry.settings.grants.allows

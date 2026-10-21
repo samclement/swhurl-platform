@@ -276,5 +276,56 @@ class RenderedJobTests(unittest.TestCase):
         self.assertEqual(env['BACKUP_S3_URI'], platform.BACKUP_S3_URI)
 
 
+class SuspendSwitchTests(unittest.TestCase):
+    """One switch: the MongoDB job's spec.suspend also suspends every rendered SQLite job."""
+
+    def root(self, text: str | None) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        if text is not None:
+            (root / backup.MONGODB_JOB).parent.mkdir(parents=True)
+            if text:
+                (root / backup.MONGODB_JOB).write_text(text)
+        return root
+
+    def test_the_repository_is_not_suspended_and_a_scratch_root_has_no_suspension(self):
+        self.assertFalse(backup.suspended(ROOT))
+        self.assertFalse(backup.suspended(self.root(None)))
+
+    def test_the_value_is_read_and_a_missing_or_malformed_file_is_an_error(self):
+        from swhurl.apps.model.draft import RenderError
+        self.assertTrue(backup.suspended(self.root('spec:\n  suspend: true\n')))
+        self.assertFalse(backup.suspended(self.root('spec:\n  suspend: false\n')))
+        for text in ('', 'spec: [\n', 'kind: CronJob\n', 'spec:\n  suspend: "true"\n', 'spec:\n  schedule: x\n'):
+            with self.subTest(text=text), self.assertRaises(RenderError):
+                backup.suspended(self.root(text))
+
+    def test_rendered_sqlite_jobs_follow_the_platform_switch(self):
+        from dataclasses import replace
+
+        from swhurl.apps.model import render, write
+        world, inputs = write.read(ROOT)
+        each = Instance('demo-orders', 'prod')
+        for value in (True, False):
+            files = render.instance(each, world, replace(inputs, backups_suspended=value))
+            _, job = files[Path('apps/demo-orders/prod') / contract.BACKUP_FILE]
+            self.assertIs(job['spec']['suspend'], value)
+
+    def test_a_suspended_switch_makes_the_committed_sqlite_jobs_disagree(self):
+        from swhurl.apps.model import generated
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        for rel in ('apps', 'platform', 'clusters'):
+            shutil.copytree(ROOT / rel, root / rel)
+        path = root / backup.MONGODB_JOB
+        path.write_text(path.read_text().replace('  suspend: false\n', '  suspend: true\n'))
+        found = generated.problems(root, only=frozenset({Instance('demo-orders', 'prod')}))
+        self.assertTrue(any(contract.BACKUP_FILE in line for line in found), found)
+        path.write_text(path.read_text().replace('  suspend: true\n', '  suspend: maybe\n'))
+        self.assertIn('platform inputs:', ' '.join(generated.problems(root)))
+
+
 if __name__ == '__main__':
     unittest.main()

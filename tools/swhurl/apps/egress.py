@@ -203,7 +203,10 @@ def problems(root: Path) -> list[str]:
     world, errors = store.world(root)
     if errors:
         return [f'egress-ports: {error}' for error in errors]
-    platform = store.platform(root)
+    try:
+        platform = store.platform(root)
+    except ValueError as error:  # RenderError: an unreadable platform input
+        return [f'egress-ports: {error}']
     if not platform.egress:
         return []
     found = [problem for each, entry in world.items() for problem in grant_problems(each, list(entry.settings.grants.egress))]

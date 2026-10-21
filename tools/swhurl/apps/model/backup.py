@@ -6,15 +6,34 @@ every night at a minute its namespace picks (docs/operations.md#backups-and-reco
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
-from swhurl import interface, platform
+import yaml
+
+from swhurl import interface, platform, yamlio
 from swhurl.apps import egress
 from swhurl.apps.contract import BACKUP_FILE, BACKUP_IMAGE, BACKUP_LABEL, BACKUP_RECIPIENT, BACKUP_UNIT, BACKUP_WRITER
-from swhurl.apps.model.draft import Draft, Entry, Platform
+from swhurl.apps.model.draft import Draft, Entry, Platform, RenderError
 
-SUSPENDED = False  # True stops every SQLite backup job (the rollback, with platform/backup/mongodb.yaml's suspend)
+# The one backup switch: this job's spec.suspend also suspends every SQLite backup job (docs/operations.md).
+MONGODB_JOB = Path('platform/backup/mongodb.yaml')
 # What the AWS CLI reads to reach S3 through the instance's proxy port (HOST_IP: NO_PROXY names it).
 PROXY_VARIABLES = (interface.OTLP_HOST_IP, interface.HTTP_VARIABLE, interface.HTTPS_VARIABLE, interface.NO_PROXY_VARIABLE)
+
+
+def suspended(root: Path) -> bool:
+    """``spec.suspend`` of the MongoDB backup job. A root without platform/backup (a scratch root) has no
+    suspension; a present directory whose file is missing or malformed is an error, never "not suspended"."""
+    path = root / MONGODB_JOB
+    if not path.parent.is_dir():
+        return False
+    try:
+        value = (yamlio.load(path.read_text())['spec'] or {}).get('suspend')
+    except (OSError, yaml.YAMLError, TypeError, KeyError, AttributeError) as error:
+        raise RenderError(f'{MONGODB_JOB}: cannot read spec.suspend ({type(error).__name__})') from None
+    if not isinstance(value, bool):
+        raise RenderError(f'{MONGODB_JOB}: spec.suspend must be true or false')
+    return value
 
 
 def schedule(namespace: str) -> str:
@@ -30,7 +49,7 @@ def variables(values: dict) -> list[dict]:
 
 
 def manifests(app: str, namespace: str, uid: int, *, claim: str, proxy: dict, path: str = interface.SQLITE_PATH,
-              key: tuple[str, str] = ('${BACKUP_AWS_ACCESS_KEY_ID}', '${BACKUP_AWS_SECRET_ACCESS_KEY}')) -> tuple[dict, dict]:
+              suspend: bool = False, key: tuple[str, str] = ('${BACKUP_AWS_ACCESS_KEY_ID}', '${BACKUP_AWS_SECRET_ACCESS_KEY}')) -> tuple[dict, dict]:
     """The job's Secret (``key``: Flux substitutes the references) and CronJob; the SQLite restore live test
     runs the same job on its throwaway app."""
     name = f'{app}-backup'
@@ -60,7 +79,7 @@ def manifests(app: str, namespace: str, uid: int, *, claim: str, proxy: dict, pa
     }
     job = {
         'apiVersion': 'batch/v1', 'kind': 'CronJob', 'metadata': {'name': name, 'namespace': namespace, 'labels': {BACKUP_LABEL: 'true'}},
-        'spec': {'schedule': schedule(namespace), 'timeZone': 'Etc/UTC', 'suspend': SUSPENDED,
+        'spec': {'schedule': schedule(namespace), 'timeZone': 'Etc/UTC', 'suspend': suspend,
                  'concurrencyPolicy': 'Forbid', 'startingDeadlineSeconds': 3600,
                  'successfulJobsHistoryLimit': 1, 'failedJobsHistoryLimit': 3,
                  'jobTemplate': {'spec': {'backoffLimit': 2, 'activeDeadlineSeconds': 900, 'template': pod}}},
@@ -76,7 +95,7 @@ def apply(draft: Draft, entry: Entry, platform: Platform) -> None:
     port = entry.settings.allocations.egress_port
     proxied = egress.variables(port) if platform.egress and port is not None else {}
     proxy = {key: value for key, value in proxied.items() if key in PROXY_VARIABLES}
-    secret, job = manifests(app, namespace, uid, claim=app, proxy=proxy)
+    secret, job = manifests(app, namespace, uid, claim=app, proxy=proxy, suspend=platform.backups_suspended)
     draft.add_file(BACKUP_FILE, [secret, job])
     draft.depend(BACKUP_UNIT)
     draft.unit['spec']['postBuild'] = {'substituteFrom': [{'kind': 'Secret', 'name': BACKUP_WRITER, 'optional': False}]}

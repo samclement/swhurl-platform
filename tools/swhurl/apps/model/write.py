@@ -234,7 +234,10 @@ def read(root: Path, base: Path = Path('apps')) -> tuple[World, Platform]:
     world, problems = store.world(root, base)
     if problems:
         raise EditError('; '.join(problems))
-    return world, store.platform(root, base)
+    try:
+        return world, store.platform(root, base)
+    except RenderError as error:
+        raise EditError(str(error)) from None
 
 
 def sync(root: Path, base: Path = Path('apps'), *, rotate: Instance | None = None, runner: Runner | None = None) -> list[Path]:

@@ -24,10 +24,10 @@ def ingress_values(name: str, host: str, exposure: str, issuer: str) -> dict:
 
 def apply(draft: Draft, entry: Entry) -> None:
     settings, app = entry.settings, draft.instance.app
-    if settings.exposure not in ROUTED:
+    if settings.grants.exposure not in ROUTED:
         return
-    host = settings.host or default_host(app, draft.instance.env)
-    draft.values['ingress'] = {'main': ingress_values(app, host, settings.exposure, settings.issuer or DEFAULT_ISSUER)}
+    host = settings.choices.host or default_host(app, draft.instance.env)
+    draft.values['ingress'] = {'main': ingress_values(app, host, settings.grants.exposure, settings.choices.issuer or DEFAULT_ISSUER)}
     draft.routed = True
-    if settings.exposure == 'authenticated-web':
+    if settings.grants.exposure == 'authenticated-web':
         draft.depend(OAUTH_UNIT)

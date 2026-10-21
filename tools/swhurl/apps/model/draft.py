@@ -9,7 +9,7 @@ from swhurl.apps.instance import Instance
 from swhurl.apps.model.records import App, Release, Settings
 
 EVENTS_SECRET, APP_SECRET = 'events', 'secret'
-"""The encrypted files an instance may hold (events.sops.yaml, secret.sops.yaml); rendering reads only that they exist."""
+"""The encrypted files an instance may hold (events.sops.yaml, secret.sops.yaml); rendering reads only their availability (on disk or as prepared ciphertext)."""
 
 
 class RenderError(ValueError):
@@ -21,7 +21,8 @@ class Entry:
     app: App
     release: Release
     settings: Settings
-    encrypted: frozenset[str] = frozenset()
+    encrypted: frozenset[str] = frozenset()  # files present on disk, never prospective facts
+    pending: dict[str, str] = field(default_factory=dict)  # prepared ciphertext, by Secret kind
 
 
 @dataclass(frozen=True)

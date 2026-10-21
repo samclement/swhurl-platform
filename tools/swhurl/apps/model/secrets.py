@@ -1,5 +1,5 @@
 """An app's own secrets: the names its image reads become variables from one Secret, whose values only
-the operator sets (make app-secret); the encrypted file is listed once it exists."""
+the operator sets (make app-secret); the encrypted file is listed when present or prepared as ciphertext."""
 from __future__ import annotations
 
 from swhurl.apps.contract import SECRET_FILE, SECRET_NAMES, app_secret, secret_key_problem
@@ -12,10 +12,10 @@ def apply(draft: Draft, entry: Entry) -> None:
         raise RenderError(f'{draft.instance}: {problem}')
     if names:
         draft.annotate(draft.release, SECRET_NAMES, ','.join(names))
-    if names or APP_SECRET in entry.encrypted:  # a value may be set before the image that reads it
+    if names or (APP_SECRET in entry.encrypted or APP_SECRET in entry.pending):  # a value may be set before the image that reads it
         # Optional: the app starts before the Secret has its first value.
         draft.env_from(app_secret(app), optional=True)
         draft.reload(app_secret(app))
-    if APP_SECRET in entry.encrypted:
+    if (APP_SECRET in entry.encrypted or APP_SECRET in entry.pending):
         draft.list_file(SECRET_FILE)
         draft.decrypt()

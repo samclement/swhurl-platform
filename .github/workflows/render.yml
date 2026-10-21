@@ -10,8 +10,9 @@ name: Render
 #
 # The commit is pushed with GITHUB_TOKEN, which starts no workflows (so not this one again, and not
 # Validate): the checks run here before pushing. Flux's webhook still applies it. app-sync makes a NATS
-# key for an instance without one; this workflow has no sops, so such a run fails loudly (a records-only
-# pull request carries its key, and Validate renders it first).
+# identity only when both its public allocation and encrypted seed are absent; a partial pair refuses,
+# never rotates. This workflow has no sops: missing identities fail before any writes. A complete
+# records-only pull request carries its identity and needs no encryption here or in Validate.
 #
 # One run at a time; a newer pending run replaces an older one, since each renders the newest main. A
 # push lost to another writer reads main again and renders again.

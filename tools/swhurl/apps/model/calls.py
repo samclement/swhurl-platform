@@ -14,12 +14,12 @@ from swhurl.apps.model.draft import Draft, Entry, RenderError, World, environmen
 
 def admits(callee: Entry, caller: str, team: str) -> bool:
     """Whether ``callee``'s grants name the app ``caller`` or its team."""
-    return caller in callee.settings.allows or f'team:{team}' in callee.settings.allows
+    return caller in callee.settings.grants.allows or f'team:{team}' in callee.settings.grants.allows
 
 
 def connected(app: str, entry: Entry, others: dict[str, Entry]) -> list[str]:
     """The apps ``app`` calls that are present in its environment and allow it, in its order."""
-    return [callee for callee in entry.settings.calls
+    return [callee for callee in entry.settings.grants.calls
             if callee != app and callee in others and admits(others[callee], app, entry.app.team)]
 
 

@@ -133,11 +133,11 @@ def check_new_app(work: Path, app: str) -> None:
         settings = Settings.parse(yamlio.load((folder / SETTINGS_FILE).read_text()))
     except (OSError, RecordError, yaml.YAMLError) as error:
         raise Hold(f'the new app records cannot be read: {error}') from None
-    if settings.exceptions:
+    if settings.grants.exceptions:
         raise Hold('it sets policy exceptions: a person reviews it')
     if settings.allocations.egress_port is not None:
         raise Hold('a new-app PR must not preallocate an egress port')
-    if settings.calls or settings.subscriptions:
+    if settings.grants.calls or settings.grants.subscriptions:
         raise Hold('it calls or subscribes to another app: a person reviews it')
     if events.has_nats(work) or release.publishes or settings.allocations.events_key or (folder / events.SECRET_FILE).exists():
         check_events_key(work, app, settings)
@@ -434,13 +434,13 @@ def settings_held(env: str, before: Settings | None, after: Settings | None) -> 
         return 'changes production settings'
     if after.allocations != before.allocations:
         return 'changes what the platform allocated it (egress port, events key or database)'
-    if after.exceptions != before.exceptions:
+    if after.grants.exceptions != before.grants.exceptions:
         return 'changes its app-policy exceptions'
-    if (after.exposure, after.host, after.issuer) != (before.exposure, before.host, before.issuer):
+    if (after.grants.exposure, after.choices.host, after.choices.issuer) != (before.grants.exposure, before.choices.host, before.choices.issuer):
         return 'changes who can reach it'
-    if added := [name for name in after.allows if name not in before.allows]:
+    if added := [name for name in after.grants.allows if name not in before.grants.allows]:
         return f'allows {", ".join(added)} to call it'
-    if added := [host for host in after.egress if host not in before.egress]:
+    if added := [host for host in after.grants.egress if host not in before.grants.egress]:
         return f'grants hosts outside the cluster: {", ".join(added)}'
     return ''
 

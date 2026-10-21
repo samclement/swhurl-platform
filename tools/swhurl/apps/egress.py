@@ -208,7 +208,7 @@ def problems(root: Path) -> list[str]:
     platform = store.platform(root)
     if not platform.egress:
         return []
-    found = [problem for each, entry in world.items() for problem in grant_problems(each, list(entry.settings.egress))]
+    found = [problem for each, entry in world.items() for problem in grant_problems(each, list(entry.settings.grants.egress))]
     owners: dict[int, list[Instance]] = {}
     for each, entry in world.items():
         port = entry.settings.allocations.egress_port

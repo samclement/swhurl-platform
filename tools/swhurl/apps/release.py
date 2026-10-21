@@ -1,9 +1,7 @@
 """Writing an instance's records to the checkout, and what intake reads for a Release.
 
-``change_release`` is how an operation's result reaches the files: it makes any NATS key the records
-now need (an effect before rendering, never undone on success), renders every instance
-(apps/model/write.py), lets the operation refuse the rendered result, then writes the files and the
-offers documents beside them. ``set_offers`` and its helpers read what an image declares and offers
+``change_release`` prepares records, allocations, encrypted credentials, rendered files and offers
+before writing any of them (apps/model/write.py). ``set_offers`` and its helpers read what an image declares and offers
 from its repository at the commit it was built from (docs/apps.md#swhurlyaml).
 """
 from __future__ import annotations
@@ -14,14 +12,12 @@ from dataclasses import replace
 from pathlib import Path
 
 from swhurl import yamlio
-from swhurl.apps import declaration, events, nkeys, offers
+from swhurl.apps import declaration, offers
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import write
-from swhurl.apps.model.draft import EVENTS_SECRET
-from swhurl.apps.model.events import keyed as events_keyed
 from swhurl.apps.model.records import Image, Release
-from swhurl.run import CommandError, Runner
+from swhurl.run import Runner
 
 
 def instance_dir(root: Path, app: str, env: str) -> Path:
@@ -39,25 +35,6 @@ def dump(docs) -> str:
     return yamlio.dump_all(docs)
 
 
-def new_nats_key(instance: Path, app: str, env: str, *, runner: Runner | None = None) -> str:
-    """Write a new NATS seed into the instance's encrypted Secret and return its public key. The seed
-    goes from memory into a file that sops encrypts in place: it is never printed."""
-    secret = instance / events.SECRET_FILE
-    seed, public = nkeys.generate()
-    secret.write_text(dump([{'apiVersion': 'v1', 'kind': 'Secret',
-                             'metadata': {'name': events.secret_name(app), 'namespace': Instance(app, env).namespace},
-                             'type': 'Opaque', 'stringData': {events.SEED_VARIABLE: seed}}]))
-    try:
-        (runner or Runner()).run(['sops', '--encrypt', '--in-place', str(secret)])
-    except CommandError as error:
-        secret.unlink(missing_ok=True)
-        raise EditError(f'could not SOPS-encrypt {secret.name}; nothing was changed: {error}') from None
-    if 'sops:' not in secret.read_text():
-        secret.unlink()
-        raise EditError(f'{secret.name} was not encrypted; removed it')
-    return public
-
-
 def offer_files(folder: Path, repository: str, commit: str, files: dict[str, str]) -> dict[Path, str | None]:
     """What the offers directory should hold: path -> text, or None for a file to delete."""
     if not files:
@@ -72,38 +49,14 @@ def offer_files(folder: Path, repository: str, commit: str, files: dict[str, str
     return planned
 
 
-def write_files(planned: dict[Path, str | None]) -> bool:
-    for path, text in planned.items():
-        if text is None:
-            path.unlink()
-        else:
-            path.parent.mkdir(exist_ok=True)
-            path.write_text(text)
-    for folder in {path.parent for path in planned}:
-        if folder.is_dir() and not any(folder.iterdir()):
-            folder.rmdir()
-    return bool(planned)
-
-
 def change_release(root: Path, each: Instance, operation: write.Create | write.Update, planned: dict[Path, str | None], *,
-                   runner: Runner | None = None, keyed: bool = False) -> bool:
-    """Prepare a create or update, supplying a NATS key for events or explicit bootstrap, then write it and its offers.
+                   runner: Runner | None = None) -> bool:
+    """Prepare a create or update and its offers, then write the complete plan.
     A planning refusal leaves the input files untouched. Returns whether anything changed."""
-    entry = operation.entry if isinstance(operation, write.Create) else operation.update(write.read(root)[0][each])
-    instance = each.folder(root)
-    created = ''
-    if (keyed or entry.release.publishes or entry.settings.subscriptions) and not events_keyed(entry):
-        created = new_nats_key(instance, each.app, each.env, runner=runner)
-        entry = replace(entry, settings=replace(entry.settings, allocations=replace(entry.settings.allocations, events_key=created)),
-                        encrypted=entry.encrypted | {EVENTS_SECRET})
-    try:
-        prepared = write.prepare(root, {each: write.Create(entry) if isinstance(operation, write.Create)
-                                        else write.Update(lambda _: entry)})
-    except EditError:
-        if created:
-            (instance / events.SECRET_FILE).unlink(missing_ok=True)
-        raise
-    return bool(write.apply(root, prepared)) | write_files(planned)
+    prepared = write.prepare(root, {each: operation}, runner=runner)
+    prepared.writes.update({path: text for path, text in planned.items() if text is not None})
+    prepared.deletions.extend(path for path, text in planned.items() if text is None)
+    return bool(write.apply(root, prepared))
 
 
 def offered(release: Release, commit: str, files: dict[str, str], described: list[offers.Event] | None,

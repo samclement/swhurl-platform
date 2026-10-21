@@ -434,10 +434,6 @@ class NewAppGateTests(GateCase):
                 'stringData': {'SWHURL_EVENTS_SEED': 'ENC[AES256_GCM,data:x,type:str]'},
                 'sops': {'age': [{'recipient': self.RECIPIENT, 'enc': 'x'}], 'mac': 'ENC[x]'}}
 
-    def fake_key(self, instance, app, env, **_):
-        (instance / events.SECRET_FILE).write_text(yamlio.dump(self.events_key()))
-        return self.PUBLIC
-
     def nats(self):
         (self.root / '.sops.yaml').write_text(f"creation_rules:\n  - path_regex: apps/.*\\.sops\\.ya?ml$\n    age: {self.RECIPIENT}\n")
         path = self.root / events.CONTROLLER_KEY_FILE
@@ -459,7 +455,8 @@ class NewAppGateTests(GateCase):
         for path in (self.base, self.head):
             shutil.rmtree(path, ignore_errors=True)
             shutil.copytree(self.root, path)
-        with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(intake, 'new_nats_key', side_effect=self.fake_key):
+        with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(model_sync.nkeys, 'generate', return_value=('fixture-secret', self.PUBLIC)), \
+                mock.patch.object(model_sync, 'Runner', return_value=FakeRunner().on('sops', stdout=yamlio.dump(self.events_key()))):
             self.assertEqual(new.main([*NEW_ARGV, '--root', str(self.head), '--no-policy-check'], opener), 0)
         record = self.head / 'apps/fresh/staging/instance.yaml'
         doc = yamlio.load(record.read_text())
@@ -682,7 +679,7 @@ class NewAppGateTests(GateCase):
         self.held('no NATS public key')
         self.open()
         runner = self.runner()
-        with mock.patch.object(intake, 'new_nats_key', side_effect=AssertionError('must retain PR key')):
+        with mock.patch.object(model_sync, 'Runner', return_value=FakeRunner()):
             self.check(runner)
         self.assertEqual((self.result / self.KEY).read_bytes(), (self.head / self.KEY).read_bytes())
         self.assertIn(self.PUBLIC, (self.result / events.USERS_FILE).read_text())

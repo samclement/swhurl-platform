@@ -46,7 +46,7 @@ def resources(entry: Entry) -> dict:
     """Each of the image's minimum (or the default) and the instance's explicit choice, whichever is larger."""
     def pick(key: str) -> str:
         base = getattr(entry.release.resources, key) or getattr(DEFAULT_RESOURCES, key)
-        chosen = getattr(entry.settings.capacity, key)
+        chosen = getattr(entry.settings.choices.capacity, key)
         return chosen if chosen and quantity(chosen) > quantity(base) else base
     return {'requests': {'cpu': pick('cpu'), 'memory': pick('memory')}, 'limits': {'memory': pick('memory_limit')}}
 
@@ -89,7 +89,7 @@ def start(instance: Instance, entry: Entry, platform: Platform) -> Draft:
         container['probes'] = {'readiness': probe(), 'liveness': probe(), 'startup': startup}
     controller: dict = {'containers': {'main': container}}
     if release.kind == 'job':
-        schedule = entry.settings.schedule or JOB_SCHEDULE
+        schedule = entry.settings.choices.schedule or JOB_SCHEDULE
         if problem := schedule_problem(schedule):
             raise RenderError(f'{instance}: {problem}')
         # One pod per run, never two at once; a failed run is not retried (the next scheduled one runs).
@@ -98,10 +98,10 @@ def start(instance: Instance, entry: Entry, platform: Platform) -> Draft:
                                  'concurrencyPolicy': 'Forbid', 'startingDeadlineSeconds': JOB_START_DEADLINE_SECONDS,
                                  'activeDeadlineSeconds': JOB_DEADLINE_SECONDS, 'backoffLimit': 0,
                                  'successfulJobsHistory': 1, 'failedJobsHistory': 1}
-    elif entry.settings.schedule:
+    elif entry.settings.choices.schedule:
         raise RenderError(f'{instance}: schedule applies to kind job only')
-    if entry.settings.replicas is not None:
-        controller['replicas'] = entry.settings.replicas
+    if entry.settings.choices.replicas is not None:
+        controller['replicas'] = entry.settings.choices.replicas
     values: dict = {
         'defaultPodOptions': {'automountServiceAccountToken': False,
                               'securityContext': {'runAsNonRoot': True, 'runAsUser': release.uid, 'runAsGroup': release.uid,
@@ -111,7 +111,7 @@ def start(instance: Instance, entry: Entry, platform: Platform) -> Draft:
     }
     if web:
         values['service'] = {'main': {'controller': 'main', 'ports': {'http': {'port': release.port}}}}
-    labels = {MANAGED: 'true', APP: app, ENVIRONMENT: env, EXPOSURE: entry.settings.exposure, TEAM: entry.app.team}
+    labels = {MANAGED: 'true', APP: app, ENVIRONMENT: env, EXPOSURE: entry.settings.grants.exposure, TEAM: entry.app.team}
     namespace = {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': instance.namespace, 'labels': labels}}
     helm_release = {
         'apiVersion': 'helm.toolkit.fluxcd.io/v2', 'kind': 'HelmRelease',
@@ -149,8 +149,8 @@ def automation(draft: Draft, entry: Entry) -> None:
 
 def finish(draft: Draft, entry: Entry) -> dict[str, list[dict]]:
     """The instance's files by name, beside its unit (``unit``)."""
-    if entry.settings.exceptions:
-        draft.annotate(draft.release, EXCEPTIONS, entry.settings.exceptions)
+    if entry.settings.grants.exceptions:
+        draft.annotate(draft.release, EXCEPTIONS, entry.settings.grants.exceptions)
     app, namespace, port = draft.instance.app, draft.instance.namespace, entry.release.port
     files = {'namespace.yaml': [draft.namespace], 'helmrelease.yaml': [draft.release],
              QUOTA_FILE: [resource_quota(app, namespace)],

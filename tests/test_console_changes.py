@@ -22,7 +22,6 @@ from starlette.testclient import TestClient
 from swhurl import ROOT
 from swhurl.apps import calling, channels, egress, new, ops, promotion, repo, teams
 from swhurl.apps import edit as app_edit
-from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import write as model_sync
 from swhurl.apps.model.records import Release
@@ -678,9 +677,6 @@ class FormTests(unittest.TestCase):
         encrypted = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': 'weather-api-events',
                      'namespace': 'weather-api-staging'}, 'type': 'Opaque',
                      'stringData': {'SWHURL_EVENTS_SEED': 'ENC[x]'}, 'sops': {'age': [{'recipient': 'fixture'}]}}
-        def key(instance, *_args, **_kwargs):
-            (instance / 'events.sops.yaml').write_text(yaml.safe_dump(encrypted))
-            return public
         api = FakeGitHub()
         chosen = changes.NewApp.from_form({**NEW, 'team': 'demo'}, [], {'demo': ''})
         image = 'ghcr.io/samclement/weather-api:0-abcdef0@sha256:' + 'd' * 64
@@ -700,7 +696,8 @@ class FormTests(unittest.TestCase):
             proxy = tree / egress.PROXY_FILE
             proxy.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / egress.PROXY_FILE, proxy)
-            with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(intake, 'new_nats_key', side_effect=key):
+            with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(model_sync.nkeys, 'generate', return_value=('fixture-secret', public)), \
+                    mock.patch.object(model_sync, 'Runner', return_value=FakeRunner().on('sops', stdout=yaml.safe_dump(encrypted))):
                 self.assertEqual(new.main([*commands[0].argv, '--root', str(tree), '--no-policy-check'], opener), 0)
             # Direct CLI output remains rendered, with its allocation.
             self.assertIn('egressPort', yaml.safe_load((tree / 'apps/weather-api/staging/instance.yaml').read_text())['allocations'])
@@ -812,6 +809,7 @@ class SharedInputPrTests(unittest.TestCase):
         settings = root / 'apps/hello/staging/instance.yaml'
         doc = yaml.safe_load(settings.read_text())
         doc['allows'] = ['team:demo']
+        doc.setdefault('allocations', {})['eventsKey'] = 'UFIXTURE'
         settings.write_text(yaml.safe_dump(doc))
         folder = settings.parent
         for name in ('events.sops.yaml', 'secret.sops.yaml'):

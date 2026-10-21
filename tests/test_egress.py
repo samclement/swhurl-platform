@@ -119,7 +119,7 @@ class EgressTests(unittest.TestCase):
         self.grant(add=['api.stripe.com'])
         world, _ = model_sync.read(self.root)
         first = promotion.first_production(self.root, world, 'hello')
-        self.assertEqual(first.entry.settings.egress, ())
+        self.assertEqual(first.entry.settings.grants.egress, ())
         with redirect_stdout(io.StringIO()) as out:
             edit.egress_difference('hello', world[Instance('hello', 'staging')], world[Instance('hello', 'prod')])
         self.assertIn('make app-egress APP=hello ENV=prod ARGS="--add api.stripe.com:443"', out.getvalue())

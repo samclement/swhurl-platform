@@ -14,8 +14,8 @@ def apply(draft: Draft, entry: Entry, platform: Platform) -> None:
     if port is None:
         raise RenderError(f'{draft.instance} has no egress port allocated')
     draft.env.update(egress.variables(port))
-    if entry.settings.egress:
-        draft.annotate(draft.release, egress.ANNOTATION, ','.join(entry.settings.egress))
+    if entry.settings.grants.egress:
+        draft.annotate(draft.release, egress.ANNOTATION, ','.join(entry.settings.grants.egress))
 
 
 def proxy(world: World, platform: Platform) -> list[dict] | None:
@@ -25,5 +25,5 @@ def proxy(world: World, platform: Platform) -> list[dict] | None:
     ordered = [each for env in ENVIRONMENTS for each in sorted(world, key=lambda i: i.app) if each.env == env]
     ports: dict[Instance, int] = {each: world[each].settings.allocations.egress_port for each in ordered
                                   if world[each].settings.allocations.egress_port is not None}
-    grants = {each: [name for name in world[each].settings.egress if not egress.grant_problem(name)] for each in ordered}
+    grants = {each: [name for name in world[each].settings.grants.egress if not egress.grant_problem(name)] for each in ordered}
     return egress.proxy_documents(ports, grants)

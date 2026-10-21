@@ -140,11 +140,11 @@ def change(root: Path, name: str, description: str | None = None, rename: str | 
         before, after = f'{TEAM_GRANT}{name}', f'{TEAM_GRANT}{rename}'
 
         def update(value: Entry) -> Entry:
-            allows = tuple(dict.fromkeys(after if grant == before else grant for grant in value.settings.allows))
+            allows = tuple(dict.fromkeys(after if grant == before else grant for grant in value.settings.grants.allows))
             return replace(value, app=replace(value.app, team=rename) if value.app.team == name else value.app,
-                           settings=replace(value.settings, allows=allows))
+                           settings=replace(value.settings, grants=replace(value.settings.grants, allows=allows)))
         operations = {each: write.Update(update) for each, value in world.items()
-                      if value.app.team == name or before in value.settings.allows}
+                      if value.app.team == name or before in value.settings.grants.allows}
         apps = sorted({each.app for each in operations if world[each].app.team == name})
     write.apply(root, prepare(root, document, operations))
     print(f'[OK] team {name}' + (f' renamed to {rename}; relabelled {len(apps)} app(s)' if rename and rename != name else ' updated'))
@@ -162,7 +162,7 @@ def remove(root: Path, name: str, move_apps_to: str | None = None) -> None:
                         'or each with make app-team, then remove it')
     if move_apps_to is not None and (move_apps_to == name or move_apps_to not in teams):
         raise EditError(f'--move-apps-to must name another registered team: {", ".join(t for t in teams if t != name)}')
-    granted = sorted(str(each) for each, value in world.items() if f'{TEAM_GRANT}{name}' in value.settings.allows)
+    granted = sorted(str(each) for each, value in world.items() if f'{TEAM_GRANT}{name}' in value.settings.grants.allows)
     if granted:
         raise EditError(f'team:{name} is allowed to call {", ".join(granted)}: remove those grants first '
                         f'(make app-allows APP=<app> ENV=<env> ARGS="--remove team:{name}")')

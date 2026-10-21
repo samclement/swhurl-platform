@@ -198,6 +198,57 @@ Production is created by the first [promotion](#promote-to-production) from revi
 
 Every instance runs non-root with no service-account token, all capabilities dropped and a read-only root filesystem with a writable `/tmp`. Every web app gets the same start-up allowance: a startup probe gives it up to 120 s to first answer its health path before liveness checks begin. A fast app is Ready as soon as it answers; a JVM on a busy node needs most of it. The allowance is fixed rather than per app so that it stays a minute inside Helm's 3-minute wait (time to pull the image), and the templates' smoke tests wait just as long. The generator refuses to overwrite an instance, expose a worker, put a public app in the sign-in cookie domain, or ship production without a digest.
 
+## Platform-provided interface
+
+For example, every instance receives `SWHURL_APP` and a notify token; a SQLite instance also receives `DATABASE_PATH=/data/app.db`. An absent conditional name means that capability is not supplied, not an empty/default value. Web token-signing keys may be empty in scratch roots without a key file. NATS identity requires both its public allocation and encrypted seed availability; publications and subscriptions additionally require that identity.
+
+This is the canonical list of platform-provided environment names, managed app metadata and token/data paths. [`interface.py`](../tools/swhurl/interface.py) owns the names, meanings and availability; `make check` checks this table, while capability renderers own when and how they are emitted. User-declared Secret keys are not platform-provided names. Recovery/test/backup labels and infrastructure-only metadata are not app capabilities. The token family uses a concrete audience (`notify` or a connected callee); the service-variable family uses the callee's app name. See [calls](#calling-another-app), [events](#events), [secrets](#secrets) and [telemetry](#telemetry) for use and policy.
+
+<!-- app-interface -->
+| Name | Surface | Meaning | Availability |
+| --- | --- | --- | --- |
+| `SWHURL_APP` | env | App name | Every instance |
+| `SWHURL_ENV` | env | Environment name | Every instance |
+| `SWHURL_NOTIFY_URL` | env | Notify service address | Every instance |
+| `SWHURL_AUTH_ISSUER` | env | Token issuer | Web instances |
+| `SWHURL_AUTH_KEYS` | env | Public token-signing keys | Web instances |
+| `SWHURL_ALLOWED_CALLERS` | env | Accepted callers, comma-separated | At least one connected caller |
+| `SWHURL_DESCRIPTION` | env | Image description | Nonempty release description |
+| `SWHURL_SERVICE_<APP>_URL` | env family | Callee URL; uppercase app name with hyphens changed to underscores | Mutually granted call to an existing web instance |
+| `SWHURL_EVENTS_PUBLISH` | env | Published events, comma-separated | Keyed instance with publications |
+| `SWHURL_EVENTS_SUBSCRIBE` | env | Subscriptions, comma-separated | Keyed instance with subscriptions |
+| `SWHURL_EVENTS_URL` | env | NATS address | Complete NATS identity |
+| `SWHURL_EVENTS_NKEY` | env | Public NATS key | Complete NATS identity |
+| `SWHURL_EVENTS_SEED` | Secret env | Private NATS seed via envFrom | Complete NATS identity |
+| `HOST_IP` | env | Node IP from status.hostIP | Telemetry or egress proxy |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | env | Node-local OTLP HTTP endpoint | Telemetry enabled |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | env | OTLP transport protocol | Telemetry enabled |
+| `OTEL_SERVICE_NAME` | env | Telemetry service name | Telemetry enabled |
+| `HTTP_PROXY` | env | HTTP proxy URL | Platform has egress proxy |
+| `HTTPS_PROXY` | env | HTTPS proxy URL | Platform has egress proxy |
+| `NO_PROXY` | env | Addresses bypassing the proxy | Platform has egress proxy |
+| `NODE_USE_ENV_PROXY` | env | Enable Node environment proxy | Platform has egress proxy |
+| `JAVA_TOOL_OPTIONS` | env | JVM proxy system properties | Platform has egress proxy |
+| `DATABASE_PATH` | env | SQLite database filename | SQLite database |
+| `/data` | path | Retained data mount | SQLite database |
+| `/data/app.db` | path | SQLite database file | SQLite database |
+| `/var/run/swhurl/tokens/<audience>/token` | path family | Audience-bound token; notify or connected callee | Every instance has notify; calls add audiences |
+| `platform.swhurl.com/managed` | label | Platform-managed marker | Namespace and image automation |
+| `platform.swhurl.com/app` | label | App name | Namespace and image automation |
+| `platform.swhurl.com/environment` | label | Environment name | Namespace |
+| `platform.swhurl.com/exposure` | label | Exposure grant | Namespace |
+| `platform.swhurl.com/team` | label | Owning team | Namespace |
+| `platform.swhurl.com/policy-exceptions` | annotation | Reviewed policy exceptions | HelmRelease when nonempty |
+| `platform.swhurl.com/secrets` | annotation | Required secret names, comma-separated | HelmRelease when declared |
+| `platform.swhurl.com/egress` | annotation | Outbound host:port grants | HelmRelease when nonempty and proxy exists |
+| `platform.swhurl.com/offers` | annotation | Commit supplying offered documents | HelmRelease when recorded |
+| `platform.swhurl.com/api-description` | annotation | Served API description path | Web HelmRelease with API path |
+| `platform.swhurl.com/alerts` | annotation | Alert overrides; absent means defaults | Namespace when configured |
+| `platform.swhurl.com/render` | annotation | Fingerprint of intended generated output | Every HelmRelease |
+| `secret.reloader.stakater.com/reload` | annotation | Secrets whose change restarts the controller | Controller with referenced app or events Secret |
+| `kustomize.toolkit.fluxcd.io/prune` | annotation | Retain namespace and its data after removal | SQLite Namespace |
+<!-- /app-interface -->
+
 ## swhurl.yaml
 
 What the app is, what its image needs and what it offers other apps, kept in the app's own repository (the templates write it from your feature answers). The name, environment, image and host belong to each instance and are never in the file. [`declaration.py`](../tools/swhurl/apps/declaration.py) is its one reader: unknown fields and other versions are refused wherever the file is read.

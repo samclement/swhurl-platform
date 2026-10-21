@@ -7,13 +7,12 @@ directions. Standard library only, so every part of the tooling can import it.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from swhurl.apps.model import records
+
 ENVIRONMENTS = ('staging', 'prod')
-NAME_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
-"""An app's name: a DNS label short enough for every name made from it."""
 INSTANCE_ROOTS = (Path('apps'), Path('tests/fixtures/apps/apps'))
 """Where instances are kept, from the repository root: the platform's own first, then the generated fixtures."""
 UNITS = Path('clusters/home')
@@ -27,7 +26,7 @@ class Instance:
     env: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.app, str) or not NAME_RE.match(self.app) or self.env not in ENVIRONMENTS:
+        if not isinstance(self.app, str) or not records.NAME_RE.match(self.app) or self.env not in ENVIRONMENTS:
             raise ValueError(f'no instance {self.app}/{self.env}: APP must be a DNS label and ENV one of {", ".join(ENVIRONMENTS)}')
 
     def __str__(self) -> str:

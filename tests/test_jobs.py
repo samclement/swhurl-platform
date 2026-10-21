@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, interface
 from swhurl.apps import contract, declaration, edit, helmrelease, new
 from swhurl.apps.errors import EditError
 
@@ -69,7 +69,7 @@ class JobInstanceTests(unittest.TestCase):
         self.assertNotIn('ingress', values)
         self.assertEqual((helmrelease.kind(release), helmrelease.schedule(release)), ('job', '17 3 * * *'))
         namespace = yaml.safe_load((self.root / 'apps/nightly/staging/namespace.yaml').read_text())
-        self.assertEqual(namespace['metadata']['labels'][contract.EXPOSURE], 'private')
+        self.assertEqual(namespace['metadata']['labels'][interface.EXPOSURE], 'private')
 
     def test_what_a_job_refuses_at_creation(self):
         for extra, message in ((['--schedule', 'every day'], 'is not five cron fields'),

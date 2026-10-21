@@ -7,30 +7,19 @@ SWHURL_SERVICE_<APP>_URL variable, a short-lived service-account token only that
 the callee's allowed-callers variable and its NetworkPolicy. A call without a grant, a grant
 without a call or a call to an absent instance renders nothing for the pair. Every instance
 is told who it is; a web app also gets the token issuer and the cluster's public signing keys.
-This module defines the rendered variables, token files and names, not the input records.
+This module renders and reads calls; interface.py owns their variable and token-path names.
 """
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
-from swhurl import ROOT
+from swhurl import ROOT, interface
 
-APP_VARIABLE = 'SWHURL_APP'
-ENVIRONMENT_VARIABLE = 'SWHURL_ENV'
-ISSUER_VARIABLE = 'SWHURL_AUTH_ISSUER'
-KEYS_VARIABLE = 'SWHURL_AUTH_KEYS'
-CALLERS_VARIABLE = 'SWHURL_ALLOWED_CALLERS'
-DESCRIPTION_VARIABLE = 'SWHURL_DESCRIPTION'
-"""What the app says it does (its swhurl.yaml's description): the templates put it in the API description
-they serve, so an image built for one app serves another's name and description correctly."""
 NOTIFY = 'notify'
 """The notify service (docs/services.md#notify-service): every instance gets its address and a token
 for this audience, so its code can send a message to its team's channel. No app may have this name."""
-NOTIFY_VARIABLE = 'SWHURL_NOTIFY_URL'
 NOTIFY_URL = f'http://{NOTIFY}.{NOTIFY}.svc.cluster.local:8080'
-TOKENS_MOUNT = '/var/run/swhurl/tokens'  # the stack templates' helpers read <this>/<callee>/token
 TOKENS_VOLUME = 'tokens'
 TOKEN_SECONDS = 600  # the shortest the API server issues; the kubelet replaces the file at 80%
 ISSUER = 'https://kubernetes.default.svc.cluster.local'
@@ -38,26 +27,20 @@ ISSUER = 'https://kubernetes.default.svc.cluster.local'
 SIGNING_KEYS_FILE = Path('apps/signing-keys.json')
 """The cluster's public token-signing keys. Apps cannot fetch them (the API refuses anonymous
 requests), so they are kept here and given to each web app; make platform-signing-keys refreshes it."""
-_CALLEE_VARIABLE = re.compile(r'^SWHURL_SERVICE_([A-Z0-9_]+)_URL$')
-
-
-def callee_variable(app: str) -> str:
-    """The variable that holds an app's address: orders-api -> SWHURL_SERVICE_ORDERS_API_URL."""
-    return f'SWHURL_SERVICE_{app.upper().replace("-", "_")}_URL'
 
 
 def callee_address(app: str, port: int) -> str:
     """The callee in the caller's own environment; Kubernetes expands $(SWHURL_ENV), which must be defined first."""
-    return f'http://{app}.{app}-$({ENVIRONMENT_VARIABLE}).svc.cluster.local:{port}'
+    return f'http://{app}.{app}-$({interface.ENVIRONMENT_VARIABLE}).svc.cluster.local:{port}'
 
 
 def declared_calls(variables: dict) -> list[str]:
-    """The apps a container's variables say it calls, in order (app names have no underscores, so this reverses callee_variable)."""
-    return [match[1].lower().replace('_', '-') for key in variables or {} if (match := _CALLEE_VARIABLE.match(str(key)))]
+    """The apps a container's variables say it calls, in order (app names have no underscores, so this reverses interface.callee_variable)."""
+    return [match[1].lower().replace('_', '-') for key in variables or {} if (match := interface.SERVICE_VARIABLE_RE.match(str(key)))]
 
 
 def allowed_callers(variables: dict) -> list[str]:
-    return [name for name in str((variables or {}).get(CALLERS_VARIABLE, '')).split(',') if name]
+    return [name for name in str((variables or {}).get(interface.CALLERS_VARIABLE, '')).split(',') if name]
 
 
 def signing_keys(root: Path = ROOT) -> str:
@@ -72,8 +55,8 @@ def signing_keys(root: Path = ROOT) -> str:
 def identity_variables(app: str, env: str, web: bool, keys: str) -> dict:
     """What every instance is told about itself and where the notify service is, and what a web app
     needs to check a caller's token."""
-    identity = {APP_VARIABLE: app, ENVIRONMENT_VARIABLE: env, NOTIFY_VARIABLE: NOTIFY_URL}
-    return identity | ({ISSUER_VARIABLE: ISSUER, KEYS_VARIABLE: keys} if web else {})
+    identity = {interface.APP_VARIABLE: app, interface.ENVIRONMENT_VARIABLE: env, interface.NOTIFY_VARIABLE: NOTIFY_URL}
+    return identity | ({interface.ISSUER_VARIABLE: ISSUER, interface.KEYS_VARIABLE: keys} if web else {})
 
 
 def token_audiences(callees: list[str]) -> list[str]:
@@ -82,9 +65,9 @@ def token_audiences(callees: list[str]) -> list[str]:
 
 
 def tokens_volume(callees: list[str]) -> dict:
-    """One token file per audience at TOKENS_MOUNT/<audience>/token, each valid for that one only: a
+    """One token file per audience at interface.TOKENS_MOUNT/<audience>/token, each valid for that one only: a
     token with an audience is refused by the Kubernetes API itself."""
     return {'type': 'projected',
             'sources': [{'serviceAccountToken': {'audience': audience, 'expirationSeconds': TOKEN_SECONDS,
                                                  'path': f'{audience}/token'}} for audience in token_audiences(callees)],
-            'globalMounts': [{'path': TOKENS_MOUNT, 'readOnly': True}]}
+            'globalMounts': [{'path': interface.TOKENS_MOUNT, 'readOnly': True}]}

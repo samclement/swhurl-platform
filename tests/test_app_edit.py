@@ -13,7 +13,7 @@ from unittest import mock
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, interface
 from swhurl.apps import calling, cli, contract, edit, new, ops, policy, promotion
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
@@ -207,7 +207,7 @@ class EditTests(unittest.TestCase):
         route = (values.get('ingress') or {}).get('main')
         namespace = yaml.safe_load((instance / 'namespace.yaml').read_text())
         unit = yaml.safe_load((self.root / f'clusters/home/app-hello-{env}.yaml').read_text())
-        return {'exposure': namespace['metadata']['labels'][contract.EXPOSURE],
+        return {'exposure': namespace['metadata']['labels'][interface.EXPOSURE],
                 'host': route['hosts'][0]['host'] if route else None,
                 'sign_in': bool(route) and contract.AUTH_MIDDLEWARE in str(route['annotations']),
                 'depends': [d['name'] for d in unit['spec']['dependsOn']]}
@@ -270,7 +270,7 @@ class EditTests(unittest.TestCase):
         for env in ('staging', 'prod'):
             instance = self.root / 'apps/hello' / env
             labels = yaml.safe_load((instance / 'namespace.yaml').read_text())['metadata']['labels']
-            self.assertEqual(labels[contract.TEAM], 'payments')
+            self.assertEqual(labels[interface.TEAM], 'payments')
         self.assertEqual(generated.problems(self.root), [])
         with self.assertRaisesRegex(edit.EditError, 'already belongs to payments'):
             edit.set_team(self.root, 'hello', 'payments')
@@ -615,9 +615,9 @@ components:
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'what it publishes follows the document')
         self.assertEqual(len(self.seeds), 1, 'its NATS key is made the first time')
         release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
-        self.assertEqual(release['metadata']['annotations'][offers.ANNOTATION], 'abc1234')
+        self.assertEqual(release['metadata']['annotations'][interface.OFFERS_ANNOTATION], 'abc1234')
         self.assertNotIn('offers', yaml.safe_load((instance / 'kustomization.yaml').read_text())['resources'], 'documents, not resources')
-        self.assertEqual(release['metadata']['annotations'][offers.API_ANNOTATION], '/openapi.json',
+        self.assertEqual(release['metadata']['annotations'][interface.API_ANNOTATION], '/openapi.json',
                          'where it serves its description, from swhurl.yaml: an annotation, since no app reads it')
         self.assertNotIn('SWHURL_API_PATH', self.env('orders'))
         self.assertEqual(offers.problems(instance, ['created', 'paid'], 'abc1234'), [])
@@ -643,7 +643,7 @@ components:
         self.quiet(edit.set_events, self.root, 'hello', 'staging', subscribe=[], runner=runner)
         self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
         self.assertFalse((instance / 'offers').exists())
-        self.assertNotIn(offers.API_ANNOTATION, yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'].get('annotations', {}),
+        self.assertNotIn(interface.API_ANNOTATION, yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'].get('annotations', {}),
                          'no provides.api: no API description to link')
         self.assertNotIn('platform.swhurl.com/offers', yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'].get('annotations', {}))
         self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders'))
@@ -1261,7 +1261,7 @@ components:
         registry.write_text(registry.read_text().replace('  - app-orders-prod.yaml\n', ''))
         with mock.patch.object(policy, 'evaluate', side_effect=lambda instance, runner=None: [
                 f'offers: {p}' for p in offers.problems(instance, [], str((yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata']
-                                                                           .get('annotations') or {}).get(offers.ANNOTATION, '')))
+                                                                           .get('annotations') or {}).get(interface.OFFERS_ANNOTATION, '')))
                 if 'annotated' in p]):
             self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod', runner=runner)
         self.assertEqual((offers.read(prod).commit, self.env('orders', 'prod')['SWHURL_EVENTS_PUBLISH']), ('abc1234', 'created,paid'))

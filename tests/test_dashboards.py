@@ -9,7 +9,7 @@ from pathlib import Path
 
 from test_clickstack import EMAIL, URI, b64
 
-from swhurl import ROOT, app_alerts, clickstack, dashboards, yamlio
+from swhurl import ROOT, app_alerts, clickstack, dashboards, interface, yamlio
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -176,7 +176,7 @@ class AlertTests(unittest.TestCase):
         release = {'metadata': {'name': 'web', 'namespace': 'web-staging', 'labels': {
             'kustomize.toolkit.fluxcd.io/name': 'app-web-staging', 'kustomize.toolkit.fluxcd.io/namespace': 'flux-system'}},
             'spec': {'values': {'service': {}}}}
-        api = HyperDX(namespaces=[{'metadata': {'name': 'web-staging', 'annotations': {app_alerts.ANNOTATION: 'errors=none'}}},
+        api = HyperDX(namespaces=[{'metadata': {'name': 'web-staging', 'annotations': {interface.ALERTS_ANNOTATION: 'errors=none'}}},
                                   {'metadata': {'name': 'other'}}])
         runner = api.runner().on(*dashboards.RELEASES, stdout=json.dumps({'items': [release]}))
         self.assertEqual(dashboards.cluster_apps(runner), [dashboards.App('web', 'web', ('staging',), 'errors=none')])

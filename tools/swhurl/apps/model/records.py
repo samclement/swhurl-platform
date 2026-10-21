@@ -17,6 +17,7 @@ KINDS = ('web', 'worker', 'job')
 EXPOSURES = ('private', 'authenticated-web', 'public')
 DATABASES = ('sqlite',)
 NAME_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
+"""An app, team, channel or event name: a DNS label of at most 40 characters."""
 SUBSCRIPTION_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?\.[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
 TEAM_GRANT = 'team:'
 ALLOW_RE = re.compile(r'^(team:)?[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')

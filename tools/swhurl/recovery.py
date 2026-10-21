@@ -26,13 +26,13 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, backupset, clickstack, platform, yamlio
+from swhurl import ROOT, backupset, clickstack, interface, platform, yamlio
 from swhurl.backupset import BackupError, BackupSet
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 INGESTION_SECRET = platform.INGESTION_SECRET
-RECOVERY_LABEL = platform.label('recovery-test')
+RECOVERY_LABEL = interface.label('recovery-test')
 
 
 def backups(backup_dir: Path) -> BackupSet:

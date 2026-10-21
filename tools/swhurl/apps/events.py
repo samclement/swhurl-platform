@@ -25,10 +25,9 @@ The stream controller (NACK) creates streams and consumers from the manifests in
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
-from swhurl import yamlio
+from swhurl import interface, yamlio
 from swhurl.apps.instance import ENVIRONMENTS, Instance
 
 NAMESPACE = 'messaging'
@@ -41,11 +40,6 @@ CONSOLE_KEY_FILE = Path('platform/nats/console-nkey.pub')
 """The console's public nkey: it writes flag overrides. Its seed is platform/console/nats.sops.yaml."""
 CONSOLE_INBOX = '_INBOX.console'
 
-PUBLISH_VARIABLE = 'SWHURL_EVENTS_PUBLISH'
-SUBSCRIBE_VARIABLE = 'SWHURL_EVENTS_SUBSCRIBE'
-URL_VARIABLE = 'SWHURL_EVENTS_URL'
-NKEY_VARIABLE = 'SWHURL_EVENTS_NKEY'
-SEED_VARIABLE = 'SWHURL_EVENTS_SEED'
 EVENTS_FILE = 'events.yaml'
 SECRET_FILE = 'events.sops.yaml'
 
@@ -53,8 +47,6 @@ RETENTION = '168h'  # seven days: an event stream is not a system of record, and
 MAX_BYTES = 64 * 2**20  # per stream; the oldest events go first
 MAX_DELIVER = 5  # a subscriber that keeps failing an event stops receiving it
 ACK_WAIT = '30s'
-EVENT_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
-SUBSCRIPTION_RE = re.compile(r'^([a-z]([a-z0-9-]{0,38}[a-z0-9])?)\.([a-z]([a-z0-9-]{0,38}[a-z0-9])?)$')
 
 
 def secret_name(app: str) -> str:
@@ -62,12 +54,12 @@ def secret_name(app: str) -> str:
 
 
 def published(variables: dict) -> list[str]:
-    return [name for name in str((variables or {}).get(PUBLISH_VARIABLE, '')).split(',') if name]
+    return [name for name in str((variables or {}).get(interface.PUBLISH_VARIABLE, '')).split(',') if name]
 
 
 def subscribed(variables: dict) -> list[tuple[str, str]]:
     """``(publishing app, event)`` pairs."""
-    pairs = [name.partition('.') for name in str((variables or {}).get(SUBSCRIBE_VARIABLE, '')).split(',') if name]
+    pairs = [name.partition('.') for name in str((variables or {}).get(interface.SUBSCRIBE_VARIABLE, '')).split(',') if name]
     return [(app, event) for app, _, event in pairs]
 
 

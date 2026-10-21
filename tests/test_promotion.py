@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl import ROOT, yamlio
-from swhurl.apps import contract, helmrelease, ops, promotion, state
+from swhurl import ROOT, interface, yamlio
+from swhurl.apps import helmrelease, ops, promotion, state
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated
@@ -226,7 +226,7 @@ class FirstProductionTests(unittest.TestCase):
         import yaml
         self.staging('web', '--team', 'payments', '--port', '9000')
         dst = self.promote()
-        self.assertEqual(yaml.safe_load((dst / 'namespace.yaml').read_text())['metadata']['labels'][contract.TEAM],
+        self.assertEqual(yaml.safe_load((dst / 'namespace.yaml').read_text())['metadata']['labels'][interface.TEAM],
                          'payments')
         network = yaml.safe_load((dst / 'networkpolicy.yaml').read_text())
         self.assertEqual(network['metadata']['namespace'], 'example-prod')

@@ -1,6 +1,6 @@
 """Facts about this platform that more than one command needs.
 
-Repository paths, label names, and the inventory of what Git defines: the Flux units (``units``)
+Repository paths and the inventory of what Git defines: the Flux units (``units``)
 and the namespaces their manifests declare (``namespaces``). Code, tests and the doc check read
 the inventory rather than retyping a unit's name, file or inputs.
 """
@@ -40,15 +40,6 @@ CONSOLE_TOKEN_KEY = 'GITHUB_TOKEN'
 APP_REPOS_TOKEN_KEY = 'APP_REPOS_TOKEN'
 # What the console image is built from (images/console/Dockerfile); validate.yml's console-image job hashes the same paths.
 CONSOLE_IMAGE_INPUTS = ('images/console', '.dockerignore', 'pyproject.toml', 'uv.lock', 'tools', str(SETTINGS))
-# Labels and annotations under the platform's domain.
-LABEL_DOMAIN = 'platform.swhurl.com'
-
-
-def label(name: str) -> str:
-    """``platform.swhurl.com/<name>``."""
-    return f'{LABEL_DOMAIN}/{name}'
-
-
 def base_domain(root: Path = ROOT) -> str:
     """``BASE_DOMAIN`` from platform-settings: parent of platform hosts and the sign-in cookie."""
     data = yamlio.load((root / SETTINGS).read_text()).get('data') or {}

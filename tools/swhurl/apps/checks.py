@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from swhurl import ROOT
+from swhurl import ROOT, interface
 from swhurl.apps import calling, contract, egress, events, hooks
 from swhurl.apps import policy as app_policy
 from swhurl.apps.instance import INSTANCE_ROOTS, Instance
@@ -18,7 +18,7 @@ from swhurl.run import CommandError, Runner
 
 
 def app_of(policy: dict) -> str:
-    return (policy['metadata'].get('labels') or {}).get(contract.APP, '')
+    return (policy['metadata'].get('labels') or {}).get(interface.APP, '')
 
 
 def check_image_automation(runner: Runner, report: Report, root: Path = ROOT) -> None:
@@ -27,7 +27,7 @@ def check_image_automation(runner: Runner, report: Report, root: Path = ROOT) ->
     report.section('Image Automation')
     try:
         policies = runner.json(['kubectl', '-n', 'flux-system', 'get', 'imagepolicies.image.toolkit.fluxcd.io',
-                                '-l', contract.APP, '-o', 'json'])['items']
+                                '-l', interface.APP, '-o', 'json'])['items']
     except (CommandError, KeyError, TypeError):
         report.bad("cannot read the apps' ImagePolicies, so no staging deploy can be checked "
                    '(kubectl -n flux-system get imagepolicies; is image-reflector-controller running? make flux-install)')
@@ -67,13 +67,13 @@ def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
     """
     report.section('App isolation')
     try:
-        namespaces = runner.json(['kubectl', 'get', 'namespaces', '-l', contract.APP, '-o', 'json'])['items']
+        namespaces = runner.json(['kubectl', 'get', 'namespaces', '-l', interface.APP, '-o', 'json'])['items']
         quotas = runner.json(['kubectl', 'get', 'resourcequotas', '--all-namespaces', '-o', 'json'])['items']
         policies = runner.json(['kubectl', 'get', 'networkpolicies.networking.k8s.io', '--all-namespaces',
                                 '-o', 'json'])['items']
     except (CommandError, KeyError, TypeError):
         report.bad('cannot read app namespaces, ResourceQuotas or NetworkPolicies, so app isolation is unchecked '
-                   f'(kubectl get namespaces -l {contract.APP})')
+                   f'(kubectl get namespaces -l {interface.APP})')
         return
     known = contract.teams(root)
     live = {n['metadata']['name']: n['metadata'].get('labels') or {} for n in namespaces}
@@ -91,7 +91,7 @@ def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
             continue
         labels = live[name]
         problems = []
-        team = labels.get(contract.TEAM)
+        team = labels.get(interface.TEAM)
         if team not in known:
             problems.append(f'team {team!r} is not in {contract.TEAMS_FILE} (make app-team APP={app} ARGS="--team <team>"'
                             + (f', or make team-add NAME={team})' if team else ')'))

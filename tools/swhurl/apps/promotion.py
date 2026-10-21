@@ -9,7 +9,8 @@ from pathlib import Path
 
 from swhurl.apps import contract, ops, state
 from swhurl.apps.errors import EditError
-from swhurl.apps.instance import NAME_RE, Instance, instance_folder, instance_unit_file
+from swhurl.apps.instance import Instance, instance_folder, instance_unit_file
+from swhurl.apps.model import records as app_records
 from swhurl.apps.model.draft import APP_SECRET, Entry, World
 from swhurl.apps.model.records import (
     RELEASE_FILE,
@@ -35,7 +36,7 @@ def select(root: Path, world: World, app: str) -> Decision:
     A merged first promotion with complete records is an existing production even before rendering.
     ``world`` must have been checked for record errors by the caller.
     """
-    if not NAME_RE.fullmatch(app):
+    if not app_records.NAME_RE.fullmatch(app):
         raise EditError('APP must be a DNS label')
     source = world.get(Instance(app, 'staging'))
     if source is None:

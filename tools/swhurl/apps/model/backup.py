@@ -7,24 +7,14 @@ from __future__ import annotations
 
 import hashlib
 
+from swhurl import interface, platform
 from swhurl.apps import egress
-from swhurl.apps.contract import (
-    BACKUP_FILE,
-    BACKUP_IMAGE,
-    BACKUP_LABEL,
-    BACKUP_RECIPIENT,
-    BACKUP_UNIT,
-    BACKUP_WRITER,
-    DATA_MOUNT,
-    DATABASE_PATH_VARIABLE,
-    SQLITE_BACKUP_URI,
-    SQLITE_PATH,
-)
+from swhurl.apps.contract import BACKUP_FILE, BACKUP_IMAGE, BACKUP_LABEL, BACKUP_RECIPIENT, BACKUP_UNIT, BACKUP_WRITER
 from swhurl.apps.model.draft import Draft, Entry, Platform
 
 SUSPENDED = False  # True stops every SQLite backup job (the rollback, with platform/backup/mongodb.yaml's suspend)
 # What the AWS CLI reads to reach S3 through the instance's proxy port (HOST_IP: NO_PROXY names it).
-PROXY_VARIABLES = ('HOST_IP', egress.HTTP_VARIABLE, egress.HTTPS_VARIABLE, egress.NO_PROXY_VARIABLE)
+PROXY_VARIABLES = (interface.OTLP_HOST_IP, interface.HTTP_VARIABLE, interface.HTTPS_VARIABLE, interface.NO_PROXY_VARIABLE)
 
 
 def schedule(namespace: str) -> str:
@@ -39,7 +29,7 @@ def variables(values: dict) -> list[dict]:
     return [{'name': name, **(value if isinstance(value, dict) else {'value': str(value)})} for name, value in values.items()]
 
 
-def manifests(app: str, namespace: str, uid: int, *, claim: str, proxy: dict, path: str = SQLITE_PATH,
+def manifests(app: str, namespace: str, uid: int, *, claim: str, proxy: dict, path: str = interface.SQLITE_PATH,
               key: tuple[str, str] = ('${BACKUP_AWS_ACCESS_KEY_ID}', '${BACKUP_AWS_SECRET_ACCESS_KEY}')) -> tuple[dict, dict]:
     """The job's Secret (``key``: Flux substitutes the references) and CronJob; the SQLite restore live test
     runs the same job on its throwaway app."""
@@ -48,12 +38,12 @@ def manifests(app: str, namespace: str, uid: int, *, claim: str, proxy: dict, pa
               'stringData': {'AWS_ACCESS_KEY_ID': key[0], 'AWS_SECRET_ACCESS_KEY': key[1]}}
     container = {
         'name': 'backup', 'image': BACKUP_IMAGE, 'args': ['backup-job-sqlite'],
-        'env': variables({**proxy, 'AGE_RECIPIENT': BACKUP_RECIPIENT, 'BACKUP_S3_URI': f'{SQLITE_BACKUP_URI}{namespace}/',
-                          'BACKUP_SOURCE': f'{namespace}/{app}', DATABASE_PATH_VARIABLE: path}),
+        'env': variables({**proxy, 'AGE_RECIPIENT': BACKUP_RECIPIENT, 'BACKUP_S3_URI': f'{platform.SQLITE_S3_URI}{namespace}/',
+                          'BACKUP_SOURCE': f'{namespace}/{app}', interface.DATABASE_PATH_VARIABLE: path}),
         'envFrom': [{'secretRef': {'name': name}}],
         'resources': {'requests': {'cpu': '10m', 'memory': '64Mi'}, 'limits': {'memory': '256Mi'}},
         'securityContext': {'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True, 'capabilities': {'drop': ['ALL']}},
-        'volumeMounts': [{'name': 'data', 'mountPath': DATA_MOUNT}, {'name': 'scratch', 'mountPath': '/scratch'},
+        'volumeMounts': [{'name': 'data', 'mountPath': interface.DATA_MOUNT}, {'name': 'scratch', 'mountPath': '/scratch'},
                          {'name': 'tmp', 'mountPath': '/tmp'}],
     }
     pod = {

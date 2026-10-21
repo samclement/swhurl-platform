@@ -25,21 +25,15 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import yamlio
+from swhurl import interface, yamlio
+from swhurl.apps.model import records
 
 OFFERS_DIR = 'offers'
 SOURCE_FILE = 'source.yaml'
 EVENTS_NAME = 'asyncapi.yaml'
 FLAGS_NAME = 'flags.json'  # the feature flags swhurl.yaml declares, as JSON (docs/apps.md#feature-flags)
-ANNOTATION = 'platform.swhurl.com/offers'
-"""On the instance's HelmRelease: the commit its offers were read at. The console sees from it that
-the app describes itself, without a variable that would restart the app when it changes."""
-API_ANNOTATION = 'platform.swhurl.com/api-description'
-"""On a web instance's HelmRelease: the path where the running app serves its API description
-(swhurl.yaml's provides.api), which the console links. An annotation, not a variable: no app reads it."""
 IMAGE_COMMIT = re.compile(r'^[0-9]+-([0-9a-f]{7,40})$')
 """An app image's tag is <run>-<commit>: the commit says which revision of the repository it is."""
-EVENT_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
 FILE_RE = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$')
 MAX_BYTES = 512 * 1024
 Opener = Callable[[urllib.request.Request], bytes]
@@ -150,7 +144,7 @@ def events(text: str, name: str = EVENTS_NAME) -> list[Event]:
             continue
         channel = _settled(doc, channel, name)
         event = str(channel.get('address') or key)
-        if not EVENT_RE.match(event):
+        if not records.NAME_RE.match(event):
             raise OfferError(f'{name}: channel {key} has the address {event!r}; an event is a lowercase name such as created')
         if event in [e.name for e in found]:
             raise OfferError(f'{name}: {event} is described twice')
@@ -265,7 +259,7 @@ def problems(instance: Path, published: list[str], annotation: str = '') -> list
     except OfferError as error:
         return [f'offers: {error}; make app-offers reads them again']
     if offers is None:
-        found = [f'offers: the release is annotated {ANNOTATION} but the instance keeps no {OFFERS_DIR}/'] if annotation else []
+        found = [f'offers: the release is annotated {interface.OFFERS_ANNOTATION} but the instance keeps no {OFFERS_DIR}/'] if annotation else []
         if published:
             found.append('offers: publications need an AsyncAPI document named by swhurl.yaml provides.eventsFile')
         return found

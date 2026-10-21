@@ -7,13 +7,13 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 
-from swhurl.apps import calling, contract, egress, events, helmrelease, offers, ops
+from swhurl import interface
+from swhurl.apps import calling, egress, events, helmrelease, ops
 from swhurl.apps import connections as links
 from swhurl.apps.contract import (
     AUTO_DEPLOY_TAG_PATTERN,
 )
 from swhurl.apps.instance import Instance
-from swhurl.apps.model.render import ANNOTATION
 from swhurl.apps.state import State, ready_reason, unit_state, verdict
 from swhurl.kube import ready_condition
 from swhurl.report import Entry, Report
@@ -22,7 +22,7 @@ from swhurl.verify import verify_platform
 
 UNITS = ['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io', '-o', 'json']
 RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']
-APP_NAMESPACES = ['kubectl', 'get', 'namespaces', '-l', contract.APP, '-o', 'json']
+APP_NAMESPACES = ['kubectl', 'get', 'namespaces', '-l', interface.APP, '-o', 'json']
 SOURCE = ['kubectl', '-n', 'flux-system', 'get', 'gitrepository', ops.SOURCE, '-o', 'json']
 PODS = ['kubectl', 'get', 'pods', '--all-namespaces', '-l', ops.INSTANCE_LABEL, '-o', 'json']
 WORKLOADS = ['kubectl', 'get', ops.WORKLOAD_KINDS, '--all-namespaces', '-l', ops.INSTANCE_LABEL, '-o', 'json']
@@ -199,7 +199,7 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
     judged = [git_source, functools.partial(items, runner, PODS), functools.partial(items, runner, WORKLOADS)]
     read = runner.together(*lists, *(judged if states else ()))
     releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in read[0]}
-    teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(contract.TEAM, '') for n in read[1]}
+    teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(interface.TEAM, '') for n in read[1]}
     found = [(instance, unit, releases.get((instance.namespace, instance.app)))
              for unit in read[2] if (instance := Instance.of_unit(unit['metadata']['name']))]
     # A unit may disappear before Helm finishes uninstalling its release. Keep it visible until both are gone.
@@ -222,7 +222,7 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
         hosts = helmrelease.hosts(release)
         address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
         annotations = ((release or {}).get('metadata') or {}).get('annotations') or {}
-        path = str(annotations.get(offers.API_ANNOTATION, '')) if address else ''
+        path = str(annotations.get(interface.API_ANNOTATION, '')) if address else ''
         calls, callers = calling.declared_calls(variables), calling.allowed_callers(variables)
         publishes, subscribes = events.published(variables), events.subscribed(variables)
         subscribers = [(event, subscriber) for env, publisher, event, subscriber in subscribed
@@ -233,7 +233,7 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
             links.rows(calls, callers, publishes, subscribes, subscribers,
                        {other.app: teams.get(other.namespace, '') for other, _, _ in found if other.env == instance.env},
                        egress.granted(release)),
-            str(annotations.get(offers.ANNOTATION, '')),
+            str(annotations.get(interface.OFFERS_ANNOTATION, '')),
             tuple(egress.granted(release)), egress.port_of(variables))
         mine = (instance.namespace, instance.app)
         status = ops.status_of(instance, unit, source, release, {'items': owned['pods'][mine]},
@@ -241,9 +241,9 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
         rows.append(AppRow(instance, verdict(status) if states else NOT_READ, status.unit_suspended,
                            ops.desired_image(release) if release else 'no HelmRelease',
                            image.get('tag', ''), image.get('digest', ''), hosts,
-                           str(variables.get('DATABASE_PATH', '')) if release else None,
+                           str(variables.get(interface.DATABASE_PATH_VARIABLE, '')) if release else None,
                            teams.get(instance.namespace, ''), connections, status.applied_revision,
-                           ((release or {}).get('metadata', {}).get('annotations') or {}).get(ANNOTATION, ''),
+                           ((release or {}).get('metadata', {}).get('annotations') or {}).get(interface.RENDER_ANNOTATION, ''),
                            release_ready(release),
                            verdict(status, render_applied=True) if states else NOT_READ,
                            status.image_state == 'matches'))

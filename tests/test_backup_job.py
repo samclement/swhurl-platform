@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from swhurl import ROOT, backup_job, platform, recovery, sqlite_backup, validate
+from swhurl import ROOT, backup_job, interface, platform, recovery, sqlite_backup, validate
 from swhurl.apps import contract, policy
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import backup
@@ -240,7 +240,7 @@ class RenderedJobTests(unittest.TestCase):
         self.assertEqual((pod['securityContext']['runAsUser'], pod['automountServiceAccountToken']), (uid, False))
         self.assertEqual(pod['volumes'][0], {'name': 'data', 'persistentVolumeClaim': {'claimName': 'demo-orders'}})
         env = {var['name']: var.get('value') for var in pod['containers'][0]['env']}
-        self.assertEqual(env['BACKUP_S3_URI'], contract.SQLITE_BACKUP_URI + 'demo-orders-prod/')
+        self.assertEqual(env['BACKUP_S3_URI'], platform.SQLITE_S3_URI + 'demo-orders-prod/')
         self.assertTrue(env['HTTPS_PROXY'].startswith('http://egress.'), 'S3 is reached through the egress proxy')
         unit = files[Path('clusters/home/app-demo-orders-prod.yaml')][0]['spec']
         self.assertIn({'name': contract.BACKUP_UNIT}, unit['dependsOn'])
@@ -260,11 +260,11 @@ class RenderedJobTests(unittest.TestCase):
         files = self.render('demo-orders', 'prod')
         docs = [doc for documents in files.values() for doc in documents if doc.get('kind') in ('HelmRelease', 'CronJob')]
         job = next(doc for doc in docs if doc['kind'] == 'CronJob')
-        self.assertEqual([v for v in policy.check_identity(docs, {contract.ENVIRONMENT: 'prod'}, '') if v[0] == 'call-tokens'], [])
+        self.assertEqual([v for v in policy.check_identity(docs, {interface.ENVIRONMENT: 'prod'}, '') if v[0] == 'call-tokens'], [])
         job['spec']['jobTemplate']['spec']['template']['spec']['volumes'].append(
             {'name': 'tokens', 'projected': {'sources': [{'serviceAccountToken': {'audience': 'x', 'path': 'x/token'}}]}})
         self.assertIn(('call-tokens', 'CronJob/demo-orders-backup is a backup job and carries no service-account token'),
-                      policy.check_identity(docs, {contract.ENVIRONMENT: 'prod'}, ''))
+                      policy.check_identity(docs, {interface.ENVIRONMENT: 'prod'}, ''))
 
     def test_the_mongodb_job_and_the_constants_agree_with_the_repository(self):
         import yaml
@@ -273,7 +273,6 @@ class RenderedJobTests(unittest.TestCase):
         env = {var['name']: var.get('value') for var in container['env']}
         self.assertEqual((container['image'], env['AGE_RECIPIENT']), (contract.BACKUP_IMAGE, contract.BACKUP_RECIPIENT))
         self.assertEqual(recovery.sops_recipient(), contract.BACKUP_RECIPIENT)
-        self.assertEqual(contract.SQLITE_BACKUP_URI, platform.SQLITE_S3_URI)
         self.assertEqual(env['BACKUP_S3_URI'], platform.BACKUP_S3_URI)
 
 

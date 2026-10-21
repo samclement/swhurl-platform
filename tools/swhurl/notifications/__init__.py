@@ -14,6 +14,7 @@ import logging.config
 import os
 from collections.abc import Callable
 
+from swhurl import interface
 from swhurl.console.logconfig import CONFIG
 from swhurl.run import CommandError, Runner
 
@@ -28,7 +29,7 @@ from .evaluate import REMINDER as REMINDER
 from .evaluate import SUCCESS as SUCCESS
 from .evaluate import evaluate, incident, snapshot
 from .evaluate import timestamp as timestamp
-from .notice import PLATFORM_KEY, SERVICE_URL, Notice, Ntfy, forward, platform_topic
+from .notice import PLATFORM_KEY, Notice, Ntfy, forward, platform_topic
 from .state import MAX_STATE_BYTES as MAX_STATE_BYTES
 from .state import STATE_NAME as STATE_NAME
 from .state import STATE_NAMESPACE as STATE_NAMESPACE
@@ -105,7 +106,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     try:
         if not runner.dry_run and not os.environ.get(PLATFORM_KEY):
             raise NotificationError(f'{PLATFORM_KEY} is missing; checker cannot deliver notifications')
-        state = check(runner, now=now, base=base, sender=sender, copies=bool(os.environ.get(SERVICE_URL)))
+        state = check(runner, now=now, base=base, sender=sender, copies=bool(os.environ.get(interface.NOTIFY_VARIABLE)))
         logging.getLogger(__name__).info('Notification check completed: %d instances, %d pending, dry_run=%s',
                                         len(state['instances']), len(state['pending']), runner.dry_run)
         if runner.dry_run:

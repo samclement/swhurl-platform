@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import yamlio
+from swhurl import interface, yamlio
 from swhurl.apps import channels, egress, events, nkeys, offers
 from swhurl.apps.contract import RETAINED_STORAGE_CLASS, SECRET_FILE
 from swhurl.apps.errors import EditError
@@ -79,7 +79,7 @@ def allocate(root: Path, world: World, platform: Platform, sizes: dict[Instance,
         if each == rotate or (rotate is None and needed and not allocations.events_key):
             seed, public = nkeys.generate()
             pending[EVENTS_SECRET] = encrypt_secret(root, each.folder(root, platform.base) / events.SECRET_FILE,
-                                                  events.secret_name(each.app), each.namespace, {events.SEED_VARIABLE: seed}, runner)
+                                                  events.secret_name(each.app), each.namespace, {interface.SEED_VARIABLE: seed}, runner)
             allocations = dataclasses.replace(allocations, events_key=public)
         found[each] = dataclasses.replace(entry, settings=dataclasses.replace(entry.settings, allocations=allocations), pending=pending)
     return found

@@ -8,29 +8,22 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import ROOT, yamlio
-from swhurl.platform import base_domain, label
+from swhurl import ROOT, interface, yamlio
+from swhurl.platform import base_domain
 
 CHART = 'app-template'
 CHART_VERSION = '5.2.1'
 CHART_REPOSITORY = 'bjw-s'
-# Capabilities an app can ask for beyond running (docs/plan.md item 12). sqlite: a retained volume
-# with the database file at SQLITE_PATH, given to the app as DATABASE_PATH.
-DATABASES = ('sqlite',)
-DATA_MOUNT = '/data'
-SQLITE_PATH = f'{DATA_MOUNT}/app.db'
-DATABASE_PATH_VARIABLE = 'DATABASE_PATH'
 DEFAULT_DATABASE_SIZE = '1Gi'
 # Each SQLite database's backup job (apps/model/backup.py; platform/backup holds MongoDB's, with the same
 # image): published by Validate's backup-image job, encrypting to the age recipient in .sops.yaml.
 BACKUP_FILE = 'backup.yaml'
-BACKUP_LABEL = label('backup')  # on the backup job and its pods: the platform's, not the app's
+BACKUP_LABEL = interface.label('backup')  # on the backup job and its pods: the platform's, not the app's
 BACKUP_IMAGE = ('ghcr.io/samclement/swhurl-backup:src-069ed3000e256548'
                 '@sha256:f1637924110353f687277141adde4114a461622f7de19fe41098f1a1a5eea7b5')
 BACKUP_RECIPIENT = 'age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h'
 BACKUP_UNIT = 'platform-backup'
 BACKUP_WRITER = 'backup-writer'  # the Secret an instance's unit substitutes the upload-only key from
-SQLITE_BACKUP_URI = 's3://swhurl-platform-backups-110927251694/app-sqlite/'
 # How long an instance may take to become Ready before its unit and HelmRelease report failure
 # (Helm waits this long, then retries once). Short, so a broken image or probe shows red quickly.
 FAIL_AFTER = '3m'
@@ -45,19 +38,11 @@ COOKIE_DOMAIN = base_domain()
 """Every host under this domain receives the shared sign-in cookie."""
 AUTH_MIDDLEWARE = 'ingress-oauth-auth-shared@kubernetescrd'
 
-EXPOSURES = ('private', 'authenticated-web', 'public')
 RETAINED_STORAGE_CLASS = 'local-path-retain'
 STORAGE_CLASSES = {'local-path', RETAINED_STORAGE_CLASS}
 
-MANAGED = label('managed')
-APP = label('app')
-ENVIRONMENT = label('environment')
-EXPOSURE = label('exposure')
-EXCEPTIONS = label('policy-exceptions')
-
 # Teams: an app belongs to one team, a name registered in TEAMS_FILE; there is no default, so every app names one. The team is a Namespace label,
 # the same in every environment of the app; telemetry carries it as swhurl.team (platform/otel).
-TEAM = label('team')
 TEAMS_FILE = Path('apps/teams.yaml')
 
 
@@ -75,8 +60,6 @@ def teams(root: Path = ROOT) -> dict[str, str]:
 # generator, the edit commands and the policy check agree.
 QUOTA_FILE = 'resourcequota.yaml'
 NETWORK_POLICY_FILE = 'networkpolicy.yaml'
-RELOAD = 'secret.reloader.stakater.com/reload'
-"""On an app's controller: the Secrets whose change restarts it (Reloader), comma-separated."""
 ISOLATION_FILES = (QUOTA_FILE, NETWORK_POLICY_FILE)
 # One size for every instance namespace: room for app-scale's maximum replicas at template sizes.
 QUOTA = {'pods': '14', 'requests.cpu': '2', 'requests.memory': '2Gi', 'limits.memory': '4Gi'}
@@ -137,28 +120,18 @@ def network_policy(app: str, namespace: str, routed_port: int | None, port: int 
 # OpenTelemetry: apps with an SDK send OTLP to the collector DaemonSet on their own node,
 # which listens with host networking on 4318 (HTTP) and 4317 (gRPC) and adds the ingestion
 # key and pod attributes (platform/otel/helmrelease-daemonset.yaml). HOST_IP is the node IP.
-OTLP_HOST_IP = 'HOST_IP'
-OTLP_ENDPOINT = f'http://$({OTLP_HOST_IP}):4318'
+OTLP_ENDPOINT = f'http://$({interface.OTLP_HOST_IP}):4318'
 OTLP_PROTOCOL = 'http/protobuf'
 
 
 def otlp_variables(service: str) -> dict:
     """The container env that points an app's OpenTelemetry SDK at the cluster collector."""
     return {
-        OTLP_HOST_IP: {'valueFrom': {'fieldRef': {'fieldPath': 'status.hostIP'}}},
-        'OTEL_EXPORTER_OTLP_ENDPOINT': OTLP_ENDPOINT,
-        'OTEL_EXPORTER_OTLP_PROTOCOL': OTLP_PROTOCOL,
-        'OTEL_SERVICE_NAME': service,
+        interface.OTLP_HOST_IP: {'valueFrom': {'fieldRef': {'fieldPath': 'status.hostIP'}}},
+        interface.OTLP_ENDPOINT_VARIABLE: OTLP_ENDPOINT,
+        interface.OTLP_PROTOCOL_VARIABLE: OTLP_PROTOCOL,
+        interface.OTLP_SERVICE_VARIABLE: service,
     }
-
-
-# Environment names the platform sets or may set. An app's secret keys arrive through envFrom, and a
-# container's own env silently wins over envFrom, so a secret with one of these names would never be seen.
-# New platform variables use the SWHURL_ prefix. KUBERNETES_* are the API server's address for in-cluster clients.
-RESERVED_VARIABLE_NAMES = (OTLP_HOST_IP, DATABASE_PATH_VARIABLE,  # and every SWHURL_ name above
-                           # the egress proxy's (egress.py, which cannot be imported here)
-                           'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'NODE_USE_ENV_PROXY', 'JAVA_TOOL_OPTIONS')
-RESERVED_VARIABLE_PREFIXES = ('OTEL_', 'SWHURL_', 'KUBERNETES_')
 
 
 def secret_key_problem(keys: list[str]) -> str:
@@ -166,10 +139,10 @@ def secret_key_problem(keys: list[str]) -> str:
     bad = [k for k in keys if not re.fullmatch(r'[A-Z_][A-Z0-9_]*', k)]
     if bad:
         return f'secret keys must be environment variable names (A-Z, 0-9, _): {", ".join(bad)}'
-    reserved = [k for k in keys if k in RESERVED_VARIABLE_NAMES or k.startswith(RESERVED_VARIABLE_PREFIXES)]
+    reserved = [k for k in keys if k in interface.RESERVED_VARIABLE_NAMES or k.startswith(interface.RESERVED_VARIABLE_PREFIXES)]
     if reserved:
-        return (f'reserved for the platform: {", ".join(reserved)} (the platform sets {", ".join(RESERVED_VARIABLE_NAMES)} '
-                f'and names starting {", ".join(RESERVED_VARIABLE_PREFIXES)}); choose another name')
+        return (f'reserved for the platform: {", ".join(reserved)} (the platform sets {", ".join(interface.RESERVED_VARIABLE_NAMES)} '
+                f'and names starting {", ".join(interface.RESERVED_VARIABLE_PREFIXES)}); choose another name')
     duplicates = sorted({k for k in keys if keys.count(k) > 1})
     if duplicates:
         return f'secret keys repeated: {", ".join(duplicates)}'
@@ -181,8 +154,6 @@ def secret_key_problem(keys: list[str]) -> str:
 # live in SECRET_FILE, which only the operator can write (make app-secret): a name without a value there
 # is "value missing", a value no name asks for is unused.
 SECRET_FILE = 'secret.sops.yaml'
-SECRET_NAMES = label('secrets')
-"""On an app's HelmRelease: the secret names its image needs, comma-separated."""
 
 
 def app_secret(app: str) -> str:
@@ -191,7 +162,7 @@ def app_secret(app: str) -> str:
 
 def declared_secrets(release: dict | None) -> list[str]:
     """The secret names a release notes its image needs."""
-    text = str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(SECRET_NAMES, ''))
+    text = str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(interface.SECRET_NAMES, ''))
     return [name for name in text.split(',') if name]
 
 

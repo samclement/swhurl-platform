@@ -20,12 +20,13 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, yamlio
+from swhurl import ROOT, interface, yamlio
 from swhurl.apps import channels, egress, events, promotion
 from swhurl.apps.calling import NOTIFY
-from swhurl.apps.contract import EXPOSURES, SECRET_FILE, TEAMS_FILE, schedule_problem
+from swhurl.apps.contract import SECRET_FILE, TEAMS_FILE, schedule_problem
 from swhurl.apps.errors import EditError
-from swhurl.apps.instance import NAME_RE, instance_folder, instance_unit_file
+from swhurl.apps.instance import instance_folder, instance_unit_file
+from swhurl.apps.model import records
 from swhurl.apps.model.records import (
     ALLOW_RE,
     APP_FILE,
@@ -87,8 +88,8 @@ def check_events_key(root: Path, app: str, settings: Settings) -> None:
         wanted = recipients(root, key)
         if (doc.get('apiVersion') != 'v1' or doc.get('kind') != 'Secret' or 'data' in doc
                 or doc.get('metadata') != {'name': events.secret_name(app), 'namespace': f'{app}-staging'}
-                or not isinstance(values, dict) or set(values) != {events.SEED_VARIABLE}
-                or not isinstance(values[events.SEED_VARIABLE], str) or not values[events.SEED_VARIABLE].startswith('ENC[')
+                or not isinstance(values, dict) or set(values) != {interface.SEED_VARIABLE}
+                or not isinstance(values[interface.SEED_VARIABLE], str) or not values[interface.SEED_VARIABLE].startswith('ENC[')
                 or not isinstance(sops, dict) or not wanted
                 or not isinstance(sops.get('age'), list)
                 or any(not isinstance(r, dict) or not isinstance(r.get('recipient'), str) for r in sops['age'])
@@ -195,7 +196,6 @@ class Command:
 SCALE_FIELDS = (('replicas', 'replicas', 'Replicas'), ('cpu', 'cpu', 'CPU request'),
                 ('memory', 'memory', 'Memory request'), ('memory_limit', 'memory-limit', 'Memory limit'))
 HOST_RE = re.compile(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+')
-TEAM_NAME = re.compile(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?')
 
 
 def checked_host(host: str) -> str:
@@ -222,8 +222,8 @@ def scale_flags(form: Mapping[str, str]) -> list[str]:
 def expose_flags(form: Mapping[str, str]) -> list[str]:
     """``--exposure=`` and an optional ``--host=`` for app-expose."""
     exposure, host = form.get('exposure', '').strip(), checked_host(form.get('host', '').strip())
-    if exposure not in EXPOSURES:
-        raise ActionError(f'exposure must be one of {", ".join(EXPOSURES)}')
+    if exposure not in records.EXPOSURES:
+        raise ActionError(f'exposure must be one of {", ".join(records.EXPOSURES)}')
     return [f'--exposure={exposure}'] + ([f'--host={host}'] if host else [])
 
 
@@ -240,8 +240,8 @@ class Connections:
             raise ActionError('publishing choices are no longer supported: edit asyncapi.yaml named by provides.eventsFile')
         chosen = cls(*(tuple(name.strip() for name in form.get(field, '').split(',') if name.strip())
                        for field in ('calls', 'subscribe')))
-        bad = [name for name in chosen.calls if not NAME_RE.match(name)]
-        bad += [name for name in chosen.subscribe if not events.SUBSCRIPTION_RE.match(name)]
+        bad = [name for name in chosen.calls if not records.NAME_RE.match(name)]
+        bad += [name for name in chosen.subscribe if not records.SUBSCRIPTION_RE.match(name)]
         if bad:
             raise ActionError(f'{", ".join(bad)}: a call names an app, a subscription <app>.<event>')
         return chosen
@@ -275,9 +275,9 @@ class Connections:
 def removing(app: str, env: str, form: Mapping[str, str]) -> tuple[Command, ...]:
     """The command that removes one connection this app declared: the row's ``role``, ``app`` and ``event``."""
     role, other, event = (form.get(key, '').strip() for key in ('role', 'app', 'event'))
-    if role == 'calls' and NAME_RE.match(other):
+    if role == 'calls' and records.NAME_RE.match(other):
         return (Command('app-calls', (app, env, f'--remove={other}')),)
-    if role == 'subscribes' and events.SUBSCRIPTION_RE.match(f'{other}.{event}'):
+    if role == 'subscribes' and records.SUBSCRIPTION_RE.match(f'{other}.{event}'):
         return (Command('app-events', (app, env, f'--remove-subscribe={other}.{event}')),)
     if role == 'publishes':
         raise ActionError('to stop publishing, edit asyncapi.yaml named by provides.eventsFile; '
@@ -320,7 +320,7 @@ def team_commands(action: str, name: str, form: Mapping[str, str]) -> tuple[Comm
     description = ' '.join(form.get('description', '').split())
     rename, move = form.get('rename', '').strip(), form.get('move_apps_to', '').strip()
     for label, value in (('team name', name), ('new name', rename), ('team to move apps to', move)):
-        if (value or label == 'team name') and not TEAM_NAME.fullmatch(value):
+        if (value or label == 'team name') and not records.NAME_RE.fullmatch(value):
             raise ActionError(f'{label}: lowercase letters, digits and hyphens, at most 40 characters')
     if len(description) > 200:
         raise ActionError('a description is one line of at most 200 characters')
@@ -331,7 +331,7 @@ def team_commands(action: str, name: str, form: Mapping[str, str]) -> tuple[Comm
 
 
 def channel_commands(name: str, form: Mapping[str, str], *, remove: bool = False) -> tuple[Command, ...]:
-    if not TEAM_NAME.fullmatch(name):
+    if not records.NAME_RE.fullmatch(name):
         raise ActionError('team name: lowercase letters, digits and hyphens, at most 40 characters')
     if remove:
         return (Command('team-channel', (name, '--remove')),)
@@ -381,7 +381,7 @@ def parse(branch: str) -> tuple[str, str, str] | None:
     for action, entry in ACTIONS.items():
         envs = f'-({"|".join(entry.envs)})' if entry.envs else '()'
         found = re.fullmatch(rf'console/{re.escape(action)}-([a-z][a-z0-9-]*?){envs}-{SHA}', branch)
-        if found and NAME_RE.fullmatch(found[1]):
+        if found and records.NAME_RE.fullmatch(found[1]):
             return action, found[1], found[2]
     return None
 

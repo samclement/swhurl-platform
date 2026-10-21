@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import yamlio
+from swhurl import interface, yamlio
 from swhurl.apps.contract import BACKUP_FILE, IMAGE_AUTOMATION_FILE, NETWORK_POLICY_FILE, QUOTA_FILE
 from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import (
@@ -27,7 +27,6 @@ from swhurl.apps.model import (
 )
 from swhurl.apps.model.draft import APP_SECRET, Platform, World
 
-ANNOTATION = 'platform.swhurl.com/render'
 REGISTRY_FILE = UNITS / 'kustomization.yaml'
 RELOADER_FILE = Path('platform/reloader/helmrelease.yaml')
 MANAGED_FILES = frozenset({'namespace.yaml', 'helmrelease.yaml', 'kustomization.yaml', QUOTA_FILE,
@@ -65,7 +64,7 @@ def instance(each: Instance, world: World, platform: Platform) -> dict[Path, lis
     folder = platform.base / each.app / each.env
     found = {folder / name: documents for name, documents in workload.finish(draft, entry).items()}
     found[UNITS / f'{each.unit}.yaml'] = [draft.unit]
-    draft.annotate(draft.release, ANNOTATION, fingerprint(found))
+    draft.annotate(draft.release, interface.RENDER_ANNOTATION, fingerprint(found))
     return found
 
 

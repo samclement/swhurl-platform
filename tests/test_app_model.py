@@ -9,7 +9,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from swhurl import ROOT, yamlio
+from swhurl import ROOT, interface, yamlio
 from swhurl.apps import cli, edit, policy
 from swhurl.apps.contract import JOB_SCHEDULE
 from swhurl.apps.errors import EditError
@@ -85,15 +85,15 @@ class RenderTests(unittest.TestCase):
         entry = Entry(App('payments'), web(), Settings())
         path = Path('apps/orders/staging/helmrelease.yaml')
         files = self.render({each: entry}, each)
-        digest = files[path][0]['metadata']['annotations'][render.ANNOTATION]
+        digest = files[path][0]['metadata']['annotations'][interface.RENDER_ANNOTATION]
         before_hash = deepcopy(files)
-        del before_hash[path][0]['metadata']['annotations'][render.ANNOTATION]
+        del before_hash[path][0]['metadata']['annotations'][interface.RENDER_ANNOTATION]
         if not before_hash[path][0]['metadata']['annotations']:
             del before_hash[path][0]['metadata']['annotations']
         self.assertEqual(render.fingerprint(before_hash), digest, 'the hash does not include itself')
         self.assertEqual(render.fingerprint(dict(reversed(list(before_hash.items())))), digest)
         changed_team = self.render({each: dataclasses.replace(entry, app=App('another'))}, each)
-        self.assertNotEqual(changed_team[path][0]['metadata']['annotations'][render.ANNOTATION], digest,
+        self.assertNotEqual(changed_team[path][0]['metadata']['annotations'][interface.RENDER_ANNOTATION], digest,
                             'a namespace change is part of the instance render')
         self.assertEqual(files[path][0]['spec'], changed_team[path][0]['spec'], 'the hash never enters the Helm spec')
         self.assertEqual(self.render({each: entry}, each), files, 'rendering is repeatable and does not mutate its inputs')

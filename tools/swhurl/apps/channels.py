@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 from swhurl import interface, yamlio
 from swhurl.apps.contract import TEAMS_FILE
-from swhurl.apps.model import records
+from swhurl.apps.model import generated, records
 
 NOTIFY_DIR = Path('platform/notify')
 ROUTES_FILE = NOTIFY_DIR / 'routes.yaml'
@@ -107,7 +107,6 @@ def problems(root: Path) -> list[str]:
     encrypted = any((root / NOTIFY_DIR).glob('*.sops.yaml'))
     if unit.is_file() and ('decryption' in (yamlio.load(unit.read_text()).get('spec') or {})) != encrypted:
         found.append(f'{UNIT_FILE} must decrypt exactly while {NOTIFY_DIR} holds an encrypted file (the channel commands set it)')
-    path, text = routes_file(root)
-    if not path.is_file() or path.read_text() != text:
+    if not generated.same(*routes_file(root)):
         found.append(f'{ROUTES_FILE} is not what the channel files and apps/teams.yaml declare; make app-sync rewrites it')
     return [f'notify-channels: {problem}' for problem in found]

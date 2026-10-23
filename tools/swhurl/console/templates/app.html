@@ -255,7 +255,7 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
       <dd>{% for r in status.replicas %}<div><span class="{{ 'ok' if r.ready == r.wanted else 'bad' }}">{{ r.ready }}/{{ r.wanted }} ready</span> <span class="muted">{{ r.workload }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
       {% endif %}
       <dt>Git revision</dt>
-      <dd><span class="mono">{{ status.applied_revision.split(':')[-1] | short }}</span> applied{% if not status.applied %} <span class="warn">· Git has {{ status.desired_revision.split(':')[-1] | short }}, not yet applied</span>{% endif %}</dd>
+      <dd><span class="mono">{{ status.applied_revision.split(':')[-1] | short }}</span> applied{% if not status.at_newest %} <span class="warn">· Git has {{ status.desired_revision.split(':')[-1] | short }}, not yet applied</span>{% endif %}</dd>
       <dt>Flux unit</dt>
       <dd>{{ st.check('ok' if status.unit[0] == 'True' else 'bad') }} <a class="mono" href="/units/{{ i.unit }}">{{ i.unit }}</a> <span class="muted">{{ status.unit[1] | short }}</span></dd>
       <dt>Helm release</dt>

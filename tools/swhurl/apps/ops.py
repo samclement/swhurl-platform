@@ -137,7 +137,7 @@ class InstanceStatus:
     runs: Runs | None = None  # a job's CronJob status; None when it has none yet
 
     @property
-    def applied(self) -> bool:
+    def at_newest(self) -> bool:
         """Revision equality: its unit last applied Git's newest revision. Any commit to main makes this False for a
         while; whether this instance's intended render reached the cluster is a render hash (console.stages.progress)."""
         return bool(self.desired_revision) and self.desired_revision == self.applied_revision
@@ -146,12 +146,12 @@ class InstanceStatus:
     def unaffected(self) -> bool:
         """Its unit is behind Git's newest revision, but only by commits that leave its own files alone
         (another app's deploy, a console change): whatever its unit waits for is not about this instance."""
-        return bool(self.desired_revision and self.applied_revision) and not self.applied and self.own_change is False
+        return bool(self.desired_revision and self.applied_revision) and not self.at_newest and self.own_change is False
 
     @property
     def current(self) -> bool:
         """Nothing of this instance waits in Git to be applied."""
-        return self.applied or self.unaffected
+        return self.at_newest or self.unaffected
 
     @property
     def image_state(self) -> str:
@@ -356,7 +356,7 @@ def stored_in_checkout(instance: Instance, root=ROOT) -> list[str] | None:
 
 def status_lines(found: InstanceStatus, team: str = '', stored: list[str] | None = None) -> list[str]:
     instance = found.instance
-    note = '' if found.applied else '  <- not yet applied'
+    note = '' if found.at_newest else '  <- not yet applied'
     lines = [
         f'Instance   {instance.app}/{instance.env} (namespace {instance.namespace})',
         'State      ' + ': '.join(filter(None, (verdict(found).label, verdict(found).detail))),

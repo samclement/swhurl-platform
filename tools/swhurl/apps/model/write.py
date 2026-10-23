@@ -20,7 +20,7 @@ from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, UNITS, Instance
 from swhurl.apps.model import generated, relations, render, store
 from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry, Platform, RenderError, World
-from swhurl.apps.model.records import APP_FILE, RECORD_FILES, Storage
+from swhurl.apps.model.records import APP_FILE, RECORD_FILES, App, RecordError, Release, Settings, Storage
 from swhurl.apps.model.render import MANAGED_FILES, REGISTRY_FILE, RELOADER_FILE
 from swhurl.apps.yaml_file import YamlFile, mapping
 from swhurl.run import CommandError, Runner
@@ -85,15 +85,6 @@ def allocate(root: Path, world: World, platform: Platform, sizes: dict[Instance,
     return found
 
 
-def _same(path: Path, text: str) -> bool:
-    if not path.is_file():
-        return False
-    try:
-        return [generated.normal(doc) for doc in yamlio.load_all(path.read_text())] == [generated.normal(doc) for doc in yamlio.load_all(text)]
-    except Exception:  # unreadable YAML on disk: write the rendered file
-        return False
-
-
 @dataclasses.dataclass(frozen=True)
 class Prepared:
     """A rendered change not yet written: the records and every file to write or delete."""
@@ -142,7 +133,7 @@ def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance
 
     def keep(path: Path, text: str) -> None:
         path = root / path
-        if not path.is_file() or path.read_text() != text:
+        if not generated.same(path, text):
             writes[path] = text
 
     try:
@@ -155,9 +146,7 @@ def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance
                 target = root / path
                 if path.parent == UNITS and not target.is_file() and each not in added and not (root / REGISTRY_FILE).is_file():
                     continue
-                text = render.text(documents)
-                if not _same(target, text):
-                    writes[target] = text
+                keep(path, render.text(documents))
             deletions += [folder / name for name in sorted(MANAGED_FILES)
                           if folder / name not in {root / path for path in rendered} and (folder / name).is_file()]
         shared = render.shared(world, platform)
@@ -293,6 +282,13 @@ def prepare(root: Path, operations: dict[Instance, Create | Update | Remove], ba
             del world[each]
         else:
             world[each] = operation.entry if isinstance(operation, Create) else operation.update(world[each])
+    try:  # a command cannot build a record that would not parse: the records check their own grammar
+        for each, operation in operations.items():
+            if not isinstance(operation, Remove):
+                entry = world[each]
+                App.parse(entry.app.document()), Release.parse(entry.release.document()), Settings.parse(entry.settings.document())
+    except RecordError as error:
+        raise EditError(f'{each}: {error}') from None
     added = frozenset(each for each, op in operations.items() if isinstance(op, Create))
     removed = removals(root, world, platform)
     sizes = {each: op.database_size for each, op in operations.items() if not isinstance(op, Remove)}

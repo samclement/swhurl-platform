@@ -61,6 +61,8 @@ class Stage:
 
 @dataclass(frozen=True)
 class Track:
+    """A job's whole path as the console shows it, including the stages before its merge; after the merge
+    its status and outcome come from Progress through MERGED."""
     stages: tuple[Stage, ...]
     status: str  # a key of STATUS
     outcome: str  # one sentence: what happens next, or how it ended
@@ -118,7 +120,8 @@ class Target:
 
 @dataclass(frozen=True)
 class Progress:
-    """How far a merged change to an instance has got; never saved."""
+    """How far a merged change to an instance has got: the facts after its merge, never saved. ``applied`` is the
+    one field named so: the intended render reached the cluster."""
     state: str  # REACHED; replaced, superseded, historical; rendering, creating, applying, removing; failing, held, unread
     detail: str = ''  # for replaced: when it was first seen at its end
     applied: bool = False  # Flux applied its render: the render hash matches and the HelmRelease is Ready at its generation
@@ -192,7 +195,8 @@ def landing(action: str, live: AppRow | str | None, target: Target) -> Progress:
     return Progress('applying', state.detail or 'waiting for the target image to be Healthy', applied=True)
 
 
-# How a merged change's Progress reads: (its status, the sentence under it, the note on its end once there or None).
+# How a merged change's Progress reads, keyed by Progress.state: (the Track status, the sentence under it, the
+# note on its end once there or None). A lookup table, not a second state model.
 MERGED = {'live': ('done', '{target} runs it{newer}.', ''),
           'zero': ('done', '{target} is applied and scaled to zero.', 'scaled to zero'),
           'removed': ('done', '{target} is removed.', ''),

@@ -243,7 +243,7 @@ class LiveExposureTests(unittest.TestCase):
 class GatherStatusTests(unittest.TestCase):
     def test_structured_status_matches_what_is_printed(self):
         found = app_ops.gather_status(cluster(), Instance('web', 'prod'))
-        self.assertTrue(found.applied)
+        self.assertTrue(found.at_newest)
         self.assertEqual(found.unit, ('True', f'Applied revision: {REV}'))
         self.assertEqual(found.running_images, [f'docker.io/x/web@{DIGEST}'])
         self.assertEqual(found.replicas, [app_ops.Replicas('Deployment/web', 1, 1)])

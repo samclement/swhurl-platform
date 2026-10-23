@@ -102,6 +102,7 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.instance import INSTANCE_ROOTS, Instance
 from swhurl.apps.model import generated
+from swhurl.apps.model.records import RELEASE_FILE, RecordError, Release
 from swhurl.run import Runner
 
 CACHE = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'swhurl-platform/charts'
@@ -441,7 +442,12 @@ def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
         problems += platform_image(instance)
     root = instance.resolve().parents[2]  # <root>/apps/<app>/<env>
     release = yamlio.load((instance / 'helmrelease.yaml').read_text())
-    problems += offers.problems(instance, events.published(helmrelease.variables(release)),
+    try:
+        published = list(Release.parse(yamlio.load((instance / RELEASE_FILE).read_text())).publishes)
+    except (OSError, UnicodeError, yaml.YAMLError, RecordError) as error:
+        problems.append(f'offers: cannot read {RELEASE_FILE}: {error}')
+        published = []
+    problems += offers.problems(instance, published,
                                 str(((release.get('metadata') or {}).get('annotations') or {}).get(interface.OFFERS_ANNOTATION, '')))
     return problems + [f'{rule}: {message}' for rule, message in check(docs, teams(root), signing_keys(root))
                        if rule not in allowed]

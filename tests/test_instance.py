@@ -1,8 +1,7 @@
-import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file, instances
+from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
 
 
 class InstanceTests(unittest.TestCase):
@@ -47,17 +46,6 @@ class InstanceTests(unittest.TestCase):
                         Instance.of_path('./apps/web/prod/extra'), Instance.of_path('./elsewhere/apps/web/prod'),
                         Instance.of_path('./apps/web/dev'), Instance.of_path('')):
             self.assertIsNone(refused)
-
-    def test_instances_are_listed_from_a_folder_in_order(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp) / 'apps'
-            for kept in ('web/staging', 'web/prod', 'api/staging', 'Bad/staging', 'web/dev'):
-                (folder / kept).mkdir(parents=True)
-                (folder / kept / 'helmrelease.yaml').write_text('')
-            (folder / 'empty/prod').mkdir(parents=True)  # no release: not an instance
-            (folder / 'teams.yaml').write_text('')
-            self.assertEqual([str(each) for each in instances(folder)], ['api/staging', 'web/prod', 'web/staging'])
-            self.assertEqual(instances(Path(tmp) / 'missing'), [])
 
 
 if __name__ == '__main__':

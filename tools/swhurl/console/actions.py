@@ -1,5 +1,5 @@
 """Background jobs: the console's cluster writes (reconcile, suspend and resume
-a Flux unit) and its Git changes (opening a PR, ``changes.py``).
+a Flux unit) and its Git changes (opening a PR, ``proposal.py``).
 
 Flux actions are the patches the ``flux`` CLI would make, sent with ``kubectl``
 (the image has no ``flux`` binary): suspend and resume set ``spec.suspend``;

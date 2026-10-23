@@ -2,7 +2,7 @@
 
 A change is more than its job: a promotion's job ends when its pull request is open, and the
 change ends when production runs it. ``progress`` is the one answer to how far a merged change to an
-instance has got, from Git's facts (``Target``, read by ``changes.render_targets``) and what the
+instance has got, from Git's facts (``Target``, read by ``render_targets``) and what the
 cluster shows (``cluster.AppRow``), read fresh every time. A matching render hash means the intended
 render reached the cluster; Ready at the current generation with the target image running means the
 rollout is complete. Proven absence, a render main has not made yet and a failed read are different
@@ -16,12 +16,29 @@ known before it is reached. Output stays with the job as one chronological log.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import io
+import json
+import logging
 import re
+import tarfile
+import tempfile
+import time
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import yaml
+
+from swhurl import interface, yamlio
+from swhurl.apps import calling, egress, events, helmrelease
+from swhurl.apps.model import backup, render, store
+from swhurl.apps.model.draft import Platform
+from swhurl.apps.model.records import Settings
 from swhurl.console import merge
-from swhurl.console.actions import Job
+from swhurl.console.actions import ActionError, Job
+from swhurl.console.github import GitHub, GitHubAPI
+from swhurl.run import Runner
 
 if TYPE_CHECKING:
     from swhurl.console.cluster import AppRow
@@ -116,6 +133,94 @@ class Target:
     def same(self, other: Target) -> bool:
         """The same render: the same records while either is unrendered, else the same render hash."""
         return self.records == other.records if self.pending or other.pending else self.hash == other.hash
+
+
+def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, Target]:
+    """Immutable Git evidence, not a verdict. Re-render the complete public inputs to identify the
+    intended output, including Settings and other instances' relationships. Encrypted files contribute
+    only their presence, never their contents. No records means absent even beside stale output."""
+    api = GitHubAPI(runner, github)
+    started = time.monotonic()
+    downloaded = extracted = None
+    size = instances = 0
+    phase = 'download'
+    try:
+        content = api.call('GET', f'/tarball/{revision}').content
+        size = len(content)
+        downloaded = time.monotonic()
+        phase = 'extract'
+        with tempfile.TemporaryDirectory(prefix='console-targets-') as tmp:
+            root = Path(tmp)
+            public = {calling.SIGNING_KEYS_FILE, events.CONTROLLER_KEY_FILE, events.CONSOLE_KEY_FILE, backup.MONGODB_JOB}
+            proxy = False
+            with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
+                for member in archive.getmembers():
+                    path = Path(*Path(member.name).parts[1:])
+                    if path.is_absolute() or '..' in path.parts:
+                        raise ValueError('invalid archive path')
+                    proxy |= path == egress.PROXY_FILE or egress.PROXY_FILE.parent in path.parents
+                    if path == backup.MONGODB_JOB.parent or backup.MONGODB_JOB.parent in path.parents:
+                        (root / backup.MONGODB_JOB.parent).mkdir(parents=True, exist_ok=True)  # present: its file must be read
+                    if not member.isfile():
+                        continue
+                    instance = len(path.parts) == 4 and path.parts[0] == 'apps'
+                    encrypted = instance and path.name in ('events.sops.yaml', 'secret.sops.yaml')
+                    if (path in public or encrypted or
+                            (len(path.parts) == 3 and path.parts[0] == 'apps' and path.name == 'app.yaml') or
+                            (instance and path.name in ('instance.yaml', 'release.yaml', 'helmrelease.yaml'))):
+                        target = root / path
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(b'' if encrypted else archive.extractfile(member).read())
+            extracted = time.monotonic()
+            phase = 'render'
+            world, problems = store.world(root)
+            if problems:
+                raise ValueError('; '.join(problems))
+            def text(path: Path) -> str:
+                return (root / path).read_text().strip() if (root / path).is_file() else ''
+            keys = text(calling.SIGNING_KEYS_FILE)
+            # Do not use store.platform here: its scratch-root signing-key fallback is not a Git fact.
+            platform_inputs = Platform(json.dumps(json.loads(keys), sort_keys=True, separators=(',', ':')) if keys else '',
+                                       proxy, text(events.CONTROLLER_KEY_FILE), text(events.CONSOLE_KEY_FILE),
+                                       backups_suspended=backup.suspended(root))
+            def digest(*parts: bytes) -> str:
+                return hashlib.sha256(b'\0'.join(parts)).hexdigest()[:16]
+            found = {}
+            for each, entry in world.items():
+                folder = each.folder(root)
+                app, record = (folder.parent / 'app.yaml').read_bytes(), (folder / 'release.yaml').read_bytes()
+                mine = creation_inputs(entry.settings)
+                path = folder / 'helmrelease.yaml'
+                release = yamlio.load(path.read_text()) if path.is_file() else None
+                if path.is_file() and not isinstance(release, dict):
+                    raise ValueError(f'{each}: malformed HelmRelease')
+                expected = ''
+                if not proxy or entry.settings.allocations.egress_port is not None:
+                    output = render.instance(each, world, platform_inputs)[path.relative_to(root)][0]
+                    expected = output['metadata']['annotations'][interface.RENDER_ANNOTATION]
+                found[str(each)] = Target(
+                    digest(app, record, mine), digest(app, mine), entry.release.image.digest,
+                    (release.get('metadata', {}).get('annotations') or {}).get(interface.RENDER_ANNOTATION, '') if release else None,
+                    helmrelease.image(release).get('digest', '') if release else '', expected)
+            instances = len(found)
+        phase = 'done'
+        return found
+    except (tarfile.TarError, OSError, ValueError, AttributeError, TypeError, KeyError, yaml.YAMLError) as error:
+        raise ActionError(f'cannot read render targets: {error}') from None
+    finally:
+        finished = time.monotonic()
+        logging.getLogger('swhurl.console.timing').info(
+            'render targets revision=%s phase=%s bytes=%d instances=%d download_ms=%.1f extract_ms=%.1f render_ms=%.1f total_ms=%.1f',
+            revision[:12], phase, size, instances,
+            ((downloaded or finished) - started) * 1000,
+            ((extracted or finished) - downloaded) * 1000 if downloaded is not None else 0,
+            (finished - extracted) * 1000 if extracted is not None else 0, (finished - started) * 1000)
+        api.client.close()
+
+def creation_inputs(settings: Settings) -> bytes:
+    """What identifies a change: every Settings field but the allocated port, which completes creation, not a choice."""
+    return yamlio.dump(replace(settings, allocations=replace(settings.allocations, egress_port=None)).document()).encode()
+
 
 
 @dataclass(frozen=True)

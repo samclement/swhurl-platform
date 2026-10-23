@@ -9,12 +9,15 @@ from contextlib import redirect_stderr
 from dataclasses import replace
 from unittest import mock
 
+from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from swhurl import kube
 from swhurl.apps import state
 from swhurl.apps.instance import Instance
-from swhurl.console import actions, changes, cluster, server, stages
+from swhurl.console import actions, cluster, context, server, stages
+from swhurl.console import github as gh
+from swhurl.console.routes import activity
 from swhurl.run import FakeRunner, Result, SharedReads, is_read
 
 REV = 'main@sha1:abc1234def'
@@ -637,9 +640,9 @@ class AppsTests(unittest.TestCase):
 class PolishTests(unittest.TestCase):
     def test_long_hashes_are_shortened_with_the_full_value_on_hover_and_still_escaped(self):
         sha = '1edf37052ebd0a94814cac0407f3380aa6a9c614'
-        self.assertEqual(str(server.short_hashes(f'Applied revision: main@sha1:{sha}')),
+        self.assertEqual(str(context.short_hashes(f'Applied revision: main@sha1:{sha}')),
                          f'Applied revision: main@sha1:<span class="hash" title="{sha}">1edf37052ebd…</span>')
-        self.assertEqual(str(server.short_hashes('<script>1edf370</script>')), '&lt;script&gt;1edf370&lt;/script&gt;')
+        self.assertEqual(str(context.short_hashes('<script>1edf370</script>')), '&lt;script&gt;1edf370&lt;/script&gt;')
 
     def test_header_breadcrumbs_and_updated_time(self):
         c, jobs, _ = operate(fake())
@@ -794,7 +797,7 @@ class AppSummaryTests(unittest.TestCase):
     def test_apps_list_offers_promote_when_staging_differs(self):
         units = [unit('app-web-staging'), unit('app-web-prod')]
         releases = [release('web-staging', 'web', tag='2.0'), release('web-prod', 'web', tag='1.0')]
-        text = client(fake(units=units, releases=releases), github=changes.GitHub('x/y', 'token')).get('/apps', headers=WHO).text
+        text = client(fake(units=units, releases=releases), github=gh.GitHub('x/y', 'token')).get('/apps', headers=WHO).text
         self.assertIn('>Images differ</span>', text)
         self.assertIn('<span class="cell act"><a href="/apps/web/staging/promotion">Review promotion</a></span>', text)
         self.assertNotIn('/staging/promote', text, 'review the exact running image on the app page first')
@@ -983,6 +986,16 @@ class UnitsTests(unittest.TestCase):
         for old, new in (('/units', '/platform#units'), ('/jobs', '/activity')):
             response = c.get(old, headers=WHO, follow_redirects=False)
             self.assertEqual((response.status_code, response.headers['location']), (301, new))
+
+    def test_routes_that_match_the_same_path_keep_their_order(self):
+        """Starlette takes the first route whose path matches (a 405 names its methods), so the order of route
+        groups matters only where two paths overlap: each such pair is listed here in the order it must keep."""
+        def overlap(a: str, b: str) -> bool:
+            a, b = a.strip('/').split('/'), b.strip('/').split('/')
+            return len(a) == len(b) and all(x == y or '{' in x + y for x, y in zip(a, b, strict=True))
+        found = [route.path for route in client(fake()).app.routes if isinstance(route, Route)]
+        self.assertEqual([(a, b) for i, a in enumerate(found) for b in found[i + 1:] if overlap(a, b)],
+                         [('/apps/{app}/staging/promotion', '/apps/{app}/{env}/{change}')])
 
 
 class OverviewTests(unittest.TestCase):
@@ -1221,7 +1234,7 @@ class ActionTests(unittest.TestCase):
                           lines=['a', '<b>'], state='succeeded', finished=jobs.now(),
                           link='https://github.com/samclement/swhurl-platform/pull/42')
         jobs._jobs[7] = job
-        with mock.patch.object(server, 'STREAM_POLL', 0.01):
+        with mock.patch.object(activity, 'STREAM_POLL', 0.01):
             response = c.get('/jobs/7/events', headers=WHO)
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/event-stream', response.headers['content-type'])
@@ -1261,7 +1274,7 @@ class ActionTests(unittest.TestCase):
         timer = threading.Timer(0.03, lambda: (job.lines.append('last line'), setattr(job, 'state', 'succeeded'),
                                                setattr(job, 'finished', jobs.now())))
         timer.start()
-        with mock.patch.object(server, 'STREAM_POLL', 0.005):
+        with mock.patch.object(activity, 'STREAM_POLL', 0.005):
             body = c.get('/jobs/7/events', headers=WHO).text
         timer.join()
         self.assertIn('1234567890abcdef1234567890abcdef12345678', body)
@@ -1299,9 +1312,9 @@ class ActionTests(unittest.TestCase):
         jobs._jobs[3] = actions.Job(3, 'promote', 'web/prod', 'sam@swhurl.com', jobs.now(), ['Downloading', 'Opened'], 'succeeded',
                                     jobs.now(), url)
         jobs._jobs[4] = actions.Job(4, 'remove', 'gone/staging', 'sam@swhurl.com', jobs.now(), [], 'succeeded', jobs.now(), url)
-        c = client(runner, jobs=jobs, github=changes.GitHub('samclement/swhurl-platform', 'tok', transport=httpx.MockTransport(handle)))
-        with mock.patch.object(changes, 'main_commit', return_value='main'), \
-                mock.patch.object(changes, 'render_targets',
+        c = client(runner, jobs=jobs, github=gh.GitHub('samclement/swhurl-platform', 'tok', transport=httpx.MockTransport(handle)))
+        with mock.patch.object(gh, 'main_commit', return_value='main'), \
+                mock.patch.object(stages, 'render_targets',
                                   return_value={'web/prod': stages.Target('records-1', 'settings-1', 'sha256:x', 'h', 'sha256:x', 'h')}), \
                 mock.patch.object(cluster, 'apps', return_value=[cluster.AppRow(Instance('web', 'prod'), state.State('healthy'), False, 'x',
                     digest='sha256:x', render_hash='h', render_ready=True, render_state=state.State('healthy'), image_matches=True)]):

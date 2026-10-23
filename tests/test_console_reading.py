@@ -12,7 +12,9 @@ from test_console import WHO, client, fake, release, unit
 
 from swhurl.apps.instance import Instance
 from swhurl.apps.state import State
-from swhurl.console import changes, cluster, reading, server
+from swhurl.console import actions, cluster, reading, server
+from swhurl.console import github as gh
+from swhurl.console.routes import instance
 from swhurl.run import FakeRunner
 
 HEAD = 'a' * 40
@@ -142,7 +144,7 @@ class FileTests(unittest.TestCase):
             asked.append(request.url)
             return httpx.Response(200, text='content')
 
-        github = changes.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle))
+        github = gh.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle))
         with reading.Files(FakeRunner(), github) as files:
             self.assertEqual(files(path), 'content')
         self.assertEqual(asked[0].path, f'/repos/x/y/contents/{path}')
@@ -151,7 +153,7 @@ class FileTests(unittest.TestCase):
         self.assertIn(b'%3F%23%20', asked[0].raw_path)
 
     def test_client_closes_even_when_rendering_raises_and_logs_no_contents(self):
-        github = changes.GitHub('x/y', 'do-not-log-token', transport=httpx.MockTransport(
+        github = gh.GitHub('x/y', 'do-not-log-token', transport=httpx.MockTransport(
             lambda request: httpx.Response(200, json={'object': {'sha': HEAD}}) if '/git/ref/' in request.url.path
             else httpx.Response(200, text='do-not-log-content')))
         files = reading.Files(FakeRunner(), github)
@@ -173,10 +175,10 @@ class FileTests(unittest.TestCase):
                 asked.append(request.url.path)
                 return response
 
-            github = changes.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle))
+            github = gh.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle))
             with reading.Files(FakeRunner(), github) as files:
                 for path in ('one', 'two', 'one'):
-                    with self.assertRaises(changes.ActionError):
+                    with self.assertRaises(actions.ActionError):
                         files(path)
             self.assertEqual(asked, ['/repos/x/y/git/ref/heads/main'])
             self.assertTrue(files.api.client.is_closed)
@@ -194,7 +196,7 @@ class FileTests(unittest.TestCase):
                 asked.append(request.url.path)
             return httpx.Response(200, text='content')
 
-        github = changes.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle))
+        github = gh.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle))
 
         def page():
             with reading.Files(FakeRunner(), github) as files:
@@ -222,7 +224,7 @@ class AppFileTests(unittest.TestCase):
         asked = []
         heads = []
         owned = []
-        factory = server.Files
+        factory = instance.Files
 
         def owner(*args):
             files = factory(*args)
@@ -239,9 +241,9 @@ class AppFileTests(unittest.TestCase):
             asked.append((path, request.url.params['ref']))
             return httpx.Response(200, text=documents[path]) if path in documents else httpx.Response(404)
 
-        github = changes.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle))
+        github = gh.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle))
         c = client(app_runner(), github=github)
-        with mock.patch.object(server, 'Files', side_effect=owner):
+        with mock.patch.object(instance, 'Files', side_effect=owner):
             for _ in range(2):
                 response = c.get('/apps/web/prod', headers=WHO)
                 self.assertEqual(response.status_code, 200)
@@ -261,7 +263,7 @@ class AppFileTests(unittest.TestCase):
             asked.append(request.url.path)
             return httpx.Response(503)
 
-        c = client(app_runner(), github=changes.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle)))
+        c = client(app_runner(), github=gh.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle)))
         for _ in range(2):
             response = c.get('/apps/web/prod', headers=WHO)
             self.assertEqual(response.status_code, 200)
@@ -292,7 +294,7 @@ class AppFileTests(unittest.TestCase):
 
     def test_template_reads_use_the_same_scope_and_client_closes_on_template_failure(self):
         owned = []
-        factory = server.Files
+        factory = instance.Files
 
         def owner(*args):
             files = factory(*args)
@@ -320,8 +322,8 @@ class AppFileTests(unittest.TestCase):
             self.assertEqual(context['offer_text'](row), 'Template description')
             raise ValueError('template failed')
 
-        c = client(app_runner(), github=changes.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle)))
-        with mock.patch.object(server, 'Files', side_effect=owner), \
+        c = client(app_runner(), github=gh.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle)))
+        with mock.patch.object(instance, 'Files', side_effect=owner), \
                 mock.patch.object(server.TEMPLATES, 'TemplateResponse', side_effect=render):
             with self.assertRaisesRegex(ValueError, 'template failed'):
                 c.get('/apps/web/prod', headers=WHO)

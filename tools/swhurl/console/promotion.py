@@ -22,8 +22,10 @@ from swhurl.apps.model import relations, write
 from swhurl.apps.model.draft import RenderError
 from swhurl.apps.model.records import Release
 from swhurl.apps.new import GenerationError
-from swhurl.console import changes, merge
+from swhurl.console import github as gh
+from swhurl.console import merge
 from swhurl.console.actions import ActionError
+from swhurl.console.proposal import download, staging_history
 from swhurl.run import CommandError, Runner
 
 IMAGE_LINE = re.compile(r'(?m)^Promote the reviewed staging image `([^`\n]+)` to `[a-z0-9-]+/prod`\.')
@@ -32,32 +34,32 @@ RENDERED = ('apps', 'clusters', 'platform')  # where a promotion's rendered file
 DIFF_LINES = 400  # the review page's rendered diff stops here
 
 
-def main_tree(runner: Runner, github: changes.GitHub, read: Callable[[Path], object]):
-    api = changes.GitHubAPI(runner, github)
+def main_tree(runner: Runner, github: gh.GitHub, read: Callable[[Path], object]):
+    api = gh.GitHubAPI(runner, github)
     work = Path(tempfile.mkdtemp(prefix='promotion-review-'))
     try:
         head = api.json('GET', '/git/ref/heads/main')['object']['sha']
-        return read(changes.download(api, head, work))
+        return read(download(api, head, work))
     finally:
         api.client.close()
         shutil.rmtree(work, ignore_errors=True)
 
 
-def settled_status(runner: Runner, github: changes.GitHub | None, status: ops.InstanceStatus | None) -> ops.InstanceStatus | None:
+def settled_status(runner: Runner, github: gh.GitHub | None, status: ops.InstanceStatus | None) -> ops.InstanceStatus | None:
     """``status`` as the gate judges it: when its unit is behind Git's newest revision, GitHub is asked whether
     the commits in between change the instance's own files (``promotion.settled``). One request, only then."""
     def changed(applied: str, newest: str) -> list[str] | None:
         if github is None:
             return None
         try:
-            contained, paths = changes.changed_since(runner, github, applied, newest)
+            contained, paths = gh.changed_since(runner, github, applied, newest)
         except ActionError:
             return None
         return paths if contained else None
     return promotion.settled(status, changed)
 
 
-def staging_status(runner: Runner, github: changes.GitHub | None, instance: Instance) -> ops.InstanceStatus | None:
+def staging_status(runner: Runner, github: gh.GitHub | None, instance: Instance) -> ops.InstanceStatus | None:
     """Staging read from the cluster, as the gate judges it."""
     return settled_status(runner, github, ops.gather_status(runner, instance))
 
@@ -86,10 +88,10 @@ class Proposal:
     body: str
     affects: str
 
-    def staged(self, api: changes.GitHubAPI, head: str) -> Callable[[Release], bool]:
-        return lambda release: promotion.staged(release, changes.staging_history(api, head, self.app, self.current))
+    def staged(self, api: gh.GitHubAPI, head: str) -> Callable[[Release], bool]:
+        return lambda release: promotion.staged(release, staging_history(api, head, self.app, self.current))
 
-    def check(self, runner: Runner, github: changes.GitHub) -> None:
+    def check(self, runner: Runner, github: gh.GitHub) -> None:
         if problem := promotion.source_problem(staging_status(runner, github, Instance(self.app, 'staging')), self.image):
             raise ActionError(problem)
 
@@ -180,9 +182,9 @@ def review(root: Path, app: str, status: ops.InstanceStatus, runner: Runner | No
     return found
 
 
-def merge_mode(pr: changes.PullRequest) -> str:
+def merge_mode(pr: gh.PullRequest) -> str:
     """How an open console PR gets merged: by the gate (its label), or by a person and why."""
-    if changes.AUTO_MERGE_LABEL in pr.labels:
+    if gh.AUTO_MERGE_LABEL in pr.labels:
         return 'Auto-merge after checks'
     if pr.refused:
         return f'Manual merge required: auto-merge was refused: {pr.refused}'
@@ -190,7 +192,7 @@ def merge_mode(pr: changes.PullRequest) -> str:
     return plan.group(1) if plan else 'Manual merge required'
 
 
-def matching(pr: changes.PullRequest, app: str) -> bool:
+def matching(pr: gh.PullRequest, app: str) -> bool:
     """Whether ``pr`` promotes ``app``'s staging to production (merge.parse)."""
     return merge.parse(pr.branch) == ('promote', app, 'staging')
 
@@ -200,8 +202,8 @@ def promoted_image(body: str) -> str:
     return found[1] if found else ''
 
 
-def existing(runner: Runner, github: changes.GitHub, app: str, image: str) -> changes.PullRequest | None:
-    for pr in changes.console_prs(runner, github):
+def existing(runner: Runner, github: gh.GitHub, app: str, image: str) -> gh.PullRequest | None:
+    for pr in gh.console_prs(runner, github):
         if matching(pr, app):
             if promoted_image(pr.body) != image:
                 raise ActionError(f'A promotion PR is already open: {pr.url}. Close it explicitly before reviewing a replacement image.')

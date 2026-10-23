@@ -326,21 +326,21 @@ class EditTests(unittest.TestCase):
     def test_calls_refusals_change_nothing(self):
         self.second_app()
         before = self.staging.read_text()
-        cases = (({'add': ['hello']}, 'does not declare calls to itself'), ({'add': ['Bad']}, 'malformed calls'),
-                 ({'remove': ['orders']}, 'does not call orders'), ({}, 'give --add and/or --remove'))
+        cases = (({'add': ['hello']}, 'does not declare calls to itself'), ({'add': ['Bad']}, 'calls: not allowed: Bad'),
+                 ({'remove': ['orders']}, 'not there to remove: orders'), ({}, 'give --add and/or --remove'))
         for kwargs, message in cases:
             with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
                 edit.set_calls(self.root, 'hello', 'staging', **kwargs)
         self.assertEqual(self.staging.read_text(), before)
         self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
-        with self.assertRaisesRegex(edit.EditError, 'already calls orders'):
+        with self.assertRaisesRegex(edit.EditError, 'already there: orders'):
             edit.set_calls(self.root, 'hello', 'staging', add=['orders'])
 
     def test_allows_refusals_change_nothing_and_a_call_waits_for_its_grant(self):
         self.second_app()
         before = (self.root / 'apps/orders/staging/instance.yaml').read_text()
         cases = (({'add': ['orders']}, 'does not allow itself'), ({'add': ['team:nobody']}, "unknown team 'nobody'"),
-                 ({'add': ['*']}, 'not an app name or team:<team>'), ({'remove': ['hello']}, 'does not allow hello'),
+                 ({'add': ['*']}, r'allows: not allowed: \*'), ({'remove': ['hello']}, 'not there to remove: hello'),
                  ({}, 'give --add and/or --remove'))
         for kwargs, message in cases:
             with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
@@ -353,7 +353,7 @@ class EditTests(unittest.TestCase):
         self.quiet(edit.set_allows, self.root, 'orders', 'staging', add=['hello'])
         self.assertIn('SWHURL_SERVICE_ORDERS_URL', self.env('hello'), 'the grant connects it')
         self.assertEqual(self.env('orders')['SWHURL_ALLOWED_CALLERS'], 'hello')
-        with self.assertRaisesRegex(edit.EditError, 'already allows hello'):
+        with self.assertRaisesRegex(edit.EditError, 'already there: hello'):
             edit.set_allows(self.root, 'orders', 'staging', add=['hello'])
 
     def test_one_sided_calls_are_policy_violations(self):
@@ -1274,7 +1274,9 @@ components:
         self.with_units()
         before = self.staging.read_text()
         cases = (({}, 'give --subscribe'),
-                 ({'subscribe': ['created']}, '<app>.<event>'), ({'subscribe': ['orders.created', 'orders.created']}, 'each once'),
+                 ({'subscribe': ['created']}, 'subscriptions: not allowed: created'),
+                 ({'subscribe': ['orders.created', 'orders.created']}, 'listed more than once: orders.created'),
+                 ({'add_subscribe': ['orders.created', 'orders.created']}, 'listed more than once: orders.created'),
                  ({'subscribe': ['orders.created']}, 'which orders/staging does not publish'))
         for kwargs, message in cases:
             with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):

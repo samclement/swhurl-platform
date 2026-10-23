@@ -198,7 +198,7 @@ def grant_problems(each: Instance, names: list[str]) -> list[str]:
 def problems(root: Path) -> list[str]:
     """Whether every instance has a port of its own and well-formed grants, and the proxy's file is what
     they generate (rules egress-ports and egress-grants)."""
-    from swhurl.apps.model import render, store
+    from swhurl.apps.model import generated, render, store
 
     world, errors = store.world(root)
     if errors:
@@ -221,8 +221,6 @@ def problems(root: Path) -> list[str]:
         if len(held) > 1:
             found.append(f'egress-ports: port {port} is in {", ".join(str(e) for e in sorted(held, key=lambda e: e.env != "staging"))}; '
                          'remove allocations.egressPort from all but one instance.yaml and run make app-sync')
-    text = proxy_text(render.shared(world, platform).egress_proxy)
-    path = root / PROXY_FILE
-    if not (path.is_file() and path.read_text() == text):
+    if not generated.same(root / PROXY_FILE, proxy_text(render.shared(world, platform).egress_proxy)):
         found.append(f'egress-ports: {PROXY_FILE} is not what the instances declare; make app-sync rewrites it')
     return found

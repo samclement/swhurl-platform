@@ -68,7 +68,7 @@ class AppRow:
     database_path: str | None = None  # None: release missing; empty: no SQLite configured
     team: str = ''  # from the namespace label; '' when unknown
     connections: Connections = Connections()
-    applied: str = ''  # the Git revision its Flux unit last applied
+    applied_revision: str = ''  # the Git revision its Flux unit last applied
     render_hash: str = ''
     render_ready: bool = False
     render_state: State = State('unknown')  # the verdict once render_hash is proved to be Git's target (stages.progress)

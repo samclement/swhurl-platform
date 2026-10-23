@@ -30,10 +30,10 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder
-from swhurl.apps.model import records, relations, workload, write
+from swhurl.apps.model import relations, workload, write
 from swhurl.apps.model.draft import APP_SECRET, Entry
 from swhurl.apps.model.exposure import ROUTED
-from swhurl.apps.model.records import ALLOW_RE, TEAM_GRANT, Resources
+from swhurl.apps.model.records import TEAM_GRANT, Resources
 from swhurl.apps.model.workload import DEFAULT_RESOURCES
 from swhurl.apps.release import (
     change_release,
@@ -61,14 +61,7 @@ def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, r
         raise EditError('give --add and/or --remove with app names')
     instance = instance_dir(root, app, env)
     world, _ = write.read(root)
-    current = list(world[Instance(app, env)].settings.grants.calls)
-    for callee in add:
-        if callee in current:
-            raise EditError(f'{app}/{env} already calls {callee}')
-    for callee in remove:
-        if callee not in current:
-            raise EditError(f'{app}/{env} does not call {callee}')
-    now = tuple([callee for callee in current if callee not in remove] + add)
+    now = tuple(transitions.changed_list('calls', list(world[Instance(app, env)].settings.grants.calls), None, add, remove))
     write.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(
         entry.settings, grants=replace(entry.settings.grants, calls=now))))
     print(f'[OK] {app}/{env} calls: {", ".join(now) or "nothing"}')
@@ -90,18 +83,11 @@ def set_allows(root: Path, app: str, env: str, *, add: list[str] | None = None, 
     current = list(world[Instance(app, env)].settings.grants.allows)
     registered = teams(root)
     for name in add:
-        if not ALLOW_RE.match(name):
-            raise EditError(f'{name!r} is not an app name or team:<team>')
         if name == app:
             raise EditError('an app does not allow itself')
         if name.startswith(TEAM_GRANT) and name.removeprefix(TEAM_GRANT) not in registered:
             raise EditError(f'unknown team {name.removeprefix(TEAM_GRANT)!r}; registered in apps/teams.yaml: {", ".join(registered)}')
-        if name in current:
-            raise EditError(f'{app}/{env} already allows {name}')
-    for name in remove:
-        if name not in current:
-            raise EditError(f'{app}/{env} does not allow {name}')
-    now = tuple([name for name in current if name not in remove] + list(dict.fromkeys(add)))
+    now = tuple(transitions.changed_list('allows', current, None, add, remove))
     write.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(
         entry.settings, grants=replace(entry.settings.grants, allows=now))))
     print(f'[OK] {app}/{env} allows: {", ".join(now) or "nobody"}')
@@ -145,10 +131,6 @@ def set_events(root: Path, app: str, env: str, *, subscribe: list[str] | None = 
     if subscribe is None:
         raise EditError('give --subscribe (an empty value clears it), --add-subscribe or --remove-subscribe; '
                         'to publish, edit asyncapi.yaml named by provides.eventsFile')
-    bad = [name for name in subscribe if not records.SUBSCRIPTION_RE.match(name)]
-    if bad or len(set(subscribe)) != len(subscribe):
-        raise EditError('subscriptions are <app>.<event> (orders.created), each once'
-                        + (f': {", ".join(bad)}' if bad else ''))
     subscribed = tuple(subscribe)
     write.change(root, each, lambda entry: replace(entry, settings=replace(
         entry.settings, grants=replace(entry.settings.grants, subscriptions=subscribed))), runner=runner)

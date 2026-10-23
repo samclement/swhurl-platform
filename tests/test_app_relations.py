@@ -223,7 +223,7 @@ class RelationTests(unittest.TestCase):
         users.write_text(users.read_text().replace('reader_created', 'reader_other'))
         self.assertTrue(any(str(events.USERS_FILE) in p for p in generated.problems(self.root)))
         users.write_text('invalid: [')
-        self.assertIn(f'{events.USERS_FILE}: cannot read committed YAML', generated.problems(self.root))
+        self.assertTrue(any(p.startswith(f'{events.USERS_FILE}: cannot read committed YAML') for p in generated.problems(self.root)))
         users.unlink()
         self.assertIn(f'{events.USERS_FILE}: rendered, not committed', generated.problems(self.root))
         world[each] = entry()

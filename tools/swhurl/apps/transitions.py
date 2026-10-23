@@ -15,7 +15,11 @@ RESOURCE_FIELDS = (('cpu', 'requests', 'cpu'), ('memory', 'requests', 'memory'),
 
 
 def changed_list(what: str, current: list[str], replace: list[str] | None, add: list[str], remove: list[str]) -> list[str] | None:
-    """A list after a change: replaced whole, or with names added and removed (as app-calls does); None if untouched."""
+    """A list after a change: replaced whole, or with names added and removed (as app-calls does); None if untouched.
+    Every list flag goes through here, so each refuses a name given twice."""
+    twice = sorted({name for names in ([*(replace or []), *add], remove) for name in names if names.count(name) > 1})
+    if twice:
+        raise EditError(f'listed more than once: {", ".join(twice)}')
     if replace is not None:
         if add or remove:
             raise EditError(f'--{what} replaces the list: do not give --add-{what} or --remove-{what} with it')

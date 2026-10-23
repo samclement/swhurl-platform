@@ -1,5 +1,6 @@
 """Generated means generated (docs/plan.md section 24): render every instance's records and compare the
-result with what is committed, as parsed objects.
+result with what is committed, byte for byte (``same``, which make app-sync's writer also uses). Where they
+differ, the parsed documents show where.
 
 A difference is a hand edit, or a record changed without rendering: make check-apps fails on it, and
 make app-sync writes what the records render.
@@ -24,11 +25,12 @@ FIXTURES = Path('tests/fixtures/apps')
 SHOWN = 120
 
 
-def normal(document: object) -> object:
-    """Kustomize lists resources in no meaningful order: compare them as a set."""
-    if isinstance(document, dict) and document.get('apiVersion', '').startswith('kustomize.config.k8s.io'):
-        return {**document, 'resources': sorted(document.get('resources') or [])}
-    return document
+def same(path: Path, text: str) -> bool:
+    """The one test that a file already is what the records render: its bytes equal ``text``."""
+    try:
+        return path.read_text() == text
+    except (OSError, UnicodeError):
+        return False
 
 
 def _short(value: object) -> str:
@@ -55,8 +57,22 @@ def differences(committed: object, rendered: object, where: str = '') -> list[st
     return [] if committed == rendered else [f'{where or "document"}: committed {_short(committed)}, rendered {_short(rendered)}']
 
 
-def _documents(path: Path) -> list:
-    return [normal(doc) for doc in yamlio.load_all(path.read_text()) if doc is not None]
+def _documents(text: str) -> list:
+    return [doc for doc in yamlio.load_all(text) if doc is not None]
+
+
+def file_problems(name: Path, path: Path, text: str) -> list[str]:
+    """Why the committed ``path`` is not ``text``, by document path; [] when ``same``."""
+    if same(path, text):
+        return []
+    if not path.is_file():
+        return [f'{name}: rendered, not committed']
+    try:
+        committed = _documents(path.read_text())
+    except (OSError, UnicodeError, yaml.YAMLError) as error:
+        return [f'{name}: cannot read committed YAML: {error}']
+    return [f'{name}: {line}' for line in differences(committed, _documents(text))] or \
+        [f'{name}: formatted differently from the render; make app-sync rewrites it']
 
 
 def _committed(root: Path, folder: Path, unit: Path) -> dict[Path, Path]:
@@ -82,13 +98,7 @@ def instance_problems(root: Path, each: Instance, world: World, platform: Platfo
         elif path not in rendered:
             found.append(f'{path}: committed, not rendered')
         else:
-            try:
-                documents = _documents(committed[path])
-            except (OSError, UnicodeError, yaml.YAMLError) as error:
-                found.append(f'{path}: cannot read committed YAML: {error}')
-                continue
-            found += [f'{path}: {line}' for line in
-                      differences(documents, [normal(doc) for doc in rendered[path]])]
+            found += file_problems(path, committed[path], render.text(rendered[path]))
     return found
 
 
@@ -98,15 +108,7 @@ def nats_problems(root: Path, world: World, users: list[dict] | None) -> list[st
     if users is not None:
         found += [f'{each}: has no NATS key; make app-sync creates it' for each, entry in world.items()
                   if not entry.settings.allocations.events_key or EVENTS_SECRET not in entry.encrypted]
-        path = root / events.USERS_FILE
-        if not path.is_file():
-            found.append(f'{events.USERS_FILE}: rendered, not committed')
-        else:
-            wanted = [normal(doc) for doc in yamlio.load_all(events.users_configmap(users))]
-            try:
-                found += [f'{events.USERS_FILE}: {line}' for line in differences(_documents(path), wanted)]
-            except (OSError, UnicodeError, yaml.YAMLError):
-                found.append(f'{events.USERS_FILE}: cannot read committed YAML')
+        found += file_problems(events.USERS_FILE, root / events.USERS_FILE, events.users_configmap(users))
     return found
 
 
@@ -134,8 +136,7 @@ def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance]
         return [*found, f'shared files: cannot render: {error}']
     found += nats_problems(root, world, shared.nats_users)
     if shared.egress_proxy is not None and (root / egress.PROXY_FILE).is_file():
-        found += [f'{egress.PROXY_FILE}: {line}' for line in
-                  differences(_documents(root / egress.PROXY_FILE), shared.egress_proxy)]
+        found += file_problems(egress.PROXY_FILE, root / egress.PROXY_FILE, egress.proxy_text(shared.egress_proxy))
     if (root / RELOADER_FILE).is_file():
         try:
             watched = yamlio.load((root / RELOADER_FILE).read_text())['spec']['values']['reloader']['namespaces']

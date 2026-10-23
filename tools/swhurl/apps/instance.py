@@ -83,9 +83,3 @@ def instance_folder(root: Path, app: str, env: str, base: Path = INSTANCE_ROOTS[
 def instance_unit_file(root: Path, app: str, env: str) -> Path:
     """Where an instance's Flux unit is (or would be) in the checkout at ``root``; as unchecked as ``instance_folder``."""
     return root / UNITS / f'app-{app}-{env}.yaml'
-
-
-def instances(folder: Path) -> list[Instance]:
-    """The instances kept under ``folder`` (``<root>/apps``): each ``<app>/<env>`` with a HelmRelease, in order."""
-    found = (Instance.named(path.parent.parent.name, path.parent.name) for path in sorted(folder.glob('*/*/helmrelease.yaml')))
-    return [each for each in found if each]

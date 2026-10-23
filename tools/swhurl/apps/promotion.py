@@ -142,7 +142,7 @@ def settled(status: ops.InstanceStatus | None,
     puts every unit behind for a few seconds, and only one that changes the instance's own files (its folder,
     its unit file) is a change it waits for. ``changed(applied, newest)`` gives the paths that differ between
     the two commits, or None when it cannot tell, which leaves the question open (and the instance not current)."""
-    if status is None or status.applied or not (status.desired_revision and status.applied_revision):
+    if status is None or status.at_newest or not (status.desired_revision and status.applied_revision):
         return status
     paths = changed(sha(status.applied_revision), sha(status.desired_revision))
     if paths is None:

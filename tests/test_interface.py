@@ -172,7 +172,9 @@ class InterfaceTests(unittest.TestCase):
         observed.add('/var/run/swhurl/tokens/<audience>/token')
         # Inspect the actual Secret preparation with a synthetic seed and fake encryption only.
         observed.update(self.prepared_seed_names())
-        self.assertEqual(observed, set(interface.ENTRIES))
+        self.assertEqual(observed, {name for name, (surface, _, _) in interface.ENTRIES.items()
+                                    if surface != 'env override'})
+        self.assertNotIn(interface.NOTIFY_TOKEN_VARIABLE, observed, 'the reader override is not injected')
 
     def test_dynamic_family_format_and_reader_preserve_names_and_order(self):
         self.assertEqual(interface.callee_variable('orders-api'), 'SWHURL_SERVICE_ORDERS_API_URL')
@@ -198,7 +200,7 @@ class InterfaceTests(unittest.TestCase):
 
     def test_every_environment_entry_is_reserved_and_refusals_keep_their_order(self):
         for name, (surface, _, _) in interface.ENTRIES.items():
-            if surface in ('env', 'Secret env', 'env family'):
+            if surface in ('env', 'Secret env', 'env family', 'env override'):
                 concrete = interface.callee_variable('orders-api') if surface == 'env family' else name
                 self.assertIn('reserved for the platform:', contract.secret_key_problem([concrete]))
         self.assertEqual(contract.secret_key_problem(['ORDERS_TOKEN']), '')

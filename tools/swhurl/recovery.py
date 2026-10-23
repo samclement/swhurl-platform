@@ -204,4 +204,4 @@ def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None 
     report.section('Backups')
     backupset.check_backup_set(runner, report, backups(Path()),
                      env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI), env=env, now=now, what='MongoDB',
-                     run='make backup-mongodb', hint='kubectl -n observability get jobs -l platform.swhurl.com/backup=true')
+                     run='make backup-mongodb', hint=f'kubectl -n observability get jobs -l {interface.label("backup")}=true')

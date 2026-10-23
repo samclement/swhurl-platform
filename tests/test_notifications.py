@@ -545,6 +545,18 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(len(tried), 1, 'the second copy is not sent to a service that just refused')
         self.assertEqual(len(saved[-1]['pending']), 2)
 
+    def test_forwarding_uses_the_default_notify_token_path_without_an_override(self):
+        requests = []
+        def accept(request):
+            requests.append(request)
+            return httpx.Response(202)
+        with mock.patch.dict('os.environ', {'SWHURL_NOTIFY_URL': 'http://notify.example.test'}, clear=True), \
+                mock.patch.object(Path, 'read_text', autospec=True, return_value='synthetic-token\n') as read:
+            forward_copy(Notice('Title', 'Message'), 'orders', 'prod', 'event:default',
+                         transport=httpx.MockTransport(accept))
+        read.assert_called_once_with(Path('/var/run/swhurl/tokens/notify/token'))
+        self.assertEqual(requests[0].headers['authorization'], 'Bearer synthetic-token')
+
     def test_forwarding_names_the_app_and_proves_who_sends_with_the_token_file(self):
         requests = []
 

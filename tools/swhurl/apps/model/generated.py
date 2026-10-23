@@ -137,10 +137,17 @@ def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance]
         found += [f'{egress.PROXY_FILE}: {line}' for line in
                   differences(_documents(root / egress.PROXY_FILE), shared.egress_proxy)]
     if (root / RELOADER_FILE).is_file():
-        watched = set(yamlio.load((root / RELOADER_FILE).read_text())['spec']['values']['reloader']['namespaces'])
-        apps_watched = {name for name in watched if Instance.of_namespace(name)}
-        found += [f'{RELOADER_FILE}: {name} is watched, not rendered' for name in sorted(apps_watched - shared.reloaded)]
-        found += [f'{RELOADER_FILE}: {name} is rendered, not watched' for name in sorted(shared.reloaded - apps_watched)]
+        try:
+            watched = yamlio.load((root / RELOADER_FILE).read_text())['spec']['values']['reloader']['namespaces']
+            if not isinstance(watched, list) or any(not isinstance(name, str) for name in watched):
+                raise ValueError('expected a list of strings')
+        except (OSError, UnicodeError, yaml.YAMLError, KeyError, TypeError, ValueError):
+            found.append(f'{RELOADER_FILE}: cannot read committed YAML; expected '
+                         'spec.values.reloader.namespaces to be a list of strings')
+        else:
+            apps_watched = {name for name in watched if Instance.of_namespace(name)}
+            found += [f'{RELOADER_FILE}: {name} is watched, not rendered' for name in sorted(apps_watched - shared.reloaded)]
+            found += [f'{RELOADER_FILE}: {name} is rendered, not watched' for name in sorted(shared.reloaded - apps_watched)]
     if (root / REGISTRY_FILE).is_file():
         registered = {str(name) for name in yamlio.load((root / REGISTRY_FILE).read_text()).get('resources') or []
                       if Instance.of_unit(str(name).removesuffix('.yaml'))}

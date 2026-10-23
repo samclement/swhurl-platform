@@ -135,7 +135,7 @@ def forward(notice: Notice, app: str, env: str, key: str, *, transport: httpx.Ba
     if not url:
         raise NotificationError(f'{interface.NOTIFY_VARIABLE} is not set')
     try:
-        token = Path(os.environ.get('SWHURL_NOTIFY_TOKEN_FILE', f'{interface.TOKENS_MOUNT}/notify/token')).read_text().strip()
+        token = Path(os.environ.get(interface.NOTIFY_TOKEN_VARIABLE, f'{interface.TOKENS_MOUNT}/notify/token')).read_text().strip()
     except OSError:
         raise NotificationError('no token file for the notify service') from None
     try:

@@ -2398,3 +2398,17 @@ App details' four later samples were **2.793, 2.799, 3.196, 2.492 s** before and
 **Size:** against `e420b41e`, production Python in `tools/swhurl` is **+98/−96, net +2**, against a budget of −20 to −50; the operator accepted it before commit. Workflow YAML **+30/−9**, tests **+74/−49**.
 
 **Remaining beside the new paths:** four places still compare action names: `stages.py:158` (promotions do not follow a replacing release), `server.py:476` (an app created but not applied), `server.py:958` (the route allowlist) and `merge.py:109` (`action == 'new'` in `encrypted_reason`).
+
+## Model review follow-ups M12 live (23 October 2026)
+
+[Approved scope](plan.md#m9-to-m14-scope-and-acceptance-approved-23-october-2026), **M12 done**. Implementation `5d1f1c1a`:
+
+- **Gate rules as a table (C7).** `merge.STAGING_REVIEW` gives each Grants and Choices field a reason and a review class (`changed`, `added` or `free`). `settings_held` loops over the table in its own order, not `dataclasses.fields` as the scope said, so that when several fields change the first reason shown is the one it was before (exceptions, then who can reach it, then added callers, then added hosts); allocations are still compared whole first. A test fails when a Grants or Choices field has no row, checks every row's verdict for a change from the defaults, that taking access away merges itself, that production is always held and which reason wins when several fields change.
+- **Promotion.** `first_production` keeps its keep-list. A test runs it on a staging instance with every field set and requires each Settings field to be either copied (exposure, calls, allows, exceptions, issuer, replicas, capacity, schedule) or production's own (host, subscriptions, egress and every allocation). Note: it copies Choices whole, so a new Choices field would be promoted by default; the test fails until the field is classified.
+- **Change identity.** `changes.creation_inputs(settings)` is the one hash input of `render_targets`; a test shows every Settings field changes it except the allocated egress port.
+
+**Offline:** validated in a clean worktree holding only the M12 files: `make check` passed **986 tests** (3 new); `git diff --check` passed. Independent read-only review found no blocker and confirmed `settings_held` gives the same result as before for every input; its doc fixes and test guards (unique field names across the parts, every `added` field a tuple, every example value away from its default) were applied.
+
+**CI and rollout:** [Validate](https://github.com/samclement/swhurl-platform/actions/runs/40030529501) passed; its deploy job (24 s) pinned console/notify image `src-096de94fd798b1df` in `62e7fcc2` through `bots.push_main`. The docs-only push before it (`1f9217aa`) ran the pin's nothing-to-push path live: `already pinned to src-d51099f76cb4de4f`, no commit. `make flux-reconcile` applied `62e7fcc2` to all **37 Flux units**; `make app-status` reported all **17 instances** Healthy. The console runs the new image with zero restarts; `console-dashboards-29879882` and `console-notifications-29879882` succeeded on it. `make verify-platform`: **100 OK, 1 BAD**, the ClickHouse merge memory failures recorded since [M9.0](#model-review-follow-ups-m90-live-23-october-2026) (20 in the last hour).
+
+**Size:** against `1f9217aa`, production Python in `tools/swhurl` is **+25/−15, net +10**, against "about zero"; tests **+99/−18** including the new shared example `tests/full_settings.py`.

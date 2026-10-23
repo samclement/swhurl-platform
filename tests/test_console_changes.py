@@ -14,6 +14,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+import full_settings
 import httpx
 import yaml
 from ci_changes import records_only
@@ -24,7 +25,7 @@ from swhurl.apps import calling, channels, egress, new, ops, promotion, repo, te
 from swhurl.apps import edit as app_edit
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import write as model_sync
-from swhurl.apps.model.records import Release
+from swhurl.apps.model.records import Release, Settings
 from swhurl.apps.state import State
 from swhurl.console import actions, changes, cluster, merge, server, stages
 from swhurl.console import promotion as console_promotion
@@ -727,6 +728,12 @@ class FormTests(unittest.TestCase):
         for form in ({'calls': 'reports'}, {'subscribe': 'orders.paid'}):
             with self.assertRaisesRegex(actions.ActionError, 'not a web app, or an event'):
                 merge.Connections.from_form(form).check_offered({'orders'}, {'orders.created'})
+
+    def test_every_settings_field_but_the_allocated_egress_port_identifies_a_creation(self):
+        base = changes.creation_inputs(Settings())
+        for name, varied in full_settings.varied():
+            with self.subTest(field=name):
+                self.assertEqual(changes.creation_inputs(varied) == base, name == 'egress_port')
 
     def test_new_app_open_carries_real_input_records_offers_and_key_but_no_port_or_rendered_files(self):
         public = 'U' + 'A' * 55

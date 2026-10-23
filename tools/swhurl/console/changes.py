@@ -256,10 +256,7 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
             for each, entry in world.items():
                 folder = each.folder(root)
                 app, record = (folder.parent / 'app.yaml').read_bytes(), (folder / 'release.yaml').read_bytes()
-                # Allocation completes creation; it is not a new operator choice. Use the actual
-                # allocation for rendering, ignoring only that port for creation's input identity.
-                inputs = replace(entry.settings, allocations=replace(entry.settings.allocations, egress_port=None))
-                mine = yamlio.dump(inputs.document()).encode()
+                mine = creation_inputs(entry.settings)
                 path = folder / 'helmrelease.yaml'
                 release = yamlio.load(path.read_text()) if path.is_file() else None
                 if path.is_file() and not isinstance(release, dict):
@@ -420,6 +417,11 @@ def platform_channels(runner: Runner, github: GitHub) -> tuple[dict[str, str], d
         raise ActionError(f'cannot read {channels.ROUTES_FILE}: {type(error).__name__}') from None
     finally:
         api.client.close()
+
+
+def creation_inputs(settings: Settings) -> bytes:
+    """What identifies a change: every Settings field but the allocated port, which completes creation, not a choice."""
+    return yamlio.dump(replace(settings, allocations=replace(settings.allocations, egress_port=None)).document()).encode()
 
 
 def open_action(runner: Runner, github: GitHub, job: Job, action: str, name: str, env: str,

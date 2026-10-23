@@ -7,10 +7,9 @@ the package is public) for that tag's digest, and writes the tag and digest
 into ``platform/console/helmrelease.yaml``. Commit and push to deploy.
 
 Validate's deploy-console job runs it, once every check has passed, as ``console-image --expect
-src-<built> --commit`` on the latest ``main``: it pins, commits and pushes, so
-the console deploys itself. ``--expect`` makes it do nothing when ``main`` has
-since moved to other image inputs (that commit's own run pins its image);
-a push rejected because ``main`` moved is rebased and retried once.
+src-<built> --commit``: it pins on the newest ``main`` and pushes like every bot (``bots.push_main``),
+so the console deploys itself. ``--expect`` makes it do nothing when ``main`` has since moved to other
+image inputs (that commit's own run pins its image).
 
 """
 from __future__ import annotations
@@ -22,7 +21,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import ROOT, platform
+from swhurl import ROOT, bots, platform
 from swhurl.run import CommandError, Runner
 
 REGISTRY = 'ghcr.io'
@@ -123,46 +122,41 @@ def pin_release(runner: Runner, root: Path, image: Image = CONSOLE) -> tuple[str
     return tag, digest, changed
 
 
-def commit_and_push(runner: Runner, root: Path, tag: str, expect: str | None, image: Image = CONSOLE,
-                    files: list[Path] | None = None) -> str:
-    """Commit the pin and push it to main; one rebase-and-retry if main moved. Returns what happened."""
-    git = ['git', '-C', str(root)]
-    runner.run([*git, 'commit', '--quiet', '-m', f'deploy: {image.name} image {tag} (Validate)', '--',
-                *[str(path) for path in (files or [RELEASE])]], mutating=True)
-    if runner.run([*git, 'push', 'origin', 'HEAD:main'], mutating=True, check=False).returncode == 0:
-        return 'pushed'
-    runner.run([*git, 'pull', '--rebase', '--quiet', 'origin', 'main'], mutating=True)
-    if expect and content_tag(runner, root, image=image) != expect:
-        return 'skipped: main moved to other image inputs while pushing; their own run pins them'
-    runner.run([*git, 'push', 'origin', 'HEAD:main'], mutating=True)
-    return 'pushed after rebasing'
+def pinned(runner: Runner, image: Image, expect: str | None, *, render: bool = True) -> bots.Change:
+    """The pin as a bot change: nothing when ``work`` builds other inputs than ``expect`` or is already pinned.
+    ``render``: on a main whose records Render has not rendered yet the checks would fail, so render it too
+    (as the merge gate does); the commit then carries those files."""
+    def change(work: Path, _base: str) -> bots.Commit | None:
+        if expect and (current := content_tag(runner, work, image=image)) != expect:
+            print(f'[OK] nothing to do: main now builds {current}, not {expect}; its own Validate run pins it')
+            return None
+        tag, digest, changed = pin_release(runner, work, image)
+        if not changed:
+            print(f'[OK] already pinned to {tag}@{digest}')
+            return None
+        print(f'{"  would pin" if runner.dry_run else "[OK] pinned"} {", ".join(map(str, changed))} to {tag}@{digest}')
+        if render:
+            bots.swhurl(runner, work, 'app-sync')
+        return bots.Commit(f'deploy: {image.name} image {tag} (Validate)')
+    return change
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None, root: Path = ROOT,
          image: Image = CONSOLE) -> int:
     parser = argparse.ArgumentParser(prog='swhurl console-image', description=__doc__.split('\n\n')[0])
     parser.add_argument('--expect', help="only pin if HEAD builds this src-<hash> tag (Validate's deploy job)")
-    parser.add_argument('--commit', action='store_true', help="commit the pin and push it to main (Validate's deploy job)")
+    parser.add_argument('--commit', action='store_true', help="pin the newest main and push it (Validate's deploy job)")
     args = parser.parse_args(argv or [])
     runner = runner or Runner.from_environment()
     try:
-        if args.expect and (current := content_tag(runner, root, image=image)) != args.expect:
-            print(f'[OK] nothing to do: main now builds {current}, not {args.expect}; its own Validate run pins it')
+        if args.commit and not runner.dry_run:
+            made = bots.push_main(runner, root, pinned(runner, image, args.expect))
+            if made:
+                print(f'[OK] pushed {made[:12]} to main')
             return 0
-        tag, digest, changed = pin_release(runner, root, image)
-        if not changed:
-            print(f'[OK] already pinned to {tag}@{digest}')
-            return 0
-        files = ', '.join(str(path) for path in changed)
-        if runner.dry_run:
-            print(f'  would pin {files} to {tag}@{digest}')
-            return 0
-        print(f'[OK] pinned {files} to {tag}@{digest}')
-        if args.commit:
-            print(f'[OK] {commit_and_push(runner, root, tag, args.expect, image, changed)}')
-        else:
+        if pinned(runner, image, args.expect, render=False)(root, '') and not runner.dry_run:
             print('[INFO] Next: commit, push, make flux-reconcile')
         return 0
-    except (ImageError, CommandError, KeyError, TypeError, ValueError) as error:
+    except (ImageError, CommandError, RuntimeError, KeyError, TypeError, ValueError) as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 1

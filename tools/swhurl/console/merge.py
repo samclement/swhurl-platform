@@ -344,9 +344,11 @@ def new_commands(name: str, _env: str, form: Mapping) -> tuple[Command, ...]:
 
 
 def promote_commands(app: str, _env: str, form: Mapping[str, str]) -> tuple[Command, ...]:
-    return (Command('app-promote', (app, f'--expect-image={form["image"]}',
-                                   '--prepare-only',
-                                   *([f'--host={form["host"]}'] if form.get('host') else []))),)
+    if not form.get('image'):
+        raise ActionError('refresh the staging app page and review the image before promotion')
+    host = checked_host(form.get('host', ''))
+    return (Command('app-promote', (app, f'--expect-image={form["image"]}', '--prepare-only',
+                                   *([f'--host={host}'] if host else []))),)
 
 
 @dataclass(frozen=True)
@@ -362,7 +364,7 @@ class Action:
     rule: Callable[..., str]  # (name, env, paths, before, after, staged) -> manual-merge reason or ''
     title: str  # formatted with name and env; never includes credentials
     job: str = ''  # when different from the action's name
-    kind: str = 'console'  # in "which are not <app>'s <kind> records"
+    kind: str = 'console'  # what open_action does for it (promotion, new-app), and in "which are not <app>'s <kind> records"
     again: str = 'make the change again'  # in "close it and <again> from the console"
     gated: bool = True  # False: a person always merges it (remove, teams, channels); the gate skips it
     keeps: str = 'AMD'  # the changes (added, modified, deleted) of its paths the PR carries

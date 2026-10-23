@@ -962,8 +962,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         fields = parse_qs((await request.body()).decode(), keep_blank_values=True)
         form = {k: v[0] for k, v in fields.items()}
         try:
-            if change == 'promote':
-                return promote(request, found, form)
+            if env not in merge.ACTIONS[change].envs:
+                raise actions.ActionError(f'{change} from the {" or ".join(merge.ACTIONS[change].envs)} instance')
             if change == 'connect':
                 for ticked in ('calls', 'subscribe'):  # one checkbox per app or event
                     form[ticked] = ','.join(value for value in fields.get(ticked, []) if value)
@@ -978,36 +978,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, 'error.html', status_code=400, error=str(error))
         except CommandError as error:
             return page(request, 'error.html', status_code=502, error=str(error))
-        return propose(request, change, app, env, commands)
+        return propose(request, change, app, env, commands, auto_merge=form.get('hold') != 'on')
 
-    def promote(request: Request, found: Instance, form: dict[str, str]) -> Response:
-        """Open the pull request for a reviewed promotion, or point at the one already open for the same image."""
-        app = found.app
-        if found.env != 'staging':
-            raise actions.ActionError('promote from the staging instance')
-        image = form.get('image', '')
-        merge.checked_host(form.get('host', ''))
-        if not image:
-            raise actions.ActionError('refresh the staging app page and review the image before promotion')
-        def work(job: actions.Job) -> None:
-            previous = promotion.existing(runner, github, app, image)
-            if previous:
-                job.link = previous.url
-                job.lines.append('Reusing the existing promotion pull request')
-                return
-            job.link = changes.open_action(runner, github, job, 'promote', app, 'staging',
-                                           merge.ACTIONS['promote'].commands(app, 'staging', form),
-                                           auto_merge=form.get('hold') != 'on')
-        try:
-            job = jobs.submit('promote', merge.target('promote', app, 'staging'), request.state.identity, work)
-        except actions.ActionError as error:
-            return page(request, 'error.html', status_code=409, error=str(error))
-        return RedirectResponse(f'/jobs/{job.id}', status_code=303)
-
-    def propose(request: Request, action: str, name: str, env: str, commands: tuple[merge.Command, ...], *, then: tuple = ()) -> Response:
+    def propose(request: Request, action: str, name: str, env: str, commands: tuple[merge.Command, ...], *,
+                then: tuple = (), auto_merge: bool = True) -> Response:
         """Run the action as a job that opens its pull request, then clear the ``then`` caches it made stale."""
         def work(job: actions.Job) -> None:
-            job.link = changes.open_action(runner, github, job, action, name, env, commands)
+            job.link = changes.open_action(runner, github, job, action, name, env, commands, auto_merge=auto_merge)
             for cache in then:
                 cache.clear()
         try:

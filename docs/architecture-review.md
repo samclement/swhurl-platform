@@ -94,7 +94,7 @@ Activity joins console jobs, GitHub PR state, the PR's merged tree, current `mai
 
 That is a substantial feature, not just a status label. Documented first-load archive downloads demonstrate part of its cost. Historical expected hashes also depend on the running console's renderer, introducing a version-skew limitation.
 
-Evidence: [`changes.py`](../tools/swhurl/console/changes.py), [`stages.py`](../tools/swhurl/console/stages.py) and [stages of a change](console.md#stages-of-a-change).
+Evidence: [`github.py`](../tools/swhurl/console/github.py), [`stages.py`](../tools/swhurl/console/stages.py) and [stages of a change](console.md#stages-of-a-change).
 
 #### Some apparently local changes have global effects
 
@@ -630,7 +630,7 @@ These facts are different:
 
 The current gate's historical `staged()` test compares complete Release snapshots selected on `main`'s first-parent history. The console's pre-publication readiness check adds live evidence at another point in time. Name these facts explicitly rather than calling all three “staged.”
 
-Evidence: [`promotion.py`](../tools/swhurl/apps/promotion.py) and [`changes.py`](../tools/swhurl/console/changes.py).
+Evidence: [`promotion.py`](../tools/swhurl/apps/promotion.py) and [`proposal.py`](../tools/swhurl/console/proposal.py).
 
 ### Proposed flow
 
@@ -977,7 +977,7 @@ Avoid a universal component registry, generic workflow/DAG language, event sourc
 | Transition decisions | `apps/transitions.py`, `apps/promotion.py` |
 | Preparation | `apps/model/write.py` |
 | Compilation | `apps/model/render.py` and capability modules |
-| Git publication | `bots.py`, `console/changes.py` |
+| Git publication | `bots.py`, `console/proposal.py` |
 | Operation policy | `console/merge.py` |
 | Observations | `apps/ops.py`, `console/cluster.py` |
 | Projections | `apps/state.py`, `console/stages.py` |

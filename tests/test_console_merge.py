@@ -835,7 +835,8 @@ class ActionParityTests(GateCase):
         from test_console_changes import MAIN, FakeGitHub, settings_edit, staging_reads, tree_fake
 
         from swhurl.apps import ops
-        from swhurl.console import actions, changes
+        from swhurl.apps.model import store
+        from swhurl.console import actions, proposal
         from swhurl.console import promotion as review
 
         # env, form, prior Settings, proposed Settings, automatic, optional encrypted-key status.
@@ -942,7 +943,7 @@ class ActionParityTests(GateCase):
                         path = self.head / 'apps/fresh/staging/instance.yaml'
                         doc = yamlio.load(path.read_text())
                         doc.get('allocations', {}).pop('egressPort', None)
-                        path.write_text(changes.store.text(changes.Settings.parse(doc).document()))
+                        path.write_text(store.text(Settings.parse(doc).document()))
                     for path in changed_files(self.base, self.head):
                         if not entry.owns(name, env, path):
                             if (self.base / path).is_file():
@@ -962,7 +963,7 @@ class ActionParityTests(GateCase):
                             mock.patch.object(review, 'staging_status', return_value=good), \
                             mock.patch.object(merge, 'encrypted_reason', wraps=merge.encrypted_reason) as encrypted, \
                             contextlib.redirect_stdout(io.StringIO()):
-                        changes.open_action(tree_fake(edit=prepare), api.github, job, action, name, env, commands)
+                        proposal.open_action(tree_fake(edit=prepare), api.github, job, action, name, env, commands)
                         runner = self.runner()
                         reason = ''
                         try:

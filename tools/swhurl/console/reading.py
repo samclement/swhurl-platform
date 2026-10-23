@@ -10,7 +10,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 from urllib.parse import quote
 
-from swhurl.console.changes import ActionError, GitHub, GitHubAPI
+from swhurl.console.actions import ActionError
+from swhurl.console.github import GitHub, GitHubAPI
 from swhurl.run import Runner
 
 LOG = logging.getLogger('swhurl.console.timing')

@@ -265,7 +265,7 @@ class ShadowTests(unittest.TestCase):
             edit.sync(self.root)  # every instance gets its egress port, as on the cluster
             edit.expose(self.root, 'hello', 'prod', 'public', 'hello.example.com')
             edit.set_egress(self.root, 'hello', 'staging', add=['api.example.com', '*.example.org:8443'])
-            edit.set_alerts(self.root, 'hello', {'errors': 'none', 'error-logs': '20'})
+            edit.set_alerts(self.root, 'hello', edit.Thresholds({'errors': 'none', 'error-logs': '20'}))
             edit.scale(self.root, 'hello', 'staging', replicas=2, memory='256Mi')
         settings = self.root / 'apps/hello/prod/instance.yaml'  # a reviewed exception, written in the record as documented
         settings.write_text(settings.read_text() + 'exceptions: no-escalation=needs raw sockets\n')
@@ -475,18 +475,12 @@ class ShadowTests(unittest.TestCase):
             model_sync.prepare(self.root, {Instance('hello', 'prod'): model_sync.Remove()})
         self.assertEqual(self.snapshot(), before)
 
-    def test_no_register_is_a_planning_choice_not_an_apply_side_effect(self):
+    def test_a_root_without_a_registry_keeps_its_units_and_creates_still_get_one(self):
         each = Instance('fresh', 'staging')
         entry = Entry(App('demo'), web(), Settings())
         registry = self.root / render.REGISTRY_FILE
-        original = registry.read_bytes()
-        prepared = model_sync.prepare(self.root, {each: model_sync.Create(entry)}, register=False)
-        self.assertNotIn(registry, prepared.writes)
-        model_sync.apply(self.root, prepared)
-        self.assertTrue(each.unit_file(self.root).is_file(), '--no-register still writes the new unit')
-        self.assertEqual(registry.read_bytes(), original)
-        model_sync.sync(self.root)
-        self.assertIn(f'{each.unit}.yaml', registry.read_text(), 'full sync reconciles all registrations')
+        model_sync.apply(self.root, model_sync.prepare(self.root, {each: model_sync.Create(entry)}))
+        self.assertIn(f'{each.unit}.yaml', registry.read_text(), 'a create registers its unit')
         registry.unlink()
         each.unit_file(self.root).unlink()
         model_sync.sync(self.root)

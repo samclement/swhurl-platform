@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 root="${FIXTURE_ROOT:-tests/fixtures/apps}"
-gen() { PYTHONPATH=tools uv run --frozen python -m swhurl app-new --root "$root" --no-register --team demo "$@"; }
+gen() { PYTHONPATH=tools uv run --frozen python -m swhurl app-new --root "$root" --team demo "$@"; }
 gen smoke-worker --env staging --kind worker --image docker.io/library/busybox:1.37 --command 'sleep 3600000'
 gen smoke-web --env staging --exposure authenticated-web --host smoke-web.homelab.swhurl.com \
   --image docker.io/nginxinc/nginx-unprivileged:1.27-alpine --uid 101 --health-path / \

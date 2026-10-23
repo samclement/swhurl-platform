@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import re
 import sys
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from swhurl import app_alerts
@@ -251,25 +251,37 @@ def set_team(root: Path, app: str, name: str) -> Path:
     return found[0].folder(root)
 
 
-def set_alerts(root: Path, app: str, changes: dict[str, str] | None = None, *, none: bool = False,
-               default: bool = False) -> Path:
-    """Change an app's default alerts in every environment: a threshold or ``none`` per alert (``changes``),
-    no alert at all, or back to the defaults. The dashboard job replaces the alerts within a minute."""
+@dataclass(frozen=True)
+class Thresholds:
+    changes: dict[str, str]  # a threshold or none per alert, by preset key; the others keep what was set before
+
+
+@dataclass(frozen=True)
+class NoAlerts:
+    pass
+
+
+@dataclass(frozen=True)
+class DefaultAlerts:
+    pass
+
+
+def set_alerts(root: Path, app: str, choice: Thresholds | NoAlerts | DefaultAlerts) -> Path:
+    """Change an app's default alerts in every environment: thresholds, no alert at all, or back to the
+    defaults. The dashboard job replaces the alerts within a minute."""
     found = app_instances(root, app)
-    if sum((bool(changes), none, default)) != 1:
-        raise EditError('give thresholds (--error-logs, --errors), or --none, or --default')
     world, _ = write.read(root)
-    try:
-        settings = app_alerts.thresholds(world[found[0]].app.alerts)
-        for key, value in (changes or {}).items():
-            settings |= {key: app_alerts.thresholds(f'{key}={value}')[key]}
-    except ValueError as error:
-        raise EditError(str(error)) from None
-    if none:
+    if isinstance(choice, NoAlerts):
         spec = app_alerts.OFF
-    elif default:
+    elif isinstance(choice, DefaultAlerts):
         spec = ''
     else:
+        try:
+            settings = app_alerts.thresholds(world[found[0]].app.alerts)
+            for key, value in choice.changes.items():
+                settings |= {key: app_alerts.thresholds(f'{key}={value}')[key]}
+        except ValueError as error:
+            raise EditError(str(error)) from None
         spec = app_alerts.spec_of(settings)
     if not write.change(root, found, lambda entry: replace(entry, app=replace(entry.app, alerts=spec))):
         raise EditError(f'{app} already has those alert settings')
@@ -474,7 +486,7 @@ def remove(root: Path, app: str, env: str) -> None:
 
 
 def sync(root: Path, *, rotate: Instance | None = None, runner: Runner | None = None) -> None:
-    changed = write.sync(root, rotate=rotate, runner=runner)
+    changed = write.apply(root, write.prepare(root, {rotate: write.Rotate()} if rotate else {}, runner=runner))
     for path in changed:
         print(f'[OK] rewrote {path.relative_to(root)}')
     if not changed:

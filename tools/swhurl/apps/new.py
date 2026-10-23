@@ -180,7 +180,7 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
     except EditError as error:
         raise GenerationError(f'what the app offers could not be read: {error}') from None
     try:
-        prepared = write.prepare(root, {created: write.Create(entry, args.database_size)}, register=args.register, runner=runner)
+        prepared = write.prepare(root, {created: write.Create(entry, args.database_size)}, runner=runner)
         prepared.writes.update(planned)
         return sorted(write.apply(root, prepared))
     except EditError as error:
@@ -265,8 +265,6 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
                         'production still changes through app-promote')
     p.add_argument('--issuer', default='letsencrypt-prod', choices=['letsencrypt-prod', 'letsencrypt-staging', 'selfsigned'])
     p.add_argument('--root', type=Path, default=ROOT)
-    p.add_argument('--no-register', dest='register', action='store_false',
-                   help='do not add the unit to clusters/home/kustomization.yaml')
     p.add_argument('--no-policy-check', dest='policy_check', action='store_false',
                    help='skip rendering the new instance against the app policy (needs helm)')
     if defaults:

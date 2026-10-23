@@ -243,23 +243,27 @@ class EditTests(unittest.TestCase):
         return (metadata.get('annotations') or {}).get('platform.swhurl.com/alerts')
 
     def test_alert_settings_change_in_every_environment_and_go_back_to_the_defaults(self):
-        _, out = self.quiet(edit.set_alerts, self.root, 'hello', {'error-logs': '20'})
+        _, out = self.quiet(edit.set_alerts, self.root, 'hello', edit.Thresholds({'error-logs': '20'}))
         self.assertEqual((self.alert_settings('staging'), self.alert_settings('prod')), ('error-logs=20', 'error-logs=20'))
         self.assertIn('[OK] hello: alerts error-logs >= 20, errors >= 5 (staging, prod)', out)
-        self.quiet(edit.set_alerts, self.root, 'hello', {'errors': 'none'})
+        self.quiet(edit.set_alerts, self.root, 'hello', edit.Thresholds({'errors': 'none'}))
         self.assertEqual(self.alert_settings('prod'), 'error-logs=20,errors=none', 'a change keeps what was set before')
-        self.quiet(edit.set_alerts, self.root, 'hello', {'error-logs': '5'})
+        self.quiet(edit.set_alerts, self.root, 'hello', edit.Thresholds({'error-logs': '5'}))
         self.assertEqual(self.alert_settings('staging'), 'errors=none', 'a default is not written down')
-        self.quiet(edit.set_alerts, self.root, 'hello', none=True)
+        self.quiet(edit.set_alerts, self.root, 'hello', edit.NoAlerts())
         self.assertEqual(self.alert_settings('staging'), 'none')
-        self.quiet(edit.set_alerts, self.root, 'hello', default=True)
+        self.quiet(edit.set_alerts, self.root, 'hello', edit.DefaultAlerts())
         self.assertEqual((self.alert_settings('staging'), self.alert_settings('prod')), (None, None))
         self.assertNotIn('annotations: {}', (self.root / 'apps/hello/staging/namespace.yaml').read_text())
-        for kwargs, message in (({'changes': {'errors': 'many'}}, "errors='many': give a number from 1"),
-                                ({'default': True}, 'hello already has those alert settings'),
-                                ({}, 'give thresholds'), ({'changes': {'errors': '9'}, 'none': True}, 'give thresholds')):
-            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
-                edit.set_alerts(self.root, 'hello', **kwargs)
+        for choice, message in ((edit.Thresholds({'errors': 'many'}), "errors='many': give a number from 1"),
+                                (edit.DefaultAlerts(), 'hello already has those alert settings')):
+            with self.subTest(choice=choice), self.assertRaisesRegex(edit.EditError, message):
+                edit.set_alerts(self.root, 'hello', choice)
+        for argv, message in (([], 'give thresholds'), (['--none', '--default'], 'not allowed with argument --none'),
+                              (['--errors', '9', '--none'], 'give thresholds'), (['--error-logs', '9', '--default'], 'give thresholds')):
+            with self.subTest(argv=argv), redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as stopped:
+                cli.main_alerts(['hello', *argv, '--root', str(self.root)])
+            self.assertEqual((stopped.exception.code, message in err.getvalue()), (2, True))
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             self.assertEqual(cli.main_alerts(['hello', '--errors', 'none', '--error-logs', '9', '--root', str(self.root)]), 0)
         self.assertEqual(self.alert_settings('prod'), 'error-logs=9,errors=none')
@@ -397,7 +401,9 @@ class EditTests(unittest.TestCase):
         self.seeds = []
         return FakeRunner().on('sops', handler=encrypt)
 
-    def with_units(self, name='orders'):
+    def with_units(self, name='orders', keyed=True):
+        """A second app with units, and NATS. ``keyed``: a healthy tree, where every instance has the identity
+        make app-sync gives it once NATS exists; without it, the next command gives every instance its key."""
         self.second_app(name)
         for env in ('staging', 'prod'):
             source = self.root / f'clusters/home/app-hello-{env}.yaml'
@@ -405,6 +411,8 @@ class EditTests(unittest.TestCase):
         key = self.root / 'platform/nats/controller-nkey.pub'
         key.parent.mkdir(parents=True, exist_ok=True)
         key.write_text('UCONTROLLER\n')
+        if keyed:
+            model_sync.sync(self.root, runner=self.sops())
 
     def publish_events(self, app, names, runner, env='staging'):
         """Intake a document for a fixture image: publications have no manual edit command."""
@@ -420,7 +428,7 @@ class EditTests(unittest.TestCase):
 
     def test_events_give_a_publisher_a_stream_and_a_subscriber_a_consumer_and_both_a_nats_user(self):
         from swhurl.apps import events
-        self.with_units()
+        self.with_units(keyed=False)
         runner = self.sops()
         self.publish_events('orders', ['created', 'cancelled'], runner)
         self.quiet(edit.set_events, self.root, 'hello', 'staging', subscribe=['orders.created'], runner=runner)
@@ -444,9 +452,9 @@ class EditTests(unittest.TestCase):
             listed = yaml.safe_load((self.root / 'apps' / app / 'staging/kustomization.yaml').read_text())['resources']
             self.assertLessEqual({'events.yaml', 'events.sops.yaml'}, set(listed))
         self.assertIn('orders-staging', (self.root / 'platform/reloader/helmrelease.yaml').read_text())
-        self.assertEqual(len(self.seeds), 2, 'a later change reuses the key')
+        self.assertEqual(len(self.seeds), 4, 'once NATS exists every instance gets its key, once')
         self.publish_events('orders', ['created', 'cancelled', 'paid'], runner)
-        self.assertEqual(len(self.seeds), 2)
+        self.assertEqual(len(self.seeds), 4, 'a later change reuses the key')
 
         stream, = yaml.safe_load_all((self.root / 'apps/orders/staging/events.yaml').read_text())
         self.assertTrue(stream['spec']['preventDelete'], 'stopping publication must not delete retained messages')
@@ -474,8 +482,7 @@ class EditTests(unittest.TestCase):
         self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders', 'prod'), 'production is its own decision')
         instances = [self.root / 'apps' / app / 'staging' for app in ('hello', 'orders')]
         self.assertEqual(generated.problems(self.root, only=frozenset(Instance(p.parent.name, p.name) for p in instances)), [])
-        self.assertCountEqual(generated.problems(self.root), [  # every instance needs its own key
-            f'{app}/prod: has no NATS key; make app-sync creates it' for app in ('hello', 'orders')])
+        self.assertEqual(generated.problems(self.root), [], 'every instance got its own key with the first change')
 
         with self.assertRaisesRegex(edit.EditError, 'publishes events that hello subscribe to'):
             edit.remove(self.root, 'orders', 'staging')
@@ -498,11 +505,11 @@ class EditTests(unittest.TestCase):
         users = {u['nkey']: u['permissions'] for u in users['config']['merge']['authorization']['users']}
         self.assertEqual(users[self.env('hello')['SWHURL_EVENTS_NKEY']]['publish']['allow'],
                          events.flag_permissions('staging', 'hello'))
-        self.assertEqual(len(users), 3, 'the controller, orders and hello')
+        self.assertEqual(len(users), 5, 'the controller and every instance of orders and hello')
 
     def test_app_sync_gives_every_instance_its_own_nats_key_and_the_console_a_writer(self):
         from swhurl.apps import events
-        self.with_units()
+        self.with_units(keyed=False)
         (self.root / events.CONSOLE_KEY_FILE).write_text('UCONSOLE\n')
         runner = self.sops()
         self.quiet(edit.sync, self.root, runner=runner)
@@ -610,7 +617,7 @@ components:
                          [('created', 'An order was accepted', {'id': 'o-1'}), ('paid', 'An order was paid', {'id': 1})],
                          'the channels it sends to; a reference is followed')
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'what it publishes follows the document')
-        self.assertEqual(len(self.seeds), 1, 'its NATS key is made the first time')
+        self.assertEqual(len(self.seeds), 0, 'publishing reuses the key the instance already has')
         release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
         self.assertEqual(release['metadata']['annotations'][interface.OFFERS_ANNOTATION], 'abc1234')
         self.assertNotIn('offers', yaml.safe_load((instance / 'kustomization.yaml').read_text())['resources'], 'documents, not resources')
@@ -1248,7 +1255,8 @@ components:
         self.assertEqual(offers.read(prod).commit, 'abc1234')
         self.assertEqual((prod / 'offers/asyncapi.yaml').read_text(), self.ASYNCAPI)
         self.assertEqual(self.env('orders', 'prod')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'no second declaration for production')
-        self.assertEqual(len(self.seeds), 2, 'production has its own key')
+        self.assertNotEqual(self.env('orders', 'prod')['SWHURL_EVENTS_NKEY'], self.env('orders')['SWHURL_EVENTS_NKEY'],
+                            'production has its own key')
         self.assertEqual(offers.problems(prod, ['created', 'paid'], 'abc1234'), [])
         self.assertEqual(generated.problems(self.root, only=frozenset(model_sync.read(self.root)[0])), [], 'offers follow each image')
         # A first promotion carries them too: production is made from staging's release, then given the documents.
@@ -1271,7 +1279,7 @@ components:
                          'staging describes its API before production runs that image')
 
     def test_event_refusals_change_nothing(self):
-        self.with_units()
+        self.with_units(keyed=False)
         before = self.staging.read_text()
         cases = (({}, 'give --subscribe'),
                  ({'subscribe': ['created']}, 'subscriptions: not allowed: created'),
@@ -1359,16 +1367,18 @@ components:
             model_sync.sync(self.root)
         self.assertEqual(self.snapshot(), before)
 
-    def test_plain_release_update_does_not_allocate_a_nats_key_just_because_nats_exists(self):
+    def test_plain_release_update_keeps_every_existing_key_and_needs_no_sops(self):
         self.with_units()
         each = Instance('hello', 'staging')
+        before = {other: entry.settings.allocations.events_key for other, entry in model_sync.read(self.root)[0].items()}
         with mock.patch.object(model_sync, 'encrypt_secret', side_effect=AssertionError('unexpected encryption')) as key:
             intake.change_release(self.root, each, model_sync.Update(lambda entry: entry), {})
         key.assert_not_called()
-        self.assertFalse((each.folder(self.root) / 'events.sops.yaml').exists())
+        self.assertEqual({other: entry.settings.allocations.events_key for other, entry in model_sync.read(self.root)[0].items()},
+                         before)
 
     def test_malformed_notification_inputs_clean_up_keys_on_failed_release_and_sync_planning(self):
-        self.with_units()
+        self.with_units(keyed=False)
         notify = self.root / 'platform/notify'
         notify.mkdir(parents=True)
         teams = self.root / 'apps/teams.yaml'

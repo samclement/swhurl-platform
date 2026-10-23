@@ -1,4 +1,5 @@
-"""How a bot pushes to main: Render, Deploy and the console's merge gate (docs/architecture.md#how-changes-reach-the-cluster).
+"""How a bot pushes to main: Render, Deploy, the console's merge gate and Validate's console image pin
+(docs/architecture.md#how-changes-reach-the-cluster).
 
 ``push_main`` starts from the newest main in a fresh worktree, lets ``change`` edit it, checks the result,
 commits the whole tree and pushes without force. A push lost to another writer starts again from the

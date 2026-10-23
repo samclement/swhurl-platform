@@ -426,10 +426,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Deploys the image once every check above passed (a check skipped for an app-only commit counts
-  # as passed): on the latest main it pins platform/console/helmrelease.yaml to that image and pushes
-  # the commit (swhurl console-image --expect --commit), unless main has since moved to other image
-  # inputs, whose own run pins them. Pushes made with GITHUB_TOKEN start no workflows, so the pin
-  # commit starts no Validate run.
+  # as passed): on the newest main it pins platform/console/helmrelease.yaml to that image, checks it
+  # and pushes the commit like every bot (swhurl console-image --expect --commit), unless main has
+  # since moved to other image inputs, whose own run pins them. Pushes made with GITHUB_TOKEN start
+  # no workflows, so the pin commit starts no Validate run.
   deploy-console:
     name: Deploy the console
     needs: [changes, validate, repo, apps, templates, collector, console-image, backup-image]
@@ -441,13 +441,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # the pin commit may need a rebase onto a newer main
+          fetch-depth: 0   # the pin is made again on a newer main when another writer pushed first
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
+      # The pin is checked like every bot push (make check-repo check-apps on the newest main).
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.34.4'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.19.0'
+
+      - name: Install validation dependencies and flux-schema
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --quiet --upgrade 'pip>=25.1'
+          python3 -m pip install --quiet --group check
+          curl -fsSLo "$RUNNER_TEMP/flux-schema.tar.gz" \
+            https://github.com/fluxcd/flux-schema/releases/download/v0.9.0/flux-schema_0.9.0_linux_amd64.tar.gz
+          echo "104b764a53bcec30ec856a6a3efaecd13abf606099f0b057932027d755313cdb  $RUNNER_TEMP/flux-schema.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/flux-schema.tar.gz" -C "$RUNNER_TEMP/bin" flux-schema
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # tools/swhurl/bots.py: a fresh worktree of the newest main, the pin, checks, one commit, a
+      # non-forced push; a push lost to another writer pins again on the newer main.
       - name: Pin the console on main (deploys it)
         env:
           GIT_AUTHOR_NAME: github-actions[bot]
@@ -456,9 +481,5 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           set -Eeuo pipefail
-          python3 -m pip install --quiet --upgrade 'pip>=25.1'
-          python3 -m pip install --quiet --group check
-          git fetch --quiet origin main
-          git checkout --quiet --detach origin/main
           PYTHONPATH=tools python3 -m swhurl console-image \
             --expect "src-${{ needs.console-image.outputs.content }}" --commit | tee -a "$GITHUB_STEP_SUMMARY"

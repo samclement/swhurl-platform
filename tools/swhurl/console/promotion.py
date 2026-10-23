@@ -12,6 +12,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl.apps import ops, promotion
@@ -19,6 +20,7 @@ from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import relations, write
 from swhurl.apps.model.draft import RenderError
+from swhurl.apps.model.records import Release
 from swhurl.apps.new import GenerationError
 from swhurl.console import changes, merge
 from swhurl.console.actions import ActionError
@@ -71,6 +73,44 @@ def admitting(root: Path, app: str) -> list[str]:
         return [r.target for r in relations.evaluate(target, world) if r.role == 'calls' and not r.pending]
     except RenderError as error:
         raise EditError(str(error)) from None
+
+
+@dataclass(frozen=True)
+class Proposal:
+    """What a promotion's console PR adds to every console PR, read from the downloaded main before its command
+    runs: its body, what it also affects (a first promotion's callees), the staged history its rule judges and
+    its readiness check, once per job after preparation and before any GitHub write."""
+    app: str
+    image: str
+    current: Release | None  # staging's Release on that main: the newest of its staged history
+    body: str
+    affects: str
+
+    def staged(self, api: changes.GitHubAPI, head: str) -> Callable[[Release], bool]:
+        return lambda release: promotion.staged(release, changes.staging_history(api, head, self.app, self.current))
+
+    def check(self, runner: Runner, github: changes.GitHub) -> None:
+        if problem := promotion.source_problem(staging_status(runner, github, Instance(self.app, 'staging')), self.image):
+            raise ActionError(problem)
+
+
+def image_of(commands: tuple[merge.Command, ...]) -> str:
+    return next(arg.split('=', 1)[1] for arg in commands[0].argv if arg.startswith('--expect-image='))
+
+
+def proposal(tree: Path, app: str, commands: tuple[merge.Command, ...]) -> Proposal:
+    world, _ = write.read(tree)
+    image, first = image_of(commands), promotion.select(tree, world, app).outcome == 'create'
+    admits = admitting(tree, app) if first else []
+    body = f'Promote the reviewed staging image `{image}` to `{app}/prod`.'
+    if first:
+        body += ('\n\nBefore merging, review the production hostname, and if Secret placeholders were created, set each value on this branch '
+                 f'with `make app-secret APP={app} ENV=prod NAME=<name>` (in your own terminal). Main renders production when this is merged.')
+    if admits:
+        body += (f"\n\nThis also lets `{app}` call {', '.join(f'`{callee}/prod`' for callee in admits)}: "
+                 "each gains it in `SWHURL_ALLOWED_CALLERS` and its network policy when main renders it.")
+    affects = f'also changes the allowed callers and network policy for {", ".join(admits)} once main renders it' if admits else ''
+    return Proposal(app, image, promotion.release_of(tree, app, 'staging'), body, affects)
 
 
 def contents(root: Path) -> dict[str, bytes]:

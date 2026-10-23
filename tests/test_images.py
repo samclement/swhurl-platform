@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -122,13 +123,15 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertEqual(steps[0]['with']['fetch-depth'], 0)
         pin = steps[-1]
         self.assertNotIn('if', pin, 'pin also when the image was already published (docs-only commits no-op)')
-        self.assertIn('git checkout --quiet --detach origin/main', pin['run'])
         self.assertIn('swhurl console-image', pin['run'])
         self.assertIn('--expect "src-${{ needs.console-image.outputs.content }}" --commit', pin['run'])
+        uses = {step['uses'].split('@')[0] for step in steps if 'uses' in step}
+        self.assertLessEqual({'azure/setup-kubectl', 'azure/setup-helm'}, uses, 'push_main runs check-repo check-apps')
+        self.assertTrue(any('flux-schema' in step.get('run', '') for step in steps))
 
 
 class WorkflowPinTests(unittest.TestCase):
-    """console-image --expect/--commit as Validate's deploy job runs it, with FakeRunner."""
+    """console-image --expect/--commit as Validate's deploy job runs it: bots.push_main, with FakeRunner."""
     HEAD = 'HTTP/2 200\r\ndocker-content-digest: sha256:' + 'b' * 64 + '\r\n'
 
     def setUp(self):
@@ -136,78 +139,100 @@ class WorkflowPinTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root)
         (self.root / images.RELEASE).parent.mkdir(parents=True)
         (self.root / images.RELEASE).write_text((ROOT / images.RELEASE).read_text())
-        self.ids = '1' * 40  # what `git rev-parse HEAD:<input>` answers; changing it changes the content tag
+        self.ids = ['1' * 40]  # what `git rev-parse HEAD:<input>` answers on each fetched main, in turn
+        self.fetches, self.pushes, self.worktrees, self.committed, self.rendered = 0, [], [], [], []
 
-    def runner(self, push_codes=(0,), moved_on_pull=False):
-        pushes = list(push_codes)
+    def runner(self, push_codes=(0,), checks=0):
+        codes = list(push_codes)
 
-        def pull(argv, _input):
-            if moved_on_pull:
-                self.ids = '2' * 40
+        def fetch(argv, _input):
+            self.fetches += 1
             return _result(argv, '')
 
-        def push(argv, _input):
-            return _result(argv, '', pushes.pop(0) if pushes else 0)
+        def add(argv, _input):  # each attempt pins a fresh copy of main
+            work = Path(argv[-2])
+            (work / images.RELEASE).parent.mkdir(parents=True)
+            (work / images.RELEASE).write_text((self.root / images.RELEASE).read_text())
+            self.worktrees.append(work)
+            return _result(argv, '')
 
-        git = ('git', '-C', str(self.root))
+        def ids(argv, _input):
+            return _result(argv, self.ids[min(self.fetches, len(self.ids)) - 1] + '\n')
+
+        def push(argv, _input):
+            self.pushes.append(argv)
+            return _result(argv, '', codes.pop(0) if codes else 0)
+
         return (FakeRunner()
                 .on('curl', '--silent', '--show-error', '--fail', stdout=json.dumps({'token': 'anon-token'}))
                 .on('curl', '--silent', '--show-error', '--head', stdout=self.HEAD)
-                .on(*git, 'status', stdout='')
-                .on(*git, 'rev-parse', handler=lambda argv, _i: _result(argv, self.ids + '\n'))
-                .on(*git, 'commit', stdout='')
-                .on(*git, 'pull', handler=pull)
-                .on(*git, 'push', handler=push))
+                .on('git', 'fetch', handler=fetch)
+                .on('git', 'rev-parse', 'origin/main', stdout='a' * 40)
+                .on('git', 'worktree', 'add', handler=add)
+                .on('git', 'worktree', 'remove')
+                .on('git', '-C', handler=lambda argv, i: ids(argv, i) if 'rev-parse' in argv else _result(argv, ''))
+                .on(sys.executable, '-m', 'swhurl', 'app-sync', handler=lambda argv, _i: self.rendered.append(argv) or _result(argv, ''))
+                .on('make', returncode=checks, stdout='[BAD] policy: broken' if checks else '')
+                .on('git', 'add')
+                .on('git', 'write-tree', stdout='tree0')
+                .on('git', 'commit-tree', handler=lambda argv, _i: self.committed.append(
+                    (self.worktrees[-1] / images.RELEASE).read_text()) or _result(argv, 'c' * 40))
+                .on('git', 'push', handler=push))
 
     def expected(self):
-        return images.content_tag(self.runner(), self.root)
+        return images.content_tag(FakeRunner().on('git', '-C', stdout=self.ids[0] + '\n'), self.root)
 
     def run_main(self, runner, *args):
         out = io.StringIO()
         with redirect_stdout(out), redirect_stderr(out):
             code = images.main(list(args), runner, self.root)
-        return code, out.getvalue(), [c[3] for c in runner.calls if c[:3] == ('git', '-C', str(self.root))]
+        return code, out.getvalue(), [c for c in runner.calls if c[:2] == ('git', 'commit-tree')]
 
-    def test_pins_commits_and_pushes(self):
+    def test_pins_the_newest_main_checks_it_and_pushes_without_force(self):
         tag = self.expected()
-        code, out, git = self.run_main(self.runner(), '--expect', tag, '--commit')
+        code, out, commits = self.run_main(self.runner(), '--expect', tag, '--commit')
         self.assertEqual(code, 0, out)
-        self.assertIn(f'tag: {tag}', (self.root / images.RELEASE).read_text())
-        self.assertEqual([g for g in git if g in ('commit', 'push', 'pull')], ['commit', 'push'])
-        self.assertIn('[OK] pushed', out)
+        self.assertEqual(commits[0][-2:], ('-m', f'deploy: console image {tag} (Validate)'))
+        self.assertIn(f'tag: {tag}', self.committed[0])
+        self.assertEqual((self.root / images.RELEASE).read_text(), (ROOT / images.RELEASE).read_text(), 'the checkout is left alone')
+        self.assertEqual(self.pushes, [('git', 'push', 'origin', f'{"c" * 40}:refs/heads/main')])
+        self.assertIn('[OK] pushed cccccccccccc to main', out)
+        self.assertEqual(len(self.rendered), 1, 'an unrendered main would fail the checks: it is rendered with the pin')
 
     def test_does_nothing_when_main_builds_other_inputs(self):
-        code, out, git = self.run_main(self.runner(), '--expect', 'src-0000000000000000', '--commit')
-        self.assertEqual(code, 0, out)
+        runner = self.runner()
+        code, out, commits = self.run_main(runner, '--expect', 'src-0000000000000000', '--commit')
+        self.assertEqual((code, commits, self.pushes), (0, [], []), out)
         self.assertIn('nothing to do', out)
-        self.assertEqual((self.root / images.RELEASE).read_text(), (ROOT / images.RELEASE).read_text())
-        self.assertNotIn('commit', git)
+        self.assertFalse([c for c in runner.calls if c[0] == 'make'], 'nothing changed: nothing to check')
 
-    def test_rejected_push_is_rebased_and_retried_once(self):
-        code, out, git = self.run_main(self.runner(push_codes=(1, 0)), '--expect', self.expected(), '--commit')
-        self.assertEqual(code, 0, out)
-        self.assertEqual([g for g in git if g in ('commit', 'push', 'pull')], ['commit', 'push', 'pull', 'push'])
-        self.assertIn('pushed after rebasing', out)
+    def test_a_lost_push_pins_again_on_the_newer_main(self):
+        code, out, commits = self.run_main(self.runner(push_codes=(1, 0)), '--expect', self.expected(), '--commit')
+        self.assertEqual((code, len(commits), len(self.pushes), self.fetches), (0, 2, 2, 2), out)
+        self.assertIn('attempt 1 of 5', out)
+        self.assertIn(f'tag: {self.expected()}', self.committed[1], 'the newer main carries the pin too')
 
-    def test_main_moving_to_other_inputs_while_pushing_skips(self):
-        code, out, git = self.run_main(self.runner(push_codes=(1,), moved_on_pull=True), '--expect', self.expected(),
-                                       '--commit')
-        self.assertEqual(code, 0, out)
-        self.assertEqual([g for g in git if g in ('commit', 'push', 'pull')], ['commit', 'push', 'pull'])
-        self.assertIn('skipped: main moved', out)
+    def test_main_moving_to_other_inputs_after_a_lost_push_pins_nothing(self):
+        self.ids = ['1' * 40, '2' * 40]
+        code, out, commits = self.run_main(self.runner(push_codes=(1,)), '--expect', self.expected(), '--commit')
+        self.assertEqual((code, len(commits), len(self.pushes)), (0, 1, 1), out)
+        self.assertIn('nothing to do: main now builds', out)
 
-    def test_second_rejection_fails(self):
-        code, out, _ = self.run_main(self.runner(push_codes=(1, 1)), '--expect', self.expected(), '--commit')
-        self.assertEqual(code, 1)
-        self.assertIn('[ERROR]', out)
+    def test_every_lost_push_and_a_failed_check_fail(self):
+        for codes, checks, message, pushed in (((1,) * 5, 0, 'main kept moving', 5), ((0,), 2, '[BAD] policy: broken', 0)):
+            with self.subTest(message=message):
+                self.pushes.clear()
+                code, out, _ = self.run_main(self.runner(push_codes=codes, checks=checks), '--expect', self.expected(), '--commit')
+                self.assertEqual((code, len(self.pushes)), (1, pushed))
+                self.assertIn(message, out)
 
     def test_already_pinned_commits_nothing(self):
-        runner = self.runner()
-        self.run_main(runner, '--expect', self.expected(), '--commit')
-        code, out, git = self.run_main(self.runner(), '--expect', self.expected(), '--commit')
-        self.assertEqual(code, 0, out)
+        tag = self.expected()
+        release = self.root / images.RELEASE
+        release.write_text(images.pin(release.read_text(), tag, 'sha256:' + 'b' * 64))
+        code, out, commits = self.run_main(self.runner(), '--expect', tag, '--commit')
+        self.assertEqual((code, commits, self.pushes), (0, [], []), out)
         self.assertIn('already pinned', out)
-        self.assertNotIn('commit', git)
 
 
 def _result(argv, stdout, code=0):

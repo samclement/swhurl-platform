@@ -49,18 +49,19 @@ def encrypt_secret(root: Path, path: Path, name: str, namespace: str, values: di
     return encrypted
 
 
-def allocate(root: Path, world: World, platform: Platform, sizes: dict[Instance, str],
-             bootstrap: frozenset[Instance], rotate: Instance | None, runner: Runner) -> World:
-    """Choose missing allocations once, staging before production. Partial identities are never absence."""
-    if rotate is not None and rotate not in world:
-        raise EditError(f'no instance {rotate}')
+def identity(each: Instance, entry: Entry) -> bool:
+    """Whether the instance has a complete NATS identity. One half alone is an error, never absence."""
+    public = bool(entry.settings.allocations.events_key)
+    if public != (EVENTS_SECRET in entry.encrypted or EVENTS_SECRET in entry.pending):
+        raise EditError(f'{each}: inconsistent NATS identity: public allocation and encrypted seed must both exist or both be absent')
+    return public
+
+
+def allocate(root: Path, world: World, platform: Platform, sizes: dict[Instance, str], runner: Runner) -> World:
+    """Choose missing allocations once, staging before production. Partial identities are never absence (``identity``).
+    Every instance needs a NATS identity when NATS exists (its user carries its flag permissions), and wherever it uses events."""
     for each, entry in world.items():
-        public = bool(entry.settings.allocations.events_key)
-        seed = EVENTS_SECRET in entry.encrypted or EVENTS_SECRET in entry.pending
-        if public != seed:
-            raise EditError(f'{each}: inconsistent NATS identity: public allocation and encrypted seed must both exist or both be absent')
-        if each == rotate and not public:
-            raise EditError(f'{each}: rotation requires an existing complete NATS identity')
+        identity(each, entry)
     nats = events.has_nats(root)
     taken = {entry.settings.allocations.egress_port for entry in world.values()} - {None}
     found = {}
@@ -75,8 +76,7 @@ def allocate(root: Path, world: World, platform: Platform, sizes: dict[Instance,
             if not sizes.get(each):
                 raise EditError(f'{each}: declares a database but has no database allocation; a new volume needs an explicit size')
             allocations = dataclasses.replace(allocations, database=Storage(sizes[each], RETAINED_STORAGE_CLASS))
-        needed = entry.release.publishes or entry.settings.grants.subscriptions or (each in bootstrap and nats)
-        if each == rotate or (rotate is None and needed and not allocations.events_key):
+        if not allocations.events_key and (nats or entry.release.publishes or entry.settings.grants.subscriptions):
             seed, public = nkeys.generate()
             pending[EVENTS_SECRET] = encrypt_secret(root, each.folder(root, platform.base) / events.SECRET_FILE,
                                                   events.secret_name(each.app), each.namespace, {interface.SEED_VARIABLE: seed}, runner)
@@ -124,10 +124,9 @@ def removals(root: Path, world: World, platform: Platform) -> frozenset[Instance
 
 
 def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance] = frozenset(), *,
-         register: bool = True, routes: dict | None = None, removed: frozenset[Instance] = frozenset()) -> Prepared:
+         routes: dict | None = None, removed: frozenset[Instance] = frozenset()) -> Prepared:
     """Complete writes and managed deletions, by absolute path. Plan everything before applying anything.
-    Scratch roots keep existing units; creates always get a unit. With a registry, sync repairs missing units.
-    ``register=False`` leaves the registry alone, not the new unit (app-new --no-register)."""
+    Scratch roots (no registry) keep existing units; creates always get a unit. With a registry, sync repairs missing units."""
     writes: dict[Path, str] = {}
     deletions: list[Path] = []
 
@@ -161,7 +160,7 @@ def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance
     for path, wanted, key, managed in (
             (REGISTRY_FILE, shared.units, 'resources', lambda name: Instance.of_unit(str(name).removesuffix('.yaml'))),
             (RELOADER_FILE, shared.reloaded, 'namespaces', Instance.of_namespace)):
-        if not (root / path).is_file() or (path == REGISTRY_FILE and not register):
+        if not (root / path).is_file():
             continue
         document = YamlFile(root / path)
         parent = document.data
@@ -229,9 +228,9 @@ def read(root: Path, base: Path = Path('apps')) -> tuple[World, Platform]:
         raise EditError(str(error)) from None
 
 
-def sync(root: Path, base: Path = Path('apps'), *, rotate: Instance | None = None, runner: Runner | None = None) -> list[Path]:
+def sync(root: Path, base: Path = Path('apps'), *, runner: Runner | None = None) -> list[Path]:
     """Reconcile records, including merged creates and removals, and all shared files."""
-    return apply(root, prepare(root, {}, base, bootstrap=True, rotate=rotate, runner=runner))
+    return apply(root, prepare(root, {}, base, runner=runner))
 
 
 def guard(root: Path, world: World, platform: Platform, targets: list[Instance], base: Path = Path('apps')) -> None:
@@ -261,11 +260,24 @@ class Remove:
     pass
 
 
+def _cleared(entry: Entry) -> Entry:
+    allocations = dataclasses.replace(entry.settings.allocations, events_key='')
+    return dataclasses.replace(entry, settings=dataclasses.replace(entry.settings, allocations=allocations),
+                               encrypted=entry.encrypted - {EVENTS_SECRET},
+                               pending={kind: text for kind, text in entry.pending.items() if kind != EVENTS_SECRET})
+
+
+@dataclasses.dataclass(frozen=True)
+class Rotate(Update):
+    """Replace an existing complete NATS identity: an update that clears it, so allocation makes a new pair."""
+    update: Callable[[Entry], Entry] = _cleared
+
+
 def prepare(root: Path, operations: dict[Instance, Create | Update | Remove], base: Path = Path('apps'), *,
-            register: bool = True, routes: dict | None = None, bootstrap: bool = False,
-            rotate: Instance | None = None, runner: Runner | None = None) -> Prepared:
+            routes: dict | None = None, runner: Runner | None = None) -> Prepared:
     """Validate all targets, transform their records, then plan every output before writing.
-    Updates guard generated files against unrepresentable hand edits. Removal needs only valid records:
+    Updates (rotations included) guard generated files against unrepresentable hand edits; a rotation also
+    needs a complete identity, and something that still needs one. Removal needs only valid records:
     its managed outputs may already be stale, and unrelated files are retained."""
     world, platform = read(root, base)
     for each, operation in operations.items():
@@ -276,6 +288,8 @@ def prepare(root: Path, operations: dict[Instance, Create | Update | Remove], ba
     for each, operation in operations.items():
         if isinstance(operation, Remove):
             check_removal(each, world)
+        elif isinstance(operation, Rotate) and not identity(each, world[each]):
+            raise EditError(f'{each}: rotation requires an existing complete NATS identity')
     guard(root, world, platform, [each for each, op in operations.items() if isinstance(op, Update)], base)
     for each, operation in operations.items():
         if isinstance(operation, Remove):
@@ -297,9 +311,11 @@ def prepare(root: Path, operations: dict[Instance, Create | Update | Remove], ba
             relations.evaluate(each, world)
     except RenderError as error:
         raise EditError(str(error)) from None
-    world = allocate(root, world, platform, sizes, frozenset(world) if bootstrap and rotate is None else added,
-                     rotate, runner or Runner())
-    return plan(root, world, platform, added, register=register, routes=routes, removed=removed)
+    world = allocate(root, world, platform, sizes, runner or Runner())
+    for each, operation in operations.items():
+        if isinstance(operation, Rotate) and not world[each].settings.allocations.events_key:
+            raise EditError(f'{each}: nothing needs a NATS identity (no NATS, no events), so there is none to rotate')
+    return plan(root, world, platform, added, routes=routes, removed=removed)
 
 
 def change(root: Path, targets: Instance | list[Instance], update: Callable[[Entry], Entry],

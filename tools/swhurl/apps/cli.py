@@ -125,13 +125,17 @@ def main_alerts(argv: list[str] | None = None) -> int:
     for preset in app_alerts.PRESETS:
         p.add_argument(f'--{preset.key}', metavar='N|none', help=f'{preset.label}: fire at N in {preset.interval} '
                                                                   f'(default {preset.threshold}), or none')
-    p.add_argument('--none', action='store_true', help='no default alerts for this app')
-    p.add_argument('--default', action='store_true', help='back to the defaults')
+    whole = p.add_mutually_exclusive_group()
+    whole.add_argument('--none', action='store_true', help='no default alerts for this app')
+    whole.add_argument('--default', action='store_true', help='back to the defaults')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     changes = {preset.key: value for preset in app_alerts.PRESETS
                if (value := getattr(args, preset.key.replace('-', '_'))) is not None}
-    return run(lambda: edit.set_alerts(args.root.resolve(), args.app, changes, none=args.none, default=args.default), True)
+    if bool(changes) == (args.none or args.default):
+        p.error('give thresholds (--error-logs, --errors), or --none, or --default')
+    choice = edit.NoAlerts() if args.none else edit.DefaultAlerts() if args.default else edit.Thresholds(changes)
+    return run(lambda: edit.set_alerts(args.root.resolve(), args.app, choice), True)
 
 
 def main_calls(argv: list[str] | None = None) -> int:

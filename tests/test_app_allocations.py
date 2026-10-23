@@ -74,9 +74,9 @@ class AllocationTests(unittest.TestCase):
             return Result(args, stdout=yamlio.dump(document) + 'sops: {}\n')
         return FakeRunner().on('sops', handler=encrypt)
 
-    def sync(self, **kwargs):
+    def sync(self, rotate=None, runner=None):
         with redirect_stdout(io.StringIO()):
-            return write.sync(self.root, **kwargs)
+            return write.apply(self.root, write.prepare(self.root, {rotate: write.Rotate()} if rotate else {}, runner=runner))
 
     def test_sync_bootstraps_all_missing_in_one_plan_and_is_byte_idempotent(self):
         self.put(Instance('orders', 'prod'))
@@ -115,17 +115,20 @@ class AllocationTests(unittest.TestCase):
         self.assertEqual(ports, {'alpha/prod': 30103, 'orders/staging': 30102, 'zebra/staging': 30101})
         self.assertEqual(self.sync(runner=FakeRunner()), [])
 
-    def test_ordinary_release_and_settings_updates_do_not_bootstrap_unrelated_keys(self):
-        self.nats()
+    def test_every_operation_gives_a_missing_identity_its_key_once_nats_exists(self):
         self.put(Instance('shop', 'staging'))
         write.apply(self.root, write.prepare(self.root, {}, runner=FakeRunner()))
-        before = self.snapshot()
-        write.change(self.root, self.each, lambda entry: entry, runner=FakeRunner())
+        self.assertFalse(list(self.root.rglob('events.sops.yaml')), 'without NATS or events, nobody needs a key')
+        self.nats()
+        runner = self.encrypting()
         write.change(self.root, self.each, lambda entry: replace(entry, release=replace(entry.release, description='new')),
-                     runner=FakeRunner())
-        self.assertFalse(list(self.root.rglob('events.sops.yaml')))
-        self.assertEqual(self.entry(Instance('shop', 'staging')).settings.allocations.events_key, '')
-        self.assertNotEqual(self.snapshot(), before)
+                     runner=runner)
+        self.assertEqual(len(runner.calls), 2)
+        self.assertTrue(self.entry().settings.allocations.events_key)
+        self.assertTrue(self.entry(Instance('shop', 'staging')).settings.allocations.events_key)
+        before = self.snapshot()
+        write.change(self.root, self.each, lambda entry: entry, runner=FakeRunner())  # complete pairs need no SOPS
+        self.assertEqual(self.snapshot(), before)
 
     def test_new_app_allocates_its_own_key_not_an_existing_apps_missing_key(self):
         self.nats()
@@ -133,10 +136,13 @@ class AllocationTests(unittest.TestCase):
                                'ghcr.io/example/fresh:2-abcdef0', '--health-path', '/healthz', '--no-policy-check'])
         new.generate(args, self.root, runner=self.encrypting())
         self.assertTrue(self.entry(Instance('fresh', 'staging')).settings.allocations.events_key)
-        self.assertFalse(self.entry().settings.allocations.events_key)
+        self.assertTrue(self.entry().settings.allocations.events_key, 'the same rule gives the existing app its key')
+        self.assertNotEqual(self.entry().settings.allocations.events_key,
+                            self.entry(Instance('fresh', 'staging')).settings.allocations.events_key)
 
     def test_new_app_encryption_and_late_routes_failures_leave_complete_tree_unchanged(self):
         self.nats()
+        self.sync(runner=self.encrypting())  # a healthy tree: only the new app needs a key
         for failure in ('encryption', 'routes'):
             if failure == 'routes':
                 (self.root / 'platform/notify').mkdir()
@@ -192,13 +198,26 @@ class AllocationTests(unittest.TestCase):
         self.assertEqual((self.root / 'apps/orders/staging/events.yaml').read_bytes(), before['apps/orders/staging/events.yaml'])
         self.assertEqual(bucket.read_text(), 'false\n')
 
-    def test_rotation_does_not_bootstrap_other_entirely_missing_identity(self):
+    def test_rotation_passes_the_guard_and_needs_something_that_uses_the_identity(self):
         self.nats()
         self.sync(runner=self.encrypting())
-        self.put(Instance('shop', 'staging'))
-        write.apply(self.root, write.prepare(self.root, {}, runner=FakeRunner()))
-        self.sync(rotate=self.each, runner=self.encrypting())
-        self.assertFalse(self.entry(Instance('shop', 'staging')).settings.allocations.events_key)
+        self.put(Instance('shop', 'staging'))  # the one rule: rotating also gives a missing identity its key
+        runner = self.encrypting()
+        self.sync(rotate=self.each, runner=runner)
+        self.assertEqual(len(runner.calls), 2)
+        self.assertTrue(self.entry(Instance('shop', 'staging')).settings.allocations.events_key)
+        release = self.each.folder(self.root) / 'helmrelease.yaml'
+        release.write_text(release.read_text() + '# a hand edit\n')
+        before = self.snapshot()
+        with self.assertRaisesRegex(EditError, 'files differ from what the platform renders'):
+            self.sync(rotate=self.each, runner=FakeRunner())
+        self.assertEqual(self.snapshot(), before)
+        self.sync(runner=FakeRunner())
+        (self.root / events.CONTROLLER_KEY_FILE).unlink()
+        before = self.snapshot()
+        with self.assertRaisesRegex(EditError, 'nothing needs a NATS identity'):
+            self.sync(rotate=self.each, runner=self.encrypting())
+        self.assertEqual(self.snapshot(), before)
 
     def test_rotation_requires_existing_target_and_complete_identity(self):
         for target, message in ((Instance('missing', 'staging'), 'no instance'), (self.each, 'existing complete')):
@@ -268,7 +287,14 @@ class AllocationTests(unittest.TestCase):
                 (self.root / 'apps/teams.yaml').write_text('teams: [')
             before = self.snapshot()
             runner = self.encrypting(fail_at=1 if failure == 'encryption' else None)
-            context = mock.patch.object(render, 'instance', side_effect=write.RenderError('late render refusal')) \
+            rendered = []
+
+            def late(*args, real=render.instance, rendered=rendered, **kwargs):  # the guard renders first; refuse after allocation
+                rendered.append(args)
+                if len(rendered) > 1:
+                    raise write.RenderError('late render refusal')
+                return real(*args, **kwargs)
+            context = mock.patch.object(render, 'instance', side_effect=late) \
                 if failure == 'render' else mock.patch.object(render, 'instance', wraps=render.instance)
             with self.subTest(failure=failure), context, self.assertRaises(EditError):
                 self.sync(rotate=self.each, runner=runner)
@@ -290,7 +316,7 @@ class AllocationTests(unittest.TestCase):
         self.nats()
         before = self.snapshot()
         with mock.patch.object(write.nkeys, 'generate', return_value=('SECRET-SEED', 'UPUBLIC')):
-            prepared = write.prepare(self.root, {}, bootstrap=True, runner=self.encrypting())
+            prepared = write.prepare(self.root, {}, runner=self.encrypting())
         entry = prepared.world[self.each]
         self.assertNotIn(EVENTS_SECRET, entry.encrypted)
         self.assertIn(EVENTS_SECRET, entry.pending)
@@ -337,7 +363,9 @@ class AllocationTests(unittest.TestCase):
         self.assertEqual(staging.settings.allocations.database, Storage('128Mi', 'custom-retain'))
         self.assertTrue(production.settings.allocations.events_key)
         self.assertEqual(production.settings.choices.replicas, 0, 'first production copies the scaled-zero choice')
-        self.assertFalse(staging.settings.allocations.events_key, 'first production does not bootstrap staging')
+        self.assertTrue(staging.settings.allocations.events_key, 'the same rule gives staging its missing key')
+        self.assertNotEqual(production.settings.allocations.events_key, staging.settings.allocations.events_key,
+                            'first production has its own key')
         self.assertEqual(production.settings.grants.allows, staging.settings.grants.allows)
         changed = replace(staging.release, image=replace(IMAGE, tag='3-bcdef01', digest='sha256:' + 'b' * 64))
         write.change(self.root, self.each, lambda entry: replace(

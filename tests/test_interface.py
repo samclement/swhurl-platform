@@ -129,7 +129,7 @@ class InterfaceTests(unittest.TestCase):
         entry = replace(entry, encrypted=frozenset(), settings=replace(entry.settings,
                         allocations=replace(entry.settings.allocations, events_key='')))
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(write.nkeys, 'generate', return_value=('synthetic seed', 'U-TEST')):
-            allocated = write.allocate(Path(tmp), {each: entry}, platform, {}, frozenset(), None, runner)
+            allocated = write.allocate(Path(tmp), {each: entry}, platform, {}, runner)
         document = yamlio.load(allocated[each].pending[draft.EVENTS_SECRET])
         self.assertEqual(document['metadata']['name'], 'shop-events')
         self.assertEqual(set(document['stringData']), {'SWHURL_EVENTS_SEED'})

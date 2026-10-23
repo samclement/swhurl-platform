@@ -2,6 +2,7 @@
 
 Standard library only: importing this catalogue reads no configuration. ENTRIES maps each name
 (or documented family) to its surface, meaning and availability; docs/apps.md is checked against it.
+Optional reader overrides are inputs, not environment variables emitted by the renderers.
 Recovery and test labels use label(), but are not app capabilities.
 """
 import re
@@ -21,6 +22,7 @@ KEYS_VARIABLE = 'SWHURL_AUTH_KEYS'
 CALLERS_VARIABLE = 'SWHURL_ALLOWED_CALLERS'
 DESCRIPTION_VARIABLE = 'SWHURL_DESCRIPTION'
 NOTIFY_VARIABLE = 'SWHURL_NOTIFY_URL'
+NOTIFY_TOKEN_VARIABLE = 'SWHURL_NOTIFY_TOKEN_FILE'
 SERVICE_VARIABLE = 'SWHURL_SERVICE_<APP>_URL'
 SERVICE_VARIABLE_RE = re.compile(r'^SWHURL_SERVICE_([A-Z0-9_]+)_URL$')
 PUBLISH_VARIABLE = 'SWHURL_EVENTS_PUBLISH'
@@ -67,6 +69,7 @@ ENTRIES = {
     APP_VARIABLE: ('env', 'App name', 'Every instance'),
     ENVIRONMENT_VARIABLE: ('env', 'Environment name', 'Every instance'),
     NOTIFY_VARIABLE: ('env', 'Notify service address', 'Every instance'),
+    NOTIFY_TOKEN_VARIABLE: ('env override', f'Notify token file override; defaults to {TOKENS_MOUNT}/notify/token', 'Optional input to the Python notify reader; not injected'),
     ISSUER_VARIABLE: ('env', 'Token issuer', 'Web instances'),
     KEYS_VARIABLE: ('env', 'Public token-signing keys', 'Web instances'),
     CALLERS_VARIABLE: ('env', 'Accepted callers, comma-separated', 'At least one connected caller'),

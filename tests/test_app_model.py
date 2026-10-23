@@ -219,6 +219,45 @@ class ShadowTests(unittest.TestCase):
         self.assertEqual(self.problems(), [])
         self.assertEqual(generated.check(ROOT), [], 'make check-apps reports the differences')
 
+    def test_invalid_reloader_is_a_validation_problem_without_writes(self):
+        path = self.root / render.RELOADER_FILE
+        for text in ('spec: [', '', '[]', '{}', 'spec: null',
+                     'spec: {values: []}', 'spec: {values: {reloader: {}}}',
+                     'spec: {values: {reloader: {namespaces: null}}}',
+                     'spec: {values: {reloader: {namespaces: hello-staging}}}',
+                     'spec: {values: {reloader: {namespaces: {hello-staging: true}}}}',
+                     'spec: {values: {reloader: {namespaces: [ingress, 1]}}}',
+                     'spec: {values: {reloader: {namespaces: [{}]}}}'):
+            with self.subTest(text=text):
+                path.write_text(text)
+                before = self.snapshot()
+                problems = generated.check(self.root)
+                self.assertEqual(len(problems), 1)
+                self.assertIn(f'{render.RELOADER_FILE}: cannot read committed YAML', problems[0])
+                self.assertEqual(self.snapshot(), before)
+
+    def test_policy_cli_fails_cleanly_on_invalid_reloader(self):
+        (self.root / render.RELOADER_FILE).write_text('spec: [')
+        output = io.StringIO()
+        with mock.patch.object(policy, 'ROOT', self.root), mock.patch.object(policy, 'instances', return_value=[]), \
+                redirect_stdout(output):
+            self.assertEqual(policy.main([]), 1)
+        self.assertIn('[BAD] app model', output.getvalue())
+        self.assertIn(f'{render.RELOADER_FILE}: cannot read committed YAML', output.getvalue())
+
+    def test_unreadable_reloader_is_a_validation_problem(self):
+        read_text = Path.read_text
+        path = self.root / render.RELOADER_FILE
+        for error in (OSError('unreadable'), UnicodeError('invalid encoding')):
+            def read(file, *args, failure=error, **kwargs):
+                if file == path:
+                    raise failure
+                return read_text(file, *args, **kwargs)
+            with self.subTest(error=type(error).__name__), mock.patch.object(Path, 'read_text', read):
+                self.assertEqual(generated.check(self.root),
+                                 [f'{render.RELOADER_FILE}: cannot read committed YAML; expected '
+                                  'spec.values.reloader.namespaces to be a list of strings'])
+
     def test_settings_written_by_the_commands_render_as_written(self):
         (self.root / 'platform/egress').mkdir(parents=True)
         shutil.copy(ROOT / 'platform/egress/proxy.yaml', self.root / 'platform/egress/proxy.yaml')

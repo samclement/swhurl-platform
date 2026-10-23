@@ -10,7 +10,7 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-from swhurl import ROOT, backupset, platform
+from swhurl import ROOT, backupset, interface, platform
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import store
 from swhurl.backupset import BackupSet
@@ -54,4 +54,4 @@ def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] 
     for each in databases:
         backupset.check_backup_set(runner, report, backups_in(Path()), uri(each.namespace, env), env=env, now=now,
                                    what='SQLite', run='make backup-sqlite', prefix=f'{each.namespace}: ',
-                                   hint=f'kubectl -n {each.namespace} get jobs -l platform.swhurl.com/backup=true')
+                                   hint=f'kubectl -n {each.namespace} get jobs -l {interface.label("backup")}=true')

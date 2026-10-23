@@ -11,8 +11,11 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+import full_settings
+from full_settings import FULL, NAMES
+
 from swhurl import ROOT, yamlio
-from swhurl.apps import cli, edit, egress, events, new, transitions
+from swhurl.apps import cli, edit, egress, events, new, promotion, transitions
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import render, store, write
@@ -375,6 +378,16 @@ class AllocationTests(unittest.TestCase):
             edit.promote(self.root, 'orders', runner=FakeRunner())
         self.assertEqual(self.entry(prod).settings, production.settings)
         self.assertEqual(self.entry(prod).release, changed)
+
+    def test_first_production_copies_or_drops_every_settings_field_on_purpose(self):
+        copied = {'exposure', 'calls', 'allows', 'exceptions', 'issuer', 'replicas', 'capacity', 'schedule'}
+        own = {'host', 'subscriptions', 'egress', 'egress_port', 'events_key', 'database'}  # production's, never staging's
+        self.assertEqual(copied | own, set(NAMES), 'say whether first production copies a new Settings field')
+        staging = replace(FULL, grants=replace(FULL.grants, exposure='authenticated-web'))  # a public one needs its own --host
+        made = promotion.first_production(self.root, {self.each: Entry(App('demo'), web(), staging)}, 'orders').entry.settings
+        for name in NAMES:
+            with self.subTest(field=name):
+                self.assertEqual(full_settings.value(made, name), full_settings.value(staging if name in copied else Settings(), name))
 
     def test_short_app_secret_does_not_false_match_a_character_in_ciphertext(self):
         with redirect_stdout(io.StringIO()):

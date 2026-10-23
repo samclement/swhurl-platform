@@ -417,11 +417,21 @@ def settings_of(root: Path, app: str, env: str) -> Settings | None:
         raise Hold(f'the instance record cannot be read: {error}') from None
 
 
+REACH = 'changes who can reach it'
+STAGING_REVIEW: dict[str, tuple[str, str]] = {
+    'exceptions': ('changes its app-policy exceptions', 'changed'),
+    'exposure': (REACH, 'changed'), 'host': (REACH, 'changed'), 'issuer': (REACH, 'changed'),
+    'allows': ('allows {added} to call it', 'added'),
+    'egress': ('grants hosts outside the cluster: {added}', 'added'),
+    'calls': ('', 'free'), 'subscriptions': ('', 'free'), 'replicas': ('', 'free'), 'capacity': ('', 'free'), 'schedule': ('', 'free'),
+}
+"""Each Grants and Choices field's staging review, first match in order: held when ``changed``, or a name ``added``, or ``free``."""
+
+
 def settings_held(env: str, before: Settings | None, after: Settings | None) -> str:
     """An instance change's one rule: why a person merges it, or '' when it merges itself. ``before`` and
-    ``after``: the instance's Settings on main and with the change. Automatic when it changes only how
-    staging runs (replicas, capacity, schedule), what it calls or receives, or takes access away; held
-    when it touches production, grants access or changes what the platform allocated.
+    ``after``: the instance's Settings on main and with the change. Held when it touches production or what the
+    platform allocated (compared whole), else as ``STAGING_REVIEW`` says.
     The words follow "this pull request" (console) and "Auto-merge refused: it" (the gate)."""
     if before is None:
         return 'changes an instance main does not have'
@@ -433,14 +443,12 @@ def settings_held(env: str, before: Settings | None, after: Settings | None) -> 
         return 'changes production settings'
     if after.allocations != before.allocations:
         return 'changes what the platform allocated it (egress port, events key or database)'
-    if after.grants.exceptions != before.grants.exceptions:
-        return 'changes its app-policy exceptions'
-    if (after.grants.exposure, after.choices.host, after.choices.issuer) != (before.grants.exposure, before.choices.host, before.choices.issuer):
-        return 'changes who can reach it'
-    if added := [name for name in after.grants.allows if name not in before.grants.allows]:
-        return f'allows {", ".join(added)} to call it'
-    if added := [host for host in after.grants.egress if host not in before.grants.egress]:
-        return f'grants hosts outside the cluster: {", ".join(added)}'
+    for name, (reason, review) in STAGING_REVIEW.items():
+        old, new = (getattr(s.grants if hasattr(s.grants, name) else s.choices, name) for s in (before, after))
+        if review == 'changed' and old != new:
+            return reason
+        if review == 'added' and (added := [item for item in new if item not in old]):
+            return reason.format(added=', '.join(added))
     return ''
 
 

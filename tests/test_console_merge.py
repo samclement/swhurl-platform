@@ -9,16 +9,19 @@ import shutil
 import sys
 import tempfile
 import unittest
+from dataclasses import fields, replace
 from pathlib import Path
 from unittest import mock
 
 from ci_changes import records_only
+from full_settings import DEFAULT, FULL, NAMES, PARTS, value, varied
 
 from swhurl import ROOT, bots, yamlio
 from swhurl.apps import cli, edit, egress, events, new, policy, promotion
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import write as model_sync
+from swhurl.apps.model.records import Settings
 from swhurl.console import merge
 from swhurl.run import CommandError, FakeRunner, Result
 
@@ -1137,6 +1140,31 @@ class RefusalTests(unittest.TestCase):
     def test_a_skipped_pr_says_nothing(self):
         code, _, sent, _ = self.run_main([merge.Skip('Validate has not passed on the current PR head')])
         self.assertEqual((code, sent), (0, []))
+
+
+class SettingsReviewTests(unittest.TestCase):
+    def test_every_grants_and_choices_field_has_a_deliberate_staging_review(self):
+        self.assertEqual(set(merge.STAGING_REVIEW), {name for name, part in NAMES.items() if part != 'allocations'},
+                         'a new Grants or Choices field needs a row in merge.STAGING_REVIEW')
+        self.assertEqual(len(NAMES), sum(len(fields(kind)) for kind in PARTS.values()), 'field names are unique across the parts')
+        for name in NAMES:
+            self.assertNotEqual(value(FULL, name), value(DEFAULT, name), f'FULL sets {name}')
+        self.assertTrue(all(isinstance(value(FULL, name), tuple) for name, (_, review) in merge.STAGING_REVIEW.items()
+                            if review == 'added'), 'an added review lists names')
+        both = replace(DEFAULT, grants=replace(DEFAULT.grants, allows=('shop',), egress=('x.com:443',), exceptions='a=b'))
+        self.assertEqual(merge.settings_held('staging', DEFAULT, both), 'changes its app-policy exceptions', 'first row wins')
+        for name, after in varied():
+            held = merge.settings_held('staging', Settings(), after)
+            with self.subTest(field=name):
+                if NAMES[name] == 'allocations':
+                    self.assertIn('allocated', held, 'allocations are compared whole')
+                    continue
+                reason, review = merge.STAGING_REVIEW[name]
+                self.assertIn(review, ('changed', 'added', 'free'))
+                self.assertEqual(held, reason.format(added=', '.join(value(after, name))) if review == 'added' else reason)
+                if review == 'added':
+                    self.assertEqual(merge.settings_held('staging', after, Settings()), '', 'taking access away merges itself')
+                self.assertEqual(merge.settings_held('prod', Settings(), after), 'changes production settings')
 
 
 if __name__ == '__main__':

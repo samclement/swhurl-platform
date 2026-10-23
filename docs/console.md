@@ -142,7 +142,7 @@ Anything else waits for you, with the reason as the PR's **Merge plan** or the g
 
 Scale, schedule, who can reach it, connect, disconnect, reach a host outside and allow callers each open a PR carrying only the instance's `instance.yaml` (connecting may also add its generated events key, which holds it). Main renders the rest: the instance's files, the other app's allowed callers and NetworkPolicy, the NATS users and the egress proxy. For example, scaling `demo-shop/staging` to 2 replicas is one changed line, `replicas: 2`.
 
-**The instance rule** (`merge.settings_held`, one function, used by the console to label the PR and by the gate before it pushes) compares the instance's Settings on `main` with the PR's:
+**The instance rule** (`merge.settings_held`, one function, used by the console to label the PR and by the gate before it pushes) compares the instance's Settings on `main` with the PR's. Each staging field's review is a row of `merge.STAGING_REVIEW`; a test fails when a Grants or Choices field has none, so a new field is never auto-merged unnoticed. Likewise every field is copied to [first production](apps.md#promote-to-production) or deliberately left as production's own, and every field but the allocated egress port identifies a change for [Activity](#stages-of-a-change):
 
 | The PR changes | Merges itself |
 | --- | --- |

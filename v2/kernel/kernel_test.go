@@ -1,0 +1,401 @@
+package kernel
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"os"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func fixture(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile("../testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func release(t *testing.T) ReleaseBundle {
+	t.Helper()
+	r, err := DecodeRelease(fixture(t, "r42.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func instance(t *testing.T, name string) InstanceSpec {
+	t.Helper()
+	s, err := DecodeInstance(fixture(t, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func code(t *testing.T, err error, want Code) {
+	t.Helper()
+	var refusal *Error
+	if !errors.As(err, &refusal) || refusal.Code != want {
+		t.Fatalf("error = %v, want code %s", err, want)
+	}
+}
+
+func TestRoundTrips(t *testing.T) {
+	r := release(t)
+	b, err := EncodeRelease(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	round, err := DecodeRelease(b)
+	if err != nil || round != r {
+		t.Fatalf("release round-trip: %v", err)
+	}
+	if !bytes.Contains(b, []byte(`"releaseId"`)) {
+		t.Fatal("output must assert the release identity")
+	}
+	for _, file := range []string{"staging.json", "prod.json"} {
+		s := instance(t, file)
+		b, err = EncodeInstance(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		round, err := DecodeInstance(b)
+		if err != nil || round != s {
+			t.Fatalf("instance round-trip: %v", err)
+		}
+	}
+}
+
+func TestSelectionChangesOnlyRelease(t *testing.T) {
+	r, prod, staging := release(t), instance(t, "prod.json"), instance(t, "staging.json")
+	beforeRelease, beforeProd, beforeStaging := r, prod, staging
+	revision, err := prod.Revision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := SelectRelease(prod, r, revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := prod
+	want.Release = r.ReleaseID
+	if after != want {
+		t.Fatalf("selection changed more than the reference: %#v", after)
+	}
+	if prod != beforeProd || r != beforeRelease || staging != beforeStaging {
+		t.Fatal("input mutated")
+	}
+	if prod.Configuration == staging.Configuration {
+		t.Fatal("fixture must distinguish environment configuration")
+	}
+	if after.Release != staging.Release {
+		t.Fatal("production did not select staging's exact release")
+	}
+	newRevision, err := after.Revision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newRevision == revision {
+		t.Fatal("selection must change instance revision")
+	}
+	again, err := SelectRelease(after, r, newRevision)
+	if err != nil || again != after {
+		t.Fatalf("matching-base no-op: %v", err)
+	}
+	_, err = SelectRelease(after, r, revision)
+	code(t, err, StaleInstance) // stale must precede the already-selected short circuit
+	// Mutating the returned value cannot mutate either original (no reference-bearing members).
+	after.Configuration.MemoryMiB++
+	if prod != beforeProd || staging != beforeStaging {
+		t.Fatal("returned value aliases an input")
+	}
+}
+
+func TestSelectionRefusalsLeaveInputsUnchanged(t *testing.T) {
+	base, current := release(t), instance(t, "prod.json")
+	revision, _ := current.Revision()
+	for _, tt := range []struct {
+		name   string
+		change func(*InstanceSpec, *ReleaseBundle, *InstanceRevision)
+		want   Code
+	}{
+		{"wrong application", func(_ *InstanceSpec, r *ReleaseBundle, _ *InstanceRevision) {
+			r.Application = "other"
+			r.ReleaseID = ""
+		}, WrongApplication},
+		{"stale", func(_ *InstanceSpec, _ *ReleaseBundle, rev *InstanceRevision) {
+			*rev = InstanceRevision("inst-sha256:" + strings.Repeat("0", 64))
+		}, StaleInstance},
+		{"bad expected revision", func(_ *InstanceSpec, _ *ReleaseBundle, rev *InstanceRevision) { *rev = "" }, Invalid},
+		{"unsupported runtime", func(_ *InstanceSpec, r *ReleaseBundle, _ *InstanceRevision) {
+			r.Runtime.Kind = "worker"
+			r.ReleaseID = ""
+		}, Unsupported},
+		{"unsupported platform", func(_ *InstanceSpec, r *ReleaseBundle, _ *InstanceRevision) {
+			r.Artifact.Platform = "linux/arm64"
+			r.ReleaseID = ""
+		}, Unsupported},
+		{"forged identity", func(_ *InstanceSpec, r *ReleaseBundle, _ *InstanceRevision) { r.Runtime.Port++ }, IdentityMismatch},
+		{"unsupported grant", func(s *InstanceSpec, _ *ReleaseBundle, _ *InstanceRevision) { s.Grants.Exposure = "public" }, Unsupported},
+		{"invalid current", func(s *InstanceSpec, _ *ReleaseBundle, _ *InstanceRevision) { s.Configuration.MemoryMiB = 0 }, Invalid},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s, r, rev := current, base, revision
+			tt.change(&s, &r, &rev)
+			beforeS, beforeR := s, r
+			result, err := SelectRelease(s, r, rev)
+			code(t, err, tt.want)
+			if result != (InstanceSpec{}) {
+				t.Fatal("refusal returned a usable result")
+			}
+			if s != beforeS || r != beforeR {
+				t.Fatal("refusal mutated inputs")
+			}
+		})
+	}
+}
+
+func TestGoldenIdentities(t *testing.T) {
+	var golden struct{ ReleaseCanonical, ReleaseID, InstanceCanonical, InstanceRevision string }
+	if err := json.Unmarshal(fixture(t, "identities.json"), &golden); err != nil {
+		t.Fatal(err)
+	}
+	r, s := release(t), instance(t, "prod.json")
+	if got := string(releaseCanonical(r)); got != golden.ReleaseCanonical {
+		t.Fatalf("release canonical bytes: %q", got)
+	}
+	if got := string(instanceCanonical(s)); got != golden.InstanceCanonical {
+		t.Fatalf("instance canonical bytes: %q", got)
+	}
+	id, _ := r.ID()
+	revision, _ := s.Revision()
+	if string(id) != golden.ReleaseID || string(revision) != golden.InstanceRevision {
+		t.Fatalf("golden hash mismatch: %s %s", id, revision)
+	}
+	// Mapping order, whitespace, JSON escapes and an optional identity assertion do not change content.
+	var doc map[string]any
+	if err := json.Unmarshal(fixture(t, "r42.json"), &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["releaseId"] = string(id)
+	b, _ := json.Marshal(doc) // sorted keys differ from the fixture
+	b = bytes.ReplaceAll(b, []byte("demo-orders"), []byte(`demo-\u006frders`))
+	round, err := DecodeRelease(append([]byte(" \n"), b...))
+	if err != nil || round != r {
+		t.Fatalf("normalization: %v", err)
+	}
+	var instanceDoc map[string]any
+	_ = json.Unmarshal(fixture(t, "prod.json"), &instanceDoc)
+	b, _ = json.MarshalIndent(instanceDoc, "", "    ")
+	roundSpec, err := DecodeInstance(b)
+	if err != nil || roundSpec != s {
+		t.Fatalf("instance normalization: %v", err)
+	}
+}
+
+func TestIdentityAssertionsAndEscaping(t *testing.T) {
+	r := release(t)
+	r.Runtime.HealthPath = "/ready&ok"
+	r.ReleaseID = ""
+	id, err := r.ID()
+	if err != nil || id != "rel-sha256:b6f23a56221240444c347786c9739bd2503132bea2320627878622c770ea7171" {
+		t.Fatalf("independent ASCII escaping vector: %s %v", id, err)
+	}
+	if !bytes.Contains(releaseCanonical(r), []byte(`"/ready&ok"`)) {
+		t.Fatal("canonical encoding must not HTML-escape printable ASCII")
+	}
+	b, err := EncodeRelease(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = bytes.ReplaceAll(b, []byte("/ready"), []byte("/other"))
+	decoded, err := DecodeRelease(b)
+	code(t, err, IdentityMismatch)
+	if decoded != (ReleaseBundle{}) {
+		t.Fatal("identity mismatch returned a record")
+	}
+	r.ReleaseID = "not-an-id"
+	_, err = r.ID()
+	code(t, err, Invalid)
+	if b, err := EncodeRelease(r); err == nil || b != nil {
+		t.Fatal("encoded invalid identity")
+	}
+	s := instance(t, "prod.json")
+	s.Configuration.Replicas = -1
+	if b, err := EncodeInstance(s); err == nil || b != nil {
+		t.Fatal("encoded invalid instance")
+	}
+}
+
+func TestEveryFieldParticipatesInIdentity(t *testing.T) {
+	base := release(t)
+	id, _ := base.ID()
+	for _, change := range []func(*ReleaseBundle){
+		func(r *ReleaseBundle) { r.Application = "other" },
+		func(r *ReleaseBundle) { r.Source.Repository = "owner/other" },
+		func(r *ReleaseBundle) { r.Source.Commit = strings.Repeat("c", 40) },
+		func(r *ReleaseBundle) { r.Artifact.Image = "registry.example/owner/other" },
+		func(r *ReleaseBundle) { r.Artifact.Digest = "sha256:" + strings.Repeat("c", 64) },
+		func(r *ReleaseBundle) { r.Runtime.Port++ },
+		func(r *ReleaseBundle) { r.Runtime.HealthPath = "/ready&ok" },
+		func(r *ReleaseBundle) { r.Runtime.UID++ },
+	} {
+		r := base
+		r.ReleaseID = ""
+		change(&r)
+		got, err := r.ID()
+		if err != nil || got == id {
+			t.Fatalf("changed release identity: %v", err)
+		}
+	}
+	s := instance(t, "prod.json")
+	rev, _ := s.Revision()
+	for _, change := range []func(*InstanceSpec){
+		func(s *InstanceSpec) { s.Application = "other" },
+		func(s *InstanceSpec) { s.Environment = "staging" },
+		func(s *InstanceSpec) { s.Release = base.ReleaseID },
+		func(s *InstanceSpec) { s.Configuration.Replicas = 0 },
+		func(s *InstanceSpec) { s.Configuration.MemoryMiB++ },
+	} {
+		changed := s
+		change(&changed)
+		got, err := changed.Revision()
+		if err != nil || got == rev {
+			t.Fatalf("changed instance revision: %v", err)
+		}
+	}
+	// Fixed version/profile fields still appear in canonical bytes, though other values are refused.
+	if !strings.Contains(string(releaseCanonical(base)), `"linux/amd64","web"`) {
+		t.Fatal("profile missing from identity")
+	}
+}
+
+func TestStrictDecoding(t *testing.T) {
+	r, s := string(fixture(t, "r42.json")), string(fixture(t, "prod.json"))
+	for _, tt := range []struct {
+		name, text string
+		release    bool
+	}{
+		{"unknown top", strings.Replace(r, `"schemaVersion": 1`, `"extra": "do-not-echo", "schemaVersion": 1`, 1), true},
+		{"grant in release", strings.Replace(r, `"runtime":`, `"grants": {"exposure":"public"}, "runtime":`, 1), true},
+		{"unknown runtime", strings.Replace(r, `"kind": "web"`, `"database":"sqlite", "kind":"web"`, 1), true},
+		{"case variant", strings.Replace(r, `"application"`, `"Application"`, 1), true},
+		{"duplicate", strings.Replace(r, `"application":`, `"application":"other", "application":`, 1), true},
+		{"nested duplicate", strings.Replace(r, `"port": 8080`, `"port":9090, "port":8080`, 1), true},
+		{"escaped duplicate", strings.Replace(r, `"port": 8080`, `"\u0070ort":9090, "port":8080`, 1), true},
+		{"null", strings.Replace(r, `"port": 8080`, `"port": null`, 1), true},
+		{"missing", strings.Replace(r, `"port": 8080,`, ``, 1), true},
+		{"false", strings.Replace(r, `"port": 8080`, `"port": false`, 1), true},
+		{"fraction", strings.Replace(r, `"port": 8080`, `"port": 8080.0`, 1), true},
+		{"exponent", strings.Replace(r, `"port": 8080`, `"port": 8.08e3`, 1), true},
+		{"string number", strings.Replace(r, `"port": 8080`, `"port": "8080"`, 1), true},
+		{"overflow", strings.Replace(r, `"port": 8080`, `"port": 2147483648`, 1), true},
+		{"extra document", r + "{}", true},
+		{"YAML", "schemaVersion: 1\n", true},
+		{"array", "[]", true},
+		{"null document", "null", true},
+		{"null object", strings.Replace(r, `"source": {`, `"source": null, "unused": {`, 1), true},
+		{"null id", strings.Replace(r, `"schemaVersion": 1`, `"releaseId":null, "schemaVersion": 1`, 1), true},
+		{"empty id", strings.Replace(r, `"schemaVersion": 1`, `"releaseId":"", "schemaVersion": 1`, 1), true},
+		{"invalid UTF8", strings.Replace(r, "demo-orders", "demo-\xfforders", 1), true},
+		{"surrogate", strings.Replace(r, "demo-orders", `demo-\ud800orders`, 1), true},
+		{"non-ASCII", strings.Replace(r, "demo-orders", "démø-orders", 1), true},
+		{"nonempty bindings", strings.Replace(s, `"bindings": {}`, `"bindings": {"database":"do-not-echo"}`, 1), false},
+		{"null bindings", strings.Replace(s, `"bindings": {}`, `"bindings": null`, 1), false},
+		{"missing configuration", strings.Replace(s, `"replicas": 1,`, ``, 1), false},
+		{"unknown configuration", strings.Replace(s, `"replicas": 1`, `"replicas":1,"memory":"256Mi"`, 1), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			before := []byte(tt.text)
+			copyBefore := bytes.Clone(before)
+			var err error
+			if tt.release {
+				_, err = DecodeRelease(before)
+			} else {
+				_, err = DecodeInstance(before)
+			}
+			if err == nil {
+				t.Fatal("accepted invalid document")
+			}
+			if strings.Contains(err.Error(), "do-not-echo") {
+				t.Fatal("diagnostic dumped input values")
+			}
+			if !bytes.Equal(before, copyBefore) {
+				t.Fatal("decoder mutated bytes")
+			}
+		})
+	}
+}
+
+func TestDomainValidation(t *testing.T) {
+	for _, tt := range []struct {
+		change func(*ReleaseBundle)
+		want   Code
+	}{
+		{func(r *ReleaseBundle) { r.SchemaVersion = 2 }, Unsupported},
+		{func(r *ReleaseBundle) { r.Runtime.Port = 0 }, Invalid},
+		{func(r *ReleaseBundle) { r.Runtime.Port = 65536 }, Invalid},
+		{func(r *ReleaseBundle) { r.Runtime.UID = 0 }, Invalid},
+		{func(r *ReleaseBundle) { r.Runtime.HealthPath = "https://example.com/" }, Invalid},
+		{func(r *ReleaseBundle) { r.Runtime.HealthPath = "//example.com/" }, Invalid},
+		{func(r *ReleaseBundle) { r.Runtime.HealthPath = "/health?secret=x" }, Invalid},
+		{func(r *ReleaseBundle) { r.Runtime.HealthPath = "/health#fragment" }, Invalid},
+		{func(r *ReleaseBundle) { r.Artifact.Image += ":latest" }, Invalid},
+		{func(r *ReleaseBundle) { r.Artifact.Image = "https://registry.example/app" }, Invalid},
+		{func(r *ReleaseBundle) { r.Artifact.Digest = "sha512:" + strings.Repeat("a", 64) }, Unsupported},
+		{func(r *ReleaseBundle) { r.Artifact.Digest = "sha256:" + strings.Repeat("A", 64) }, Invalid},
+		{func(r *ReleaseBundle) { r.Artifact.MediaType = "application/vnd.oci.image.index.v1+json" }, Unsupported},
+		{func(r *ReleaseBundle) { r.Artifact.MediaType = "application/vnd.oci.image.config.v1+json" }, Unsupported},
+		{func(r *ReleaseBundle) { r.Artifact.Platform = "linux/arm64" }, Unsupported},
+		{func(r *ReleaseBundle) { r.Source.Commit = "abcdef0" }, Invalid},
+	} {
+		r := release(t)
+		r.ReleaseID = ""
+		tt.change(&r)
+		_, err := r.ID()
+		code(t, err, tt.want)
+	}
+	for _, change := range []func(*InstanceSpec){
+		func(s *InstanceSpec) { s.Configuration.Replicas = -1 },
+		func(s *InstanceSpec) { s.Configuration.MemoryMiB = 0 },
+		func(s *InstanceSpec) { s.Release = ReleaseID("sha256:" + strings.Repeat("a", 64)) },
+		func(s *InstanceSpec) { s.Environment = "preview" },
+	} {
+		s := instance(t, "prod.json")
+		change(&s)
+		if _, err := s.Revision(); err == nil {
+			t.Fatal("invalid instance accepted")
+		}
+	}
+	// Restoring identical content restores the revision; this is not an edit-history counter.
+	s := instance(t, "prod.json")
+	original := s
+	rev, _ := s.Revision()
+	s.Configuration.Replicas++
+	s = original
+	if again, _ := s.Revision(); rev != again {
+		t.Fatal("revision depends on history")
+	}
+}
+
+func TestRecordsAreValues(t *testing.T) {
+	var check func(reflect.Type)
+	check = func(typ reflect.Type) {
+		switch typ.Kind() {
+		case reflect.Struct:
+			for i := 0; i < typ.NumField(); i++ {
+				check(typ.Field(i).Type)
+			}
+		case reflect.String, reflect.Int32:
+		default:
+			t.Fatalf("reference-bearing or unexpected domain field: %s", typ)
+		}
+	}
+	check(reflect.TypeFor[ReleaseBundle]())
+	check(reflect.TypeFor[InstanceSpec]())
+}

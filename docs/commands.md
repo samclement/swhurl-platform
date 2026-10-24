@@ -90,7 +90,7 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 | `check-otel` | Render both collectors and validate with the exact `otelcol-k8s` release and feature gates (binary cached and SHA-256 checked); run log fixtures through their actual processors and container framing; warn on deprecated component names | Local |
 | `check-lint` | Ruff on the Python tooling (including `devtools`) and ShellCheck on the remaining bash (needs `uv`) | Local |
 | `check-codegraph` | Unit tests for the [code graph](visual-change-tool.md) development aid in `devtools/codegraph` (standard library only) | Local |
-| `check-v2` | `gofmt`, `go vet` and `go test` for the Go [v2 prototype](iteration-2-plan.md#guardrails) in `v2/`, its design guardrails included; needs Go 1.26.0, runs offline, and is not part of `check` or CI | Local |
+| `check-v2` | `gofmt`, `go vet` and `go test` for the Go [v2 prototype](iteration-2-plan.md#guardrails) in `v2/`, its design guardrails included; needs Go 1.26.0 and runs offline; CI runs it, `check` does not | Local |
 | `check-secrets` | Decrypt every tracked Secret in memory; fail on empty or `REPLACE_ME`, warn on probable double encoding. Needs the age key, so CI cannot run it | Local |
 | `help` | List every target with its variables, the † mark and what it touches | Local |
 

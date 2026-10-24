@@ -25,6 +25,8 @@ CI also runs every `DRY_RUN=true` target and `REQUIRE_HELM=1` so Helm-based test
 
 ## Operator tooling
 
+**Code graph exception:** the read-only [code graph](visual-change-tool.md) development aid is a separate standard-library package in [`devtools/codegraph/`](../devtools/codegraph), outside `tools/` so it is not in the console image. It reads Git through its own revision reader instead of `Runner`, is not a `swhurl` command, and never imports or runs the code it analyses. `make check-codegraph` runs its tests (part of `make check` and CI); `make check-lint` lints it. Its [primitives and contracts](visual-change-tool.md#4-primitives-and-contracts) are canonical.
+
 All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl) (live tests in `swhurl/livetests/`), run as `python3 -m swhurl <command>` with `tools/` on `PYTHONPATH`; the Makefile's `$(SWHURL)` does that. A command that edits apps or needs the other locked dependencies is marked `uv=True` in [`swhurl/commands.py`](../tools/swhurl/commands.py) and `make` runs it through `uv run --frozen`; `make` stays the operator interface. Choose the language by what the code does:
 
 - **Python** for anything that parses JSON or YAML or edits structured files, makes a safety decision or refusal, handles or compares Secret values, polls or cleans up after failure, or produces a pass/fail verdict.

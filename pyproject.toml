@@ -9,7 +9,7 @@ requires-python = ">=3.11"
 package = false
 default-groups = ["check", "console"]
 
-# Lint settings for the operator tooling and tests (run: uvx ruff@0.16.9 check tools tests).
+# Lint settings for the operator tooling, tests and devtools (run: uvx ruff@0.16.9 check tools tests devtools).
 [tool.ruff]
 line-length = 120
 target-version = "py311"
@@ -20,7 +20,7 @@ select = ["E", "F", "W", "I", "B", "UP"]
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["swhurl"]
+known-first-party = ["swhurl", "codegraph"]
 
 # Python packages, locked in uv.lock. `check`: the offline checks (CI also runs
 # pip install --group check for the non-test steps). `console`: the web console

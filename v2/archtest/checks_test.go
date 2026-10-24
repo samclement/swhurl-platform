@@ -13,8 +13,18 @@ import (
 
 func fixture(t *testing.T, files map[string]string) *Module {
 	t.Helper()
-	dir := t.TempDir()
 	files["go.mod"] = "module example.com/v2\n\ngo 1.26.0\n"
+	m, err := loadModule(writeFiles(t, files))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// writeFiles writes files (path: content) to a new temporary directory and returns it.
+func writeFiles(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
 	for name, content := range files {
 		path := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -24,11 +34,7 @@ func fixture(t *testing.T, files map[string]string) *Module {
 			t.Fatal(err)
 		}
 	}
-	m, err := loadModule(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return m
+	return dir
 }
 
 func lines(found []Violation) []string {

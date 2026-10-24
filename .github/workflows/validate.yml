@@ -99,6 +99,15 @@ jobs:
       - name: Test the code graph development aid
         run: make check-codegraph
 
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: v2/go.mod
+          cache: false # no go.sum: v2 has no dependencies
+
+      - name: Check the v2 prototype and its design rules
+        run: make check-v2
+
       # The dry runs are not listed here: make test runs every target whose DRY_RUN=true only plans
       # (tools/swhurl/commands.py says which).
       - name: Render the lifecycle test fixture

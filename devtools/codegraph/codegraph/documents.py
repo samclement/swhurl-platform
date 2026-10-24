@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from codegraph.errors import CodegraphError
@@ -17,6 +18,20 @@ SUPPORTED = {'snapshot': frozenset({1})}
 """The versions of each kind this code reads; anything else is refused, never upgraded silently."""
 
 ENVELOPE = ('kind', 'version', 'inputs', 'params')
+
+
+@dataclass(frozen=True)
+class Input:
+    """How a document names one it was derived from: an entry of its ``inputs``."""
+    kind: str
+    digest: str
+    revision: str | None = None  # for a snapshot
+
+    def to_document(self) -> dict[str, Any]:
+        result = {'kind': self.kind, 'digest': self.digest}
+        if self.revision is not None:
+            result['revision'] = self.revision
+        return result
 
 
 def dump(document: Mapping[str, Any]) -> bytes:

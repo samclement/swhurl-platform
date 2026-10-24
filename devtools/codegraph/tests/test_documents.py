@@ -5,15 +5,17 @@ import unittest
 from codegraph import documents
 from codegraph import snapshot as snapshots
 from codegraph.errors import CodegraphError
-from codegraph.snapshot import Edge, Node, Snapshot, Unparsed
+from codegraph.snapshot import Argument, Edge, Node, ObjectReference, Snapshot, Unparsed
 
 SAMPLE = Snapshot(
-    'a' * 40, 'tools/pkg', 'tools', 'python-ast', 1, '3.12',
-    (Node('py:pkg', 'module', 'pkg', '', 'tools/pkg/__init__.py', 1, 3),
+    'a' * 40, 'tools/pkg', 'tools', 'python-ast', 2, '3.12',
+    (Node('py:pkg', 'module', 'pkg', '', 'tools/pkg/__init__.py', 1, 3, main_blocks=((3, 3),)),
      Node('py:pkg:f', 'function', 'pkg', 'f', 'tools/pkg/__init__.py', 2, 3, '()', 'sha256:00', 1, 2,
           (('dynamic', 1), ('value-attribute', 4)))),
-    (Edge('py:pkg', 'py:pkg:f', 'calls', (3,)),),
-    (Unparsed('tools/pkg/broken.py', 'SyntaxError at line 1'),))
+    (Edge('py:pkg', 'py:pkg:f', 'calls', (3,)), Edge('py:pkg', 'py:pkg:f', 'references', (3,))),
+    (Unparsed('tools/pkg/broken.py', 'SyntaxError at line 1'),),
+    (ObjectReference('py:pkg', 2, 'pkg:f'),),
+    (Argument('py:pkg', 3, 'builtins.sorted', 'key', 'py:pkg:f', (('0', 'x'),)),))
 
 
 def failure(callable_, *args):
@@ -56,10 +58,21 @@ class SnapshotDocumentTests(unittest.TestCase):
         self.assertEqual(snapshots.load(snapshots.dump(SAMPLE)), SAMPLE)
 
     def test_optional_fields_are_omitted_when_empty(self):
-        module = snapshots.to_document(SAMPLE)['nodes'][0]
+        module, function = snapshots.to_document(SAMPLE)['nodes']
         self.assertNotIn('signature', module)
         self.assertNotIn('redefinitions', module)
+        self.assertNotIn('mainBlocks', function)
         self.assertEqual(module['unresolvedCalls'], {})
+
+    def test_a_document_from_extractor_version_1_still_loads(self):
+        document = snapshots.to_document(SAMPLE)
+        del document['objectReferences'], document['arguments'], document['nodes'][0]['mainBlocks']
+        loaded = snapshots.load(documents.dump(document))
+        self.assertEqual((loaded.object_references, loaded.arguments, loaded.nodes[0].main_blocks), ((), (), ()))
+
+    def test_as_input_names_the_snapshot_by_digest(self):
+        self.assertEqual(snapshots.as_input(SAMPLE).to_document(), {
+            'kind': 'snapshot', 'revision': 'a' * 40, 'digest': documents.digest(snapshots.to_document(SAMPLE))})
 
     def test_load_refuses_a_malformed_snapshot(self):
         def broken(change):
@@ -81,6 +94,15 @@ class SnapshotDocumentTests(unittest.TestCase):
             'unsorted lines': lambda d: d['edges'][0].update(lines=[3, 2]),
             'duplicate edge': lambda d: d['edges'].append(dict(d['edges'][0])),
             'input documents': lambda d: d['inputs'].append({'kind': 'snapshot'}),
+            'main block on a function': lambda d: d['nodes'][1].update(mainBlocks=[[1, 2]]),
+            'empty main blocks': lambda d: d['nodes'][0].update(mainBlocks=[]),
+            'reversed main block': lambda d: d['nodes'][0].update(mainBlocks=[[3, 2]]),
+            'dangling object reference': lambda d: d['objectReferences'][0].update(source='py:nowhere'),
+            'object reference line 0': lambda d: d['objectReferences'][0].update(line=0),
+            'duplicate object reference': lambda d: d['objectReferences'].append(dict(d['objectReferences'][0])),
+            'dangling argument': lambda d: d['arguments'][0].update(target='py:nowhere'),
+            'non-string literal': lambda d: d['arguments'][0].update(literals={'0': 1}),
+            'argument field missing': lambda d: d['arguments'][0].pop('slot'),
             'unknown param': lambda d: d['params'].update(extra='x'),
         }
         for name, change in cases.items():

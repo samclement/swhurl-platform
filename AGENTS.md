@@ -1,5 +1,11 @@
 # AGENTS.md
 
+1. Capture the current behaviour with meaningful tests.
+2. Identify the structural problem that makes change difficult.
+3. Make the smallest reshape that addresses it.
+4. Verify behaviour after each step.
+5. Keep the refactoring only if it reduces the effort of understanding the code.
+
 GitOps source for a live single-node k3s homelab. Flux applies `main`; changes reach the cluster only through Git or the documented `make` targets.
 
 ## Rules

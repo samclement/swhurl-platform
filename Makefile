@@ -60,6 +60,10 @@ check-v2:
 		&& unformatted=$$(gofmt -l .) && { [ -z "$$unformatted" ] || { echo "gofmt: run gofmt -w on: $$unformatted"; exit 1; }; } \
 		&& go vet ./... && go test -count=1 ./...
 
+.PHONY: v2-report
+v2-report:
+	@BASE='$(BASE)' AFTER='$(AFTER)' FORMAT='$(FORMAT)' v2/archtest/report.sh
+
 .PHONY: check-lint
 check-lint:
 	uvx ruff@0.16.9 check tools tests devtools

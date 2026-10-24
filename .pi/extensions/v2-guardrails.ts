@@ -4,7 +4,8 @@
  * After every edit or write under v2/, run `make check-v2` and attach any failure to that tool
  * result, so the agent sees it at once. Before a run ends, if v2/ (or the documents its rules
  * read) changed during the run and the check fails, hand the failures back and ask for another
- * turn, at most MAX_RETRIES times per prompt; then tell the operator it still fails.
+ * turn, at most MAX_RETRIES times per prompt; then tell the operator it still fails. When it passes,
+ * show the operator what the change does to v2 (`make v2-report`), without another turn.
  *
  * The rules themselves live in v2/archtest; this file only runs them. Pi loads it once the
  * project is trusted (/trust), or explicitly with `pi -e .pi/extensions/v2-guardrails.ts`.
@@ -77,6 +78,15 @@ export default function (pi: ExtensionAPI) {
 		return run;
 	}
 
+	/** The change report against origin/main (`make v2-report`): "" when v2 is unchanged. */
+	async function changeReport(top: string): Promise<string> {
+		const result = await pi.exec("make", ["--no-print-directory", "-s", "v2-report"], { cwd: top, timeout: TIMEOUT_MS });
+		if (result.code !== 0 || result.killed) {
+			return "make v2-report failed:\n" + `${result.stdout}\n${result.stderr}`.trim().split("\n").slice(0, MAX_LINES).join("\n");
+		}
+		return result.stdout.includes("\nno changes under v2/") ? "" : result.stdout.trim();
+	}
+
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (event.messageType !== "user") return; // continuations keep their prompt's retry count
 		retries = 0;
@@ -103,7 +113,14 @@ export default function (pi: ExtensionAPI) {
 		const result = await check(ctx.cwd);
 		if (result.ok) {
 			baseline = now;
-			return;
+			const report = await changeReport(top);
+			if (!report) return;
+			return { // for the operator: no further turn
+				entries: [{
+					type: "custom_message", customType: "v2-guardrails", display: true,
+					content: "[v2 guardrails] make check-v2 passes. What this change does to v2:\n" + report,
+				}],
+			};
 		}
 		if (retries >= MAX_RETRIES) {
 			if (ctx.hasUI) ctx.ui.notify(`v2 guardrails: make check-v2 still fails after ${MAX_RETRIES} retries`, "warning");

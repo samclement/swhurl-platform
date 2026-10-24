@@ -14,7 +14,7 @@ from typing import Any
 
 from codegraph.errors import CodegraphError
 
-SUPPORTED = {'snapshot': frozenset({1})}
+SUPPORTED = {'snapshot': frozenset({1}), 'entries': frozenset({1})}
 """The versions of each kind this code reads; anything else is refused, never upgraded silently."""
 
 ENVELOPE = ('kind', 'version', 'inputs', 'params')
@@ -32,6 +32,13 @@ class Input:
         if self.revision is not None:
             result['revision'] = self.revision
         return result
+
+    @classmethod
+    def from_document(cls, value: Any, where: str) -> Input:
+        item = fields(value, where, {'kind': str, 'digest': str}, {'revision': str})
+        if (item['kind'] == 'snapshot') != ('revision' in item):
+            invalid(where, 'a snapshot input, and only one, names its revision')
+        return cls(item['kind'], item['digest'], item.get('revision'))
 
 
 def dump(document: Mapping[str, Any]) -> bytes:
@@ -65,6 +72,30 @@ def load(data: bytes, kind: str) -> dict[str, Any]:
     if not isinstance(value['inputs'], list) or not isinstance(value['params'], dict):
         raise CodegraphError('invalid-document', 'inputs must be a list and params an object')
     return value
+
+
+def fields(value: Any, where: str, required: Mapping[str, type], optional: Mapping[str, type] | None = None) -> dict:
+    """``value`` as a dict if it is an object with exactly the required fields, any of the optional ones,
+    and each of the expected type (a boolean is not an integer); ``where`` names it in the error."""
+    optional = optional or {}
+    if not isinstance(value, Mapping):
+        invalid(where, 'expected an object')
+    unknown = sorted(set(value) - set(required) - set(optional))
+    missing = sorted(set(required) - set(value))
+    if unknown or missing:
+        invalid(where, ', '.join([*(f'unknown field {name}' for name in unknown), *(f'missing {name}' for name in missing)]))
+    for name, expected in {**required, **optional}.items():
+        if name in value and not (is_int(value[name]) if expected is int else isinstance(value[name], expected)):
+            invalid(f'{where}.{name}', f'expected {expected.__name__}')
+    return dict(value)
+
+
+def is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def invalid(where: str, reason: str):
+    raise CodegraphError('invalid-document', f'{where}: {reason}')
 
 
 def _rounded(value: Any) -> Any:

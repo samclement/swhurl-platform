@@ -8,6 +8,7 @@ line with the error code.
 from __future__ import annotations
 
 import argparse
+import math
 import posixpath
 import sys
 from collections import Counter
@@ -16,10 +17,12 @@ from pathlib import Path
 
 from codegraph import documents, git, python_ast
 from codegraph import entries as entry_points
+from codegraph import journeys as journey_candidates
 from codegraph import reach as reaches
 from codegraph import snapshot as snapshots
 from codegraph.entries import Entries, Evidence
 from codegraph.errors import CodegraphError
+from codegraph.journeys import Journeys
 from codegraph.reach import Reach
 from codegraph.snapshot import Snapshot
 
@@ -41,13 +44,32 @@ def scope_path(value: str) -> str:
     return '/'.join(parts)
 
 
-def read_snapshot(source: str) -> Snapshot:
-    """The snapshot document at a path, or on stdin for '-'."""
+def read(source: str) -> bytes:
+    """The bytes at a path, or on stdin for '-'."""
     try:
-        data = sys.stdin.buffer.read() if source == '-' else Path(source).read_bytes()
+        return sys.stdin.buffer.read() if source == '-' else Path(source).read_bytes()
     except OSError as error:
         raise CodegraphError('usage', f'cannot read {source}: {error.strerror}') from error
-    return snapshots.load(data)
+
+
+def read_snapshot(source: str) -> Snapshot:
+    return snapshots.load(read(source))
+
+
+def threshold(value: str) -> float:
+    try:
+        result = float(value)
+    except ValueError:
+        result = math.nan
+    if not 0 < result <= 1:
+        raise argparse.ArgumentTypeError('expected a number above 0 and at most 1')
+    return result
+
+
+def limit(value: str) -> int:
+    if not value.isdigit():
+        raise argparse.ArgumentTypeError('expected 0 (no limit) or a positive whole number')
+    return int(value)
 
 
 def snapshot_text(snapshot: Snapshot) -> str:
@@ -107,6 +129,37 @@ def reach_text(result: Reach) -> str:
     return '\n'.join(lines) + '\n'
 
 
+def journeys_text(result: Journeys, limit: int) -> str:
+    """Groups first, largest first; each with its members, links and the shared functions fewest entry points reach."""
+    params = result.params
+    grouped = [candidate for candidate in result.candidates if len(candidate.members) > 1]
+    total = sum(len(candidate.members) for candidate in result.candidates)
+    lines = [
+        f'journeys   snapshot {result.snapshot.revision}  weighting {params.weighting}  '
+        f'similarity {journey_candidates.SIMILARITY}  grouping {journey_candidates.GROUPING}  threshold {params.threshold}',
+        f'{total} entry points in {len(result.candidates)} candidates: {len(grouped)} groups of '
+        f'{sum(len(candidate.members) for candidate in grouped)} entry points, '
+        f'{len(result.candidates) - len(grouped)} single; reach is a lower bound (unresolved calls per entry point)',
+    ]
+    for number, candidate in enumerate(result.candidates, 1):
+        scores = [link.similarity for link in candidate.links]
+        lines.append('')
+        lines.append(f'candidate {number}: {len(candidate.members)} entry points, {len(candidate.links)} links'
+                     + (f' (similarity {min(scores)} to {max(scores)})' if scores else '')
+                     + f', {len(candidate.shared)} functions shared by all')
+        for member in candidate.members:
+            nearest = (f', nearest {member.nearest.similarity} {", ".join(member.nearest.nodes)}' if member.nearest else '')
+            values = ''.join(f'  {value!r}' for value in member.values)
+            lines.append(f'  {member.node}{values}  (reach {member.reached}, unresolved '
+                         f'{sum(count for _, count in member.unresolved_calls)}{nearest})')
+        shown = candidate.shared[:limit] if limit else candidate.shared
+        lines.append('  shared, by entry points reaching it:')
+        lines.extend(f'    {item.entry_points:>3}  {item.node}' for item in shown)
+        if len(shown) < len(candidate.shared):
+            lines.append(f'    ... {len(candidate.shared) - len(shown)} more (--limit)')
+    return '\n'.join(lines) + '\n'
+
+
 def run_snapshot(args: argparse.Namespace) -> bytes:
     result = build_snapshot(args.repo, args.ref, args.scope)
     return snapshot_text(result).encode() if args.text else snapshots.dump(result)
@@ -120,6 +173,13 @@ def run_entries(args: argparse.Namespace) -> bytes:
 def run_reach(args: argparse.Namespace) -> bytes:
     result = reaches.reach(read_snapshot(args.snapshot), args.node)
     return reach_text(result).encode() if args.text else documents.dump(reaches.to_document(result))
+
+
+def run_journeys(args: argparse.Namespace) -> bytes:
+    result = journey_candidates.journeys(read_snapshot(args.snapshot), entry_points.load(read(args.entries)),
+                                         journey_candidates.Params(args.threshold, args.weighting))
+    return (journeys_text(result, args.limit).encode() if args.text
+            else documents.dump(journey_candidates.to_document(result)))
 
 
 def parser() -> argparse.ArgumentParser:
@@ -148,6 +208,23 @@ def parser() -> argparse.ArgumentParser:
     reach.add_argument('node', help='A node ID, such as py:swhurl.apps.cli:main_promote')
     reach.add_argument('--text', action='store_true', help='A listing for a person instead of the document')
     reach.set_defaults(run=run_reach)
+
+    journeys = commands.add_parser('journeys', help='Group entry points that share distinctive reach',
+                                   description='Pair entry points that are each other\'s nearest by the weighted '
+                                               'similarity of the functions they reach; write the journeys document.')
+    journeys.add_argument('snapshot', help="A snapshot document's path, or - for stdin")
+    journeys.add_argument('entries', help="The entries document derived from that snapshot: a path, or - for stdin")
+    defaults = journey_candidates.DEFAULTS
+    journeys.add_argument('--threshold', type=threshold, default=defaults.threshold,
+                          help='Link mutual nearest entry points only if at least this similar '
+                               f'(default {defaults.threshold})')
+    journeys.add_argument('--weighting', choices=journey_candidates.WEIGHTINGS, default=defaults.weighting,
+                          help='inverse: ln(N/k) per function, k the entry points reaching it; uniform: 1 '
+                               f'(default {defaults.weighting})')
+    journeys.add_argument('--text', action='store_true', help='A listing for a person instead of the document')
+    journeys.add_argument('--limit', type=limit, default=10,
+                          help='With --text, shared functions shown per candidate (default 10, 0 for all)')
+    journeys.set_defaults(run=run_journeys)
     return result
 
 

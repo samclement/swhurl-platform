@@ -1,6 +1,6 @@
 # Code graph: dependency chains, journeys and hotspots from code
 
-**Status: steps 0 (place, policy, check wiring), 1 (the core, `snapshot`) and 2 (`references`, `entries`, `reach`) done and committed 24 October 2026; step 3 next.** A read-only development aid in [`devtools/codegraph/`](../devtools/codegraph) that derives a dependency graph, entry-point journeys, hotspots and changes between commits from **v1 source and its Git history**. Independent of the v2 prototype. No push or deployment is authorised by this page.
+**Status: steps 0 (place, policy, check wiring), 1 (the core, `snapshot`), 2 (`references`, `entries`, `reach`) and 3 (`journeys`, gate answered, grouping changed to mutual nearest neighbours) done and committed 24 October 2026; step 4 next.** A read-only development aid in [`devtools/codegraph/`](../devtools/codegraph) that derives a dependency graph, entry-point journeys, hotspots and changes between commits from **v1 source and its Git history**. Independent of the v2 prototype. No push or deployment is authorised by this page.
 
 [Plan section 0](plan.md#0-where-this-paused-and-what-is-left) indexes this page; it is the canonical design, plan and handoff for this workstream. **Every change applies [section 4](#4-primitives-and-contracts) and [section 5](#5-designed-for-incremental-change).**
 
@@ -36,7 +36,7 @@ Get the core right first: deterministic facts as JSON and a short text report fr
 | **Entry point** | A function the outside world starts, found by a named rule. Records the rule and the source location of its evidence; several pieces of evidence for one function make one entry point. |
 | **Reach** | The nodes reachable from a node over `calls` and `references` edges (the node included), with the external and unresolved call counts across them. |
 | **Spine** | The resolved calls and references in a node's own body, in source order (within a line, by target ID): a readable outline, not an execution trace. |
-| **Journey candidate** | A group of entry points that share **distinctive** reach, explained by the shared functions few other entry points reach. Evidence of shared code, not proof of a shared user goal. Names are not inferred. |
+| **Journey candidate** | A group of entry points that share **distinctive** reach, explained by the shared functions few other entry points reach: entry points linked because each is the other's nearest (ties all count) at or above a similarity threshold, or one entry point with no link. Evidence of shared code, not proof of a shared user goal. Names are not inferred. |
 | **Change** | Between two revisions: added, removed, moved (same qualified name and body hash, different module, old gone), candidate move (same qualified name, body differs, old gone), interface changed (signature), implementation changed (body hash). "No structural change" is not "no behaviour change". |
 | **Document** | A JSON value with a `kind`, `version`, `inputs` and `params`: the snapshot and every feature's output. Documents are what primitives exchange and what the CLI chains. |
 
@@ -50,9 +50,9 @@ Each layer may use only the layers above it in this table. Signatures are the in
 | --- | --- | --- | --- |
 | **A. Revision reader** | `git.py` | `resolve(repo, ref) -> Revision`<br>`tree(repo, revision, scope) -> tuple[Blob, ...]` (path, blob ID)<br>`blob(repo, blob_id) -> bytes`<br>`log(repo, range) -> tuple[Commit, ...]` (step 5) | The only module that runs a process. Reads Git objects; never the working tree, index or configuration it could change. |
 | **B. Extraction** | `python_ast.py` | `module_name(path, import_root) -> str`<br>`extract(module, path, source: bytes) -> FileFacts`: one file's definitions, imports, call sites and module-level bindings, resolved lexically within the file and still symbolic across files<br>`link(revision, scope, import_root, files: Iterable[FileFacts]) -> Snapshot`: resolve references across files (including re-exports), count external and unresolved calls | Pure. `extract` depends only on its arguments, so its result can be cached by blob ID. |
-| **C. Documents** | `documents.py`, `snapshot.py` | `documents.dump(document) -> bytes` (canonical), `documents.load(data, kind) -> dict` (the envelope), `documents.digest(document) -> str`, `documents.Input` (an entry of `inputs`)<br>`snapshot.to_document`, `snapshot.from_document` (strict), `snapshot.dump`, `snapshot.load`, `snapshot.as_input(snapshot) -> Input` | Pure. |
+| **C. Documents** | `documents.py`, `snapshot.py` | `documents.dump(document) -> bytes` (canonical), `documents.load(data, kind) -> dict` (the envelope), `documents.digest(document) -> str`, `documents.Input` (an entry of `inputs`, with a strict `Input.from_document`), `documents.fields`, `documents.invalid` (the strict field checks every loader shares)<br>`snapshot.to_document`, `snapshot.from_document` (strict), `snapshot.dump`, `snapshot.load`, `snapshot.as_input(snapshot) -> Input` | Pure. |
 | **D. Graph** | `graph.py` | `graph(snapshot, kinds) -> Graph` (every node, edges of the chosen kinds)<br>`closure(graph, starts) -> frozenset[NodeId]` (the starts included)<br>`components(graph) -> tuple[frozenset[NodeId], ...]` (strongly connected)<br>`rank(graph) -> Mapping[NodeId, int]` (depth with cycles condensed) | Pure and generic: no Python or swhurl knowledge. Added with the first feature that needs each. |
-| **E. Features** | one module each | `entries(snapshot) -> Entries`<br>`reach(snapshot, node) -> Reach`<br>`journeys(snapshot, entries, params) -> Journeys`<br>`diff(a, b, journeys_a=None, journeys_b=None) -> Diff`<br>`hotspots(snapshot, history, journeys=None) -> Hotspots`<br>`timeline(snapshots, params) -> Timeline` | Pure: documents in, one document out. Built from layer D and other features' public functions. |
+| **E. Features** | one module each | `entries(snapshot) -> Entries`, with `entries.from_document` (strict), `entries.load`, `entries.as_input(entries) -> Input`<br>`reach(snapshot, node) -> Reach`<br>`journeys(snapshot, entries, params) -> Journeys`<br>`diff(a, b, journeys_a=None, journeys_b=None) -> Diff`<br>`hotspots(snapshot, history, journeys=None) -> Hotspots`<br>`timeline(snapshots, params) -> Timeline` | Pure: documents in, one document out. Built from layer D and other features' public functions. |
 | **F. CLI** | `cli.py` | One subcommand per primitive that produces a document; rendering as JSON or `--text` | Reads arguments, files and stdin; writes stdout and stderr; calls layer A only for `snapshot`, `history` and `timeline`. |
 
 The snapshot is a composition, not a special case (`cli.build_snapshot`):
@@ -67,7 +67,7 @@ snapshot = link(revision.commit, scope, import_root, files)
 
 The snapshot document: `revision`, `nodes` (`id`, `kind`, `module`, `qualname`, `path`, `lines`, `externalCalls`, `unresolvedCalls` by category, and `signature`, `bodyHash`, `redefinitions`, `mainBlocks` (a module's `if __name__ == '__main__':` bodies as line ranges) where they apply), `edges` (`source`, `target`, `kind`, `lines`), `unparsed` (`path`, `error`), `objectReferences` (`source`, `line`, `value`) and `arguments` (`source`, `line`, `callee`, `slot`, `target`, `literals`), with `params` recording `scope`, `importRoot`, `extractor`, `extractorVersion` and `python`. `mainBlocks`, `objectReferences` and `arguments` came with extractor version 2 and are optional when read. Body hashes come from `ast.unparse`, so they are comparable only between snapshots with the same `python` value.
 
-The entries document: `entries` (`node`, `evidence`: `rule`, `path`, `line`, and `value` when the rule matched one), `ambiguous` (evidence and `candidates`) and `unresolved` (evidence), with `params.rules`. The reach document: `node`, `reached` (node IDs, the node included), `externalCalls`, `unresolvedCalls` by category across everything reached, and `spine` (`line`, `target`, `kind`), with `params.node` and `params.edgeKinds`. Both name their snapshot in `inputs` (`kind`, `digest`, `revision`). Neither has a loader yet: step 3 adds one for entries when `journeys` reads it.
+The entries document: `entries` (`node`, `evidence`: `rule`, `path`, `line`, and `value` when the rule matched one), `ambiguous` (evidence and `candidates`) and `unresolved` (evidence), with `params.rules`. The reach document: `node`, `reached` (node IDs, the node included), `externalCalls`, `unresolvedCalls` by category across everything reached, and `spine` (`line`, `target`, `kind`), with `params.node` and `params.edgeKinds`. Both name their snapshot in `inputs` (`kind`, `digest`, `revision`). Entries has a loader (`entries.load`, since `journeys` reads it); reach has none until a feature reads it. The journeys document: `candidates`, each with `members` (`node`, `values` its entry rules matched, `reached` functions, `unresolvedCalls` across everything reached, and `nearest` (`nodes`, every other entry point at the highest similarity, and `similarity`), omitted when that similarity is 0 or there is no other entry point), `links` (`a`, `b`, `similarity`) and `shared` (`node`, `entryPoints`: the functions every member reaches, fewest entry points first), with `params` recording `edgeKinds`, `nodeKind`, `weighting`, `similarity`, `grouping` and `threshold`; its `inputs` are the snapshot and the entries document.
 
 ### Contracts every primitive keeps
 
@@ -120,7 +120,7 @@ Each step ends in a usable subcommand with tests and is checked against v1 evide
 | 0 | Place, policy and check wiring (**done**) | — |
 | 1 | The core: layers A–C and `snapshot` (**done**) | 0 |
 | 2 | `entries`, `reach` (**done**) | 1 |
-| 3 | `journeys` (validation gate) | 2 |
+| 3 | `journeys` (validation gate) (**done**) | 2 |
 | 4 | `diff` | 1; journey changes need 3 |
 | 5 | `hotspots`, `history`, `timeline` | 1; journey counts need 3 |
 | Later | Separate decisions (below) | the above |
@@ -172,19 +172,54 @@ Entry rules (generic Python or framework knowledge, none specific to swhurl):
 
 **Surprises:** besides route reach above, calling a class reaches only the class node: the class body's own calls, not `__init__` or other methods. A method called on a value stays `value-attribute`, so reach under-counts behind constructors. Recovering that needs type-aware resolution (later features), not a new rule. `references` also brings in exception classes from `except` clauses: true dependencies that add nodes, little reach.
 
-### Step 3: journey candidates
+### Step 3: journey candidates (done; gate answered, grouping changed)
 
-`codegraph journeys <snapshot> <entries>`.
+`codegraph journeys <snapshot> <entries> [--threshold 0.3] [--weighting inverse|uniform] [--text] [--limit 10]`; one of the two may be `-` (stdin).
 
-- Weight each function by how few entry points reach it: `w(n) = log(N / entry points reaching n)`. Plumbing reached by everything weighs nearly nothing.
-- Similarity of two entry points: weighted Jaccard of their reach sets. Link pairs that meet a threshold; candidates are the connected groups. `params` records the weighting and threshold.
-- Each candidate lists its entry points, its distinctive shared functions with their entry counts, and the shared and per-entry reach sizes. Ungrouped entry points are single-entry candidates.
+- Each entry point's reach over `calls` and `references`, as in `reach`, reduced to its **functions**: classes are reached and carry their unresolved calls, but are not compared.
+- Weight each function by how few entry points reach it: `w(n) = ln(N / entry points reaching n)`. Plumbing reached by every entry point weighs nothing. `uniform` weighting gives every function 1 (plain Jaccard), for comparison.
+- Similarity of two entry points: weighted Jaccard of their function sets, rounded to 4 places before comparing.
+- **Grouping, `mutual-nearest`:** a pair is linked when each is the other's nearest (the pair's similarity is the highest either has; ties all count) and the similarity is at least the threshold. Candidates are the connected groups, largest first; an unlinked entry point is a single-entry candidate. Groups larger than a pair come only from ties, so a shared subsystem cannot chain entry points together; a feature with three or more entry points that are not tied comes out as pairs or singles. This replaced linking every pair above a threshold, after the validation gate below.
+- Each candidate lists its members (rule values, functions reached, the unresolved calls that reach rests on, and its nearest other entry points with their similarity, omitted when it is 0), its links and the functions all members share, rarest first. `--text --limit` bounds only the shared list it shows.
+- Layer C gained the strict entries loader (`documents.SUPPORTED` has `entries` 1) and shares its field checks with the snapshot loader. `journeys` refuses an entries document whose snapshot digest differs from the snapshot given (`invalid-document`) and parameters out of range (`usage`).
 
-**Tests:** entry points that share only plumbing are not grouped; entry points that share a rare function are; ties are broken deterministically.
+**Acceptance, met:** 85 tests (16 new). Layer C: entries round-trip, `as_input`, malformed entries refused case by case (16 cases, including a rule not in `params.rules`, a single ambiguous candidate and a non-snapshot input), another kind or version refused. Layer E on hand-written snapshots: entry points that share only plumbing are not grouped and have no nearest, while `uniform` groups them; entry points that share a rare function are, at exactly the computed similarity (0.2) and not above it; a third entry point similar enough to one of a pair but not its nearest is not chained in; tied nearest entry points all count; equal candidates come in member order and two runs give the same bytes; a member's reach and unknowns; one and no entry points; the document names both inputs and every parameter; mismatched entries and bad parameters are refused. CLI: `journeys` reads entries from stdin, the inputs' digests are the files' digests, `--weighting`, `--threshold`, `--text`; failures exit 1 with empty stdout and usage errors 2. Mutation checks (every weight 1; ties to the higher ID; links without the mutual condition; only the first tied nearest) each fail the tests they should.
 
-**v1 evidence:** `main_promote` and the route `/apps/{app}/staging/promotion` are each other's nearest neighbour (0.73; next 0.63), linked by `promote`, `staging_offers` and `egress_difference`, which only 3 entry points reach. Unweighted Jaccard instead groups 27 record-editing commands by their shared 121-function core: the weighting matters.
+**v1 evidence (24 October 2026, HEAD `2fb23035`, the same `tools/swhurl` tree as step 2):** under 1 s for `journeys`; byte-identical across runs.
 
-**Validation gate:** print every candidate at HEAD; the operator marks which match a real feature and which do not. Record the result here. Tune or rethink the grouping before steps 4 and 5 rely on it; this is the main unproven idea.
+- **Nearest neighbours as the probe found:** `main_promote` and `/apps/{app}/staging/promotion` are each other's nearest neighbour at **0.6924** (probe 0.73); `main_promote`'s next is 0.6202 (`main_sync`, `keys:main`; probe 0.63), the route's next only 0.4407. They share 191 functions; the rarest 11 are reached by only 4 entry points, among them `edit.promote`, `edit.staging_offers` and `edit.egress_difference` (probe: 3 entry points). The other two are `console.server:main`, which reaches 394 functions, and `templates_check:main`. With `uniform` weighting `main_promote`'s nearest becomes `main_sync` (0.7928) and the route third (0.7925): **the weighting decides the nearest neighbour.**
+- **First grouping rule (every pair at or above 0.5 linked):** 52 candidates: groups of 27, 8, 2, 2, 2 and 47 single entry points (`uniform`: 28, 8, 2, 2, 2, 2 and 44 single). Candidate 1 held the 27 record-editing commands (`apps.cli`, `apps.teams`, `new`, `ops`, `policy`, `templates_check`) and the promotion route; the probe's unweighted 27 shared 121 functions, these 123. Candidate 2 held the 8 console pages that list apps and teams. The pairs were the two `backup_job` run commands, `change_app` with `use_offer`, and `new_repo` with `resume_job`. From 0.5 to 0.8 in steps of 0.1 the large group shrank slowly (inverse 27, 27, 23, 19; uniform 28, 27, 27, 23). **The weighting did not decide the grouping:** the promotion route's one link, to `main_promote`, chained it into a group whose every shared function is reached by 28 to 43 entry points.
+- **`mutual-nearest` at 0.3 (current):** 70 candidates: one group of 3 and 16 pairs (35 entry points), 53 single (`uniform`: three groups of 3, 16 pairs, 47 single). Every pair the operator marked as a real feature comes out exactly: promotion (0.6924), the backup run commands (0.5175), `change_app` with `use_offer` (0.6589), `new_repo` with `resume_job` (0.6945). The three team pages (`/teams`, `/teams/{action}`, `/team-channel/{action}`) are the group of 3, through a tie at 0.9551. The other pairs: `deploy`/`offers`, `sync`/`keys:main`, `new`/`templates_check`, `ops`/`policy`, team add/edit, team channel add/team channel, `hooks`/`repo` (0.3015, just above the floor), the two `backup_job` backup commands, `bots` deploy/render, `lifecycle` with its live test, `sqlite_restore` with its live test, and `/apps/{app}/{env}/flags/{flag}` with `/egress` (through the listing subsystem: their rarest shared functions are reached by 10 entry points).
+
+**Surprises:**
+
+- **Linking every pair above a threshold chains** (first rule, above): the weighting separated the promotion pair and the grouping merged it back.
+- Under `mutual-nearest`, 13 of the record-editing commands are single although their nearest is at 0.87 to 0.91: they all point at a few hubs (`main_schedule`, `main_remove`, `main_sync`) that point elsewhere. Their similarity is the shared subsystem, so being single is the intended outcome, but it also means such a command's own feature is invisible here.
+- Single candidates are mostly real single-purpose commands whose reach is their own module (livetests, `flux`, `images`, `bots`). Some routes reach only themselves (`/activity`, `/healthz`, `/new`): their work is behind `ctx.*`, unresolved (step 2 surprises).
+- `change_app` (`/apps/{app}/{env}/{change}`, the console's Promote, Scale and Connect buttons) reaches 3 functions: it starts its work through the `merge.ACTIONS[change]` table, a `dynamic` call. So the console's promotion is linked to `main_promote` only through the review page, not the button.
+
+**Validation gate (answered 24 October 2026):** every candidate of the first rule at HEAD was printed; the operator accepted these marks:
+
+| Candidate | Entry points | Real feature? |
+| --- | --- | --- |
+| 1 | 27 record-editing commands and the promotion route | **No:** the shared code that loads, edits, checks and writes app records (31% of functions, 34% of lines in functions, 53 modules; 123 functions shared by all). The promotion pair inside it is a real journey, chained in. |
+| 2 | 8 console pages that list apps and teams | **No:** a shared listing subsystem. |
+| 3 | `backup_job:run_mongodb_main`, `run_sqlite_main` | **Yes:** run a backup now, one variant per database. |
+| 4 | `change_app`, `use_offer` | **Yes,** trivially: `use_offer` calls `change_app` with `connect`. |
+| 5 | `/new/repo`, `/jobs/{id}/resume` | **Yes:** create a new app, and resume that job. |
+
+Single entry points were not marked. **Conclusion:** the weighting finds real pairs; grouping by connected links turns shared subsystems into false features. Rethink the grouping rule, not the weights; the operator chose `mutual-nearest` (above).
+
+**Alternatives tried before choosing (throwaway, on the same similarities, judged by whether the promotion pair and candidates 3 to 5 come out as exact pairs):**
+
+| Rule | Groups (sizes) | Pairs found |
+| --- | --- | --- |
+| Connected links at 0.5 (the first rule) | 27, 8, 2, 2, 2 | 3 of 4 (not promotion) |
+| Average linkage at 0.5 / 0.6 | 27, 8, 2, 2, 2 / 23, 7, 2, 2, 2, 2 | 3 of 4 |
+| Each to its nearest, connected, at 0.5 | 14, 4, 4, 3 and 8 pairs | 4 of 4 |
+| Connected, kept only if all members share a function no other entry point reaches | one pair | 1 of 4 |
+| Mutual nearest neighbours at 0.3 / 0.5, ties broken by ID | 17 / 12 pairs | 4 of 4 |
+| **Mutual nearest at 0.3, ties all count (chosen)** | one group of 3, 16 pairs | **4 of 4** |
 
 ### Step 4: comparison between commits
 
@@ -225,7 +260,9 @@ Each needs its own decision once the core has proved useful, and each fits secti
 
 Settled with step 0 (24 October 2026): location `devtools/codegraph/`; tests run by `make check-codegraph` as part of `make check` and CI; the `AGENTS.md` and contributing exception as described in step 0.
 
-Taken in step 2 (24 October 2026), open to review: entry rules read only snapshot facts. Layer B therefore records generic Python facts (object references, arguments with their callee and literals, main blocks) and `entries.py` interprets them, instead of layer B recognising entry points itself. Entries and reach documents have no loader until a feature reads them.
+Taken in step 2 (24 October 2026), confirmed by the operator at the step 3 gate: entry rules read only snapshot facts. Layer B therefore records generic Python facts (object references, arguments with their callee and literals, main blocks) and `entries.py` interprets them, instead of layer B recognising entry points itself. Entries and reach documents have no loader until a feature reads them (step 3 added the entries loader).
+
+Taken in step 3 (24 October 2026): only function nodes are compared; an entry point's own node counts in its reach; `uniform` weighting stays as a parameter for comparison. After the validation gate the operator chose `mutual-nearest` grouping at a 0.3 floor over linking every pair above 0.5 (the plan's first rule), which chained shared subsystems into false features; ties all count, so tied neighbours (the three team pages) form one group instead of a choice by ID.
 
 ## 8. Evidence and limits so far
 
@@ -234,7 +271,7 @@ A throwaway read-only probe (`/tmp/vct-probe/`, not kept) parsed v1 from Git obj
 - Static resolution leaves most method calls on values unresolved; step 1 measured it (4,378 `value-attribute` call sites at HEAD, step 1 evidence).
 - Dependency injection through a context object (`ctx.*` in the console) leaves the console's service calls unresolved; `references` recovers the nested bodies handlers pass to it (step 2 evidence).
 - Calling a class reaches the class node, not its methods (step 2 surprises).
-- Journey grouping was tested on one pair at one revision.
+- Journey grouping was judged at one revision: the first rule chained the probe's nearest pair into a 27-command subsystem group; `mutual-nearest` finds the four features the operator marked, but only pairs or ties, and was chosen on the same evidence it was judged by (step 3).
 - The probe merged nested functions' calls into their parent and used breadth-first order; its reach and spine numbers for step 2 and 3 are therefore approximate. The implementation attributes calls to the innermost definition, in source order.
 
 ## 9. Handoff

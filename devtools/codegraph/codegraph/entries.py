@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from codegraph import documents
 from codegraph import snapshot as snapshots
 from codegraph.documents import Input
 from codegraph.snapshot import Node, Snapshot
@@ -106,6 +107,10 @@ def entries(snapshot: Snapshot) -> Entries:
                    tuple(sorted(ambiguous, key=_match_key)), tuple(sorted(unresolved, key=_match_key)))
 
 
+def as_input(result: Entries) -> Input:
+    return Input(KIND, documents.digest(to_document(result)))
+
+
 def to_document(result: Entries) -> dict[str, Any]:
     return {
         'kind': KIND, 'version': VERSION, 'inputs': [result.snapshot.to_document()], 'params': {'rules': list(result.rules)},
@@ -113,6 +118,57 @@ def to_document(result: Entries) -> dict[str, Any]:
         'ambiguous': [{**_evidence(match.evidence), 'candidates': list(match.candidates)} for match in result.ambiguous],
         'unresolved': [_evidence(match.evidence) for match in result.unresolved],
     }
+
+
+def from_document(document: Mapping[str, Any]) -> Entries:
+    """The entries in a loaded envelope (``documents.load(data, KIND)``); refuses anything malformed. That the
+    nodes belong to the named snapshot is the reader's check: this document alone cannot show it."""
+    top = documents.fields(document, 'document', {'kind': str, 'version': int, 'inputs': list, 'params': dict,
+                                                  'entries': list, 'ambiguous': list, 'unresolved': list})
+    if len(top['inputs']) != 1:
+        documents.invalid('inputs', 'expected the one snapshot the entries come from')
+    source = Input.from_document(top['inputs'][0], 'inputs[0]')
+    if source.kind != snapshots.KIND:
+        documents.invalid('inputs[0].kind', 'expected a snapshot')
+    rules = documents.fields(top['params'], 'params', {'rules': list})['rules']
+    if not all(isinstance(rule, str) for rule in rules) or len(set(rules)) != len(rules):
+        documents.invalid('params.rules', 'expected distinct rule names')
+
+    def evidence(value: Any, where: str, extra: Mapping[str, type] | None = None) -> tuple[Evidence, dict]:
+        item = documents.fields(value, where, {'rule': str, 'path': str, 'line': int, **(extra or {})}, {'value': str})
+        if item['rule'] not in rules:
+            documents.invalid(f'{where}.rule', 'not one of params.rules')
+        if item['line'] < 1:
+            documents.invalid(f'{where}.line', 'expected a positive line number')
+        return Evidence(item['rule'], item['path'], item['line'], item.get('value')), item
+
+    found = []
+    for index, value in enumerate(top['entries']):
+        item = documents.fields(value, f'entries[{index}]', {'node': str, 'evidence': list})
+        if not item['evidence']:
+            documents.invalid(f'entries[{index}].evidence', 'an entry point has at least one piece of evidence')
+        found.append(Entry(item['node'], tuple(sorted(
+            (evidence(part, f'entries[{index}].evidence[{position}]')[0] for position, part in enumerate(item['evidence'])),
+            key=_evidence_key))))
+    if len({entry.node for entry in found}) != len(found):
+        documents.invalid('entries', 'an entry point appears twice')
+    ambiguous = []
+    for index, value in enumerate(top['ambiguous']):
+        where = f'ambiguous[{index}]'
+        place, item = evidence(value, where, {'candidates': list})
+        candidates = item['candidates']
+        if len(candidates) < 2 or not all(isinstance(node, str) for node in candidates) or len(set(candidates)) != len(candidates):
+            documents.invalid(f'{where}.candidates', 'expected two or more distinct node IDs')
+        ambiguous.append(Match(place, tuple(sorted(candidates))))
+    unresolved = [Match(evidence(value, f'unresolved[{index}]')[0], ()) for index, value in enumerate(top['unresolved'])]
+    if len(set(ambiguous)) != len(ambiguous) or len(set(unresolved)) != len(unresolved):
+        documents.invalid('document', 'an ambiguous or unresolved match appears twice')
+    return Entries(source, tuple(rules), tuple(sorted(found, key=lambda entry: entry.node)),
+                   tuple(sorted(ambiguous, key=_match_key)), tuple(sorted(unresolved, key=_match_key)))
+
+
+def load(data: bytes) -> Entries:
+    return from_document(documents.load(data, KIND))
 
 
 def _evidence(evidence: Evidence) -> dict[str, Any]:

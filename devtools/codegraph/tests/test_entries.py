@@ -3,6 +3,7 @@ import unittest
 
 from codegraph import documents, entries
 from codegraph import snapshot as snapshots
+from codegraph.errors import CodegraphError
 from tests.snapshots import node, snapshot
 
 FUNCTIONS = ['py:pkg.apps.cli:main_promote', 'py:pkg.cli:main', 'py:pkg.apps.cli:main', 'py:pkg.web:routes',
@@ -85,6 +86,58 @@ class DocumentTests(unittest.TestCase):
     def test_no_entry_points_is_an_empty_success(self):
         document = entries.to_document(entries.entries(snapshot(['py:pkg.a', 'py:pkg.a:f'])))
         self.assertEqual((document['entries'], document['ambiguous'], document['unresolved']), ([], [], []))
+
+
+# One entry point with two pieces of evidence, one ambiguous and one unresolved string.
+LOADABLE = entries.entries(snapshot(['py:pkg.commands', *FUNCTIONS], object_references=[
+    ('py:pkg.commands', 3, 'cli:main'), ('py:pkg.commands', 4, 'x:y'), ('py:pkg.commands', 5, 'pkg.cli:main'),
+    ('py:pkg.commands', 6, 'cli:main_promote')]))
+
+
+class LoadTests(unittest.TestCase):
+    def test_round_trip(self):
+        self.assertEqual(entries.load(documents.dump(entries.to_document(LOADABLE))), LOADABLE)
+        self.assertEqual(len(LOADABLE.ambiguous) + len(LOADABLE.unresolved), 2)
+
+    def test_as_input_names_the_document_by_digest(self):
+        self.assertEqual(entries.as_input(LOADABLE).to_document(),
+                         {'kind': 'entries', 'digest': documents.digest(entries.to_document(LOADABLE))})
+
+    def test_load_refuses_malformed_entries(self):
+        def broken(change):
+            document = entries.to_document(LOADABLE)
+            change(document)
+            return documents.dump(document)
+
+        cases = {
+            'unknown field': lambda d: d['entries'][0].update(extra=1),
+            'missing field': lambda d: d['entries'][0]['evidence'][0].pop('path'),
+            'no evidence': lambda d: d['entries'][0].update(evidence=[]),
+            'bool as line': lambda d: d['unresolved'][0].update(line=True),
+            'line 0': lambda d: d['unresolved'][0].update(line=0),
+            'rule not in params': lambda d: d['unresolved'][0].update(rule='guess'),
+            'repeated rule': lambda d: d['params'].update(rules=['entry-string', 'entry-string']),
+            'duplicate entry': lambda d: d['entries'].append(d['entries'][0]),
+            'one candidate': lambda d: d['ambiguous'][0].update(candidates=['py:pkg.cli:main']),
+            'repeated candidate': lambda d: d['ambiguous'][0].update(candidates=['py:pkg.cli:main'] * 2),
+            'duplicate unresolved': lambda d: d['unresolved'].append(d['unresolved'][0]),
+            'no input': lambda d: d['inputs'].clear(),
+            'two inputs': lambda d: d['inputs'].append(d['inputs'][0]),
+            'input not a snapshot': lambda d: d['inputs'][0].update(kind='entries'),
+            'snapshot input without revision': lambda d: d['inputs'][0].pop('revision'),
+            'unknown param': lambda d: d['params'].update(extra=1),
+        }
+        for name, change in cases.items():
+            with self.subTest(name):
+                with self.assertRaises(CodegraphError) as raised:
+                    entries.load(broken(change))
+                self.assertEqual(raised.exception.code, 'invalid-document')
+
+    def test_load_refuses_another_kind_or_version(self):
+        for change, code in (({'kind': 'snapshot'}, 'invalid-document'), ({'version': 2}, 'unsupported-version')):
+            with self.subTest(change), self.assertRaises(CodegraphError) as raised:
+                entries.load(documents.dump({**entries.to_document(LOADABLE), **change}))
+            self.assertEqual(raised.exception.code, code)
 
 
 if __name__ == '__main__':

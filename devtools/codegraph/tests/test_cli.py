@@ -125,7 +125,7 @@ def helper():
 
 
 def page(request):
-    pass
+    helper()
 
 
 ROUTES = [Route('/page', page)]
@@ -137,7 +137,7 @@ if __name__ == '__main__':
 
 
 class AnalysisCommandTests(unittest.TestCase):
-    """entries and reach read a snapshot document from a path or stdin, never Git."""
+    """entries, reach and journeys read documents from a path or stdin, never Git."""
 
     @classmethod
     def setUpClass(cls):
@@ -149,6 +149,8 @@ class AnalysisCommandTests(unittest.TestCase):
         assert result.returncode == 0, result.stderr
         cls.snapshot = cls.tmp / 'snapshot.json'
         cls.snapshot.write_bytes(result.stdout)
+        cls.entries = cls.tmp / 'entries.json'
+        cls.entries.write_bytes(codegraph('entries', str(cls.snapshot)).stdout)
 
     def test_entries_from_stdin(self):
         result = codegraph('entries', '-', stdin=self.snapshot.read_bytes())
@@ -177,8 +179,30 @@ class AnalysisCommandTests(unittest.TestCase):
         text = codegraph('reach', str(self.snapshot), 'py:pkg.cli:main', '--text').stdout
         self.assertIn(b'reached    3 nodes besides itself', text)
 
+    def test_journeys_chains_snapshot_and_entries(self):
+        result = codegraph('journeys', str(self.snapshot), '-', stdin=self.entries.read_bytes())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        document = json.loads(result.stdout)
+        self.assertEqual([item['kind'] for item in document['inputs']], ['snapshot', 'entries'])
+        self.assertEqual(document['inputs'][1]['digest'], 'sha256:' + hashlib.sha256(self.entries.read_bytes()).hexdigest())
+        self.assertEqual([[member['node'] for member in item['members']] for item in document['candidates']],
+                         [['py:pkg.cli:main'], ['py:pkg.cli:page']], 'helper is all they share, reached by both: weight 0')
+        uniform = json.loads(codegraph('journeys', str(self.snapshot), str(self.entries), '--weighting', 'uniform',
+                                       '--threshold', '0.2').stdout)
+        self.assertEqual(uniform['params']['weighting'], 'uniform')
+        (candidate,) = uniform['candidates']
+        self.assertEqual(candidate['links'], [{'a': 'py:pkg.cli:main', 'b': 'py:pkg.cli:page', 'similarity': 0.2}])
+        text = codegraph('journeys', str(self.snapshot), str(self.entries), '--weighting', 'uniform', '--threshold', '0.2',
+                         '--text', '--limit', '0').stdout
+        self.assertIn(b'candidate 1: 2 entry points, 1 links (similarity 0.2 to 0.2), 1 functions shared by all', text)
+        self.assertIn(b"py:pkg.cli:page  '/page'  (reach 2, unresolved 0, nearest 0.2 py:pkg.cli:main)", text)
+
     def test_failures_exit_1_with_empty_stdout(self):
+        other = json.loads(self.entries.read_bytes())
+        other['inputs'][0]['digest'] = 'sha256:' + '0' * 64
         for args, stdin, code in ((('reach', '-', 'py:pkg.cli:nothing'), self.snapshot.read_bytes(), b'unknown-node'),
+                                  (('journeys', str(self.snapshot), '-'), json.dumps(other).encode(), b'invalid-document'),
+                                  (('journeys', str(self.snapshot), str(self.snapshot)), b'', b'invalid-document'),
                                   (('entries', str(self.tmp / 'missing.json')), b'', b'usage'),
                                   (('entries', '-'), b'{"kind": "entries"}', b'invalid-document')):
             with self.subTest(args=args):
@@ -188,8 +212,11 @@ class AnalysisCommandTests(unittest.TestCase):
                 self.assertIn(b'codegraph: ' + code + b':', result.stderr)
 
     def test_usage_errors_exit_2(self):
-        result = codegraph('reach', '-')
-        self.assertEqual((result.returncode, result.stdout), (2, b''))
+        for args in (('reach', '-'), ('journeys', '-'), ('journeys', '-', '-', '--threshold', '0'),
+                     ('journeys', '-', '-', '--threshold', 'nan'), ('journeys', '-', '-', '--weighting', 'squared')):
+            with self.subTest(args=args):
+                result = codegraph(*args)
+                self.assertEqual((result.returncode, result.stdout), (2, b''))
 
 
 if __name__ == '__main__':

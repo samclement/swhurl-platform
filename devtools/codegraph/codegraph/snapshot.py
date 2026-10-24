@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from codegraph import documents
-from codegraph.errors import CodegraphError
 
 KIND = 'snapshot'
 VERSION = 1
@@ -112,27 +111,27 @@ def to_document(snapshot: Snapshot) -> dict[str, Any]:
 
 def from_document(document: Mapping[str, Any]) -> Snapshot:
     """The snapshot in a loaded envelope (``documents.load(data, KIND)``); refuses anything malformed."""
-    top = _fields(document, 'document', {'kind': str, 'version': int, 'inputs': list, 'params': dict, 'revision': str,
+    top = documents.fields(document, 'document', {'kind': str, 'version': int, 'inputs': list, 'params': dict, 'revision': str,
                                          'nodes': list, 'edges': list, 'unparsed': list},
                   {'objectReferences': list, 'arguments': list})
     if top['inputs']:
-        _invalid('inputs', 'a snapshot has no input documents')
-    params = _fields(top['params'], 'params', {'scope': str, 'importRoot': str, 'extractor': str,
+        documents.invalid('inputs', 'a snapshot has no input documents')
+    params = documents.fields(top['params'], 'params', {'scope': str, 'importRoot': str, 'extractor': str,
                                                 'extractorVersion': int, 'python': str})
     nodes = tuple(_node(item, f'nodes[{index}]') for index, item in enumerate(top['nodes']))
     ids = {node.id for node in nodes}
     if len(ids) != len(nodes):
-        _invalid('nodes', 'node IDs must be unique')
+        documents.invalid('nodes', 'node IDs must be unique')
     edges = tuple(_edge(item, f'edges[{index}]', ids) for index, item in enumerate(top['edges']))
     if len({_edge_key(edge) for edge in edges}) != len(edges):
-        _invalid('edges', 'an edge appears twice')
-    unparsed = tuple(Unparsed(**_fields(item, f'unparsed[{index}]', {'path': str, 'error': str}))
+        documents.invalid('edges', 'an edge appears twice')
+    unparsed = tuple(Unparsed(**documents.fields(item, f'unparsed[{index}]', {'path': str, 'error': str}))
                      for index, item in enumerate(top['unparsed']))
     object_references = tuple(_object_reference(item, f'objectReferences[{index}]', ids)
                               for index, item in enumerate(top.get('objectReferences', [])))
     arguments = tuple(_argument(item, f'arguments[{index}]', ids) for index, item in enumerate(top.get('arguments', [])))
     if len(set(object_references)) != len(object_references) or len(set(arguments)) != len(arguments):
-        _invalid('document', 'an object reference or argument appears twice')
+        documents.invalid('document', 'an object reference or argument appears twice')
     return Snapshot(top['revision'], params['scope'], params['importRoot'], params['extractor'],
                     params['extractorVersion'], params['python'], tuple(sorted(nodes, key=lambda node: node.id)),
                     tuple(sorted(edges, key=_edge_key)), tuple(sorted(unparsed, key=lambda item: item.path)),
@@ -163,87 +162,66 @@ def _node_document(node: Node) -> dict[str, Any]:
 
 
 def _node(value: Any, where: str) -> Node:
-    fields = _fields(value, where, {'id': str, 'kind': str, 'module': str, 'qualname': str, 'path': str, 'lines': list,
+    fields = documents.fields(value, where, {'id': str, 'kind': str, 'module': str, 'qualname': str, 'path': str, 'lines': list,
                                     'externalCalls': int, 'unresolvedCalls': dict},
                      {'signature': str, 'bodyHash': str, 'redefinitions': int, 'mainBlocks': list})
     if fields['kind'] not in NODE_KINDS:
-        _invalid(f'{where}.kind', 'unknown node kind')
+        documents.invalid(f'{where}.kind', 'unknown node kind')
     lines = fields['lines']
-    if len(lines) != 2 or not all(_is_int(line) and line >= 0 for line in lines):
-        _invalid(f'{where}.lines', 'expected [start, end]')
+    if len(lines) != 2 or not all(documents.is_int(line) and line >= 0 for line in lines):
+        documents.invalid(f'{where}.lines', 'expected [start, end]')
     unresolved = fields['unresolvedCalls']
     for category, count in unresolved.items():
-        if category not in UNRESOLVED or not _is_int(count) or count < 1:
-            _invalid(f'{where}.unresolvedCalls', 'unknown category or count below 1')
+        if category not in UNRESOLVED or not documents.is_int(count) or count < 1:
+            documents.invalid(f'{where}.unresolvedCalls', 'unknown category or count below 1')
     if fields['externalCalls'] < 0 or fields.get('redefinitions', 1) < 1:
-        _invalid(where, 'counts must be positive (redefinitions is omitted when zero)')
+        documents.invalid(where, 'counts must be positive (redefinitions is omitted when zero)')
     blocks = fields.get('mainBlocks', [])
     if 'mainBlocks' in fields and (not blocks or fields['kind'] != 'module' or not all(
-            isinstance(block, list) and len(block) == 2 and all(_is_int(line) and line > 0 for line in block)
+            isinstance(block, list) and len(block) == 2 and all(documents.is_int(line) and line > 0 for line in block)
             and block[0] <= block[1] for block in blocks)):
-        _invalid(f'{where}.mainBlocks', 'expected [start, end] line ranges on a module (omitted when none)')
+        documents.invalid(f'{where}.mainBlocks', 'expected [start, end] line ranges on a module (omitted when none)')
     return Node(fields['id'], fields['kind'], fields['module'], fields['qualname'], fields['path'], lines[0], lines[1],
                 fields.get('signature'), fields.get('bodyHash'), fields.get('redefinitions', 0),
                 fields['externalCalls'], tuple(sorted(unresolved.items())), tuple(sorted(tuple(b) for b in blocks)))
 
 
 def _edge(value: Any, where: str, ids: set[str]) -> Edge:
-    fields = _fields(value, where, {'source': str, 'target': str, 'kind': str, 'lines': list})
+    fields = documents.fields(value, where, {'source': str, 'target': str, 'kind': str, 'lines': list})
     if fields['kind'] not in EDGE_KINDS:
-        _invalid(f'{where}.kind', 'unknown edge kind')
+        documents.invalid(f'{where}.kind', 'unknown edge kind')
     if fields['source'] not in ids or fields['target'] not in ids:
-        _invalid(where, 'an edge must join two nodes of the snapshot')
+        documents.invalid(where, 'an edge must join two nodes of the snapshot')
     lines = fields['lines']
-    if not lines or not all(_is_int(line) and line > 0 for line in lines) or sorted(set(lines)) != lines:
-        _invalid(f'{where}.lines', 'expected sorted, distinct, positive line numbers')
+    if not lines or not all(documents.is_int(line) and line > 0 for line in lines) or sorted(set(lines)) != lines:
+        documents.invalid(f'{where}.lines', 'expected sorted, distinct, positive line numbers')
     return Edge(fields['source'], fields['target'], fields['kind'], tuple(lines))
 
 
 def _object_reference(value: Any, where: str, ids: set[str]) -> ObjectReference:
-    fields = _fields(value, where, {'source': str, 'line': int, 'value': str})
+    fields = documents.fields(value, where, {'source': str, 'line': int, 'value': str})
     _check_site(fields, where, ids)
     return ObjectReference(fields['source'], fields['line'], fields['value'])
 
 
 def _argument(value: Any, where: str, ids: set[str]) -> Argument:
-    fields = _fields(value, where, {'source': str, 'line': int, 'callee': str, 'slot': str, 'target': str, 'literals': dict})
+    fields = documents.fields(value, where, {'source': str, 'line': int, 'callee': str, 'slot': str, 'target': str, 'literals': dict})
     _check_site(fields, where, ids)
     if fields['target'] not in ids:
-        _invalid(f'{where}.target', 'must be a node of the snapshot')
+        documents.invalid(f'{where}.target', 'must be a node of the snapshot')
     if not all(isinstance(item, str) for item in fields['literals'].values()):
-        _invalid(f'{where}.literals', 'expected string values')
+        documents.invalid(f'{where}.literals', 'expected string values')
     return Argument(fields['source'], fields['line'], fields['callee'], fields['slot'], fields['target'],
                     tuple(sorted(fields['literals'].items())))
 
 
 def _check_site(fields: Mapping[str, Any], where: str, ids: set[str]) -> None:
     if fields['source'] not in ids:
-        _invalid(f'{where}.source', 'must be a node of the snapshot')
+        documents.invalid(f'{where}.source', 'must be a node of the snapshot')
     if fields['line'] < 1:
-        _invalid(f'{where}.line', 'expected a positive line number')
-
-
-def _fields(value: Any, where: str, required: Mapping[str, type], optional: Mapping[str, type] | None = None) -> dict:
-    optional = optional or {}
-    if not isinstance(value, Mapping):
-        _invalid(where, 'expected an object')
-    unknown = sorted(set(value) - set(required) - set(optional))
-    missing = sorted(set(required) - set(value))
-    if unknown or missing:
-        _invalid(where, ', '.join([*(f'unknown field {name}' for name in unknown), *(f'missing {name}' for name in missing)]))
-    for name, expected in {**required, **optional}.items():
-        if name in value and not (_is_int(value[name]) if expected is int else isinstance(value[name], expected)):
-            _invalid(f'{where}.{name}', f'expected {expected.__name__}')
-    return dict(value)
-
-
-def _is_int(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
+        documents.invalid(f'{where}.line', 'expected a positive line number')
 
 
 def _edge_key(edge: Edge) -> tuple[str, str, str]:
     return edge.source, edge.target, edge.kind
 
-
-def _invalid(where: str, reason: str):
-    raise CodegraphError('invalid-document', f'{where}: {reason}')

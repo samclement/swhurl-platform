@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>codegraph</title>
+<style>
+  :root {
+    --ink: #1c2126; --muted: #5d6873; --faint: #8b949e; --line: #d8dde3; --paper: #ffffff; --wash: #f4f6f8;
+    --accent: #0f766e; --accent-soft: #ccebe7; --partial: #e8eef3; --entry: #b45309; --focus: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Inter, "Noto Sans", "DejaVu Sans", Helvetica, Arial, sans-serif; color: var(--ink); background: var(--wash); }
+  code, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 12.5px; }
+  #details .mono { overflow-wrap: anywhere; }
+  header { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; padding: 10px 18px; background: var(--paper);
+           border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .01em; }
+  header .facts { color: var(--muted); }
+  .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; height: calc(100vh - 44px); }
+  .panel { overflow: auto; background: var(--paper); }
+  #candidates { border-right: 1px solid var(--line); }
+  #details { border-left: 1px solid var(--line); padding: 14px 16px 40px; }
+  #filter { position: sticky; top: 0; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--line);
+            font: inherit; background: var(--paper); }
+  #filter:focus { outline: 2px solid var(--focus); outline-offset: -2px; }
+  .group-title { padding: 10px 14px 4px; color: var(--faint); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  button.candidate { display: block; width: 100%; text-align: left; padding: 8px 14px; border: 0; border-left: 3px solid transparent;
+                     background: none; font: inherit; color: inherit; cursor: pointer; }
+  button.candidate:hover { background: var(--wash); }
+  button.candidate:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+  button.candidate[aria-current="true"] { background: var(--accent-soft); border-left-color: var(--accent); }
+  .candidate .head { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+  .candidate .who { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #graph { position: relative; }
+  #graph svg { display: block; }
+  #graph .empty { padding: 40px; color: var(--muted); }
+  .legend { position: sticky; top: 0; left: 0; z-index: 1; display: flex; gap: 16px; flex-wrap: wrap; padding: 8px 14px;
+            background: rgba(244, 246, 248, .94); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 5px;
+            border: 1px solid var(--line); }
+  g.module { cursor: pointer; }
+  g.module rect { fill: var(--paper); stroke: #b8c1ca; rx: 5; }
+  g.module.partial rect { fill: var(--partial); }
+  g.module.all rect { fill: var(--accent-soft); stroke: var(--accent); }
+  g.module.entry rect { stroke: var(--entry); stroke-width: 2; }
+  g.module.selected rect { stroke: var(--focus); stroke-width: 2.5; }
+  g.module text { font: 12px ui-monospace, Menlo, Consolas, monospace; fill: var(--ink); pointer-events: none; }
+  g.module text.count { fill: var(--muted); }
+  g.module:focus-visible rect { stroke: var(--focus); stroke-width: 3; }
+  path.edge { fill: none; stroke: #9aa5b1; stroke-opacity: .35; stroke-width: 1.2; }
+  path.edge.lazy { stroke-dasharray: 4 3; }
+  path.edge.lit { stroke: var(--focus); stroke-opacity: .9; stroke-width: 1.8; }
+  text.rank { font-size: 11px; fill: var(--faint); }
+  h2 { font-size: 15px; margin: 0 0 6px; }
+  h3 { font-size: 12px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .note { color: var(--muted); font-size: 12.5px; margin: 4px 0; }
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 3px 6px 3px 0; vertical-align: top; border-bottom: 1px solid var(--wash); }
+  td.n { text-align: right; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  button.link { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }
+  button.link:hover { text-decoration: underline; }
+  button.link[aria-pressed="true"] { color: var(--ink); font-weight: 600; }
+  .value { color: var(--entry); }
+  .dots span { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 2px; background: var(--line); }
+  .dots span.on { background: var(--accent); }
+  .more { margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>codegraph</h1>
+  <span class="facts" id="facts"></span>
+</header>
+<div class="layout">
+  <nav class="panel" id="candidates" aria-label="Journey candidates">
+    <input id="filter" type="search" placeholder="Filter by entry point, route or command" aria-label="Filter candidates">
+    <div id="list"></div>
+  </nav>
+  <section class="panel" id="graph" aria-label="Modules reached"></section>
+  <aside class="panel" id="details" aria-live="polite"></aside>
+</div>
+<script type="application/json" id="model">__MODEL__</script>
+<script>
+'use strict';
+const M = JSON.parse(document.getElementById('model').textContent);
+const SVG = 'http://www.w3.org/2000/svg';
+const firstPart = M.modules.length ? M.modules[0][0].split('.')[0] + '.' : '';
+const prefix = M.modules.every(([name]) => name === firstPart.slice(0, -1) || name.startsWith(firstPart)) ? firstPart : '';
+const shortModule = (i) => M.modules[i][0] === prefix.slice(0, -1) ? M.modules[i][0] : M.modules[i][0].slice(prefix.length);
+const nodeLabel = (i) => shortModule(M.nodes[i][0]) + ':' + M.nodes[i][1];
+const entryName = (e) => nodeLabel(M.entries[e].node);
+const entryValue = (e) => M.entries[e].values.find((v) => v.startsWith('/')) || M.entries[e].values[0] || '';
+const isFunction = (node) => M.nodes[node][2] === 'function';
+const state = { candidate: null, module: null, entry: null };
+
+function el(tag, attrs = {}, ...children) {
+  const node = tag.startsWith('svg:') ? document.createElementNS(SVG, tag.slice(4)) : document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key === 'class') node.setAttribute('class', value);
+    else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value);
+  }
+  for (const child of children) node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  return node;
+}
+
+function facts() {
+  const groups = M.candidates.filter((c) => c.members.length > 1).length;
+  document.getElementById('facts').textContent =
+    `${M.scope} at ${M.revision.slice(0, 10)} · ${M.modules.length} modules · ${M.entries.length} entry points · ` +
+    `${M.candidates.length} candidates (${groups} groups) · weighting ${M.journeyParams.weighting}, ` +
+    `threshold ${M.journeyParams.threshold}`;
+}
+
+function renderList() {
+  const query = document.getElementById('filter').value.trim().toLowerCase();
+  const list = document.getElementById('list');
+  list.replaceChildren();
+  let lastKind = null;
+  M.candidates.forEach((c, index) => {
+    const words = c.members.map((m) => entryName(m.entry) + ' ' + M.entries[m.entry].values.join(' ')).join(' ').toLowerCase();
+    if (query && !words.includes(query)) return;
+    const kind = c.members.length > 1 ? 'Groups' : 'Single entry points';
+    if (kind !== lastKind) { list.append(el('div', { class: 'group-title' }, kind)); lastKind = kind; }
+    const best = c.links.length ? Math.max(...c.links.map((l) => l[2])) : null;
+    const reach = new Set(c.members.flatMap((m) => M.entries[m.entry].reached.filter(isFunction))).size;
+    const button = el('button', { class: 'candidate', type: 'button', 'aria-current': String(state.candidate === index),
+                                  onclick: () => select(index) },
+      el('span', { class: 'head' }, el('span', {}, `#${index + 1} · ${c.members.length} · ${reach} functions`),
+         el('span', {}, best === null ? '' : `similarity ${best}`)),
+      ...c.members.map((m) => el('span', { class: 'who mono', title: entryName(m.entry) },
+                                 entryValue(m.entry) || entryName(m.entry))));
+    list.append(button);
+  });
+}
+
+function candidateModel(c) {
+  const members = c.members.map((m) => m.entry);
+  const perModule = new Map();  // module index -> {nodes: Map(node -> set of member positions), members: Set}
+  members.forEach((e, position) => {
+    for (const node of M.entries[e].reached) {
+      const module = M.nodes[node][0];
+      if (!perModule.has(module)) perModule.set(module, { nodes: new Map(), members: new Set() });
+      const slot = perModule.get(module);
+      slot.members.add(position);
+      if (!slot.nodes.has(node)) slot.nodes.set(node, new Set());
+      slot.nodes.get(node).add(position);
+    }
+  });
+  const entryModules = new Set(members.map((e) => M.nodes[M.entries[e].node][0]));
+  return { members, perModule, entryModules };
+}
+
+function renderGraph() {
+  const host = document.getElementById('graph');
+  host.replaceChildren();
+  if (state.candidate === null) { host.append(el('p', { class: 'empty' }, 'Choose a candidate.')); return; }
+  const c = M.candidates[state.candidate];
+  const { members, perModule, entryModules } = candidateModel(c);
+  host.append(el('div', { class: 'legend' },
+    el('span', {}, el('span', { class: 'swatch', style: 'background:var(--accent-soft);border-color:var(--accent)' }),
+       members.length > 1 ? 'reached by every member' : 'reached'),
+    ...(members.length > 1 ? [el('span', {}, el('span', { class: 'swatch', style: 'background:var(--partial)' }), 'by some')] : []),
+    el('span', {}, el('span', { class: 'swatch', style: 'border:2px solid var(--entry)' }), 'holds an entry point'),
+    el('span', {}, `rows: depth over ${M.rankEdgeKinds.join(', ')}, deepest at the top; dashed: lazy import; ` +
+       'number: functions and classes reached')));
+  const visible = [...perModule.keys()];
+  const ranks = [...new Set(visible.map((m) => M.modules[m][2]))].sort((a, b) => b - a);
+  const W = 200, H = 24, GAPX = 18, LINE = 34, GAPY = 26, LEFT = 74, TOP = 18;
+  const perLine = Math.max(1, Math.floor((host.clientWidth - LEFT - 20) / (W + GAPX)));
+  const where = new Map();
+  const labels = [];
+  let y = TOP;
+  for (const r of ranks) {
+    const items = visible.filter((m) => M.modules[m][2] === r).sort((a, b) => M.modules[a][0].localeCompare(M.modules[b][0]));
+    labels.push([r, y]);
+    items.forEach((m, i) => where.set(m, [LEFT + (i % perLine) * (W + GAPX), y + Math.floor(i / perLine) * LINE]));
+    y += Math.ceil(items.length / perLine) * LINE + GAPY;
+  }
+  const height = y;
+  const width = LEFT + Math.min(perLine, Math.max(...ranks.map((r) => visible.filter((m) => M.modules[m][2] === r).length)))
+                * (W + GAPX) + 60;
+  const svg = el('svg:svg', { width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
+                              'aria-label': `${visible.length} modules reached` });
+  for (const [r, top] of labels) svg.append(el('svg:text', { class: 'rank', x: 10, y: top + 16 }, `depth ${r}`));
+  const edges = el('svg:g');
+  svg.append(edges);
+  for (const [a, b, kind] of M.imports) {
+    if (!where.has(a) || !where.has(b) || a === b) continue;
+    const [ax, ay] = where.get(a), [bx, by] = where.get(b);
+    let d;
+    if (by > ay + H) {  // down to a shallower module
+      const sx = ax + W / 2, sy = ay + H, tx = bx + W / 2, ty = by, bend = Math.max(20, (ty - sy) / 2);
+      d = `M${sx},${sy} C${sx},${sy + bend} ${tx},${ty - bend} ${tx},${ty}`;
+    } else {  // within a cycle or up to a deeper one (lazy): round the right-hand side
+      const sx = ax + W, sy = ay + H / 2, tx = bx + W, ty = by + H / 2;
+      d = `M${sx},${sy} C${sx + 40},${sy} ${tx + 40},${ty} ${tx},${ty}`;
+    }
+    edges.append(el('svg:path', { class: 'edge' + (kind === 'lazy-imports' ? ' lazy' : ''), d,
+                                  'data-a': a, 'data-b': b }));
+  }
+  for (const m of visible) {
+    const [x, y] = where.get(m);
+    const slot = perModule.get(m);
+    const share = slot.members.size === members.length ? 'all' : 'partial';
+    const classes = ['module', share, entryModules.has(m) ? 'entry' : '', state.module === m ? 'selected' : ''].join(' ');
+    const label = shortModule(m);
+    const group = el('svg:g', { class: classes, tabindex: 0, role: 'button', transform: `translate(${x},${y})`,
+                                'aria-label': `${label}: ${slot.nodes.size} reached`,
+                                onclick: () => selectModule(m),
+                                onkeydown: (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectModule(m); } } },
+      el('svg:title', {}, `${M.modules[m][0]} (${M.modules[m][1]})`),
+      el('svg:rect', { width: W, height: H }),
+      el('svg:text', { x: 8, y: 16 }, label.length > 23 ? label.slice(0, 22) + '…' : label),
+      el('svg:text', { class: 'count', x: W - 8, y: 16, 'text-anchor': 'end' }, slot.nodes.size));
+    svg.append(group);
+  }
+  host.append(svg);
+  lightEdges();
+}
+
+function lightEdges() {
+  for (const path of document.querySelectorAll('path.edge')) {
+    const lit = state.module !== null && (Number(path.dataset.a) === state.module || Number(path.dataset.b) === state.module);
+    path.classList.toggle('lit', lit);
+  }
+}
+
+function sum(object) { return Object.values(object).reduce((a, b) => a + b, 0); }
+
+function renderDetails() {
+  const host = document.getElementById('details');
+  host.replaceChildren();
+  if (state.candidate === null) {
+    host.append(el('h2', {}, 'Journey candidates'),
+      el('p', { class: 'note' }, 'Entry points that are each other\'s nearest by distinctive shared reach. ' +
+         'Evidence of shared code, not proof of a shared goal; every reach is a lower bound (unresolved calls).'));
+    return;
+  }
+  const c = M.candidates[state.candidate];
+  const { members, perModule } = candidateModel(c);
+  host.append(el('h2', {}, `Candidate #${state.candidate + 1}`),
+    el('p', { class: 'note' }, members.length > 1
+      ? `${members.length} entry points, linked at ${c.links.map((l) => l[2]).join(', ')}.`
+      : 'A single entry point: no other is its mutual nearest at the threshold.'));
+  host.append(el('h3', {}, 'Entry points'));
+  const table = el('table');
+  members.forEach((e, position) => {
+    const entry = M.entries[e];
+    const nearest = c.members[position].nearest;
+    table.append(el('tr', {},
+      el('td', {}, el('button', { class: 'link mono', type: 'button', 'aria-pressed': String(state.entry === e),
+                                  onclick: () => { state.entry = state.entry === e ? null : e; renderDetails(); } }, entryName(e)),
+         ...entry.values.map((v) => el('div', { class: 'mono value' }, v)),
+         el('div', { class: 'note' }, `${entry.rules.join(', ')} · reaches ${entry.reached.filter(isFunction).length} functions ` +
+            `(+${entry.reached.filter((n) => !isFunction(n)).length} classes) ` +
+            `(${sum(entry.unresolvedCalls)} unresolved calls) · ` +
+            (nearest ? `nearest ${nearest[1]}: ${nearest[0].map(entryName).join(', ')}` : 'no similar entry point')))));
+  });
+  host.append(table);
+  if (state.entry !== null && members.includes(state.entry)) {
+    const entry = M.entries[state.entry];
+    host.append(el('h3', {}, `Spine of ${entryName(state.entry)}`),
+      el('p', { class: 'note' }, 'Its own resolved calls and references in source order: an outline, not a trace.'));
+    const spine = el('table');
+    for (const [line, target, kind] of entry.spine) {
+      spine.append(el('tr', {}, el('td', { class: 'n' }, line), el('td', { class: 'mono' }, nodeLabel(target)),
+                       el('td', { class: 'n' }, kind)));
+    }
+    host.append(entry.spine.length ? spine : el('p', { class: 'note' }, 'No resolved calls or references.'));
+  }
+  if (state.module !== null && perModule.has(state.module)) {
+    const slot = perModule.get(state.module);
+    host.append(el('h3', {}, `${shortModule(state.module)}: ${slot.nodes.size} reached`),
+      el('p', { class: 'note mono' }, M.modules[state.module][1]));
+    const rows = el('table');
+    [...slot.nodes.entries()].sort((a, b) => M.nodes[a[0]][3] - M.nodes[b[0]][3]).forEach(([node, who]) => {
+      const [, qualname, kind, line, unresolved] = M.nodes[node];
+      rows.append(el('tr', {},
+        el('td', { class: 'mono' }, qualname, kind === 'class' ? ' (class)' : ''),
+        el('td', { class: 'n' }, `line ${line}`),
+        el('td', { class: 'n', title: 'unresolved calls in its body' }, unresolved ? `${unresolved} unresolved` : ''),
+        ...(members.length > 1 ? [el('td', { class: 'dots', title: 'which entry points reach it' },
+                                     ...members.map((_, p) => el('span', { class: who.has(p) ? 'on' : '' })))] : [])));
+    });
+    host.append(rows);
+  }
+  const shared = c.shared.filter(([node]) => !members.some((e) => M.entries[e].node === node));
+  host.append(el('h3', {}, members.length > 1 ? 'Shared by every member, rarest first' : 'Reached, rarest first'),
+    el('p', { class: 'note' }, 'With how many of the ' + M.entries.length + ' entry points reach each.'));
+  const list = el('table');
+  const show = (limit) => {
+    list.replaceChildren();
+    for (const [node, count] of shared.slice(0, limit)) {
+      list.append(el('tr', {}, el('td', { class: 'n' }, count), el('td', { class: 'mono' }, nodeLabel(node))));
+    }
+  };
+  show(15);
+  host.append(list);
+  if (shared.length > 15) {
+    const more = el('button', { class: 'link more', type: 'button',
+                                onclick: () => { show(shared.length); more.remove(); } }, `Show all ${shared.length}`);
+    host.append(more);
+  }
+}
+
+function select(index) {
+  state.candidate = index; state.module = null; state.entry = null;
+  history.replaceState(null, '', `#c=${index + 1}`);
+  renderList(); renderGraph(); renderDetails();
+}
+
+function selectModule(m) {
+  state.module = state.module === m ? null : m;
+  history.replaceState(null, '', `#c=${state.candidate + 1}` + (state.module === null ? '' : `&m=${encodeURIComponent(M.modules[m][0])}`));
+  for (const group of document.querySelectorAll('g.module')) group.classList.remove('selected');
+  renderGraph(); renderDetails();
+}
+
+function fromHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const index = Number(params.get('c')) - 1;
+  if (Number.isInteger(index) && index >= 0 && index < M.candidates.length) {
+    state.candidate = index;
+    const module = M.modules.findIndex(([name]) => name === params.get('m'));
+    state.module = module >= 0 ? module : null;
+  }
+}
+
+facts();
+fromHash();
+document.getElementById('filter').addEventListener('input', renderList);
+window.addEventListener('resize', () => { if (state.candidate !== null) renderGraph(); });
+renderList(); renderGraph(); renderDetails();
+</script>
+</body>
+</html>

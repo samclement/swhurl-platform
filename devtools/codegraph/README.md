@@ -14,7 +14,9 @@ python3 -m codegraph reach head.json py:swhurl.apps.cli:main_promote  # what one
 python3 -m codegraph snapshot HEAD --scope tools/swhurl | python3 -m codegraph entries -
 python3 -m codegraph entries head.json > entries.json
 python3 -m codegraph journeys head.json entries.json --text    # entry points grouped by distinctive shared reach
+python3 -m codegraph journeys head.json entries.json > journeys.json
+python3 -m codegraph view head.json entries.json journeys.json > /tmp/codegraph.html  # one offline page; open it in a browser
 make check-codegraph                                                  # its tests; part of make check
 ```
 
-`--scope` is a package directory; modules are named from its parent (`tools/swhurl/apps/cli.py` is `swhurl.apps.cli`). A scope that does not exist at that revision gives an empty snapshot. `entries` and `reach` read a snapshot document, and `journeys` a snapshot and the entries document derived from it, each from a path or `-` (stdin); none of them reads Git. Exit 0 on success, 1 on failure (`codegraph: <code>: <detail>` on stderr, nothing on stdout), 2 on a usage error.
+`--scope` is a package directory; modules are named from its parent (`tools/swhurl/apps/cli.py` is `swhurl.apps.cli`). A scope that does not exist at that revision gives an empty snapshot. `entries` and `reach` read a snapshot document, `journeys` a snapshot and the entries document derived from it, and `view` all three, each from a path or `-` (stdin, at most one); none of them reads Git. Exit 0 on success, 1 on failure (`codegraph: <code>: <detail>` on stderr, nothing on stdout), 2 on a usage error.

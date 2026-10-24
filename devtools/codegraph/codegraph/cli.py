@@ -20,6 +20,7 @@ from codegraph import entries as entry_points
 from codegraph import journeys as journey_candidates
 from codegraph import reach as reaches
 from codegraph import snapshot as snapshots
+from codegraph import view as views
 from codegraph.entries import Entries, Evidence
 from codegraph.errors import CodegraphError
 from codegraph.journeys import Journeys
@@ -182,6 +183,13 @@ def run_journeys(args: argparse.Namespace) -> bytes:
             else documents.dump(journey_candidates.to_document(result)))
 
 
+def run_view(args: argparse.Namespace) -> bytes:
+    if [args.snapshot, args.entries, args.journeys].count('-') > 1:
+        raise CodegraphError('usage', 'only one input can be read from stdin')
+    return views.render(read_snapshot(args.snapshot), entry_points.load(read(args.entries)),
+                        journey_candidates.load(read(args.journeys)))
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         prog='codegraph',
@@ -225,6 +233,14 @@ def parser() -> argparse.ArgumentParser:
     journeys.add_argument('--limit', type=limit, default=10,
                           help='With --text, shared functions shown per candidate (default 10, 0 for all)')
     journeys.set_defaults(run=run_journeys)
+
+    view = commands.add_parser('view', help='One offline HTML page of the journey candidates and what they reach',
+                               description='Render a snapshot, its entries and its journeys as one self-contained HTML '
+                                           'page on stdout; open it in a browser.')
+    view.add_argument('snapshot', help="A snapshot document's path, or - for stdin")
+    view.add_argument('entries', help="The entries document derived from it: a path, or - for stdin")
+    view.add_argument('journeys', help="The journeys document derived from both: a path, or - for stdin")
+    view.set_defaults(run=run_view)
     return result
 
 

@@ -1,6 +1,6 @@
 # Code graph: dependency chains, journeys and hotspots from code
 
-**Status: steps 0 (place, policy, check wiring), 1 (the core, `snapshot`), 2 (`references`, `entries`, `reach`) and 3 (`journeys`, gate answered, grouping changed to mutual nearest neighbours) done and committed 24 October 2026; step 4 next.** A read-only development aid in [`devtools/codegraph/`](../devtools/codegraph) that derives a dependency graph, entry-point journeys, hotspots and changes between commits from **v1 source and its Git history**. Independent of the v2 prototype. No push or deployment is authorised by this page.
+**Status: steps 0 (place, policy, check wiring), 1 (the core, `snapshot`), 2 (`references`, `entries`, `reach`) and 3 (`journeys`, gate answered, grouping changed to mutual nearest neighbours) done and committed 24 October 2026; a preview page (`view`) implemented and committed 24 October 2026, for the operator's first look; step 4 next.** A read-only development aid in [`devtools/codegraph/`](../devtools/codegraph) that derives a dependency graph, entry-point journeys, hotspots and changes between commits from **v1 source and its Git history**. Independent of the v2 prototype. No push or deployment is authorised by this page.
 
 [Plan section 0](plan.md#0-where-this-paused-and-what-is-left) indexes this page; it is the canonical design, plan and handoff for this workstream. **Every change applies [section 4](#4-primitives-and-contracts) and [section 5](#5-designed-for-incremental-change).**
 
@@ -51,9 +51,9 @@ Each layer may use only the layers above it in this table. Signatures are the in
 | **A. Revision reader** | `git.py` | `resolve(repo, ref) -> Revision`<br>`tree(repo, revision, scope) -> tuple[Blob, ...]` (path, blob ID)<br>`blob(repo, blob_id) -> bytes`<br>`log(repo, range) -> tuple[Commit, ...]` (step 5) | The only module that runs a process. Reads Git objects; never the working tree, index or configuration it could change. |
 | **B. Extraction** | `python_ast.py` | `module_name(path, import_root) -> str`<br>`extract(module, path, source: bytes) -> FileFacts`: one file's definitions, imports, call sites and module-level bindings, resolved lexically within the file and still symbolic across files<br>`link(revision, scope, import_root, files: Iterable[FileFacts]) -> Snapshot`: resolve references across files (including re-exports), count external and unresolved calls | Pure. `extract` depends only on its arguments, so its result can be cached by blob ID. |
 | **C. Documents** | `documents.py`, `snapshot.py` | `documents.dump(document) -> bytes` (canonical), `documents.load(data, kind) -> dict` (the envelope), `documents.digest(document) -> str`, `documents.Input` (an entry of `inputs`, with a strict `Input.from_document`), `documents.fields`, `documents.invalid` (the strict field checks every loader shares)<br>`snapshot.to_document`, `snapshot.from_document` (strict), `snapshot.dump`, `snapshot.load`, `snapshot.as_input(snapshot) -> Input` | Pure. |
-| **D. Graph** | `graph.py` | `graph(snapshot, kinds) -> Graph` (every node, edges of the chosen kinds)<br>`closure(graph, starts) -> frozenset[NodeId]` (the starts included)<br>`components(graph) -> tuple[frozenset[NodeId], ...]` (strongly connected)<br>`rank(graph) -> Mapping[NodeId, int]` (depth with cycles condensed) | Pure and generic: no Python or swhurl knowledge. Added with the first feature that needs each. |
-| **E. Features** | one module each | `entries(snapshot) -> Entries`, with `entries.from_document` (strict), `entries.load`, `entries.as_input(entries) -> Input`<br>`reach(snapshot, node) -> Reach`<br>`journeys(snapshot, entries, params) -> Journeys`<br>`diff(a, b, journeys_a=None, journeys_b=None) -> Diff`<br>`hotspots(snapshot, history, journeys=None) -> Hotspots`<br>`timeline(snapshots, params) -> Timeline` | Pure: documents in, one document out. Built from layer D and other features' public functions. |
-| **F. CLI** | `cli.py` | One subcommand per primitive that produces a document; rendering as JSON or `--text` | Reads arguments, files and stdin; writes stdout and stderr; calls layer A only for `snapshot`, `history` and `timeline`. |
+| **D. Graph** | `graph.py` | `graph(snapshot, kinds) -> Graph` (every node, edges of the chosen kinds)<br>`closure(graph, starts) -> frozenset[NodeId]` (the starts included)<br>`components(graph) -> tuple[frozenset[NodeId], ...]` (strongly connected)<br>`rank(graph) -> Mapping[NodeId, int]` (depth with cycles condensed: 0 for a node that reaches nothing outside its cycle, otherwise one more than the deepest it has an edge to) | Pure and generic: no Python or swhurl knowledge. Added with the first feature that needs each; all four exist. |
+| **E. Features** | one module each | `entries(snapshot) -> Entries`, with `entries.from_document` (strict), `entries.load`, `entries.as_input(entries) -> Input`<br>`reach(snapshot, node) -> Reach`, `reach.many(snapshot, nodes) -> tuple[Reach, ...]` (one graph view and digest for all)<br>`journeys(snapshot, entries, params) -> Journeys`, with `journeys.from_document` (strict) and `journeys.load`<br>`diff(a, b, journeys_a=None, journeys_b=None) -> Diff`<br>`hotspots(snapshot, history, journeys=None) -> Hotspots`<br>`timeline(snapshots, params) -> Timeline` | Pure: documents in, one document out. Built from layer D and other features' public functions. |
+| **F. CLI** | `cli.py`, `view.py` (with its template `view.html`) | One subcommand per primitive that produces a document; rendering as JSON or `--text`<br>`view.render(snapshot, entries, journeys) -> bytes`: one self-contained HTML page | Reads arguments, files and stdin; writes stdout and stderr; calls layer A only for `snapshot`, `history` and `timeline`. |
 
 The snapshot is a composition, not a special case (`cli.build_snapshot`):
 
@@ -91,6 +91,7 @@ codegraph snapshot HEAD~20 > before.json
 codegraph entries head.json > entries.json
 codegraph reach head.json py:swhurl.apps.cli:main_promote
 codegraph journeys head.json entries.json > journeys.json
+codegraph view head.json entries.json journeys.json > view.html
 codegraph diff before.json head.json
 codegraph snapshot HEAD | codegraph entries -
 ```
@@ -121,6 +122,7 @@ Each step ends in a usable subcommand with tests and is checked against v1 evide
 | 1 | The core: layers A–C and `snapshot` (**done**) | 0 |
 | 2 | `entries`, `reach` (**done**) | 1 |
 | 3 | `journeys` (validation gate) (**done**) | 2 |
+| View | `view`, a preview page (implemented, first look pending) | 3 |
 | 4 | `diff` | 1; journey changes need 3 |
 | 5 | `hotspots`, `history`, `timeline` | 1; journey counts need 3 |
 | Later | Separate decisions (below) | the above |
@@ -221,6 +223,22 @@ Single entry points were not marked. **Conclusion:** the weighting finds real pa
 | Mutual nearest neighbours at 0.3 / 0.5, ties broken by ID | 17 / 12 pairs | 4 of 4 |
 | **Mutual nearest at 0.3, ties all count (chosen)** | one group of 3, 16 pairs | **4 of 4** |
 
+### View: a preview page (implemented, first look pending)
+
+`codegraph view <snapshot> <entries> <journeys> > view.html`, then open the file in a browser. The operator chose, on 24 October 2026, to see the work before building `diff`, and to iterate on the page from there.
+
+- **One self-contained file:** the model is embedded as JSON (`<` escaped, so data cannot close its script element), drawn by inline script with `textContent` only; a Content Security Policy of `default-src 'none'` lets it load nothing. Identical documents give identical bytes. The view checks that the entries and journeys were derived from the snapshot given (`invalid-document` otherwise) and reads at most one input from stdin.
+- **Left:** the candidates, groups first, filterable by entry point, route or command; each shows its size, functions reached and best similarity.
+- **Middle:** the modules the selected candidate reaches, one row per depth (`rank` over module-level `imports`, deepest at the top; lazy imports drawn dashed but not placing a module), shaded by whether every member or only some reach them, entry point modules outlined, with the count of functions and classes reached. Selecting a module lights its import edges.
+- **Right:** the members with their rule values, functions reached, unresolved calls and nearest entry points; a member's spine; the functions reached in the selected module, with which members reach each; the shared functions, rarest first.
+- The URL fragment keeps the selection (`#c=3&m=swhurl.apps.edit`), so a view can be linked or reopened.
+
+**Acceptance, met:** 98 tests (13 new). Layer D: components with cycles, a self-edge, an empty graph and a 5,000-node chain without recursion; rank through cycles and by the deepest path. Layer E: the journeys loader round-trips and refuses malformed documents case by case. Layer F on hand-written documents: the model is embedded exactly and deterministically, lazy imports do not set depth, a value containing `</script>` stays inside the data, the page has no `src`, `href` or URL besides the SVG namespace, and documents from other inputs are refused. CLI: `view` with journeys from stdin matches the file form, and two inputs on stdin are refused.
+
+**v1 check (24 October 2026, HEAD `2fb23035` snapshot):** 186 KB, about 0.7 s, byte-identical across runs. In headless Chromium (1600 × 1000, no console errors): all 70 candidates listed; the promotion pair reaches 51 modules over depths 0 to 18; `console.server:main` draws 68 modules and reports 394 functions (+79 classes), matching its journeys document; a fragment-selected module is outlined with its edges lit. Not yet checked: narrow windows, keyboard-only use, and a browser other than Chromium.
+
+**Known limits of the first version:** edges between modules in the first column of successive rows run on top of each other; a row with many modules wraps; there is no before/after comparison until step 4.
+
 ### Step 4: comparison between commits
 
 `codegraph diff <snapshot-a> <snapshot-b> [--journeys <a> <b>]`.
@@ -249,7 +267,7 @@ Single entry points were not marked. **Conclusion:** the weighting finds real pa
 
 Each needs its own decision once the core has proved useful, and each fits section 5 as a feature or a renderer of documents:
 
-- **HTML view:** offline, a combined before/after graph with stable placement from derived depth, module overview with function drill-down. The [repository blueprint](repository-blueprint.html) renderer is a reuse candidate.
+- **HTML view:** a first version exists (View, above). Still to decide: a combined before/after graph once step 4 exists. The [repository blueprint](repository-blueprint.html) renderer was considered for reuse, but its builder (the `repository-blueprint` skill) is not installed here, so the view has its own small template.
 - **Names for journey candidates:** an optional overlay referring to entry point IDs, checked at each revision.
 - **Agent skill:** queries the CLI and cites node IDs and commits; tested against the known v1 answers above.
 - **Type-aware resolution:** pyright, or SCIP indexers for more languages, to recover `ctx.*` reach and methods behind constructors.
@@ -261,6 +279,8 @@ Each needs its own decision once the core has proved useful, and each fits secti
 Settled with step 0 (24 October 2026): location `devtools/codegraph/`; tests run by `make check-codegraph` as part of `make check` and CI; the `AGENTS.md` and contributing exception as described in step 0.
 
 Taken in step 2 (24 October 2026), confirmed by the operator at the step 3 gate: entry rules read only snapshot facts. Layer B therefore records generic Python facts (object references, arguments with their callee and literals, main blocks) and `entries.py` interprets them, instead of layer B recognising entry points itself. Entries and reach documents have no loader until a feature reads them (step 3 added the entries loader).
+
+Taken 24 October 2026 by the operator: a preview page (`view`) before step 4, to see the work and iterate on it. Taken with it, open to review at the first look: layout by import depth in rows, deepest at the top; counts of functions and classes on modules, functions only elsewhere, as in the journeys document.
 
 Taken in step 3 (24 October 2026): only function nodes are compared; an entry point's own node counts in its reach; `uniform` weighting stays as a parameter for comparison. After the validation gate the operator chose `mutual-nearest` grouping at a 0.3 floor over linking every pair above 0.5 (the plan's first rule), which chained shared subsystems into false features; ties all count, so tied neighbours (the three team pages) form one group instead of a choice by ID.
 

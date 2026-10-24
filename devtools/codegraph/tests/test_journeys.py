@@ -130,5 +130,49 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, 'usage')
 
 
+
+class LoadTests(unittest.TestCase):
+    def document(self):
+        return journeys.to_document(journeys.journeys(*RARE, Params(threshold=0.2)))
+
+    def test_round_trip(self):
+        result = journeys.journeys(*RARE, Params(threshold=0.2))
+        self.assertEqual(journeys.load(documents.dump(journeys.to_document(result))), result)
+
+    def test_load_refuses_malformed_journeys(self):
+        def broken(change):
+            document = self.document()
+            change(document)
+            return documents.dump(document)
+
+        cases = {
+            'unknown field': lambda d: d['candidates'][0].update(extra=1),
+            'missing member field': lambda d: d['candidates'][0]['members'][0].pop('reached'),
+            'reached 0': lambda d: d['candidates'][0]['members'][0].update(reached=0),
+            'similarity above 1': lambda d: d['candidates'][0]['links'][0].update(similarity=1.5),
+            'similarity as bool': lambda d: d['candidates'][0]['links'][0].update(similarity=True),
+            'link to a non-member': lambda d: d['candidates'][0]['links'][0].update(b='py:pkg.cli:z'),
+            'link reversed': lambda d: d['candidates'][0]['links'][0].update(a='py:pkg.cli:b', b='py:pkg.cli:a'),
+            'group without links': lambda d: d['candidates'][0].update(links=[]),
+            'nearest at 0': lambda d: d['candidates'][0]['members'][0]['nearest'].update(similarity=0),
+            'shared by fewer than the members': lambda d: d['candidates'][0]['shared'][0].update(entryPoints=1),
+            'entry point in two candidates': lambda d: d['candidates'].append(d['candidates'][0]),
+            'unknown category': lambda d: d['candidates'][0]['members'][0].update(unresolvedCalls={'guessed': 1}),
+            'another grouping': lambda d: d['params'].update(grouping='connected'),
+            'threshold 0': lambda d: d['params'].update(threshold=0),
+            'one input': lambda d: d['inputs'].pop(),
+            'inputs swapped': lambda d: d['inputs'].reverse(),
+        }
+        for name, change in cases.items():
+            with self.subTest(name), self.assertRaises(CodegraphError) as raised:
+                journeys.load(broken(change))
+            self.assertEqual(raised.exception.code, 'invalid-document')
+
+    def test_a_whole_number_threshold_loads(self):
+        document = self.document()
+        document['params']['threshold'] = 1
+        self.assertEqual(journeys.load(documents.dump(document)).params.threshold, 1.0)
+
+
 if __name__ == '__main__':
     unittest.main()

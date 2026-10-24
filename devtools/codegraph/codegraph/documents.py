@@ -14,7 +14,7 @@ from typing import Any
 
 from codegraph.errors import CodegraphError
 
-SUPPORTED = {'snapshot': frozenset({1}), 'entries': frozenset({1})}
+SUPPORTED = {'snapshot': frozenset({1}), 'entries': frozenset({1}), 'journeys': frozenset({1})}
 """The versions of each kind this code reads; anything else is refused, never upgraded silently."""
 
 ENVELOPE = ('kind', 'version', 'inputs', 'params')
@@ -76,7 +76,7 @@ def load(data: bytes, kind: str) -> dict[str, Any]:
 
 def fields(value: Any, where: str, required: Mapping[str, type], optional: Mapping[str, type] | None = None) -> dict:
     """``value`` as a dict if it is an object with exactly the required fields, any of the optional ones,
-    and each of the expected type (a boolean is not an integer); ``where`` names it in the error."""
+    and each of the expected type (a boolean is not a number; an integer is a float); ``where`` names it in the error."""
     optional = optional or {}
     if not isinstance(value, Mapping):
         invalid(where, 'expected an object')
@@ -85,13 +85,18 @@ def fields(value: Any, where: str, required: Mapping[str, type], optional: Mappi
     if unknown or missing:
         invalid(where, ', '.join([*(f'unknown field {name}' for name in unknown), *(f'missing {name}' for name in missing)]))
     for name, expected in {**required, **optional}.items():
-        if name in value and not (is_int(value[name]) if expected is int else isinstance(value[name], expected)):
+        if name in value and not (is_int(value[name]) if expected is int else is_number(value[name]) if expected is float
+                                  else isinstance(value[name], expected)):
             invalid(f'{where}.{name}', f'expected {expected.__name__}')
     return dict(value)
 
 
 def is_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def is_number(value: Any) -> bool:
+    return is_int(value) or isinstance(value, float)
 
 
 def invalid(where: str, reason: str):

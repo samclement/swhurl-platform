@@ -6,7 +6,8 @@ source order (within a line, by target ID): a readable outline, not an execution
 """
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,18 +40,32 @@ class Reach:
 
 
 def reach(snapshot: Snapshot, node: str) -> Reach:
+    return many(snapshot, [node])[0]
+
+
+def many(snapshot: Snapshot, starts: Iterable[str]) -> tuple[Reach, ...]:
+    """``reach`` for each start, in the order given, sharing one graph view and one digest of the snapshot."""
     nodes = {item.id: item for item in snapshot.nodes}
-    if node not in nodes:
-        raise CodegraphError('unknown-node', node)
-    reached = sorted(closure(graph(snapshot, EDGE_KINDS), [node]))
-    unresolved: Counter[str] = Counter()
-    for item in reached:
-        unresolved.update(dict(nodes[item].unresolved_calls))
-    spine = sorted((Step(line, edge.target, edge.kind) for edge in snapshot.edges
-                    if edge.source == node and edge.kind in EDGE_KINDS for line in edge.lines),
-                   key=lambda step: (step.line, step.target, step.kind))
-    return Reach(snapshots.as_input(snapshot), node, tuple(reached), sum(nodes[item].external_calls for item in reached),
-                 tuple(sorted(unresolved.items())), tuple(spine))
+    starts = list(starts)
+    unknown = sorted(set(starts) - set(nodes))
+    if unknown:
+        raise CodegraphError('unknown-node', ', '.join(unknown))
+    source = snapshots.as_input(snapshot)
+    view = graph(snapshot, EDGE_KINDS)
+    steps: dict[str, list[Step]] = defaultdict(list)
+    for edge in snapshot.edges:
+        if edge.kind in EDGE_KINDS:
+            steps[edge.source].extend(Step(line, edge.target, edge.kind) for line in edge.lines)
+    results = []
+    for node in starts:
+        reached = sorted(closure(view, [node]))
+        unresolved: Counter[str] = Counter()
+        for item in reached:
+            unresolved.update(dict(nodes[item].unresolved_calls))
+        spine = sorted(steps[node], key=lambda step: (step.line, step.target, step.kind))
+        results.append(Reach(source, node, tuple(reached), sum(nodes[item].external_calls for item in reached),
+                             tuple(sorted(unresolved.items())), tuple(spine)))
+    return tuple(results)
 
 
 def to_document(result: Reach) -> dict[str, Any]:

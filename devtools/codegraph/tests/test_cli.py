@@ -197,6 +197,18 @@ class AnalysisCommandTests(unittest.TestCase):
         self.assertIn(b'candidate 1: 2 entry points, 1 links (similarity 0.2 to 0.2), 1 functions shared by all', text)
         self.assertIn(b"py:pkg.cli:page  '/page'  (reach 2, unresolved 0, nearest 0.2 py:pkg.cli:main)", text)
 
+    def test_view_renders_the_three_documents_as_one_page(self):
+        journeys = self.tmp / 'journeys.json'
+        journeys.write_bytes(codegraph('journeys', str(self.snapshot), str(self.entries)).stdout)
+        result = codegraph('view', str(self.snapshot), str(self.entries), '-', stdin=journeys.read_bytes())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.startswith(b'<!doctype html>'))
+        self.assertIn(b'"/page"', result.stdout)
+        self.assertEqual(codegraph('view', str(self.snapshot), str(self.entries), str(journeys)).stdout, result.stdout)
+        twice = codegraph('view', '-', str(self.entries), '-', stdin=self.snapshot.read_bytes())
+        self.assertEqual((twice.returncode, twice.stdout), (1, b''))
+        self.assertIn(b'codegraph: usage: only one input', twice.stderr)
+
     def test_failures_exit_1_with_empty_stdout(self):
         other = json.loads(self.entries.read_bytes())
         other['inputs'][0]['digest'] = 'sha256:' + '0' * 64

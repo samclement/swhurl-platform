@@ -208,6 +208,130 @@ class CountedTests(unittest.TestCase):
         self.assertEqual(calls_from(result, 'py:pkg.a:cats'), set())
 
 
+class ReferenceTests(unittest.TestCase):
+    """A function or class used as a value is a ``references`` edge; a call or a value is not."""
+
+    def test_functions_and_classes_used_as_values(self):
+        result = snapshot({'pkg/b.py': B, 'pkg/a.py': '''
+            import pkg.b
+            from pkg.b import f, K
+
+            def deco(function):
+                return function
+
+            @deco
+            def decorated():
+                pass
+
+            class Sub(K):
+                pass
+
+            def main():
+                def change():
+                    pass
+
+                run(change, True)
+                table = {'go': f, 'build': K.build}
+                handler = pkg.b.f
+                try:
+                    pass
+                except K:
+                    pass
+                return Sub
+
+            def run(work, flag):
+                work()
+            '''})
+        self.assertEqual(edges(result, 'references'), {
+            ('py:pkg.a:main', 'py:pkg.a:main.change'), ('py:pkg.a:main', 'py:pkg.b:f'), ('py:pkg.a:main', 'py:pkg.b:K.build'),
+            ('py:pkg.a:main', 'py:pkg.b:K'), ('py:pkg.a:main', 'py:pkg.a:Sub'),
+            ('py:pkg.a', 'py:pkg.a:deco'), ('py:pkg.a', 'py:pkg.b:K'),
+        })
+        self.assertEqual(calls_from(result, 'py:pkg.a:main'), {'py:pkg.a:run'}, 'a reference is not a call')
+        self.assertEqual(dict(node(result, 'py:pkg.a:run').unresolved_calls), {'dynamic': 1})
+
+    def test_calls_values_modules_builtins_and_annotations_are_not_references(self):
+        result = snapshot({'pkg/b.py': B, 'pkg/a.py': '''
+            import json
+            import pkg.b
+            from pkg.b import f, K, VALUE
+
+            def g(param: K) -> K:
+                local: K = K()
+                f()
+                pkg.b.f()
+                x = VALUE
+                y = param
+                z = len
+                w = json.dumps
+                m = pkg.b
+                f = 1
+            '''})
+        self.assertEqual(edges(result, 'references'), set())
+        self.assertEqual(calls_from(result, 'py:pkg.a:g'), {'py:pkg.b:K', 'py:pkg.b:f'})
+
+    def test_a_reference_lands_on_the_definition_through_a_re_export(self):
+        result = snapshot({'pkg/__init__.py': 'from .b import f\n', 'pkg/b.py': B,
+                           'pkg/c.py': 'import pkg\n\ndef use():\n    return pkg.f\n'})
+        self.assertEqual(edges(result, 'references'), {('py:pkg.c:use', 'py:pkg.b:f')})
+
+    def test_arguments_record_the_callee_slot_and_string_literals(self):
+        result = snapshot({'pkg/b.py': B, 'pkg/a.py': '''
+            from starlette.routing import Route
+            from pkg.b import f, K
+
+            def page():
+                pass
+
+            def routes(other):
+                return [Route('/page', page, methods=['POST']), Route(path='/kw', endpoint=f), sorted([], key=f),
+                        other.add('/x', page), Route('/wrapped', wrap(page)), Route(*other, page), K(f)]
+
+            def wrap(function):
+                return function
+            '''})
+        self.assertEqual({(a.line, a.callee, a.slot, a.target, a.literals) for a in result.arguments}, {
+            (9, 'starlette.routing.Route', '1', 'py:pkg.a:page', (('0', '/page'),)),
+            (9, 'starlette.routing.Route', 'endpoint', 'py:pkg.b:f', (('path', '/kw'),)),
+            (9, 'builtins.sorted', 'key', 'py:pkg.b:f', ()),
+            (10, '', '1', 'py:pkg.a:page', (('0', '/x'),)),
+            (10, 'pkg.a.wrap', '0', 'py:pkg.a:page', ()),
+            (10, 'pkg.b.K', '0', 'py:pkg.b:f', ()),
+        })
+        self.assertEqual({a.source for a in result.arguments}, {'py:pkg.a:routes'})
+
+    def test_object_reference_strings(self):
+        result = snapshot({'pkg/a.py': '''
+            COMMANDS = ['pkg.cli:main', 'cli:Store.save', 'r:gz']
+            NOT = ['a:b:c', 'a b:c', 'pkg.cli', 'x:', f'pkg.{1}:main', f'cli:main{1}', 'http://x']
+
+            def f():
+                """Run cli:main."""
+                return 'x.y:z'
+            '''})
+        self.assertEqual({(o.source, o.line, o.value) for o in result.object_references}, {
+            ('py:pkg.a', 2, 'pkg.cli:main'), ('py:pkg.a', 2, 'cli:Store.save'), ('py:pkg.a', 2, 'r:gz'),
+            ('py:pkg.a:f', 7, 'x.y:z')})
+
+    def test_main_blocks_are_top_level_name_guards(self):
+        result = snapshot({'pkg/a.py': '''
+            def main():
+                if __name__ == '__main__':
+                    pass
+
+            if __name__ == '__main__':
+                main()
+                main()
+
+            if '__main__' == __name__:
+                main()
+            elif __name__ == 'other':
+                pass
+            '''})
+        self.assertEqual(node(result, 'py:pkg.a').main_blocks, ((7, 8), (11, 11)))
+        self.assertEqual(node(result, 'py:pkg.a:main').main_blocks, ())
+
+
 class SnapshotTests(unittest.TestCase):
     def test_nodes_carry_kind_location_signature_and_module(self):
         result = snapshot({'pkg/__init__.py': '', 'pkg/a.py': '''

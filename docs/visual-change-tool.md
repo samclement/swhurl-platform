@@ -1,6 +1,6 @@
 # Code graph: dependency chains, journeys and hotspots from code
 
-**Status: steps 0 (place, policy, check wiring) and 1 (the core, `snapshot`) done and committed 24 October 2026; step 2 next.** A read-only development aid in [`devtools/codegraph/`](../devtools/codegraph) that derives a dependency graph, entry-point journeys, hotspots and changes between commits from **v1 source and its Git history**. Independent of the v2 prototype. No push or deployment is authorised by this page.
+**Status: steps 0 (place, policy, check wiring), 1 (the core, `snapshot`) and 2 (`references`, `entries`, `reach`) done and committed 24 October 2026; step 3 next.** A read-only development aid in [`devtools/codegraph/`](../devtools/codegraph) that derives a dependency graph, entry-point journeys, hotspots and changes between commits from **v1 source and its Git history**. Independent of the v2 prototype. No push or deployment is authorised by this page.
 
 [Plan section 0](plan.md#0-where-this-paused-and-what-is-left) indexes this page; it is the canonical design, plan and handoff for this workstream. **Every change applies [section 4](#4-primitives-and-contracts) and [section 5](#5-designed-for-incremental-change).**
 
@@ -27,13 +27,15 @@ Get the core right first: deterministic facts as JSON and a short text report fr
 | --- | --- |
 | **Revision** | A ref resolved once to a full commit ID. An unknown ref is a failure, never a fallback to `main` or the working tree. |
 | **Node** | A module, class or function/method (nested functions included) at a revision. ID `py:<module>:<qualified name>`, for example `py:swhurl.apps.cli:main_promote`; a module is `py:<module>`. Carries path, line range, signature and a body hash (docstring excluded). The same ID at two revisions is the same element for comparison. |
-| **Edge** | `imports` (an import statement outside any function, module to module), `lazy-imports` (an import inside a function) or `calls` (a call site resolved to a node in scope, from the innermost enclosing definition, or the module for module-level code). A call inside a nested function belongs to the nested function, not its parent. |
+| **Edge** | `imports` (an import statement outside any function, module to module), `lazy-imports` (an import inside a function), `calls` (a call site resolved to a node in scope, from the innermost enclosing definition, or the module for module-level code) or `references` (a function or class in scope used as a value outside call position: passed, stored, returned, a decorator, a base class, an `except` clause; annotations are not references). A call or reference inside a nested function belongs to the nested function, not its parent. |
 | **External call** | Resolves outside the scanned scope (`json.dumps`, `len`). Out of scope, counted separately; not unknown. |
 | **Unresolved call** | A call site the extractor cannot map, counted per caller by category: `value-attribute` (a method on a value: `runner.run()`, `self.x()`, `"".join()`), `dynamic` (calling a parameter, a variable or a computed value), `ambiguous` (a name bound in more than one way, such as a `try`/`except` import fallback), `missing` (a reference that leads nowhere in scope: an inherited method, a name the target module lacks) and `unparsed` (the target is in a file that did not parse). Anything computed over calls is therefore a **lower bound**. |
 | **Unparsed file** | A file that fails to parse at that revision, or a second file for an already-named module. Recorded with the error; its module node remains, the snapshot is still produced and reports list it. |
-| **Entry point** | A function the outside world starts, found by a named rule. Records the rule and the source location of its evidence. |
-| **Reach** | The functions reachable from a node over `calls` edges, with the unresolved count across them. |
-| **Spine** | The resolved calls in an entry function's own body, in source order: a readable outline, not an execution trace. |
+| **Object reference** | A whole string literal in the `module:qualname` form packaging entry points use (`'swhurl.apps.cli:main_promote'`, `'cli:main_promote'`), recorded unresolved where it appears. |
+| **Argument** | A function or class in scope passed directly as an argument of a call, recorded with the callee's absolute dotted name as the file binds it (`starlette.routing.Route`), the argument's position or keyword, and the call's string literal arguments. |
+| **Entry point** | A function the outside world starts, found by a named rule. Records the rule and the source location of its evidence; several pieces of evidence for one function make one entry point. |
+| **Reach** | The nodes reachable from a node over `calls` and `references` edges (the node included), with the external and unresolved call counts across them. |
+| **Spine** | The resolved calls and references in a node's own body, in source order (within a line, by target ID): a readable outline, not an execution trace. |
 | **Journey candidate** | A group of entry points that share **distinctive** reach, explained by the shared functions few other entry points reach. Evidence of shared code, not proof of a shared user goal. Names are not inferred. |
 | **Change** | Between two revisions: added, removed, moved (same qualified name and body hash, different module, old gone), candidate move (same qualified name, body differs, old gone), interface changed (signature), implementation changed (body hash). "No structural change" is not "no behaviour change". |
 | **Document** | A JSON value with a `kind`, `version`, `inputs` and `params`: the snapshot and every feature's output. Documents are what primitives exchange and what the CLI chains. |
@@ -48,8 +50,8 @@ Each layer may use only the layers above it in this table. Signatures are the in
 | --- | --- | --- | --- |
 | **A. Revision reader** | `git.py` | `resolve(repo, ref) -> Revision`<br>`tree(repo, revision, scope) -> tuple[Blob, ...]` (path, blob ID)<br>`blob(repo, blob_id) -> bytes`<br>`log(repo, range) -> tuple[Commit, ...]` (step 5) | The only module that runs a process. Reads Git objects; never the working tree, index or configuration it could change. |
 | **B. Extraction** | `python_ast.py` | `module_name(path, import_root) -> str`<br>`extract(module, path, source: bytes) -> FileFacts`: one file's definitions, imports, call sites and module-level bindings, resolved lexically within the file and still symbolic across files<br>`link(revision, scope, import_root, files: Iterable[FileFacts]) -> Snapshot`: resolve references across files (including re-exports), count external and unresolved calls | Pure. `extract` depends only on its arguments, so its result can be cached by blob ID. |
-| **C. Documents** | `documents.py`, `snapshot.py` | `documents.dump(document) -> bytes` (canonical), `documents.load(data, kind) -> dict` (the envelope), `documents.digest(document) -> str`<br>`snapshot.to_document`, `snapshot.from_document` (strict), `snapshot.dump`, `snapshot.load` | Pure. |
-| **D. Graph** | `graph.py` | `graph(snapshot, kinds) -> Graph` (adjacency view of chosen edge kinds)<br>`closure(graph, starts) -> frozenset[NodeId]`<br>`components(graph) -> tuple[frozenset[NodeId], ...]` (strongly connected)<br>`rank(graph) -> Mapping[NodeId, int]` (depth with cycles condensed) | Pure and generic: no Python or swhurl knowledge. Added with the first feature that needs each. |
+| **C. Documents** | `documents.py`, `snapshot.py` | `documents.dump(document) -> bytes` (canonical), `documents.load(data, kind) -> dict` (the envelope), `documents.digest(document) -> str`, `documents.Input` (an entry of `inputs`)<br>`snapshot.to_document`, `snapshot.from_document` (strict), `snapshot.dump`, `snapshot.load`, `snapshot.as_input(snapshot) -> Input` | Pure. |
+| **D. Graph** | `graph.py` | `graph(snapshot, kinds) -> Graph` (every node, edges of the chosen kinds)<br>`closure(graph, starts) -> frozenset[NodeId]` (the starts included)<br>`components(graph) -> tuple[frozenset[NodeId], ...]` (strongly connected)<br>`rank(graph) -> Mapping[NodeId, int]` (depth with cycles condensed) | Pure and generic: no Python or swhurl knowledge. Added with the first feature that needs each. |
 | **E. Features** | one module each | `entries(snapshot) -> Entries`<br>`reach(snapshot, node) -> Reach`<br>`journeys(snapshot, entries, params) -> Journeys`<br>`diff(a, b, journeys_a=None, journeys_b=None) -> Diff`<br>`hotspots(snapshot, history, journeys=None) -> Hotspots`<br>`timeline(snapshots, params) -> Timeline` | Pure: documents in, one document out. Built from layer D and other features' public functions. |
 | **F. CLI** | `cli.py` | One subcommand per primitive that produces a document; rendering as JSON or `--text` | Reads arguments, files and stdin; writes stdout and stderr; calls layer A only for `snapshot`, `history` and `timeline`. |
 
@@ -63,7 +65,9 @@ files = (extract(module_name(b.path, import_root), b.path, blob(repo, b.id))
 snapshot = link(revision.commit, scope, import_root, files)
 ```
 
-The snapshot document: `revision`, `nodes` (`id`, `kind`, `module`, `qualname`, `path`, `lines`, `externalCalls`, `unresolvedCalls` by category, and `signature`, `bodyHash`, `redefinitions` where they apply), `edges` (`source`, `target`, `kind`, `lines`) and `unparsed` (`path`, `error`), with `params` recording `scope`, `importRoot`, `extractor`, `extractorVersion` and `python`. Body hashes come from `ast.unparse`, so they are comparable only between snapshots with the same `python` value.
+The snapshot document: `revision`, `nodes` (`id`, `kind`, `module`, `qualname`, `path`, `lines`, `externalCalls`, `unresolvedCalls` by category, and `signature`, `bodyHash`, `redefinitions`, `mainBlocks` (a module's `if __name__ == '__main__':` bodies as line ranges) where they apply), `edges` (`source`, `target`, `kind`, `lines`), `unparsed` (`path`, `error`), `objectReferences` (`source`, `line`, `value`) and `arguments` (`source`, `line`, `callee`, `slot`, `target`, `literals`), with `params` recording `scope`, `importRoot`, `extractor`, `extractorVersion` and `python`. `mainBlocks`, `objectReferences` and `arguments` came with extractor version 2 and are optional when read. Body hashes come from `ast.unparse`, so they are comparable only between snapshots with the same `python` value.
+
+The entries document: `entries` (`node`, `evidence`: `rule`, `path`, `line`, and `value` when the rule matched one), `ambiguous` (evidence and `candidates`) and `unresolved` (evidence), with `params.rules`. The reach document: `node`, `reached` (node IDs, the node included), `externalCalls`, `unresolvedCalls` by category across everything reached, and `spine` (`line`, `target`, `kind`), with `params.node` and `params.edgeKinds`. Both name their snapshot in `inputs` (`kind`, `digest`, `revision`). Neither has a loader yet: step 3 adds one for entries when `journeys` reads it.
 
 ### Contracts every primitive keeps
 
@@ -115,7 +119,7 @@ Each step ends in a usable subcommand with tests and is checked against v1 evide
 | --- | --- | --- |
 | 0 | Place, policy and check wiring (**done**) | — |
 | 1 | The core: layers A–C and `snapshot` (**done**) | 0 |
-| 2 | `entries`, `reach` | 1 |
+| 2 | `entries`, `reach` (**done**) | 1 |
 | 3 | `journeys` (validation gate) | 2 |
 | 4 | `diff` | 1; journey changes need 3 |
 | 5 | `hotspots`, `history`, `timeline` | 1; journey counts need 3 |
@@ -140,24 +144,33 @@ Layers A–C, the snapshot document and `codegraph snapshot <ref> --scope <dir> 
 
 **Findings that shape step 2:**
 
-- `main_promote` itself calls only `run` and `Runner`: its work is in the nested `main_promote.change`, which it passes to `run(change, True)`. The probe's 210-function reach merged nested bodies into their parent; the snapshot does not. Reach needs the fact that a function is **passed as a value**: step 2 adds a `references` edge kind (a load of a name that resolves to a function or class in scope, outside call position), additively, keeping version 1.
+- `main_promote` itself calls only `run` and `Runner`: its work is in the nested `main_promote.change`, which it passes to `run(change, True)`. The probe's 210-function reach merged nested bodies into their parent; the snapshot does not. Reach needs the fact that a function is **passed as a value**: step 2 added the `references` edge kind for it, additively, keeping version 1.
 - Of the `value-attribute` calls, only about 144 call sites in v1 are `self.`/`cls.` methods; most are methods on local values and parameters (`runner.run`, `path.read_text`). A `self` resolution case would recover little; type-aware resolution is the real lever (later features).
 
-### Step 2: entry points, reach and spine
+### Step 2: entry points, reach and spine (done)
 
-`codegraph entries <snapshot>`, `codegraph reach <snapshot> <node>`.
+`codegraph entries <snapshot>`, `codegraph reach <snapshot> <node>`, each with `--text`; both read a snapshot document from a path or `-`.
 
-First, add the `references` edge kind to layer B (step 1 findings). Reach follows `calls` and `references`.
+- Layer B (extractor version 2, snapshot version 1) adds the `references` edge kind and three facts the entry rules read, so that no rule parses source: `objectReferences`, `arguments` and a module's `mainBlocks` (section 3 and the document in section 4).
+- Layer D: `graph` and `closure`. Layer E: `entries.py` with its rules in `RULES`, and `reach.py`, which follows `calls` and `references`.
 
 Entry rules (generic Python or framework knowledge, none specific to swhurl):
 
-1. `entry-string`: a string literal `pkg.module:function` that resolves to exactly one function (setuptools entry points, command tables such as `commands.py`). Suffix matching within the scope; more than one match is reported as ambiguous, not chosen.
-2. `main-block`: a function called from `if __name__ == '__main__':`.
-3. `starlette-route`: `Route('<path>', handler)` with a resolvable handler.
+1. `entry-string`: an object reference whose qualified name is a function and whose module part is that function's module or a suffix of it (`'cli:main_promote'` matches `swhurl.apps.cli`). One match is an entry point; several are reported as ambiguous and none as unresolved, never chosen.
+2. `main-block`: a function called from a module's `if __name__ == '__main__':` body.
+3. `starlette-route`: a function passed as argument 1 or `endpoint` of `starlette.routing.Route`; the value is the route's literal path. A handler built by a call (`Route('/x', endpoint(f))`) or a class endpoint is not a match.
 
-Adds `closure` to layer D. **Tests:** each rule, including ambiguous and unresolvable entry strings; reach through nested functions and methods; spine order follows source order.
+**Acceptance, met:** 69 tests (30 new). Layer B: what is and is not a reference (calls, values, modules, builtins and annotations are not), references through a re-export, argument slots, callees and literals, object reference strings (not f-string fragments or docstrings), main guards either way round. Layer C: the new fields round-trip, a document without them still loads, malformed ones are refused. Layer D: kinds, cycles, unknown starts. Layer E on hand-written snapshots: each rule, ambiguous and unresolved entry strings, a class is never an entry point, reach through nested functions and methods with the unknowns it rests on, spine in source order. CLI: `snapshot | entries -`, `reach` on a file, failures exit 1 with empty stdout.
 
-**v1 evidence:** 88 entry points at HEAD (64 entry strings, 23 routes, 1 main block). 71 `commands.py` declarations name a function: explain the 7 the probe did not resolve. `main_promote` reaches about 214 functions. Console routes reach a median of 15 because handlers reach dependencies through `ctx.*`; expect high unresolved counts there.
+**v1 evidence (24 October 2026, HEAD `4a855098`, the same `tools/swhurl` tree as `726b3cf4`):**
+
+- Snapshot: every step 1 count unchanged; 398 `references` edges (210 function → class, mostly `except` clauses; 115 function → function; 58 module → function), 75 object references, 201 arguments (23 to `starlette.routing.Route`), 1 main block. Byte-identical across runs; about 5 s. `entries` and `reach` take about 0.4 s each.
+- **88 entry points: 64 entry strings, 23 routes, 1 main block, exactly the probe's numbers.** All 71 `commands.py` strings resolve, with none ambiguous. **The 7 explained:** they are repeats, not failures. `swhurl.apps.ops:main` backs 4 commands, `swhurl.lifecycle:main` 3, `swhurl.console.server:main` and `swhurl.settings:platform_certs` 2 each, so 71 strings name 64 functions. Unresolved: 4 strings that only look like object references (`'app:smoke'` twice in `apps/build_image.py`, the tar mode `'r:gz'` in `console/proposal.py` and `console/stages.py`).
+- `main_promote` reaches **219 functions** and 36 classes in 44 modules, resting on 686 unresolved calls. Over `calls` alone it reaches 71: `references` restores the nested `change` body. The spine is 4 steps: `Runner`, `change` (referenced), `run`, `CommandError`. Across M4 it is 218 functions both before (`apps.edit:main_promote`) and after (`apps.cli:main_promote`), in 39 then 42 modules, against the probe's "about 210, 38 to 40".
+- **Route reach was higher than expected.** Routes reach a median of 42 functions (range 0 to 211), not 15, with a median of 153 unresolved calls. Each handler is a nested function of `routes(ctx)` that passes a nested `read` to a context-provided `reading(...)`. Over `calls` alone the median is 1. Through `references` the `read` bodies are reached, while `ctx.*` itself stays unresolved. The probe's 15 came from merging nested bodies and is not reproducible. `/apps/{app}/staging/promotion` reaches 211 functions, close to `main_promote`'s 219, which is the overlap step 3 expects.
+- Entry strings reach a median of 26 functions (up to 393). `swhurl.__main__:main` reaches only 2: it dispatches through `importlib` on the strings that the entry-string rule reads instead.
+
+**Surprises:** besides route reach above, calling a class reaches only the class node: the class body's own calls, not `__init__` or other methods. A method called on a value stays `value-attribute`, so reach under-counts behind constructors. Recovering that needs type-aware resolution (later features), not a new rule. `references` also brings in exception classes from `except` clauses: true dependencies that add nodes, little reach.
 
 ### Step 3: journey candidates
 
@@ -183,7 +196,7 @@ Adds `closure` to layer D. **Tests:** each rule, including ambiguous and unresol
 
 **Tests:** each change category; a move with an edit (candidate, not move); a docstring-only edit (not an implementation change); a pair with no structural change.
 
-**v1 evidence:** M4 (`334a0f11^..334a0f11`): about 15 moved, 3 interface changes, 36 implementation changes, import edges +35 −16, promote reach unchanged at about 210 functions, now spread over 40 modules instead of 38. M3 (`cd10da1d^..cd10da1d`): moves from `console.changes` to `console.merge`.
+**v1 evidence:** M4 (`334a0f11^..334a0f11`): about 15 moved, 3 interface changes, 36 implementation changes, import edges +35 −16, promote reach unchanged (measured in step 2: 218 functions, 39 modules before and 42 after; the probe said about 210, 38 and 40). M3 (`cd10da1d^..cd10da1d`): moves from `console.changes` to `console.merge`.
 
 ### Step 5: history and hotspots
 
@@ -204,20 +217,23 @@ Each needs its own decision once the core has proved useful, and each fits secti
 - **HTML view:** offline, a combined before/after graph with stable placement from derived depth, module overview with function drill-down. The [repository blueprint](repository-blueprint.html) renderer is a reuse candidate.
 - **Names for journey candidates:** an optional overlay referring to entry point IDs, checked at each revision.
 - **Agent skill:** queries the CLI and cites node IDs and commits; tested against the known v1 answers above.
-- **Type-aware resolution:** pyright, or SCIP indexers for more languages, to recover `ctx.*` reach.
+- **Type-aware resolution:** pyright, or SCIP indexers for more languages, to recover `ctx.*` reach and methods behind constructors.
 - **Layer rules** and **state-machine views** (v1 has no explicit transition tables).
 - **A second language.**
 
 ## 7. Decisions
 
-Settled with step 0 (24 October 2026): location `devtools/codegraph/`; tests run by `make check-codegraph` as part of `make check` and CI; the `AGENTS.md` and contributing exception as described in step 0. None pending.
+Settled with step 0 (24 October 2026): location `devtools/codegraph/`; tests run by `make check-codegraph` as part of `make check` and CI; the `AGENTS.md` and contributing exception as described in step 0.
+
+Taken in step 2 (24 October 2026), open to review: entry rules read only snapshot facts. Layer B therefore records generic Python facts (object references, arguments with their callee and literals, main blocks) and `entries.py` interprets them, instead of layer B recognising entry points itself. Entries and reach documents have no loader until a feature reads them.
 
 ## 8. Evidence and limits so far
 
 A throwaway read-only probe (`/tmp/vct-probe/`, not kept) parsed v1 from Git objects with `ast` on 24 October 2026 and produced the expected numbers above. Known limits it showed:
 
 - Static resolution leaves most method calls on values unresolved; step 1 measured it (4,378 `value-attribute` call sites at HEAD, step 1 evidence).
-- Dependency injection through a context object (`ctx.*` in the console) hides most route reach.
+- Dependency injection through a context object (`ctx.*` in the console) leaves the console's service calls unresolved; `references` recovers the nested bodies handlers pass to it (step 2 evidence).
+- Calling a class reaches the class node, not its methods (step 2 surprises).
 - Journey grouping was tested on one pair at one revision.
 - The probe merged nested functions' calls into their parent and used breadth-first order; its reach and spine numbers for step 2 and 3 are therefore approximate. The implementation attributes calls to the innermost definition, in source order.
 

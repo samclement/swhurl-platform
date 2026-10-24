@@ -6,7 +6,8 @@ and module scopes, imports) and leaves cross-file references symbolic; ``link`` 
 each lands on a node in scope, outside scope (external) or nowhere it can tell (unresolved).
 
 Deliberately conservative: a name bound in more than one way, or bound by assignment, is not
-followed. A call it cannot place is counted by category, never guessed.
+followed. A call it cannot place is counted by category, never guessed. A reference (a function or
+class used as a value) is recorded only when it lands on a node; any other loaded name is a value.
 """
 from __future__ import annotations
 
@@ -19,10 +20,10 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
-from codegraph.snapshot import Edge, Node, Snapshot, Unparsed
+from codegraph.snapshot import Argument, Edge, Node, ObjectReference, Snapshot, Unparsed
 
 EXTRACTOR = 'python-ast'
-EXTRACTOR_VERSION = 1
+EXTRACTOR_VERSION = 2  # 2: references edges, object references, arguments, main blocks
 BUILTINS = frozenset(dir(builtins))
 MAX_REEXPORTS = 10  # re-export hops followed before a reference counts as missing
 
@@ -62,10 +63,29 @@ class ImportFact:
 
 
 @dataclass(frozen=True)
-class CallSite:
+class Site:
+    """A call (of ``ref``) or a reference (to ``ref``) in the body of ``caller``."""
     caller: str  # qualified name; '' for module-level code
     line: int
     ref: Ref
+
+
+@dataclass(frozen=True)
+class ObjectReferenceFact:
+    caller: str
+    line: int
+    value: str  # 'module:qualname', as written
+
+
+@dataclass(frozen=True)
+class ArgumentFact:
+    """A function or class (``ref``, if it lands on a node) passed directly as an argument of a call."""
+    caller: str
+    line: int
+    callee: str  # the callee's absolute dotted name as this file binds it; '' when not rooted in a name it can place
+    slot: str  # the argument's position ('0', '1', ...) or keyword
+    ref: Ref
+    literals: tuple[tuple[str, str], ...]  # (slot, value) of the call's string literal arguments
 
 
 @dataclass(frozen=True)
@@ -76,8 +96,12 @@ class FileFacts:
     error: str | None
     definitions: tuple[Definition, ...] = ()
     imports: tuple[ImportFact, ...] = ()
-    calls: tuple[CallSite, ...] = ()
+    calls: tuple[Site, ...] = ()
     bindings: tuple[tuple[str, Ref], ...] = ()  # module-level names, for links from other files
+    references: tuple[Site, ...] = ()
+    object_references: tuple[ObjectReferenceFact, ...] = ()
+    arguments: tuple[ArgumentFact, ...] = ()
+    main_blocks: tuple[tuple[int, int], ...] = ()  # line ranges of `if __name__ == '__main__':` bodies
 
 
 def module_name(path: str, import_root: str) -> str:
@@ -103,23 +127,46 @@ class _Extractor:
         self.package = module.split('.') if is_package else module.split('.')[:-1]
         self.definitions: dict[str, Definition] = {}
         self.imports: list[ImportFact] = []
-        self.calls: list[CallSite] = []
+        self.calls: list[Site] = []
+        self.references: list[Site] = []
+        self.object_references: list[ObjectReferenceFact] = []
+        self.arguments: list[ArgumentFact] = []
 
     def run(self, tree: ast.Module, path: str, lines: int) -> FileFacts:
         module_scope = self._bindings(tree.body, '', ())
         self._scope(tree.body, '', '', [(False, module_scope)], lazy=False)
         return FileFacts(self.module, path, lines, None, tuple(sorted(self.definitions.values(), key=lambda d: d.qualname)),
                          tuple(sorted(set(self.imports), key=lambda i: (i.line, i.target, i.lazy))),
-                         tuple(sorted(self.calls, key=lambda c: (c.caller, c.line, c.ref.kind, c.ref.target))),
-                         tuple(sorted(module_scope.items())))
+                         _sites(self.calls), tuple(sorted(module_scope.items())), _sites(self.references),
+                         tuple(sorted(set(self.object_references), key=lambda o: (o.caller, o.line, o.value))),
+                         tuple(sorted(set(self.arguments), key=lambda a: (a.caller, a.line, a.slot, a.callee, a.ref.target))),
+                         tuple((node.body[0].lineno, node.body[-1].end_lineno or node.body[-1].lineno)
+                               for node in tree.body if _is_main_guard(node)))
 
     def _scope(self, body: list[ast.stmt], caller: str, prefix: str, chain: list[tuple[bool, dict[str, Ref]]],
                lazy: bool) -> None:
         """Record the calls, imports and nested definitions of one scope's body.
         ``chain`` is (is a class scope, names) for every scope visible here, innermost first."""
+        done: set[int] = set()  # IDs of name chains already handled as a callee or a reference, and annotations
         for node in _shallow(body):
+            if id(node) in done:
+                continue
             if isinstance(node, ast.Call):
-                self.calls.append(CallSite(caller, node.lineno, self._callee(node.func, chain)))
+                callee = self._callee(node.func, chain)
+                self.calls.append(Site(caller, node.lineno, callee))
+                done.update(id(part) for part in _chain(node.func))
+                self._arguments(node, caller, callee, chain)
+            elif isinstance(node, ast.Name | ast.Attribute) and isinstance(node.ctx, ast.Load):
+                done.update(id(part) for part in _chain(node))
+                ref = self._reference(node, chain)
+                if ref is not None:
+                    self.references.append(Site(caller, node.lineno, ref))
+            elif isinstance(node, ast.AnnAssign):
+                done.update(id(part) for part in ast.walk(node.annotation))  # a type, not a use of a value
+            elif isinstance(node, ast.JoinedStr):
+                done.update(id(part) for part in node.values)  # f-string fragments are not whole strings
+            elif isinstance(node, ast.Constant) and _is_object_reference(node.value):
+                self.object_references.append(ObjectReferenceFact(caller, node.lineno, node.value))
             elif isinstance(node, ast.Import | ast.ImportFrom):
                 for target, _, _ in self._imported(node):
                     self.imports.append(ImportFact(target, node.lineno, lazy))
@@ -212,6 +259,32 @@ class _Extractor:
             return Ref(ref.kind, '.'.join([ref.target, *attributes]))
         return ref
 
+    def _reference(self, expr: ast.expr, chain: list[tuple[bool, dict[str, Ref]]]) -> Ref | None:
+        """What a loaded name chain refers to if it could be a node in scope; None for values, builtins and the unknown."""
+        if _dotted(expr) is None:
+            return None
+        ref = self._callee(expr, chain)
+        return ref if ref.kind in ('dotted', 'local') else None
+
+    def _arguments(self, call: ast.Call, caller: str, callee: Ref, chain: list[tuple[bool, dict[str, Ref]]]) -> None:
+        """Record each argument of ``call`` that could be a function or class in scope, with the call's string literals.
+        Positions after a ``*args`` are unknown, so they are not recorded."""
+        slots: list[tuple[str, ast.expr]] = []
+        for position, argument in enumerate(call.args):
+            if isinstance(argument, ast.Starred):
+                break
+            slots.append((str(position), argument))
+        slots.extend((keyword.arg, keyword.value) for keyword in call.keywords if keyword.arg is not None)
+        literals = tuple(sorted((slot, value.value) for slot, value in slots
+                                if isinstance(value, ast.Constant) and isinstance(value.value, str)))
+        names = _dotted(call.func)
+        dotted = {'dotted': callee.target, 'local': f'{self.module}.{callee.target}',
+                  'external': '.'.join(['builtins', *(names or [])])}.get(callee.kind, '')
+        for slot, value in slots:
+            ref = self._reference(value, chain)
+            if ref is not None:
+                self.arguments.append(ArgumentFact(caller, call.lineno, dotted, slot, ref, literals))
+
 
 def link(revision: str, scope: str, import_root: str, files: Iterable[FileFacts]) -> Snapshot:
     """Resolve every file's references against the others and build the snapshot."""
@@ -236,6 +309,8 @@ class _Linker:
     def snapshot(self) -> Snapshot:
         nodes: list[Node] = []
         edges: dict[tuple[str, str, str], set[int]] = defaultdict(set)
+        object_references: set[ObjectReference] = set()
+        arguments: set[Argument] = set()
         for module, facts in self.files.items():
             external: Counter[str] = Counter()
             unresolved: dict[str, Counter[str]] = defaultdict(Counter)
@@ -247,12 +322,24 @@ class _Linker:
                     external[call.caller] += 1
                 else:
                     unresolved[call.caller][value] += 1
+            for reference in facts.references:
+                kind, value = self._resolve(module, reference.ref)
+                if kind == 'node':
+                    edges[(_node_id(module, reference.caller), value, 'references')].add(reference.line)
+            object_references.update(ObjectReference(_node_id(module, item.caller), item.line, item.value)
+                                     for item in facts.object_references)
+            for item in facts.arguments:
+                kind, value = self._resolve(module, item.ref)
+                if kind == 'node':
+                    arguments.add(Argument(_node_id(module, item.caller), item.line, item.callee, item.slot, value,
+                                           item.literals))
             for fact in facts.imports:
                 target = self._module_of(fact.target)
                 if target is not None and target != module:
                     edges[(_node_id(module, ''), _node_id(target, ''), 'lazy-imports' if fact.lazy else 'imports')].add(fact.line)
             nodes.append(Node(_node_id(module, ''), 'module', module, '', facts.path, 1, facts.lines,
-                              external_calls=external[''], unresolved_calls=tuple(sorted(unresolved[''].items()))))
+                              external_calls=external[''], unresolved_calls=tuple(sorted(unresolved[''].items())),
+                              main_blocks=facts.main_blocks))
             for d in facts.definitions:
                 nodes.append(Node(_node_id(module, d.qualname), d.kind, module, d.qualname, facts.path, d.start, d.end,
                                   d.signature, d.body_hash, d.redefinitions, external[d.qualname],
@@ -262,7 +349,8 @@ class _Linker:
                         tuple(sorted(nodes, key=lambda node: node.id)),
                         tuple(Edge(source, target, kind, tuple(sorted(lines)))
                               for (source, target, kind), lines in sorted(edges.items())),
-                        tuple(sorted(self.unparsed, key=lambda item: item.path)))
+                        tuple(sorted(self.unparsed, key=lambda item: item.path)),
+                        tuple(sorted(object_references)), tuple(sorted(arguments)))
 
     def _module_of(self, dotted: str) -> str | None:
         """The longest prefix of ``dotted`` that is a module in scope."""
@@ -322,6 +410,36 @@ def _shallow(body: list[ast.stmt]) -> Iterator[ast.AST]:
         else:
             children = list(ast.iter_child_nodes(node))
         stack.extend(reversed(children))
+
+
+def _sites(sites: list[Site]) -> tuple[Site, ...]:
+    return tuple(sorted(sites, key=lambda site: (site.caller, site.line, site.ref.kind, site.ref.target)))
+
+
+def _chain(expr: ast.expr) -> Iterator[ast.expr]:
+    """``a.b.c`` and its parts ``a.b`` and ``a``; stops at anything that is not an attribute or a name."""
+    while isinstance(expr, ast.Attribute):
+        yield expr
+        expr = expr.value
+    if isinstance(expr, ast.Name):
+        yield expr
+
+
+def _is_object_reference(value: object) -> bool:
+    """A whole string in the ``module:qualname`` form packaging entry points use (``pkg.cli:main``)."""
+    if not isinstance(value, str) or value.count(':') != 1:
+        return False
+    return all(part.isidentifier() for side in value.split(':') for part in side.split('.'))
+
+
+def _is_main_guard(node: ast.stmt) -> bool:
+    """``if __name__ == '__main__':``, either way round."""
+    if not (isinstance(node, ast.If) and isinstance(node.test, ast.Compare) and len(node.test.ops) == 1
+            and isinstance(node.test.ops[0], ast.Eq)):
+        return False
+    sides = [node.test.left, node.test.comparators[0]]
+    return any(isinstance(side, ast.Name) and side.id == '__name__' for side in sides) and \
+        any(isinstance(side, ast.Constant) and side.value == '__main__' for side in sides)
 
 
 def _dotted(func: ast.expr) -> list[str] | None:

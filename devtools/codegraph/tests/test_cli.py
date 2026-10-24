@@ -1,5 +1,6 @@
 """The command line runs as ``python3 -m codegraph`` from any directory, and keeps its exit and stdout contract."""
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -13,11 +14,11 @@ from tests.gitrepo import git, make_repo
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
-def codegraph(*args, cwd=None):
+def codegraph(*args, cwd=None, stdin=b''):
     """Run the CLI in a fresh process, by default from an empty directory, so it relies on neither the checkout nor the cwd."""
     with tempfile.TemporaryDirectory() as empty:
         return subprocess.run([sys.executable, '-m', 'codegraph', *args], cwd=cwd or empty, capture_output=True,
-                              env={**os.environ, 'PYTHONPATH': str(PACKAGE_ROOT)})
+                              input=stdin, env={**os.environ, 'PYTHONPATH': str(PACKAGE_ROOT)})
 
 
 class UsageTests(unittest.TestCase):
@@ -102,6 +103,93 @@ class SnapshotCommandTests(unittest.TestCase):
         result = codegraph('snapshot', 'HEAD', '--scope', 'src/pkg', '--repo', str(self.tmp))
         self.assertEqual((result.returncode, result.stdout), (1, b''))
         self.assertIn(b'codegraph: git-failed:', result.stderr)
+
+
+CLI = """\
+from starlette.routing import Route
+
+
+def main():
+    def change():
+        helper()
+
+    run(change)
+
+
+def run(work):
+    work()
+
+
+def helper():
+    pass
+
+
+def page(request):
+    pass
+
+
+ROUTES = [Route('/page', page)]
+COMMANDS = {'go': 'pkg.cli:main', 'gone': 'cli:nothing'}
+
+if __name__ == '__main__':
+    main()
+"""
+
+
+class AnalysisCommandTests(unittest.TestCase):
+    """entries and reach read a snapshot document from a path or stdin, never Git."""
+
+    @classmethod
+    def setUpClass(cls):
+        tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(tmp.cleanup)
+        cls.tmp = Path(tmp.name)
+        make_repo(cls.tmp / 'repo', {'src/pkg/__init__.py': '', 'src/pkg/cli.py': CLI})
+        result = codegraph('snapshot', 'HEAD', '--scope', 'src/pkg', '--repo', str(cls.tmp / 'repo'))
+        assert result.returncode == 0, result.stderr
+        cls.snapshot = cls.tmp / 'snapshot.json'
+        cls.snapshot.write_bytes(result.stdout)
+
+    def test_entries_from_stdin(self):
+        result = codegraph('entries', '-', stdin=self.snapshot.read_bytes())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        document = json.loads(result.stdout)
+        self.assertEqual(document['kind'], 'entries')
+        self.assertEqual(document['inputs'][0]['digest'], 'sha256:' + hashlib.sha256(self.snapshot.read_bytes()).hexdigest())
+        self.assertEqual({entry['node']: sorted(item['rule'] for item in entry['evidence']) for entry in document['entries']},
+                         {'py:pkg.cli:main': ['entry-string', 'main-block'], 'py:pkg.cli:page': ['starlette-route']})
+        self.assertEqual([item['value'] for item in document['unresolved']], ['cli:nothing'])
+        self.assertEqual(codegraph('entries', str(self.snapshot)).stdout, result.stdout, 'a path and stdin agree')
+
+    def test_entries_text(self):
+        result = codegraph('entries', str(self.snapshot), '--text')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"py:pkg.cli:page  starlette-route  src/pkg/cli.py:23  '/page'", result.stdout)
+
+    def test_reach_follows_the_nested_function_passed_as_a_value(self):
+        result = codegraph('reach', str(self.snapshot), 'py:pkg.cli:main')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        document = json.loads(result.stdout)
+        self.assertEqual(document['reached'], ['py:pkg.cli:helper', 'py:pkg.cli:main', 'py:pkg.cli:main.change', 'py:pkg.cli:run'])
+        self.assertEqual([(step['line'], step['kind']) for step in document['spine']], [(8, 'references'), (8, 'calls')],
+                         'within a line, by target ID')
+        self.assertEqual(document['unresolvedCalls'], {'dynamic': 1}, 'run() calls its parameter')
+        text = codegraph('reach', str(self.snapshot), 'py:pkg.cli:main', '--text').stdout
+        self.assertIn(b'reached    3 nodes besides itself', text)
+
+    def test_failures_exit_1_with_empty_stdout(self):
+        for args, stdin, code in ((('reach', '-', 'py:pkg.cli:nothing'), self.snapshot.read_bytes(), b'unknown-node'),
+                                  (('entries', str(self.tmp / 'missing.json')), b'', b'usage'),
+                                  (('entries', '-'), b'{"kind": "entries"}', b'invalid-document')):
+            with self.subTest(args=args):
+                result = codegraph(*args, stdin=stdin)
+                self.assertEqual((result.returncode, result.stdout), (1, b''))
+                self.assertEqual(result.stderr.count(b'\n'), 1)
+                self.assertIn(b'codegraph: ' + code + b':', result.stderr)
+
+    def test_usage_errors_exit_2(self):
+        result = codegraph('reach', '-')
+        self.assertEqual((result.returncode, result.stdout), (2, b''))
 
 
 if __name__ == '__main__':

@@ -108,8 +108,12 @@ spec:
               # Merged with the chart's ttl. metric_log has ~1,350 columns: a
               # horizontal merge into a Wide part needs more than the 3.6 GiB
               # server limit and retries forever; vertical merges one column at a time.
+              # Even vertical merges of a month (2M rows) exceed it, and so does the
+              # rewrite that applies the TTL: daily partitions bound every merge to
+              # a day and ttl_only_drop_parts drops an expired day without reading it.
               metric_log:
-                settings: vertical_merge_algorithm_min_rows_to_activate = 1
+                partition_by: toYYYYMMDD(event_date)
+                settings: vertical_merge_algorithm_min_rows_to_activate = 1, ttl_only_drop_parts = 1
           dataVolumeClaimSpec:
             resources:
               requests:

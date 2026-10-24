@@ -221,6 +221,7 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 LOCAL, 'swhurl.apps.templates_check:main', uv=True),
         Command('check-otel', 'Render the OTel collectors and validate their config with that exact otelcol-k8s release', LOCAL, 'swhurl.otel:main'),
         Command('check-lint', 'Lint the Python tooling and the bash that stays (needs uv)', LOCAL),
+        Command('check-codegraph', 'Unit tests for the code graph development aid (devtools/codegraph)', LOCAL),
         Command('check-secrets', 'Decrypt tracked Secrets locally; flag placeholders and double encoding (never prints values)', LOCAL,
                 'swhurl.secrets_check:main'),
         Command('help', 'List the targets, from tools/swhurl/commands.py', LOCAL, 'swhurl.commands:help_main'),

@@ -44,15 +44,19 @@ flux-bootstrap:
 
 .PHONY: check
 check:
-	@$(MAKE) --no-print-directory -j6 --output-sync=target check-repo test check-apps check-otel check-lint
+	@$(MAKE) --no-print-directory -j6 --output-sync=target check-repo test check-apps check-otel check-lint check-codegraph
 
 .PHONY: test
 test:
 	PYTHONPATH=$(CURDIR)/tools uv run --frozen python tests/run.py $(if $(K),-k '$(K)')
 
+.PHONY: check-codegraph
+check-codegraph:
+	PYTHONPATH=$(CURDIR)/devtools/codegraph python3 -m unittest discover -s $(CURDIR)/devtools/codegraph/tests -t $(CURDIR)/devtools/codegraph
+
 .PHONY: check-lint
 check-lint:
-	uvx ruff@0.16.9 check tools tests
+	uvx ruff@0.16.9 check tools tests devtools
 	uvx --from shellcheck-py==0.11.0.1 shellcheck -x $$(git ls-files --cached --others --exclude-standard '*.sh')
 
 # Host timers (host/install-timer.sh) -------------------------------------------

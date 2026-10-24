@@ -9,6 +9,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 - Commit to `main` after validation, push, `make flux-reconcile`, verify on the cluster (`make verify-platform`, `make app-status`), then record dated evidence in `docs/current-state.md`.
 - Confirm with the user before hard-to-reverse live actions: deleting data (`make destroy-data`, namespaces, PVs), rotating real credentials, changing where backups go, or anything under `flux-system`. `make app-repo` and the console's **Start a new app** create a real public GitHub repository and package; name throwaway ones `swhurl-try-<n>`. Once a throwaway's instance is removed, delete its repository and package with the tokens in the gitignored `secrets/` (`github-cleanup.sops.yaml` for repositories, `github-packages.sops.yaml` for packages; decrypt with `SOPS_AGE_KEY_FILE=./age.agekey`, and check the token is not empty: `gh` falls back to its own login, which cannot delete). Any other repository is the user's to delete.
 - New operator logic goes in the `tools/swhurl` package, calling external tools only through `Runner` and tested with `FakeRunner`, and a new command is one entry in `tools/swhurl/commands.py` ([contributing](docs/contributing.md#operator-tooling)); keep short glue and host scripts as bash.
+- Narrow exception: the read-only code graph development aid lives in `devtools/codegraph/` (standard library only), reads Git through its own revision reader instead of `Runner`, and is not a `swhurl` command; `make check-codegraph` tests it. It never imports or runs the code it analyses. Apply its [primitives and contracts](docs/visual-change-tool.md#4-primitives-and-contracts) to every change.
 - Never print Secret values. Compare by bytes or hashes (`make check-secrets`, `make verify-platform`). `age.agekey` stays out of Git.
 - Scripted `kubectl` needs `export KUBECONFIG=$HOME/.kube/config`; the k3s wrapper otherwise reads `/etc/rancher/k3s/k3s.yaml`.
 
@@ -35,6 +36,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 | Validation, change checklist, docs and diagram conventions | `docs/contributing.md` |
 | What app, environment, instance and unit mean | `GLOSSARY.md` |
 | Dated live evidence and unexercised paths | `docs/current-state.md` |
+| Code graph development aid: design, contracts, roadmap | `docs/visual-change-tool.md` |
 | Remaining planned work | `docs/plan.md` section 0 |
 
 ## Commands

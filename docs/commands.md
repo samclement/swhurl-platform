@@ -82,13 +82,14 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `check` | `check-repo`, `test`, `check-apps`, `check-otel`, `check-lint` in parallel: everything CI runs except `check-templates`, which CI runs on every push. Run before every push; run `check-templates` too when a change touches a template pin, the app types or what `app-new` writes | Local |
+| `check` | `check-repo`, `test`, `check-apps`, `check-otel`, `check-lint`, `check-codegraph` in parallel: everything CI runs except `check-templates`, which CI runs on every push. Run before every push; run `check-templates` too when a change touches a template pin, the app types or what `app-new` writes | Local |
 | `check-repo` | Render every active Flux path, validate schemas, SOPS structure, shell syntax and doc links, check that every unit that decrypts has a Secret file and that `BASE_DOMAIN` and `CERT_ISSUER` are set, and compare the [Flux units table](architecture.md#flux-units) with the units in Git | Local |
 | `test [K=<pattern>]` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules, and every dry run that plans without touching anything (runs in `uv`'s locked environment, tests in parallel; a class with `setUpClass` stays together), then the slowest classes. `K` runs only the classes whose dotted name contains it (`K=test_console` while working on the console); `check` always runs them all | Local |
 | `check-apps` | Render every app instance with Helm and check the app policy, and that the [app model](plan.md#24-code-simplification--design-contracts-18-october-2026) reproduces every instance | Local |
 | `check-templates` | Render each app type from its stack's pinned template; each `swhurl.yaml` must pass `app-new` and the app policy in staging and prod, and the template must refuse answers no type has; one process per CPU, about 15 s ([apps](apps.md#stacks-and-features)) | Local (reads GitHub; needs `sops` for a template that declares events) |
 | `check-otel` | Render both collectors and validate with the exact `otelcol-k8s` release and feature gates (binary cached and SHA-256 checked); run log fixtures through their actual processors and container framing; warn on deprecated component names | Local |
-| `check-lint` | Ruff on the Python tooling and ShellCheck on the remaining bash (needs `uv`) | Local |
+| `check-lint` | Ruff on the Python tooling (including `devtools`) and ShellCheck on the remaining bash (needs `uv`) | Local |
+| `check-codegraph` | Unit tests for the [code graph](visual-change-tool.md) development aid in `devtools/codegraph` (standard library only) | Local |
 | `check-secrets` | Decrypt every tracked Secret in memory; fail on empty or `REPLACE_ME`, warn on probable double encoding. Needs the age key, so CI cannot run it | Local |
 | `help` | List every target with its variables, the † mark and what it touches | Local |
 

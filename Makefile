@@ -54,6 +54,12 @@ test:
 check-codegraph:
 	PYTHONPATH=$(CURDIR)/devtools/codegraph python3 -m unittest discover -s $(CURDIR)/devtools/codegraph/tests -t $(CURDIR)/devtools/codegraph
 
+.PHONY: check-v2
+check-v2:
+	cd v2 && export GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 \
+		&& unformatted=$$(gofmt -l .) && { [ -z "$$unformatted" ] || { echo "gofmt: run gofmt -w on: $$unformatted"; exit 1; }; } \
+		&& go vet ./... && go test -count=1 ./...
+
 .PHONY: check-lint
 check-lint:
 	uvx ruff@0.16.9 check tools tests devtools

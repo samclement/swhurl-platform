@@ -1,0 +1,26 @@
+kernel: const IdentityMismatch Code = "identity_mismatch"
+kernel: const Invalid Code = "invalid"
+kernel: const ManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
+kernel: const StaleInstance Code = "stale_instance"
+kernel: const Unsupported Code = "unsupported"
+kernel: const WrongApplication Code = "wrong_application"
+kernel: func (*Error) Error() string
+kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
+kernel: func (ReleaseBundle) ID() (ReleaseID, error)
+kernel: func DecodeInstance(data []byte) (InstanceSpec, error)
+kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
+kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
+kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
+kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
+kernel: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"` MediaType string `json:"mediaType"` Platform string `json:"platform"`}
+kernel: type Bindings struct {}
+kernel: type Code string
+kernel: type Configuration struct {Replicas int32 `json:"replicas"` MemoryMiB int32 `json:"memoryMiB"`}
+kernel: type Error struct {Code Code Field string Reason string}
+kernel: type Grants struct {Exposure string `json:"exposure"`}
+kernel: type InstanceRevision string
+kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"`}
+kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` ReleaseID ReleaseID `json:"releaseId"`}
+kernel: type ReleaseID string
+kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` HealthPath string `json:"healthPath"` UID int32 `json:"uid"`}
+kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}

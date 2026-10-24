@@ -435,9 +435,38 @@ This does not approve removing those features from v1. It keeps them out of the 
 - Confirm hard-to-reverse actions separately: data deletion, real credential rotation, backup destination changes and changes under `flux-system`.
 - Once execution is approved, keep phase status and remaining decisions here and link from `docs/plan.md` section 0. Do not create another parallel status artifact.
 
+### Guardrails
+
+v2's design principles are checked, not only described. The rules are code in [`v2/archtest`](../v2/archtest): test files using the standard library only, which parse v2's source and never build or run it, so every `go test ./...` checks them. This table lists the same rules; a test fails when the two differ.
+
+| Rule | What it enforces |
+| --- | --- |
+| `stdlib-only` | v2 imports only the standard library and its own packages; `go.mod` requires nothing ([why](#kubernetes-the-api-server-not-kubectl)). A dependency needs the operator's approval first. |
+| `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 commands) and imports only v2 packages in lower layers ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
+| `pure` | Pure packages (`kernel`) import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments. |
+| `no-subprocess` | v2 code (not its tests) starts no process and names no `kubectl` or `flux` command ([why](#kubernetes-the-api-server-not-kubectl)). |
+| `public-api` | The exported API of every library package matches `archtest/api.txt`, so an interface change is a deliberate, reviewed diff. |
+| `budgets` | No function exceeds complexity 10 or 60 lines unless `archtest/budgets.json` lists it with a reason; a listed function may shrink but not grow, and its entry goes once it fits. |
+| `rules-documented` | This table lists exactly the rules in code, each rule's principle link resolves, and `AGENTS.md` names `make check-v2`. |
+
+**Run** `make check-v2` from the repository root: `gofmt`, `go vet` and `go test` (with the rules) on the pinned toolchain with network access off, in about two seconds. It is not part of `make check` or CI. A failure prints one line per violation (rule, file and line, what is wrong), then each broken rule's fix and the section explaining why.
+
+**In the agent loop:** the project's pi extension [`.pi/extensions/v2-guardrails.ts`](../.pi/extensions/v2-guardrails.ts) runs `make check-v2` after every edit or write under `v2/` and attaches any failure to that tool result, so the agent sees it straight away. Before a run ends, if anything under `v2/` changed during it and the check fails, the extension hands the failures back and asks for another turn, at most twice per run, then tells the operator the check still fails. Pi loads project extensions once the project is trusted (`/trust`).
+
+**Changing a baseline:** a rule is satisfied by fixing the code; a baseline changes only when the change is intended, and the diff shows it.
+
+- Exported API: `go test ./archtest -run TestPublicAPI -update` rewrites `api.txt`. Say why the interface changed.
+- Budgets: `go test ./archtest -run TestBudgets -update` only lowers or removes entries. Adding one is a hand edit with a reason. Two phase-1 functions are listed: the CLI's `run` and `ReleaseBundle.validate`.
+- Layers and pure imports: `Layers`, `Pure` and `PureImports` in `archtest/rules_test.go`.
+- There is no comment that silences a rule; every exception is an entry in these files.
+
+**Verification (24 October 2026, working tree before commit):** each rule has a test on a small module written to a temporary directory, showing what it catches and what it leaves alone (a parameter that shadows a package variable, a test that starts a process); breaking a check on purpose makes those tests fail. On v2 the code rules pass; two phase-1 functions are over budget and listed. End to end, three runs of pi (Haiku 5.5, a throwaway copy of the repository, the extension loaded with `-e`): an agent asked to add a counter to the kernel got the `pure` failure on its edit, reverted it, re-ran the check and offered compliant alternatives without touching a baseline; a change made through the shell, which the edit hook does not see, was caught when the agent tried to finish, handed back once, and fixed; an agent told never to fix it got two attempts and then a message for the operator, after which the run ended. Not exercised: interactive mode after `/trust`.
+
+Added with the code they guard: `adapter-complete` (each adapter has a fake satisfying its interface and a contract test) with the first adapter, and extension recipes (what adding an adapter or command touches) as phases add them.
+
 ### Offline CLI and build
 
-Prerequisite: Go **1.26.0** already installed. The following disables automatic dependency access and C dependencies. There is no `go.sum`: the module has no third-party dependencies. These focused checks are **not** included in `make check` or CI.
+Prerequisite: Go **1.26.0** already installed. `make check-v2` runs the format, vet and test steps below, [guardrails](#guardrails) included. The following disables automatic dependency access and C dependencies. There is no `go.sum`: the module has no third-party dependencies. These focused checks are **not** included in `make check` or CI.
 
 **Run with `!`**, from the repository root:
 
@@ -494,7 +523,7 @@ Component checklist: no deployed process, persistent store, default credential, 
 
 **Approved:** the operator said yes to the concrete phase-1 proposal: root-level `v2/`, Go 1.26.0, JSON-only descriptors, positional canonical encoding, manifest-only `linux/amd64` artifact claims, empty-only bindings and the narrow policy exception. Keep v1 unchanged; no platform console UI, general framework, compiler, bridge, credential access, integrations, publication, live changes or feature removals. The operator separated the [visual change-tool workstream](visual-change-tool.md) from v2; it uses v1 code/history and has its own scope and handoff. Do not implement visual tooling in this v2 thread. **Do not commit or push without instruction.**
 
-**Done:** the two value records, strict codec, identities and pure selection operation, thin offline CLI, synthetic fixtures and focused tests are implemented. Phase-1 Go tests/vet/format, the v1 baseline, full `make check`, shell syntax, repeat-build and demonstration checks passed; binary measurements and their limits are in section 7. The independent visual-tool brief is linked above; it is not a v2 deliverable. No live action has been taken.
+**Done:** the two value records, strict codec, identities and pure selection operation, thin offline CLI, synthetic fixtures and focused tests are implemented. Phase-1 Go tests/vet/format, the v1 baseline, full `make check`, shell syntax, repeat-build and demonstration checks passed; binary measurements and their limits are in section 7. v2's design rules are checked as code by `make check-v2` and, in pi, after each edit and before a run ends ([guardrails](#guardrails)). The independent visual-tool brief is linked above; it is not a v2 deliverable. No live action has been taken.
 
 **Left:** a completed independent phase-1 review was unavailable after two execution failures; see section 7. Nothing is published. Phases 2–7 still need their own decisions and approval.
 
@@ -516,7 +545,7 @@ Read the actual [`kernel`](../v2/kernel/records.go), [`identity`](../v2/kernel/i
 2. Find the v1 behaviour it covers and classify it as preserve, deliberately change or remove. Check the relevant review findings so the change does not rebuild a known problem.
 3. Write the pure function and its tests first. It takes time, identifiers and snapshots as arguments.
 4. Add an adapter only when the slice needs that dependency. Give it a domain-level interface, a raw-fixture contract test and a behavioural fake for its failure cases. Kubernetes goes through the API server ([why](#kubernetes-the-api-server-not-kubectl)).
-5. Run the format, vet and test commands in [offline CLI and build](#offline-cli-and-build) and the matching [test tiers](#test-tiers); live checks only in an approved live phase.
+5. Run `make check-v2` ([guardrails](#guardrails), format, vet and tests) and the matching [test tiers](#test-tiers); live checks only in an approved live phase. Fix what a rule reports rather than its baseline, unless the change is intended and explained.
 
 ### Working-tree preservation
 

@@ -222,6 +222,7 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command('check-otel', 'Render the OTel collectors and validate their config with that exact otelcol-k8s release', LOCAL, 'swhurl.otel:main'),
         Command('check-lint', 'Lint the Python tooling and the bash that stays (needs uv)', LOCAL),
         Command('check-codegraph', 'Unit tests for the code graph development aid (devtools/codegraph)', LOCAL),
+        Command('check-v2', 'Format, vet and test the Go v2 prototype, its design guardrails included (needs Go 1.26.0)', LOCAL),
         Command('check-secrets', 'Decrypt tracked Secrets locally; flag placeholders and double encoding (never prints values)', LOCAL,
                 'swhurl.secrets_check:main'),
         Command('help', 'List the targets, from tools/swhurl/commands.py', LOCAL, 'swhurl.commands:help_main'),

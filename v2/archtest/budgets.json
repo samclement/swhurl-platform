@@ -1,0 +1,18 @@
+{
+  "maxComplexity": 10,
+  "maxLines": 60,
+  "allow": [
+    {
+      "function": "cmd/swhurl-v2.run",
+      "complexity": 28,
+      "lines": 85,
+      "reason": "Phase-1 command dispatch, written before this budget existed; split it per command when the CLI next changes."
+    },
+    {
+      "function": "kernel.ReleaseBundle.validate",
+      "complexity": 14,
+      "lines": 43,
+      "reason": "Phase-1 field-by-field release validation, written before this budget existed; split it by section (source, artifact, runtime) when it next changes."
+    }
+  ]
+}

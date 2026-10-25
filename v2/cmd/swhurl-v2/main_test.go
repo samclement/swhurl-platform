@@ -23,7 +23,7 @@ func fixture(t *testing.T, name string) []byte {
 }
 
 func TestCLI(t *testing.T) {
-	prod, r42 := fixture(t, "prod.json"), fixture(t, "r42.json")
+	prod, r42, r41, profile := fixture(t, "prod.json"), fixture(t, "r42.json"), fixture(t, "r41.json"), fixture(t, "profile.json")
 	before := bytes.Clone(prod)
 	s, err := kernel.DecodeInstance(prod)
 	if err != nil {
@@ -56,6 +56,14 @@ func TestCLI(t *testing.T) {
 		{[]string{"release-id", "release", "extra"}, 2, "", "usage"},
 		{[]string{"promote"}, 2, "", "usage"},
 		{nil, 2, "", "usage"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "profile"}, 0, `"kind": "v2-compilation"`, ""},
+		{[]string{"compile", "--instance", "prod", "--release", "release", "--profile", "profile"}, 2, "", "wrong_release: release:"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "bad"}, 2, "", "invalid: document:"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "huge"}, 2, "", "invalid: profile: input file is larger than 1 MiB"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "unreadable"}, 1, "", "io: profile: cannot read input file"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41"}, 2, "", "usage"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "profile", "--profile", "profile"}, 2, "", "usage"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "profile", "--expect", "x"}, 2, "", "usage"},
 		{[]string{"--help"}, 0, "usage", ""},
 		{[]string{"select-release", "--help"}, 0, "usage", ""},
 	} {
@@ -67,6 +75,10 @@ func TestCLI(t *testing.T) {
 					return prod, nil
 				case "release":
 					return r42, nil
+				case "r41":
+					return r41, nil
+				case "profile":
+					return profile, nil
 				case "bad":
 					return []byte(`{"secret":"do-not-echo"`), nil
 				case "unsupported":
@@ -153,7 +165,7 @@ func TestBinary(t *testing.T) {
 	}
 	dir := t.TempDir()
 	originals := map[string][]byte{}
-	for _, file := range []string{"r41.json", "r42.json", "staging.json", "prod.json"} {
+	for _, file := range []string{"r41.json", "r42.json", "staging.json", "prod.json", "profile.json"} {
 		b := fixture(t, file)
 		originals[file] = b
 		if err := os.WriteFile(filepath.Join(dir, file), b, 0600); err != nil {
@@ -231,6 +243,11 @@ func TestBinary(t *testing.T) {
 			t.Fatal("refusal changed candidate file")
 		}
 	}
+	compiled := invoke(0, "", "compile", "--instance", "prod.json", "--release", "r41.json", "--profile", "profile.json")
+	if !bytes.Equal(compiled, fixture(t, "compiled/prod.json")) {
+		t.Fatal("the binary's compilation differs from the golden document")
+	}
+	invoke(2, "wrong_release:", "compile", "--instance", "staging.json", "--release", "r41.json", "--profile", "profile.json")
 	invoke(1, "io: release:", "release-id", "missing.json")
 	if err := os.WriteFile(filepath.Join(dir, "huge.json"), bytes.Repeat([]byte(" "), maxInput+1), 0600); err != nil {
 		t.Fatal(err)

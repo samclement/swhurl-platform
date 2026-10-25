@@ -1,0 +1,289 @@
+{
+  "kind": "v2-compilation",
+  "version": 1,
+  "id": "comp-sha256:a03afde5c6b0c29485ad6ef57f84caf2a412dca97b7ed3ab60f94f8b97f72cd5",
+  "inputs": {
+    "release": "rel-sha256:2554994bc604486823e42caaf8e506b9468325b826224b9fb436f00dc22b10b0",
+    "instance": "inst-sha256:6294e94b9652124cea8da16e601af3f992026d46669b80e50374cf11981bc8bc",
+    "profile": "prof-sha256:841fa52e70ce2e61f9f3cef8cbb7c575b9a38d5dd833c19614949488e7583829"
+  },
+  "files": [
+    {
+      "path": "v2-apps/demo-orders/staging/namespace.json",
+      "document": {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+          "labels": {
+            "platform.swhurl.com/app": "demo-orders",
+            "platform.swhurl.com/environment": "staging",
+            "platform.swhurl.com/exposure": "private",
+            "platform.swhurl.com/managed": "true"
+          },
+          "name": "demo-orders-staging"
+        }
+      }
+    },
+    {
+      "path": "v2-apps/demo-orders/staging/helmrelease.json",
+      "document": {
+        "apiVersion": "helm.toolkit.fluxcd.io/v2",
+        "kind": "HelmRelease",
+        "metadata": {
+          "name": "demo-orders",
+          "namespace": "demo-orders-staging"
+        },
+        "spec": {
+          "chart": {
+            "spec": {
+              "chart": "app-template",
+              "interval": "30m",
+              "sourceRef": {
+                "kind": "HelmRepository",
+                "name": "bjw-s",
+                "namespace": "flux-system"
+              },
+              "version": "5.2.1"
+            }
+          },
+          "install": {
+            "remediation": {
+              "retries": 1
+            }
+          },
+          "interval": "30m",
+          "timeout": "3m",
+          "upgrade": {
+            "remediation": {
+              "retries": 1
+            }
+          },
+          "values": {
+            "controllers": {
+              "main": {
+                "containers": {
+                  "main": {
+                    "env": {
+                      "SWHURL_APP": "demo-orders",
+                      "SWHURL_ENV": "staging"
+                    },
+                    "image": {
+                      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "repository": "ghcr.io/samclement/demo-orders"
+                    },
+                    "probes": {
+                      "liveness": {
+                        "custom": true,
+                        "enabled": true,
+                        "spec": {
+                          "httpGet": {
+                            "path": "/healthz",
+                            "port": 8080
+                          }
+                        }
+                      },
+                      "readiness": {
+                        "custom": true,
+                        "enabled": true,
+                        "spec": {
+                          "httpGet": {
+                            "path": "/healthz",
+                            "port": 8080
+                          }
+                        }
+                      },
+                      "startup": {
+                        "custom": true,
+                        "enabled": true,
+                        "spec": {
+                          "failureThreshold": 24,
+                          "httpGet": {
+                            "path": "/healthz",
+                            "port": 8080
+                          },
+                          "periodSeconds": 5
+                        }
+                      }
+                    },
+                    "resources": {
+                      "limits": {
+                        "memory": "128Mi"
+                      },
+                      "requests": {
+                        "cpu": "10m",
+                        "memory": "128Mi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true
+                    }
+                  }
+                },
+                "replicas": 2
+              }
+            },
+            "defaultPodOptions": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "fsGroup": 65532,
+                "runAsGroup": 65532,
+                "runAsNonRoot": true,
+                "runAsUser": 65532,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              }
+            },
+            "persistence": {
+              "tmp": {
+                "globalMounts": [
+                  {
+                    "path": "/tmp"
+                  }
+                ],
+                "type": "emptyDir"
+              }
+            },
+            "service": {
+              "main": {
+                "controller": "main",
+                "ports": {
+                  "http": {
+                    "port": 8080
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": "v2-apps/demo-orders/staging/resourcequota.json",
+      "document": {
+        "apiVersion": "v1",
+        "kind": "ResourceQuota",
+        "metadata": {
+          "name": "demo-orders",
+          "namespace": "demo-orders-staging"
+        },
+        "spec": {
+          "hard": {
+            "limits.memory": "4Gi",
+            "pods": "14",
+            "requests.cpu": "2",
+            "requests.memory": "2Gi"
+          }
+        }
+      }
+    },
+    {
+      "path": "v2-apps/demo-orders/staging/networkpolicy.json",
+      "document": {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "NetworkPolicy",
+        "metadata": {
+          "name": "demo-orders",
+          "namespace": "demo-orders-staging"
+        },
+        "spec": {
+          "ingress": [],
+          "podSelector": {
+            "matchLabels": {
+              "app.kubernetes.io/instance": "demo-orders"
+            }
+          },
+          "policyTypes": [
+            "Ingress"
+          ]
+        }
+      }
+    },
+    {
+      "path": "v2-apps/demo-orders/staging/kustomization.yaml",
+      "document": {
+        "apiVersion": "kustomize.config.k8s.io/v1beta1",
+        "kind": "Kustomization",
+        "resources": [
+          "namespace.json",
+          "helmrelease.json",
+          "resourcequota.json",
+          "networkpolicy.json"
+        ]
+      }
+    },
+    {
+      "path": "v2-apps/units/app-demo-orders-staging.json",
+      "document": {
+        "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+        "kind": "Kustomization",
+        "metadata": {
+          "name": "app-demo-orders-staging",
+          "namespace": "flux-system"
+        },
+        "spec": {
+          "dependsOn": [
+            {
+              "name": "infra-base"
+            }
+          ],
+          "interval": "10m",
+          "path": "./v2-apps/demo-orders/staging",
+          "prune": true,
+          "sourceRef": {
+            "kind": "GitRepository",
+            "name": "swhurl-platform"
+          },
+          "timeout": "3m",
+          "wait": true
+        }
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "group": "",
+      "kind": "Namespace",
+      "namespace": "",
+      "name": "demo-orders-staging",
+      "owner": "demo-orders/staging"
+    },
+    {
+      "group": "helm.toolkit.fluxcd.io",
+      "kind": "HelmRelease",
+      "namespace": "demo-orders-staging",
+      "name": "demo-orders",
+      "owner": "demo-orders/staging"
+    },
+    {
+      "group": "",
+      "kind": "ResourceQuota",
+      "namespace": "demo-orders-staging",
+      "name": "demo-orders",
+      "owner": "demo-orders/staging"
+    },
+    {
+      "group": "networking.k8s.io",
+      "kind": "NetworkPolicy",
+      "namespace": "demo-orders-staging",
+      "name": "demo-orders",
+      "owner": "demo-orders/staging"
+    },
+    {
+      "group": "kustomize.toolkit.fluxcd.io",
+      "kind": "Kustomization",
+      "namespace": "flux-system",
+      "name": "app-demo-orders-staging",
+      "owner": "demo-orders/staging"
+    }
+  ],
+  "registrations": [
+    "v2-apps/units/app-demo-orders-staging.json"
+  ]
+}

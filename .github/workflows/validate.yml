@@ -105,7 +105,24 @@ jobs:
           go-version-file: v2/go.mod
           cache: false # no go.sum: v2 has no dependencies
 
+      - name: Fetch the chart v2 compiles for
+        run: |
+          set -Eeuo pipefail
+          # The chart v2's profile pins, into the cache make check-apps keeps (v2/cmd/swhurl-v2/chart_test.go reads it).
+          chart=$(python3 -c 'import json; c = json.load(open("v2/testdata/profile.json"))["chart"]; print(c["name"], c["version"])')
+          read -r name version <<< "$chart"
+          charts="$HOME/.cache/swhurl-platform/charts"
+          if [ ! -f "$charts/$name-$version/Chart.yaml" ]; then
+            mkdir -p "$charts"
+            tmp=$(mktemp -d "$charts/pull.XXXXXX")
+            helm pull "$name" --repo https://bjw-s-labs.github.io/helm-charts --version "$version" --untar --untardir "$tmp"
+            mv "$tmp/$name" "$charts/$name-$version"
+            rmdir "$tmp"
+          fi
+
       - name: Check the v2 prototype and its design rules
+        env:
+          REQUIRE_HELM: '1'
         run: make check-v2
 
       # The dry runs are not listed here: make test runs every target whose DRY_RUN=true only plans

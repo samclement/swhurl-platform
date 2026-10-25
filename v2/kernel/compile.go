@@ -66,15 +66,15 @@ const (
 // manifest is a Kubernetes object or kustomization as the compiler builds it: fresh maps only.
 type manifest = map[string]any
 
-// Compile builds one private stateless HTTP instance's files. It validates every input, then
-// refuses a release of another application before one the instance does not select.
+// Compile builds one stateless HTTP instance's files, private or signed-in. It validates every input,
+// then refuses a release of another application before one the instance does not select.
 func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error) {
 	inputs, err := compileInputs(spec, release, profile)
 	if err != nil {
 		return Compilation{}, err
 	}
 	resources, err := RenderHTTP(
-		HTTPInstance{spec.Application, spec.Environment, spec.Configuration},
+		HTTPInstance{spec.Application, spec.Environment, spec.Configuration, spec.Grants.Exposure},
 		HTTPWorkload{release.Artifact.Image, release.Artifact.Digest, release.Runtime.Port, release.Runtime.HealthPath, release.Runtime.UID}, profile)
 	if err != nil {
 		return Compilation{}, err

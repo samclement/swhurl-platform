@@ -127,7 +127,7 @@ func TestCompiledManifests(t *testing.T) {
 	// Flux names the Helm release after the HelmRelease (it sets no targetNamespace); render it so.
 	rendered := output(t, helm, "template", release.Metadata.Name, chart, "-n", release.Metadata.Namespace, "-f", values)
 	for _, want := range []string{
-		"kind: Deployment", "kind: Service", "replicas: 1", "automountServiceAccountToken: false", "runAsUser: 65532",
+		"kind: Deployment", "kind: Service", "name: " + release.Metadata.Name + "\n", "replicas: 1", "automountServiceAccountToken: false", "runAsUser: 65532",
 		"image: ghcr.io/samclement/demo-orders@sha256:" + strings.Repeat("a", 64), "path: /healthz", "memory: 256Mi",
 	} {
 		if !strings.Contains(rendered, want) {

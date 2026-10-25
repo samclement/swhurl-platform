@@ -23,5 +23,15 @@
     "requestsCpuMilli": 2000,
     "requestsMemoryMiB": 2048,
     "limitsMemoryMiB": 4096
+  },
+  "routing": {
+    "baseDomain": "homelab.swhurl.com",
+    "class": "traefik",
+    "middleware": "ingress-oauth-auth-shared@kubernetescrd",
+    "issuer": "letsencrypt-prod",
+    "ingressNamespace": "kube-system",
+    "ingressLabels": {
+      "app.kubernetes.io/name": "traefik"
+    }
   }
 }

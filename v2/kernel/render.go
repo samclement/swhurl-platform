@@ -14,10 +14,12 @@ type HTTPWorkload struct {
 	UID           int32
 }
 
-// HTTPInstance contains the environment-owned facts for a private HTTP preview.
+// HTTPInstance contains the environment-owned facts for an HTTP preview. An empty Exposure means
+// private; any other value must be one the renderer supports.
 type HTTPInstance struct {
 	Application, Environment string
 	Configuration            Configuration
+	Exposure                 string
 }
 
 // ResourceSet owns fresh resource bytes and slices, without release identities or readiness.
@@ -39,6 +41,10 @@ func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (
 	if err := validateHTTP(http.Port, http.HealthPath, http.UID); err != nil {
 		return ResourceSet{}, err
 	}
+	exposure, err := exposureOf(spec.Exposure, profile)
+	if err != nil {
+		return ResourceSet{}, err
+	}
 	if err := spec.Configuration.validate(); err != nil {
 		return ResourceSet{}, err
 	}
@@ -51,15 +57,7 @@ func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (
 	// Instances under the instance root; units under the profile's unit root, which kustomize can list.
 	folder := profile.Delivery.OutputRoot + "/instances/" + spec.Application + "/" + spec.Environment
 	unitPath := profile.Delivery.UnitsRoot + "/" + unitName(spec) + ".json"
-	resources := []struct {
-		name string
-		doc  manifest
-	}{
-		{"namespace.json", namespaceManifest(spec)},
-		{"helmrelease.json", helmRelease(spec, http, profile)},
-		{"resourcequota.json", resourceQuota(spec, profile.Quota)},
-		{"networkpolicy.json", networkPolicy(spec)},
-	}
+	resources := resourcesOf(spec, http, profile, exposure)
 	var files []File
 	var listed []any
 	for _, resource := range resources {
@@ -164,16 +162,53 @@ func memoryQuantity(mib int32) string {
 	return fmt.Sprintf("%dMi", mib)
 }
 
-// networkPolicy: a private instance's pods accept no connections. It selects the app's own pods,
-// not the namespace, as v1's does.
-// networkPolicy is the isolation boundary: a private instance accepts no ingress and, by the
-// operator's decision of 25 October 2026, sends no egress either. An empty rule list denies all.
-func networkPolicy(spec HTTPInstance) manifest {
+// networkPolicy is the isolation boundary: a private instance accepts no ingress, and an exposed one
+// accepts only its ingress controller's own pods on its port. By the operator's decision of
+// 25 October 2026 no instance sends egress, and an empty egress rule list denies all of it.
+func networkPolicy(spec HTTPInstance, exposure string, http HTTPWorkload, profile PlatformProfile) manifest {
+	ingressRules := []any{}
+	if exposure == "authenticated-web" {
+		labels := manifest{}
+		for key, value := range profile.Routing.IngressLabels {
+			labels[key] = value
+		}
+		ingressRules = append(ingressRules, manifest{
+			"from": []any{manifest{
+				"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": profile.Routing.IngressNamespace}},
+				"podSelector":       manifest{"matchLabels": labels},
+			}},
+			"ports": []any{manifest{"port": http.Port, "protocol": "TCP"}},
+		})
+	}
 	return manifest{"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
 		"metadata": metadata(spec.Application, namespaceName(spec)),
 		"spec": manifest{"podSelector": manifest{"matchLabels": manifest{instanceLabel: spec.Application}},
-			"policyTypes": []any{"Ingress", "Egress"}, "ingress": []any{}, "egress": []any{}}}
+			"policyTypes": []any{"Ingress", "Egress"}, "ingress": ingressRules, "egress": []any{}}}
 }
+
+// ingress is the route: a host derived from the platform's base domain, TLS from the platform's issuer and
+// the shared sign-in middleware. The chart keeps its own ingress off; this object is the route.
+func ingress(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) manifest {
+	host := routeHost(spec, profile.Routing)
+	route := profile.Routing
+	return manifest{"apiVersion": "networking.k8s.io/v1", "kind": "Ingress",
+		"metadata": manifest{"name": spec.Application, "namespace": namespaceName(spec),
+			"annotations": manifest{"cert-manager.io/cluster-issuer": route.Issuer,
+				"traefik.ingress.kubernetes.io/router.middlewares": route.Middleware}},
+		"spec": manifest{"ingressClassName": route.Class,
+			"rules": []any{manifest{"host": host, "http": manifest{"paths": []any{manifest{"path": "/", "pathType": "Prefix",
+				"backend": manifest{"service": manifest{"name": spec.Application, "port": manifest{"number": http.Port}}}}}}}},
+			"tls": []any{manifest{"hosts": []any{host}, "secretName": spec.Application + "-tls"}}}}
+}
+
+// routeHost derives the host name the way the platform states it: the environment, the app and the base
+// domain. No instance stores a host, so two instances cannot disagree about one name's shape.
+func routeHost(spec HTTPInstance, routing Routing) string {
+	return spec.Environment + "-" + spec.Application + "." + routing.BaseDomain
+}
+
+// configured is whether the profile states routing at all.
+func (r Routing) configured() bool { return r.BaseDomain != "" }
 
 func unit(spec HTTPInstance, profile PlatformProfile, folder string) manifest {
 	dependsOn := []any{}
@@ -187,16 +222,58 @@ func unit(spec HTTPInstance, profile PlatformProfile, folder string) manifest {
 			"path":      "./" + folder, "prune": true, "wait": true, "timeout": failAfter}}
 }
 
+// exposureOf is the exposure the files are rendered for: absent means private, and a route needs the
+// platform's routing facts before one can be rendered.
+func exposureOf(stated string, profile PlatformProfile) (string, error) {
+	if stated == "" {
+		return "private", nil
+	}
+	if stated != "private" && stated != "authenticated-web" {
+		return "", refuse(Unsupported, "grants.exposure", "only private and authenticated-web exposure are supported")
+	}
+	if stated == "authenticated-web" && !profile.Routing.configured() {
+		return "", refuse(Unsupported, "routing", "the profile states no routing, so no route can be rendered")
+	}
+	return stated, nil
+}
+
+// resourcesOf is the instance's files in their fixed order: the route, when there is one, after the policy
+// and before the kustomization that lists them.
+func resourcesOf(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile, exposure string) []struct {
+	name string
+	doc  manifest
+} {
+	resources := []struct {
+		name string
+		doc  manifest
+	}{
+		{"namespace.json", namespaceManifest(spec)},
+		{"helmrelease.json", helmRelease(spec, http, profile)},
+		{"resourcequota.json", resourceQuota(spec, profile.Quota)},
+		{"networkpolicy.json", networkPolicy(spec, exposure, http, profile)},
+	}
+	if exposure != "private" {
+		resources = append(resources, struct {
+			name string
+			doc  manifest
+		}{"ingress.json", ingress(spec, http, profile)})
+	}
+	return resources
+}
+
 // inventory is every cluster object the files create, in file order.
 func inventory(spec HTTPInstance) []Claim {
 	namespace, by := namespaceName(spec), owner(spec)
-	return []Claim{
+	claims := []Claim{
 		{Object{"", "Namespace", "", namespace}, by},
 		{Object{"helm.toolkit.fluxcd.io", "HelmRelease", namespace, spec.Application}, by},
 		{Object{"", "ResourceQuota", namespace, spec.Application}, by},
 		{Object{"networking.k8s.io", "NetworkPolicy", namespace, spec.Application}, by},
-		{Object{"kustomize.toolkit.fluxcd.io", "Kustomization", "flux-system", unitName(spec)}, by},
 	}
+	if spec.Exposure == "authenticated-web" {
+		claims = append(claims, Claim{Object{"networking.k8s.io", "Ingress", namespace, spec.Application}, by})
+	}
+	return append(claims, Claim{Object{"kustomize.toolkit.fluxcd.io", "Kustomization", "flux-system", unitName(spec)}, by})
 }
 
 // encodeManifest is a document's canonical bytes: compact, keys sorted, no HTML escaping.

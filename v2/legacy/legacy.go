@@ -225,7 +225,7 @@ func gaps(app, instance, release *record, carried Instance) []Gap {
 	if carried.Team != "" {
 		found = append(found, Gap{Where: "app.yaml: team", Fact: "app.team", Owner: "platform (teams)"})
 	}
-	if carried.Exposure != "private" {
+	if carried.Exposure != "private" && carried.Exposure != "authenticated-web" {
 		found = append(found, Gap{Where: "instance.yaml: exposure", Fact: "instance.exposure", Owner: "platform (exposure)"})
 	}
 	add("app.yaml", app, ownerOf)

@@ -89,7 +89,8 @@ func previewSubject(translation legacy.Translation) subject {
 		workload: kernel.HTTPWorkload{Image: translation.Workload.Image, Digest: translation.Workload.Digest,
 			Port: translation.Workload.Port, HealthPath: translation.Workload.HealthPath, UID: translation.Workload.UID},
 		instance: kernel.HTTPInstance{Application: translation.Application, Environment: translation.Environment,
-			Configuration: kernel.Configuration{Replicas: translation.Instance.Replicas, MemoryMiB: translation.Instance.MemoryMiB}},
+			Configuration: kernel.Configuration{Replicas: translation.Instance.Replicas, MemoryMiB: translation.Instance.MemoryMiB},
+			Exposure:      translation.Instance.Exposure},
 	}
 }
 

@@ -52,11 +52,17 @@ func TestCompiledManifests(t *testing.T) {
 	}
 	dir := t.TempDir()
 	var release struct {
-		Spec struct {
+		Metadata struct{ Name, Namespace string }
+		Spec     struct {
 			Chart struct {
 				Spec struct{ Chart, Version string }
 			}
 			Values json.RawMessage
+		}
+	}
+	var policy struct {
+		Spec struct {
+			PodSelector struct{ MatchLabels map[string]string }
 		}
 	}
 	for _, file := range compiled.Files {
@@ -67,10 +73,17 @@ func TestCompiledManifests(t *testing.T) {
 		if err := os.WriteFile(path, file.Document, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if strings.HasSuffix(file.Path, "/helmrelease.json") {
-			if err := json.Unmarshal(file.Document, &release); err != nil {
-				t.Fatal(err)
-			}
+		var into any
+		switch {
+		case strings.HasSuffix(file.Path, "/helmrelease.json"):
+			into = &release
+		case strings.HasSuffix(file.Path, "/networkpolicy.json"):
+			into = &policy
+		default:
+			continue
+		}
+		if err := json.Unmarshal(file.Document, into); err != nil {
+			t.Fatal(err)
 		}
 	}
 	cache, _ := os.UserCacheDir()
@@ -82,7 +95,8 @@ func TestCompiledManifests(t *testing.T) {
 	if err := os.WriteFile(values, release.Spec.Values, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rendered := output(t, helm, "template", "demo-orders", chart, "-n", "demo-orders-prod", "-f", values)
+	// Flux names the Helm release after the HelmRelease (it sets no targetNamespace); render it so.
+	rendered := output(t, helm, "template", release.Metadata.Name, chart, "-n", release.Metadata.Namespace, "-f", values)
 	for _, want := range []string{
 		"kind: Deployment", "kind: Service", "replicas: 1", "automountServiceAccountToken: false", "runAsUser: 65532",
 		"image: ghcr.io/samclement/demo-orders@sha256:" + strings.Repeat("a", 64), "path: /healthz", "memory: 256Mi",
@@ -91,11 +105,17 @@ func TestCompiledManifests(t *testing.T) {
 			t.Errorf("the chart's output lacks %q", want)
 		}
 	}
-	// The NetworkPolicy selects app.kubernetes.io/instance; the Deployment's pods must carry it.
+	// Every label the compiled NetworkPolicy selects must be on the Deployment's pods.
 	pods := rendered[strings.Index(rendered, "kind: Deployment"):]
 	pods = pods[strings.Index(pods, "  template:"):]
-	if labels := pods[:strings.Index(pods, "    spec:")]; !strings.Contains(labels, "app.kubernetes.io/instance: demo-orders") {
-		t.Errorf("the pods lack the label the NetworkPolicy selects:\n%s", labels)
+	labels := pods[:strings.Index(pods, "    spec:")]
+	if len(policy.Spec.PodSelector.MatchLabels) == 0 {
+		t.Fatal("the NetworkPolicy selects no labels")
+	}
+	for key, value := range policy.Spec.PodSelector.MatchLabels {
+		if !strings.Contains(labels, key+": "+value+"\n") {
+			t.Errorf("the pods lack %s: %s, which the NetworkPolicy selects:\n%s", key, value, labels)
+		}
 	}
 	built := output(t, kubectl, "kustomize", filepath.Join(dir, "v2-apps/demo-orders/prod"))
 	for _, want := range []string{"kind: Namespace", "kind: HelmRelease", "kind: ResourceQuota", "kind: NetworkPolicy"} {

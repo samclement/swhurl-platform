@@ -122,6 +122,8 @@ func TestProfileDecoding(t *testing.T) {
 		{"bad version", strings.Replace(text, `"5.2.1"`, `"v5.2.1"`, 1), Invalid, "chart.version"},
 		{"escaping root", strings.Replace(text, `"v2-apps"`, `"../v2-apps"`, 1), Invalid, "delivery.outputRoot"},
 		{"absolute root", strings.Replace(text, `"v2-apps"`, `"/v2-apps"`, 1), Invalid, "delivery.outputRoot"},
+		{"zero startup period", strings.Replace(text, `"startupPeriodSeconds": 5`, `"startupPeriodSeconds": 0`, 1), Invalid, "workload.startupPeriodSeconds"},
+		{"root segment longer than a DNS label", strings.Replace(text, `"v2-apps"`, `"`+strings.Repeat("a", 64)+`"`, 1), Invalid, "delivery.outputRoot"},
 		{"startup not a multiple", strings.Replace(text, `"startupSeconds": 120`, `"startupSeconds": 121`, 1), Invalid, "workload.startupSeconds"},
 		{"zero quota", strings.Replace(text, `"pods": 14`, `"pods": 0`, 1), Invalid, "quota.pods"},
 		{"bad name", strings.Replace(text, `"home-k3s"`, `"Home"`, 1), Invalid, "name"},
@@ -192,9 +194,10 @@ func TestCompiledResources(t *testing.T) {
 			}
 		}
 	}
-	for _, removed := range []string{"tag", "SWHURL_NOTIFY_URL", "SWHURL_AUTH", "tokens", "team", "ingress\":{", "render"} {
+	for _, removed := range []string{`"tag"`, `"SWHURL_NOTIFY_URL"`, `"SWHURL_AUTH_`, `"tokens"`, `"platform.swhurl.com/team"`,
+		`"ingress":{`, `"platform.swhurl.com/render"`, `"annotations"`, `"HTTP_PROXY"`, `"HTTPS_PROXY"`} {
 		for path, doc := range f {
-			if strings.Contains(doc, `"`+removed) {
+			if strings.Contains(doc, removed) {
 				t.Errorf("%s has %q, which phase 2 does not generate", path, removed)
 			}
 		}
@@ -275,6 +278,7 @@ func TestCompileRefusals(t *testing.T) {
 		{"another application's release", staging, other, p, WrongApplication},
 		{"invalid instance first", invalid, other, p, Invalid},
 		{"invalid profile", prod, r41, broken, Invalid},
+		{"invalid profile before another application's release", staging, other, broken, Invalid},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c, err := Compile(tt.spec, tt.release, tt.profile)
@@ -283,6 +287,54 @@ func TestCompileRefusals(t *testing.T) {
 				t.Fatal("a refusal returned a compilation")
 			}
 		})
+	}
+}
+
+// TestInventoryAndSelectorMatchTheFiles: the inventory is exactly the objects the files declare,
+// and the NetworkPolicy selects the label the chart gives pods, the Helm release name, which Flux
+// takes from the HelmRelease's name. The three are written separately, so this ties them together.
+func TestInventoryAndSelectorMatchTheFiles(t *testing.T) {
+	c := compile(t, instance(t, "prod.json"), releaseFile(t, "r41.json"), profile(t))
+	var declared []Object
+	var release, selected string
+	for _, file := range c.Files {
+		if strings.HasSuffix(file.Path, "/kustomization.yaml") {
+			continue
+		}
+		var doc struct {
+			APIVersion, Kind string
+			Metadata         struct{ Name, Namespace string }
+			Spec             struct {
+				PodSelector struct{ MatchLabels map[string]string }
+			}
+		}
+		if err := json.Unmarshal(file.Document, &doc); err != nil {
+			t.Fatal(err)
+		}
+		group, _, versioned := strings.Cut(doc.APIVersion, "/")
+		if !versioned {
+			group = ""
+		}
+		declared = append(declared, Object{group, doc.Kind, doc.Metadata.Namespace, doc.Metadata.Name})
+		switch doc.Kind {
+		case "HelmRelease":
+			release = doc.Metadata.Name
+		case "NetworkPolicy":
+			selected = doc.Spec.PodSelector.MatchLabels["app.kubernetes.io/instance"]
+			if len(doc.Spec.PodSelector.MatchLabels) != 1 {
+				t.Errorf("the policy selects by more than the instance label: %v", doc.Spec.PodSelector.MatchLabels)
+			}
+		}
+	}
+	var claimed []Object
+	for _, claim := range c.Inventory {
+		claimed = append(claimed, claim.Object)
+	}
+	if !slices.Equal(declared, claimed) {
+		t.Errorf("inventory %v, files declare %v", claimed, declared)
+	}
+	if release == "" || selected != release {
+		t.Errorf("the NetworkPolicy selects instance %q, the HelmRelease is %q", selected, release)
 	}
 }
 

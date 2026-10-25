@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: approved
-Gate: observation slice 2b: the credential source and an `observe` command that reads one instance (read-only)
-Uncommitted: none
+Status: in progress
+Gate: the operator's choice after observation: phase 3 slice 2 (snapshot acquisition, or legacy translation) or live verification of a v2-owned instance
+Uncommitted: `v2/adapters/kube/kubeconfig.go`, `v2/adapters/kube/kubeconfig_test.go`, `v2/cmd/swhurl-v2/observe.go`, `v2/cmd/swhurl-v2/observe_test.go`, `v2/cmd/swhurl-v2/main.go`, `v2/observe/report.go`, `v2/observe/report_test.go`, `v2/observe/explain.go`, `v2/archtest/api.txt`, `docs/`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -23,7 +23,7 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 | 1. Release-selection kernel | done, reviewed, committed 24 October 2026 | [contract](iteration-2-plan.md#2-phase-1-model-and-contract), [evidence](iteration-2-plan.md#phase-1-verification-evidence) |
 | 2. Deterministic compiler | done, reviewed, committed 25 October 2026 | [contract](iteration-2-plan.md#phase-2-establish-compiler-ownership) |
 | 4. Git delivery | done: offline half and one live instance, 25 October 2026 | [slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) |
-| 5. Observation | slices 1 and 2a done: 2a derives the target from compiled output, committed 25 October 2026 | [slice 1](iteration-2-plan.md#first-observation-slice-what-is-running-implemented-offline-25-october-2026), [2a](iteration-2-plan.md#second-observation-slice-the-target-from-compiled-output-implemented-25-october-2026) |
+| 5. Observation | slices 1 and 2a committed; slice 2b (kubeconfig in JSON form, `observe` command, report document) implemented and read the live cluster read-only on 25 October 2026 | [slice 1](iteration-2-plan.md#first-observation-slice-what-is-running-implemented-offline-25-october-2026), [2a](iteration-2-plan.md#second-observation-slice-the-target-from-compiled-output-implemented-25-october-2026) |
 | 6. First live instance | done 25 October 2026: applied, verified and removed, see the record above | [evidence](current-state.md#first-v2-instance-live-25-october-2026) |
 | 3. Shadow bridge | slice 1 done; **3.2–3.5 are the other candidate next slice** (need approval) | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
 | 7. Selective replacement | proposed, not approved; needs the bridge first | [phases](iteration-2-plan.md#5-incremental-delivery) |
@@ -92,6 +92,15 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Next gate:** observation slice 2b — a credential source and an `observe` command that reads one instance, read-only.
 - **Committed:** `2a851c61` (with the record flip in the commit that follows it).
 
+## Slice record: phase 5 observation, credentials and command
+
+- **Outcome and the refusal it must produce:** an operator can point v2 at one live instance and read, as a versioned document, whether the intended release is running — `swhurl-v2 observe --instance --release --profile --revision --kubeconfig` — with the target derived from the compiled documents and the credential material taken from a kubeconfig in its **JSON** form. Exit 0 means a report was produced, whatever its verdict; the verdict is in the document. It refuses before any request: a kubeconfig it cannot parse or use (no current context, unknown context/cluster/user, material that is not base64, an `exec`/`auth-provider` plugin, no token and no certificate), a plain-http endpoint, a missing `--revision`, and any invalid compiled input.
+- **Owners and boundaries:** `adapters/kube` owns the kubeconfig's format and the connection, and still decides nothing about meaning; the command owns compilation, the derived target and the sequencing of four reads under a 20-second bound; `observe` owns the projection and the document's shape. `observe.IsPositive` exposes the verdict's own sign table so a summary cannot become a second copy of the words.
+- **What crosses each seam:** kubeconfig bytes into `Connect`, a `Connection` and a `Reader` out; `observe.Evidence` into the projection; `observe.Report` into `EncodeReport`. No credential material reaches a diagnostic: a refusal carries a fixed reason only, which a test asserts.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged (no v1 file touched; `make check` passes). 2. Pure — `observe` still takes no effects; the clock and the reads live in the command and the adapter. 3. Bytes and identities unchanged: `kernel` and `shadow` untouched, no golden compilation regenerated; the API baseline grows by the new types and functions and loses nothing. 4. Refusals: a new fixed vocabulary, stated in the plan and tested case by case. 5. Failure paths tested: every kubeconfig shape, a `403` (unassessed, `unknown`), a `404` (absent, `not_running`), a bad kubeconfig (exit 2, no report), a missing revision (exit 2). 6. Scope: the document states its assessed, unassessed and not-covered facts; the summary names only non-positive findings. 7. Offline tests are not readiness — and the live read is recorded separately, as what it was: a read-only observation with a `not_running` verdict for the intended artifact, not a parity claim. 8. This page, the plan, the gap list and the current-state evidence change in the same commit.
+- **Live evidence, 25 October 2026 (read-only):** two observations of `demo-orders` through the real API server returned `unit reconciled`, `unit.revision applied`, `release settled`, `workload present`, `ready ready`; the verdicts were `not_running` because the artifact v2's fixture descriptor pins is not the running image (`image different/digest`), and staging also reported `replicas different/available_replicas`. Recorded in [current state](current-state.md#first-v2-observation-of-a-live-instance-25-october-2026).
+- **Next gate:** the operator's choice after observation: phase 3 slice 2 (snapshot acquisition, or legacy translation), or live verification of a v2-owned instance.
+
 ## Resume
 
 **Read first**, in this order — the rest is the links below, not a substitute for inspection:
@@ -127,9 +136,9 @@ The report shows what the tree adds to `origin/main`: a new package, a changed e
 >
 > Then run, from the repository root: `git log --oneline -5`, `git status --short`, `make check-v2`, `make -s v2-report`, `python3 -m swhurl check-docs`. Report what they say before proposing anything. A check that reads the working tree can pass here and fail on a clone; CI is the reader that matters.
 >
-> Where v2 stands: phases 1 and 2 are done and reviewed; phase 3 slice 1 (release-independent `RenderHTTP` and the pure `shadow.CompareHTTP`) is done; the **delivery slice is done end to end**, including one disposable instance that was applied by Flux, verified (digest, readiness, isolation, no egress) and removed on 25 October 2026; **phase 5 observation slice 1 is committed** (`dc12f5d3`): the pure evidence projection and the first real adapter (`adapters/kube`), reviewed with its blocker and should-fix findings fixed, offline only. Nothing is uncommitted.
+> Where v2 stands: phases 1 and 2 are done and reviewed; phase 3 slice 1 is done; the **delivery slice is done end to end** (one disposable instance applied, verified and removed on 25 October 2026); **observation is done through a live read**: the pure projection and adapter (`dc12f5d3`, reviewed), the target derived from compiled output (`2a851c61`), and a credential source plus the `observe` command, which read `demo-orders` read-only on 25 October 2026 and reported the intended artifact as not running.
 >
-> The next gate is the operator's choice between **phase 3 slice 2** (snapshot acquisition, or legacy translation and default resolution) for the shadow bridge, and the **next observation slice** (deriving the target from compiled output, a credential source, the report envelope, then a live read under phase 6). Ask which; do not implement either before the operator approves that slice.
+> The next gate is the operator's choice: **phase 3 slice 2** (snapshot acquisition, or legacy translation and default resolution) for the shadow bridge, or **live verification of a v2-owned instance**. Ask which; do not implement either before the operator approves that slice.
 >
 > Follow the operator's design principles: maintainable v2 contracts rather than v1 compatibility; a pure core with orchestration above it and integrations at the edges; explicit domain and data ownership; iterative transition with honestly incomplete semantics. Do not require supplemental provenance claims or complete releases merely to preview known workload facts. Answer the eight slice invariants on the status page in the same change as the code, keep the gap list current, and run `make check-v2` and `make check` before asking to commit.
 >

@@ -413,6 +413,10 @@ const (
 	unclear
 )
 
+// IsPositive reports whether an outcome is one of the seven that make a report running. A caller that
+// formats or filters a report needs the same table the verdict uses, not a copy of the words.
+func IsPositive(outcome string) bool { return outcomeSign(outcome) == positive }
+
 func outcomeSign(outcome string) int {
 	switch outcome {
 	case Reconciled, Applied, Settled, Present, Running, Ready, AsIntended:

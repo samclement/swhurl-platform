@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Offline Go v2 | main | in progress | live verification of the v2-owned instance `swhurl-try-v2-2`, applied 25 October 2026 | live verification of a v2-owned instance: `swhurl-try-v2-2` is applied and awaiting observation with v2 itself, then removal | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/` |
+| Offline Go v2 | main | approved | v2 observed its own instance running (`swhurl-try-v2-2`, 25 October 2026) and removed it; bridge slices 1–3 committed | the bridge's remaining ownership work: declared objects against the live cluster, then the first migration decision | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/` |
 | Live platform | main | approved | the 24 open items in the plan index | M14, then B4b (records-only removal) | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

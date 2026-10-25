@@ -1,1 +1,0 @@
-{"apiVersion":"kustomize.toolkit.fluxcd.io/v1","kind":"Kustomization","metadata":{"name":"app-swhurl-try-v2-2-staging","namespace":"flux-system"},"spec":{"dependsOn":[{"name":"infra-base"}],"interval":"10m","path":"./v2-apps/instances/swhurl-try-v2-2/staging","prune":true,"sourceRef":{"kind":"GitRepository","name":"swhurl-platform"},"timeout":"3m","wait":true}}

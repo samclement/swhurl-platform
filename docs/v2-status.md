@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
-Status: in progress
-Gate: live verification of a v2-owned instance: `swhurl-try-v2-2` is applied and awaiting observation with v2 itself, then removal
+Status: approved
+Gate: the bridge's remaining ownership work: declared objects against the live cluster, then the first migration decision
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -27,12 +27,12 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 4. Git delivery | Compiled intent reaches the cluster through Git; no egress | **Done end to end** (one disposable instance, applied and removed 25 Oct) |
 | 5. Observation | What a cluster actually runs: intended digest, readiness, and unavailable ≠ absent | **Done through a live read** (25 Oct) |
 | 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, and an ownership inventory | **Slices 1–3 done, offline** |
-| 6. First live instance | A v2-owned instance published, observed and removed | **Done 25 Oct** (one throwaway, removed) |
+| 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Not started**; needs the bridge's remaining ownership work and a migration decision |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** no v2 command publishes or reconciles an instance (delivery is manual: compile, commit, push); no v2-owned app exists beyond the removed throwaway; v2 renders no routes, storage, secrets, calls, events, teams, alarms or telemetry, so most instances cannot be migrated without new domain models; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+**Not yet true, and what would make it true:** no v2 command publishes or reconciles an instance (delivery is manual: compile, commit, push); no v2-owned app exists (both throwaways were removed); v2 renders no routes, storage, secrets, calls, events, teams, alarms or telemetry, so most instances cannot be migrated without new domain models; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -141,6 +141,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** over this repository's own snapshot at `2d4e06ed`: 135 declared objects, 10 instances compared, 7 unavailable (all non-web kinds, each named), **no field differences** in scope and **no cross-instance ownership conflict**; each compared instance reports its own five expected collisions. `make check-v2` (11 packages), `REQUIRE_HELM=1 make check-v2` (including the chart-default assertion), `make check` (1012 tests) and `make v2-report` pass; the exporter's tests cover the pinned revision, a dirty tree, a missing record, SOPS exclusion and determinism.
 - **Next gate:** the operator's choice — phase 6/7 live verification of a v2-owned instance, or the bridge's remaining ownership work (declared objects for output no record explains *live*, and the migration decision itself).
 - **Committed:** `06aae224` (with the record flip in the commit that follows it).
+
+## Slice record: live verification of a v2-owned instance
+
+- **Outcome:** a third throwaway instance, `swhurl-try-v2-2` in staging, was compiled by v2 (five files and a unit, no v1 record), applied by Flux at a pushed commit, and then **observed with v2's own `observe` command** rather than by hand: `verdict running` with all seven facts positive — unit reconciled, `unit.revision applied` at the pushed commit, release settled, workload present, the compiled digest running, ready, and the intended replica count. It was then removed the way it was created: deleting its files and its unit registration, pushing, and letting Flux prune.
+- **What it proves:** the phase-5 contract holds end to end against a real API server for an instance v2 owns; the phase-4 delivery path and the phase-5 observation path now close a loop that does not need v1 tooling.
+- **Not exercised:** an unavailable or absent read (not manufactured), pod-level facts, and isolation re-testing — the compiled NetworkPolicy has the same shape as the one demonstrated earlier, including that egress enforcement lags a new pod by seconds.
+- **Evidence:** [current state](current-state.md#third-v2-owned-instance-observed-by-v2-itself-25-october-2026), including the reported verdict and the objects Flux created; the removal's prune evidence is recorded there too.
+- **Next gate:** the bridge's remaining ownership work: declared objects against the live cluster, then the first migration decision.
 
 ## Resume
 

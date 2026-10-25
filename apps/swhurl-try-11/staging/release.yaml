@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/swhurl-try-11
-  tag: 48-419f5ae
-  digest: sha256:59f546f8ddbd9920a3159982601e48cc0708e4b41145b04039103819ffba0bc5
+  tag: 50-d771828
+  digest: sha256:63a4e954464150c9574981bd54900b46872f9e98ba0fb0a535702662462ccc5d
 kind: web
 uid: 65532
 stack: typescript
@@ -11,4 +11,4 @@ port: 8080
 healthPath: /healthz
 telemetry: true
 apiPath: /openapi.json
-offers: 419f5ae
+offers: d771828

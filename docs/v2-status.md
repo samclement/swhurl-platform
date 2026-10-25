@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: removal of swhurl-try-v2-1: delete its files and its unit line, push, and confirm prune removes only it
+Gate: the operator's choice of the next slice: phase 3 slice 2 (snapshot acquisition, or legacy translation) or phase 5 observation
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -44,7 +44,8 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Gaps touched:** the egress row now says egress is denied and the proxy path is due with the first instance that needs it; the delivery row records that the unit is written and its one-line registration is the operator's edit.
 - **Independent read-only review, before commit:** should-fix findings, all fixed — the `apps/` refusal read the destination as typed, so `--out .` from inside `apps/` or a symlink to it wrote into the v1 tree (now resolved, with the checkout's own `apps/` identified by `.git` or `clusters/` beside it, which also stops it refusing an unrelated folder called `apps`); a mid-write failure left earlier files written without saying so (now reported, and each file is atomic); the new profile refusals had no tests (now four cases); and this page still said the slice awaited approval. Nits fixed: the fake no longer keeps a partial write, and the shared `Contract` proves a refusal wrote nothing; `--out ""` is a usage error; a `/` destination is accepted; refusals no longer echo the destination; the adapter fixtures are the compiler's exact bytes. Not changed: a `/` destination as the filesystem root still writes into it if the operator asks for it — the `apps/` refusal is the guard, not a sandbox.
 - **The live half, 25 October 2026.** `swhurl-try-v2-1` runs in staging, owned only by v2: unit and HelmRelease Ready, the pod `1/1` on the compiled digest, unreachable from a sibling pod and from another namespace, no egress from the pod, and all 37 v1 units unchanged. Three findings, recorded in [current state](current-state.md#first-v2-instance-live-25-october-2026): the first image kept SQLite and crash-looped (the model was right, the image was wrong — a deferred row, not a defect); a timed-out *install* leaves a release Flux cannot roll back (`Stalled`, fixed with `flux reconcile helmrelease --force`, now in the troubleshooting table); and the egress policy is enforced only after a few seconds for a newly created pod, so a fresh pod can egress until then. CI also failed both pushes on the page's cited hash after a rebase, which is why the check now requires a cited commit to be reachable from a ref.
-- **Next gate:** removal, which is a namespace deletion and needs the operator.
+- **Removal, 25 October 2026.** The instance's five files, its unit file and its line in `clusters/home/kustomization.yaml` are deleted, so Flux prunes what it applied; the evidence of what prune actually removed is in [current state](current-state.md#first-v2-instance-live-25-october-2026).
+- **Next gate:** the operator's choice of the next slice.
 
 ## Slice record: phase 3 slice 1
 

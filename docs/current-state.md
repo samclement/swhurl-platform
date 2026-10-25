@@ -2,6 +2,27 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Third v2-owned instance, observed by v2 itself (25 October 2026)
+
+`swhurl-try-v2-2` in staging: compiled output only (five files under `v2-apps/`, the unit `cluster-stack` lists, no v1 record), pinned to `ghcr.io/samclement/swhurl-try-11@sha256:63a4e954464150c9574981bd54900b46872f9e98ba0fb0a535702662462ccc5d` — a web app with no database, the image the first live test proved runs. Pushed `a5a43291`; `make flux-reconcile` applied it, and the unit reached `True` at that revision with the pod `1/1 Running` and the HelmRelease `True` (`Helm install succeeded`, app-template 5.2.1).
+
+**Observed with v2's own command**, not by hand: `swhurl-v2 observe --instance … --release … --profile … --revision <pushed commit> --kubeconfig …` (the descriptors live outside the repository) reported, on the first attempt:
+
+```text
+verdict running
+  unit reconciled
+  unit.revision applied
+  release settled
+  workload present
+  image running          (the compiled digest)
+  ready ready
+  replicas as_intended
+```
+
+So the phase-5 contract holds end to end against a real API server for an instance v2 itself owns: Flux applied the pushed commit, Helm settled the release, the pod runs the pinned digest, and every fact is positive. Isolation was not re-tested: the compiled NetworkPolicy has the same shape as the one demonstrated on 25 October (both policy types, no rules), and the egress timing caveat from that record still applies.
+
+The v1 units were untouched (39 units Ready during the wait). Not exercised here: an unavailable or absent read, and anything about pods beyond the running image.
+
 ## First v2 observation of a live instance (25 October 2026)
 
 Read-only, from the host, with the operator's kubeconfig in its JSON form (`kubectl config view --raw -o json`) and the built `swhurl-v2 observe` from `bd5f2455`. Both reads exited 0 (a report was produced) and reported `source default`:

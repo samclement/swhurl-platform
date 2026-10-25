@@ -1,0 +1,44 @@
+{
+  "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+  "kind": "Kustomization",
+  "metadata": {
+    "name": "app-hello-staging",
+    "namespace": "flux-system",
+    "generation": 3,
+    "labels": {
+      "kustomize.toolkit.fluxcd.io/name": "cluster-stack",
+      "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+    }
+  },
+  "spec": {
+    "dependsOn": [
+      {
+        "name": "cluster-sources"
+      }
+    ],
+    "interval": "10m",
+    "path": "./v2-apps/instances/hello/staging",
+    "prune": true,
+    "sourceRef": {
+      "kind": "GitRepository",
+      "name": "swhurl-platform"
+    },
+    "timeout": "3m",
+    "wait": true
+  },
+  "status": {
+    "lastAppliedRevision": "main@sha1:9f1c0e2d34b7a5c86e4f0d2b9a17c3e5d8b6f04a",
+    "lastAttemptedRevision": "main@sha1:9f1c0e2d34b7a5c86e4f0d2b9a17c3e5d8b6f04a",
+    "observedGeneration": 3,
+    "conditions": [
+      {
+        "type": "Ready",
+        "status": "True",
+        "reason": "ReconciliationSucceeded",
+        "message": "Applied revision: main@sha1:9f1c0e2d34b7a5c86e4f0d2b9a17c3e5d8b6f04a",
+        "lastTransitionTime": "2026-10-25T09:12:04Z",
+        "observedGeneration": 3
+      }
+    ]
+  }
+}

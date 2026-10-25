@@ -97,8 +97,9 @@ func f(count int) int {
 	return fmt.Sprint(count) == "" && pattern > 0
 }
 `,
-		"kernel/b.go":    "package kernel\n\nfunc g() { count = 2 }\n",
-		"shadow/http.go": "package shadow\n",
+		"kernel/b.go":        "package kernel\n\nfunc g() { count = 2 }\n",
+		"observe/explain.go": "package observe\n",
+		"shadow/http.go":     "package shadow\n",
 	})
 	expect(t, checkPure(m),
 		"pure kernel/a.go:5: imports os, which is not in PureImports",

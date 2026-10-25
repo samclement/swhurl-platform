@@ -14,6 +14,23 @@ adapters/files: type Disk struct {}
 adapters/files: type Error struct {Code string Path string Reason string}
 adapters/files: type Outcome struct {Path string `json:"path"` State string `json:"state"`}
 adapters/files: type Writer interface {Write(dir string, files []kernel.File) ([]Outcome, error)}
+adapters/kube/kubetest: func (*Fake) List(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
+adapters/kube/kubetest: func (*Fake) Read(_ context.Context, ref observe.Ref) (observe.Read, error)
+adapters/kube/kubetest: func Contract(t *testing.T, answers Answers, open func(*testing.T, Answers) kube.Reader)
+adapters/kube/kubetest: func New(answers Answers) *Fake
+adapters/kube/kubetest: type Answers struct {Object observe.Ref Document []byte Missing observe.Ref Failed observe.Ref Malformed observe.Ref Mismatched observe.Ref Pods observe.Ref Selector string Items [][]byte}
+adapters/kube/kubetest: type Fake struct {Answers Answers Reads []observe.Ref Selectors []string Refuse error}
+adapters/kube: const BadCredentials = "credentials"
+adapters/kube: const RefusedRequest = "refused_request"
+adapters/kube: func (*API) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
+adapters/kube: func (*API) Read(ctx context.Context, ref observe.Ref) (observe.Read, error)
+adapters/kube: func (*Error) Error() string
+adapters/kube: func Client(credentials Credentials) (*http.Client, error)
+adapters/kube: func New(endpoint string, client *http.Client, token string) (Reader, error)
+adapters/kube: type API struct {}
+adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
+adapters/kube: type Error struct {Code, Subject, Reason string}
+adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)}
 kernel: const AppTree = "apps"
 kernel: const IdentityMismatch Code = "identity_mismatch"
 kernel: const Invalid Code = "invalid"
@@ -65,6 +82,64 @@ kernel: type ResourceSet struct {Files []File Inventory []Claim Registrations []
 kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` HealthPath string `json:"healthPath"` UID int32 `json:"uid"`}
 kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
+observe: const Absent = "absent"
+observe: const Applied = "applied"
+observe: const AsIntended = "as_intended"
+observe: const Different = "different"
+observe: const IsNotRunning Verdict = "not_running"
+observe: const IsRunning Verdict = "running"
+observe: const NotApplied = "not_applied"
+observe: const NotAssessed = "not_assessed"
+observe: const NotRead = "not_read"
+observe: const NotReady = "not_ready"
+observe: const NotReconciled = "not_reconciled"
+observe: const NotRunning = "not_running"
+observe: const NotSettled = "not_settled"
+observe: const Present = "present"
+observe: const Ready = "ready"
+observe: const ReasonDigest = "digest"
+observe: const ReasonForbidden = "forbidden"
+observe: const ReasonMalformed = "malformed"
+observe: const ReasonNoCondition = "condition_absent"
+observe: const ReasonNoContainer = "container_absent"
+observe: const ReasonNoPods = "no_pods"
+observe: const ReasonNoReplicas = "no_replicas_intended"
+observe: const ReasonNotAppliedRev = "revision_not_applied"
+observe: const ReasonNotAvailable = "condition_not_available"
+observe: const ReasonNotFound = "not_found"
+observe: const ReasonNotPulled = "not_pulled"
+observe: const ReasonNotSupplied = "revision_not_supplied"
+observe: const ReasonNotTrue = "condition_not_ready"
+observe: const ReasonPodsDown = "pods_unavailable"
+observe: const ReasonReplicas = "available_replicas"
+observe: const ReasonRevisionShape = "unrecognised_revision"
+observe: const ReasonStale = "status_stale"
+observe: const ReasonStatus = "status"
+observe: const ReasonSuspended = "suspended"
+observe: const ReasonTimedOut = "timed_out"
+observe: const ReasonTooLarge = "response_too_large"
+observe: const ReasonTransport = "transport"
+observe: const ReasonUnitDown = "unit_unavailable"
+observe: const ReasonUnitGone = "unit_absent"
+observe: const ReasonUnpinnedPod = "unpinned_pod_image"
+observe: const ReasonWorkloadDown = "workload_unavailable"
+observe: const ReasonWorkloadGone = "workload_absent"
+observe: const Reconciled = "reconciled"
+observe: const Running = "running"
+observe: const Settled = "settled"
+observe: const Unavailable = "unavailable"
+observe: const Unknown Verdict = "unknown"
+observe: func (*Error) Error() string
+observe: func Explain(target Target, evidence Evidence) (Report, error)
+observe: type Error struct {Field, Reason string}
+observe: type Evidence struct {Source string ObservedAt string Objects []Read Pods []List}
+observe: type Finding struct {Field, Outcome, Reason string}
+observe: type List struct {Ref Ref Selector string Status string Reason string Items [][]byte}
+observe: type Read struct {Ref Ref Status string Reason string Object []byte}
+observe: type Ref struct {APIVersion, Kind, Namespace, Name string}
+observe: type Report struct {Target Target Source string ObservedAt string Findings []Finding Verdict Verdict Assessed []string Unassessed []string NotCovered []string}
+observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string}
+observe: type Verdict string
 shadow: func (*Error) Error() string
 shadow: func CompareHTTP(before, after []byte, choices ResourceChoices) (HTTPComparison, error)
 shadow: type Error struct {Field, Reason string}

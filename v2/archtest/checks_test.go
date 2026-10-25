@@ -120,6 +120,91 @@ func TestCheckNoSubprocess(t *testing.T) {
 		"no-subprocess kernel/b.go:5: names the flux command")
 }
 
+func TestCheckPlaces(t *testing.T) {
+	m := fixture(t, map[string]string{
+		"kernel/a.go":         "package kernel\n",
+		"adapters/git/git.go": "package git\n",
+		"cmd/tool/main.go":    "package main\n",
+		"undeclared/u.go":     "package undeclared\n",
+		"only/o_test.go":      "package only\n",
+		"model/a.go":          "package model\n",
+		"listed/l.go":         "package listed\n",
+		"store/s.go":          "package store\n",
+		"adapters/bad/b.go":   "package bad\n",
+		"cmd/lib/lib.go":      "package lib\n",
+		"tools/x/main.go":     "package main\n",
+		"cmd/pure/p.go":       "package pure\n",
+		"odd/o.go":            "package odd\n",
+	})
+	layers := map[string]int{"kernel": 0, "adapters/git": 1, "cmd/tool": 2, "only": 2, "model": 0, "listed": 1, "store": 1,
+		"adapters/bad": 2, "cmd/lib": 2, "tools/x": 2, "cmd/pure": 0, "odd": 3}
+	expect(t, checkPlaces(m, layers, []string{"kernel", "listed", "cmd/pure"}),
+		"places adapters/bad/b.go: adapters/bad is under adapters/ but is layer 2",
+		"places cmd/lib/lib.go: cmd/lib is layer 2 (commands) but is not a main package under cmd/",
+		"places cmd/pure/p.go: cmd/pure is under cmd/ but is layer 0",
+		"places listed/l.go: listed is listed in Pure but is layer 1",
+		"places model/a.go: model is layer 0, the pure model, but is not listed in Pure",
+		"places odd/o.go: odd has layer 3; the layers are 0 (pure model), 1 (adapters) and 2 (commands)",
+		"places store/s.go: store is layer 1 (adapters) but is not under adapters/",
+		"places tools/x/main.go: tools/x is layer 2 (commands) but is not a main package under cmd/")
+}
+
+// completeAdapter is an adapter that follows the new-adapter recipe, used by a command and its test.
+func completeAdapter() map[string]string {
+	return map[string]string{
+		"adapters/git/git.go": "package git\n\ntype Reader interface{ Read(path string) ([]byte, error) }\n\n" +
+			"type Repo struct{}\n\nfunc (Repo) Read(string) ([]byte, error) { return nil, nil }\n",
+		"adapters/git/testdata/tree.json": "{}\n",
+		"adapters/git/git_test.go": "package git_test\n\nimport (\n\t\"testing\"\n\n\t\"example.com/v2/adapters/git\"\n" +
+			"\tfake \"example.com/v2/adapters/git/gittest\"\n)\n\nfunc TestContract(t *testing.T) { fake.Contract(t, git.Repo{}) }\n",
+		"adapters/git/gittest/fake.go": "package gittest\n\nimport (\n\t\"testing\"\n\n\t\"example.com/v2/adapters/git\"\n)\n\n" +
+			"type Fake struct{}\n\nvar _ git.Reader = (*Fake)(nil)\n\nfunc (*Fake) Read(string) ([]byte, error) { return nil, nil }\n\n" +
+			"func Contract(t *testing.T, r git.Reader) {}\n",
+		"adapters/git/gittest/fake_test.go": "package gittest\n\nimport \"testing\"\n\nfunc TestFake(t *testing.T) { Contract(t, &Fake{}) }\n",
+		"cmd/tool/main.go":                  "package main\n\nimport \"example.com/v2/adapters/git\"\n\nvar _ = git.Repo{}\n",
+		"cmd/tool/main_test.go":             "package main\n\nimport \"example.com/v2/adapters/git/gittest\"\n\nvar _ = gittest.Fake{}\n",
+	}
+}
+
+func TestCheckAdapters(t *testing.T) {
+	expect(t, checkAdapters(fixture(t, completeAdapter()))) // tests may import a fake; an aliased import counts
+	const at = "adapter-complete adapters/git/git.go: adapters/git "
+	for _, tt := range []struct {
+		name    string
+		changes map[string]string
+		want    []string
+	}{
+		{"no interface", map[string]string{"adapters/git/git.go": "package git\n\ntype Reader struct{}\n"},
+			[]string{at + "exports no interface: the port its users depend on, in domain terms"}},
+		{"no raw fixtures", map[string]string{"adapters/git/testdata/tree.json": ""},
+			[]string{at + "has no raw fixtures in adapters/git/testdata"}},
+		{"no fake", map[string]string{"adapters/git/gittest/fake.go": "", "adapters/git/gittest/fake_test.go": ""},
+			[]string{at + "has no fake package adapters/git/gittest"}},
+		{"no assertion", map[string]string{"adapters/git/gittest/fake.go": strings.Replace(completeAdapter()["adapters/git/gittest/fake.go"],
+			"var _ git.Reader = (*Fake)(nil)", "var _ = (*Fake)(nil)", 1)},
+			[]string{at + "has no assertion in adapters/git/gittest that a fake satisfies Reader (var _ git.Reader = ...)"}},
+		{"assertion against another package", map[string]string{"adapters/git/gittest/fake.go": strings.NewReplacer(
+			"var _ git.Reader", "var _ io.Reader", "import (", "import (\n\t\"io\"").Replace(completeAdapter()["adapters/git/gittest/fake.go"])},
+			[]string{at + "has no assertion in adapters/git/gittest that a fake satisfies Reader (var _ git.Reader = ...)"}},
+		{"Contract without *testing.T", map[string]string{"adapters/git/gittest/fake.go": strings.Replace(completeAdapter()["adapters/git/gittest/fake.go"],
+			"func Contract(t *testing.T, r git.Reader)", "func Contract(r git.Reader)", 1)},
+			[]string{at + "has no Contract(t *testing.T, ...) suite in adapters/git/gittest"}},
+		{"real adapter not run through Contract", map[string]string{"adapters/git/git_test.go": ""},
+			[]string{at + "has no test running gittest.Contract against the real adapter"}},
+		{"real adapter run through another Contract", map[string]string{"adapters/git/git_test.go": strings.Replace(
+			completeAdapter()["adapters/git/git_test.go"], `fake "example.com/v2/adapters/git/gittest"`, `fake "example.com/v2/adapters/other/othertest"`, 1)},
+			[]string{at + "has no test running gittest.Contract against the real adapter"}},
+		{"fake not run through Contract", map[string]string{"adapters/git/gittest/fake_test.go": ""},
+			[]string{at + "has no test in adapters/git/gittest running Contract against the fake"}},
+		{"a command imports the fake", map[string]string{"cmd/tool/main.go": "package main\n\nimport \"example.com/v2/adapters/git/gittest\"\n"},
+			[]string{"adapter-complete cmd/tool/main.go:3: imports the fake adapters/git/gittest; only tests use fakes"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			expect(t, checkAdapters(fixture(t, with(completeAdapter(), tt.changes))), tt.want...)
+		})
+	}
+}
+
 func TestPublicAPIRendering(t *testing.T) {
 	m := fixture(t, map[string]string{
 		"kernel/a.go":           "package kernel\n\n// Doc is dropped.\ntype T struct {\n\tA string `json:\"a\"`\n\tb int\n}\n\nfunc (t *T) Get(x int) string { return \"\" }\nfunc (t *T) hidden() {}\nfunc New() T { return T{} }\n\nconst C, d = 1, 2\n",

@@ -23,7 +23,7 @@ def row(name='Alpha', kind='main', state='approved', gate='a decision', needs='o
     return f'| {name} | {kind} | {state} | a slice | {gate} | {needs} | {page} | {paths} |\n'
 
 
-def fake(status='', diff='', commits=(), pages='docs/alpha-status.md\n', shallow='false'):
+def fake(status='', diff='', commits=(), pages='docs/alpha-status.md\n', shallow='false', tracked='v2/file.go\n'):
     """A runner answering the Git reads; ``commits`` are the hashes some ref reaches."""
     reachable = ''.join(f'{commit}0000000000000000000000000000000000\n' for commit in commits)
     return (FakeRunner()
@@ -31,6 +31,7 @@ def fake(status='', diff='', commits=(), pages='docs/alpha-status.md\n', shallow
             .on('git', 'diff', '--name-only', stdout=diff)
             .on('git', 'rev-list', stdout=reachable)
             .on('git', 'rev-parse', stdout=shallow + '\n')
+            .on('git', 'ls-files', '--', stdout=tracked)
             .on('git', 'ls-files', stdout=pages))
 
 
@@ -83,6 +84,12 @@ class RegistryTests(Tree):
         report, output = self.check(table=HEAD + row(gate='—', needs=''))
         self.assertIn('Next gate is empty', output)
         self.assertIn('Needs is empty', output)
+
+    def test_an_owned_path_must_hold_a_tracked_file(self):
+        report, output = self.check(runner=fake(tracked=''))
+        self.assertIn('Paths names v2/, which holds no tracked file', output)
+        report, output = self.check(runner=fake(tracked='v2/kernel/render.go\nv2-apps/.gitkeep\n'))
+        self.assertEqual(report.failures, 0, output)
 
     def test_a_page_or_path_that_does_not_exist_fails(self):
         report, output = self.check(table=HEAD + row(page='[alpha status](missing.md)', paths='`absent/`'))

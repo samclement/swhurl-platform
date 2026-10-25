@@ -141,6 +141,21 @@ def block_problems(row: Row, root: Path = ROOT) -> list[str]:
     return found
 
 
+def tracked_problems(rows: list[Row], runner: Runner, root: Path = ROOT) -> list[str]:
+    """Every path a row owns must hold a tracked file, not merely exist on this disk.
+
+    An empty directory can exist in one checkout and nowhere else, so a claim it satisfies would
+    pass locally and fail on a fresh clone -- which is exactly what a reader does.
+    """
+    wanted = [(row.name, path) for row in rows for path in row.paths]
+    if not wanted:
+        return []
+    files = runner.output(['git', 'ls-files', '--', *[path for _, path in wanted]]).splitlines()
+    return [f'{REGISTRY}: {name}: Paths names {path}, which holds no tracked file'
+            for name, path in wanted
+            if not any(file == path or file.startswith(path.rstrip('/') + '/') for file in files)]
+
+
 def uncommitted_problems(rows: list[Row], runner: Runner, root: Path = ROOT) -> list[str]:
     """`Uncommitted: none` must match a clean workstream, and a named path must be dirty."""
     found = []
@@ -227,6 +242,7 @@ def check(runner: Runner, report: Report, root: Path = ROOT) -> None:
     pages = [row for row in rows if status_page(row, root) and page_file(row, root).is_file()]
     summarize(report, [p for row in pages for p in block_problems(row, root)],
               f'{len(pages)} status page(s) agree with the registry')
+    summarize(report, tracked_problems(rows, runner, root), 'every owned path holds a tracked file')
     summarize(report, uncommitted_problems(rows, runner, root), 'uncommitted work matches each status page')
     if shallow(runner):
         report.warn('the checkout is shallow, so cited commits were not checked against history')

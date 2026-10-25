@@ -928,6 +928,33 @@ Stateful migration additionally requires demonstrated backup/restore, explicit r
 
 **Not claimed:** observation does not verify a route (Ingress readiness, certificate state), and no exposed instance has been compiled into the cluster. `public` exposure, per-instance host overrides and route-level telemetry remain deferred.
 
+#### Proposed slice: SQLite storage (decision brief, 25 October 2026 — not approved)
+
+The first migrated app (`swhurl-try-11` staging) runs on v2, and its two calls stay blocked because its callees need domains v2 lacks: `swhurl-try-10` keeps SQLite, `swhurl-try-12` publishes an event. Storage is the larger unblock — four of the ten web instances keep SQLite.
+
+**What v1 does, from its own records and rendered objects:**
+
+| Fact | v1's mechanism |
+| --- | --- |
+| Requirement | The *release* states `database: sqlite`; a worker or job may not |
+| Volume | The chart's `persistence.data`: a PVC with the instance's `storageClass` (`local-path-retain`), `ReadWriteOnce`, its `size` (`1Gi`), `retain: true`, mounted at `/data` |
+| Path | `DATABASE_PATH=/data/app.db` |
+| One writer | `replicas: 1` and `strategy: Recreate` — never two pods on one database file |
+| Removal safety | The namespace carries `kustomize.toolkit.fluxcd.io/prune: disabled`, so deleting the instance's files does not delete its data; `make destroy-data` deletes it deliberately |
+| Quota | Storage is **not** in the ResourceQuota (pods, CPU, memory only) |
+| Backup | One Secret per instance (AWS keys from platform SOPS) and a CronJob at `13 4 * * *` running the platform's backup image with `backup-job-sqlite`, the data volume mounted, an S3 prefix per instance, an age recipient for encryption, and **egress through the proxy** |
+| Restore | `make restore-sqlite APP= ENV= CONFIRM=<app>/<env>`: stops the app, replaces the live database from the newest backup, needs the age key and S3 |
+
+**The five decisions:**
+
+1. **Where the facts live.** *Recommend*: the release states `database: sqlite` (or nothing); the instance states the volume **size** — a data volume's size is a decision, not a default; the profile states the **storage class** (a platform choice, `local-path-retain`). All three are identity-bearing, so the release, instance and profile canonical forms grow and the goldens regenerate once, explained.
+2. **Removal safety.** *Recommend both v1 guards*: the retained class **and** the namespace's `prune: disabled`, because removing a v2 instance means deleting its files, and files are not data. The report must then say plainly that removing a database instance leaves its data behind, and that deleting it is a separate, explicit action.
+3. **Backups.** This is the first thing that **must leave the cluster**, which is exactly the case the 25 October egress decision deferred to the proxy. *Recommend splitting*: this slice renders the volume, the path, the single writer and the removal guards; `backup` comes with the **egress-proxy slice** (proxy variables, per-instance port allocation, and the backup CronJob using it), and `restore` after that. An unlogged S3 rule would be weaker than v1, and a per-instance database with no backup is a named risk, acceptable only for a throwaway.
+4. **Restore.** *Recommend*: an operator command in the same shape as v1's — it stops the app, replaces the live database from the newest backup, and requires an explicit `CONFIRM=<app>/<env>` because it destroys data. It is a live action every time, never part of a reconcile.
+5. **Which instance proves it first.** *Recommend* a **throwaway** (`swhurl-try-v2-4` with SQLite), not `try-10`: it proves the volume, the single writer, restart survival and that removal leaves data behind, without touching the chain the migrated app depends on. `try-10` then becomes the migration that completes `try-11`'s calls — which still leaves `try-12`'s event for the events slice.
+
+**What this slice would not do:** events (so `try-12` still waits), backup or restore, a storage quota, or a size change on a live instance (v1's `app-scale` handles storage growth; v2 would refuse rather than resize).
+
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 
 The inventory above makes the choice concrete. Of the 17 instances in this repository, **no instance is both private and a web app**: every web instance is `authenticated-web`, and every private instance is a `worker` or `job`, which v2 does not render at all. The lightest web instance is `swhurl-try-11` (no database, no events, two calls); `demo-orders` — the natural candidate — needs storage (SQLite), events, calls, routes and a backup job.

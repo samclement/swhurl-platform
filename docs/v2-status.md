@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: in progress
+Status: approved
 Gate: the operator's choice: phase 6/7 live verification of a v2-owned instance, or the bridge's remaining ownership work
-Uncommitted: `v2/legacy/`, `v2/kernel/compile.go`, `v2/cmd/swhurl-v2/shadow.go`, `v2/cmd/swhurl-v2/shadow_test.go`, `v2/cmd/swhurl-v2/chart_test.go`, `v2/cmd/swhurl-v2/main.go`, `v2/archtest/api.txt`, `tools/swhurl/v2snapshot.py`, `tools/swhurl/commands.py`, `tests/test_v2_snapshot.py`, `Makefile`, `docs/`
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -140,6 +140,7 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged: no v1 module or record changed; the new command is additive, the catalogue/table test passes. 2. Pure (`legacy`, `observe`, `kernel`) takes no effects; the exporter and the command hold the I/O. 3. Golden compilations and compilation IDs unchanged; `CheckOwnership`'s behaviour and message are unchanged and its test still asserts them. 4. Refusals: the new snapshot/analysis vocabulary is stated; no existing code moved. 5. Failure paths tested: a cross-instance conflict, an instance with no records, residual units, a snapshot with the wrong version or revision, a non-web kind, a missing record, a mutation the comparison must see. 6. Scope: coverage counts, unavailable instances with reasons, and a fixed not-covered list; a missing record is named, not invented. 7. Offline only: the snapshot is read from Git's objects, so nothing live was touched and no readiness is claimed. 8. This page, the plan and the gap list change together.
 - **Evidence:** over this repository's own snapshot at `2d4e06ed`: 135 declared objects, 10 instances compared, 7 unavailable (all non-web kinds, each named), **no field differences** in scope and **no cross-instance ownership conflict**; each compared instance reports its own five expected collisions. `make check-v2` (11 packages), `REQUIRE_HELM=1 make check-v2` (including the chart-default assertion), `make check` (1012 tests) and `make v2-report` pass; the exporter's tests cover the pinned revision, a dirty tree, a missing record, SOPS exclusion and determinism.
 - **Next gate:** the operator's choice — phase 6/7 live verification of a v2-owned instance, or the bridge's remaining ownership work (declared objects for output no record explains *live*, and the migration decision itself).
+- **Committed:** `06aae224` (with the record flip in the commit that follows it).
 
 ## Resume
 

@@ -417,6 +417,8 @@ func TestSQLiteInstanceRendersItsVolume(t *testing.T) {
 	instance, workload := previewFacts()
 	instance.Database = "sqlite"
 	instance.Storage = Storage{SizeMiB: 1024}
+	// A database instance is compiled with an allocation: its backup must leave through the proxy.
+	instance.Egress = &Egress{Port: 30101}
 	profile := profile(t)
 	rendered, err := RenderHTTP(instance, workload, profile)
 	if err != nil {
@@ -432,11 +434,11 @@ func TestSQLiteInstanceRendersItsVolume(t *testing.T) {
 		data["accessMode"] != "ReadWriteOnce" || data["size"] != "1024Mi" || data["retain"] != true {
 		t.Fatalf("the data volume: %v", data)
 	}
-	if mount := data["globalMounts"].([]any)[0].(map[string]any); mount["path"] != "/data" {
+	if mount := data["globalMounts"].([]any)[0].(map[string]any); mount["path"] != dataMount {
 		t.Fatalf("the data mount: %v", mount)
 	}
 	container := controller["containers"].(map[string]any)["main"].(map[string]any)
-	if container["env"].(map[string]any)["DATABASE_PATH"] != "/data/app.db" {
+	if container["env"].(map[string]any)["DATABASE_PATH"] != databasePath {
 		t.Fatalf("the database path: %v", container["env"])
 	}
 	namespace := documentOf(t, rendered, "namespace.json")["metadata"].(map[string]any)

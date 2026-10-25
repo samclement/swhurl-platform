@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -71,6 +72,13 @@ func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (
 		File{folder + "/kustomization.yaml", encodeManifest(manifest{
 			"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization", "resources": listed})},
 		File{unitPath, encodeManifest(unit(spec, profile, folder))})
+	if spec.Database == "sqlite" {
+		// Flux substitutes every reference in the folder, so a reference v2 did not mean to write would be
+		// replaced or could not be resolved; nothing else may look like one.
+		if err := substitutionProblem(files); err != nil {
+			return ResourceSet{}, err
+		}
+	}
 	return ResourceSet{files, inventory(spec), []string{unitPath}}, nil
 }
 
@@ -137,7 +145,7 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClas
 	if spec.Database == "sqlite" {
 		persistence["data"] = manifest{"type": "persistentVolumeClaim", "storageClass": storageClass,
 			"accessMode": "ReadWriteOnce", "size": fmt.Sprintf("%dMi", spec.Storage.SizeMiB), "retain": true,
-			"globalMounts": []any{manifest{"path": "/data"}}}
+			"globalMounts": []any{manifest{"path": dataMount}}}
 	}
 	if len(spec.Calls) > 0 {
 		persistence["tokens"] = tokensPersistence(spec.Calls)
@@ -152,7 +160,7 @@ func container(spec HTTPInstance, http HTTPWorkload, workload Workload, egressAd
 	memory := fmt.Sprintf("%dMi", spec.Configuration.MemoryMiB)
 	env := manifest{"SWHURL_APP": spec.Application, "SWHURL_ENV": spec.Environment}
 	if spec.Database == "sqlite" {
-		env["DATABASE_PATH"] = "/data/app.db"
+		env["DATABASE_PATH"] = databasePath
 	}
 	if spec.Egress != nil {
 		// Every client library must use the proxy, and the JVM keeps its own list.
@@ -352,11 +360,19 @@ func unit(spec HTTPInstance, profile PlatformProfile, folder string) manifest {
 	for _, name := range profile.Delivery.DependsOn {
 		dependsOn = append(dependsOn, manifest{"name": name})
 	}
+	specification := manifest{"dependsOn": dependsOn, "interval": unitInterval,
+		"sourceRef": manifest{"kind": "GitRepository", "name": profile.Delivery.Source},
+		"path":      "./" + folder, "prune": true, "wait": true, "timeout": failAfter}
+	if spec.Database == "sqlite" {
+		// The backup job reads a key from the platform's own unit, so that unit must exist first, and the
+		// file's references are substituted from its Secret. Substitution is one switch for every document
+		// in the folder, which is why the compiler refuses any other reference (see substitutionProblem).
+		specification["dependsOn"] = append(dependsOn, manifest{"name": backupUnit})
+		specification["postBuild"] = manifest{"substituteFrom": []any{manifest{
+			"kind": backupSubstitutionKind, "name": profile.Backup.WriterName, "optional": false}}}
+	}
 	return manifest{"apiVersion": "kustomize.toolkit.fluxcd.io/v1", "kind": "Kustomization",
-		"metadata": metadata(unitName(spec), "flux-system"),
-		"spec": manifest{"dependsOn": dependsOn, "interval": unitInterval,
-			"sourceRef": manifest{"kind": "GitRepository", "name": profile.Delivery.Source},
-			"path":      "./" + folder, "prune": true, "wait": true, "timeout": failAfter}}
+		"metadata": metadata(unitName(spec), "flux-system"), "spec": specification}
 }
 
 // validate runs every check the renderer makes, in a fixed order, and returns the exposure the files are
@@ -381,7 +397,7 @@ func (spec HTTPInstance) validate(http HTTPWorkload, profile PlatformProfile) (s
 	if err := profile.validate(); err != nil {
 		return "", err
 	}
-	if err := fits(spec.Configuration, profile); err != nil {
+	if err := fits(spec.Configuration, profile, spec.Database == "sqlite"); err != nil {
 		return "", err
 	}
 	if err := spec.validateResources(profile); err != nil {
@@ -432,7 +448,143 @@ func resourcesOf(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile, 
 			doc  manifest
 		}{"auth.json", authConfigMap(spec, profile.Auth)})
 	}
+	if spec.Database == "sqlite" {
+		// A database is the platform's to protect: the job, the reference to the upload key it reads,
+		// and a policy for the pod that reaches S3.
+		resources = append(resources,
+			struct {
+				name string
+				doc  manifest
+			}{"backup-secret.json", backupSecret(spec)},
+			struct {
+				name string
+				doc  manifest
+			}{"backup-cronjob.json", backupCronJob(spec, http, profile)},
+			struct {
+				name string
+				doc  manifest
+			}{"backup-networkpolicy.json", backupPolicy(spec, profile)})
+	}
 	return resources
+}
+
+// The backup job's own resources: it copies, encrypts and uploads, and needs nothing else.
+const (
+	backupCPURequestMilli = 10
+	backupMemoryMiB       = 64
+	backupLimitMiB        = 256
+	backupFirstMinute     = 35 // 03:35 UTC: after the MongoDB job at 03:30
+	backupMinutes         = 50 // a minute hash into 03:35–04:24, so instances do not all start at once
+	backupScratch         = "1Gi"
+	backupDeadlineSeconds = 900
+	// The job's Secret holds the upload-only key under the names the AWS CLI reads, as references Flux
+	// substitutes from the platform's own Secret (whose keys are the BACKUP_ names).
+	backupKeyVariable      = "AWS_ACCESS_KEY_ID"
+	backupSecretVariable   = "AWS_SECRET_ACCESS_KEY"
+	backupKeyReference     = "${BACKUP_AWS_ACCESS_KEY_ID}"
+	backupSecretReference  = "${BACKUP_AWS_SECRET_ACCESS_KEY}"
+	backupSubstitutionKind = "Secret"
+)
+
+// backupSecret is the job's Secret: the upload-only key, as references the instance's unit substitutes
+// from the platform's own Secret. The key itself never reaches v2, Git or this document.
+func backupSecret(spec HTTPInstance) manifest {
+	return manifest{"apiVersion": "v1", "kind": "Secret",
+		"metadata":   metadata(backupName(spec), namespaceName(spec)),
+		"type":       "Opaque",
+		"stringData": manifest{backupKeyVariable: backupKeyReference, backupSecretVariable: backupSecretReference}}
+}
+
+// backupCronJob is the nightly job: SQLite's online backup, age's public-key encryption, and an upload
+// through the instance's own proxy port. It runs as the app's user on the app's claim, so the data it
+// reads is the data the app wrote.
+func backupCronJob(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) manifest {
+	name := backupName(spec)
+	container := manifest{
+		"name": "backup", "image": profile.Backup.Image + "@" + profile.Backup.Digest, "args": []any{"backup-job-sqlite"},
+		"env":     backupEnv(spec, profile),
+		"envFrom": []any{manifest{"secretRef": manifest{"name": name}}},
+		"resources": manifest{"requests": manifest{"cpu": fmt.Sprintf("%dm", backupCPURequestMilli), "memory": fmt.Sprintf("%dMi", backupMemoryMiB)},
+			"limits": manifest{"memory": fmt.Sprintf("%dMi", backupLimitMiB)}},
+		"securityContext": manifest{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true,
+			"capabilities": manifest{"drop": []any{"ALL"}}},
+		"volumeMounts": []any{manifest{"name": "data", "mountPath": dataMount},
+			manifest{"name": "scratch", "mountPath": "/scratch"}, manifest{"name": "tmp", "mountPath": "/tmp"}},
+	}
+	uid := http.UID
+	pod := manifest{
+		"metadata": manifest{"labels": manifest{backupLabel: "true"}},
+		"spec": manifest{"restartPolicy": "Never", "automountServiceAccountToken": false,
+			"securityContext": manifest{"runAsNonRoot": true, "runAsUser": uid, "runAsGroup": uid, "fsGroup": uid,
+				"seccompProfile": manifest{"type": "RuntimeDefault"}},
+			"containers": []any{container},
+			// The app's own claim: one node, so a second pod on it is admitted while the app runs.
+			"volumes": []any{
+				manifest{"name": "data", "persistentVolumeClaim": manifest{"claimName": spec.Application}},
+				manifest{"name": "scratch", "emptyDir": manifest{"sizeLimit": backupScratch}},
+				manifest{"name": "tmp", "emptyDir": manifest{}}}}}
+	return manifest{"apiVersion": "batch/v1", "kind": "CronJob",
+		"metadata": manifest{"name": name, "namespace": namespaceName(spec), "labels": manifest{backupLabel: "true"}},
+		"spec": manifest{"schedule": backupSchedule(namespaceName(spec)), "timeZone": "Etc/UTC",
+			"suspend": profile.Backup.Suspended, "concurrencyPolicy": "Forbid", "startingDeadlineSeconds": 3600,
+			"successfulJobsHistoryLimit": 1, "failedJobsHistoryLimit": 3,
+			"jobTemplate": manifest{"spec": manifest{"backoffLimit": 2, "activeDeadlineSeconds": backupDeadlineSeconds,
+				"template": pod}}}}
+}
+
+// backupEnv is what the job reads: how to reach the proxy, where to publish, and which database file to
+// copy. $(HOST_IP) is the kubelet's own expansion of the field reference above it, not Flux's.
+func backupEnv(spec HTTPInstance, profile PlatformProfile) []any {
+	env := []any{manifest{"name": "HOST_IP", "valueFrom": manifest{"fieldRef": manifest{"fieldPath": "status.hostIP"}}}}
+	if spec.Egress != nil {
+		address := fmt.Sprintf("http://%s:%d", profile.Egress.Address, spec.Egress.Port)
+		env = append(env,
+			manifest{"name": "HTTP_PROXY", "value": address},
+			manifest{"name": "HTTPS_PROXY", "value": address},
+			manifest{"name": "NO_PROXY", "value": "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)"})
+	}
+	return append(env,
+		manifest{"name": "AGE_RECIPIENT", "value": profile.Backup.Recipient},
+		manifest{"name": "BACKUP_S3_URI", "value": profile.Backup.S3URI + namespaceName(spec) + "/"},
+		manifest{"name": "BACKUP_SOURCE", "value": namespaceName(spec) + "/" + spec.Application},
+		manifest{"name": "DATABASE_PATH", "value": databasePath})
+}
+
+// backupPolicy admits nothing to the job's pod and lets it reach only the name service and the instance's
+// own proxy port. The app's policy selects the app's pods, so without this the pod that must leave the
+// cluster would be the one pod with unrestricted egress.
+func backupPolicy(spec HTTPInstance, profile PlatformProfile) manifest {
+	egress := []any{manifest{
+		"to": []any{manifest{
+			"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": profile.DNS.Namespace}},
+			"podSelector":       manifest{"matchLabels": labelManifest(profile.DNS.Labels)}}},
+		"ports": []any{manifest{"port": 53, "protocol": "UDP"}, manifest{"port": 53, "protocol": "TCP"}}}}
+	if spec.Egress != nil {
+		egress = append(egress, manifest{
+			"to": []any{manifest{
+				"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": profile.Egress.Namespace}},
+				"podSelector":       manifest{"matchLabels": labelManifest(profile.Egress.Labels)}}},
+			"ports": []any{manifest{"port": spec.Egress.Port, "protocol": "TCP"}}})
+	}
+	return manifest{"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+		"metadata": metadata(backupName(spec), namespaceName(spec)),
+		"spec": manifest{"podSelector": manifest{"matchLabels": manifest{backupLabel: "true"}},
+			"policyTypes": []any{"Ingress", "Egress"}, "ingress": []any{}, "egress": egress}}
+}
+
+// backupName is the job, its Secret and its policy: one name per instance's database.
+func backupName(spec HTTPInstance) string { return spec.Application + "-backup" }
+
+// backupSchedule is the minute a namespace's backup runs at, derived from its name so it is stable and
+// spread: the same rule v1 uses, so a migrated instance keeps the slot its logs name.
+func backupSchedule(namespace string) string {
+	sum := sha256.Sum256([]byte(namespace))
+	remainder := 0
+	for _, b := range sum {
+		remainder = (remainder*256 + int(b)) % backupMinutes
+	}
+	minute := backupFirstMinute + remainder
+	return fmt.Sprintf("%d %d * * *", minute%60, 3+minute/60)
 }
 
 // validateEgress checks an allocated way out: a port in the range the platform proxies on, and a proxy
@@ -480,6 +632,14 @@ func (spec HTTPInstance) validateStorage(profile PlatformProfile) error {
 	if spec.Configuration.Replicas > 1 {
 		return refuse(Invalid, "configuration.replicas", "a database admits one writer")
 	}
+	// A database is the platform's to protect: without the backup facts nothing could render a job, and
+	// without an allocation the job's pod (which may reach only DNS and the proxy) could not upload.
+	if profile.Backup.absent() {
+		return refuse(Unsupported, "backup", "the profile states no backup")
+	}
+	if spec.Egress == nil {
+		return refuse(Unsupported, "backup.egress", "a backup must leave the cluster through the proxy, so the instance needs an allocation")
+	}
 	return nil
 }
 
@@ -514,6 +674,28 @@ func authConfigMap(spec HTTPInstance, auth Auth) manifest {
 		"data":     manifest{"SWHURL_AUTH_ISSUER": auth.Issuer, "SWHURL_AUTH_KEYS": auth.Keys}}
 }
 
+// substitutionProblem refuses a rendered file holding a Flux reference other than the backup's own two.
+// Substitution is switched on for every document in a database instance's folder, so a reference v2 did
+// not write on purpose would be replaced too, or fail to resolve: one document, one refusal.
+func substitutionProblem(files []File) error {
+	allowed := []string{backupKeyReference, backupSecretReference}
+	for _, file := range files {
+		rest := string(file.Document)
+		for {
+			start := strings.Index(rest, "${")
+			if start < 0 {
+				break
+			}
+			rest = rest[start:]
+			if !slices.ContainsFunc(allowed, func(reference string) bool { return strings.HasPrefix(rest, reference) }) {
+				return refuse(Invalid, "backup", "a document of a substituted instance may contain only the backup key references")
+			}
+			rest = rest[len("${"):]
+		}
+	}
+	return nil
+}
+
 // inventory is every cluster object the files create, in file order.
 func inventory(spec HTTPInstance) []Claim {
 	namespace, by := namespaceName(spec), owner(spec)
@@ -528,6 +710,13 @@ func inventory(spec HTTPInstance) []Claim {
 	}
 	if len(spec.Callers) > 0 {
 		claims = append(claims, Claim{Object{"", "ConfigMap", namespace, spec.Application + "-auth"}, by})
+	}
+	if spec.Database == "sqlite" {
+		name := backupName(spec)
+		claims = append(claims,
+			Claim{Object{"", "Secret", namespace, name}, by},
+			Claim{Object{"batch", "CronJob", namespace, name}, by},
+			Claim{Object{"networking.k8s.io", "NetworkPolicy", namespace, name}, by})
 	}
 	return append(claims, Claim{Object{"kustomize.toolkit.fluxcd.io", "Kustomization", "flux-system", unitName(spec)}, by})
 }

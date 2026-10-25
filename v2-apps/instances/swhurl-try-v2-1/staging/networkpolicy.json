@@ -1,0 +1,1 @@
+{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"swhurl-try-v2-1","namespace":"swhurl-try-v2-1-staging"},"spec":{"egress":[],"ingress":[],"podSelector":{"matchLabels":{"app.kubernetes.io/instance":"swhurl-try-v2-1"}},"policyTypes":["Ingress","Egress"]}}

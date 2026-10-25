@@ -121,10 +121,16 @@ func TestReplicasComeFromIdentifiedEvidence(t *testing.T) {
 	if translation.Instance.Replicas != 1 || translation.Sources["instance.replicas"] != "committed HelmRelease" {
 		t.Fatalf("replicas %+v from %s", translation.Instance.Replicas, translation.Sources["instance.replicas"])
 	}
+	// Neither document states a count: the pinned chart's default applies, and the source says so rather
+	// than pretending a record stated it.
 	noEvidence := mutate(t, committed, func(document map[string]any) { delete(controllerOf(document), "replicas") })
-	if _, err := legacy.Translate(legacy.Records{App: base.App, Instance: withoutReplicas,
-		Release: base.Release, Committed: noEvidence}); !refusal(err, legacy.Missing, "instance.yaml: replicas", "no_identified_default") {
-		t.Fatalf("no evidence: %v", err)
+	translation, err = legacy.Translate(legacy.Records{App: base.App, Instance: withoutReplicas,
+		Release: base.Release, Committed: noEvidence})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if translation.Instance.Replicas != 1 || translation.Sources["instance.replicas"] != "pinned chart default" {
+		t.Fatalf("the chart default: %+v from %s", translation.Instance.Replicas, translation.Sources["instance.replicas"])
 	}
 }
 

@@ -24,6 +24,7 @@ const usage = `usage:
       --revision COMMIT --kubeconfig KUBECONFIG.json [--source NAME]
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
       --committed HELMRELEASE.json --profile PROFILE.json
+  swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json
 
 Input files are never overwritten. Without --out the compilation document goes to stdout and nothing
 is written. With --out every compiled file is written under DIR, one "written PATH" or
@@ -33,6 +34,11 @@ observe compiles the instance, reads its unit, HelmRelease, Deployment and pods 
 kubeconfig names (the JSON form that "kubectl config view --raw -o json" prints), and writes the
 observation report to stdout with a one-line summary on stderr. It reads only, and --revision is the
 source revision Flux should have applied.
+
+shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
+HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
+predecessor already declares is reported rather than assumed away. It reads only the two named files.
+The snapshot is the JSON document "make v2-snapshot REVISION= OUT=" writes.
 
 preview renders one predecessor instance from its records and compares the result with the HelmRelease
 that predecessor committed, writing a v2-preview document to stdout. It reads only the five named JSON
@@ -84,6 +90,8 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		return c.observe(r)
 	case "preview":
 		return c.preview(r)
+	case "shadow":
+		return c.shadow(r)
 	}
 	return c.selectRelease(r)
 }
@@ -93,7 +101,7 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 type request struct {
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
-	app, settings, committed                           string
+	app, settings, committed, snapshot                 string
 	outFlag                                            *once
 }
 
@@ -109,7 +117,7 @@ func parse(args []string) (request, outcome) {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		return request{}, help
 	}
-	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release", "compile", "observe", "preview"}, args[0]) {
+	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release", "compile", "observe", "preview", "shadow"}, args[0]) {
 		return request{}, misuse
 	}
 	r := request{command: args[0]}
@@ -130,6 +138,10 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	if r.command == "select-release" || r.command == "compile" || r.command == "observe" {
 		flags.Var(&once{value: &r.instance}, "instance", "instance file")
 		flags.Var(&once{value: &r.release}, "release", "release file")
+	}
+	if r.command == "shadow" {
+		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 	}
 	if r.command == "preview" {
 		flags.Var(&once{value: &r.app}, "app", "legacy app record")
@@ -186,6 +198,8 @@ func (r *request) named() []string {
 		return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig}
 	case "preview":
 		return []string{r.app, r.settings, r.release, r.committed, r.profile}
+	case "shadow":
+		return []string{r.snapshot, r.profile}
 	}
 	return nil
 }

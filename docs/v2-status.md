@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: live verification of a v2-owned instance: `swhurl-try-v2-2` is applied and will be observed with v2 itself, then removed
-Uncommitted: `v2-apps/instances`, `clusters/home/app-swhurl-try-v2-2-staging.json`, `clusters/home/kustomization.yaml`, `docs/`
+Gate: live verification of a v2-owned instance: `swhurl-try-v2-2` is applied and awaiting observation with v2 itself, then removal
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 

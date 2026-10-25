@@ -55,7 +55,11 @@ class SqliteJobTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp)
         self.database = self.tmp / 'data/app.db'
         self.database.parent.mkdir()
-        with sqlite3.connect(self.database) as db:
+        # The app's connection stays open, so committed rows stay in the WAL. Closing the last connection
+        # checkpoints the WAL into the file, so it is closed explicitly, never whenever it is collected.
+        self.writer = sqlite3.connect(self.database)
+        self.addCleanup(self.writer.close)
+        with self.writer as db:
             db.execute('PRAGMA journal_mode=WAL')
             db.execute('CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)')
             db.execute('CREATE TABLE tags (name TEXT)')
@@ -90,6 +94,7 @@ class SqliteJobTests(unittest.TestCase):
         self.assertTrue(tried[tried.index('--key') + 1].endswith('.db.age'), 'the archive was tried; the metadata never was')
 
     def test_a_database_that_is_not_one_or_is_missing_publishes_nothing(self):
+        self.writer.close()  # its checkpoint would otherwise write valid pages over the bytes below
         self.database.write_bytes(b'not a database' * 100)
         Path(f'{self.database}-wal').unlink(missing_ok=True)
         for env in (self.environment(), self.environment(DATABASE_PATH=str(self.tmp / 'missing.db'))):

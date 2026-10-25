@@ -30,7 +30,8 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Routes | A signed-in route from platform facts, verified live through the shared sign-in | **Done, live** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
 | Calls | Consent decided purely, a pair rendered both ways, and delivery wired (`resolve` → `compile --calls`) | **Done offline** |
-| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **First one live**: `swhurl-try-11` staging is v2-owned, healthy and observed; its calls wait for its callees to move |
+| Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
+| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **First one live**: `swhurl-try-11` staging is v2-owned, healthy and observed; storage now renders, so `try-10` can follow |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
@@ -196,6 +197,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make v2-report`; over this repository's snapshot the resolver reports the 9 pairs v1's declarations imply, and the compiled caller renders the callee's address while the callee renders its caller list.
 - **Next gate:** the first migration — completed as a handover of `swhurl-try-11` staging; the callee-side consent consequence and the choice to complete the pair or roll back are recorded in [current state](current-state.md#first-migration-swhurl-try-11-staging-is-owned-by-v2-25-october-2026).
 - **Committed:** in the commit that follows this record.
+
+## Slice record: SQLite storage, the volume
+
+- **Outcome and the refusal it must produce:** a SQLite instance renders a retained volume at `/data`, `DATABASE_PATH`, a single writer, and a namespace Flux will not prune, so removing an instance's files cannot delete its data. It refuses a volume with no database, a database with no size or class, more than one replica, and any database other than `sqlite`.
+- **Owners and boundaries:** the release owns the requirement, the instance the size, the platform the class; the renderer owns the shape and the guards. Nothing about data lives in a command.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages still take no effects. 3. **Identities changed deliberately:** release, instance and profile canonical forms gained the storage facts, so their IDs changed; fixtures' identities were recomputed independently in Python, the goldens regenerated once, and the independent escaping vector updated. 4. New refusals, appended after the existing checks, so no existing precedence moved. 5. Failure paths tested: no database with a volume, no size, no class, two writers, an unsupported database. 6. Scope: backup, restore and growth are named as deferred. 7. **Live proof**: the volume bound, the storage-hungry image ran, a deleted pod was replaced on the same volume, and removal left the data behind. 8. This page, the plan and the gap list change together.
+- **Evidence:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make v2-report`; [current state](current-state.md#sqlite-storage-proved-live-25-october-2026) for the live record.
+- **Next gate:** the egress proxy (which unblocks backup and restore), or migrating `try-10` (storage now renders) to complete the migrated app's calls.
 
 ## Resume
 

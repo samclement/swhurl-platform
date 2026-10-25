@@ -2,6 +2,16 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## SQLite storage proved live (25 October 2026)
+
+`swhurl-try-v2-4` staging was compiled by v2 with `database: sqlite`, a 1 GiB volume and the `demo-orders` image — the same image that crash-looped without storage in the first live test, so a running pod is evidence that the volume answers at `DATABASE_PATH`.
+
+**Verified live:** the PVC is `Bound` (`1Gi`, `RWO`, `local-path-retain`); the pod is `1/1 Running`; v2's `observe` reports `verdict running`. Deleting the pod brought a replacement `1/1` on the **same** volume (`pvc-468ac831…`), so a restart does not lose the data. Then the instance's files and unit were deleted and pushed: Flux **left the namespace** (its `prune: disabled` annotation) and the PVC and PV stayed `Bound`.
+
+That is the deliberate shape: removing a database instance does not delete its data. Deleting the namespace, and with it the claim and the volume, is a separate action that needs the operator's word — `make destroy-data` in v1, a namespace deletion here.
+
+**Not exercised:** reading data back through the app's API (the image has no shell), backup and restore (they wait on the egress proxy, which is what a backup needs to leave the cluster), and resizing a volume.
+
 ## First migration: `swhurl-try-11` staging is owned by v2 (25 October 2026)
 
 The first existing app moved from v1 ownership to v2, at the operator's confirmation, in two pushes: v1's records, rendered manifests and unit were removed and Flux pruned the namespace (`581a53e22`-era commit), then v2's compiled output took the same namespace and host name (`e5adf24e`, rebased over a Render-workflow commit).

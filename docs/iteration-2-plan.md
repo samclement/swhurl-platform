@@ -955,6 +955,18 @@ The first migrated app (`swhurl-try-11` staging) runs on v2, and its two calls s
 
 **What this slice would not do:** events (so `try-12` still waits), backup or restore, a storage quota, or a size change on a live instance (v1's `app-scale` handles storage growth; v2 would refuse rather than resize).
 
+#### SQLite storage: the volume (implemented and proved live 25 October 2026)
+
+**The four decisions as approved:** the release states the database, the instance states the size, the profile states the class; both removal guards; the volume now with backup and restore deferred to the egress-proxy slice; restore stays a `CONFIRM`-gated command; a throwaway proves it before `try-10`.
+
+**Facts and rendering.** `ReleaseBundle.database` is `"sqlite"` or empty (the image's requirement); `InstanceSpec.storage.sizeMiB` is the instance's size, required for a database and refused without one; `PlatformProfile.storage.class` is the platform's class. A SQLite instance renders v1's shape: a `persistentVolumeClaim` at `/data` with the class, `ReadWriteOnce`, the size and `retain: true`; `DATABASE_PATH=/data/app.db`; `strategy: Recreate`; and a namespace annotated `kustomize.toolkit.fluxcd.io/prune: disabled`. **Refusals:** a volume with no database, a database with no size or no class, more than one replica ("a database admits one writer"), and any database other than `sqlite`. The new checks run after the existing ones, so no existing refusal's precedence moved.
+
+**Identity:** the release, instance and profile canonical forms gained these facts, so their IDs changed and the fixtures' identities were recomputed independently in Python; the goldens were regenerated once and the independent escaping vector updated. Nothing released exists, so no consumer of an old ID is disturbed.
+
+**Evidence, live (`swhurl-try-v2-4`, applied and removed the same day):** the PVC bound at `1Gi` on `local-path-retain`; the `demo-orders` image — which crash-looped without storage on 25 October — ran `1/1`; a deleted pod was replaced on the same volume; `observe` reported `running`; and after the instance's files and unit were removed, Flux left the namespace and the claim bound, so the data survived the removal by design. **Not exercised:** reading data back through the app, backup, restore, resize.
+
+**Deferred, with the reason:** backup and restore wait on the **egress proxy** — a backup is the first thing that must leave the cluster, and the 25 October egress decision made the proxy the path for that; a per-instance database with no backup is a named risk that is acceptable only while it is a throwaway. Volume growth is refused rather than resized.
+
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 
 The inventory above makes the choice concrete. Of the 17 instances in this repository, **no instance is both private and a web app**: every web instance is `authenticated-web`, and every private instance is a `worker` or `job`, which v2 does not render at all. The lightest web instance is `swhurl-try-11` (no database, no events, two calls); `demo-orders` — the natural candidate — needs storage (SQLite), events, calls, routes and a backup job.
@@ -983,7 +995,9 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | Events: NATS users, streams and consumers | Not generated | Phase 7 |
 | Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |
 | Telemetry: the OTLP endpoint and its variables | Not generated | Phase 7 |
-| SQLite storage, backups and restore; alerts | Not generated | Phase 7, per app |
+| SQLite storage: the volume, its path and the single writer | The [storage slice](#sqlite-storage-the-volume-implemented-and-proved-live-25-october-2026) renders a retained 1 GiB-class volume, `DATABASE_PATH`, `Recreate`, and a namespace Flux will not prune; proved live including restart and removal survival | Done for the volume; growth is refused |
+| SQLite backup and restore | Not generated: a backup must leave the cluster, so it waits for the egress proxy; restore follows it | With the egress-proxy slice |
+| Alerts | Not generated | Phase 7, per app |
 | Resources from the image's minimums; a per-instance CPU choice | CPU from the profile; one memory value for request and limit | When an app needs more |
 | Quota headroom for an instance's other pods | Not counted: a phase-2 instance has no other pods | With the first feature that adds pods |
 | Image automation, automatic release discovery, auto-merge | Not generated | After phase 4's delivery |

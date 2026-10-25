@@ -111,7 +111,7 @@ jobs:
           # The chart v2's profile pins, into the cache make check-apps keeps (v2/cmd/swhurl-v2/chart_test.go reads it).
           chart=$(python3 -c 'import json; c = json.load(open("v2/testdata/profile.json"))["chart"]; print(c["name"], c["version"])')
           read -r name version <<< "$chart"
-          charts="$HOME/.cache/swhurl-platform/charts"
+          charts="${XDG_CACHE_HOME:-$HOME/.cache}/swhurl-platform/charts"
           if [ ! -f "$charts/$name-$version/Chart.yaml" ]; then
             mkdir -p "$charts"
             tmp=$(mktemp -d "$charts/pull.XXXXXX")

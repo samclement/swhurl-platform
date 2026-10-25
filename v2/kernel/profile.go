@@ -51,7 +51,7 @@ type Quota struct {
 var (
 	labelPattern   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 	versionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-	rootPattern    = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(/[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
+	rootPattern    = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(/[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$`)
 )
 
 func DecodeProfile(data []byte) (PlatformProfile, error) {
@@ -138,7 +138,10 @@ func (w Workload) validate() error {
 	if w.CPURequestMilli < 1 {
 		return refuse(Invalid, "workload.cpuRequestMilli", "expected a positive integer")
 	}
-	if w.StartupPeriodSeconds < 1 || w.StartupSeconds < w.StartupPeriodSeconds || w.StartupSeconds%w.StartupPeriodSeconds != 0 {
+	if w.StartupPeriodSeconds < 1 {
+		return refuse(Invalid, "workload.startupPeriodSeconds", "expected a positive integer")
+	}
+	if w.StartupSeconds < w.StartupPeriodSeconds || w.StartupSeconds%w.StartupPeriodSeconds != 0 {
 		return refuse(Invalid, "workload.startupSeconds", "expected a positive multiple of startupPeriodSeconds")
 	}
 	return nil

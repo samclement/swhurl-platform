@@ -1,4 +1,5 @@
-// Package kernel models offline release selection. It has no I/O or reference-bearing records.
+// Package kernel models offline release selection and compilation. It has no I/O; its records hold
+// no references, except a PlatformProfile's Delivery.DependsOn slice, which every use copies.
 package kernel
 
 import (

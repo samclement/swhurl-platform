@@ -50,6 +50,7 @@ type Claim struct {
 
 const (
 	WrongRelease      Code = "wrong_release"
+	OverQuota         Code = "over_quota"
 	OwnershipConflict Code = "ownership_conflict"
 )
 
@@ -73,7 +74,8 @@ func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) 
 	if err != nil {
 		return Compilation{}, err
 	}
-	folder := profile.Delivery.OutputRoot + "/" + spec.Application + "/" + spec.Environment
+	// Instances under instances/, units under units/: no app name can reach the units folder.
+	folder := profile.Delivery.OutputRoot + "/instances/" + spec.Application + "/" + spec.Environment
 	unitPath := profile.Delivery.OutputRoot + "/units/" + unitName(spec) + ".json"
 	resources := []struct {
 		name string
@@ -118,7 +120,35 @@ func compileInputs(spec InstanceSpec, release ReleaseBundle, profile PlatformPro
 	if id != spec.Release {
 		return Inputs{}, refuse(WrongRelease, "release", "the instance selects a different release")
 	}
+	if err := fits(spec.Configuration, profile); err != nil {
+		return Inputs{}, err
+	}
 	return Inputs{id, revision, profileID}, nil
+}
+
+// fits refuses an instance whose pods can never fit the profile's quota: its replicas and one more
+// for a rolling update (none when stopped), each with the profile's CPU request and the instance's
+// memory as request and limit. Checked in the order of the profile's quota fields.
+func fits(c Configuration, profile PlatformProfile) error {
+	pods := int64(0)
+	if c.Replicas > 0 {
+		pods = int64(c.Replicas) + 1
+	}
+	q, cpu, memory := profile.Quota, int64(profile.Workload.CPURequestMilli), int64(c.MemoryMiB)
+	for _, need := range []struct {
+		field         string
+		needed, quota int64
+	}{
+		{"quota.pods", pods, int64(q.Pods)},
+		{"quota.requestsCpuMilli", pods * cpu, int64(q.RequestsCPUMilli)},
+		{"quota.requestsMemoryMiB", pods * memory, int64(q.RequestsMemoryMiB)},
+		{"quota.limitsMemoryMiB", pods * memory, int64(q.LimitsMemoryMiB)},
+	} {
+		if need.needed > need.quota {
+			return refuse(OverQuota, need.field, "the instance's pods, with one more for a rolling update, need more than this")
+		}
+	}
+	return nil
 }
 
 func namespaceName(spec InstanceSpec) string { return spec.Application + "-" + spec.Environment }

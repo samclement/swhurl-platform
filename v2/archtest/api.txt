@@ -1,6 +1,7 @@
 kernel: const IdentityMismatch Code = "identity_mismatch"
 kernel: const Invalid Code = "invalid"
 kernel: const ManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
+kernel: const OverQuota Code = "over_quota"
 kernel: const OwnershipConflict Code = "ownership_conflict"
 kernel: const StaleInstance Code = "stale_instance"
 kernel: const Unsupported Code = "unsupported"

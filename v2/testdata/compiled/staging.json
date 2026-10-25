@@ -1,7 +1,7 @@
 {
   "kind": "v2-compilation",
   "version": 1,
-  "id": "comp-sha256:a03afde5c6b0c29485ad6ef57f84caf2a412dca97b7ed3ab60f94f8b97f72cd5",
+  "id": "comp-sha256:3325af34e018611192dd5cd45d72da21403de10e942ea2fe716a090c32a40959",
   "inputs": {
     "release": "rel-sha256:2554994bc604486823e42caaf8e506b9468325b826224b9fb436f00dc22b10b0",
     "instance": "inst-sha256:6294e94b9652124cea8da16e601af3f992026d46669b80e50374cf11981bc8bc",
@@ -9,7 +9,7 @@
   },
   "files": [
     {
-      "path": "v2-apps/demo-orders/staging/namespace.json",
+      "path": "v2-apps/instances/demo-orders/staging/namespace.json",
       "document": {
         "apiVersion": "v1",
         "kind": "Namespace",
@@ -25,7 +25,7 @@
       }
     },
     {
-      "path": "v2-apps/demo-orders/staging/helmrelease.json",
+      "path": "v2-apps/instances/demo-orders/staging/helmrelease.json",
       "document": {
         "apiVersion": "helm.toolkit.fluxcd.io/v2",
         "kind": "HelmRelease",
@@ -165,7 +165,7 @@
       }
     },
     {
-      "path": "v2-apps/demo-orders/staging/resourcequota.json",
+      "path": "v2-apps/instances/demo-orders/staging/resourcequota.json",
       "document": {
         "apiVersion": "v1",
         "kind": "ResourceQuota",
@@ -184,7 +184,7 @@
       }
     },
     {
-      "path": "v2-apps/demo-orders/staging/networkpolicy.json",
+      "path": "v2-apps/instances/demo-orders/staging/networkpolicy.json",
       "document": {
         "apiVersion": "networking.k8s.io/v1",
         "kind": "NetworkPolicy",
@@ -206,7 +206,7 @@
       }
     },
     {
-      "path": "v2-apps/demo-orders/staging/kustomization.yaml",
+      "path": "v2-apps/instances/demo-orders/staging/kustomization.yaml",
       "document": {
         "apiVersion": "kustomize.config.k8s.io/v1beta1",
         "kind": "Kustomization",
@@ -234,7 +234,7 @@
             }
           ],
           "interval": "10m",
-          "path": "./v2-apps/demo-orders/staging",
+          "path": "./v2-apps/instances/demo-orders/staging",
           "prune": true,
           "sourceRef": {
             "kind": "GitRepository",

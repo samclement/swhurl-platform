@@ -19,7 +19,8 @@ const usage = `usage:
   swhurl-v2 release-id RELEASE.json
   swhurl-v2 instance-revision INSTANCE.json
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
-  swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--out DIR]
+  swhurl-v2 resolve --snapshot SNAPSHOT.json
+  swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--source NAME]
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
@@ -41,6 +42,10 @@ predecessor already declares is reported rather than assumed away. It reads only
 The snapshot is the JSON document "make v2-snapshot REVISION= OUT=" writes. With --kubeconfig it also
 reads every object a preview would create from that API server, read-only, and reports each as present,
 absent or unavailable; a failed read is never reported as absence.
+
+resolve reads one snapshot's declarations and writes the resolved connections as a v2-calls document:
+which pairs are connected, which wait for the other side and why, and which are refused. compile takes
+that document with --calls and renders only the pairs it names for the instance being compiled.
 
 preview renders one predecessor instance from its records and compares the result with the HelmRelease
 that predecessor committed, writing a v2-preview document to stdout. It reads only the five named JSON
@@ -94,6 +99,8 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		return c.preview(r)
 	case "shadow":
 		return c.shadow(r)
+	case "resolve":
+		return c.resolve(r)
 	}
 	return c.selectRelease(r)
 }
@@ -103,7 +110,7 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 type request struct {
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
-	app, settings, committed, snapshot                 string
+	app, settings, committed, snapshot, callFile       string
 	outFlag                                            *once
 }
 
@@ -119,7 +126,7 @@ func parse(args []string) (request, outcome) {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		return request{}, help
 	}
-	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release", "compile", "observe", "preview", "shadow"}, args[0]) {
+	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release", "compile", "observe", "preview", "shadow", "resolve"}, args[0]) {
 		return request{}, misuse
 	}
 	r := request{command: args[0]}
@@ -162,8 +169,12 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	if r.command == "select-release" {
 		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
 	}
+	if r.command == "resolve" {
+		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+	}
 	if r.command == "compile" {
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		r.outFlag = &once{value: &r.out}
 		flags.Var(r.outFlag, "out", "destination directory")
 	}
@@ -203,6 +214,8 @@ func (r *request) named() []string {
 		return []string{r.app, r.settings, r.release, r.committed, r.profile}
 	case "shadow":
 		return []string{r.snapshot, r.profile}
+	case "resolve":
+		return []string{r.snapshot}
 	}
 	return nil
 }
@@ -287,7 +300,19 @@ func (c cli) compile(r request) int {
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	compiled, err := kernel.Compile(spec, release, profile)
+	connections := kernel.Connections{}
+	if r.callFile != "" {
+		data, status := c.read(r.callFile, "calls")
+		if status != 0 {
+			return status
+		}
+		resolved, err := compileConnections(data, spec.Application, spec.Environment)
+		if err != nil {
+			return fail(c.diagnostic, err)
+		}
+		connections = resolved
+	}
+	compiled, err := kernel.CompileWith(spec, release, profile, connections)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}

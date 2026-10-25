@@ -25,6 +25,44 @@ type Inputs struct {
 	Release  ReleaseID        `json:"release"`
 	Instance InstanceRevision `json:"instance"`
 	Profile  ProfileID        `json:"profile"`
+	// Calls is the identity of the connected pairs this compilation rendered, empty when it took part in
+	// none. The compilation's own ID hashes its rendered output, so a resolution that changes a file
+	// changes the ID with it.
+	Calls ConnectionsID `json:"calls"`
+}
+
+// Connections are the connected pairs one instance takes part in: what it calls and who may call it. They
+// come from the relationship resolver, not from the instance record, so rendering never decides consent.
+type Connections struct {
+	Calls   []Call
+	Callers []string
+}
+
+// ConnectionsID is a resolution's content identity.
+type ConnectionsID string
+
+// ID is the identity of the pairs a compilation rendered: the same edges in any order give the same ID,
+// and no edges give an empty one.
+func (c Connections) ID() ConnectionsID {
+	if len(c.Calls) == 0 && len(c.Callers) == 0 {
+		return ""
+	}
+	calls, callers := slices.Clone(c.Calls), slices.Clone(c.Callers)
+	slices.SortFunc(calls, func(a, b Call) int {
+		if a.Callee != b.Callee {
+			return strings.Compare(a.Callee, b.Callee)
+		}
+		return int(a.Port - b.Port)
+	})
+	slices.Sort(callers)
+	edges := []any{}
+	for _, call := range calls {
+		edges = append(edges, []any{"calls", call.Callee, call.Port})
+	}
+	for _, caller := range callers {
+		edges = append(edges, []any{"called_by", caller})
+	}
+	return ConnectionsID(hash("conn-sha256:", canonical([]any{"swhurl.connections.v1", edges})))
 }
 
 // File is one file to deliver: its path from the repository root and its JSON document.
@@ -69,13 +107,23 @@ type manifest = map[string]any
 // Compile builds one stateless HTTP instance's files, private or signed-in. It validates every input,
 // then refuses a release of another application before one the instance does not select.
 func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error) {
+	return CompileWith(spec, release, profile, Connections{})
+}
+
+// CompileWith compiles an instance together with the connected pairs it takes part in.
+func CompileWith(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, connections Connections) (Compilation, error) {
 	inputs, err := compileInputs(spec, release, profile)
+	if err != nil {
+		return Compilation{}, err
+	}
+	inputs.Calls = connections.ID()
 	if err != nil {
 		return Compilation{}, err
 	}
 	resources, err := RenderHTTP(
 		HTTPInstance{Application: spec.Application, Environment: spec.Environment,
-			Configuration: spec.Configuration, Exposure: spec.Grants.Exposure},
+			Configuration: spec.Configuration, Exposure: spec.Grants.Exposure,
+			Calls: connections.Calls, Callers: connections.Callers},
 		HTTPWorkload{release.Artifact.Image, release.Artifact.Digest, release.Runtime.Port, release.Runtime.HealthPath, release.Runtime.UID}, profile)
 	if err != nil {
 		return Compilation{}, err
@@ -107,7 +155,7 @@ func compileInputs(spec InstanceSpec, release ReleaseBundle, profile PlatformPro
 	if err := fits(spec.Configuration, profile); err != nil {
 		return Inputs{}, err
 	}
-	return Inputs{id, revision, profileID}, nil
+	return Inputs{Release: id, Instance: revision, Profile: profileID}, nil
 }
 
 // fits refuses an instance whose pods can never fit the profile's quota: its replicas and one more

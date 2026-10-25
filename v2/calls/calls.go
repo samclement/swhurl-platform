@@ -23,8 +23,11 @@ type Declaration struct {
 }
 
 // Pair is a connected caller and callee in one environment. A caller's client reaches the callee's
-// Service, so both ports are facts of the pair.
-type Pair struct{ Caller, Callee, Environment string }
+// Service, so the callee's port is a fact of the pair.
+type Pair struct {
+	Caller, Callee, Environment string
+	CalleePort                  int32
+}
 
 // Wait is a declaration that renders nothing until the other side agrees or appears.
 type Wait struct{ Caller, Callee, Environment, Reason string }
@@ -137,7 +140,7 @@ func evaluate(caller Declaration, callee string, byInstance []Declaration) (*Wai
 	case !consents(target, caller):
 		return &Wait{caller.Application, callee, caller.Environment, NoConsent}, nil, nil, nil
 	}
-	return nil, nil, &Pair{caller.Application, callee, caller.Environment}, nil
+	return nil, nil, &Pair{caller.Application, callee, caller.Environment, target.Port}, nil
 }
 
 // consents is whether the callee allows this caller: by its app name, or by its team. An app's own team is

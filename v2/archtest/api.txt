@@ -43,7 +43,7 @@ calls: func (*Error) Error() string
 calls: func Resolve(declarations []Declaration) (Resolution, error)
 calls: type Declaration struct {Application, Environment, Team, Kind string Port int32 Calls, Allows []string}
 calls: type Error struct {Field, Reason string}
-calls: type Pair struct {Caller, Callee, Environment string}
+calls: type Pair struct {Caller, Callee, Environment string CalleePort int32}
 calls: type Refusal struct {Application, Environment, Callee, Reason string}
 calls: type Resolution struct {Pairs []Pair Waiting []Wait Refused []Refusal}
 calls: type Wait struct {Caller, Callee, Environment, Reason string}
@@ -58,11 +58,13 @@ kernel: const Unsupported Code = "unsupported"
 kernel: const WrongApplication Code = "wrong_application"
 kernel: const WrongRelease Code = "wrong_release"
 kernel: func (*Error) Error() string
+kernel: func (Connections) ID() ConnectionsID
 kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
 kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
 kernel: func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error)
+kernel: func CompileWith(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, connections Connections) (Compilation, error)
 kernel: func DecodeInstance(data []byte) (InstanceSpec, error)
 kernel: func DecodeProfile(data []byte) (PlatformProfile, error)
 kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
@@ -83,13 +85,15 @@ kernel: type Compilation struct {ID CompilationID `json:"id"` Inputs Inputs `jso
 kernel: type CompilationID string
 kernel: type Configuration struct {Replicas int32 `json:"replicas"` MemoryMiB int32 `json:"memoryMiB"`}
 kernel: type Conflict struct {Object Object Owners []string}
+kernel: type Connections struct {Calls []Call Callers []string}
+kernel: type ConnectionsID string
 kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `json:"outputRoot"` UnitsRoot string `json:"unitsRoot"` DependsOn []string `json:"dependsOn"`}
 kernel: type Error struct {Code Code Field string Reason string}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
 kernel: type Grants struct {Exposure string `json:"exposure"`}
 kernel: type HTTPInstance struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string}
 kernel: type HTTPWorkload struct {Image, Digest string Port int32 HealthPath string UID int32}
-kernel: type Inputs struct {Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"`}
+kernel: type Inputs struct {Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"` Calls ConnectionsID `json:"calls"`}
 kernel: type InstanceRevision string
 kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"`}
 kernel: type Object struct {Group string `json:"group"` Kind string `json:"kind"` Namespace string `json:"namespace"` Name string `json:"name"`}

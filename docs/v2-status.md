@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: in progress
+Status: approved
 Gate: the operator's choice after observation: phase 3 slice 2 (snapshot acquisition, or legacy translation) or live verification of a v2-owned instance
-Uncommitted: `v2/adapters/kube/kubeconfig.go`, `v2/adapters/kube/kubeconfig_test.go`, `v2/cmd/swhurl-v2/observe.go`, `v2/cmd/swhurl-v2/observe_test.go`, `v2/cmd/swhurl-v2/main.go`, `v2/observe/report.go`, `v2/observe/report_test.go`, `v2/observe/explain.go`, `v2/archtest/api.txt`, `docs/`
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -23,7 +23,7 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 | 1. Release-selection kernel | done, reviewed, committed 24 October 2026 | [contract](iteration-2-plan.md#2-phase-1-model-and-contract), [evidence](iteration-2-plan.md#phase-1-verification-evidence) |
 | 2. Deterministic compiler | done, reviewed, committed 25 October 2026 | [contract](iteration-2-plan.md#phase-2-establish-compiler-ownership) |
 | 4. Git delivery | done: offline half and one live instance, 25 October 2026 | [slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) |
-| 5. Observation | slices 1 and 2a committed; slice 2b (kubeconfig in JSON form, `observe` command, report document) implemented and read the live cluster read-only on 25 October 2026 | [slice 1](iteration-2-plan.md#first-observation-slice-what-is-running-implemented-offline-25-october-2026), [2a](iteration-2-plan.md#second-observation-slice-the-target-from-compiled-output-implemented-25-october-2026) |
+| 5. Observation | done through a live read: slices 1, 2a and 2b committed 25 October 2026; `observe` read `demo-orders` read-only and reported the intended artifact not running | [slice 1](iteration-2-plan.md#first-observation-slice-what-is-running-implemented-offline-25-october-2026), [2a](iteration-2-plan.md#second-observation-slice-the-target-from-compiled-output-implemented-25-october-2026) |
 | 6. First live instance | done 25 October 2026: applied, verified and removed, see the record above | [evidence](current-state.md#first-v2-instance-live-25-october-2026) |
 | 3. Shadow bridge | slice 1 done; **3.2–3.5 are the other candidate next slice** (need approval) | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
 | 7. Selective replacement | proposed, not approved; needs the bridge first | [phases](iteration-2-plan.md#5-incremental-delivery) |
@@ -100,6 +100,7 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged (no v1 file touched; `make check` passes). 2. Pure — `observe` still takes no effects; the clock and the reads live in the command and the adapter. 3. Bytes and identities unchanged: `kernel` and `shadow` untouched, no golden compilation regenerated; the API baseline grows by the new types and functions and loses nothing. 4. Refusals: a new fixed vocabulary, stated in the plan and tested case by case. 5. Failure paths tested: every kubeconfig shape, a `403` (unassessed, `unknown`), a `404` (absent, `not_running`), a bad kubeconfig (exit 2, no report), a missing revision (exit 2). 6. Scope: the document states its assessed, unassessed and not-covered facts; the summary names only non-positive findings. 7. Offline tests are not readiness — and the live read is recorded separately, as what it was: a read-only observation with a `not_running` verdict for the intended artifact, not a parity claim. 8. This page, the plan, the gap list and the current-state evidence change in the same commit.
 - **Live evidence, 25 October 2026 (read-only):** two observations of `demo-orders` through the real API server returned `unit reconciled`, `unit.revision applied`, `release settled`, `workload present`, `ready ready`; the verdicts were `not_running` because the artifact v2's fixture descriptor pins is not the running image (`image different/digest`), and staging also reported `replicas different/available_replicas`. Recorded in [current state](current-state.md#first-v2-observation-of-a-live-instance-25-october-2026).
 - **Next gate:** the operator's choice after observation: phase 3 slice 2 (snapshot acquisition, or legacy translation), or live verification of a v2-owned instance.
+- **Committed:** `671e1de6` (with the record flip in the commit that follows it).
 
 ## Resume
 

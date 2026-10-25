@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: approved
-Gate: the bridge's remaining ownership work: declared objects against the live cluster, then the first migration decision
-Uncommitted: none
+Status: in progress
+Gate: the operator's choice of the next domain slice: routes (authenticated-web), or the first migration decision
+Uncommitted: `v2/adapters/kube/`, `v2/cmd/swhurl-v2/shadow.go`, `v2/cmd/swhurl-v2/shadow_test.go`, `v2/cmd/swhurl-v2/main.go`, `v2/archtest/api.txt`, `docs/`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -26,9 +26,9 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 2. Compiler | Byte-identical resources from validated records, with fixed refusals | **Done** (reviewed) |
 | 4. Git delivery | Compiled intent reaches the cluster through Git; no egress | **Done end to end** (one disposable instance, applied and removed 25 Oct) |
 | 5. Observation | What a cluster actually runs: intended digest, readiness, and unavailable ≠ absent | **Done through a live read** (25 Oct) |
-| 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, and an ownership inventory | **Slices 1–3 done, offline** |
+| 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, an ownership inventory, and a read-only live check of the claims | **Slices 1–4 done** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
-| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Not started**; needs the bridge's remaining ownership work and a migration decision |
+| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Not started**; the [candidate analysis](iteration-2-plan.md#first-migration-candidate-the-decision-with-the-evidence-25-october-2026) recommends routes first |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
@@ -149,6 +149,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Not exercised:** an unavailable or absent read (not manufactured), pod-level facts, and isolation re-testing — the compiled NetworkPolicy has the same shape as the one demonstrated earlier, including that egress enforcement lags a new pod by seconds.
 - **Evidence:** [current state](current-state.md#third-v2-owned-instance-observed-by-v2-itself-25-october-2026), including the reported verdict and the objects Flux created; the removal's prune evidence is recorded there too.
 - **Next gate:** the bridge's remaining ownership work: declared objects against the live cluster, then the first migration decision.
+
+## Slice record: phase 3 live ownership
+
+- **Outcome and the refusal it must produce:** `swhurl-v2 shadow --snapshot … --profile … --kubeconfig …` also reads, from the API server, every object a preview would create, and reports each as `present`, `absent` or `unavailable` with its reason. A failed read is never absence, a failed read never changes a comparison, and without `--kubeconfig` nothing live is read. It refuses what the adapter cannot state: a kind outside its table, a namespaced reference to a cluster-scoped object, and a kubeconfig it cannot use.
+- **Owners and boundaries:** the adapter owns the kind table (now including the cluster-scoped Namespace, ResourceQuota and NetworkPolicy), the paths and `RefOf`, so no caller guesses a version; the command owns the read sequence and the document. Scope is stated: only the preview's own claims are read — Secrets, CronJobs, Streams and image policies are not, so this is not full inventory coverage.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages untouched by this slice's effects; the read lives in the command and the adapter. 3. Bytes and identities unchanged; `api.txt` grows by `RefOf`. 4. New refusals stated and tested; nothing existing moved. 5. Failure paths tested: present, absent (404), forbidden (unavailable with reason), and the unconfigured case; a failed read is asserted *not* to be absence. 6. Scope: only claims are read, and the report's `live` list is empty rather than absent when not configured. 7. Offline tests and unit tests are distinguished from the real read, which is recorded as evidence. 8. This page, the plan and the gap list change together.
+- **Evidence, read-only, 25 October 2026:** `shadow` over this repository's snapshot at `HEAD` with the operator's kubeconfig in its JSON form: 50 live reads across 10 instances, all `present` — every claim a preview would create already exists, owned by the instance v1 runs; no read failed. Recorded here rather than in current state: nothing on the cluster changed.
+- **Next gate:** the operator's choice of the next domain slice — routes (`authenticated-web`), which every web instance needs and which the [candidate analysis](iteration-2-plan.md#first-migration-candidate-the-decision-with-the-evidence-25-october-2026) recommends first — or the first migration decision itself.
 
 ## Resume
 

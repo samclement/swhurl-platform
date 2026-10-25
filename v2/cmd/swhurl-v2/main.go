@@ -24,7 +24,7 @@ const usage = `usage:
       --revision COMMIT --kubeconfig KUBECONFIG.json [--source NAME]
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
       --committed HELMRELEASE.json --profile PROFILE.json
-  swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json
+  swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json [--kubeconfig KUBECONFIG.json]
 
 Input files are never overwritten. Without --out the compilation document goes to stdout and nothing
 is written. With --out every compiled file is written under DIR, one "written PATH" or
@@ -38,7 +38,9 @@ source revision Flux should have applied.
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
 predecessor already declares is reported rather than assumed away. It reads only the two named files.
-The snapshot is the JSON document "make v2-snapshot REVISION= OUT=" writes.
+The snapshot is the JSON document "make v2-snapshot REVISION= OUT=" writes. With --kubeconfig it also
+reads every object a preview would create from that API server, read-only, and reports each as present,
+absent or unavailable; a failed read is never reported as absence.
 
 preview renders one predecessor instance from its records and compares the result with the HelmRelease
 that predecessor committed, writing a v2-preview document to stdout. It reads only the five named JSON
@@ -142,6 +144,7 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	if r.command == "shadow" {
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON (enables the live ownership check)")
 	}
 	if r.command == "preview" {
 		flags.Var(&once{value: &r.app}, "app", "legacy app record")

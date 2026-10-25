@@ -252,30 +252,56 @@ func itemsOf(body []byte) ([][]byte, bool) {
 	return items, true
 }
 
-// resource is where one supported kind lives: all of them are namespaced.
+// resource is where one supported kind lives: its API version, its collection, and whether it lives in
+// a namespace. Every kind is stated, never discovered.
 type resource struct {
-	prefix     string
+	apiVersion string
 	collection string
+	namespaced bool
 }
 
-// resourceOf states the API group, version and collection of each kind this slice reads. An
-// unsupported kind is a refused request, not a discovery.
+// pathKey is the pair a kind is stated by: its group (empty for the core API) and its kind.
+type pathKey struct{ group, kind string }
+
+// kinds is the whole table this adapter reads. A kind outside it is a refused request, not a discovery.
+func kinds() map[pathKey]resource {
+	return map[pathKey]resource{
+		{"", "Namespace"}:                                {"v1", "namespaces", false},
+		{"", "Pod"}:                                      {"v1", "pods", true},
+		{"", "ResourceQuota"}:                            {"v1", "resourcequotas", true},
+		{"apps", "Deployment"}:                           {"apps/v1", "deployments", true},
+		{"networking.k8s.io", "NetworkPolicy"}:           {"networking.k8s.io/v1", "networkpolicies", true},
+		{"helm.toolkit.fluxcd.io", "HelmRelease"}:        {"helm.toolkit.fluxcd.io/v2", "helmreleases", true},
+		{"kustomize.toolkit.fluxcd.io", "Kustomization"}: {"kustomize.toolkit.fluxcd.io/v1", "kustomizations", true},
+	}
+}
+
+// RefOf is the reference to one object a caller knows by group, kind, namespace and name, as the compiler
+// states those. It refuses a kind this adapter does not read, so a caller cannot guess a version.
+func RefOf(group, kind, namespace, name string) (observe.Ref, error) {
+	found, ok := kinds()[pathKey{group, kind}]
+	if !ok {
+		return observe.Ref{}, &Error{RefusedRequest, "resource", "unsupported_kind"}
+	}
+	return observe.Ref{APIVersion: found.apiVersion, Kind: kind, Namespace: namespace, Name: name}, nil
+}
+
+// resourceOf states the API group, version, collection and scope of one kind. An unsupported kind is a
+// refused request, not a discovery.
 func resourceOf(ref observe.Ref) (resource, error) {
-	var found resource
-	switch ref.APIVersion + " " + ref.Kind {
-	case "v1 Pod":
-		found = resource{"/api/v1", "pods"}
-	case "apps/v1 Deployment":
-		found = resource{"/apis/apps/v1", "deployments"}
-	case "helm.toolkit.fluxcd.io/v2 HelmRelease":
-		found = resource{"/apis/helm.toolkit.fluxcd.io/v2", "helmreleases"}
-	case "kustomize.toolkit.fluxcd.io/v1 Kustomization":
-		found = resource{"/apis/kustomize.toolkit.fluxcd.io/v1", "kustomizations"}
-	default:
+	group := ""
+	if before, _, hasGroup := strings.Cut(ref.APIVersion, "/"); hasGroup {
+		group = before
+	}
+	found, ok := kinds()[pathKey{group, ref.Kind}]
+	if !ok || found.apiVersion != ref.APIVersion {
 		return resource{}, &Error{RefusedRequest, "resource", "unsupported_kind"}
 	}
-	if !namePattern.MatchString(ref.Namespace) {
+	if found.namespaced && !namePattern.MatchString(ref.Namespace) {
 		return resource{}, &Error{RefusedRequest, "resource", "invalid_namespace"}
+	}
+	if !found.namespaced && ref.Namespace != "" {
+		return resource{}, &Error{RefusedRequest, "resource", "namespace_not_used"}
 	}
 	if ref.Name != "" && !namePattern.MatchString(ref.Name) {
 		return resource{}, &Error{RefusedRequest, "resource", "invalid_name"}
@@ -283,17 +309,29 @@ func resourceOf(ref observe.Ref) (resource, error) {
 	return found, nil
 }
 
+// namespacedPath is where one kind's collection lives: cluster-scoped kinds sit under the prefix, the
+// others under their namespace.
+func (r resource) namespacedPath(ref observe.Ref) string {
+	if !r.namespaced {
+		return r.prefix() + "/" + r.collection
+	}
+	return r.prefix() + "/namespaces/" + url.PathEscape(ref.Namespace) + "/" + r.collection
+}
+
+// prefix is where one kind's resources start: the core API is /api, a group is /apis.
+func (r resource) prefix() string {
+	if strings.Contains(r.apiVersion, "/") {
+		return "/apis/" + r.apiVersion
+	}
+	return "/api/" + r.apiVersion
+}
+
 // namePattern is the shape an API object's name and namespace can have, so a reference cannot reshape
 // the request path (`..`, a slash, an empty segment).
 var namePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$`)
 
-// namespaced is the path prefix shared by one kind's objects and its collection.
-func (r resource) namespaced(ref observe.Ref) string {
-	return r.prefix + "/namespaces/" + url.PathEscape(ref.Namespace) + "/" + r.collection
-}
-
 func (r resource) objectPath(ref observe.Ref) string {
-	return r.namespaced(ref) + "/" + url.PathEscape(ref.Name)
+	return r.namespacedPath(ref) + "/" + url.PathEscape(ref.Name)
 }
 
-func (r resource) listPath(ref observe.Ref) string { return r.namespaced(ref) }
+func (r resource) listPath(ref observe.Ref) string { return r.namespacedPath(ref) }

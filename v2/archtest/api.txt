@@ -29,6 +29,7 @@ adapters/kube: func (Connection) Reader() (Reader, error)
 adapters/kube: func Client(credentials Credentials) (*http.Client, error)
 adapters/kube: func Connect(data []byte) (Connection, error)
 adapters/kube: func New(endpoint string, client *http.Client, token string) (Reader, error)
+adapters/kube: func RefOf(group, kind, namespace, name string) (observe.Ref, error)
 adapters/kube: type API struct {}
 adapters/kube: type Connection struct {Endpoint string Credentials Credentials Token string Context string}
 adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}

@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/legacy"
 	"github.com/samclement/swhurl-platform/v2/shadow"
@@ -68,6 +70,11 @@ func (c cli) shadow(r request) int {
 		return status
 	}
 	report := shadowReport(pinned, profile)
+	if r.kubeconfig != "" {
+		if status := c.readLive(r.kubeconfig, &report); status != 0 {
+			return status
+		}
+	}
 	document, err := encodeShadow(report)
 	if err != nil {
 		return fail(c.diagnostic, err)
@@ -97,8 +104,8 @@ func decodeSnapshot(data []byte) (snapshot, error) {
 	return pinned, nil
 }
 
-// analysed is one instance's result: what could be compared, or why nothing could, and the claims its
-// preview would make.
+// analysed is one instance's result: what could be compared, or why nothing could, the claims its
+// preview would make, and — when a kubeconfig was given — what the live cluster holds for them.
 type analysed struct {
 	Application, Environment string
 	Available                bool
@@ -107,6 +114,15 @@ type analysed struct {
 	Comparison               *shadow.HTTPComparison
 	Claims                   []kernel.Claim
 	Conflicts                []kernel.Conflict
+	Live                     []liveRead
+}
+
+// liveRead is what one live read established about an object a preview would create: present, absent, or
+// unavailable with a reason. Absence is only ever a successful answer that the object is not there.
+type liveRead struct {
+	Object string
+	Status string
+	Reason string
 }
 
 // report is one shadow analysis: the snapshot's identity, each instance's result, and its coverage.
@@ -189,6 +205,44 @@ func analyse(instance snapshotInstance, profile kernel.PlatformProfile, owner st
 		result.Claims = append(result.Claims, kernel.Claim{Object: claim.Object, Owner: owner})
 	}
 	return result
+}
+
+// readLive reads every object a preview would create, from the API server the kubeconfig names. A failed
+// read stays unavailable: it is never reported as absence, and it never changes a comparison.
+func (c cli) readLive(kubeconfig string, report *report) int {
+	data, status := c.read(kubeconfig, "kubeconfig")
+	if status != 0 {
+		return status
+	}
+	connection, err := kube.Connect(data)
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
+	reader, err := connection.Reader()
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+	defer cancel()
+	for i := range report.Instances {
+		instance := &report.Instances[i]
+		if !instance.Available {
+			continue
+		}
+		for _, claim := range instance.Claims {
+			ref, err := kube.RefOf(claim.Object.Group, claim.Object.Kind, claim.Object.Namespace, claim.Object.Name)
+			if err != nil {
+				instance.Live = append(instance.Live, liveRead{claim.Object.Kind + " " + claim.Object.Name, "not_checked", "unsupported_kind"})
+				continue
+			}
+			read, err := reader.Read(ctx, ref)
+			if err != nil {
+				return fail(c.diagnostic, err)
+			}
+			instance.Live = append(instance.Live, liveRead{objectTextOf(claim.Object), read.Status, read.Reason})
+		}
+	}
+	return 0
 }
 
 // conflictsOf is the collisions an instance is part of.
@@ -281,6 +335,15 @@ type shadowInstanceDocument struct {
 	Gaps        []string           `json:"gaps"`
 	Comparison  comparedFields     `json:"comparison"`
 	Ownership   []conflictDocument `json:"ownership"`
+	Live        []liveDocument     `json:"live"`
+}
+
+// liveDocument is one live answer about an object the preview would create. Present and absent are the
+// two successful answers; unavailable carries the reason its read failed.
+type liveDocument struct {
+	Object string `json:"object"`
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // conflictDocument is one object more than one claim names. Owners are distinct, in claim order; Claims
@@ -313,13 +376,17 @@ func encodeShadow(report report) ([]byte, error) {
 		entry := shadowInstanceDocument{Application: instance.Application, Environment: instance.Environment,
 			Available: instance.Available, Reason: instance.Reason, Gaps: nonNil(instance.Gaps),
 			Comparison: comparedFields{Findings: []findingDocument{}, Assessed: []string{}, Unassessed: []string{}},
-			Ownership:  make([]conflictDocument, 0, len(instance.Conflicts))}
+			Ownership:  make([]conflictDocument, 0, len(instance.Conflicts)),
+			Live:       make([]liveDocument, 0, len(instance.Live))}
 		if instance.Comparison != nil {
 			entry.Comparison = comparedFields{
 				Findings:   findingsOf(instance.Comparison.Findings),
 				Assessed:   nonNil(instance.Comparison.AssessedScope),
 				Unassessed: nonNil(instance.Comparison.UnassessedScope),
 			}
+		}
+		for _, live := range instance.Live {
+			entry.Live = append(entry.Live, liveDocument{live.Object, live.Status, live.Reason})
 		}
 		for _, conflict := range instance.Conflicts {
 			entry.Ownership = append(entry.Ownership, conflictDocument{objectTextOf(conflict.Object),

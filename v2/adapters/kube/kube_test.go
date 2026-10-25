@@ -608,3 +608,45 @@ func TestCompositionSeesAnotherDigestRunning(t *testing.T) {
 		}
 	}
 }
+
+// A compiled object's identity becomes a reference through the same stated table, so a caller never
+// guesses a version, and a kind the adapter does not read cannot be turned into one.
+func TestRefOfStatesTheVersion(t *testing.T) {
+	for _, tt := range []struct{ group, kind, apiVersion string }{
+		{"", "Namespace", "v1"},
+		{"", "Pod", "v1"},
+		{"apps", "Deployment", "apps/v1"},
+		{"networking.k8s.io", "NetworkPolicy", "networking.k8s.io/v1"},
+		{"helm.toolkit.fluxcd.io", "HelmRelease", "helm.toolkit.fluxcd.io/v2"},
+		{"kustomize.toolkit.fluxcd.io", "Kustomization", "kustomize.toolkit.fluxcd.io/v1"},
+	} {
+		ref, err := kube.RefOf(tt.group, tt.kind, "hello-staging", "hello")
+		if err != nil || ref.APIVersion != tt.apiVersion || ref.Kind != tt.kind {
+			t.Errorf("%s/%s: %+v %v", tt.group, tt.kind, ref, err)
+		}
+	}
+	if _, err := kube.RefOf("batch", "CronJob", "hello-staging", "nightly"); !refused(err, "unsupported_kind") {
+		t.Errorf("a kind outside the table: %v", err)
+	}
+}
+
+// A cluster-scoped object's path carries no namespace segment, and a namespace on one is refused.
+func TestClusterScopedPaths(t *testing.T) {
+	scenario := answers(t)
+	reader, server := readerWith(t, scenario)
+	namespace, err := kube.RefOf("", "Namespace", "", "hello-staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Read(context.Background(), namespace); err != nil {
+		t.Fatal(err)
+	}
+	if path := server.requests[0].URL.Path; path != "/api/v1/namespaces/hello-staging" {
+		t.Fatalf("a cluster-scoped path: %s", path)
+	}
+	scoped := namespace
+	scoped.Namespace = "hello-staging"
+	if _, err := reader.Read(context.Background(), scoped); !refused(err, "namespace_not_used") {
+		t.Fatalf("a namespaced reference to a cluster-scoped kind: %v", err)
+	}
+}

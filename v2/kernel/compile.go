@@ -99,6 +99,14 @@ const (
 	retries       = 1
 	labelDomain   = "platform.swhurl.com/"
 	instanceLabel = "app.kubernetes.io/instance"
+	// backupLabel marks the backup job and its pods: the platform's workload, not the app's.
+	backupLabel = labelDomain + "backup"
+	// backupUnit is the platform unit that holds the upload key and the MongoDB job; a database
+	// instance's unit waits for it.
+	backupUnit = "platform-backup"
+	// dataMount is where a database instance's volume is mounted, and databasePath the file inside it.
+	dataMount    = "/data"
+	databasePath = dataMount + "/app.db"
 )
 
 // manifest is a Kubernetes object or kustomization as the compiler builds it: fresh maps only.
@@ -153,32 +161,38 @@ func compileInputs(spec InstanceSpec, release ReleaseBundle, profile PlatformPro
 	if id != spec.Release {
 		return Inputs{}, refuse(WrongRelease, "release", "the instance selects a different release")
 	}
-	if err := fits(spec.Configuration, profile); err != nil {
+	if err := fits(spec.Configuration, profile, release.Database == "sqlite"); err != nil {
 		return Inputs{}, err
 	}
 	return Inputs{Release: id, Instance: revision, Profile: profileID}, nil
 }
 
-// fits refuses an instance whose pods can never fit the profile's quota: its replicas and one more
-// for a rolling update (none when stopped), each with the profile's CPU request and the instance's
-// memory as request and limit. Checked in the order of the profile's quota fields.
-func fits(c Configuration, profile PlatformProfile) error {
-	pods := int64(0)
-	if c.Replicas > 0 {
-		pods = int64(c.Replicas) + 1
-	}
+// fits checks what an instance needs at once against the profile's quota: its replicas and one more for a
+// rolling update (none when stopped), each with the profile's CPU request and the instance's memory, and
+// — for a database — the backup pod, which runs beside the app on the same claim and the same node.
+// Checked in the order of the profile's quota fields.
+func fits(c Configuration, profile PlatformProfile, database bool) error {
 	q, cpu, memory := profile.Quota, int64(profile.Workload.CPURequestMilli), int64(c.MemoryMiB)
+	var pods, needCPU, needMemory, needLimit int64
+	if c.Replicas > 0 {
+		running := int64(c.Replicas) + 1
+		pods, needCPU, needMemory, needLimit = running, running*cpu, running*memory, running*memory
+	}
+	if database {
+		pods, needCPU = pods+1, needCPU+backupCPURequestMilli
+		needMemory, needLimit = needMemory+backupMemoryMiB, needLimit+backupLimitMiB
+	}
 	for _, need := range []struct {
 		field         string
 		needed, quota int64
 	}{
 		{"quota.pods", pods, int64(q.Pods)},
-		{"quota.requestsCpuMilli", pods * cpu, int64(q.RequestsCPUMilli)},
-		{"quota.requestsMemoryMiB", pods * memory, int64(q.RequestsMemoryMiB)},
-		{"quota.limitsMemoryMiB", pods * memory, int64(q.LimitsMemoryMiB)},
+		{"quota.requestsCpuMilli", needCPU, int64(q.RequestsCPUMilli)},
+		{"quota.requestsMemoryMiB", needMemory, int64(q.RequestsMemoryMiB)},
+		{"quota.limitsMemoryMiB", needLimit, int64(q.LimitsMemoryMiB)},
 	} {
 		if need.needed > need.quota {
-			return refuse(OverQuota, need.field, "the instance's pods, with one more for a rolling update, need more than this")
+			return refuse(OverQuota, need.field, "the pods this instance needs at once need more than the profile's quota")
 		}
 	}
 	return nil

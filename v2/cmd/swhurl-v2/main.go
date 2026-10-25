@@ -48,6 +48,9 @@ absent or unavailable; a failed read is never reported as absence.
 egress allocates one proxy port per instance, keeping every port the previous document gave and giving a
 new instance the lowest free one. compile takes the document with --egress.
 
+compile refuses a database instance without --egress: its backup job may reach only the proxy, so it
+could not upload. A database instance also renders its backup from the profile's backup facts.
+
 proxy renders the platform's egress proxy from one allocation: its configuration, with a port per
 instance and the hosts each instance's grants allow, and a policy admitting each port from that
 instance's namespace only. Grants are enforced, so an instance reaches what it declares and nothing

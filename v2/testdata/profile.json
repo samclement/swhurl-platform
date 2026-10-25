@@ -36,6 +36,15 @@
   "egress": {"address": "egress.egress.svc.cluster.local", "namespace": "egress",
              "labels": {"app.kubernetes.io/name": "egress"}},
   "dns": {"namespace": "kube-system", "labels": {"k8s-app": "kube-dns"}},
+  "backup": {
+    "image": "ghcr.io/samclement/swhurl-backup",
+    "digest": "sha256:f1637924110353f687277141adde4114a461622f7de19fe41098f1a1a5eea7b5",
+    "s3Uri": "s3://swhurl-platform-backups-110927251694/app-sqlite/",
+    "recipient": "age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h",
+    "writerNamespace": "flux-system",
+    "writerName": "backup-writer",
+    "suspended": false
+  },
   "auth": {
     "issuer": "https://kubernetes.default.svc.cluster.local",
     "keys": "{\"keys\":[{\"alg\":\"RS256\",\"e\":\"AQAB\",\"kid\":\"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ\",\"kty\":\"RSA\",\"n\":\"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q\",\"use\":\"sig\"}]}"

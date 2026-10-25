@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "application": "demo-orders",
+  "source": {
+    "repository": "samclement/demo-orders",
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/demo-orders",
+    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "web",
+    "port": 8080,
+    "healthPath": "/healthz",
+    "uid": 65532
+  },
+  "database": "sqlite"
+}

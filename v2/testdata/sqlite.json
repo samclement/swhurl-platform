@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "application": "demo-orders",
+  "environment": "staging",
+  "release": "rel-sha256:07cb4b7506587ccf30470a9971fe3c4c833ebe15e5d4f58a1649f8d76186d424",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "private"
+  },
+  "bindings": {},
+  "storage": {
+    "sizeMiB": 1024
+  }
+}

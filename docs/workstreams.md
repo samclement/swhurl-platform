@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Offline Go v2 | main | approved | egress part two: v2 renders the proxy's configuration from the allocation, with grants enforced, offline, 25 October 2026; the platform still runs v1's generated file | egress part three: the backup CronJob, then restore | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/` |
+| Offline Go v2 | main | approved | egress part three: a database instance renders its backup job, key reference, policy and unit dependency, offline and tied to v1's job, 25 October 2026 | the next slice, chosen by the operator: a read-only backup observation, then restore (which needs its own approval for its effects) | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/` |
 | Live platform | main | approved | the 24 open items in the plan index | M14, then B4b (records-only removal) | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

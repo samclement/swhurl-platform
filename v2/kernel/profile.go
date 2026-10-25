@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -32,6 +33,23 @@ type PlatformProfile struct {
 	// the DNS service that lets it resolve a name at all.
 	Egress EgressProxy `json:"egress"`
 	DNS    DNS         `json:"dns"`
+	// Backup is how the platform protects an instance's data: the job image, where it publishes, the key
+	// that encrypts the archive, the Secret its upload key is substituted from, and whether schedules run.
+	Backup Backup `json:"backup"`
+}
+
+// Backup is the platform's backup contract for an instance's SQLite database. The recipient is a public
+// key, so the job encrypts before it uploads and never holds the private key; the writer is a Secret in
+// the platform's own namespace that Flux substitutes the upload-only key from, so v2 renders a reference
+// and never a credential value.
+type Backup struct {
+	Image           string `json:"image"`
+	Digest          string `json:"digest"`
+	S3URI           string `json:"s3Uri"`
+	Recipient       string `json:"recipient"`
+	WriterNamespace string `json:"writerNamespace"`
+	WriterName      string `json:"writerName"`
+	Suspended       bool   `json:"suspended"`
 }
 
 // EgressProxy is where the platform's proxy lives and which pods serve it. The instance's own port is
@@ -112,6 +130,9 @@ var (
 	labelKeyPattern   = regexp.MustCompile(`^([a-z0-9]([a-z0-9.-]*[a-z0-9])?/)?[a-z0-9]([a-z0-9._-]*[a-z0-9])?$`)
 	issuerURLPattern  = regexp.MustCompile(`^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$`)
 	jwksPattern       = regexp.MustCompile(`"keys"\s*:\s*\[`)
+	// An S3 URI is a bucket and a prefix ending in "/", so a namespace appends to it unambiguously.
+	backupURIPattern    = regexp.MustCompile(`^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/[A-Za-z0-9._/-]*/$`)
+	ageRecipientPattern = regexp.MustCompile(`^age1[0-9a-z]{58}$`)
 )
 
 // sortedKeys is a map's keys in order, so validation and identity encoding are deterministic.
@@ -128,7 +149,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 	if err := document(data); err != nil {
 		return PlatformProfile{}, err
 	}
-	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing", "auth", "storage", "egress", "dns")
+	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing", "auth", "storage", "egress", "dns", "backup")
 	if err != nil {
 		return PlatformProfile{}, err
 	}
@@ -147,6 +168,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"storage", []string{"class"}},
 		{"egress", []string{"address", "namespace", "labels"}},
 		{"dns", []string{"namespace", "labels"}},
+		{"backup", []string{"image", "digest", "s3Uri", "recipient", "writerNamespace", "writerName", "suspended"}},
 	} {
 		if _, present := root[part.key]; !present {
 			continue
@@ -189,9 +211,9 @@ func (p PlatformProfile) validate() error {
 }
 
 // validateBlocks checks the platform's optional blocks, in the order of the field table: routing, egress,
-// DNS, storage and auth.
+// DNS, storage, auth and backup.
 func (p PlatformProfile) validateBlocks() error {
-	for _, block := range []interface{ validate() error }{p.Routing, p.Egress, p.DNS, p.Auth} {
+	for _, block := range []interface{ validate() error }{p.Routing, p.Egress, p.DNS, p.Auth, p.Backup} {
 		if err := block.validate(); err != nil {
 			return err
 		}
@@ -229,6 +251,42 @@ func (e EgressProxy) validate() error {
 		return refuse(Invalid, "egress.namespace", "expected a DNS label")
 	}
 	return validateLabels("egress.labels", e.Labels)
+}
+
+// validate checks a configured backup block: an image by digest, an S3 prefix, an age public key, and the
+// Secret its upload key comes from (a reference, never a value). A block that states anything must state
+// all of it: a half-configured backup would render a job that cannot publish.
+func (b Backup) validate() error {
+	if b.absent() {
+		return nil
+	}
+	if !imagePattern.MatchString(b.Image) {
+		return refuse(Invalid, "backup.image", "expected a repository name")
+	}
+	if !digestPattern.MatchString(b.Digest) {
+		return refuse(Invalid, "backup.digest", "expected sha256: and 64 lowercase hex characters")
+	}
+	if !backupURIPattern.MatchString(b.S3URI) {
+		return refuse(Invalid, "backup.s3Uri", "expected s3://<bucket>/<prefix>/")
+	}
+	if !ageRecipientPattern.MatchString(b.Recipient) {
+		return refuse(Invalid, "backup.recipient", "expected an age public key")
+	}
+	for _, field := range []struct{ name, value string }{
+		{"backup.writerNamespace", b.WriterNamespace}, {"backup.writerName", b.WriterName},
+	} {
+		if !labelPattern.MatchString(field.value) {
+			return refuse(Invalid, field.name, "expected a DNS label")
+		}
+	}
+	return nil
+}
+
+// absent is whether the profile states no backup at all, which is valid: only a database instance needs
+// one, and a profile that compiles none needs no facts.
+func (b Backup) absent() bool {
+	return b.Image == "" && b.Digest == "" && b.S3URI == "" && b.Recipient == "" &&
+		b.WriterNamespace == "" && b.WriterName == "" && !b.Suspended
 }
 
 // validate checks the cluster's DNS block the same way.
@@ -389,7 +447,10 @@ func profileCanonical(p PlatformProfile) []byte {
 		p.Routing.IngressNamespace, labelPairs(p.Routing.IngressLabels),
 		p.Auth.Issuer, p.Auth.Keys, p.Storage.Class,
 		p.Egress.Address, p.Egress.Namespace, labelPairs(p.Egress.Labels),
-		p.DNS.Namespace, labelPairs(p.DNS.Labels)})
+		p.DNS.Namespace, labelPairs(p.DNS.Labels),
+		// The backup facts are platform facts too: another bucket, image or key set is another identity.
+		p.Backup.Image, p.Backup.Digest, p.Backup.S3URI, p.Backup.Recipient,
+		p.Backup.WriterNamespace, p.Backup.WriterName, strconv.FormatBool(p.Backup.Suspended)})
 }
 
 func (p PlatformProfile) ID() (ProfileID, error) {

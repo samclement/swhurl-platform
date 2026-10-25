@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: in progress
+Status: approved
 Gate: the operator's choice: verify an exposed instance live, or move to the first migration
-Uncommitted: `v2/kernel/`, `v2/legacy/`, `v2/adapters/kube/`, `v2/cmd/swhurl-v2/`, `v2/testdata/profile.json`, `v2/testdata/profile-identity.json`, `v2/testdata/compiled/`, `v2/archtest/api.txt`, `docs/`
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -167,6 +167,7 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages still take no effects. 3. **Identities changed, deliberately and explained:** the profile now covers routing, so its ID and every compilation ID changed; the compiled resource bytes are unchanged apart from the `id`/`inputs.profile` lines, the two goldens were regenerated once, and the canonical profile identity was recomputed independently in Python. 4. Refusals stated and tested (`public`, unconfigured routing, invalid routing fields). 5. Failure paths tested: missing routing, unsupported exposure, invalid domain/labels, and the policy's single rule with egress still denied. 6. Scope: routes are rendered but the comparison still lists them as unassessed, and observation still does not verify them. 7. Offline only: no route has been served, no certificate issued. 8. This page, the plan and the gap list change together.
 - **Evidence:** `make check-v2` (11 packages), `REQUIRE_HELM=1 make check-v2` (chart render, Service name pinned), `make check`, `make v2-report`; the bridge previews the inherited `authenticated-web` fixture unchanged in comparison; live ownership over the snapshot read 60 claims, all present, including the ten Ingresses each v1 instance already has.
 - **Next gate:** the operator's choice — verify an exposed instance live (compile, apply, wait for its certificate, sign in, observe, remove), or move to the first migration of a database-free web instance.
+- **Committed:** `5f2243eb` (with the record flip in the commit that follows it).
 
 ## Resume
 

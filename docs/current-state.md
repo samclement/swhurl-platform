@@ -23,6 +23,8 @@ So the phase-5 contract holds end to end against a real API server for an instan
 
 The v1 units were untouched (39 units Ready during the wait). Not exercised here: an unavailable or absent read, and anything about pods beyond the running image.
 
+**Removed the same day:** deleting its five compiled files, its unit and the unit's registration and pushing was the whole removal. `make flux-reconcile` completed with every unit Ready; Flux pruned the namespace `swhurl-try-v2-2-staging` and everything in it. Afterwards no object anywhere carries the name, managed namespaces are 28 (back from 29) and the units are 37 (from 38); all 37 are Ready; `demo-orders/staging` still runs its own newer digest `sha256:e2a5b5cf…`, so no v1 instance moved; `make verify-platform` passed.
+
 ## First v2 observation of a live instance (25 October 2026)
 
 Read-only, from the host, with the operator's kubeconfig in its JSON form (`kubectl config view --raw -o json`) and the built `swhurl-v2 observe` from `bd5f2455`. Both reads exited 0 (a report was produced) and reported `source default`:

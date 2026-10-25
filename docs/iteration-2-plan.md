@@ -1,6 +1,6 @@
 # Iteration 2: incremental replacement alongside the current platform
 
-**Status: phase 1 implemented and offline-verified 23 October 2026, committed 24 October 2026; phase 2's compiler implemented 25 October 2026.** The operator approved the root-level Go module, JSON-only descriptors, positional canonical identity encoding, manifest-only `linux/amd64` artifacts and empty-only bindings, and phase 2's [compiler contract](#phase-2-establish-compiler-ownership). Phases 3–7 remain proposals. v2 and the [visual change-tool investigation](visual-change-tool.md) are independent workstreams; neither is a prerequisite for the other. No publication, live migration, v1 behaviour change or feature removal is approved. Do not commit or push without instruction.
+**Status: phase 1 implemented and offline-verified 23 October 2026, committed 24 October 2026; phase 2's compiler implemented 25 October 2026.** The operator approved the root-level Go module, JSON-only descriptors, positional canonical identity encoding, manifest-only `linux/amd64` artifacts and empty-only bindings, and phase 2's [compiler contract](#phase-2-establish-compiler-ownership). The operator's [design principles](#design-principles) govern subsequent work; phase 3's brief is revised around scoped previews and iterative domain modelling, not mandatory v1 compatibility. Only the [first pure HTTP preview/comparison slice](#first-slice-proposal-pure-http-preview-and-comparison) of phase 3 is additionally approved and implemented, reviewed and committed (25 October 2026); the rest of phases 3–7 is not approved for implementation. v2 and the [visual change-tool investigation](visual-change-tool.md) are independent workstreams; neither is a prerequisite for the other. No publication, live migration, v1 behaviour change or feature removal is approved. Do not commit or push without instruction.
 
 This plan develops the recommendations in [the architecture review](architecture-review.md). [Architecture](architecture.md) remains the canonical description of deployed behaviour; [plan](plan.md) section 0 remains the index of approved work and links here for the phase-1 contract, evidence and handoff.
 
@@ -226,12 +226,37 @@ Current working-tree changes must be inspected again before implementation; this
 
 **Approved 24 October 2026 as the working method for v2.** Phases 3–7 still need their own approval; this section says how to build them, not that they are approved.
 
-v2 has two layers, so that most work iterates offline in seconds:
+### Design principles
+
+**Operator direction, approved after the first phase-3 draft.** These principles apply to subsequent v2 phases and fresh sessions, not just the bridge. They guide contract design; the existing schemas, package layout and architecture checks are the current implementation, not the destination.
+
+1. **Design maintainable v2 contracts, not v1 compatibility.** v1 supplies examples, operational evidence and migration constraints; it does not dictate v2's models, defaults, APIs or orchestration. Preserve v1's live operation while experimenting offline, not its internal contracts by default. Capture current behaviour in tests to understand it, then distinguish behaviour deliberately retained from behaviour deliberately changed. Do not turn every legacy convenience into a replacement requirement.
+2. **Separate pure core, orchestration and integrations.** Core functions own domain rules and transformations, with explicit inputs/results and no effects. Orchestration sits above them: it sequences reads and operations, passes facts between domains and handles workflow failures, without reimplementing domain decisions. Integration code owns external dependencies such as Git, files, registries or Kubernetes, translating their formats and failures at narrow boundaries. A command is an entry point, not the owner of all three responsibilities. Start with a few concrete functions; do not build a general workflow/provider framework.
+3. **Make domain and data ownership explicit.** Name the authority for each fact, who may change it, and whether a returned value is owned or shared. Pass the smallest coherent domain inputs an operation needs, not one universal record merely because it already exists. An integration can report missing build evidence; it must not invent release provenance. A bridge can translate legacy settings; it must not become their second source of truth. Resource generation need not depend on source history merely because both currently appear in `ReleaseBundle`.
+4. **Transition iteratively, with honest intermediate semantics.** Early slices may have incomplete release semantics or missing domain models. Deliver useful, explicitly scoped results while those models develop; do not fabricate identities, supply made-up defaults, require a manual parallel catalogue or weaken a complete-release API to make an intermediate step fit. Distinguish not-yet-modelled semantics, unsupported operations, invalid data, absence and failed reads. A preview of known workload facts is not a reconstructed release, migration plan or authorisation to deploy.
+5. **Keep the structure and checks serving those principles.** Prefer the smallest reshape that makes the boundary clearer, with tests for retained behaviour and deliberate changes. Current `kernel` placement and numeric layer rules must not force unrelated domains/orchestration into one package. If a sound boundary needs a rule/API change, propose and explain it, then update code, checks, fixtures and docs together in the approved implementation; do not silently weaken a baseline to get a pass. No rule change is made by this documentation update.
+
+**Ownership guide** (responsibilities, not a requirement to create one package per row):
+
+| Domain or boundary | Owns | Does not own |
+| --- | --- | --- |
+| Release | Artifact/runtime identity; source/build relationships and compatibility as those models develop | Environment configuration, grants or allocations |
+| Instance | Release selection, environment configuration, grants and bindings | Discovering or reconstructing build provenance |
+| Platform | Deployment primitives, defaults, quotas and delivery conventions | Application requirements or build facts |
+| Resource generation | Deterministic resources from the workload, instance and platform facts it actually needs | Resolving Git, verifying a build or deciding publication authority |
+| Integration | Reading/changing its external system and reporting identified facts or failures | Domain policy or filling missing facts with guesses |
+| Orchestration | Sequencing a use case and carrying results across boundaries | Becoming a second implementation of domain rules |
+| Transition bridge | Legacy interpretation, scoped comparison and explicit gaps | Permanent release authority, ongoing synchronisation or approval to apply a preview |
+
+For each change, state the facts and their owners, the pure functions and orchestration, what crosses each integration boundary, and the result's scope. Track incomplete features in [section 6](#6-deliberately-deferred), naming the domain or next boundary that must resolve them; do not create a second backlog for temporary semantics.
 
 ```text
-pure model    inputs → decision, plan, resources or refusal      (no effects)
-adapters      read or change Git, GitHub, Kubernetes, ...        (effects, behind narrow interfaces)
+entry point → orchestration → pure core functions
+                    ↕
+               integrations → Git, files, registry, Kubernetes, ...
 ```
+
+This is a responsibility model. The current checked layout is `kernel` (layer 0), adapters (layer 1), and command wiring (layer 2); it does not yet provide a separate orchestration package. A later slice should introduce or revise package boundaries only where its use case needs them, rather than treating the numbers as a permanent domain architecture.
 
 ### The pure model
 
@@ -308,7 +333,7 @@ Recorded responses suit reads. Changes need small **behavioural fakes** that imp
 
 ### Reusing v1
 
-v1 is evidence of required behaviour, not an expected-output generator. Classify each behaviour as **preserve**, **deliberately change** or **remove**, using the [architecture review](architecture-review.md) and [model review](model-review.html). Starting points:
+v1 is evidence to evaluate, not the specification of v2 or an expected-output generator. Under the [design principles](#design-principles), classify relevant behaviour as **preserve**, **deliberately change**, **remove** or **not yet modelled**, using the [architecture review](architecture-review.md) and [model review](model-review.html). This is not a requirement to model every v1 feature now. Starting points:
 
 - [`tests/fixtures/instance`](../tests/fixtures/instance): a frozen staging/production example with records and rendered resources.
 - [`tests/fakecluster.py`](../tests/fakecluster.py): healthy-cluster responses across Flux, apps, observability, backups and notifications.
@@ -343,7 +368,7 @@ Each phase ends in something usable and independently checkable. Phases 1 and 2 
 | --- | --- | --- |
 | 1. Release-selection kernel | The two records, release identity and pure selection operation | Offline contract tests pass; no external access |
 | 2. Deterministic compiler | Compile one private stateless HTTP instance using one pinned platform profile | Identical inputs produce identical output; duplicate resource ownership fails |
-| 3. Read-only v1 bridge | Translate a pinned v1 snapshot into v2 inputs; compile into scratch output | Differences explained; unsupported features reported; no writes to v1 |
+| 3. Read-only v1 bridge | Translate known facts from a pinned v1 snapshot into scoped resource previews and comparison | Differences, coverage, incomplete semantics and ownership conflicts explained; no writes to v1 or claim of a deployable replacement |
 | 4. Git delivery | Local plan/diff, validation and narrow proposal/publication through existing command infrastructure | Failed preparation publishes nothing; concurrent changes cannot overwrite each other |
 | 5. Current-state observation | Read Git, Flux and workload evidence for an identified target | Unavailable differs from absent; publication differs from running |
 | 6. First isolated live instance | Deploy a new disposable stateless instance owned only by v2 | Digest, readiness and private access boundary verified; removal demonstrated |
@@ -428,15 +453,167 @@ The NetworkPolicy selects `app.kubernetes.io/instance: <app>`, which the chart s
 
 ### Phase 3: shadow, not synchronise
 
-The bridge is one-way and read-only:
+**Revised direction:** the operator approved documenting the [design principles](#design-principles) and revising this brief around them. This is not approval to implement the bridge. The goal is a useful comparison of known workload facts, **not complete reconstruction of v1 as v2 releases**. No migration, publication, live reads or changes to existing v1 behaviour.
+
+**Example:** v1 supplies a digest, port, health path, uid and environment settings, but not a full source commit or verified artifact type/platform. We can preview resources from the known facts and compare them with committed v1 output. The report must say that release semantics are incomplete; it must not invent a release ID, assume an amd64 manifest or require a manually maintained provenance catalogue merely to satisfy today's `ReleaseBundle` schema. An instance with SQLite can still yield a comparison of its HTTP workload, but not a claim that its storage or the whole instance has been replaced.
 
 ```text
-Pinned v1 records → explicit translation → v2 model → scratch output
+Git/file integration → identified legacy facts and committed evidence
+                           ↓
+                     orchestration
+                           ↓
+        pure translation → scoped workload facts + semantic gaps
+        pure rendering   → resource preview for the known subset
+        pure comparison  → differences, coverage and ownership findings
+                           ↓
+                     shadow report
 ```
 
-Read all inputs from one identified snapshot. Do not substitute moving `main` after a failed read.
+#### Responsibilities and contract choices
 
-Compare semantic output for the supported profile. v1 output is evidence, not automatically the specification: some differences will be intentional simplifications. Unsupported features must be visible rather than dropped during translation.
+1. **Compare available facts rather than force complete releases.** The bridge owns legacy interpretation and records each fact's source. The release domain will own complete artifact/source/build semantics as those models develop. Missing provenance limits the claim about a release; it need not prevent a workload preview. Do not add mandatory supplemental claims or a second release catalogue in phase 3.
+2. **Separate resource generation from complete-release validation.** The renderer needs selected workload/runtime facts, instance configuration and platform choices, not unrelated source history. A small extraction may let the existing `Compile(spec, release, profile)` validate its full inputs and delegate resource generation, while the shadow path uses the same pure renderer with explicitly scoped inputs. Retain current full-release validation, identity checks and output behaviour unless a separate contract change is proposed. A resource preview must not masquerade as a complete `Compilation` with fabricated `Inputs` identities.
+3. **Keep translation out of permanent release/instance authority.** Integrations read Git/files and decode legacy formats. Pure bridge functions translate and explain gaps. Orchestration sequences the reads, translation, rendering and comparison; it does not hide decisions in I/O code or reproduce domain rules. Do not put all of this in `kernel` solely because today's numeric layer rule makes that convenient. Establish concrete function/data boundaries first, then propose the smallest package/rule changes they require.
+4. **Let gaps limit coverage, not erase useful evidence.** Distinguish the cases below. A preview always states its scope; it never represents a deployable replacement or publication approval. Partial comparison is not partial success disguised as full parity.
+
+| Situation | Meaning for the shadow result |
+| --- | --- |
+| Source/build relationship or artifact verification not yet modelled | Record a semantic gap owned by the release/build boundary. Compare workload facts that do not require it; do not manufacture a complete release. |
+| SQLite, calls, routes or another capability absent from v2 | Mark that capability and its dependent comparisons outside the preview's coverage. Other independent comparisons may proceed. Do not count excluded fields/resources as equal or silently change the instance to private/stateless. |
+| Required rendering fact missing (for example, no digest for a digest-pinned image) | That preview cannot be produced; explain the missing fact without guessing or resolving a mutable tag remotely. Other comparisons can still be useful. |
+| Invalid or contradictory input | Report an error at the responsible boundary, not a future-feature gap. Never pass a malformed value to the renderer. |
+| Successful read showing something absent | Record absence for that identified source. |
+| Failed or incomplete read | Evidence is unavailable, not absent. Do not claim comparison/inventory completeness or fall back to moving `main` or the current checkout. |
+
+#### Initial comparison policy
+
+The first slice below implements only its fixed comparison policy. Legacy translation/default resolution and the rest of this bridge policy remain proposals, not new v2 domain contracts or broader implementation approval:
+
+- Preserve known application/environment identity and runtime facts. A tag beside a digest is unnecessary for the already-approved digest-only output. Neither the tag nor an `offers` commit proves the missing build relationship, media type or platform.
+- Keep legacy default resolution separate from v2 policy. Materialise an absent replica count only when its effective default has identified evidence (expected to be one for the pinned v1 chart; verify it). Explicit zero stays zero. Unknown defaults remain gaps, not copied assumptions.
+- For the current one-memory-value preview, use v1's effective **limit** and report the resulting request change (for example, 32Mi/128Mi → 128Mi/128Mi). This is a preview policy choice, not a demand that v2 preserve v1 resource contracts. Resolve quantities exactly within the supported range; do not round or hide contradictory request/limit values.
+- Use the supplied platform profile for CPU, chart, quota and startup choices, and explain differences from v1. Do not alter a profile merely to make the comparison pass. Preserve applicable resource/quota checks at the rendering boundary; being incomplete about release semantics does not excuse invalid workload inputs.
+- Explain phase-2 omissions such as team labels, notification wiring, default proxy configuration, image automation and output paths. They are neither an implicit permanent-removal decision nor permission to run without the relevant safety controls. Keep the [single deferred-feature tracker](#6-deliberately-deferred) current as domain models develop.
+
+#### Snapshot, comparison and ownership boundaries
+
+- Read one identified local Git snapshot. Resolve the revision once; all legacy records and committed manifest evidence come from that tree. Dirty/untracked files have no effect. Do not execute code from the snapshot, fetch, access credentials, decrypt/read secret values or contact a cluster/registry/GitHub. Public checked-in resources are desired-output evidence, not live observations; do not regenerate them and label the regeneration observed evidence.
+- Identify the consumed paths, comparison coverage and read failures. Malformed records and missing partner files are not absent apps. Unsupported layouts make their evidence/coverage unavailable rather than silently disappearing. The bridge need not become a general Kustomize interpreter.
+- Compare semantics, not YAML formatting or filenames. Explain deliberate changes precisely; do not blanket-ignore env arrays, annotations or security fields. A changed security context or policy inside the compared scope must remain visible. Unmodelled fields/resources are explicitly outside coverage, never counted as matching.
+- Feed declared v1 object identities into ownership checks, including relevant output of unmodelled instances and residual output without records. Inventory coverage is independent of whether a workload preview can be rendered. It is snapshot-declared ownership, not proof of live or whole-cluster ownership. Missing inventory evidence prevents a clear-ownership claim.
+- Do not exempt the v1 app being compared from conflicts. Its Namespace/HelmRelease should collide; the report retains those findings alongside useful comparisons. Candidate-to-candidate conflicts also remain visible. No ownership result authorises applying a preview.
+- Output is deterministic report/scratch data only, with explicit identity of the snapshot/profile, scope, semantic gaps, differences, unavailable evidence and ownership findings. Separate analysis completeness from replacement readiness; completing the scoped analysis does not mean all release semantics/capabilities exist. Exact report/exit schemas remain to be specified with the concrete implementation slice, rather than inheriting the withdrawn all-or-nothing draft.
+
+#### Integration options, after the boundaries
+
+The integration choice is secondary to the domain design. Checked facts: v1 uses YAML ([records](../tools/swhurl/apps/model/records.py), [loader](../tools/swhurl/yamlio.py)); the current Go module is JSON-only, standard-library-only and starts no subprocesses. Its current package/rule layout is described in [section 4](#4-development-layers-and-adapters).
+
+1. **Separate Python export to JSON, then Go analysis:** likely the smallest initial adapter, reusing existing YAML parsing and Git via `Runner`. Costs two development commands, a small interchange format, and console image-input changes if implemented under `tools/swhurl/` and later pushed. No Go runtime invocation of Python is needed.
+2. **Native Go reading:** one operator command, but adds YAML/Git dependencies or requires a deliberate subprocess-rule change. Consider only if its maintenance benefit justifies those costs; do not handwrite YAML/Git parsers to preserve a rule mechanically.
+3. **Frozen JSON fixtures first:** enough to prove pure boundaries and tests cheaply, but not the final pinned-snapshot bridge. Use as the first implementation step, not a substitute for integration verification.
+
+**Recommendation:** prove the pure preview/comparison boundary with fixtures first; then select the smallest read-only integration. No exporter command, extra provenance input or new adapter/package layout is fixed by this brief.
+
+#### First slice proposal: pure HTTP preview and comparison
+
+**Approved by the operator for this first slice only; implemented, offline-verified, independently reviewed and committed 25 October 2026.** Two composable Go functions and frozen fixture scenarios, not a new operator command or the complete bridge. Example result: “HTTP image, probes and security settings agree; memory request changes from 32Mi to 128Mi under the selected preview choice; release provenance, storage, routing and ownership have not been assessed.” This is useful without a full source commit or a claim that the instance can be migrated.
+
+**Structural problem observed:** [`Compile`](../v2/kernel/compile.go) already validates the full release/instance/profile before constructing resources, but its rendering helpers receive those whole records. Construction uses image/digest, runtime facts, application/environment and configuration—not source repository/commit, media type, platform or the selected release ID. That coupling forces callers to manufacture a complete release merely to ask for resources.
+
+**Options:** (1) keep all preview/legacy comparison code in `kernel`—least file movement, but gives the release/compiler package ownership of transition policy; (2) **extract a release-independent renderer entry point in the existing compiler and add a separate pure `shadow` comparator—recommended**; (3) move renderer, profile and shared types into new domain packages now—potentially useful later, but requires more API/dependency restructuring than this slice proves necessary. Option 2 changes the actual dependency without a compatibility layer, duplicate renderer or general comparison framework. Keeping resource construction where it already lives is deliberate, not a claim that `kernel` is the permanent home of every pure domain.
+
+**Implemented Go boundary** (these are ordinary Go values, not new versioned JSON descriptors):
+
+```go
+// kernel: facts needed to render one private HTTP workload, not a release.
+type HTTPWorkload struct {
+    Image, Digest string
+    Port int32
+    HealthPath string
+    UID int32
+}
+type HTTPInstance struct {
+    Application, Environment string
+    Configuration Configuration
+}
+type ResourceSet struct {
+    Files []File
+    Inventory []Claim
+    Registrations []string
+}
+func RenderHTTP(HTTPInstance, HTTPWorkload, PlatformProfile) (ResourceSet, error)
+
+// shadow: the resource choices being compared, not publication authority.
+type ResourceChoices struct {
+    CPURequestMilli, MemoryMiB int32
+}
+func CompareHTTP(before, after []byte, choices ResourceChoices) (HTTPComparison, error)
+```
+
+- **Renderer ownership:** `HTTPWorkload` contains supplied workload facts; the resource domain validates and consumes them, but does not discover or verify build provenance. `HTTPInstance` contains the environment-owned facts needed for this private template, not a release selection or a claim that a legacy app is private. `PlatformProfile` stays platform-owned. Rendering validates names/environment, digest image syntax, port/path/non-root uid, configuration, profile and quota fit, in that order. It neither resolves defaults nor accepts absent required facts. Invalid values return a zero resource result and the existing typed refusal categories.
+- **Result ownership:** `ResourceSet` holds the same six files, five direct object claims and registration the compiler currently produces, with no release ID, instance revision, compilation ID or readiness flag. Each call owns fresh slices/JSON bytes; it neither retains nor mutates inputs. In a shadow flow it is only resource-preview data, not a complete instance replacement. A valid digest reference makes no assertion about its manifest type or runtime platform.
+- **Full compilation:** `Compile` retains its existing validation/refusal precedence, translates its already-validated records into these rendering inputs, calls the same `RenderHTTP`, and adds the real input identities and unchanged output identity encoding. Keep its public signature, CLI behaviour, golden bytes and IDs unchanged. Share field predicates rather than creating placeholder `ReleaseBundle`/`InstanceSpec` values or implementing a second set of validation rules. Additional renderer validation must not alter which refusal a full compilation returns first.
+- **Comparator ownership:** `shadow` owns a bounded transition comparison policy. It accepts the two actual HelmRelease JSON documents, not release records or the renderer's desired input repeated as evidence. It owns decoding/projection of the selected resource fields and comparison, all pure. The future Git/YAML integration will supply identified evidence; neither function reads files or Git. The `before`/`after` direction is explicit, and returned results do not alias the input bytes.
+- **Composition, not package coupling:** `shadow` imports no `kernel` types. Later orchestration takes the HelmRelease document from `ResourceSet`, passes it with the baseline and explicit resource choices to `CompareHTTP`, and retains the surrounding source identity/coverage. This slice uses an external test scenario to exercise that composition; it does not add a production workflow package before there are effects to sequence. It proves comparison of rendered output, not just agreement between two copies of desired inputs.
+
+**Fixed first comparison scope:** app-template 5.2.1's one-controller/one-container HTTP HelmRelease shape, checked by raw JSON fixtures. Other chart/controller shapes are outside coverage, not auto-detected as equivalent. Require valid, unambiguous JSON (including no duplicate keys); structural/type errors return no comparison and safe field/category errors, never raw input values.
+
+| Compared group | Initial interpretation |
+| --- | --- |
+| HelmRelease name/namespace and chart/source reference | Compare exactly; an unplanned difference is visible, not an automatically approved platform change. |
+| Image repository/digest, HTTP Service port, health probes/startup settings, explicit replicas, app/env identity variables | Compare actual selected fields. A tag beside the same digest is a named digest-only change; a missing digest or unresolved replica default leaves that item unassessed, not equal. Zero replicas is an explicit value. |
+| Pod security context, service-account automount and container security context | Compare complete selected subtrees, not a list that silently ignores extra security fields. Missing/changed settings are visible differences; do not assume a chart default makes them equal. |
+| CPU request and memory request/limit | Compare exact quantities in the initial supported grammar: whole cores or integer `m` CPU, integer `Mi`/`Gi` memory, normalised without floats. Other quantity spellings remain unassessed. Explain a CPU change only if it exactly matches the supplied CPU choice. Explain the one-memory-value change only when the prior limit equals the chosen memory, the prior request does not exceed it, and the new request/limit both equal that choice. A changed limit or another unexplained value is a difference, not a generic memory exception. |
+
+`HTTPComparison` contains `Findings []Finding`, `AssessedScope []string` and `UnassessedScope []string`; each `Finding` has a fixed `Field`, `Outcome` (`equal`, `intentional`, `different` or `not_assessed`) and `Reason`. Findings/scopes have deterministic schema order, with empty arrays rather than null. These are per-field/group results with fixed reason identifiers and explicit included/excluded scope. Report fixed safe field paths/reasons rather than dumping before/after documents or arbitrary env values. No single `supported`, `ready` or migration-success boolean. An error is not a “not assessed” success. The actual report envelope/CLI exit contract belongs to a later orchestration slice, not this Go-only result.
+
+Everything outside that fixed scope is explicitly unassessed: full release/source/type/platform semantics, routes, storage, secrets, calls, additional env/config/mounts/containers, Namespace/team semantics, NetworkPolicy, quota-object equivalence, Flux units/registration and foreign ownership. Existing renderer tests still protect generated policy/quota/unit behaviour; this comparator does **not** establish parity for those objects. Known source capabilities may be carried as fixture context, but this slice does not yet promise their automatic discovery from legacy records. No whole-instance parity claim, even if every assessed finding agrees.
+
+**Files and guardrails:** add `kernel/render.go` and focused tests for the extracted boundary; `shadow/http.go`, its tests and raw JSON fixtures; register `shadow` at layer 0 and in `Pure`, and deliberately update `api.txt` for the new APIs. The packages exchange only document bytes through a caller; no same-layer import is needed. No numeric layer-rule change, new dependency, budget exception, subprocess, adapter, CLI, Python exporter or console-image input change. Avoid promising a permanent interchange schema before a real reader exists.
+
+**Acceptance and sequence:**
+
+1. Capture current compiler output/refusal behaviour, then extract rendering. Both existing golden compilations remain byte-identical with the same IDs; retain existing mismatch/validation precedence tests. No golden regeneration merely to make the refactor pass.
+2. Test rendering without any source/commit/media/platform/release-ID fields, explicit zero, invalid workload/profile/configuration, quota boundaries, repeated output and independent ownership of returned slices/bytes.
+3. Compare actual rendered HelmRelease documents against frozen legacy-shaped JSON. Cover 32Mi/128Mi → 128Mi/128Mi, exact quantity equivalence, unexplained CPU/limit changes, missing defaults/digest, malformed/duplicate-key input, unsupported shapes and excluded features. A fixture may include storage/routing/extra config while the result remains explicitly scoped; it must never count those omissions as parity.
+4. Deliberately mutate the rendered image, probe, security context and explicit replicas and prove each affected finding changes. An extra security-context field must not be silently dropped. Changing source-only provenance must leave resource output unchanged while full compilation still records the true input identities.
+5. Run `make check-v2`, `make check`, `git diff --check`, `make v2-report`, and the existing required offline chart/Kustomize tests. Review the new API and result/coverage semantics independently. Update section 6 and this handoff; stop before the next integration slice. No commit/push/live work is implied.
+
+Approval covers **this first slice only**. Full legacy translation/default resolution, snapshot acquisition, foreign ownership integration, production orchestration and an operator-facing report remain separate follow-up work. The bridge is not complete when this slice passes.
+
+**Implementation and evidence (25 October 2026, working tree based on `1ea1bbde`; nothing published):**
+
+- [`kernel/render.go`](../v2/kernel/render.go) owns the extracted renderer. Shared validation predicates keep the original full-record field order; `Compile` validates complete records and selection/quota constraints before calling `RenderHTTP` and attaching the real identities. No placeholder records or second renderer. The two existing golden compilations were not edited or regenerated; their bytes and IDs still pass unchanged.
+- [`shadow/http.go`](../v2/shadow/http.go) owns strict JSON decoding, fixed projection and comparison. It checks selected structure/types, rejects duplicate keys even in excluded subtrees, invalid UTF-8, multiple documents and lossy unpaired Unicode escapes. Safe `shadow.Error` fields/reasons accompany a zero comparison on invalid input. This is not a Kubernetes schema validator: unknown security members are retained literally in the complete selected subtree rather than silently dropped or interpreted as valid Kubernetes settings.
+- The fixed finding order is `metadata`, `chart`, `image`, `service.http`, `probes`, `replicas`, `env.identity`, `pod.securityContext`, `pod.automountServiceAccountToken`, `container.securityContext`, `resources.cpuRequest`, `resources.memory`. Chart/source references are exact; metadata compares name/namespace. Other chart/controller shapes, a disabled controller, a `valuesFrom`-style HelmRelease with no `values`, a per-controller pod override or pod-options strategy, and a named probe port leave their findings `not_assessed` (`outside_http_shape`), while metadata/chart remain assessed so their differences are visible. Missing digest, absent/string-valued unresolved replicas, absent quantities (`missing_quantity`) and unsupported quantity spellings are explicitly unassessed. Null selected scalars/objects and wrong types are errors, not absent defaults. Explicit zero replicas is assessed. Resource choices must be positive integer milliCPU/MiB.
+- The frozen [`shadow/testdata`](../v2/shadow/testdata) JSON documents retain the shape of `tests/fixtures/instance/apps/hello/staging/helmrelease.yaml`; arbitrary auth configuration is synthetic. The incomplete variant removes digest/replicas and adds a storage mount. The external `shadow_test` composition test calls the actual renderer with known workload facts and no source/commit/media/platform/release-ID fields, then passes its HelmRelease bytes to the comparator. It explains digest-only output and 32Mi/128Mi → 128Mi/128Mi without claiming parity for routes, storage, config, policy, quota, Flux units or ownership.
+- Focused tests cover preview validation order, explicit zero, all quota dimensions/boundaries, overflow, repeatability, input/result ownership, full compilation refusal precedence and source-only changes that preserve resource output/compilation ID but change real release and instance input identities. Rendered-output mutations to repository/digest, readiness/startup, container/pod security, extra/nested/unknown security members, automount, replicas, Service port, env identity, metadata and chart/source reference all change the affected finding to `different`. Exact whole-core/milliCPU and Mi/Gi equivalence, unexplained limits/CPU, memory direction and unknown defaults have focused assertions.
+- `shadow` is registered at layer 0 and in `Pure`; `api.txt` intentionally adds only the renderer inputs/result/API and scoped comparison types/API/error. The purity-rule fixture now includes the declared pure package. Numeric layer rules, pure imports, dependencies and budgets are unchanged. No adapter, workflow package, CLI, exporter or console input change.
+- Baseline before extraction: `GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 make check-v2` passed all four existing packages. After implementation, `make check-v2` and `REQUIRE_HELM=1 make check-v2` pass all five packages, with unchanged golden tests and the required cached-chart Helm rendering/offline Kustomize test. Focused `go test -count=1 -cover ./kernel ./shadow` passed (95.3% and 96.0% statements respectively). `make check` passed: lint, 20 app-policy instances, 38 active schema/render entrypoints, OTel fixtures, relative doc links, 98 codegraph tests and 987 v1 tests. Existing OTel component-name and Starlette/httpx deprecation warnings remain; BAD/WARN lines from negative fixture scenarios are expected test output, not live observations.
+- Final gates passed: `for f in host/*.sh tests/fixtures/*.sh v2/archtest/report.sh; do bash -n "$f"; done`, `git diff --check` and `make -s v2-report`. The report identifies only the approved new pure package/layer entry and ten added API declarations for review; no budget or dependency changes. No timing/benchmark, credential, network, cluster or live checks were performed. `make check-templates` is not required: no template pin, app type or `app-new` change. **Independent read-only review, 25 October 2026** (reviewer agent, on this working tree): **OK with notes, no blockers.** It reproduced the main claims by differential testing: 34 single-field mutations across instance, release and profile, in every single, pair and triple combination (40,495 cases), gave byte-identical error strings, compilation IDs and file counts against `1ea1bbde`, so the renderer extraction changed no refusal and no identity; duplicate keys, invalid UTF-8, unpaired escapes and multiple documents are refused, including inside excluded subtrees; quantities, explicit zero, unknown security members, determinism, owned results and diagnostic safety behave as stated; `shadow` imports `kernel` only in its external test. It could not verify syscall-level access, real v1 HelmReleases using per-controller pod overrides, or `make check` and `git diff --check` (not in its task; both were run here).
+- **Review should-fix findings, both false parity (fixed 25 October 2026):** (1) app-template merges `controllers.<name>.pod` over `defaultPodOptions` (strategy `overwrite`), so a per-controller override changed the effective security context and automount while the comparator still reported the `defaultPodOptions` subtree as `equal`; a non-empty `controllers.main.pod`, or any `defaultPodOptionsStrategy`, now makes `pod.securityContext` and `pod.automountServiceAccountToken` `not_assessed` (`outside_http_shape`), while an empty override changes nothing and stays comparable; (2) a chart outside the pinned one, and a `valuesFrom`-style HelmRelease with no `values`, were refused as invalid because `values` and `controllers` were required before the chart check; both now stop at the shape check as `not_assessed`, and a null or wrong type is still an error, as the contract requires. **Nits fixed:** a disabled controller (which renders no workload) is outside the shape instead of comparing as `equal`; an absent quantity is `not_assessed`/`missing_quantity`, so absence is not mislabelled as a spelling problem; `digest_only_image` became `tag_beside_digest`, because the change is named in either direction; a named probe port, which Kubernetes accepts, leaves `probes` unassessed instead of refusing the document; the per-call regexes are commented, since the `pure` rule forbids package variables and the digest grammar is repeated deliberately rather than importing `kernel`. **Documented, not changed:** `RenderHTTP`'s refusals reuse the compilation's field names (`artifact.image`, `runtime.port`), which name release paths a preview caller never supplied. **Not adopted:** nothing. After the fixes, `REQUIRE_HELM=1 make check-v2` (chart render and offline Kustomize ran, not skipped), `make check` (987 tests) and `git diff --check` passed; `go test -cover` reported kernel 95.3% and shadow 96.7%. Implementation approval still does not approve a push or the next integration slice.
+
+**Test it yourself — run with `!`**, from the repository root (offline, files unchanged):
+
+```bash
+export GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0
+(cd v2 && go test -count=1 ./kernel ./shadow)
+REQUIRE_HELM=1 make check-v2
+```
+
+
+#### Remaining phase-3 acceptance gate
+
+The [first-slice proposal](#first-slice-proposal-pure-http-preview-and-comparison) supplies concrete inputs/results and owners for pure rendering/comparison. Later slices must similarly specify orchestration and integration seams, and any package/rule changes, before implementing those effects.
+
+The eventual bounded implementation should proceed through checkable slices:
+
+1. **Pure preview first:** fixtures with known workload facts and missing release semantics; minimal renderer extraction if needed. Prove existing compiler bytes/identities/refusals remain intact, explicit zero is preserved, resource choices are explained and preview results cannot be mistaken for complete releases.
+2. **Scoped comparison and inventory:** prove unmodelled capabilities remain visible, independent comparisons still work, failed evidence is not absence, preserved security/policy mutations are detected, and ownership conflicts include unmodelled/residual apps. No blanket equivalence or false complete-coverage result.
+3. **Read-only integration and orchestration:** pin a temporary local repository, change its branch/checkout after resolution and prove the selected input stays fixed. Test missing reads, malformed data, unexpected paths and secret-safe errors. Use raw fixtures and the real/fake shared contract for each Go adapter; Python external calls use `Runner`/`FakeRunner`. Test the actual end-to-end entry point and unchanged inputs.
+4. **Review and handoff:** run `make check-v2`, `make check`, applicable shell syntax, `git diff --check` and `make v2-report`; independently review the result before requesting a push. Update this section, the feature tracker and handoff. Phase 4 and live effects remain separate decisions.
+
+**Authority:** the principles, revised brief and the first pure HTTP preview/comparison slice above are approved. No further phase-3 implementation, dependency/rule relaxation, commit, push, console deployment, credentials or live operation is authorised by that approval.
 
 ### Phase 4: settle publication before automation
 
@@ -488,9 +665,9 @@ Stateful migration additionally requires demonstrated backup/restore, explicit r
 
 ## 6. Deliberately deferred
 
-Do not make feature parity the first goal. This is the one list of what v1 does that v2 does not do yet: how v2 treats each today, and when it has to be decided. Update it in the change that defers, implements or removes something; a phase's own classification table links here. The list does not approve removing anything from v1.
+Do not make feature parity the first goal. This is the one list of unimplemented features and incomplete transition semantics: how v2 treats each today, and which domain or next boundary must resolve it. v1 supplies examples, not the required replacement contract. Update the list in the change that defers, implements or removes something; a phase's own classification table links here. The list does not approve removing anything from v1.
 
-| v1 feature | v2 today | Decide by |
+| Feature or semantic gap | v2 today | Decide by |
 | --- | --- | --- |
 | Egress proxy: proxy variables, port allocation, egress grants | Not generated: a v2 instance would reach outside directly, unlogged | **Phase 6, before the first instance runs** |
 | Routes: `authenticated-web` and `public` exposure, Ingress, TLS, the sign-in middleware | Refused (`unsupported`): only `private` | The first instance that needs a route |
@@ -507,11 +684,15 @@ Do not make feature parity the first goal. This is the one list of what v1 does 
 | Image automation, automatic release discovery, auto-merge | Not generated | After phase 4's delivery |
 | The render fingerprint in the resources | The compilation ID is in the compilation document only | Phase 5, if observation needs it in the cluster |
 | The unit's registration in `clusters/home/kustomization.yaml` | Returned as a contribution, not written | Phase 4 |
-| v1's objects as `foreign` ownership | Empty | Phase 3 |
+| v1's objects as `foreign` ownership | Empty; the [phase-3 brief](#phase-3-shadow-not-synchronise) proposes declared app-object identities from a pinned snapshot, independent of preview coverage, including unmodelled/residual apps | Phase 3 |
+| Complete release/source/build relationships and artifact verification | The current descriptor requires source/type/platform claims but does not verify them. Phase 3 would preview known workload facts without inventing complete releases or requiring a manual claims catalogue | Release/build domain modelling as it develops; before claiming complete or independently verified release semantics |
+| Scoped workload preview/comparison independent of complete releases | The approved [first phase-3 slice](#first-slice-proposal-pure-http-preview-and-comparison) implements shared `RenderHTTP` and pure `shadow.CompareHTTP` over actual JSON with fixed, explicit coverage. Full legacy translation/default resolution, snapshot acquisition, ownership integration and report orchestration remain unimplemented | Resource-generation and transition domains in the next separately approved phase-3 slice; before claiming the bridge complete |
 | What an app offers (offers documents) | Not generated | Phase 7 |
 | Live feature flags | None | Later |
 | Console: repository creation, seed images, historical Activity | None | Later |
 | Multiple stacks and app types (the templates) | None | Later |
+
+This table records missing work, not a promise to copy all v1 features. A scoped shadow preview may compare known facts while a row remains unmodelled; it must identify that gap and the domain/next boundary responsible, not call the entire instance supported. Resolve the gap in this table when its domain model arrives. Complete release semantics need not be forced into the first transition step ([design principles](#design-principles)).
 
 Not planned: generic plugins, workflow engines and provider abstractions.
 
@@ -527,13 +708,13 @@ Not planned: generic plugins, workflow engines and provider abstractions.
 
 ### Guardrails
 
-v2's design principles are checked, not only described. The rules are code in [`v2/archtest`](../v2/archtest): test files using the standard library only, which parse v2's source and never build or run it, so every `go test ./...` checks them. This table lists the same rules; a test fails when the two differ.
+Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/archtest): test files using the standard library only, which parse v2's source and never build or run it, so every `go test ./...` checks them. This table lists the same rules; a test fails when the two differ. Passing these checks does not prove domain/data ownership, useful contracts or honest preview semantics; those [design principles](#design-principles) also need scenario tests and review. The current numeric layout is a checked implementation choice, not a substitute for those principles.
 
 | Rule | What it enforces |
 | --- | --- |
 | `stdlib-only` | v2 imports only the standard library and its own packages; `go.mod` requires nothing ([why](#kubernetes-the-api-server-not-kubectl)). A dependency needs the operator's approval first. |
 | `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 commands) and imports only v2 packages in lower layers ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
-| `pure` | Pure packages (`kernel`) import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments. |
+| `pure` | Pure packages (`kernel`, `shadow`) import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments. |
 | `no-subprocess` | v2 code (not its tests) starts no process and names no `kubectl` or `flux` command ([why](#kubernetes-the-api-server-not-kubectl)). |
 | `public-api` | The exported API of every library package matches `archtest/api.txt`, so an interface change is a deliberate, reviewed diff. |
 | `budgets` | No function exceeds complexity 10 or 60 lines unless `archtest/budgets.json` lists it with a reason; a listed function may shrink but not grow, and its entry goes once it fits. |
@@ -614,7 +795,7 @@ cmd/swhurl-v2/main.go               one wiring line
 
 **Verification (25 October 2026, before commit):** on v2 both rules pass (there is no adapter yet, so `adapter-complete` checks nothing until the first). On fixtures, `places` reports eight misplaced packages (layer 0 not pure, pure at layer 1, layer 1 outside `adapters/`, `adapters/` at layer 2, layer 2 not `main` or outside `cmd/`, `cmd/` at layer 0, an unknown layer) and leaves correctly placed, undeclared and test-only packages alone. A complete adapter passes `adapter-complete`, including an aliased import of the fake in a test; each of ten broken versions is reported (no interface, no raw fixtures, no fake, no assertion, an assertion against another package's interface, a `Contract` without `*testing.T`, the real adapter not run through `Contract` or run through another package's, the fake not run through it, a command importing the fake). The complete fixture also builds and passes `go vet` and `go test` as a real module, and removing the fake's method fails compilation at the assertion. Eight deliberate breaks to the two checks each failed a test.
 
-The first real adapter needs phase-2 approval; it is checked by `adapter-complete` from the commit that adds it.
+The first real adapter needs separate phase approval; phase 3 will select its read-only integration after establishing pure preview/comparison boundaries. It is checked by `adapter-complete` from the commit that adds it.
 
 ### Offline CLI and build
 
@@ -674,18 +855,18 @@ Component checklist: no deployed process, persistent store, default credential, 
 
 ### State and authority
 
-**Approved:** the operator said yes to the concrete phase-1 proposal: root-level `v2/`, Go 1.26.0, JSON-only descriptors, positional canonical encoding, manifest-only `linux/amd64` artifact claims, empty-only bindings and the narrow policy exception. Keep v1 unchanged; no platform console UI, general framework, compiler, bridge, credential access, integrations, publication, live changes or feature removals. The operator separated the [visual change-tool workstream](visual-change-tool.md) from v2; it uses v1 code/history and has its own scope and handoff. Do not implement visual tooling in this v2 thread. **Do not commit or push without instruction.**
+**Approved:** the operator said yes to the concrete phase-1 proposal: root-level `v2/`, Go 1.26.0, JSON-only descriptors, positional canonical encoding, manifest-only `linux/amd64` artifact claims, empty-only bindings and the narrow policy exception. Phase 2's compiler and its review decisions are also approved and implemented. The operator's [design principles](#design-principles) and the revised phase-3 brief are approved as documentation/direction; only the [first pure HTTP slice](#first-slice-proposal-pure-http-preview-and-comparison) is additionally approved for implementation: v2 is not bound to v1 contracts, responsibilities/data have explicit owners, and transition may have incomplete semantics. Keep existing v1 behaviour unchanged; no platform console UI, general framework, bridge integration beyond that pure slice, credential access, integrations, v2 publication, live migration or feature removals are approved. The operator separated the [visual change-tool workstream](visual-change-tool.md) from v2; it uses v1 code/history and has its own scope and handoff. Do not implement visual tooling in this v2 thread. **Do not commit or push without instruction.**
 
-**Done:** the two value records, strict codec, identities and pure selection operation, thin offline CLI, synthetic fixtures and focused tests are implemented. Phase-1 Go tests/vet/format, the v1 baseline, full `make check`, shell syntax, repeat-build and demonstration checks passed; binary measurements and their limits are in section 7. v2's design rules are checked as code by `make check-v2` and, in pi, after each edit and before a run ends ([guardrails](#guardrails)). Phase 2's [compiler](#phase-2-establish-compiler-ownership) is implemented to its approved contract. The independent visual-tool brief is linked above; it is not a v2 deliverable. No live action has been taken.
+**Done:** the two value records, strict codec, identities and pure selection operation, thin offline CLI, synthetic fixtures and focused tests are implemented. Phase-1 Go tests/vet/format, the v1 baseline, full `make check`, shell syntax, repeat-build and demonstration checks passed; binary measurements and their limits are in section 7. v2's design rules are checked as code by `make check-v2` and, in pi, after each edit and before a run ends ([guardrails](#guardrails)). Phase 2's [compiler](#phase-2-establish-compiler-ownership) is implemented to its approved contract, independently reviewed and its findings resolved. Its code was pushed through `1ea1bbde`; Validate `40176776265` passed all nine jobs, reconciliation succeeded and platform verification reported 101 OK, no BAD/WARN. Those are checks of the existing platform after the code push, not a v2 deployment. The independent visual-tool brief is linked above; it is not a v2 deliverable.
 
-**Left:** of the [independent review's findings](#phase-1-verification-evidence), the coexistence check's blind spots, deliberately not fixed. Nothing is published. Phases 3–7 still need their own decisions and approval.
+**Left:** of the [phase-1 independent review's findings](#phase-1-verification-evidence), the coexistence check's blind spots, deliberately not fixed. No v2 intent/resources have been published to active Flux paths. The remainder of phase 3 and phases 4–7 still need their own decisions and approval.
 
-**Next:** phase 3, the read-only v1 bridge, needs its own proposal and approval before implementing it. Do not wait for or build the visual tool here. No platform console, live-adapter or publication work is authorised by this handoff.
+**Next:** a proposal for the next phase-3 slice (snapshot acquisition, or legacy translation and default resolution), which needs its own approval. Slice 1 is committed: `kernel.RenderHTTP` takes release-independent inputs, `shadow.CompareHTTP` compares actual HelmRelease JSON and is owned separately, and both are covered by the evidence and the review record above. Stop before ownership integration, report orchestration or any CLI/adapter work. Those need a concrete next-slice proposal and separate approval. Read the [design principles](#design-principles) first. Do not revive mandatory supplemental claims or force complete release reconstruction. Python export remains a later integration option, not a settled architecture. Keep [deferred features](#6-deliberately-deferred) current. Do not wait for or build the visual tool here. No platform console, live-adapter or publication work is authorised by this handoff.
 
 ### Read first
 
 1. Root `AGENTS.md` and inherited working preferences; inspect `git status` and relevant diffs. Other work was in progress when this was saved.
-2. This document, particularly [development layers](#4-development-layers-and-adapters), then [architecture review](architecture-review.md) (release identity, ownership, transition contracts and acceptance criteria) and [model review](model-review.html) (where v1's complexity comes from, so v2 does not repeat it).
+2. This document, starting with the operator's [design principles](#design-principles), then [development layers](#4-development-layers-and-adapters) and the [phase-3 brief](#phase-3-shadow-not-synchronise); then [architecture review](architecture-review.md) (release identity, ownership, transition contracts and acceptance criteria) and [model review](model-review.html) (where v1's complexity comes from, so v2 does not repeat it).
 3. [Architecture](architecture.md), [glossary](../GLOSSARY.md), [contributing](contributing.md) and [plan section 0](plan.md#0-where-this-paused-and-what-is-left) for current behaviour, terminology, validation and other work.
 4. [Current records](../tools/swhurl/apps/model/records.py) and [model tests](../tests/test_app_model.py) for behaviour worth retaining. Read relevant tests before translating a contract.
 5. [Runner](../tools/swhurl/run.py) for later effect-boundary contracts. The phase-1 kernel itself must have no external effects.
@@ -694,9 +875,9 @@ Read the actual [`kernel`](../v2/kernel/records.go), [`identity`](../v2/kernel/i
 
 ### How to approach a v2 change
 
-1. Start from a domain scenario: the inputs, the request and the expected plan or refusal ([fixtures](#fixtures-and-fakes)).
-2. Find the v1 behaviour it covers and classify it as preserve, deliberately change or remove. Check the relevant review findings so the change does not rebuild a known problem.
-3. Write the pure function and its tests first. It takes time, identifiers and snapshots as arguments.
+1. Read the [design principles](#design-principles). Start from a domain scenario: the facts and their owners, the request, and the expected result/refusal with its scope and semantic gaps ([fixtures](#fixtures-and-fakes)).
+2. Use v1 behaviour as evidence, not the target contract. Classify relevant behaviour as preserve, deliberately change, remove or not yet modelled. Check review findings; track gaps in section 6 rather than forcing later domains into this slice.
+3. Write the pure functions and their tests first. Identify the orchestration above them and data crossing the integration seams; propose the smallest necessary package/check changes rather than packing every responsibility into `kernel`.
 4. Add an adapter only when the slice needs that dependency, following the [new-adapter recipe](#extension-recipes): a domain-level interface, raw fixtures, and a behavioural fake that shares one contract suite with the real adapter, failure cases included. Kubernetes goes through the API server ([why](#kubernetes-the-api-server-not-kubectl)).
 5. Run `make check-v2` ([guardrails](#guardrails), format, vet and tests) and the matching [test tiers](#test-tiers); live checks only in an approved live phase. Fix what a rule reports rather than its baseline, unless the change is intended and explained.
 
@@ -714,4 +895,4 @@ The phase-1 demonstration uses different environment configuration, **not non-em
 
 ### Suggested opening prompt for a fresh session
 
-> Work only on v2. Read `docs/iteration-2-plan.md`, its phase-1 contract, evidence and handoff, the repository instructions, `docs/architecture-review.md` and `docs/model-review.html`. Inspect the working tree and existing Go code/tests. Phase 1 is implemented, independently reviewed and its review findings fixed, and phase 2's compiler is implemented; the next step is a proposal for phase 3, the read-only v1 bridge. The visual change tool is a separate v1/history-based workstream: do not build it or wait for it here. Preserve unrelated work. Do not commit, push, publish, access credentials or touch the live cluster.
+> Work only on v2. Read `docs/iteration-2-plan.md`, its phase-1 contract, evidence and handoff, the repository instructions, `docs/architecture-review.md` and `docs/model-review.html`. Inspect the working tree and existing Go code/tests. Phase 1 is implemented, independently reviewed and its review findings fixed, and phase 2's compiler is implemented, reviewed and pushed; the phase-3 read-only bridge brief is revised in the same document. Start with the operator's design principles: maintainable v2 contracts rather than v1 compatibility; pure core, orchestration and integrations; domain/data ownership; iterative transition with explicit incomplete semantics. The first-slice proposal is approved, implemented, reviewed and committed: release-independent `RenderHTTP` and a separate pure `shadow.CompareHTTP` on actual HelmRelease documents, with explicit limited coverage and no integration/CLI work. Read its implementation evidence and the record of its review; the next gate is a proposal for the following slice, not further implementation. Obtain separate approval for the next slice. Do not require supplemental provenance claims or complete releases merely to preview known workload facts. The visual change tool is a separate v1/history-based workstream: do not build it or wait for it here. Preserve unrelated work. Do not commit, push, publish, access credentials or touch the live cluster.

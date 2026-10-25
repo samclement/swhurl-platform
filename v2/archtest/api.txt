@@ -19,6 +19,7 @@ kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
 kernel: func EncodeCompilation(c Compilation) []byte
 kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
 kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
+kernel: func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (ResourceSet, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"` MediaType string `json:"mediaType"` Platform string `json:"platform"`}
 kernel: type Bindings struct {}
@@ -32,6 +33,8 @@ kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `j
 kernel: type Error struct {Code Code Field string Reason string}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
 kernel: type Grants struct {Exposure string `json:"exposure"`}
+kernel: type HTTPInstance struct {Application, Environment string Configuration Configuration}
+kernel: type HTTPWorkload struct {Image, Digest string Port int32 HealthPath string UID int32}
 kernel: type Inputs struct {Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"`}
 kernel: type InstanceRevision string
 kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"`}
@@ -41,6 +44,13 @@ kernel: type ProfileID string
 kernel: type Quota struct {Pods int32 `json:"pods"` RequestsCPUMilli int32 `json:"requestsCpuMilli"` RequestsMemoryMiB int32 `json:"requestsMemoryMiB"` LimitsMemoryMiB int32 `json:"limitsMemoryMiB"`}
 kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` ReleaseID ReleaseID `json:"releaseId"`}
 kernel: type ReleaseID string
+kernel: type ResourceSet struct {Files []File Inventory []Claim Registrations []string}
 kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` HealthPath string `json:"healthPath"` UID int32 `json:"uid"`}
 kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
+shadow: func (*Error) Error() string
+shadow: func CompareHTTP(before, after []byte, choices ResourceChoices) (HTTPComparison, error)
+shadow: type Error struct {Field, Reason string}
+shadow: type Finding struct {Field, Outcome, Reason string}
+shadow: type HTTPComparison struct {Findings []Finding AssessedScope []string UnassessedScope []string}
+shadow: type ResourceChoices struct {CPURequestMilli, MemoryMiB int32}

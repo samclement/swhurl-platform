@@ -1,7 +1,7 @@
 {
   "kind": "v2-compilation",
   "version": 1,
-  "id": "comp-sha256:e461121ec5712fa0e3ab36dabf48f8bf6de1853a8e457796391e578a9b8af1f0",
+  "id": "comp-sha256:eebbc2aa267f45ed119152d26ac95c7f499686499d0d65ebb697a65cbf4c8513",
   "inputs": {
     "release": "rel-sha256:c0a198380d8ad269805e5ffdec3f94715acba8946a1deda4f9e2c66e7c673ea0",
     "instance": "inst-sha256:cfee25aa1b381a71cc9a01bd03e2e865120ccbb78d7a73195998e3d4a4d92f60",
@@ -9,7 +9,7 @@
   },
   "files": [
     {
-      "path": "v2-apps/demo-orders/prod/namespace.json",
+      "path": "v2-apps/instances/demo-orders/prod/namespace.json",
       "document": {
         "apiVersion": "v1",
         "kind": "Namespace",
@@ -25,7 +25,7 @@
       }
     },
     {
-      "path": "v2-apps/demo-orders/prod/helmrelease.json",
+      "path": "v2-apps/instances/demo-orders/prod/helmrelease.json",
       "document": {
         "apiVersion": "helm.toolkit.fluxcd.io/v2",
         "kind": "HelmRelease",
@@ -165,7 +165,7 @@
       }
     },
     {
-      "path": "v2-apps/demo-orders/prod/resourcequota.json",
+      "path": "v2-apps/instances/demo-orders/prod/resourcequota.json",
       "document": {
         "apiVersion": "v1",
         "kind": "ResourceQuota",
@@ -184,7 +184,7 @@
       }
     },
     {
-      "path": "v2-apps/demo-orders/prod/networkpolicy.json",
+      "path": "v2-apps/instances/demo-orders/prod/networkpolicy.json",
       "document": {
         "apiVersion": "networking.k8s.io/v1",
         "kind": "NetworkPolicy",
@@ -206,7 +206,7 @@
       }
     },
     {
-      "path": "v2-apps/demo-orders/prod/kustomization.yaml",
+      "path": "v2-apps/instances/demo-orders/prod/kustomization.yaml",
       "document": {
         "apiVersion": "kustomize.config.k8s.io/v1beta1",
         "kind": "Kustomization",
@@ -234,7 +234,7 @@
             }
           ],
           "interval": "10m",
-          "path": "./v2-apps/demo-orders/prod",
+          "path": "./v2-apps/instances/demo-orders/prod",
           "prune": true,
           "sourceRef": {
             "kind": "GitRepository",

@@ -196,6 +196,9 @@ The code is the machine contract; the field says where; the reason is prose for 
 | `identity_mismatch` | A `releaseId` assertion that differs from the computed release ID |
 | `wrong_application` | A candidate release for another application |
 | `stale_instance` | An expected revision that is not the current instance's |
+| `wrong_release` | Phase 2: compiling a release the instance does not select |
+| `over_quota` | Phase 2: an instance whose pods can never fit the profile's quota |
+| `ownership_conflict` | Phase 2: an object claimed by two compilations, or by one and someone else |
 
 When an input breaks several rules, the first in this order decides, so the same input always gets the same refusal: the document itself; then object by object, the top level first: missing required fields (in schema order), unsupported fields, nulls (each in key order); then types and integer ranges; then each record's fields in the order of its field table; then the identity assertion; then selection's contractual order above. An unsupported field is reported at its parent object (`unsupported: runtime: unsupported field`), because the key is input and is not echoed; a type or range error names the record (`release` or `instance`).
 
@@ -354,7 +357,7 @@ Judge model clarity and ease of change as well as binary characteristics before 
 
 ### Phase 2: establish compiler ownership
 
-**Contract approved 25 October 2026** (operator: digest-only images, one memory value, an output-based compilation ID, integrations removed for this phase, ownership checked within a compiled set and against a supplied inventory, output on stdout). Implementation status and evidence are at the end of this section.
+**Contract approved 25 October 2026** (operator: digest-only images, one memory value, an output-based compilation ID, integrations removed for this phase, ownership checked within a compiled set and against a supplied inventory, output on stdout; after the review, the egress proxy deferred, a quota-fit refusal and instance files under `instances/`). Implementation status and evidence are at the end of this section.
 
 ```text
 compile(instance + the release it selects + platform profile)
@@ -397,16 +400,18 @@ Timings that belong to the compiler (Helm and unit intervals, the 3-minute timeo
 | CPU and memory from image minimums and instance choices | **Change:** CPU request from the profile; memory request and limit both `configuration.memoryMiB` |
 | `replicas` optional | **Change:** always set; `0` means stopped |
 | ResourceQuota; a NetworkPolicy selecting the app's pods with no ingress for a private instance | **Preserve:** the isolation boundary |
+| Refusing an instance that can never fit its quota (`over_quota`: its pods and one for a rolling update, plus headroom for v1's other pods) | **Preserve** as `over_quota`, without the headroom, which covers pods (backups, certificate solvers) a phase-2 instance does not have |
 | `SWHURL_APP`, `SWHURL_ENV` | **Preserve** |
 | Notify URL, caller-token issuer and keys, the projected `notify` token | **Remove for phase 2:** integrations are [deferred](#6-deliberately-deferred) |
+| Egress proxy variables (`HOST_IP`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `NODE_USE_ENV_PROXY`, `JAVA_TOOL_OPTIONS`) and the egress port allocation every instance gets | **Remove for phase 2** ([deferred](#6-deliberately-deferred)): a v2 instance would reach outside directly, unlogged, so [phase 6](#phase-6-first-isolated-live-instance) decides egress before anything compiled runs |
 | Image automation; the render fingerprint annotation | **Remove:** automatic deploys are deferred; the compilation ID is in the compilation document, not in the resources |
 | Flux unit `app-<app>-<env>`: `dependsOn`, prune, wait, timeout | **Preserve**, at `<outputRoot>/units/`; its registration is returned, not written |
 
-The NetworkPolicy selects `app.kubernetes.io/instance: <app>`, which the chart sets to the Helm release name; Flux names the release after the HelmRelease when it has no `targetNamespace`, so the compiler sets none. Files are JSON (YAML's subset), so the standard library writes them: `<outputRoot>/<app>/<env>/{namespace,helmrelease,resourcequota,networkpolicy}.json`, a `kustomization.yaml` listing them, and `<outputRoot>/units/app-<app>-<env>.json`. Objects the chart renders (Deployment, Service, ServiceAccount) are owned through the HelmRelease; the inventory lists the objects compiled directly, by API group, kind, namespace and name.
+The NetworkPolicy selects `app.kubernetes.io/instance: <app>`, which the chart sets to the Helm release name; Flux names the release after the HelmRelease when it has no `targetNamespace`, so the compiler sets none. Files are JSON (YAML's subset), so the standard library writes them: `<outputRoot>/instances/<app>/<env>/{namespace,helmrelease,resourcequota,networkpolicy}.json`, a `kustomization.yaml` listing them, and `<outputRoot>/units/app-<app>-<env>.json`; no app name reaches the units folder. File paths are not ownership-checked: `CheckOwnership` compares cluster objects, so where a profile's `outputRoot` points (never at v1's `apps/`) is the profile's own choice. Objects the chart renders (Deployment, Service, ServiceAccount) are owned through the HelmRelease; the inventory lists the objects compiled directly, by API group, kind, namespace and name.
 
 **Compilation ID:** `comp-sha256:` over `["swhurl.compilation.v1", [[path, document], ...], [[group, kind, namespace, name, owner], ...], [registration, ...]]`, encoded as the record identities are, with each document as its own canonical JSON (keys sorted). The inputs' identities are recorded beside it and do not participate.
 
-**Refusals,** besides each record's own: `wrong_application` when the release is another application's, then `wrong_release` when it is not the one the instance selects; `ownership_conflict` from `CheckOwnership`, naming the object (an object identity is platform-chosen, not input values).
+**Refusals,** besides each record's own: `wrong_application` when the release is another application's, then `wrong_release` when it is not the one the instance selects, then `over_quota` (field: the first quota the pods exceed, in the profile's order) when the instance's replicas and one more for a rolling update, none when stopped, each with the profile's CPU request and the instance's memory, cannot fit the profile's quota; `ownership_conflict` from `CheckOwnership`, naming the object (an object identity is platform-chosen, not input values).
 
 **Output:** `swhurl-v2 compile --instance FILE --release FILE --profile FILE` prints one JSON document (`"kind": "v2-compilation", "version": 1`, with the inputs' identities, the files, the inventory, the registrations and the ID) to stdout and writes no file. Identical inputs give identical bytes: Kubernetes documents with sorted keys, the compilation document's own fields in a fixed order, no HTML escaping and a fixed file order. Exit codes are phase 1's.
 
@@ -419,7 +424,7 @@ The NetworkPolicy selects `app.kubernetes.io/instance: <app>`, which the chart s
 - The output has none of what phase 2 removes (tag, notify, caller tokens, team label, route, render annotation). Refusals: `wrong_release`, `wrong_application`, an invalid instance before either, an invalid profile; `CheckOwnership` passes staging with prod, refuses a repeated instance and a `foreign` HelmRelease by name, and does not claim objects the chart renders.
 - With the cached app-template 5.2.1, `helm template` of the golden HelmRelease renders a Deployment and Service with `image: ghcr.io/samclement/demo-orders@sha256:…`, one replica, the `/healthz` probes, 256Mi, uid 65532 and no service account token, and pods labelled as the NetworkPolicy selects; `kubectl kustomize` accepts the JSON files. Without `helm` the check skips, and fails under `REQUIRE_HELM=1`, as without the chart; a broken image fails it. CI fetches the chart before `make check-v2`, which it runs with `REQUIRE_HELM=1`.
 - Guardrails held: `public-api` caught the 19 new declarations (all additions, `api.txt` updated); `budgets` caught a CLI function at complexity 11, which was split.
-- **Independent review, 25 October 2026** (reviewer agent, read-only, on `1262960f`): OK with notes, no blockers. Fixed in the same change: (1) the isolation boundary rested on three names written separately, the HelmRelease name, the NetworkPolicy's selector and the inventory, and no test tied them (renaming the HelmRelease passed every test while its policy would select no pods); a kernel test now compares the inventory with what each file declares and the selector with the release name, and the chart test renders under the compiled name and checks every label the compiled policy selects; both of the reviewer's probes now fail; (2) the check for removed v1 items searched for `"team` and `"render` instead of the full `platform.swhurl.com/` keys; (6) the compilation ID's encoding is stated above, and the reviewer's independent Python recomputation matched both golden IDs; (7) the records-are-values statements name `delivery.dependsOn`; (8) an invalid profile is tested beside another application's release, a zero startup period names its own field, output-root segments are at most 63 characters, and two overstated sentences are corrected; (9) the CI step honours `XDG_CACHE_HOME`, as v1 and the test do. **Open, for the operator:** (3) v1 gives every instance the egress proxy's variables and port, which this table does not classify; (4) v1 refuses an instance that can never fit its quota, which the compiler accepts (and with one memory value, `requests.memory` always binds before `limits.memory`); (5) an app named `units` lands its files in the folder the unit files use, and file paths are not covered by the ownership check.
+- **Independent review, 25 October 2026** (reviewer agent, read-only, on `1262960f`): OK with notes, no blockers. Fixed in the same change: (1) the isolation boundary rested on three names written separately, the HelmRelease name, the NetworkPolicy's selector and the inventory, and no test tied them (renaming the HelmRelease passed every test while its policy would select no pods); a kernel test now compares the inventory with what each file declares and the selector with the release name, and the chart test renders under the compiled name and checks every label the compiled policy selects; both of the reviewer's probes now fail; (2) the check for removed v1 items searched for `"team` and `"render` instead of the full `platform.swhurl.com/` keys; (6) the compilation ID's encoding is stated above, and the reviewer's independent Python recomputation matched both golden IDs; (7) the records-are-values statements name `delivery.dependsOn`; (8) an invalid profile is tested beside another application's release, a zero startup period names its own field, output-root segments are at most 63 characters, and two overstated sentences are corrected; (9) the CI step honours `XDG_CACHE_HOME`, as v1 and the test do. **Decided by the operator the same day:** (3) the egress proxy is removed for phase 2 and decided in phase 6 (rows above); (4) the compiler refuses `over_quota`, as v1 does, without v1's headroom (with one memory value, `requests.memory` always binds before `limits.memory`); (5) instance files moved under `instances/`, and file paths are stated to be outside the ownership check. Evidence: `TestQuotaFit` (each quota field at and over its limit, a stopped instance needing nothing, no overflow at the largest values, the release checked first) and `TestNoAppReachesTheUnitsFolder`; `public-api` reported the one new code, `over_quota`.
 
 ### Phase 3: shadow, not synchronise
 
@@ -466,7 +471,7 @@ Use a new approved disposable instance, not an existing stateful app. Retain the
 
 Prove publication, reconciliation, intended artifact, readiness and access/isolation from a separate workload. Check that v1 instances and their owners remain unchanged. Exercise failure reporting and approved removal without deleting unrelated resources or data.
 
-Apply the new-component checklist before adding anything that runs, stores data or holds a credential. Any root Flux configuration changes require separate confirmation.
+Decide egress before the first instance runs: phase 2 generates no proxy variables or port allocation, so a v2 instance would reach outside the cluster directly and unlogged ([what is not implemented](#6-deliberately-deferred)). Apply the new-component checklist before adding anything that runs, stores data or holds a credential. Any root Flux configuration changes require separate confirmation.
 
 ### Phase 7: selective replacement
 
@@ -483,17 +488,32 @@ Stateful migration additionally requires demonstrated backup/restore, explicit r
 
 ## 6. Deliberately deferred
 
-Do not make feature parity the first goal. Initially defer:
+Do not make feature parity the first goal. This is the one list of what v1 does that v2 does not do yet: how v2 treats each today, and when it has to be decided. Update it in the change that defers, implements or removes something; a phase's own classification table links here. The list does not approve removing anything from v1.
 
-- Console repository creation and seed images.
-- Automatic release discovery and auto-merge.
-- Historical Activity reconstruction.
-- Live feature flags.
-- Events, calls and egress integrations.
-- Multiple stacks and app types.
-- Generic plugins, workflow engines and provider abstractions.
+| v1 feature | v2 today | Decide by |
+| --- | --- | --- |
+| Egress proxy: proxy variables, port allocation, egress grants | Not generated: a v2 instance would reach outside directly, unlogged | **Phase 6, before the first instance runs** |
+| Routes: `authenticated-web` and `public` exposure, Ingress, TLS, the sign-in middleware | Refused (`unsupported`): only `private` | The first instance that needs a route |
+| App kinds `worker` and `job` (a CronJob schedule); a command override | Refused (`unsupported`): only `web`, and no command | Phase 7, per app |
+| Teams: the namespace `team` label, team isolation | Not in the records; no label | Before an instance needs team isolation |
+| Calls between apps: caller tokens and signing keys, `SWHURL_<APP>_URL`, callers in the NetworkPolicy | Not generated | Phase 7, with the first app that calls another |
+| Notifications: `SWHURL_NOTIFY_URL`, the projected `notify` token | Not generated | Phase 7 |
+| Events: NATS users, streams and consumers | Not generated | Phase 7 |
+| Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |
+| Telemetry: the OTLP endpoint and its variables | Not generated | Phase 7 |
+| SQLite storage, backups and restore; alerts | Not generated | Phase 7, per app |
+| Resources from the image's minimums; a per-instance CPU choice | CPU from the profile; one memory value for request and limit | When an app needs more |
+| Quota headroom for an instance's other pods | Not counted: a phase-2 instance has no other pods | With the first feature that adds pods |
+| Image automation, automatic release discovery, auto-merge | Not generated | After phase 4's delivery |
+| The render fingerprint in the resources | The compilation ID is in the compilation document only | Phase 5, if observation needs it in the cluster |
+| The unit's registration in `clusters/home/kustomization.yaml` | Returned as a contribution, not written | Phase 4 |
+| v1's objects as `foreign` ownership | Empty | Phase 3 |
+| What an app offers (offers documents) | Not generated | Phase 7 |
+| Live feature flags | None | Later |
+| Console: repository creation, seed images, historical Activity | None | Later |
+| Multiple stacks and app types (the templates) | None | Later |
 
-This does not approve removing those features from v1. It keeps them out of the replacement's critical path while the core contract is proved.
+Not planned: generic plugins, workflow engines and provider abstractions.
 
 ## 7. Verification and execution gates
 

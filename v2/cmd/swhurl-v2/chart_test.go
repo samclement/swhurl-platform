@@ -117,7 +117,7 @@ func TestCompiledManifests(t *testing.T) {
 			t.Errorf("the pods lack %s: %s, which the NetworkPolicy selects:\n%s", key, value, labels)
 		}
 	}
-	built := output(t, kubectl, "kustomize", filepath.Join(dir, "v2-apps/demo-orders/prod"))
+	built := output(t, kubectl, "kustomize", filepath.Join(dir, "v2-apps/instances/demo-orders/prod"))
 	for _, want := range []string{"kind: Namespace", "kind: HelmRelease", "kind: ResourceQuota", "kind: NetworkPolicy"} {
 		if !strings.Contains(built, want) {
 			t.Errorf("kustomize's output lacks %q", want)

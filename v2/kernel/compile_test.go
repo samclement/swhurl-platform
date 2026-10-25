@@ -174,18 +174,18 @@ func TestCompiledResources(t *testing.T) {
 	c := compile(t, instance(t, "prod.json"), releaseFile(t, "r41.json"), profile(t))
 	f := files(c)
 	for path, want := range map[string][]string{
-		"v2-apps/demo-orders/prod/namespace.json": {`"name":"demo-orders-prod"`, `"platform.swhurl.com/exposure":"private"`},
-		"v2-apps/demo-orders/prod/helmrelease.json": {
+		"v2-apps/instances/demo-orders/prod/namespace.json": {`"name":"demo-orders-prod"`, `"platform.swhurl.com/exposure":"private"`},
+		"v2-apps/instances/demo-orders/prod/helmrelease.json": {
 			`"image":{"digest":"sha256:aaaa`, `"repository":"ghcr.io/samclement/demo-orders"}`,
 			`"env":{"SWHURL_APP":"demo-orders","SWHURL_ENV":"prod"}`, `"replicas":1`,
 			`"limits":{"memory":"256Mi"},"requests":{"cpu":"10m","memory":"256Mi"}`,
 			`"runAsUser":65532`, `"automountServiceAccountToken":false`, `"failureThreshold":24`,
 			`"sourceRef":{"kind":"HelmRepository","name":"bjw-s","namespace":"flux-system"}`, `"version":"5.2.1"`},
-		"v2-apps/demo-orders/prod/resourcequota.json": {`"hard":{"limits.memory":"4Gi","pods":"14","requests.cpu":"2","requests.memory":"2Gi"}`},
-		"v2-apps/demo-orders/prod/networkpolicy.json": {
+		"v2-apps/instances/demo-orders/prod/resourcequota.json": {`"hard":{"limits.memory":"4Gi","pods":"14","requests.cpu":"2","requests.memory":"2Gi"}`},
+		"v2-apps/instances/demo-orders/prod/networkpolicy.json": {
 			`"ingress":[]`, `"podSelector":{"matchLabels":{"app.kubernetes.io/instance":"demo-orders"}}`, `"policyTypes":["Ingress"]`},
-		"v2-apps/demo-orders/prod/kustomization.yaml": {`"resources":["namespace.json","helmrelease.json","resourcequota.json","networkpolicy.json"]`},
-		"v2-apps/units/app-demo-orders-prod.json": {`"path":"./v2-apps/demo-orders/prod"`, `"dependsOn":[{"name":"infra-base"}]`,
+		"v2-apps/instances/demo-orders/prod/kustomization.yaml": {`"resources":["namespace.json","helmrelease.json","resourcequota.json","networkpolicy.json"]`},
+		"v2-apps/units/app-demo-orders-prod.json": {`"path":"./v2-apps/instances/demo-orders/prod"`, `"dependsOn":[{"name":"infra-base"}]`,
 			`"prune":true`, `"wait":true`, `"timeout":"3m"`},
 	} {
 		for _, fragment := range want {
@@ -211,7 +211,7 @@ func TestCompiledResources(t *testing.T) {
 func TestCompilationChanges(t *testing.T) {
 	spec, r41, r42, p := instance(t, "prod.json"), releaseFile(t, "r41.json"), releaseFile(t, "r42.json"), profile(t)
 	base := compile(t, spec, r41, p)
-	folder := "v2-apps/demo-orders/prod/"
+	folder := "v2-apps/instances/demo-orders/prod/"
 	revision, _ := spec.Revision()
 	selected, err := SelectRelease(spec, r42, revision)
 	if err != nil {
@@ -335,6 +335,65 @@ func TestInventoryAndSelectorMatchTheFiles(t *testing.T) {
 	}
 	if release == "" || selected != release {
 		t.Errorf("the NetworkPolicy selects instance %q, the HelmRelease is %q", selected, release)
+	}
+}
+
+func TestQuotaFit(t *testing.T) {
+	r41, p := releaseFile(t, "r41.json"), profile(t)
+	spec := func(replicas, memory int32) InstanceSpec {
+		s := instance(t, "prod.json")
+		s.Configuration.Replicas, s.Configuration.MemoryMiB = replicas, memory
+		return s
+	}
+	cpu, limits := p, p
+	cpu.Workload.CPURequestMilli = 1001
+	limits.Quota.LimitsMemoryMiB = 511
+	for _, tt := range []struct {
+		name    string
+		spec    InstanceSpec
+		profile PlatformProfile
+		field   string
+	}{
+		{"13 replicas and a surge pod fill 14", spec(13, 64), p, ""},
+		{"14 replicas need 15 pods", spec(14, 64), p, "quota.pods"},
+		{"8 pods of 256Mi fill 2Gi", spec(7, 256), p, ""},
+		{"9 pods of 256Mi do not", spec(8, 256), p, "quota.requestsMemoryMiB"},
+		{"two pods of 1001m exceed 2 CPUs", spec(1, 256), cpu, "quota.requestsCpuMilli"},
+		{"a limit quota below the requests", spec(1, 256), limits, "quota.limitsMemoryMiB"},
+		{"stopped needs nothing", spec(0, 1<<30), p, ""},
+		{"no overflow", spec(1<<31-1, 1<<31-1), p, "quota.pods"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Compile(tt.spec, r41, tt.profile)
+			if tt.field == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			refusal(t, err, OverQuota, tt.field)
+		})
+	}
+	other := spec(14, 64)
+	other.Release = ReleaseID("rel-sha256:" + strings.Repeat("0", 64))
+	_, err := Compile(other, r41, p)
+	code(t, err, WrongRelease) // the release is checked before the quota
+}
+
+func TestNoAppReachesTheUnitsFolder(t *testing.T) {
+	r := releaseFile(t, "r41.json")
+	r.Application, r.ReleaseID = "units", ""
+	id, err := r.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := instance(t, "prod.json")
+	s.Application, s.Release = "units", id
+	c := compile(t, s, r, profile(t))
+	for _, file := range c.Files {
+		if strings.HasPrefix(file.Path, "v2-apps/units/") && file.Path != "v2-apps/units/app-units-prod.json" {
+			t.Errorf("an app's file is in the units folder: %s", file.Path)
+		}
 	}
 }
 

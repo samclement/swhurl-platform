@@ -29,17 +29,30 @@ Uncommitted: none
 `Uncommitted: none` must match a clean `git status` for that workstream's paths; to name work in progress instead, list the paths. Below the block, the page carries:
 
 - **Authority** — what the operator approved, and what is explicitly not approved.
-- **Slice record** — one per delivered slice:
+- **Slice record** — one per delivered slice, appended when the slice is committed. It answers the same eight invariants every time, with the evidence for each, so "done" means the gate rather than the code:
 
   ```text
   ## Slice <n>: <name> — <state>
   Outcome and the refusal it must produce:
   Owners and boundaries:
   What crosses each seam:
+
+  Invariants — say how this slice satisfies each, or that it does not apply and why:
+  1. v1 behaviour, files and live state are unchanged.
+  2. Pure packages take no effects (no clock, network, filesystem, environment, randomness, subprocess).
+  3. Golden bytes and identities are unchanged, or their change is explained; nothing is regenerated to pass.
+  4. Refusal codes and their precedence are unchanged, or the change is stated in the contract.
+  5. Failure paths are tested, not only success: unavailable is not absent, invalid is not unimplemented.
+  6. The result states its assessed and unassessed scope; nothing it did not read is reported as equal.
+  7. Offline checks are not live readiness.
+  8. This page and the gap list are updated in the same commit.
+
   Evidence:              <commands> → <result>, dated
-  Deferred rows touched: <docs/iteration-2-plan.md#6-deliberately-deferred>
+  Deferred rows touched: <link>
   Next gate:
   ```
+
+  Only invariant 8 is mechanical (`make check-docs`). The rest are what an independent review applies, which is where false parity and weakened baselines are actually caught.
 
 - **Resume** — the read-first links (three at most), the stop line, and the commands that prove the checkout matches the page.
 

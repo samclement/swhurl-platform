@@ -374,6 +374,8 @@ Each phase ends in something usable and independently checkable. Phases 1 and 2 
 | 6. First isolated live instance | Deploy a new disposable stateless instance owned only by v2 | Digest, readiness and private access boundary verified; removal demonstrated |
 | 7. Selective replacement | Add capabilities needed by the next chosen app; migrate one ownership boundary at a time | Each migration has parity/safety evidence and a defined recovery path |
 
+**Order approved 25 October 2026: retire risk, not numbers.** Phases 4–6 for one disposable instance come before the rest of phase 3. Delivery, ownership, observation and removal are the untested paths, and the bridge protects nothing until something runs; building it afterwards means it is built against a delivery contract known to work. The bridge is still required before any existing app is migrated (phase 7), and v1 stays untouched either way. The order of this table is therefore not the order of work: 1, 2, 3-slice-1, then 4 → 5 → 6 on one disposable instance, then 3.2–3.5, then 7.
+
 ### Phase 1: prove the semantic boundary
 
 Approved implementation: the [phase-1 contract](#2-phase-1-model-and-contract), tests and [offline CLI demonstration](#offline-cli-and-build). No compiler, bridge, publication, console, GitHub workflow or cluster deployment. The module has no third-party dependencies and builds with C disabled. Go 1.26.0 is the installed, pinned experimental toolchain; its status as the latest security patch has not been verified. Revisit the patch pin deliberately before distributing or deploying anything.
@@ -649,6 +651,29 @@ Use a new approved disposable instance, not an existing stateful app. Retain the
 Prove publication, reconciliation, intended artifact, readiness and access/isolation from a separate workload. Check that v1 instances and their owners remain unchanged. Exercise failure reporting and approved removal without deleting unrelated resources or data.
 
 Decide egress before the first instance runs: phase 2 generates no proxy variables or port allocation, so a v2 instance would reach outside the cluster directly and unlogged ([what is not implemented](#6-deliberately-deferred)). Apply the new-component checklist before adding anything that runs, stores data or holds a credential. Any root Flux configuration changes require separate confirmation.
+
+#### Decision needed: egress and credentials for the first instance
+
+**Not decided. Recommended below; nothing depends on it until the delivery slice is approved.** What is true today: the compiled [NetworkPolicy](../v2/kernel/render.go) declares `policyTypes: [Ingress]` and no `egress` rules, so Kubernetes allows every outbound connection from a v2 pod; the compiler emits no proxy variables and no port allocation. v1 sends every instance through the egress proxy, which logs each request with the instance and applies [grants](apps.md#reaching-outside-the-cluster). A v2 instance as compiled today is therefore **weaker** than a v1 instance: it egresses, and nothing records that it did.
+
+**Egress, for the first disposable instance:**
+
+| Option | What it takes | Trade-off |
+| --- | --- | --- |
+| **1. Deny all egress** (`policyTypes: [Ingress, Egress]`, no rules) — *recommended* | One compiler change and its golden files | Strictly safer than v1: the instance answers probes and reaches nothing. Needs no allocation model. Proves the isolation boundary properly. The instance cannot call anything, which the first disposable one does not need |
+| 2. Through the egress proxy, as v1 does | A pure allocation decision, a supplied allocation snapshot, the six proxy variables, and a policy allowing only the proxy — a slice of its own | v1 parity and per-instance log attribution. The allocation is the boundary v1 gets wrong by mixing decision, filesystem and keys, so it deserves a slice, not a corner of this one |
+| 3. Direct egress, unlogged | Nothing | **Rejected.** Silently weaker than v1, and it makes the grant model unenforceable for anything v2 later owns |
+| 4. Proxy with a fixed shared identity, no allocation | The variables only | **Rejected for now.** Logs stop attributing requests to an instance, and the allocation is the decision that needs designing anyway |
+
+**Credentials, for delivery and observation:**
+
+| Option | What it takes | Trade-off |
+| --- | --- | --- |
+| **1. The operator's own credentials, run from the host** — *recommended* | Nothing new: push with the operator's Git auth, read the cluster with `$HOME/.kube/config` | No new Secret, no new runner, no rotation, no second control plane; every acceptance criterion (non-force publish, failed preparation publishes nothing, ownership) is provable locally. Delivery is not unattended |
+| 2. In-cluster writer with a dedicated deploy key and RBAC | A workload, a Secret, rotation and its own permissions | Automation, at the cost of exactly the second live control plane the approach section warns about |
+| 3. A GitHub Actions job | Workflow, bot token, scoped permissions | Automation that reuses CI trust, but phase 4 deliberately prefers one published commit to an asynchronous bot while the contract is unproven |
+
+**What each answer changes:** option 1 for egress makes the compiler's egress policy a slice of its own, with its golden files changed and the change explained rather than regenerated (invariant 3); that slice also updates the [deferred row](#6-deliberately-deferred) for egress to "deny-all decided; the proxy path is due with the first instance that needs to reach outside". Option 1 for credentials decides nothing in code: it is how the delivery slice is exercised. **What would change these recommendations:** a first instance that must call another app or the internet (then egress 2), or delivery that must be unattended (then credentials 2 or 3).
 
 ### Phase 7: selective replacement
 

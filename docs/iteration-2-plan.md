@@ -874,6 +874,31 @@ Let the next migration supply the capability requirement:
 3. Add selected console commands only after the domain and delivery contracts work through Git/CLI.
 4. Retire a v1 path only once its replacement owns the relevant inputs, output and operations.
 
+#### Proposed slice: calls between apps (decision brief, 25 October 2026 — not approved)
+
+Every web instance in this repository needs at least one domain v2 lacks, and `swhurl-try-11` staging needs only **calls** (two, no events, no database). This brief states what v1 does, what v2 would have to own, and the four decisions that are the operator's.
+
+**What v1 does, from its own records and rendered objects:**
+
+| Fact | v1's mechanism |
+| --- | --- |
+| Consent | The caller declares `calls: [app]`; the callee declares `allows: [app]` or `allows: [team:<team>]`. A pair is *connected* only when both agree; a missing half is pending, not an error |
+| Address | Caller env `SWHURL_SERVICE_<CALLEE>_URL` = `http://<callee>.<callee>-$(SWHURL_ENV).svc.cluster.local:<port>` — the callee in the caller's own environment, over its Service |
+| Credential | A **projected service-account token** at `/var/run/swhurl/tokens/<callee>/token`, `audience: <callee>`, ten minutes, kubelet-rotated; the Kubernetes API refuses it and so does any app other than the callee |
+| Verification | The callee's app verifies the token with `SWHURL_AUTH_ISSUER` and `SWHURL_AUTH_KEYS` (the cluster's public keys, inlined in env from `apps/signing-keys.json`) and accepts only callers listed in `SWHURL_ALLOWED_CALLERS` |
+| Network | The callee's policy admits each allowed caller's pods on its port. **v1's caller has no egress policy at all**, which is where v2 differs |
+
+**What v2 would own, and the four decisions:**
+
+1. **Consent model — both sides or the caller alone?** *Recommend keeping both*: the callee's `allows` is a real authorisation, and v1's pending/connected distinction is worth preserving. It forces one thing: a connection cannot be resolved by one instance, so rendering needs all instances' declarations — a pure resolver over supplied declarations, run where the snapshot already is.
+2. **Egress path for a call — direct, or through the egress proxy?** *Recommend direct*: a call is intra-cluster traffic to a Service. v2's "deny all egress" would then gain exactly one narrow exception per declared callee (an egress rule admitting that callee's pods on its port), which is **stronger than v1** rather than weaker. The proxy stays what it is for: internet egress, still deferred.
+3. **Credential — the projected audience token, or something simpler?** *Recommend the projection*: it is the platform's actual security property, the `call-tokens` rule already forbids audience-less projections, and the app templates verify exactly this token. A shared secret would be a second mechanism to rotate and a weaker one.
+4. **Where the verification keys come from.** *Recommend the platform profile*, as `auth.issuer` and `auth.keys` (the public keys from `apps/signing-keys.json`). They are rendered into every instance's env, so they are genuinely part of its identity: rotating them changes the profile ID and every compilation, which is correct rather than churn to avoid. The alternative — a platform-owned ConfigMap mounted into pods — avoids that, but needs a `valueFrom`-style env the renderer does not have and a new platform object v2 must own.
+
+**Scope of the slice if approved:** a pure resolver (connected, pending-with-reason, and the three errors v1 defines: a self-call, a callee that is a worker or job, a malformed declaration) and rendering for one connected pair — caller env and token projection, callee `SWHURL_ALLOWED_CALLERS`, `SWHURL_AUTH_ISSUER`/`SWHURL_AUTH_KEYS` on both sides, and policy rules both ways. Offline tests render and compare the pair; the bridge's `calls` gap closes; observation and the comparator still do not verify a live call (named as out of scope). Live verification would come with the migration itself, not as a separate throwaway.
+
+**Not in this slice:** calls to an app in another environment (v1 allows only the same one), internet egress and its proxy, `team:<team>` grants resolved from `apps/teams.yaml` beyond what the declaration states, and the `x-swhurl-user` on-behalf-of header (the app's own behaviour, unchanged).
+
 Existing-instance migration follows the [documented staged Flux ownership handover](architecture.md#flux-units). Do not change the old unit's path in the cutover commit or permit it to prune handed-over resources.
 
 Stateful migration additionally requires demonstrated backup/restore, explicit resource-retention rules and operator approval. It must not be the first migration exercise. Define recovery per migration; do not imply that rolling back an image reverses data migrations.

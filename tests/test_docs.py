@@ -23,13 +23,14 @@ def row(name='Alpha', kind='main', state='approved', gate='a decision', needs='o
     return f'| {name} | {kind} | {state} | a slice | {gate} | {needs} | {page} | {paths} |\n'
 
 
-def fake(status='', diff='', commits=(), pages='docs/alpha-status.md\n'):
-    """A runner answering the four Git reads; ``commits`` are the hashes some ref reaches."""
+def fake(status='', diff='', commits=(), pages='docs/alpha-status.md\n', shallow='false'):
+    """A runner answering the Git reads; ``commits`` are the hashes some ref reaches."""
     reachable = ''.join(f'{commit}0000000000000000000000000000000000\n' for commit in commits)
     return (FakeRunner()
             .on('git', 'status', '--porcelain', stdout=status)
             .on('git', 'diff', '--name-only', stdout=diff)
             .on('git', 'rev-list', stdout=reachable)
+            .on('git', 'rev-parse', stdout=shallow + '\n')
             .on('git', 'ls-files', stdout=pages))
 
 
@@ -148,6 +149,12 @@ class GitTests(Tree):
         report, output = self.check(page=page, runner=fake(commits={'abcdef1234'}))
         self.assertEqual(report.failures, 0, output)
 
+    def test_a_shallow_checkout_skips_citations_rather_than_failing_them(self):
+        page = PAGE + '\nCommitted in `abcdef1234`.\n'
+        report, output = self.check(page=page, runner=fake(shallow='true'))
+        self.assertEqual(report.failures, 0, output)
+        self.assertIn('shallow', output)
+
     def test_changing_a_workstream_without_its_page_fails(self):
         report, output = self.check(page=PAGE, runner=fake(diff='v2/kernel/render.go\n'))
         self.assertIn('changed without docs/alpha-status.md', output)
@@ -166,6 +173,8 @@ class RepositoryTests(unittest.TestCase):
         report = Report(out=io.StringIO())
         docs.check(Runner(cwd=ROOT), report)
         self.assertEqual(report.failures, 0, '\n'.join(report.lines))
+        if not docs.shallow(Runner(cwd=ROOT)):
+            self.assertNotIn('shallow', '\n'.join(report.lines))
 
     def test_every_workstream_page_is_listed(self):
         rows, problems = docs.registry_rows((ROOT / docs.REGISTRY).read_text())

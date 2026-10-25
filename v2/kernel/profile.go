@@ -28,6 +28,24 @@ type PlatformProfile struct {
 	// Storage is the platform's class for an instance's data volume. A database instance cannot be
 	// rendered without it; the size belongs to the instance.
 	Storage PlatformStorage `json:"storage"`
+	// Egress is the platform's own way out: the proxy every instance reaches the internet through, and
+	// the DNS service that lets it resolve a name at all.
+	Egress EgressProxy `json:"egress"`
+	DNS    DNS         `json:"dns"`
+}
+
+// EgressProxy is where the platform's proxy lives and which pods serve it. The instance's own port is
+// rendered from its allocation; this block is the same for every instance.
+type EgressProxy struct {
+	Address   string            `json:"address"`
+	Namespace string            `json:"namespace"`
+	Labels    map[string]string `json:"labels"`
+}
+
+// DNS is the cluster's name service: no instance may reach anything without resolving it first.
+type DNS struct {
+	Namespace string            `json:"namespace"`
+	Labels    map[string]string `json:"labels"`
 }
 
 // PlatformStorage is where a data volume lives and what survives its instance.
@@ -110,7 +128,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 	if err := document(data); err != nil {
 		return PlatformProfile{}, err
 	}
-	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing", "auth", "storage")
+	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing", "auth", "storage", "egress", "dns")
 	if err != nil {
 		return PlatformProfile{}, err
 	}
@@ -127,6 +145,8 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"routing", []string{"baseDomain", "class", "middleware", "issuer", "ingressNamespace", "ingressLabels"}},
 		{"auth", []string{"issuer", "keys"}},
 		{"storage", []string{"class"}},
+		{"egress", []string{"address", "namespace", "labels"}},
+		{"dns", []string{"namespace", "labels"}},
 	} {
 		if _, present := root[part.key]; !present {
 			continue
@@ -165,13 +185,21 @@ func (p PlatformProfile) validate() error {
 	if err := p.Quota.validate(); err != nil {
 		return err
 	}
-	if err := p.Routing.validate(); err != nil {
-		return err
+	return p.validateBlocks()
+}
+
+// validateBlocks checks the platform's optional blocks, in the order of the field table: routing, egress,
+// DNS, storage and auth.
+func (p PlatformProfile) validateBlocks() error {
+	for _, block := range []interface{ validate() error }{p.Routing, p.Egress, p.DNS, p.Auth} {
+		if err := block.validate(); err != nil {
+			return err
+		}
 	}
 	if p.Storage.Class != "" && !labelPattern.MatchString(p.Storage.Class) {
 		return refuse(Invalid, "storage.class", "expected a DNS label")
 	}
-	return p.Auth.validate()
+	return nil
 }
 
 // validate checks a configured auth block: an https issuer, and keys that are a JWKS document.
@@ -184,6 +212,45 @@ func (a Auth) validate() error {
 	}
 	if !json.Valid([]byte(a.Keys)) || !jwksPattern.MatchString(a.Keys) {
 		return refuse(Invalid, "auth.keys", "expected a JSON Web Key Set")
+	}
+	return nil
+}
+
+// validate checks the platform's proxy block when it states one: a DNS name, a namespace and the pods
+// that serve it.
+func (e EgressProxy) validate() error {
+	if e.Address == "" && e.Namespace == "" && len(e.Labels) == 0 {
+		return nil
+	}
+	if !domainPattern.MatchString(e.Address) {
+		return refuse(Invalid, "egress.address", "expected a DNS name")
+	}
+	if !labelPattern.MatchString(e.Namespace) {
+		return refuse(Invalid, "egress.namespace", "expected a DNS label")
+	}
+	return validateLabels("egress.labels", e.Labels)
+}
+
+// validate checks the cluster's DNS block the same way.
+func (d DNS) validate() error {
+	if d.Namespace == "" && len(d.Labels) == 0 {
+		return nil
+	}
+	if !labelPattern.MatchString(d.Namespace) {
+		return refuse(Invalid, "dns.namespace", "expected a DNS label")
+	}
+	return validateLabels("dns.labels", d.Labels)
+}
+
+// validateLabels checks a selector's labels: keys as label keys, values as DNS labels.
+func validateLabels(field string, labels map[string]string) error {
+	if len(labels) == 0 {
+		return refuse(Invalid, field, "expected at least one label")
+	}
+	for _, key := range sortedKeys(labels) {
+		if !labelKeyPattern.MatchString(key) || !labelPattern.MatchString(labels[key]) {
+			return refuse(Invalid, field, "expected label keys and DNS-label values")
+		}
 	}
 	return nil
 }
@@ -320,7 +387,9 @@ func profileCanonical(p PlatformProfile) []byte {
 		// the profile's identity; an absent block encodes as empty values rather than being omitted.
 		p.Routing.BaseDomain, p.Routing.Class, p.Routing.Middleware, p.Routing.Issuer,
 		p.Routing.IngressNamespace, labelPairs(p.Routing.IngressLabels),
-		p.Auth.Issuer, p.Auth.Keys, p.Storage.Class})
+		p.Auth.Issuer, p.Auth.Keys, p.Storage.Class,
+		p.Egress.Address, p.Egress.Namespace, labelPairs(p.Egress.Labels),
+		p.DNS.Namespace, labelPairs(p.DNS.Labels)})
 }
 
 func (p PlatformProfile) ID() (ProfileID, error) {

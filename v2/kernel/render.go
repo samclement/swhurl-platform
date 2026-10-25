@@ -27,6 +27,14 @@ type HTTPInstance struct {
 	Callers                  []string
 	Database                 string // "sqlite", or empty for an image that keeps no state
 	Storage                  Storage
+	Egress                   *Egress
+}
+
+// Egress is an instance's way out: its own port on the platform's proxy, and the hosts it may reach. The
+// port identifies the instance to the proxy, so it is allocated and kept, never derived.
+type Egress struct {
+	Port   int32
+	Grants []string
 }
 
 // Call is one connected callee: the app and the port its Service listens on.
@@ -45,29 +53,8 @@ type ResourceSet struct {
 // RenderHTTP builds resources from known facts without inventing release provenance.
 // Validation order is names/environment, workload, configuration, profile, quota fit.
 func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (ResourceSet, error) {
-	if err := validateNames(spec.Application, spec.Environment); err != nil {
-		return ResourceSet{}, err
-	}
-	if err := validateImage(http.Image, http.Digest); err != nil {
-		return ResourceSet{}, err
-	}
-	if err := validateHTTP(http.Port, http.HealthPath, http.UID); err != nil {
-		return ResourceSet{}, err
-	}
-	exposure, err := exposureOf(spec.Exposure, profile)
+	exposure, err := spec.validate(http, profile)
 	if err != nil {
-		return ResourceSet{}, err
-	}
-	if err := spec.Configuration.validate(); err != nil {
-		return ResourceSet{}, err
-	}
-	if err := profile.validate(); err != nil {
-		return ResourceSet{}, err
-	}
-	if err := fits(spec.Configuration, profile); err != nil {
-		return ResourceSet{}, err
-	}
-	if err := spec.validateResources(profile); err != nil {
 		return ResourceSet{}, err
 	}
 	// Instances under the instance root; units under the profile's unit root, which kustomize can list.
@@ -123,20 +110,25 @@ func helmRelease(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) 
 	chart := manifest{"chart": profile.Chart.Name, "version": profile.Chart.Version, "interval": helmInterval,
 		"sourceRef": manifest{"kind": "HelmRepository", "name": profile.Chart.Repository, "namespace": profile.Chart.RepositoryNamespace}}
 	remediation := manifest{"remediation": manifest{"retries": retries}}
+	meta := metadata(spec.Application, namespaceName(spec))
+	if spec.Egress != nil && len(spec.Egress.Grants) > 0 {
+		// What the proxy may read from its log for this instance: the hosts the instance declares it needs.
+		meta["annotations"] = manifest{labelDomain + "egress": strings.Join(spec.Egress.Grants, ",")}
+	}
 	return manifest{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease",
-		"metadata": metadata(spec.Application, namespaceName(spec)),
+		"metadata": meta,
 		"spec": manifest{"interval": helmInterval, "timeout": failAfter, "chart": manifest{"spec": chart},
 			"install": remediation, "upgrade": manifest{"remediation": manifest{"retries": retries}},
-			"values": values(spec, http, profile.Workload, profile.Storage.Class)}}
+			"values": values(spec, http, profile.Workload, profile.Storage.Class, profile.Egress.Address)}}
 }
 
 // values are the chart's values: one controller, one container, its Service and /tmp.
-func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClass string) manifest {
+func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClass, egressAddress string) manifest {
 	uid := http.UID
 	pod := manifest{"automountServiceAccountToken": false, "securityContext": manifest{
 		"runAsNonRoot": true, "runAsUser": uid, "runAsGroup": uid, "fsGroup": uid,
 		"seccompProfile": manifest{"type": "RuntimeDefault"}}}
-	controller := manifest{"replicas": spec.Configuration.Replicas, "containers": manifest{"main": container(spec, http, workload)}}
+	controller := manifest{"replicas": spec.Configuration.Replicas, "containers": manifest{"main": container(spec, http, workload, egressAddress)}}
 	if spec.Database == "sqlite" {
 		// One pod at a time: a rolling update would open one database file twice.
 		controller["strategy"] = "Recreate"
@@ -156,11 +148,22 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClas
 			"ports": manifest{"http": manifest{"port": http.Port}}}}}
 }
 
-func container(spec HTTPInstance, http HTTPWorkload, workload Workload) manifest {
+func container(spec HTTPInstance, http HTTPWorkload, workload Workload, egressAddress string) manifest {
 	memory := fmt.Sprintf("%dMi", spec.Configuration.MemoryMiB)
 	env := manifest{"SWHURL_APP": spec.Application, "SWHURL_ENV": spec.Environment}
 	if spec.Database == "sqlite" {
 		env["DATABASE_PATH"] = "/data/app.db"
+	}
+	if spec.Egress != nil {
+		// Every client library must use the proxy, and the JVM keeps its own list.
+		address := fmt.Sprintf("http://%s:%d", egressAddress, spec.Egress.Port)
+		env["HOST_IP"] = manifest{"valueFrom": manifest{"fieldRef": manifest{"fieldPath": "status.hostIP"}}}
+		env["HTTP_PROXY"] = address
+		env["HTTPS_PROXY"] = address
+		env["NODE_USE_ENV_PROXY"] = "1"
+		env["NO_PROXY"] = "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)"
+		env["JAVA_TOOL_OPTIONS"] = fmt.Sprintf("-Dhttp.proxyHost=%s -Dhttp.proxyPort=%d -Dhttps.proxyHost=%s -Dhttps.proxyPort=%d -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)",
+			egressAddress, spec.Egress.Port, egressAddress, spec.Egress.Port)
 	}
 	for _, call := range spec.Calls {
 		env[callVariable(call.Callee)] = calleeAddress(call, spec.Environment)
@@ -276,10 +279,39 @@ func networkPolicy(spec HTTPInstance, exposure string, http HTTPWorkload, profil
 			"ports": []any{manifest{"port": call.Port, "protocol": "TCP"}},
 		})
 	}
+	// Anything that leaves the pod's own namespace needs a name resolved first, and a proxy port is the
+	// only way out: both are admitted narrowly, and nothing else is.
+	if len(spec.Calls) > 0 || spec.Egress != nil {
+		egressRules = append(egressRules, manifest{
+			"to": []any{manifest{
+				"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": profile.DNS.Namespace}},
+				"podSelector":       manifest{"matchLabels": labelManifest(profile.DNS.Labels)},
+			}},
+			"ports": []any{manifest{"port": 53, "protocol": "UDP"}, manifest{"port": 53, "protocol": "TCP"}},
+		})
+	}
+	if spec.Egress != nil {
+		egressRules = append(egressRules, manifest{
+			"to": []any{manifest{
+				"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": profile.Egress.Namespace}},
+				"podSelector":       manifest{"matchLabels": labelManifest(profile.Egress.Labels)},
+			}},
+			"ports": []any{manifest{"port": spec.Egress.Port, "protocol": "TCP"}},
+		})
+	}
 	return manifest{"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
 		"metadata": metadata(spec.Application, namespaceName(spec)),
 		"spec": manifest{"podSelector": manifest{"matchLabels": manifest{instanceLabel: spec.Application}},
 			"policyTypes": []any{"Ingress", "Egress"}, "ingress": ingressRules, "egress": egressRules}}
+}
+
+// labelManifest is a label set as the map a selector needs.
+func labelManifest(labels map[string]string) manifest {
+	out := manifest{}
+	for key, value := range labels {
+		out[key] = value
+	}
+	return out
 }
 
 // peerSelector is one instance's own pods in its own environment: the only peer a call or a consent
@@ -327,6 +359,37 @@ func unit(spec HTTPInstance, profile PlatformProfile, folder string) manifest {
 			"path":      "./" + folder, "prune": true, "wait": true, "timeout": failAfter}}
 }
 
+// validate runs every check the renderer makes, in a fixed order, and returns the exposure the files are
+// rendered for.
+func (spec HTTPInstance) validate(http HTTPWorkload, profile PlatformProfile) (string, error) {
+	if err := validateNames(spec.Application, spec.Environment); err != nil {
+		return "", err
+	}
+	if err := validateImage(http.Image, http.Digest); err != nil {
+		return "", err
+	}
+	if err := validateHTTP(http.Port, http.HealthPath, http.UID); err != nil {
+		return "", err
+	}
+	exposure, err := exposureOf(spec.Exposure, profile)
+	if err != nil {
+		return "", err
+	}
+	if err := spec.Configuration.validate(); err != nil {
+		return "", err
+	}
+	if err := profile.validate(); err != nil {
+		return "", err
+	}
+	if err := fits(spec.Configuration, profile); err != nil {
+		return "", err
+	}
+	if err := spec.validateResources(profile); err != nil {
+		return "", err
+	}
+	return exposure, spec.validateEgress(profile)
+}
+
 // exposureOf is the exposure the files are rendered for: absent means private, and a route needs the
 // platform's routing facts before one can be rendered.
 func exposureOf(stated string, profile PlatformProfile) (string, error) {
@@ -370,6 +433,21 @@ func resourcesOf(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile, 
 		}{"auth.json", authConfigMap(spec, profile.Auth)})
 	}
 	return resources
+}
+
+// validateEgress checks an allocated way out: a port in the range the platform proxies on, and a proxy
+// the profile states.
+func (spec HTTPInstance) validateEgress(profile PlatformProfile) error {
+	if spec.Egress == nil {
+		return nil
+	}
+	if spec.Egress.Port < 1024 || spec.Egress.Port > 65535 {
+		return refuse(Invalid, "egress.port", "expected an unprivileged port")
+	}
+	if profile.Egress.Address == "" {
+		return refuse(Unsupported, "egress", "the profile states no proxy")
+	}
+	return nil
 }
 
 // validateResources checks what an instance adds to its workload: the pairs it takes part in and the volume

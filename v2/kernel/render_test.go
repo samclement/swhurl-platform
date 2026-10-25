@@ -344,7 +344,8 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 	// The policy reaches out only to the callee, on the callee's port, and admits only the caller's pods.
 	callerPolicy := documentOf(t, rendered, "networkpolicy.json")["spec"].(map[string]any)
 	egress := callerPolicy["egress"].([]any)
-	if len(egress) != 1 {
+	// Two rules: the callee's pods on the call's port, and the DNS service that resolves its name.
+	if len(egress) != 2 {
 		t.Fatalf("caller egress: %v", egress)
 	}
 	to := egress[0].(map[string]any)["to"].([]any)[0].(map[string]any)
@@ -499,5 +500,87 @@ func TestStorageRefusals(t *testing.T) {
 		refusal(t, err, Unsupported, "database")
 	} else {
 		t.Fatal("a database v2 does not support rendered")
+	}
+}
+
+// An allocated instance reaches the internet only through its own port on the platform's proxy, and it can
+// resolve a name at all only because DNS is admitted with it.
+func TestEgressRendersTheProxyAndDNS(t *testing.T) {
+	instance, workload := previewFacts()
+	instance.Egress = &Egress{Port: 30120, Grants: []string{"api.stripe.com:443", "*.example.com:8443"}}
+	profile := profile(t)
+	rendered, err := RenderHTTP(instance, workload, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
+	container := values["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)
+	env := container["env"].(map[string]any)
+	address := "http://" + profile.Egress.Address + ":30120"
+	if env["HTTP_PROXY"] != address || env["HTTPS_PROXY"] != address || env["NODE_USE_ENV_PROXY"] != "1" {
+		t.Fatalf("the proxy variables: %v", env)
+	}
+	if env["NO_PROXY"] != "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)" {
+		t.Fatalf("NO_PROXY: %v", env["NO_PROXY"])
+	}
+	hostIP := env["HOST_IP"].(map[string]any)["valueFrom"].(map[string]any)["fieldRef"].(map[string]any)
+	if hostIP["fieldPath"] != "status.hostIP" {
+		t.Fatalf("HOST_IP: %v", env["HOST_IP"])
+	}
+	if options := env["JAVA_TOOL_OPTIONS"].(string); !strings.Contains(options, "-Dhttp.proxyPort=30120") {
+		t.Fatalf("the JVM's proxy properties: %v", options)
+	}
+	// The declared grants are what the proxy reads from its log for this instance.
+	release := documentOf(t, rendered, "helmrelease.json")
+	annotations := release["metadata"].(map[string]any)["annotations"].(map[string]any)
+	if annotations["platform.swhurl.com/egress"] != "api.stripe.com:443,*.example.com:8443" {
+		t.Fatalf("the egress annotation: %v", annotations)
+	}
+	// The policy admits the proxy's pods on that port and DNS, and nothing else.
+	egress := documentOf(t, rendered, "networkpolicy.json")["spec"].(map[string]any)["egress"].([]any)
+	if len(egress) != 2 {
+		t.Fatalf("egress rules: %v", egress)
+	}
+	proxy := egress[1].(map[string]any)["to"].([]any)[0].(map[string]any)["namespaceSelector"].(map[string]any)["matchLabels"].(map[string]any)
+	if proxy["kubernetes.io/metadata.name"] != "egress" {
+		t.Fatalf("the proxy peer: %v", proxy)
+	}
+	if port := egress[1].(map[string]any)["ports"].([]any)[0].(map[string]any); port["port"] != float64(30120) {
+		t.Fatalf("the proxy port: %v", port)
+	}
+
+	// Without an allocation there is no proxy variable and no proxy rule.
+	stateless, _ := previewFacts()
+	plain, err := RenderHTTP(stateless, workload, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainValues := documentOf(t, plain, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
+	plainContainer := plainValues["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)
+	if _, found := plainContainer["env"].(map[string]any)["HTTP_PROXY"]; found {
+		t.Fatal("an unallocated instance was told to use the proxy")
+	}
+	if rules := documentOf(t, plain, "networkpolicy.json")["spec"].(map[string]any)["egress"].([]any); len(rules) != 0 {
+		t.Fatalf("an unallocated instance egresses: %v", rules)
+	}
+}
+
+// An allocation must be usable and the platform must state a proxy.
+func TestEgressRefusals(t *testing.T) {
+	instance, workload := previewFacts()
+	profile := profile(t)
+	instance.Egress = &Egress{Port: 80}
+	if _, err := RenderHTTP(instance, workload, profile); err != nil {
+		refusal(t, err, Invalid, "egress.port")
+	} else {
+		t.Fatal("a privileged proxy port rendered")
+	}
+	instance.Egress = &Egress{Port: 30120}
+	without := profile
+	without.Egress = EgressProxy{}
+	if _, err := RenderHTTP(instance, workload, without); err != nil {
+		refusal(t, err, Unsupported, "egress")
+	} else {
+		t.Fatal("an allocation without a platform proxy rendered")
 	}
 }

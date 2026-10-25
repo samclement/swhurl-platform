@@ -17,12 +17,6 @@ spec:
       podSelector:
         matchLabels:
           app.kubernetes.io/name: traefik
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: swhurl-try-11-staging
-      podSelector:
-        matchLabels:
-          app.kubernetes.io/instance: swhurl-try-11
     ports:
     - port: 8080
       protocol: TCP

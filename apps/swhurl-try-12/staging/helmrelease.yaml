@@ -6,7 +6,7 @@ metadata:
   annotations:
     platform.swhurl.com/api-description: /openapi.yaml
     platform.swhurl.com/offers: e66954f
-    platform.swhurl.com/render: 8771cca45d2420534ee14972ee315dd7c8c1fef9d036800825fc791174daa432
+    platform.swhurl.com/render: 3e37fbd28b9ad2f6efc414ddca4ac250575fe10ffe75bcf505eb5215356e8389
 spec:
   interval: 30m
   timeout: 3m
@@ -72,7 +72,6 @@ spec:
               SWHURL_EVENTS_PUBLISH: visited
               SWHURL_EVENTS_NKEY: UAJUO75UCZ2KQUCMEXSZIJPHME3WN26A6NEA5772V2JGY5FUBQLGHYU6
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
-              SWHURL_ALLOWED_CALLERS: swhurl-try-11
               HTTP_PROXY: http://egress.egress.svc.cluster.local:30107
               HTTPS_PROXY: http://egress.egress.svc.cluster.local:30107
               JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30107 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30107 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)

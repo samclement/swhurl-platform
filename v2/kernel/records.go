@@ -55,12 +55,15 @@ type Runtime struct {
 // ReleaseID is an optional assertion on input; DecodeRelease fills it on success.
 // Constructing a value does not validate it. ID, encoding and selection all validate.
 type ReleaseBundle struct {
-	SchemaVersion int32     `json:"schemaVersion"`
-	Application   string    `json:"application"`
-	Source        Source    `json:"source"`
-	Artifact      Artifact  `json:"artifact"`
-	Runtime       Runtime   `json:"runtime"`
-	ReleaseID     ReleaseID `json:"releaseId"`
+	SchemaVersion int32    `json:"schemaVersion"`
+	Application   string   `json:"application"`
+	Source        Source   `json:"source"`
+	Artifact      Artifact `json:"artifact"`
+	Runtime       Runtime  `json:"runtime"`
+	// Database is what the image needs to keep state: "sqlite", or empty for none. It is a release fact
+	// because the image is what depends on it, and an instance without a volume for it cannot run.
+	Database  string    `json:"database,omitempty"`
+	ReleaseID ReleaseID `json:"releaseId"`
 }
 
 type Configuration struct {
@@ -83,6 +86,14 @@ type InstanceSpec struct {
 	Configuration Configuration `json:"configuration"`
 	Grants        Grants        `json:"grants"`
 	Bindings      Bindings      `json:"bindings"`
+	// Storage is the volume the instance asks for: a size in MiB, and nothing else. The class belongs to
+	// the platform; a size is a decision, so there is no default.
+	Storage Storage `json:"storage,omitempty"`
+}
+
+// Storage is one instance's data volume. A size of zero means the instance asks for none.
+type Storage struct {
+	SizeMiB int32 `json:"sizeMiB,omitempty"`
 }
 
 var (
@@ -111,7 +122,13 @@ func (r ReleaseBundle) validate() error {
 	if err := r.Artifact.validate(); err != nil {
 		return err
 	}
-	return r.Runtime.validate()
+	if err := r.Runtime.validate(); err != nil {
+		return err
+	}
+	if r.Database != "" && r.Database != "sqlite" {
+		return refuse(Unsupported, "database", "only sqlite is supported")
+	}
+	return nil
 }
 
 func (s Source) validate() error {
@@ -156,6 +173,9 @@ func (s InstanceSpec) validate() error {
 	}
 	if err := s.Configuration.validate(); err != nil {
 		return err
+	}
+	if s.Storage.SizeMiB < 0 {
+		return refuse(Invalid, "storage.sizeMiB", "expected a nonnegative signed-32-bit integer")
 	}
 	if s.Grants.Exposure != "private" && s.Grants.Exposure != "authenticated-web" {
 		return refuse(Unsupported, "grants.exposure", "only private and authenticated-web exposure are supported")

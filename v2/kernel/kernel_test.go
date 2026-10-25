@@ -212,7 +212,7 @@ func TestIdentityAssertionsAndEscaping(t *testing.T) {
 	r.Runtime.HealthPath = "/ready&ok"
 	r.ReleaseID = ""
 	id, err := r.ID()
-	if err != nil || id != "rel-sha256:b6f23a56221240444c347786c9739bd2503132bea2320627878622c770ea7171" {
+	if err != nil || id != "rel-sha256:cbd7233891cea7a6f7c59d2bef282a5627cdd5fe6723f5d2877ea5fdd13d9ee3" {
 		t.Fatalf("independent ASCII escaping vector: %s %v", id, err)
 	}
 	if !bytes.Contains(releaseCanonical(r), []byte(`"/ready&ok"`)) {

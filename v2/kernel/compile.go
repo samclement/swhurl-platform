@@ -123,7 +123,8 @@ func CompileWith(spec InstanceSpec, release ReleaseBundle, profile PlatformProfi
 	resources, err := RenderHTTP(
 		HTTPInstance{Application: spec.Application, Environment: spec.Environment,
 			Configuration: spec.Configuration, Exposure: spec.Grants.Exposure,
-			Calls: connections.Calls, Callers: connections.Callers},
+			Calls: connections.Calls, Callers: connections.Callers,
+			Database: release.Database, Storage: spec.Storage},
 		HTTPWorkload{release.Artifact.Image, release.Artifact.Digest, release.Runtime.Port, release.Runtime.HealthPath, release.Runtime.UID}, profile)
 	if err != nil {
 		return Compilation{}, err

@@ -409,3 +409,95 @@ func TestCallsNeedPlatformAuth(t *testing.T) {
 		t.Fatal("a key set that is not a JWKS was accepted")
 	}
 }
+
+// A database instance gets v1's shape: a retained volume, one writer at a time, and a namespace Flux will
+// not prune, because deleting an instance's files must not delete its data.
+func TestSQLiteInstanceRendersItsVolume(t *testing.T) {
+	instance, workload := previewFacts()
+	instance.Database = "sqlite"
+	instance.Storage = Storage{SizeMiB: 1024}
+	profile := profile(t)
+	rendered, err := RenderHTTP(instance, workload, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
+	controller := values["controllers"].(map[string]any)["main"].(map[string]any)
+	if controller["strategy"] != "Recreate" {
+		t.Fatalf("single writer: %v", controller["strategy"])
+	}
+	data := values["persistence"].(map[string]any)["data"].(map[string]any)
+	if data["type"] != "persistentVolumeClaim" || data["storageClass"] != profile.Storage.Class ||
+		data["accessMode"] != "ReadWriteOnce" || data["size"] != "1024Mi" || data["retain"] != true {
+		t.Fatalf("the data volume: %v", data)
+	}
+	if mount := data["globalMounts"].([]any)[0].(map[string]any); mount["path"] != "/data" {
+		t.Fatalf("the data mount: %v", mount)
+	}
+	container := controller["containers"].(map[string]any)["main"].(map[string]any)
+	if container["env"].(map[string]any)["DATABASE_PATH"] != "/data/app.db" {
+		t.Fatalf("the database path: %v", container["env"])
+	}
+	namespace := documentOf(t, rendered, "namespace.json")["metadata"].(map[string]any)
+	if annotation := namespace["annotations"].(map[string]any)["kustomize.toolkit.fluxcd.io/prune"]; annotation != "disabled" {
+		t.Fatalf("removal must not delete data: %v", namespace)
+	}
+
+	// A stateless instance keeps no volume, no strategy override and no prune exception.
+	stateless, workload := previewFacts()
+	plain, err := RenderHTTP(stateless, workload, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainValues := documentOf(t, plain, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
+	if _, found := plainValues["persistence"].(map[string]any)["data"]; found {
+		t.Fatal("a stateless instance rendered a data volume")
+	}
+	if strategy := plainValues["controllers"].(map[string]any)["main"].(map[string]any)["strategy"]; strategy != nil {
+		t.Fatalf("a stateless instance set a strategy: %v", strategy)
+	}
+	if _, found := documentOf(t, plain, "namespace.json")["metadata"].(map[string]any)["annotations"]; found {
+		t.Fatal("a stateless instance asked Flux not to prune its namespace")
+	}
+}
+
+// A volume must match what the image needs and what the platform states, and one database admits one
+// writer: each mismatch is refused rather than silently adjusted.
+func TestStorageRefusals(t *testing.T) {
+	instance, workload := previewFacts()
+	profile := profile(t)
+	instance.Storage = Storage{SizeMiB: 1024}
+	if _, err := RenderHTTP(instance, workload, profile); err != nil {
+		refusal(t, err, Invalid, "storage")
+	} else {
+		t.Fatal("a volume without a database rendered")
+	}
+	instance.Database = "sqlite"
+	instance.Storage = Storage{}
+	if _, err := RenderHTTP(instance, workload, profile); err != nil {
+		refusal(t, err, Invalid, "storage.sizeMiB")
+	} else {
+		t.Fatal("a database without a size rendered")
+	}
+	instance.Storage = Storage{SizeMiB: 1024}
+	withoutClass := profile
+	withoutClass.Storage = PlatformStorage{}
+	if _, err := RenderHTTP(instance, workload, withoutClass); err != nil {
+		refusal(t, err, Unsupported, "storage.class")
+	} else {
+		t.Fatal("a database rendered without a storage class")
+	}
+	instance.Configuration.Replicas = 2
+	if _, err := RenderHTTP(instance, workload, profile); err != nil {
+		refusal(t, err, Invalid, "configuration.replicas")
+	} else {
+		t.Fatal("a database rendered with two writers")
+	}
+	other := instance
+	other.Database = "postgres"
+	if _, err := RenderHTTP(other, workload, profile); err != nil {
+		refusal(t, err, Unsupported, "database")
+	} else {
+		t.Fatal("a database v2 does not support rendered")
+	}
+}

@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: in progress
-Gate: live verification of a v2 route: done, the signed-in hop included; the instance is being removed
-Uncommitted: `v2-apps/instances`, `clusters/home/app-swhurl-try-v2-3-staging.json`, `clusters/home/kustomization.yaml`, `docs/`
+Status: approved
+Gate: the first migration: implement the relationship slice an existing app needs (calls between apps), then migrate `swhurl-try-11` staging
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -27,13 +27,13 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 4. Git delivery | Compiled intent reaches the cluster through Git; no egress | **Done end to end** (one disposable instance, applied and removed 25 Oct) |
 | 5. Observation | What a cluster actually runs: intended digest, readiness, and unavailable ≠ absent | **Done through a live read** (25 Oct) |
 | 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, an ownership inventory, and a read-only live check of the claims | **Slices 1–4 done** |
-| Routes | A signed-in route rendered from platform facts, with the host derived and TLS, sign-in and reach the platform's | **Done offline** |
+| Routes | A signed-in route from platform facts, verified live through the shared sign-in | **Done, live** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
-| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Not started**; its precondition — signed-in routes — is now rendered and owned |
+| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Next**; the precondition (routes) is live, and the first candidate needs calls |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** no v2 command publishes or reconciles an instance (delivery is manual: compile, commit, push); no v2-owned app exists (both throwaways were removed); v2 renders no storage, secrets, calls, events, teams, alarms or telemetry, so most instances cannot be migrated without new domain models, and no route has been verified against a live certificate; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+**Not yet true, and what would make it true:** no v2 command publishes or reconciles an instance (delivery is manual: compile, commit, push); no v2-owned app exists (every throwaway was removed); v2 renders no storage, secrets, calls, events, teams, alarms or telemetry, and **every web instance in this repository needs at least one of them** — `swhurl-try-11` needs only calls, so that is the shortest path to a first migration; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -168,6 +168,15 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** `make check-v2` (11 packages), `REQUIRE_HELM=1 make check-v2` (chart render, Service name pinned), `make check`, `make v2-report`; the bridge previews the inherited `authenticated-web` fixture unchanged in comparison; live ownership over the snapshot read 60 claims, all present, including the ten Ingresses each v1 instance already has.
 - **Next gate:** the operator's choice — verify an exposed instance live (compile, apply, wait for its certificate, sign in, observe, remove), or move to the first migration of a database-free web instance.
 - **Committed:** `5f2243eb` (with the record flip in the commit that follows it).
+
+## Slice record: a v2 route live, through the shared sign-in
+
+- **Outcome:** a throwaway instance compiled by v2 was exposed `authenticated-web` at its derived host and verified end to end: DNS, a certificate issued by cert-manager **through our Ingress**, signed-out access redirected to the shared Google sign-in (never served), and — the operator's own check — a signed-in request reaching the app, which reported the authenticated caller. It was then removed the way it was created.
+- **What it proves:** the route contract is not just rendered: host derivation, the platform's TLS issuer and middleware, the traefik-only policy, and the identity header all work together against the live platform. v2's `observe` reported `running` for the same instance; observation does not check routes, so the route facts are the host's evidence.
+- **Deliberate difference from v1:** v2 renders its own Ingress object rather than chart ingress values, which is why the comparison still lists `routes` as unassessed and why the route is an ownership claim.
+- **Not exercised:** a production-issued certificate (the test used the staging issuer, so browsers warn), a sibling-pod ingress test, and `public` exposure — still deferred.
+- **Evidence:** [current state](current-state.md#first-v2-route-live-signed-in-exposure-25-october-2026), including the certificate issuer, the 302, the signed-in confirmation and what pruning removed.
+- **Next gate:** the first migration — implement calls between apps (the only relationship `swhurl-try-11` needs) and then migrate it to v2 ownership.
 
 ## Resume
 

@@ -232,7 +232,7 @@ func (c cli) readLive(kubeconfig string, report *report) int {
 		for _, claim := range instance.Claims {
 			ref, err := kube.RefOf(claim.Object.Group, claim.Object.Kind, claim.Object.Namespace, claim.Object.Name)
 			if err != nil {
-				instance.Live = append(instance.Live, liveRead{claim.Object.Kind + " " + claim.Object.Name, "not_checked", "unsupported_kind"})
+				instance.Live = append(instance.Live, liveRead{objectTextOf(claim.Object), "not_checked", "unsupported_kind"})
 				continue
 			}
 			read, err := reader.Read(ctx, ref)

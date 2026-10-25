@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: approved
-Gate: the operator's choice of the next domain slice: routes (authenticated-web), or the first migration decision
-Uncommitted: none
+Status: in progress
+Gate: the operator's choice: verify an exposed instance live, or move to the first migration
+Uncommitted: `v2/kernel/`, `v2/legacy/`, `v2/adapters/kube/`, `v2/cmd/swhurl-v2/`, `v2/testdata/profile.json`, `v2/testdata/profile-identity.json`, `v2/testdata/compiled/`, `v2/archtest/api.txt`, `docs/`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -27,12 +27,13 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 4. Git delivery | Compiled intent reaches the cluster through Git; no egress | **Done end to end** (one disposable instance, applied and removed 25 Oct) |
 | 5. Observation | What a cluster actually runs: intended digest, readiness, and unavailable ≠ absent | **Done through a live read** (25 Oct) |
 | 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, an ownership inventory, and a read-only live check of the claims | **Slices 1–4 done** |
+| Routes | A signed-in route rendered from platform facts, with the host derived and TLS, sign-in and reach the platform's | **Done offline** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
-| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Not started**; the [candidate analysis](iteration-2-plan.md#first-migration-candidate-the-decision-with-the-evidence-25-october-2026) recommends routes first |
+| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Not started**; its precondition — signed-in routes — is now rendered and owned |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** no v2 command publishes or reconciles an instance (delivery is manual: compile, commit, push); no v2-owned app exists (both throwaways were removed); v2 renders no routes, storage, secrets, calls, events, teams, alarms or telemetry, so most instances cannot be migrated without new domain models; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+**Not yet true, and what would make it true:** no v2 command publishes or reconciles an instance (delivery is manual: compile, commit, push); no v2-owned app exists (both throwaways were removed); v2 renders no storage, secrets, calls, events, teams, alarms or telemetry, so most instances cannot be migrated without new domain models, and no route has been verified against a live certificate; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -158,6 +159,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence, read-only, 25 October 2026:** `shadow` over this repository's snapshot at `HEAD` with the operator's kubeconfig in its JSON form: 50 live reads across 10 instances, all `present` — every claim a preview would create already exists, owned by the instance v1 runs; no read failed. Recorded here rather than in current state: nothing on the cluster changed.
 - **Next gate:** the operator's choice of the next domain slice — routes (`authenticated-web`), which every web instance needs and which the [candidate analysis](iteration-2-plan.md#first-migration-candidate-the-decision-with-the-evidence-25-october-2026) recommends first — or the first migration decision itself.
 - **Committed:** `545f3105` (with the record flip in the commit that follows it).
+
+## Slice record: signed-in routes
+
+- **Outcome and the refusal it must produce:** an `authenticated-web` instance renders its route from platform facts — a host derived as `<env>-<app>.<baseDomain>`, TLS from the profile's issuer, the shared sign-in middleware, the Service backend, and a policy admitting only the ingress controller's pods on the app's port. It refuses `public` and any other exposure (`unsupported: grants.exposure`) and refuses to render a route when the profile states no routing (`unsupported: routing`), rather than inventing a host, issuer or middleware.
+- **Owners and boundaries:** the platform owns the domain, class, issuer, middleware and which pods may reach the port; the instance owns only its exposure; the workload owns its port. The route is a v2-rendered object and an ownership claim, not chart values. The adapter now states `networking.k8s.io/v1 Ingress`, so the live ownership check reads it.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages still take no effects. 3. **Identities changed, deliberately and explained:** the profile now covers routing, so its ID and every compilation ID changed; the compiled resource bytes are unchanged apart from the `id`/`inputs.profile` lines, the two goldens were regenerated once, and the canonical profile identity was recomputed independently in Python. 4. Refusals stated and tested (`public`, unconfigured routing, invalid routing fields). 5. Failure paths tested: missing routing, unsupported exposure, invalid domain/labels, and the policy's single rule with egress still denied. 6. Scope: routes are rendered but the comparison still lists them as unassessed, and observation still does not verify them. 7. Offline only: no route has been served, no certificate issued. 8. This page, the plan and the gap list change together.
+- **Evidence:** `make check-v2` (11 packages), `REQUIRE_HELM=1 make check-v2` (chart render, Service name pinned), `make check`, `make v2-report`; the bridge previews the inherited `authenticated-web` fixture unchanged in comparison; live ownership over the snapshot read 60 claims, all present, including the ten Ingresses each v1 instance already has.
+- **Next gate:** the operator's choice — verify an exposed instance live (compile, apply, wait for its certificate, sign in, observe, remove), or move to the first migration of a database-free web instance.
 
 ## Resume
 

@@ -8,7 +8,7 @@ import (
 )
 
 func previewFacts() (HTTPInstance, HTTPWorkload) {
-	return HTTPInstance{"hello", "staging", Configuration{1, 128}}, HTTPWorkload{"docker.io/nginxinc/nginx-unprivileged", "sha256:" + strings.Repeat("a", 64), 8080, "/", 101}
+	return HTTPInstance{"hello", "staging", Configuration{1, 128}, ""}, HTTPWorkload{"docker.io/nginxinc/nginx-unprivileged", "sha256:" + strings.Repeat("a", 64), 8080, "/", 101}
 }
 
 // No source, commit, media type, platform, selection or release identity is available here.
@@ -187,4 +187,119 @@ func TestCompileCompleteRefusalPrecedence(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A signed-in instance renders one more file than a private one: the route. Its host is derived from the
+// platform's base domain, and its TLS and sign-in settings are the platform's, not the app's.
+func TestExposedInstanceRendersTheRoute(t *testing.T) {
+	instance, workload := previewFacts()
+	instance.Exposure = "authenticated-web"
+	profile := profile(t)
+	got, err := RenderHTTP(instance, workload, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Files) != 7 || len(got.Inventory) != 6 {
+		t.Fatalf("%d files, %d claims", len(got.Files), len(got.Inventory))
+	}
+	route := documentOf(t, got, "ingress.json")
+	metadata := route["metadata"].(map[string]any)
+	annotations := metadata["annotations"].(map[string]any)
+	if metadata["name"] != "hello" || metadata["namespace"] != "hello-staging" {
+		t.Fatalf("route metadata: %v", metadata)
+	}
+	if annotations["cert-manager.io/cluster-issuer"] != "letsencrypt-prod" ||
+		annotations["traefik.ingress.kubernetes.io/router.middlewares"] != "ingress-oauth-auth-shared@kubernetescrd" {
+		t.Fatalf("route annotations: %v", annotations)
+	}
+	spec := route["spec"].(map[string]any)
+	if spec["ingressClassName"] != "traefik" {
+		t.Fatalf("class: %v", spec["ingressClassName"])
+	}
+	rules := spec["rules"].([]any)
+	host := rules[0].(map[string]any)["host"]
+	if host != "staging-hello.homelab.swhurl.com" {
+		t.Fatalf("derived host: %v", host)
+	}
+	path := rules[0].(map[string]any)["http"].(map[string]any)["paths"].([]any)[0].(map[string]any)
+	backend := path["backend"].(map[string]any)["service"].(map[string]any)
+	if path["path"] != "/" || path["pathType"] != "Prefix" || backend["name"] != "hello" ||
+		backend["port"].(map[string]any)["number"] != float64(8080) {
+		t.Fatalf("route path: %v", path)
+	}
+	tls := spec["tls"].([]any)[0].(map[string]any)
+	if tls["secretName"] != "hello-tls" || tls["hosts"].([]any)[0] != "staging-hello.homelab.swhurl.com" {
+		t.Fatalf("route TLS: %v", tls)
+	}
+	// The policy admits the ingress controller's pods on the app's port, and still denies all egress.
+	policy := documentOf(t, got, "networkpolicy.json")["spec"].(map[string]any)
+	ingress := policy["ingress"].([]any)
+	if len(ingress) != 1 {
+		t.Fatalf("policy ingress: %v", ingress)
+	}
+	rule := ingress[0].(map[string]any)
+	source := rule["from"].([]any)[0].(map[string]any)
+	namespace := source["namespaceSelector"].(map[string]any)["matchLabels"].(map[string]any)
+	labels := source["podSelector"].(map[string]any)["matchLabels"].(map[string]any)
+	if namespace["kubernetes.io/metadata.name"] != "kube-system" || labels["app.kubernetes.io/name"] != "traefik" {
+		t.Fatalf("policy source: %v", source)
+	}
+	if port := rule["ports"].([]any)[0].(map[string]any); port["port"] != float64(8080) || port["protocol"] != "TCP" {
+		t.Fatalf("policy port: %v", port)
+	}
+	if policy["egress"] == nil || len(policy["egress"].([]any)) != 0 {
+		t.Fatalf("egress is not denied: %v", policy["egress"])
+	}
+
+	// The route is what the instance claims, so an ownership check sees it.
+	claimed := map[string]bool{}
+	for _, claim := range got.Inventory {
+		claimed[claim.Object.Kind+" "+claim.Object.Namespace+"/"+claim.Object.Name] = true
+	}
+	if !claimed["Ingress hello-staging/hello"] {
+		t.Fatalf("the route is not claimed: %v", claimed)
+	}
+}
+
+// A private instance renders no route, and a profile that states no routing cannot render one: a preview
+// fails rather than inventing a host or a middleware.
+func TestRoutesNeedPlatformRouting(t *testing.T) {
+	instance, workload := previewFacts()
+	private, err := RenderHTTP(instance, workload, profile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(private.Files) != 6 {
+		t.Fatalf("a private instance rendered %d files", len(private.Files))
+	}
+	instance.Exposure = "authenticated-web"
+	without := profile(t)
+	without.Routing = Routing{}
+	if _, err := RenderHTTP(instance, workload, without); err != nil {
+		refusal(t, err, Unsupported, "routing")
+	} else {
+		t.Fatal("an exposed instance rendered without platform routing")
+	}
+	instance.Exposure = "public"
+	if _, err := RenderHTTP(instance, workload, profile(t)); err != nil {
+		refusal(t, err, Unsupported, "grants.exposure")
+	} else {
+		t.Fatal("public exposure rendered")
+	}
+}
+
+// documentOf is one rendered file, decoded.
+func documentOf(t *testing.T, resources ResourceSet, name string) map[string]any {
+	t.Helper()
+	for _, file := range resources.Files {
+		if strings.HasSuffix(file.Path, "/"+name) {
+			var document map[string]any
+			if err := json.Unmarshal(file.Document, &document); err != nil {
+				t.Fatal(err)
+			}
+			return document
+		}
+	}
+	t.Fatalf("no %s among the rendered files", name)
+	return nil
 }

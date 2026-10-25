@@ -73,18 +73,19 @@ kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `j
 kernel: type Error struct {Code Code Field string Reason string}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
 kernel: type Grants struct {Exposure string `json:"exposure"`}
-kernel: type HTTPInstance struct {Application, Environment string Configuration Configuration}
+kernel: type HTTPInstance struct {Application, Environment string Configuration Configuration Exposure string}
 kernel: type HTTPWorkload struct {Image, Digest string Port int32 HealthPath string UID int32}
 kernel: type Inputs struct {Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"`}
 kernel: type InstanceRevision string
 kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"`}
 kernel: type Object struct {Group string `json:"group"` Kind string `json:"kind"` Namespace string `json:"namespace"` Name string `json:"name"`}
-kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"`}
+kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Routing Routing `json:"routing"`}
 kernel: type ProfileID string
 kernel: type Quota struct {Pods int32 `json:"pods"` RequestsCPUMilli int32 `json:"requestsCpuMilli"` RequestsMemoryMiB int32 `json:"requestsMemoryMiB"` LimitsMemoryMiB int32 `json:"limitsMemoryMiB"`}
 kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` ReleaseID ReleaseID `json:"releaseId"`}
 kernel: type ReleaseID string
 kernel: type ResourceSet struct {Files []File Inventory []Claim Registrations []string}
+kernel: type Routing struct {BaseDomain string `json:"baseDomain"` Class string `json:"class"` Middleware string `json:"middleware"` Issuer string `json:"issuer"` IngressNamespace string `json:"ingressNamespace"` IngressLabels map[string]string `json:"ingressLabels"`}
 kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` HealthPath string `json:"healthPath"` UID int32 `json:"uid"`}
 kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}

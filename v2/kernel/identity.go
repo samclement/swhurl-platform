@@ -22,6 +22,15 @@ func instanceCanonical(s InstanceSpec) []byte {
 		s.Grants.Exposure, s.Bindings})
 }
 
+// labelPairs is a label set as sorted "key=value" strings: a map's iteration order is not an identity.
+func labelPairs(labels map[string]string) []any {
+	pairs := make([]any, 0, len(labels))
+	for _, key := range sortedKeys(labels) {
+		pairs = append(pairs, key+"="+labels[key])
+	}
+	return pairs
+}
+
 func canonical(value []any) []byte {
 	var out bytes.Buffer
 	encoder := json.NewEncoder(&out)

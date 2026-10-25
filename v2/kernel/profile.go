@@ -19,6 +19,21 @@ type PlatformProfile struct {
 	Delivery      Delivery `json:"delivery"`
 	Workload      Workload `json:"workload"`
 	Quota         Quota    `json:"quota"`
+	// Routing is how a signed-in or public route reaches an instance. A profile without it cannot compile
+	// an exposed instance; a private instance never uses it.
+	Routing Routing `json:"routing"`
+}
+
+// Routing is the platform's own facts about routes: the domain names hang off, the ingress class, the
+// shared sign-in middleware, the certificate issuer, and which pods may reach an instance's port. Host
+// names are derived from it, never stored per instance.
+type Routing struct {
+	BaseDomain       string            `json:"baseDomain"`
+	Class            string            `json:"class"`
+	Middleware       string            `json:"middleware"`
+	Issuer           string            `json:"issuer"`
+	IngressNamespace string            `json:"ingressNamespace"`
+	IngressLabels    map[string]string `json:"ingressLabels"`
 }
 
 type Chart struct {
@@ -52,16 +67,30 @@ type Quota struct {
 }
 
 var (
-	labelPattern   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-	versionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-	rootPattern    = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(/[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$`)
+	labelPattern      = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+	versionPattern    = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	rootPattern       = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(/[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$`)
+	domainPattern     = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
+	issuerPattern     = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+	middlewarePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?(@[a-z]+)?$`)
+	labelKeyPattern   = regexp.MustCompile(`^([a-z0-9]([a-z0-9.-]*[a-z0-9])?/)?[a-z0-9]([a-z0-9._-]*[a-z0-9])?$`)
 )
+
+// sortedKeys is a map's keys in order, so validation and identity encoding are deterministic.
+func sortedKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
 
 func DecodeProfile(data []byte) (PlatformProfile, error) {
 	if err := document(data); err != nil {
 		return PlatformProfile{}, err
 	}
-	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"})
+	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing")
 	if err != nil {
 		return PlatformProfile{}, err
 	}
@@ -73,6 +102,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"delivery", []string{"source", "outputRoot", "unitsRoot", "dependsOn"}},
 		{"workload", []string{"cpuRequestMilli", "startupSeconds", "startupPeriodSeconds"}},
 		{"quota", []string{"pods", "requestsCpuMilli", "requestsMemoryMiB", "limitsMemoryMiB"}},
+		{"routing", []string{"baseDomain", "class", "middleware", "issuer", "ingressNamespace", "ingressLabels"}},
 	} {
 		if _, err := fields(root[part.key], part.key, part.required); err != nil {
 			return PlatformProfile{}, err
@@ -105,7 +135,55 @@ func (p PlatformProfile) validate() error {
 	if err := p.Workload.validate(); err != nil {
 		return err
 	}
-	return p.Quota.validate()
+	if err := p.Quota.validate(); err != nil {
+		return err
+	}
+	return p.Routing.validate()
+}
+
+// validate checks a configured routing block. An absent block is valid: a profile that compiles only
+// private instances needs no domain, class or middleware.
+func (r Routing) validate() error {
+	if r.absent() {
+		return nil
+	}
+	if !domainPattern.MatchString(r.BaseDomain) {
+		return refuse(Invalid, "routing.baseDomain", "expected a DNS name")
+	}
+	for _, field := range []struct{ name, value string }{
+		{"routing.class", r.Class}, {"routing.ingressNamespace", r.IngressNamespace},
+	} {
+		if !labelPattern.MatchString(field.value) {
+			return refuse(Invalid, field.name, "expected a DNS label")
+		}
+	}
+	if !issuerPattern.MatchString(r.Issuer) {
+		return refuse(Invalid, "routing.issuer", "expected a certificate issuer name")
+	}
+	if !middlewarePattern.MatchString(r.Middleware) {
+		return refuse(Invalid, "routing.middleware", "expected a middleware reference")
+	}
+	return r.validateIngress()
+}
+
+// absent is whether the profile states no routing at all, which is valid: such a profile compiles only
+// private instances.
+func (r Routing) absent() bool {
+	return !r.configured() && r.Class == "" && r.Middleware == "" && r.Issuer == "" &&
+		r.IngressNamespace == "" && len(r.IngressLabels) == 0
+}
+
+// validateIngress checks which pods may reach an instance's port.
+func (r Routing) validateIngress() error {
+	if len(r.IngressLabels) == 0 {
+		return refuse(Invalid, "routing.ingressLabels", "expected at least one label")
+	}
+	for _, key := range sortedKeys(r.IngressLabels) {
+		if !labelKeyPattern.MatchString(key) || !labelPattern.MatchString(r.IngressLabels[key]) {
+			return refuse(Invalid, "routing.ingressLabels", "expected label keys and DNS-label values")
+		}
+	}
+	return nil
 }
 
 func (c Chart) validate() error {
@@ -190,7 +268,11 @@ func profileCanonical(p PlatformProfile) []byte {
 		p.Chart.Name, p.Chart.Version, p.Chart.Repository, p.Chart.RepositoryNamespace,
 		p.Delivery.Source, p.Delivery.OutputRoot, p.Delivery.UnitsRoot, dependsOn,
 		p.Workload.CPURequestMilli, p.Workload.StartupSeconds, p.Workload.StartupPeriodSeconds,
-		p.Quota.Pods, p.Quota.RequestsCPUMilli, p.Quota.RequestsMemoryMiB, p.Quota.LimitsMemoryMiB})
+		p.Quota.Pods, p.Quota.RequestsCPUMilli, p.Quota.RequestsMemoryMiB, p.Quota.LimitsMemoryMiB,
+		// Routing is a platform fact, so a changed domain, issuer or middleware changes the profile's
+		// identity; an absent block encodes as empty values rather than being omitted.
+		p.Routing.BaseDomain, p.Routing.Class, p.Routing.Middleware, p.Routing.Issuer,
+		p.Routing.IngressNamespace, labelPairs(p.Routing.IngressLabels)})
 }
 
 func (p PlatformProfile) ID() (ProfileID, error) {

@@ -616,7 +616,7 @@ The eventual bounded implementation should proceed through checkable slices:
 3. **Read-only integration and orchestration:** pin a temporary local repository, change its branch/checkout after resolution and prove the selected input stays fixed. Test missing reads, malformed data, unexpected paths and secret-safe errors. Use raw fixtures and the real/fake shared contract for each Go adapter; Python external calls use `Runner`/`FakeRunner`. Test the actual end-to-end entry point and unchanged inputs.
 4. **Review and handoff:** run `make check-v2`, `make check`, applicable shell syntax, `git diff --check` and `make v2-report`; independently review the result before requesting a push. Update this section, the feature tracker and handoff. Phase 4 and live effects remain separate decisions.
 
-**Authority:** the principles, the revised brief, the first pure HTTP preview/comparison slice, the legacy translation and preview report, the snapshot export and ownership inventory, and (25 October 2026) the read-only live ownership check below are approved. No further phase-3 implementation — snapshot acquisition, ownership inventory, dependency/rule relaxation — is authorised by that approval, and neither is any commit, push, console deployment, credential or live operation beyond those slices.
+**Authority:** the principles, the revised brief, the first pure HTTP preview/comparison slice, the legacy translation and preview report, the snapshot export and ownership inventory, the read-only live ownership check, and (25 October 2026) signed-in routes below are approved. No further phase-3 implementation — snapshot acquisition, ownership inventory, dependency/rule relaxation — is authorised by that approval, and neither is any commit, push, console deployment, credential or live operation beyond those slices.
 
 #### Phase-3 slice 2: legacy translation and a preview report (implemented offline 25 October 2026)
 
@@ -878,6 +878,28 @@ Existing-instance migration follows the [documented staged Flux ownership handov
 
 Stateful migration additionally requires demonstrated backup/restore, explicit resource-retention rules and operator approval. It must not be the first migration exercise. Define recovery per migration; do not imply that rolling back an image reverses data migrations.
 
+#### Phase-2 slice: signed-in routes (`authenticated-web`) — implemented offline 25 October 2026
+
+**Approved 25 October 2026 with the four decisions:** the host is derived, the TLS issuer and sign-in middleware are the platform's, and the app's policy admits only its ingress controller.
+
+**Contract.** An instance's `grants.exposure` is now `private` or `authenticated-web` (an empty exposure means private where the renderer is used directly; `public` stays refused as deferred). An exposed instance renders one more file and one more ownership claim than a private one, and its policy changes:
+
+| Fact | Owner | Rule |
+| --- | --- | --- |
+| Host name | Platform (profile) | Derived as `<environment>-<application>.<baseDomain>`; no instance stores a host, so two instances cannot disagree about one name's shape |
+| TLS | Platform (profile) | `cert-manager.io/cluster-issuer: <issuer>` on the Ingress, secret `<application>-tls` |
+| Sign-in | Platform (profile) | `traefik.ingress.kubernetes.io/router.middlewares: <middleware>` (the shared ForwardAuth) |
+| Backend | Instance + workload | Service `<application>` on the workload's port, path `/` (`Prefix`) |
+| Ingress controller's reach | Platform (profile) | The policy admits pods matching the profile's labels in its namespace, on the app's port only; egress stays denied |
+
+**Refusals, fixed:** `unsupported: grants.exposure` for any exposure other than private or authenticated-web (including `public`, still deferred), and `unsupported: routing` when a profile states no routing block and an exposed instance is compiled — a preview fails rather than inventing a host, an issuer or a middleware. A configured routing block is validated field by field (domain, labels, issuer, middleware reference, ingress labels).
+
+**The identity change, explained.** A profile's identity is a canonical encoding of the facts it owns, so adding routing changes the profile's ID and therefore every compilation ID. That is intended: the compiled resource bytes for the two golden private instances are unchanged (the only diff is the `id` and `inputs.profile` lines), and `profile-identity.json` was recomputed independently in Python rather than copied from Go's output. Nothing has been published or migrated, so no released identity is disturbed; a future profile change that alters rendered output must change the ID in the same way.
+
+**Evidence, offline:** `kernel` tests render the route (host, class, both annotations, TLS secret, path, backend), assert the policy's single ingress rule and denied egress, and refuse an exposed instance without platform routing and `public` exposure; the chart render still pins the Service name our route targets. The bridge renders routes for the inherited fixture (still `authenticated-web`), and its comparison is unchanged: routes remain outside the compared scope and the report still lists them as unassessed. **Live ownership over this repository's snapshot:** 60 live reads across the ten compared instances, **all present** — the six claims per instance, including the Ingress each v1 instance already has.
+
+**Not claimed:** observation does not verify a route (Ingress readiness, certificate state), and no exposed instance has been compiled into the cluster. `public` exposure, per-instance host overrides and route-level telemetry remain deferred.
+
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 
 The inventory above makes the choice concrete. Of the 17 instances in this repository, **no instance is both private and a web app**: every web instance is `authenticated-web`, and every private instance is a `worker` or `job`, which v2 does not render at all. The lightest web instance is `swhurl-try-11` (no database, no events, two calls); `demo-orders` — the natural candidate — needs storage (SQLite), events, calls, routes and a backup job.
@@ -897,7 +919,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | Feature or semantic gap | v2 today | Decide by |
 | --- | --- | --- |
 | Egress proxy: proxy variables, port allocation, egress grants | **All egress denied** for the first instance ([decided 25 October 2026](#decision-egress-and-credentials-for-the-first-instance-decided-25-october-2026)): no proxy path, and no instance can reach outside | With the first instance that must reach outside, as a slice of its own |
-| Routes: `authenticated-web` and `public` exposure, Ingress, TLS, the sign-in middleware | Refused (`unsupported`): only `private` | The first instance that needs a route |
+| Routes: `public` exposure, a per-instance host override, route-level observation (Ingress readiness, certificate state) | `authenticated-web` renders its Ingress, TLS annotation and middleware from the profile and is `private`'s only alternative; `public` is still refused (`unsupported`), no instance stores a host, and observation does not verify a route | The first instance that needs a public route or an unusual host |
 | App kinds `worker` and `job` (a CronJob schedule); a command override | Refused (`unsupported`): only `web`, and no command | Phase 7, per app |
 | Teams: the namespace `team` label, team isolation | Not in the records; no label | Before an instance needs team isolation |
 | Calls between apps: caller tokens and signing keys, `SWHURL_<APP>_URL`, callers in the NetworkPolicy | Not generated | Phase 7, with the first app that calls another |

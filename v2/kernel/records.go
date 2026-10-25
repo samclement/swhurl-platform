@@ -157,8 +157,8 @@ func (s InstanceSpec) validate() error {
 	if err := s.Configuration.validate(); err != nil {
 		return err
 	}
-	if s.Grants.Exposure != "private" {
-		return refuse(Unsupported, "grants.exposure", "only private exposure is supported")
+	if s.Grants.Exposure != "private" && s.Grants.Exposure != "authenticated-web" {
+		return refuse(Unsupported, "grants.exposure", "only private and authenticated-web exposure are supported")
 	}
 	return nil
 }

@@ -232,6 +232,8 @@ func TestShadowChecksLiveOwnership(t *testing.T) {
 			"metadata": map[string]any{"name": "hello-staging"}},
 		"/apis/networking.k8s.io/v1/namespaces/hello-staging/networkpolicies/hello": {"apiVersion": "networking.k8s.io/v1",
 			"kind": "NetworkPolicy", "metadata": map[string]any{"name": "hello", "namespace": "hello-staging"}},
+		"/apis/networking.k8s.io/v1/namespaces/hello-staging/ingresses/hello": {"apiVersion": "networking.k8s.io/v1",
+			"kind": "Ingress", "metadata": map[string]any{"name": "hello", "namespace": "hello-staging"}},
 		"/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/app-hello-staging": {"apiVersion": "kustomize.toolkit.fluxcd.io/v1",
 			"kind": "Kustomization", "metadata": map[string]any{"name": "app-hello-staging", "namespace": "flux-system"}},
 	}
@@ -291,8 +293,8 @@ func TestShadowChecksLiveOwnership(t *testing.T) {
 	if live["HelmRelease.helm.toolkit.fluxcd.io hello-staging/hello"]["reason"] != "not_found" {
 		t.Errorf("absence without not_found: %v", live["HelmRelease.helm.toolkit.fluxcd.io hello-staging/hello"])
 	}
-	if requests != 5 {
-		t.Fatalf("%d requests for five claims", requests)
+	if requests != 6 {
+		t.Fatalf("%d requests for six claims", requests)
 	}
 }
 

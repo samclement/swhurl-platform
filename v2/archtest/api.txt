@@ -1,3 +1,20 @@
+adapters/files/filestest: func (*Fake) Write(dir string, docs []kernel.File) ([]files.Outcome, error)
+adapters/files/filestest: func Contract(t *testing.T, open func(*testing.T) (files.Writer, string), docs []kernel.File)
+adapters/files/filestest: func New() *Fake
+adapters/files/filestest: type Fake struct {Contents map[string][]byte Writes int Files []kernel.File Fail error}
+adapters/files: const IO = "io"
+adapters/files: const RefusedDestination = "refused_destination"
+adapters/files: const Unchanged = "unchanged"
+adapters/files: const Written = "written"
+adapters/files: func (*Error) Error() string
+adapters/files: func (Disk) Write(dir string, docs []kernel.File) ([]Outcome, error)
+adapters/files: func New() Writer
+adapters/files: func Target(base, relative string) (string, error)
+adapters/files: type Disk struct {}
+adapters/files: type Error struct {Code string Path string Reason string}
+adapters/files: type Outcome struct {Path string `json:"path"` State string `json:"state"`}
+adapters/files: type Writer interface {Write(dir string, files []kernel.File) ([]Outcome, error)}
+kernel: const AppTree = "apps"
 kernel: const IdentityMismatch Code = "identity_mismatch"
 kernel: const Invalid Code = "invalid"
 kernel: const ManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
@@ -29,7 +46,7 @@ kernel: type Code string
 kernel: type Compilation struct {ID CompilationID `json:"id"` Inputs Inputs `json:"inputs"` Files []File `json:"files"` Inventory []Claim `json:"inventory"` Registrations []string `json:"registrations"`}
 kernel: type CompilationID string
 kernel: type Configuration struct {Replicas int32 `json:"replicas"` MemoryMiB int32 `json:"memoryMiB"`}
-kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `json:"outputRoot"` DependsOn []string `json:"dependsOn"`}
+kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `json:"outputRoot"` UnitsRoot string `json:"unitsRoot"` DependsOn []string `json:"dependsOn"`}
 kernel: type Error struct {Code Code Field string Reason string}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
 kernel: type Grants struct {Exposure string `json:"exposure"`}

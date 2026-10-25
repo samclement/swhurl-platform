@@ -1,0 +1,1 @@
+{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"demo-orders","namespace":"demo-orders-prod"},"spec":{"egress":[],"ingress":[],"podSelector":{"matchLabels":{"app.kubernetes.io/instance":"demo-orders"}},"policyTypes":["Ingress","Egress"]}}

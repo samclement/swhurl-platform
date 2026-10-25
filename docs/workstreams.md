@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Offline Go v2 | main | approved | phase 3 slice 1 committed (`354aae1e`); egress and credentials decided 25 October 2026; delivery slice proposed | approval of the delivery slice proposal for one disposable instance | operator approval | [v2 status](v2-status.md) | `v2/` |
+| Offline Go v2 | main | approved | phase 3 slice 1 and the delivery slice's offline half committed; egress and credentials decided 25 October 2026 | the live half of the delivery slice: one disposable instance applied by Flux, then removed with the operator's confirmation | the operator at the cluster | [v2 status](v2-status.md) | `v2/` |
 | Live platform | main | approved | the 24 open items in the plan index | M14, then B4b (records-only removal) | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

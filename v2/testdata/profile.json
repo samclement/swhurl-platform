@@ -10,6 +10,7 @@
   "delivery": {
     "source": "swhurl-platform",
     "outputRoot": "v2-apps",
+    "unitsRoot": "clusters/home",
     "dependsOn": ["infra-base"]
   },
   "workload": {

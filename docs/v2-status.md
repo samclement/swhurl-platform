@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: approval of the delivery slice proposal for one disposable instance
+Gate: the live half of the delivery slice: one disposable instance applied by Flux, then removed with the operator's confirmation
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -20,7 +20,7 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 | --- | --- | --- |
 | 1. Release-selection kernel | done, reviewed, committed 24 October 2026 | [contract](iteration-2-plan.md#2-phase-1-model-and-contract), [evidence](iteration-2-plan.md#phase-1-verification-evidence) |
 | 2. Deterministic compiler | done, reviewed, committed 25 October 2026 | [contract](iteration-2-plan.md#phase-2-establish-compiler-ownership) |
-| 4. Git delivery | **next:** a [proposal](iteration-2-plan.md#first-delivery-slice-proposal-one-disposable-instance-operator-run) awaiting approval | [contract](iteration-2-plan.md#phase-4-settle-publication-before-automation) |
+| 4. Git delivery | offline half done 25 October 2026; the live half is next | [slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) |
 | 5. Observation | after delivery: the first real adapter | [gate](iteration-2-plan.md#phase-5-explain-current-state-honestly) |
 | 6. First live instance | after observation: one disposable instance, then removal | [decision](iteration-2-plan.md#decision-egress-and-credentials-for-the-first-instance-decided-25-october-2026) |
 | 3. Shadow bridge | slice 1 done; 3.2–3.5 after the first live instance | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
@@ -32,7 +32,18 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 
 **25 October 2026 — egress and credentials for the first instance (decided, in the operator's words, by accepting both recommendations):** all egress is denied for the first disposable instance (`policyTypes: [Ingress, Egress]`, no rules) rather than routed through the proxy or left open, and delivery and observation use the operator's own credentials from the host rather than a new Secret, runner or control plane. [The record](iteration-2-plan.md#decision-egress-and-credentials-for-the-first-instance-decided-25-october-2026) states what each answer changes, why the alternatives lost, and what reopens them.
 
-**The next gate is a proposal, not an implementation:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-proposal-one-disposable-instance-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it — awaits the operator's approval. Its three parts, its write contract, its acceptance per invariant and the costs of approval are all on that page, so approving it is a decision about a specified change rather than a direction.
+**25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
+
+## Slice record: the delivery slice, offline half
+
+- **Outcome and the refusal it must produce:** a compiled instance can be written into the repository, with all egress denied and the Flux unit where kustomize can list it. It refuses to write into the checkout's `apps/` — however the destination is spelled, including through a symlink — outside the destination, or at all if any file's path is unsound.
+- **Owners and boundaries:** the compiler decides the paths and their content; `adapters/files` decides only whether a destination is safe and what each path needs; `cmd/swhurl-v2` owns the `apps/` refusal and the exit codes. The profile owns both roots.
+- **What crosses each seam:** `[]kernel.File` into the writer; `[]files.Outcome` (`written`/`unchanged`, in compilation order) back, including the outcomes completed before a failure; an error carrying a code, a path and a fixed reason, never content.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** v1 unchanged (nothing under `apps/`, `clusters/` or `platform/` touched; `make check` passes). Pure — `kernel` and `shadow` still take no effects; the filesystem lives in a layer-1 adapter. The golden diff is exactly the intended change — compilation ID, profile ID, the network policy's `egress` and `policyTypes`, the unit's path and its registration — and the other four instance documents and the unit document are byte-identical; the profile identity was recomputed independently in Python. Refusal codes gained `refused_destination` and no existing code or precedence moved. Failure paths tested: every refusal, a symlink at or below the destination, a refused path writing nothing (proved by a clean write afterwards), an unnamed file left alone, both filesystem-failure branches, and the outcomes completed before a failure. Each file is written to a temporary name and renamed, so an interrupted run cannot leave a truncated file. Assessed scope: the write contract above; no claim about anything else. Offline only — nothing was applied, so no readiness is claimed. This page, the gap list and the plan's contract text changed in the same commit.
+- **Evidence:** `make check-v2` (7 packages), `REQUIRE_HELM=1 make check-v2` (chart render and Kustomize ran), `make check`, `git diff --check`, `make v2-report`. Coverage: kernel 95.3%, `adapters/files` 85.7%, `filestest` 83.3%, CLI 93.3%.
+- **Gaps touched:** the egress row now says egress is denied and the proxy path is due with the first instance that needs it; the delivery row records that the unit is written and its one-line registration is the operator's edit.
+- **Independent read-only review, before commit:** should-fix findings, all fixed — the `apps/` refusal read the destination as typed, so `--out .` from inside `apps/` or a symlink to it wrote into the v1 tree (now resolved, with the checkout's own `apps/` identified by `.git` or `clusters/` beside it, which also stops it refusing an unrelated folder called `apps`); a mid-write failure left earlier files written without saying so (now reported, and each file is atomic); the new profile refusals had no tests (now four cases); and this page still said the slice awaited approval. Nits fixed: the fake no longer keeps a partial write, and the shared `Contract` proves a refusal wrote nothing; `--out ""` is a usage error; a `/` destination is accepted; refusals no longer echo the destination; the adapter fixtures are the compiler's exact bytes. Not changed: a `/` destination as the filesystem root still writes into it if the operator asks for it — the `apps/` refusal is the guard, not a sandbox.
+- **Next gate:** the live half, which needs the operator.
 
 ## Slice record: phase 3 slice 1
 

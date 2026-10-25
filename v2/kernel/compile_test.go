@@ -87,6 +87,7 @@ func TestProfileIdentity(t *testing.T) {
 		func(p *PlatformProfile) { p.Chart.RepositoryNamespace = "other" },
 		func(p *PlatformProfile) { p.Delivery.Source = "other" },
 		func(p *PlatformProfile) { p.Delivery.OutputRoot = "other" },
+		func(p *PlatformProfile) { p.Delivery.UnitsRoot = "other" },
 		func(p *PlatformProfile) { p.Delivery.DependsOn = []string{"infra-base", "other"} },
 		func(p *PlatformProfile) { p.Delivery.DependsOn = nil },
 		func(p *PlatformProfile) { p.Workload.CPURequestMilli++ },
@@ -127,6 +128,10 @@ func TestProfileDecoding(t *testing.T) {
 		{"startup not a multiple", strings.Replace(text, `"startupSeconds": 120`, `"startupSeconds": 121`, 1), Invalid, "workload.startupSeconds"},
 		{"zero quota", strings.Replace(text, `"pods": 14`, `"pods": 0`, 1), Invalid, "quota.pods"},
 		{"bad name", strings.Replace(text, `"home-k3s"`, `"Home"`, 1), Invalid, "name"},
+		{"missing units root", strings.Replace(text, `"unitsRoot": "clusters/home",`, ``, 1), Invalid, "delivery.unitsRoot"},
+		{"units root in the app tree", strings.Replace(text, `"unitsRoot": "clusters/home"`, `"unitsRoot": "apps/x"`, 1), Unsupported, "delivery.unitsRoot"},
+		{"output root in the app tree", strings.Replace(text, `"outputRoot": "v2-apps"`, `"outputRoot": "apps"`, 1), Unsupported, "delivery.outputRoot"},
+		{"escaping units root", strings.Replace(text, `"unitsRoot": "clusters/home"`, `"unitsRoot": "../home"`, 1), Invalid, "delivery.unitsRoot"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := DecodeProfile([]byte(tt.text))
@@ -183,9 +188,10 @@ func TestCompiledResources(t *testing.T) {
 			`"sourceRef":{"kind":"HelmRepository","name":"bjw-s","namespace":"flux-system"}`, `"version":"5.2.1"`},
 		"v2-apps/instances/demo-orders/prod/resourcequota.json": {`"hard":{"limits.memory":"4Gi","pods":"14","requests.cpu":"2","requests.memory":"2Gi"}`},
 		"v2-apps/instances/demo-orders/prod/networkpolicy.json": {
-			`"ingress":[]`, `"podSelector":{"matchLabels":{"app.kubernetes.io/instance":"demo-orders"}}`, `"policyTypes":["Ingress"]`},
+			`"egress":[]`, `"ingress":[]`, `"podSelector":{"matchLabels":{"app.kubernetes.io/instance":"demo-orders"}}`,
+			`"policyTypes":["Ingress","Egress"]`},
 		"v2-apps/instances/demo-orders/prod/kustomization.yaml": {`"resources":["namespace.json","helmrelease.json","resourcequota.json","networkpolicy.json"]`},
-		"v2-apps/units/app-demo-orders-prod.json": {`"path":"./v2-apps/instances/demo-orders/prod"`, `"dependsOn":[{"name":"infra-base"}]`,
+		"clusters/home/app-demo-orders-prod.json": {`"path":"./v2-apps/instances/demo-orders/prod"`, `"dependsOn":[{"name":"infra-base"}]`,
 			`"prune":true`, `"wait":true`, `"timeout":"3m"`},
 	} {
 		for _, fragment := range want {
@@ -202,7 +208,7 @@ func TestCompiledResources(t *testing.T) {
 			}
 		}
 	}
-	if len(f) != 6 || !slices.Equal(c.Registrations, []string{"v2-apps/units/app-demo-orders-prod.json"}) {
+	if len(f) != 6 || !slices.Equal(c.Registrations, []string{"clusters/home/app-demo-orders-prod.json"}) {
 		t.Fatalf("files %d, registrations %v", len(f), c.Registrations)
 	}
 }
@@ -242,9 +248,17 @@ func TestCompilationChanges(t *testing.T) {
 			}
 		})
 	}
+	// A new output root moves the instance files and the unit's spec.path, not the unit's own file.
 	moved := compile(t, spec, r41, root)
-	if len(changed(base, moved)) != 12 || !strings.HasPrefix(moved.Registrations[0], "elsewhere/units/") {
-		t.Errorf("a new output root moves every file: %v", changed(base, moved))
+	if len(changed(base, moved)) != 11 || !strings.HasPrefix(moved.Registrations[0], "clusters/home/") {
+		t.Errorf("a new output root moves the instance files: %v", changed(base, moved))
+	}
+	// A new units root moves only the unit file: instance paths and its document are unchanged.
+	elsewhere := p
+	elsewhere.Delivery.UnitsRoot = "elsewhere/units"
+	unitMoved := compile(t, spec, r41, elsewhere)
+	if got := changed(base, unitMoved); len(got) != 2 || unitMoved.Registrations[0] != "elsewhere/units/app-demo-orders-prod.json" {
+		t.Errorf("a new units root moves only the unit: %v", got)
 	}
 	// The ID is the output's: another name for the same platform profile compiles to the same files.
 	renamed := p
@@ -380,20 +394,35 @@ func TestQuotaFit(t *testing.T) {
 	code(t, err, WrongRelease) // the release is checked before the quota
 }
 
-func TestNoAppReachesTheUnitsFolder(t *testing.T) {
-	r := releaseFile(t, "r41.json")
-	r.Application, r.ReleaseID = "units", ""
-	id, err := r.ID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := instance(t, "prod.json")
-	s.Application, s.Release = "units", id
-	c := compile(t, s, r, profile(t))
-	for _, file := range c.Files {
-		if strings.HasPrefix(file.Path, "v2-apps/units/") && file.Path != "v2-apps/units/app-units-prod.json" {
-			t.Errorf("an app's file is in the units folder: %s", file.Path)
-		}
+// Every file stays under the root that owns it, whatever the app is called, so no app name can
+// steer a path into the unit root or out of the instance root.
+func TestInstancesAndUnitsStayUnderTheirRoots(t *testing.T) {
+	for _, name := range []string{"units", "clusters", "home", "v2-apps"} {
+		t.Run(name, func(t *testing.T) {
+			r := releaseFile(t, "r41.json")
+			r.Application, r.ReleaseID = name, ""
+			id, err := r.ID()
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := instance(t, "prod.json")
+			s.Application, s.Release = name, id
+			p := profile(t)
+			c := compile(t, s, r, p)
+			folder := p.Delivery.OutputRoot + "/instances/" + name + "/prod/"
+			unit := p.Delivery.UnitsRoot + "/app-" + name + "-prod.json"
+			for _, file := range c.Files {
+				if file.Path == unit {
+					continue
+				}
+				if !strings.HasPrefix(file.Path, folder) {
+					t.Errorf("%s is outside %s", file.Path, folder)
+				}
+			}
+			if !slices.Equal(c.Registrations, []string{unit}) {
+				t.Errorf("registrations %v, want %s", c.Registrations, unit)
+			}
+		})
 	}
 }
 

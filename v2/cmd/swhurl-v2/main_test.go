@@ -40,6 +40,11 @@ func TestCLI(t *testing.T) {
 		{[]string{"select-release", "--instance", "prod", "--release", "release", "--expect", string(revision)}, 0, `"release":`, ""},
 		{[]string{"select-release", "--instance", "prod", "--release", "release", "--expect", "inst-sha256:" + strings.Repeat("0", 64)}, 2, "", "stale_instance"},
 		{[]string{"select-release", "--instance", "prod", "--release", "release"}, 2, "", "usage"},
+		{[]string{"select-release", "--instance", "prod", "--instance", "prod", "--release", "release", "--expect", string(revision)}, 2, "", "usage"},
+		{[]string{"select-release", "--instance", "prod", "--release", "huge", "--expect", string(revision)}, 2, "", "invalid: release: input file is larger than 1 MiB"},
+		{[]string{"select-release", "--instance", "", "--release", "release", "--expect", string(revision)}, 2, "", "usage"},
+		{[]string{"instance-revision", ""}, 1, "", "io: instance: cannot read input file"},
+		{[]string{"instance-revision", "huge"}, 2, "", "invalid: instance: input file is larger than 1 MiB"},
 		{[]string{"select-release", "--instance", "prod", "--release", "release", "--expect", string(revision), "extra"}, 2, "", "usage"},
 		{[]string{"release-id", "unreadable"}, 1, "", "io"},
 		{[]string{"instance-revision", "unreadable"}, 1, "", "io"},
@@ -66,8 +71,10 @@ func TestCLI(t *testing.T) {
 					return []byte(`{"secret":"do-not-echo"`), nil
 				case "unsupported":
 					return bytes.ReplaceAll(r42, []byte(`"web"`), []byte(`"do-not-echo"`)), nil
-				case "unreadable":
+				case "unreadable", "":
 					return nil, errors.New("do-not-echo")
+				case "huge":
+					return nil, errTooLarge
 				default:
 					t.Fatalf("unexpected file read: %s", name)
 					return nil, nil
@@ -112,6 +119,26 @@ func TestOutputFailure(t *testing.T) {
 	}
 }
 
+func TestReadInputLimit(t *testing.T) {
+	dir := t.TempDir()
+	for _, tt := range []struct {
+		size     int
+		tooLarge bool
+	}{{maxInput, false}, {maxInput + 1, true}} {
+		path := filepath.Join(dir, "input.json")
+		if err := os.WriteFile(path, bytes.Repeat([]byte(" "), tt.size), 0600); err != nil {
+			t.Fatal(err)
+		}
+		data, err := readInput(path)
+		if errors.Is(err, errTooLarge) != tt.tooLarge || !tt.tooLarge && (err != nil || len(data) != tt.size) {
+			t.Fatalf("size %d: %d bytes, %v", tt.size, len(data), err)
+		}
+	}
+	if _, err := readInput(filepath.Join(dir, "missing.json")); err == nil || errors.Is(err, errTooLarge) {
+		t.Fatalf("a missing file is an I/O error: %v", err)
+	}
+}
+
 func TestBinary(t *testing.T) {
 	// Build once, then invoke the real binary with no PATH, service configuration or credentials.
 	goTool, err := exec.LookPath("go")
@@ -133,7 +160,8 @@ func TestBinary(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	invoke := func(want int, args ...string) []byte {
+	// invoke runs the binary; a refusal must print its code (or "io: ...") on stderr.
+	invoke := func(want int, diagnosticWant string, args ...string) []byte {
 		t.Helper()
 		command := exec.Command(binary, args...)
 		command.Dir = dir
@@ -159,11 +187,14 @@ func TestBinary(t *testing.T) {
 		if want == 0 && diagnostic.Len() != 0 {
 			t.Fatalf("success diagnostic: %s", &diagnostic)
 		}
+		if !strings.HasPrefix(diagnostic.String(), diagnosticWant) {
+			t.Fatalf("%v: stderr %q, want it to start with %q", args, &diagnostic, diagnosticWant)
+		}
 		return out.Bytes()
 	}
-	id := strings.TrimSpace(string(invoke(0, "release-id", "r42.json")))
-	revision := strings.TrimSpace(string(invoke(0, "instance-revision", "prod.json")))
-	out := invoke(0, "select-release", "--instance", "prod.json", "--release", "r42.json", "--expect", revision)
+	id := strings.TrimSpace(string(invoke(0, "", "release-id", "r42.json")))
+	revision := strings.TrimSpace(string(invoke(0, "", "instance-revision", "prod.json")))
+	out := invoke(0, "", "select-release", "--instance", "prod.json", "--release", "r42.json", "--expect", revision)
 	after, err := kernel.DecodeInstance(out)
 	if err != nil {
 		t.Fatal(err)
@@ -177,27 +208,34 @@ func TestBinary(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "selected.json"), out, 0600); err != nil {
 		t.Fatal(err)
 	}
-	newRevision := strings.TrimSpace(string(invoke(0, "instance-revision", "selected.json")))
-	again := invoke(0, "select-release", "--instance", "selected.json", "--release", "r42.json", "--expect", newRevision)
+	newRevision := strings.TrimSpace(string(invoke(0, "", "instance-revision", "selected.json")))
+	again := invoke(0, "", "select-release", "--instance", "selected.json", "--release", "r42.json", "--expect", newRevision)
 	if !bytes.Equal(out, again) {
 		t.Fatal("binary no-op changed output")
 	}
-	invoke(2, "select-release", "--instance", "selected.json", "--release", "r42.json", "--expect", revision)
-	for _, bad := range [][]byte{
-		bytes.ReplaceAll(originals["r42.json"], []byte("demo-orders"), []byte("other")),
-		bytes.ReplaceAll(originals["r42.json"], []byte(`"web"`), []byte(`"worker"`)),
-		bytes.ReplaceAll(originals["r42.json"], []byte(`"runtime":`), []byte(`"grants":{"exposure":"public"},"runtime":`)),
+	invoke(2, "stale_instance:", "select-release", "--instance", "selected.json", "--release", "r42.json", "--expect", revision)
+	for _, bad := range []struct {
+		data []byte
+		want string
+	}{
+		{bytes.ReplaceAll(originals["r42.json"], []byte("demo-orders"), []byte("other")), "wrong_application:"},
+		{bytes.ReplaceAll(originals["r42.json"], []byte(`"web"`), []byte(`"worker"`)), "unsupported: runtime.kind:"},
+		{bytes.ReplaceAll(originals["r42.json"], []byte(`"runtime":`), []byte(`"grants":{"exposure":"public"},"runtime":`)), "unsupported: release:"},
 	} {
-		if err := os.WriteFile(filepath.Join(dir, "bad.json"), bad, 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "bad.json"), bad.data, 0600); err != nil {
 			t.Fatal(err)
 		}
-		invoke(2, "select-release", "--instance", "prod.json", "--release", "bad.json", "--expect", revision)
+		invoke(2, bad.want, "select-release", "--instance", "prod.json", "--release", "bad.json", "--expect", revision)
 		actual, _ := os.ReadFile(filepath.Join(dir, "bad.json"))
-		if !bytes.Equal(actual, bad) {
+		if !bytes.Equal(actual, bad.data) {
 			t.Fatal("refusal changed candidate file")
 		}
 	}
-	invoke(1, "release-id", "missing.json")
+	invoke(1, "io: release:", "release-id", "missing.json")
+	if err := os.WriteFile(filepath.Join(dir, "huge.json"), bytes.Repeat([]byte(" "), maxInput+1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	invoke(2, "invalid: release: input file is larger than 1 MiB", "release-id", "huge.json")
 	for file, before := range originals {
 		after, err := os.ReadFile(filepath.Join(dir, file))
 		if err != nil || !bytes.Equal(before, after) {

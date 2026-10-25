@@ -45,6 +45,15 @@ func code(t *testing.T, err error, want Code) {
 	}
 }
 
+// refusal checks the code and the field: when a document breaks several rules, which one decides.
+func refusal(t *testing.T, err error, want Code, field string) {
+	t.Helper()
+	var got *Error
+	if !errors.As(err, &got) || got.Code != want || got.Field != field {
+		t.Fatalf("error = %v, want %s: %s", err, want, field)
+	}
+}
+
 func TestRoundTrips(t *testing.T) {
 	r := release(t)
 	b, err := EncodeRelease(r)
@@ -280,35 +289,37 @@ func TestStrictDecoding(t *testing.T) {
 	for _, tt := range []struct {
 		name, text string
 		release    bool
+		want       Code
 	}{
-		{"unknown top", strings.Replace(r, `"schemaVersion": 1`, `"extra": "do-not-echo", "schemaVersion": 1`, 1), true},
-		{"grant in release", strings.Replace(r, `"runtime":`, `"grants": {"exposure":"public"}, "runtime":`, 1), true},
-		{"unknown runtime", strings.Replace(r, `"kind": "web"`, `"database":"sqlite", "kind":"web"`, 1), true},
-		{"case variant", strings.Replace(r, `"application"`, `"Application"`, 1), true},
-		{"duplicate", strings.Replace(r, `"application":`, `"application":"other", "application":`, 1), true},
-		{"nested duplicate", strings.Replace(r, `"port": 8080`, `"port":9090, "port":8080`, 1), true},
-		{"escaped duplicate", strings.Replace(r, `"port": 8080`, `"\u0070ort":9090, "port":8080`, 1), true},
-		{"null", strings.Replace(r, `"port": 8080`, `"port": null`, 1), true},
-		{"missing", strings.Replace(r, `"port": 8080,`, ``, 1), true},
-		{"false", strings.Replace(r, `"port": 8080`, `"port": false`, 1), true},
-		{"fraction", strings.Replace(r, `"port": 8080`, `"port": 8080.0`, 1), true},
-		{"exponent", strings.Replace(r, `"port": 8080`, `"port": 8.08e3`, 1), true},
-		{"string number", strings.Replace(r, `"port": 8080`, `"port": "8080"`, 1), true},
-		{"overflow", strings.Replace(r, `"port": 8080`, `"port": 2147483648`, 1), true},
-		{"extra document", r + "{}", true},
-		{"YAML", "schemaVersion: 1\n", true},
-		{"array", "[]", true},
-		{"null document", "null", true},
-		{"null object", strings.Replace(r, `"source": {`, `"source": null, "unused": {`, 1), true},
-		{"null id", strings.Replace(r, `"schemaVersion": 1`, `"releaseId":null, "schemaVersion": 1`, 1), true},
-		{"empty id", strings.Replace(r, `"schemaVersion": 1`, `"releaseId":"", "schemaVersion": 1`, 1), true},
-		{"invalid UTF8", strings.Replace(r, "demo-orders", "demo-\xfforders", 1), true},
-		{"surrogate", strings.Replace(r, "demo-orders", `demo-\ud800orders`, 1), true},
-		{"non-ASCII", strings.Replace(r, "demo-orders", "démø-orders", 1), true},
-		{"nonempty bindings", strings.Replace(s, `"bindings": {}`, `"bindings": {"database":"do-not-echo"}`, 1), false},
-		{"null bindings", strings.Replace(s, `"bindings": {}`, `"bindings": null`, 1), false},
-		{"missing configuration", strings.Replace(s, `"replicas": 1,`, ``, 1), false},
-		{"unknown configuration", strings.Replace(s, `"replicas": 1`, `"replicas":1,"memory":"256Mi"`, 1), false},
+		{"case variant beside the key", strings.Replace(r, `"application":`, `"Application":"demo-orders", "application":`, 1), true, Unsupported},
+		{"unknown top", strings.Replace(r, `"schemaVersion": 1`, `"extra": "do-not-echo", "schemaVersion": 1`, 1), true, Unsupported},
+		{"grant in release", strings.Replace(r, `"runtime":`, `"grants": {"exposure":"public"}, "runtime":`, 1), true, Unsupported},
+		{"unknown runtime", strings.Replace(r, `"kind": "web"`, `"database":"sqlite", "kind":"web"`, 1), true, Unsupported},
+		{"case variant", strings.Replace(r, `"application"`, `"Application"`, 1), true, Invalid},
+		{"duplicate", strings.Replace(r, `"application":`, `"application":"other", "application":`, 1), true, Invalid},
+		{"nested duplicate", strings.Replace(r, `"port": 8080`, `"port":9090, "port":8080`, 1), true, Invalid},
+		{"escaped duplicate", strings.Replace(r, `"port": 8080`, `"\u0070ort":9090, "port":8080`, 1), true, Invalid},
+		{"null", strings.Replace(r, `"port": 8080`, `"port": null`, 1), true, Invalid},
+		{"missing", strings.Replace(r, `"port": 8080,`, ``, 1), true, Invalid},
+		{"false", strings.Replace(r, `"port": 8080`, `"port": false`, 1), true, Invalid},
+		{"fraction", strings.Replace(r, `"port": 8080`, `"port": 8080.0`, 1), true, Invalid},
+		{"exponent", strings.Replace(r, `"port": 8080`, `"port": 8.08e3`, 1), true, Invalid},
+		{"string number", strings.Replace(r, `"port": 8080`, `"port": "8080"`, 1), true, Invalid},
+		{"overflow", strings.Replace(r, `"port": 8080`, `"port": 2147483648`, 1), true, Invalid},
+		{"extra document", r + "{}", true, Invalid},
+		{"YAML", "schemaVersion: 1\n", true, Invalid},
+		{"array", "[]", true, Invalid},
+		{"null document", "null", true, Invalid},
+		{"null object", strings.Replace(r, `"source": {`, `"source": null, "unused": {`, 1), true, Unsupported},
+		{"null id", strings.Replace(r, `"schemaVersion": 1`, `"releaseId":null, "schemaVersion": 1`, 1), true, Invalid},
+		{"empty id", strings.Replace(r, `"schemaVersion": 1`, `"releaseId":"", "schemaVersion": 1`, 1), true, Invalid},
+		{"invalid UTF8", strings.Replace(r, "demo-orders", "demo-\xfforders", 1), true, Invalid},
+		{"surrogate", strings.Replace(r, "demo-orders", `demo-\ud800orders`, 1), true, Invalid},
+		{"non-ASCII", strings.Replace(r, "demo-orders", "démø-orders", 1), true, Invalid},
+		{"nonempty bindings", strings.Replace(s, `"bindings": {}`, `"bindings": {"database":"do-not-echo"}`, 1), false, Unsupported},
+		{"null bindings", strings.Replace(s, `"bindings": {}`, `"bindings": null`, 1), false, Invalid},
+		{"missing configuration", strings.Replace(s, `"replicas": 1,`, ``, 1), false, Invalid},
+		{"unknown configuration", strings.Replace(s, `"replicas": 1`, `"replicas":1,"memory":"256Mi"`, 1), false, Unsupported},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			before := []byte(tt.text)
@@ -319,15 +330,73 @@ func TestStrictDecoding(t *testing.T) {
 			} else {
 				_, err = DecodeInstance(before)
 			}
-			if err == nil {
-				t.Fatal("accepted invalid document")
-			}
+			code(t, err, tt.want)
 			if strings.Contains(err.Error(), "do-not-echo") {
 				t.Fatal("diagnostic dumped input values")
 			}
 			if !bytes.Equal(before, copyBefore) {
 				t.Fatal("decoder mutated bytes")
 			}
+		})
+	}
+}
+
+// TestRefusalPrecedence: a document that breaks several rules always gets the same refusal, the
+// first in section 2's order (missing, unsupported, null, type, then the field table).
+func TestRefusalPrecedence(t *testing.T) {
+	r := string(fixture(t, "r42.json"))
+	for _, tt := range []struct {
+		name, text string
+		want       Code
+		field      string
+	}{
+		{"unsupported before null", strings.Replace(r, `"port": 8080`, `"port": null, "zzz": 1, "aaa": 1`, 1), Unsupported, "runtime"},
+		{"outer object first", strings.Replace(strings.Replace(r, `"port": 8080`, `"port": null`, 1),
+			`"schemaVersion": 1`, `"extra": 1, "schemaVersion": 1`, 1), Unsupported, "release"},
+		{"missing before unsupported", strings.Replace(r, `"application": "demo-orders"`, `"extra": 1`, 1), Invalid, "release.application"},
+		{"nulls in key order", strings.Replace(strings.Replace(r, `"uid": 65532`, `"uid": null`, 1), `"port": 8080`, `"port": null`, 1), Invalid, "runtime.port"},
+		{"null before type", strings.Replace(strings.Replace(r, `"port": 8080`, `"port": "8080"`, 1), `"uid": 65532`, `"uid": null`, 1), Invalid, "runtime.uid"},
+		{"field table order", strings.Replace(strings.Replace(r, `"linux/amd64"`, `"linux/arm64"`, 1), "ghcr.io", "GHCR.io", 1), Invalid, "artifact.image"},
+		{"kind before port", strings.Replace(strings.Replace(r, `"web"`, `"worker"`, 1), `"port": 8080`, `"port": 0`, 1), Unsupported, "runtime.kind"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for range 50 { // map order varies from run to run; the refusal must not
+				_, err := DecodeRelease([]byte(tt.text))
+				refusal(t, err, tt.want, tt.field)
+			}
+		})
+	}
+}
+
+// TestSelectionCheckOrder: section 2's order is contractual, so each case breaks two checks.
+func TestSelectionCheckOrder(t *testing.T) {
+	base, current := release(t), instance(t, "prod.json")
+	revision, _ := current.Revision()
+	stale := InstanceRevision("inst-sha256:" + strings.Repeat("0", 64))
+	other := base
+	other.Application, other.ReleaseID = "other", ""
+	worker := base
+	worker.Runtime.Kind, worker.ReleaseID = "worker", ""
+	forged := base
+	forged.Application = "other" // keeps the old identity assertion
+	broken := current
+	broken.Configuration.MemoryMiB = 0
+	for _, tt := range []struct {
+		name     string
+		current  InstanceSpec
+		release  ReleaseBundle
+		expected InstanceRevision
+		want     Code
+	}{
+		{"wrong application before stale", current, other, stale, WrongApplication},
+		{"expected syntax before wrong application", current, other, "", Invalid},
+		{"unsupported candidate before stale", current, worker, stale, Unsupported},
+		{"identity before wrong application", current, forged, revision, IdentityMismatch},
+		{"invalid current before wrong application", broken, other, revision, Invalid},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := SelectRelease(tt.current, tt.release, tt.expected)
+			code(t, err, tt.want)
 		})
 	}
 }

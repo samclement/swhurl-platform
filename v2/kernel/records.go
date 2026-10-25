@@ -96,46 +96,64 @@ var (
 	healthPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$`)
 )
 
+// validate checks the fields in the order of the field table, so the first broken one decides.
 func (r ReleaseBundle) validate() error {
 	if r.SchemaVersion != 1 {
 		return refuse(Unsupported, "schemaVersion", "only version 1 is supported")
 	}
-	for _, field := range []struct {
-		name, value string
-		pattern     *regexp.Regexp
-	}{
-		{"application", r.Application, namePattern},
-		{"source.repository", r.Source.Repository, sourcePattern},
-		{"source.commit", r.Source.Commit, commitPattern},
-		{"artifact.image", r.Artifact.Image, imagePattern},
-	} {
-		if !field.pattern.MatchString(field.value) {
-			return refuse(Invalid, field.name, "invalid format")
-		}
+	if !namePattern.MatchString(r.Application) {
+		return refuse(Invalid, "application", "invalid format")
 	}
-	if !strings.HasPrefix(r.Artifact.Digest, "sha256:") {
+	if err := r.Source.validate(); err != nil {
+		return err
+	}
+	if err := r.Artifact.validate(); err != nil {
+		return err
+	}
+	return r.Runtime.validate()
+}
+
+func (s Source) validate() error {
+	if !sourcePattern.MatchString(s.Repository) {
+		return refuse(Invalid, "source.repository", "invalid format")
+	}
+	if !commitPattern.MatchString(s.Commit) {
+		return refuse(Invalid, "source.commit", "invalid format")
+	}
+	return nil
+}
+
+func (a Artifact) validate() error {
+	if !imagePattern.MatchString(a.Image) {
+		return refuse(Invalid, "artifact.image", "invalid format")
+	}
+	if !strings.HasPrefix(a.Digest, "sha256:") {
 		return refuse(Unsupported, "artifact.digest", "only sha256 is supported")
 	}
-	if !digestPattern.MatchString(r.Artifact.Digest) {
+	if !digestPattern.MatchString(a.Digest) {
 		return refuse(Invalid, "artifact.digest", "expected sha256 and 64 lowercase hex characters")
 	}
-	if r.Artifact.MediaType != ManifestMediaType {
+	if a.MediaType != ManifestMediaType {
 		return refuse(Unsupported, "artifact.mediaType", "only OCI image manifests are supported")
 	}
-	if r.Artifact.Platform != "linux/amd64" {
+	if a.Platform != "linux/amd64" {
 		return refuse(Unsupported, "artifact.platform", "only linux/amd64 is supported")
 	}
-	if r.Runtime.Kind != "web" {
+	return nil
+}
+
+func (r Runtime) validate() error {
+	if r.Kind != "web" {
 		return refuse(Unsupported, "runtime.kind", "only stateless HTTP web releases are supported")
 	}
-	if r.Runtime.Port < 1 || r.Runtime.Port > 65535 {
+	if r.Port < 1 || r.Port > 65535 {
 		return refuse(Invalid, "runtime.port", "expected an integer from 1 to 65535")
 	}
-	if r.Runtime.UID < 1 {
-		return refuse(Invalid, "runtime.uid", "expected a positive non-root signed-32-bit UID")
-	}
-	if !healthPattern.MatchString(r.Runtime.HealthPath) || strings.HasPrefix(r.Runtime.HealthPath, "//") {
+	if !healthPattern.MatchString(r.HealthPath) || strings.HasPrefix(r.HealthPath, "//") {
 		return refuse(Invalid, "runtime.healthPath", "expected an absolute ASCII path, without authority, query or fragment")
+	}
+	if r.UID < 1 {
+		return refuse(Invalid, "runtime.uid", "expected a positive non-root signed-32-bit UID")
 	}
 	return nil
 }

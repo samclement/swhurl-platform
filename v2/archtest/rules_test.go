@@ -60,9 +60,11 @@ var Rules = []Rule{
 // Layers: a package may import v2 packages only from lower layers. 0 is the pure model, 1 adapters
 // (one per external dependency, speaking domain terms), 2 commands that wire adapters to the model.
 var Layers = map[string]int{
-	"kernel":        0,
-	"shadow":        0,
-	"cmd/swhurl-v2": 2,
+	"kernel":                   0,
+	"shadow":                   0,
+	"adapters/files":           1,
+	"adapters/files/filestest": 1,
+	"cmd/swhurl-v2":            2,
 }
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
@@ -258,6 +260,9 @@ func checkLayers(m *Module) []Violation {
 				target := m.local(importPath(spec))
 				if target == "" {
 					continue
+				}
+				if isFake(dir) && target == path.Dir(dir) {
+					continue // a fake asserts it satisfies the adapter it fakes; the recipe requires it
 				}
 				if other, ok := Layers[target]; !ok || other >= layer {
 					found = append(found, Violation{"layers", m.at(file, spec.Pos()),

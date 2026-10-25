@@ -1,11 +1,11 @@
 {
   "kind": "v2-compilation",
   "version": 1,
-  "id": "comp-sha256:3325af34e018611192dd5cd45d72da21403de10e942ea2fe716a090c32a40959",
+  "id": "comp-sha256:2d085a4b39b0c13efeb88583bf05ce8107ed91e865de505e8ed75bfb116eecb8",
   "inputs": {
     "release": "rel-sha256:2554994bc604486823e42caaf8e506b9468325b826224b9fb436f00dc22b10b0",
     "instance": "inst-sha256:6294e94b9652124cea8da16e601af3f992026d46669b80e50374cf11981bc8bc",
-    "profile": "prof-sha256:841fa52e70ce2e61f9f3cef8cbb7c575b9a38d5dd833c19614949488e7583829"
+    "profile": "prof-sha256:e2e1b3130be01ddcffa8ea790c6a62247fab59d8e7696a5cba53bd307fc22f11"
   },
   "files": [
     {
@@ -193,6 +193,7 @@
           "namespace": "demo-orders-staging"
         },
         "spec": {
+          "egress": [],
           "ingress": [],
           "podSelector": {
             "matchLabels": {
@@ -200,7 +201,8 @@
             }
           },
           "policyTypes": [
-            "Ingress"
+            "Ingress",
+            "Egress"
           ]
         }
       }
@@ -219,7 +221,7 @@
       }
     },
     {
-      "path": "v2-apps/units/app-demo-orders-staging.json",
+      "path": "clusters/home/app-demo-orders-staging.json",
       "document": {
         "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
         "kind": "Kustomization",
@@ -284,6 +286,6 @@
     }
   ],
   "registrations": [
-    "v2-apps/units/app-demo-orders-staging.json"
+    "clusters/home/app-demo-orders-staging.json"
   ]
 }

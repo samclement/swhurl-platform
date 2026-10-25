@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/files/filestest"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
@@ -92,7 +94,7 @@ func TestCLI(t *testing.T) {
 					return nil, nil
 				}
 			}
-			status := run(tt.args, &out, &diagnostic, read)
+			status := run(tt.args, &out, &diagnostic, read, filestest.New())
 			if status != tt.status {
 				t.Fatalf("status %d, want %d; %s", status, tt.status, &diagnostic)
 			}
@@ -124,7 +126,7 @@ func (w failedWriter) Write(b []byte) (int, error) {
 func TestOutputFailure(t *testing.T) {
 	for _, writer := range []io.Writer{failedWriter{}, failedWriter{true}} {
 		var diagnostic bytes.Buffer
-		status := run([]string{"release-id", "r42"}, writer, &diagnostic, func(string) ([]byte, error) { return fixture(t, "r42.json"), nil })
+		status := run([]string{"release-id", "r42"}, writer, &diagnostic, func(string) ([]byte, error) { return fixture(t, "r42.json"), nil }, filestest.New())
 		if status != 1 || !strings.Contains(diagnostic.String(), "io") {
 			t.Fatalf("output failure: %d %s", status, &diagnostic)
 		}
@@ -262,5 +264,134 @@ func TestBinary(t *testing.T) {
 	selected, _ := os.ReadFile(filepath.Join(dir, "selected.json"))
 	if !bytes.Equal(out, selected) {
 		t.Fatal("stale refusal changed instance file")
+	}
+}
+
+// inputs are the fixture files compile reads, by the name the command line uses.
+func inputs(t *testing.T) func(string) ([]byte, error) {
+	t.Helper()
+	docs := map[string][]byte{"prod.json": fixture(t, "prod.json"), "r41.json": fixture(t, "r41.json"),
+		"profile.json": fixture(t, "profile.json")}
+	return func(name string) ([]byte, error) { return docs[name], nil }
+}
+
+func compileArgs(dir string) []string {
+	return []string{"compile", "--instance", "prod.json", "--release", "r41.json", "--profile", "profile.json", "--out", dir}
+}
+
+// --out writes the compiled files and prints one line per path, not the document.
+func TestCompileOut(t *testing.T) {
+	dir := t.TempDir()
+	var out, diagnostic bytes.Buffer
+	if status := run(compileArgs(dir), &out, &diagnostic, inputs(t), files.New()); status != 0 {
+		t.Fatalf("status %d: %s", status, &diagnostic)
+	}
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	if len(lines) != 6 {
+		t.Fatalf("%d lines for 6 files: %q", len(lines), out.String())
+	}
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "written ") {
+			t.Errorf("line %q, want a written outcome", line)
+		}
+	}
+	if strings.Contains(out.String(), "v2-compilation") {
+		t.Error("--out printed the document")
+	}
+	// The unit lands where kustomize can list it; the instance files stay under the profile's root.
+	for _, path := range []string{"clusters/home/app-demo-orders-prod.json", "v2-apps/instances/demo-orders/prod/networkpolicy.json"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(path))); err != nil {
+			t.Errorf("%s: %v", path, err)
+		}
+	}
+	// A repeat changes nothing.
+	out.Reset()
+	if status := run(compileArgs(dir), &out, &diagnostic, inputs(t), files.New()); status != 0 {
+		t.Fatalf("repeat status %d: %s", status, &diagnostic)
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n") {
+		if !strings.HasPrefix(line, "unchanged ") {
+			t.Errorf("repeat line %q, want unchanged", line)
+		}
+	}
+}
+
+// A destination may not resolve into a checkout's apps/, where v1 records its instances: not when it
+// is named as apps/, not through a symlink, and not when it only looks like one.
+func TestCompileOutRefusesTheAppTree(t *testing.T) {
+	repo := t.TempDir()
+	for _, name := range []string{"clusters", "apps"} {
+		if err := os.MkdirAll(filepath.Join(repo, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(repo, "out-link")
+	if err := os.Symlink(filepath.Join(repo, "apps"), link); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	for _, dir := range []string{filepath.Join(repo, "apps"), filepath.Join(repo, "apps", "demo"), link} {
+		t.Run(dir, func(t *testing.T) {
+			var out, diagnostic bytes.Buffer
+			if status := run(compileArgs(dir), &out, &diagnostic, inputs(t), files.New()); status != 2 {
+				t.Fatalf("status %d, want 2: %s", status, &diagnostic)
+			}
+			if !strings.Contains(diagnostic.String(), files.RefusedDestination) || out.Len() != 0 {
+				t.Fatalf("stdout %q, stderr %q", out.String(), diagnostic.String())
+			}
+			if strings.Contains(diagnostic.String(), dir) {
+				t.Error("the refusal echoed the destination")
+			}
+		})
+	}
+	entries, err := os.ReadDir(filepath.Join(repo, "apps"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("a refused destination wrote %d entries into apps/", len(entries))
+	}
+	// A folder that merely has "apps" in its path, outside any checkout, is an ordinary destination.
+	elsewhere := filepath.Join(t.TempDir(), "home", "apps", "project", "out")
+	var out, diagnostic bytes.Buffer
+	if status := run(compileArgs(elsewhere), &out, &diagnostic, inputs(t), files.New()); status != 0 {
+		t.Fatalf("a non-checkout apps/ path: status %d: %s", status, &diagnostic)
+	}
+	if _, err := os.Stat(filepath.Join(elsewhere, "clusters", "home", "app-demo-orders-prod.json")); err != nil {
+		t.Errorf("the unit was not written: %v", err)
+	}
+}
+
+// An explicitly empty destination is a usage error, not a request to print the document.
+func TestCompileOutRejectsAnEmptyDestination(t *testing.T) {
+	var out, diagnostic bytes.Buffer
+	args := []string{"compile", "--instance", "prod.json", "--release", "r41.json", "--profile", "profile.json", "--out", ""}
+	if status := run(args, &out, &diagnostic, inputs(t), files.New()); status != 2 {
+		t.Fatalf("status %d, want 2", status)
+	}
+	if !strings.Contains(diagnostic.String(), "usage") || strings.Contains(out.String(), "v2-compilation") {
+		t.Fatalf("stdout %q, stderr %q", out.String(), diagnostic.String())
+	}
+}
+
+// The command hands the compiled files to the adapter and maps its failures to exit codes.
+func TestCompileOutAdapterOutcomes(t *testing.T) {
+	var out, diagnostic bytes.Buffer
+	fake := filestest.New()
+	if status := run(compileArgs("/destination"), &out, &diagnostic, inputs(t), fake); status != 0 {
+		t.Fatalf("status %d: %s", status, &diagnostic)
+	}
+	if fake.Writes != 1 || len(fake.Files) != 6 {
+		t.Fatalf("%d writes of %d files", fake.Writes, len(fake.Files))
+	}
+	for _, tt := range []struct {
+		fail   error
+		status int
+	}{{&files.Error{Code: files.RefusedDestination, Path: "x", Reason: "symlink_in_path"}, 2},
+		{&files.Error{Code: files.IO, Path: "x", Reason: "cannot write the file"}, 1}} {
+		diagnostic.Reset()
+		fake.Fail = tt.fail
+		if status := run(compileArgs("/destination"), &out, &diagnostic, inputs(t), fake); status != tt.status {
+			t.Errorf("status %d, want %d: %s", status, tt.status, &diagnostic)
+		}
 	}
 }

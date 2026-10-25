@@ -48,9 +48,9 @@ func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (
 	if err := fits(spec.Configuration, profile); err != nil {
 		return ResourceSet{}, err
 	}
-	// Instances under instances/, units under units/: no app name can reach the units folder.
+	// Instances under the instance root; units under the profile's unit root, which kustomize can list.
 	folder := profile.Delivery.OutputRoot + "/instances/" + spec.Application + "/" + spec.Environment
-	unitPath := profile.Delivery.OutputRoot + "/units/" + unitName(spec) + ".json"
+	unitPath := profile.Delivery.UnitsRoot + "/" + unitName(spec) + ".json"
 	resources := []struct {
 		name string
 		doc  manifest
@@ -166,11 +166,13 @@ func memoryQuantity(mib int32) string {
 
 // networkPolicy: a private instance's pods accept no connections. It selects the app's own pods,
 // not the namespace, as v1's does.
+// networkPolicy is the isolation boundary: a private instance accepts no ingress and, by the
+// operator's decision of 25 October 2026, sends no egress either. An empty rule list denies all.
 func networkPolicy(spec HTTPInstance) manifest {
 	return manifest{"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
 		"metadata": metadata(spec.Application, namespaceName(spec)),
 		"spec": manifest{"podSelector": manifest{"matchLabels": manifest{instanceLabel: spec.Application}},
-			"policyTypes": []any{"Ingress"}, "ingress": []any{}}}
+			"policyTypes": []any{"Ingress", "Egress"}, "ingress": []any{}, "egress": []any{}}}
 }
 
 func unit(spec HTTPInstance, profile PlatformProfile, folder string) manifest {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 // ProfileID is a platform profile's content identity: prof-sha256 over its canonical encoding.
@@ -27,11 +28,13 @@ type Chart struct {
 	RepositoryNamespace string `json:"repositoryNamespace"`
 }
 
-// Delivery is how Flux finds the files: its GitRepository, the root under it, the units every
-// instance waits for. DependsOn is copied whenever a profile is used, so nothing aliases it.
+// Delivery is how Flux finds the files: its GitRepository, the root instances are written under, the
+// root units are written under (kustomize can only list a unit from inside its own directory), and the
+// units every instance waits for. DependsOn is copied whenever a profile is used, so nothing aliases it.
 type Delivery struct {
 	Source     string   `json:"source"`
 	OutputRoot string   `json:"outputRoot"`
+	UnitsRoot  string   `json:"unitsRoot"`
 	DependsOn  []string `json:"dependsOn"`
 }
 
@@ -67,7 +70,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		required []string
 	}{
 		{"chart", []string{"name", "version", "repository", "repositoryNamespace"}},
-		{"delivery", []string{"source", "outputRoot", "dependsOn"}},
+		{"delivery", []string{"source", "outputRoot", "unitsRoot", "dependsOn"}},
 		{"workload", []string{"cpuRequestMilli", "startupSeconds", "startupPeriodSeconds"}},
 		{"quota", []string{"pods", "requestsCpuMilli", "requestsMemoryMiB", "limitsMemoryMiB"}},
 	} {
@@ -119,12 +122,28 @@ func (c Chart) validate() error {
 	return nil
 }
 
+// AppTree is where v1 keeps its app records. No profile root may point into it, so nothing compiled
+// can land among them.
+const AppTree = "apps"
+
+// reservedRoot is whether a profile root points at v1's app tree.
+func reservedRoot(path string) bool { return path == AppTree || strings.HasPrefix(path, AppTree+"/") }
+
 func (f Delivery) validate() error {
 	if !labelPattern.MatchString(f.Source) {
 		return refuse(Invalid, "delivery.source", "expected a DNS label")
 	}
-	if !rootPattern.MatchString(f.OutputRoot) {
-		return refuse(Invalid, "delivery.outputRoot", "expected a relative path of DNS-label segments")
+	// Field order: outputRoot, then unitsRoot.
+	for _, root := range []struct{ name, value string }{
+		{"delivery.outputRoot", f.OutputRoot},
+		{"delivery.unitsRoot", f.UnitsRoot},
+	} {
+		if !rootPattern.MatchString(root.value) {
+			return refuse(Invalid, root.name, "expected a relative path of DNS-label segments")
+		}
+		if reservedRoot(root.value) {
+			return refuse(Unsupported, root.name, "must not be inside "+AppTree+"/, which records v1 instances")
+		}
 	}
 	for i, unit := range f.DependsOn {
 		if !labelPattern.MatchString(unit) || slices.Contains(f.DependsOn[:i], unit) {
@@ -169,7 +188,7 @@ func profileCanonical(p PlatformProfile) []byte {
 	}
 	return canonical([]any{"swhurl.profile.v1", p.SchemaVersion, p.Name,
 		p.Chart.Name, p.Chart.Version, p.Chart.Repository, p.Chart.RepositoryNamespace,
-		p.Delivery.Source, p.Delivery.OutputRoot, dependsOn,
+		p.Delivery.Source, p.Delivery.OutputRoot, p.Delivery.UnitsRoot, dependsOn,
 		p.Workload.CPURequestMilli, p.Workload.StartupSeconds, p.Workload.StartupPeriodSeconds,
 		p.Quota.Pods, p.Quota.RequestsCPUMilli, p.Quota.RequestsMemoryMiB, p.Quota.LimitsMemoryMiB})
 }

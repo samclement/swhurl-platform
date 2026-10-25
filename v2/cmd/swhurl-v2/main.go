@@ -1,4 +1,4 @@
-// swhurl-v2 is an offline adapter. Only explicitly named files are read; no files are written.
+// swhurl-v2 is an offline adapter. Only explicitly named files are read.
 package main
 
 import (
@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
@@ -16,13 +19,16 @@ const usage = `usage:
   swhurl-v2 release-id RELEASE.json
   swhurl-v2 instance-revision INSTANCE.json
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
-  swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json
+  swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--out DIR]
 
-Offline only. Results go to stdout; input files are never overwritten.
-Exit 0: success/no-op; 2: usage/validation/refusal; 1: file/output I/O failure.
+Offline only, and input files are never overwritten. Without --out the compilation document goes to
+stdout and nothing is written. With --out every compiled file is written under DIR, one
+"written PATH" or "unchanged PATH" line each; DIR must not be inside apps/, and nothing outside it
+is touched.
+Exit 0: success/no-op; 2: usage/validation/refusal; 1: file or output I/O failure.
 `
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, readInput)) }
+func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, readInput, files.New())) }
 
 // maxInput bounds what is read from a named file; a descriptor is a few hundred bytes.
 const maxInput = 1 << 20
@@ -42,7 +48,7 @@ func readInput(path string) ([]byte, error) {
 	return data, err
 }
 
-func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error)) int {
+func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error), writer files.Writer) int {
 	r, outcome := parse(args)
 	switch outcome {
 	case help:
@@ -51,7 +57,7 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		fmt.Fprint(diagnostic, usage)
 		return 2
 	}
-	c := cli{out, diagnostic, readFile}
+	c := cli{out, diagnostic, readFile, writer}
 	switch r.command {
 	case "release-id":
 		return c.releaseID(r.release)
@@ -63,8 +69,11 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 	return c.selectRelease(r)
 }
 
-// request is one parsed command line: the command and the files and revision it names.
-type request struct{ command, instance, release, expected, profile string }
+// request is one parsed command line: the command, the files and revision it names, and where to write.
+type request struct {
+	command, instance, release, expected, profile, out string
+	outFlag                                            *once
+}
 
 type outcome int
 
@@ -105,6 +114,8 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	}
 	if r.command == "compile" {
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		r.outFlag = &once{value: &r.out}
+		flags.Var(r.outFlag, "out", "destination directory")
 	}
 	return flags, flags.Parse(args)
 }
@@ -112,7 +123,11 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 // take fills r from the arguments left after the flags; false is a usage error.
 func (r *request) take(flags *flag.FlagSet) bool {
 	if named := r.named(); named != nil {
-		return flags.NArg() == 0 && !slices.Contains(named, "")
+		if flags.NArg() != 0 || slices.Contains(named, "") {
+			return false
+		}
+		// An explicitly empty destination is a usage error, not a request to print the document.
+		return r.outFlag == nil || !r.outFlag.set || r.out != ""
 	}
 	if flags.NArg() != 1 {
 		return false
@@ -156,6 +171,7 @@ func (o *once) Set(value string) error {
 type cli struct {
 	out, diagnostic io.Writer
 	readFile        func(string) ([]byte, error)
+	writer          files.Writer
 }
 
 func (c cli) releaseID(path string) int {
@@ -219,7 +235,92 @@ func (c cli) compile(r request) int {
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
+	if r.out != "" {
+		return c.write(r.out, compiled)
+	}
 	return emit(c.out, c.diagnostic, kernel.EncodeCompilation(compiled))
+}
+
+// write is the only effect the CLI has: it hands the compiled files to the adapter and reports each
+// one. A destination inside the checkout's apps/ is refused, because that is where v1's instances are
+// recorded. Outcomes are printed before any failure, so a partly written destination is visible.
+func (c cli) write(dir string, compiled kernel.Compilation) int {
+	if _, inside := appTree(dir); inside {
+		fmt.Fprintf(c.diagnostic, "%s: destination: %s\n", files.RefusedDestination, "inside the v1 app tree")
+		return 2
+	}
+	outcomes, err := c.writer.Write(dir, compiled.Files)
+	for _, outcome := range outcomes {
+		if _, writeErr := fmt.Fprintf(c.out, "%s %s\n", outcome.State, outcome.Path); writeErr != nil {
+			fmt.Fprintln(c.diagnostic, "io: output: cannot write result")
+			return 1
+		}
+	}
+	if err == nil {
+		return 0
+	}
+	fmt.Fprintln(c.diagnostic, err)
+	var refusal *files.Error
+	if errors.As(err, &refusal) && refusal.Code == files.RefusedDestination {
+		return 2
+	}
+	return 1
+}
+
+// appTree reports the v1 app tree a destination would write into, if any: the apps/ directory of the
+// checkout that contains it. A checkout has .git or clusters/ beside apps/, which is what makes an
+// apps/ directory this repository's rather than an unrelated folder that happens to be called apps.
+func appTree(dir string) (string, bool) {
+	resolved, err := resolve(dir)
+	if err != nil {
+		return "", false
+	}
+	for current := resolved; ; current = filepath.Dir(current) {
+		if isCheckout(current) {
+			tree := filepath.Join(current, kernel.AppTree)
+			if resolved == tree || strings.HasPrefix(resolved, tree+string(filepath.Separator)) {
+				return tree, true
+			}
+			return "", false
+		}
+		if parent := filepath.Dir(current); parent == current {
+			return "", false
+		}
+	}
+}
+
+func isCheckout(dir string) bool {
+	for _, marker := range []string{".git", "clusters"} {
+		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// resolve is filepath.Abs plus the symlinks of the nearest existing ancestor: the destination may not
+// exist yet, but a link the operator passes must not hide where the files would really go.
+func resolve(dir string) (string, error) {
+	absolute, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	existing, rest := absolute, ""
+	for {
+		if _, err := os.Lstat(existing); err == nil {
+			resolved, err := filepath.EvalSymlinks(existing)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Join(resolved, rest), nil
+		}
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return absolute, nil
+		}
+		rest = filepath.Join(filepath.Base(existing), rest)
+		existing = parent
+	}
 }
 
 func (c cli) release(path string) (kernel.ReleaseBundle, int) {

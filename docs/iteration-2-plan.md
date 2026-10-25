@@ -463,6 +463,8 @@ v2's design principles are checked, not only described. The rules are code in [`
 | `no-subprocess` | v2 code (not its tests) starts no process and names no `kubectl` or `flux` command ([why](#kubernetes-the-api-server-not-kubectl)). |
 | `public-api` | The exported API of every library package matches `archtest/api.txt`, so an interface change is a deliberate, reviewed diff. |
 | `budgets` | No function exceeds complexity 10 or 60 lines unless `archtest/budgets.json` lists it with a reason; a listed function may shrink but not grow, and its entry goes once it fits. |
+| `places` | A package's place matches its layer: layer 0 is listed in `Pure`, layer 1 is under `adapters/`, layer 2 is a `main` package under `cmd/` ([why](#extension-recipes)). |
+| `adapter-complete` | Each adapter `adapters/<name>` follows the [new-adapter recipe](#extension-recipes): it exports an interface, has raw fixtures in `testdata/`, and its fake in `adapters/<name>/<name>test` satisfies each interface and shares one `Contract` suite with the real adapter; only tests import a fake ([why](#fixtures-and-fakes)). |
 | `rules-documented` | This table lists exactly the rules in code, each rule's principle link resolves, and `AGENTS.md` names `make check-v2`. |
 
 **Run** `make check-v2` from the repository root: `gofmt`, `go vet` and `go test` (with the rules) on the pinned toolchain with network access off, in about two seconds. CI runs it in Validate's tooling job, with Go set up from the version in `v2/go.mod`; it is not part of `make check`. A failure prints one line per violation (rule, file and line, what is wrong), then each broken rule's fix and the section explaining why.
@@ -507,7 +509,38 @@ budgets (complexity/lines): + adapters/git.Read 4/31
 
 **Verification (24 October 2026, before commit):** nine tests on small trees in temporary directories cover identical trees (an empty report with no `null`), a new package with local, standard and external imports and API, an updated baseline with removed code, undeclared and tests-only packages, budget entries added, raised and lowered with changed limits, changed rule settings, a base without v2 (one review line for the new rules; every setting still in the document), the five-item limit with byte-identical documents, and six inputs it refuses. Eight deliberate breaks to the comparison (reversed import changes, external imports not reviewed, rules never new, the test-only flag inverted, raised entries not reviewed, absent trees accepted without `go.mod`, changed files dropped, no item limit) each failed at least one test. Through `make`: the working tree against `origin/main`; `BASE=HEAD AFTER=HEAD` (no changes); phase 1 to guardrails (`2641c018` → `c63fe75e`: the rules new and both budget entries for review); before v2 to phase 1 (`5c85a793` → `2641c018`: v2 new, two packages without layers); `FORMAT=json`; and a wrong `FORMAT`, `AFTER` and `BASE` each failing with a message. One pi run (`claude-bridge/claude-haiku-5-5`, a throwaway worktree, the extension loaded with `-e`), asked to add a comment line in the kernel: the edit check passed and, at the end, the report appeared once as a message, with no further agent turn.
 
-Added with the code they guard: `adapter-complete` (each adapter has a fake satisfying its interface and a contract test) with the first adapter, and extension recipes (what adding an adapter or command touches) as phases add them.
+#### Extension recipes
+
+What each kind of change touches, so a change can be checked against it rather than remembered. The rules check what holds in every tree; the [change report](#change-report) shows what one change added, for the parts no rule can see.
+
+| Change | Touches | Checked by |
+| --- | --- | --- |
+| New pure-model package | Declared at layer 0 in `Layers` and listed in `Pure` | `places`, `pure` |
+| New adapter | `adapters/<name>/` at layer 1, as below | `places`, `adapter-complete`; the wiring line by review |
+| New command | `cmd/<name>/` as `package main` at layer 2, declared in `Layers`; wiring only | `places`, `layers` |
+| New exported function or type | `archtest/api.txt`, with the reason in the change | `public-api` |
+| New dependency | The operator's approval first | `stdlib-only` |
+
+A new adapter, for example one that reads Git:
+
+```text
+adapters/git/git.go                 package git: the interface it offers (Reader) and the real adapter
+adapters/git/testdata/              raw responses the real adapter's contract test reads
+adapters/git/git_test.go            package git_test: gittest.Contract(t, <the real adapter on raw fixtures>)
+adapters/git/gittest/fake.go        package gittest: Fake; var _ git.Reader = (*Fake)(nil); func Contract(t *testing.T, r git.Reader)
+adapters/git/gittest/fake_test.go   Contract(t, &Fake{...})
+archtest/rules_test.go              Layers: "adapters/git": 1, "adapters/git/gittest": 1
+cmd/swhurl-v2/main.go               one wiring line
+```
+
+- **The interface** speaks domain terms ([adapters](#adapters)). Its users, commands and their tests, depend on it, not on the real adapter.
+- **`var _ git.Reader = (*Fake)(nil)`** makes the compiler prove the fake satisfies the interface; `adapter-complete` only checks the line is there, since the rules read source and never build it.
+- **`Contract`** is one behaviour suite, failures included ([fixtures and fakes](#fixtures-and-fakes)), run against the real adapter on raw fixtures (or a cheap real component such as a temporary Git repository) and against the fake, so the fake cannot drift from what the real adapter does. The real adapter's test is an external test package (`git_test`) because the fake imports the adapter.
+- **Fakes are for tests:** only test files (and other fakes) import a `<name>test` package, so no fake reaches the binary.
+
+**Verification (25 October 2026, before commit):** on v2 both rules pass (there is no adapter yet, so `adapter-complete` checks nothing until the first). On fixtures, `places` reports eight misplaced packages (layer 0 not pure, pure at layer 1, layer 1 outside `adapters/`, `adapters/` at layer 2, layer 2 not `main` or outside `cmd/`, `cmd/` at layer 0, an unknown layer) and leaves correctly placed, undeclared and test-only packages alone. A complete adapter passes `adapter-complete`, including an aliased import of the fake in a test; each of ten broken versions is reported (no interface, no raw fixtures, no fake, no assertion, an assertion against another package's interface, a `Contract` without `*testing.T`, the real adapter not run through `Contract` or run through another package's, the fake not run through it, a command importing the fake). The complete fixture also builds and passes `go vet` and `go test` as a real module, and removing the fake's method fails compilation at the assertion. Eight deliberate breaks to the two checks each failed a test.
+
+The first real adapter needs phase-2 approval; it is checked by `adapter-complete` from the commit that adds it.
 
 ### Offline CLI and build
 
@@ -590,7 +623,7 @@ Read the actual [`kernel`](../v2/kernel/records.go), [`identity`](../v2/kernel/i
 1. Start from a domain scenario: the inputs, the request and the expected plan or refusal ([fixtures](#fixtures-and-fakes)).
 2. Find the v1 behaviour it covers and classify it as preserve, deliberately change or remove. Check the relevant review findings so the change does not rebuild a known problem.
 3. Write the pure function and its tests first. It takes time, identifiers and snapshots as arguments.
-4. Add an adapter only when the slice needs that dependency. Give it a domain-level interface, a raw-fixture contract test and a behavioural fake for its failure cases. Kubernetes goes through the API server ([why](#kubernetes-the-api-server-not-kubectl)).
+4. Add an adapter only when the slice needs that dependency, following the [new-adapter recipe](#extension-recipes): a domain-level interface, raw fixtures, and a behavioural fake that shares one contract suite with the real adapter, failure cases included. Kubernetes goes through the API server ([why](#kubernetes-the-api-server-not-kubectl)).
 5. Run `make check-v2` ([guardrails](#guardrails), format, vet and tests) and the matching [test tiers](#test-tiers); live checks only in an approved live phase. Fix what a rule reports rather than its baseline, unless the change is intended and explained.
 
 ### Working-tree preservation

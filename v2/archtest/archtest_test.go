@@ -48,10 +48,12 @@ func readRepo(t *testing.T, path string) string {
 	return string(data)
 }
 
-func TestStdlibOnly(t *testing.T)   { report(t, checkStdlibOnly(module(t))) }
-func TestLayers(t *testing.T)       { report(t, checkLayers(module(t))) }
-func TestPure(t *testing.T)         { report(t, checkPure(module(t))) }
-func TestNoSubprocess(t *testing.T) { report(t, checkNoSubprocess(module(t))) }
+func TestStdlibOnly(t *testing.T)      { report(t, checkStdlibOnly(module(t))) }
+func TestLayers(t *testing.T)          { report(t, checkLayers(module(t))) }
+func TestPure(t *testing.T)            { report(t, checkPure(module(t))) }
+func TestNoSubprocess(t *testing.T)    { report(t, checkNoSubprocess(module(t))) }
+func TestPlaces(t *testing.T)          { report(t, checkPlaces(module(t), Layers, Pure)) }
+func TestAdapterComplete(t *testing.T) { report(t, checkAdapters(module(t))) }
 
 func TestPublicAPI(t *testing.T) {
 	got := strings.Join(publicAPI(module(t)), "\n") + "\n"

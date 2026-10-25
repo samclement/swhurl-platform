@@ -13,6 +13,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -45,6 +46,12 @@ var Rules = []Rule{
 	{"budgets", "no function exceeds the complexity and length limits in archtest/budgets.json unless listed there, and listed ones never grow",
 		"split the function; only if it truly cannot be split, add it to budgets.json with a reason (reviewed)",
 		"guardrails"},
+	{"places", "a package's place matches its layer: layer 0 is listed in Pure, layer 1 is under adapters/, layer 2 is a main package under cmd/",
+		"move the package, or correct its entry in Layers or Pure (archtest/rules_test.go)",
+		"extension-recipes"},
+	{"adapter-complete", "each adapter adapters/<name> exports an interface, has raw fixtures in testdata/, and a fake in adapters/<name>/<name>test that satisfies each interface and runs one Contract suite with the real adapter; only tests import a fake",
+		"add the missing piece the violation names, following the new-adapter recipe",
+		"fixtures-and-fakes"},
 	{"rules-documented", "the plan's Guardrails table lists exactly these rules and every principle link resolves",
 		"update the table in docs/iteration-2-plan.md (or this file) so both say the same",
 		"guardrails"},
@@ -69,6 +76,9 @@ var PureImports = []string{
 
 // Printing is an effect even with an allowed package.
 var pureBannedCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println"}
+
+// Where each layer lives: adapters under adapters/, commands under cmd/.
+const adapterRoot, commandRoot = "adapters/", "cmd/"
 
 var subprocessImports = []string{"os/exec", "syscall"}
 var subprocessCalls = []string{"os.StartProcess"}
@@ -374,4 +384,208 @@ func checkNoSubprocess(m *Module) []Violation {
 		}
 	}
 	return found
+}
+
+func checkPlaces(m *Module, layers map[string]int, pure []string) []Violation {
+	var found []Violation
+	for _, dir := range m.Dirs() {
+		source := m.Packages[dir].Source()
+		layer, declared := layers[dir]
+		if len(source) == 0 || !declared {
+			continue // tests only, or undeclared: the layers rule reports that
+		}
+		if problem := placeProblem(dir, layer, slices.Contains(pure, dir), source[0].AST.Name.Name == "main"); problem != "" {
+			found = append(found, Violation{"places", source[0].Path, problem})
+		}
+	}
+	return found
+}
+
+// placeProblem is what is wrong with a package's place for its layer, or "".
+func placeProblem(dir string, layer int, pure, main bool) string {
+	adapter, command := strings.HasPrefix(dir, adapterRoot), strings.HasPrefix(dir, commandRoot)
+	switch {
+	case layer < 0 || layer > 2:
+		return fmt.Sprintf("%s has layer %d; the layers are 0 (pure model), 1 (adapters) and 2 (commands)", dir, layer)
+	case layer == 0 && !pure:
+		return dir + " is layer 0, the pure model, but is not listed in Pure"
+	case layer != 0 && pure:
+		return fmt.Sprintf("%s is listed in Pure but is layer %d", dir, layer)
+	case layer == 1 && !adapter:
+		return dir + " is layer 1 (adapters) but is not under " + adapterRoot
+	case layer != 1 && adapter:
+		return fmt.Sprintf("%s is under %s but is layer %d", dir, adapterRoot, layer)
+	case layer == 2 && !(command && main):
+		return dir + " is layer 2 (commands) but is not a main package under " + commandRoot
+	case layer != 2 && command:
+		return fmt.Sprintf("%s is under %s but is layer %d", dir, commandRoot, layer)
+	}
+	return ""
+}
+
+// ---- adapter-complete: the new-adapter recipe ----
+
+// fakeOf is the fake package of an adapter: adapters/git has adapters/git/gittest.
+func fakeOf(adapter string) string { return adapter + "/" + path.Base(adapter) + "test" }
+
+// isFake is whether dir is some adapter's fake package.
+func isFake(dir string) bool {
+	parts := strings.Split(dir, "/")
+	return len(parts) == 3 && parts[0]+"/" == adapterRoot && parts[2] == parts[1]+"test"
+}
+
+func checkAdapters(m *Module) []Violation {
+	var found []Violation
+	for _, dir := range m.Dirs() {
+		source := m.Packages[dir].Source()
+		if strings.HasPrefix(dir, adapterRoot) && strings.Count(dir, "/") == 1 && len(source) > 0 {
+			found = append(found, checkAdapter(m, dir, source[0].Path)...)
+		}
+		for _, file := range source {
+			if isFake(dir) {
+				break // a fake may build on another fake
+			}
+			for _, spec := range file.AST.Imports {
+				if target := m.local(importPath(spec)); isFake(target) {
+					found = append(found, Violation{"adapter-complete", m.at(file, spec.Pos()), "imports the fake " + target + "; only tests use fakes"})
+				}
+			}
+		}
+	}
+	return found
+}
+
+// checkAdapter checks one adapter against the recipe; where is a file of it, for the report.
+func checkAdapter(m *Module, dir, where string) []Violation {
+	var found []Violation
+	missing := func(what string) { found = append(found, Violation{"adapter-complete", where, dir + " " + what}) }
+	ports := interfaces(m.Packages[dir])
+	if len(ports) == 0 {
+		missing("exports no interface: the port its users depend on, in domain terms")
+	}
+	if entries, err := os.ReadDir(filepath.Join(m.Root, dir, "testdata")); err != nil || len(entries) == 0 {
+		missing("has no raw fixtures in " + dir + "/testdata")
+	}
+	fake := m.Packages[fakeOf(dir)]
+	if fake == nil || len(fake.Source()) == 0 {
+		missing("has no fake package " + fakeOf(dir))
+		return found
+	}
+	for _, port := range ports {
+		if !asserts(m, fake.Source(), m.Path+"/"+dir, port) {
+			missing(fmt.Sprintf("has no assertion in %s that a fake satisfies %s (var _ %s.%s = ...)", fakeOf(dir), port, path.Base(dir), port))
+		}
+	}
+	if !declaresContract(fake.Source()) {
+		missing("has no Contract(t *testing.T, ...) suite in " + fakeOf(dir))
+	}
+	if !callsContract(m, tests(m.Packages[dir]), m.Path+"/"+fakeOf(dir)) {
+		missing("has no test running " + path.Base(fakeOf(dir)) + ".Contract against the real adapter")
+	}
+	if !callsContract(m, tests(fake), m.Path+"/"+fakeOf(dir)) {
+		missing("has no test in " + fakeOf(dir) + " running Contract against the fake")
+	}
+	return found
+}
+
+func tests(pkg *Package) []File {
+	return slices.DeleteFunc(slices.Clone(pkg.Files), func(f File) bool { return !f.Test })
+}
+
+// interfaces are the exported interface types a package declares, sorted.
+func interfaces(pkg *Package) []string {
+	var out []string
+	for _, file := range pkg.Source() {
+		for _, decl := range file.AST.Decls {
+			if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.TYPE {
+				for _, spec := range gen.Specs {
+					spec := spec.(*ast.TypeSpec)
+					if _, ok := spec.Type.(*ast.InterfaceType); ok && spec.Name.IsExported() {
+						out = append(out, spec.Name.Name)
+					}
+				}
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// imported is the name each import of a file is known by.
+func imported(file File) map[string]string {
+	names := map[string]string{}
+	for _, spec := range file.AST.Imports {
+		name := path.Base(importPath(spec))
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		names[name] = importPath(spec)
+	}
+	return names
+}
+
+// asserts is whether a file has `var _ pkg.Port = ...` with pkg the adapter at importPath: the
+// compiler then proves the fake satisfies the interface.
+func asserts(m *Module, files []File, adapter, port string) bool {
+	for _, file := range files {
+		names := imported(file)
+		for _, decl := range file.AST.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				spec := spec.(*ast.ValueSpec)
+				sel, ok := spec.Type.(*ast.SelectorExpr)
+				if !ok || len(spec.Names) != 1 || spec.Names[0].Name != "_" || len(spec.Values) != 1 || sel.Sel.Name != port {
+					continue
+				}
+				if pkg, ok := sel.X.(*ast.Ident); ok && names[pkg.Name] == adapter {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func declaresContract(files []File) bool {
+	for _, file := range files {
+		for _, decl := range file.AST.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if ok && fn.Recv == nil && fn.Name.Name == "Contract" && len(fn.Type.Params.List) > 0 &&
+				render(token.NewFileSet(), fn.Type.Params.List[0].Type) == "*testing.T" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// callsContract is whether a test calls the fake package's Contract, as fake.Contract from another
+// package or as Contract from inside it.
+func callsContract(m *Module, files []File, fake string) bool {
+	for _, file := range files {
+		names := imported(file)
+		inside := m.Path+"/"+path.Dir(file.Path) == fake && file.AST.Name.Name == path.Base(fake)
+		calls := false
+		ast.Inspect(file.AST, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return !calls
+			}
+			switch fun := call.Fun.(type) {
+			case *ast.SelectorExpr:
+				pkg, ok := fun.X.(*ast.Ident)
+				calls = calls || ok && fun.Sel.Name == "Contract" && names[pkg.Name] == fake
+			case *ast.Ident:
+				calls = calls || inside && fun.Name == "Contract"
+			}
+			return !calls
+		})
+		if calls {
+			return true
+		}
+	}
+	return false
 }

@@ -73,6 +73,7 @@ kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
 kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
 kernel: func Ownership(claims []Claim) []Conflict
 kernel: func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (ResourceSet, error)
+kernel: func RenderProxy(allocations []EgressAllocation, profile PlatformProfile) (ResourceSet, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"` MediaType string `json:"mediaType"` Platform string `json:"platform"`}
 kernel: type Auth struct {Issuer string `json:"issuer"` Keys string `json:"keys"`}
@@ -90,6 +91,7 @@ kernel: type ConnectionsID string
 kernel: type DNS struct {Namespace string `json:"namespace"` Labels map[string]string `json:"labels"`}
 kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `json:"outputRoot"` UnitsRoot string `json:"unitsRoot"` DependsOn []string `json:"dependsOn"`}
 kernel: type Egress struct {Port int32 Grants []string}
+kernel: type EgressAllocation struct {Application, Environment string Port int32 Grants []string}
 kernel: type EgressProxy struct {Address string `json:"address"` Namespace string `json:"namespace"` Labels map[string]string `json:"labels"`}
 kernel: type Error struct {Code Code Field string Reason string}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}

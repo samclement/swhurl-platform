@@ -142,6 +142,20 @@ func decodeEgress(data []byte) (egressDocument, error) {
 	return document, nil
 }
 
+// checkedEgress reads an allocation document and checks what every reader of it depends on: a
+// document this command wrote, and the commit it was allocated at. Two commands read the document, so
+// the check is one function rather than one per caller.
+func checkedEgress(data []byte) (egressDocument, error) {
+	document, err := decodeEgress(data)
+	if err != nil {
+		return egressDocument{}, err
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(document.Revision) {
+		return egressDocument{}, fmt.Errorf("invalid: egress: revision_required")
+	}
+	return document, nil
+}
+
 func encodeEgress(document egressDocument) ([]byte, error) {
 	var out bytes.Buffer
 	encoder := json.NewEncoder(&out)
@@ -185,12 +199,9 @@ func (c cli) resolutionFiles(r request, spec kernel.InstanceSpec) (kernel.Connec
 
 // compileEgress picks one instance's allocation out of the document.
 func compileEgress(data []byte, application, environment string) (*kernel.Egress, error) {
-	document, err := decodeEgress(data)
+	document, err := checkedEgress(data)
 	if err != nil {
 		return nil, err
-	}
-	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(document.Revision) {
-		return nil, fmt.Errorf("invalid: egress: revision_required")
 	}
 	for _, allocated := range document.Instances {
 		if allocated.Application == application && allocated.Environment == environment {

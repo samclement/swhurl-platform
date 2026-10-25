@@ -104,6 +104,7 @@ One machine runs k3s. cert-manager gets certificates from Let's Encrypt, the pac
 | See how the pieces depend on and own each other | [Architecture](docs/architecture.md) |
 | Consider a clean-sheet design, contracts and feature-cost trade-offs (proposal) | [Architecture review](docs/architecture-review.md) |
 | Change this repository safely (tests, fixtures, docs) | [Contributing](docs/contributing.md) |
+| Run a bounded software change with a coding agent | [Software change workflow](docs/software-change-workflow.md) |
 | Learn what app, environment, instance and unit mean | [Glossary](GLOSSARY.md) |
 
 <details>

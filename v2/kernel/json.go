@@ -3,6 +3,7 @@ package kernel
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
 	"slices"
 	"unicode/utf8"
 )
@@ -62,11 +63,15 @@ func fields(data []byte, where string, required []string, optional ...string) (m
 			return nil, refuse(Invalid, where+"."+key, "required field is missing")
 		}
 	}
-	for key, value := range object {
+	// Unsupported fields before nulls, each in key order: one document always gets one refusal.
+	keys := slices.Sorted(maps.Keys(object))
+	for _, key := range keys {
 		if !slices.Contains(required, key) && !slices.Contains(optional, key) {
 			return nil, refuse(Unsupported, where, "unsupported field")
 		}
-		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+	}
+	for _, key := range keys {
+		if bytes.Equal(bytes.TrimSpace(object[key]), []byte("null")) {
 			return nil, refuse(Invalid, where+"."+key, "null is not supported")
 		}
 	}

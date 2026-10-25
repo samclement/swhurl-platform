@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
@@ -20,92 +21,199 @@ Offline only. Results go to stdout; input files are never overwritten.
 Exit 0: success/no-op; 2: usage/validation/refusal; 1: file/output I/O failure.
 `
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, os.ReadFile)) }
+func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, readInput)) }
+
+// maxInput bounds what is read from a named file; a descriptor is a few hundred bytes.
+const maxInput = 1 << 20
+
+var errTooLarge = errors.New("input file is larger than 1 MiB")
+
+func readInput(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxInput+1))
+	if err == nil && len(data) > maxInput {
+		return nil, errTooLarge
+	}
+	return data, err
+}
 
 func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error)) int {
-	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+	r, outcome := parse(args)
+	switch outcome {
+	case help:
 		return emit(out, diagnostic, []byte(usage))
-	}
-	if len(args) == 0 {
+	case misuse:
 		fmt.Fprint(diagnostic, usage)
 		return 2
 	}
-	command := args[0]
-	if command != "release-id" && command != "instance-revision" && command != "select-release" {
-		fmt.Fprint(diagnostic, usage)
-		return 2
+	c := cli{out, diagnostic, readFile}
+	switch r.command {
+	case "release-id":
+		return c.releaseID(r.release)
+	case "instance-revision":
+		return c.instanceRevision(r.instance)
 	}
-	flags := flag.NewFlagSet(command, flag.ContinueOnError)
+	return c.selectRelease(r)
+}
+
+// request is one parsed command line: the command and the files and revision it names.
+type request struct{ command, instance, release, expected string }
+
+type outcome int
+
+const (
+	parsed outcome = iota
+	help
+	misuse
+)
+
+func parse(args []string) (request, outcome) {
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		return request{}, help
+	}
+	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release"}, args[0]) {
+		return request{}, misuse
+	}
+	r := request{command: args[0]}
+	flags, err := r.parseFlags(args[1:])
+	if errors.Is(err, flag.ErrHelp) {
+		return r, help
+	}
+	if err != nil || !r.take(flags) {
+		return r, misuse
+	}
+	return r, parsed
+}
+
+// parseFlags parses the flags select-release takes into r; the other commands take none.
+func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
+	flags := flag.NewFlagSet(r.command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard) // flag errors can echo rejected values
-	var instancePath, releasePath, expected string
-	if command == "select-release" {
-		flags.StringVar(&instancePath, "instance", "", "instance file")
-		flags.StringVar(&releasePath, "release", "", "release file")
-		flags.StringVar(&expected, "expect", "", "reviewed instance revision")
+	if r.command == "select-release" {
+		flags.Var(&once{value: &r.instance}, "instance", "instance file")
+		flags.Var(&once{value: &r.release}, "release", "release file")
+		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
 	}
-	if err := flags.Parse(args[1:]); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return emit(out, diagnostic, []byte(usage))
-		}
-		fmt.Fprint(diagnostic, usage)
-		return 2
+	return flags, flags.Parse(args)
+}
+
+// take fills r from the arguments left after the flags; false is a usage error.
+func (r *request) take(flags *flag.FlagSet) bool {
+	switch {
+	case r.command == "select-release":
+		return flags.NArg() == 0 && r.instance != "" && r.release != "" && r.expected != ""
+	case flags.NArg() != 1:
+		return false
+	case r.command == "release-id":
+		r.release = flags.Arg(0)
+	default:
+		r.instance = flags.Arg(0)
 	}
-	if command == "select-release" {
-		if flags.NArg() != 0 || instancePath == "" || releasePath == "" || expected == "" {
-			fmt.Fprint(diagnostic, usage)
-			return 2
-		}
-	} else {
-		if flags.NArg() != 1 {
-			fmt.Fprint(diagnostic, usage)
-			return 2
-		}
-		if command == "release-id" {
-			releasePath = flags.Arg(0)
-		} else {
-			instancePath = flags.Arg(0)
-		}
+	return true
+}
+
+// once is a flag that may be given at most once: a repeat is a usage error, not the last one winning.
+type once struct {
+	value *string
+	set   bool
+}
+
+func (o *once) String() string { return "" }
+
+func (o *once) Set(value string) error {
+	if o.set {
+		return errors.New("flag repeated")
 	}
-	var spec kernel.InstanceSpec
-	if instancePath != "" {
-		data, err := readFile(instancePath)
-		if err != nil {
-			fmt.Fprintln(diagnostic, "io: instance: cannot read input file")
-			return 1
-		}
-		spec, err = kernel.DecodeInstance(data)
-		if err != nil {
-			return fail(diagnostic, err)
-		}
-		if command == "instance-revision" {
-			revision, err := spec.Revision()
-			if err != nil {
-				return fail(diagnostic, err)
-			}
-			return emit(out, diagnostic, []byte(revision))
-		}
+	o.set, *o.value = true, value
+	return nil
+}
+
+// cli runs one parsed command. Each step returns 0 or the exit status after its diagnostic.
+type cli struct {
+	out, diagnostic io.Writer
+	readFile        func(string) ([]byte, error)
+}
+
+func (c cli) releaseID(path string) int {
+	release, status := c.release(path)
+	if status != 0 {
+		return status
 	}
-	data, err := readFile(releasePath)
+	return emit(c.out, c.diagnostic, []byte(release.ReleaseID))
+}
+
+func (c cli) instanceRevision(path string) int {
+	spec, status := c.instance(path)
+	if status != 0 {
+		return status
+	}
+	revision, err := spec.Revision()
 	if err != nil {
-		fmt.Fprintln(diagnostic, "io: release: cannot read input file")
-		return 1
+		return fail(c.diagnostic, err)
+	}
+	return emit(c.out, c.diagnostic, []byte(revision))
+}
+
+func (c cli) selectRelease(r request) int {
+	spec, status := c.instance(r.instance)
+	if status != 0 {
+		return status
+	}
+	release, status := c.release(r.release)
+	if status != 0 {
+		return status
+	}
+	selected, err := kernel.SelectRelease(spec, release, kernel.InstanceRevision(r.expected))
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
+	data, err := kernel.EncodeInstance(selected)
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
+	return emit(c.out, c.diagnostic, data)
+}
+
+func (c cli) release(path string) (kernel.ReleaseBundle, int) {
+	data, status := c.read(path, "release")
+	if status != 0 {
+		return kernel.ReleaseBundle{}, status
 	}
 	release, err := kernel.DecodeRelease(data)
 	if err != nil {
-		return fail(diagnostic, err)
+		return kernel.ReleaseBundle{}, fail(c.diagnostic, err)
 	}
-	if command == "release-id" {
-		return emit(out, diagnostic, []byte(release.ReleaseID))
+	return release, 0
+}
+
+func (c cli) instance(path string) (kernel.InstanceSpec, int) {
+	data, status := c.read(path, "instance")
+	if status != 0 {
+		return kernel.InstanceSpec{}, status
 	}
-	selected, err := kernel.SelectRelease(spec, release, kernel.InstanceRevision(expected))
+	spec, err := kernel.DecodeInstance(data)
 	if err != nil {
-		return fail(diagnostic, err)
+		return kernel.InstanceSpec{}, fail(c.diagnostic, err)
 	}
-	data, err = kernel.EncodeInstance(selected)
-	if err != nil {
-		return fail(diagnostic, err)
+	return spec, 0
+}
+
+// read refuses a file over maxInput (exit 2, like any refused input); other read errors are I/O (exit 1).
+func (c cli) read(path, what string) ([]byte, int) {
+	data, err := c.readFile(path)
+	switch {
+	case errors.Is(err, errTooLarge):
+		fmt.Fprintf(c.diagnostic, "invalid: %s: %v\n", what, errTooLarge)
+		return nil, 2
+	case err != nil:
+		fmt.Fprintf(c.diagnostic, "io: %s: cannot read input file\n", what)
+		return nil, 1
 	}
-	return emit(out, diagnostic, data)
+	return data, 0
 }
 
 func fail(diagnostic io.Writer, err error) int { fmt.Fprintln(diagnostic, err); return 2 }

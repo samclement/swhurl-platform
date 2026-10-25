@@ -1,5 +1,5 @@
-// Package kernel models offline release selection and compilation. It has no I/O; its records hold
-// no references, except a PlatformProfile's Delivery.DependsOn slice, which every use copies.
+// Package kernel models offline release selection and resource generation with no I/O.
+// Resource results own their slices and document bytes; profile dependencies are copied on use.
 package kernel
 
 import (
@@ -125,14 +125,8 @@ func (s Source) validate() error {
 }
 
 func (a Artifact) validate() error {
-	if !imagePattern.MatchString(a.Image) {
-		return refuse(Invalid, "artifact.image", "invalid format")
-	}
-	if !strings.HasPrefix(a.Digest, "sha256:") {
-		return refuse(Unsupported, "artifact.digest", "only sha256 is supported")
-	}
-	if !digestPattern.MatchString(a.Digest) {
-		return refuse(Invalid, "artifact.digest", "expected sha256 and 64 lowercase hex characters")
+	if err := validateImage(a.Image, a.Digest); err != nil {
+		return err
 	}
 	if a.MediaType != ManifestMediaType {
 		return refuse(Unsupported, "artifact.mediaType", "only OCI image manifests are supported")
@@ -147,39 +141,70 @@ func (r Runtime) validate() error {
 	if r.Kind != "web" {
 		return refuse(Unsupported, "runtime.kind", "only stateless HTTP web releases are supported")
 	}
-	if r.Port < 1 || r.Port > 65535 {
-		return refuse(Invalid, "runtime.port", "expected an integer from 1 to 65535")
-	}
-	if !healthPattern.MatchString(r.HealthPath) || strings.HasPrefix(r.HealthPath, "//") {
-		return refuse(Invalid, "runtime.healthPath", "expected an absolute ASCII path, without authority, query or fragment")
-	}
-	if r.UID < 1 {
-		return refuse(Invalid, "runtime.uid", "expected a positive non-root signed-32-bit UID")
-	}
-	return nil
+	return validateHTTP(r.Port, r.HealthPath, r.UID)
 }
 
 func (s InstanceSpec) validate() error {
 	if s.SchemaVersion != 1 {
 		return refuse(Unsupported, "schemaVersion", "only version 1 is supported")
 	}
-	if !namePattern.MatchString(s.Application) {
-		return refuse(Invalid, "application", "expected an app name")
-	}
-	if s.Environment != "staging" && s.Environment != "prod" {
-		return refuse(Unsupported, "environment", "only staging and prod are supported")
+	if err := validateNames(s.Application, s.Environment); err != nil {
+		return err
 	}
 	if !releasePattern.MatchString(string(s.Release)) {
 		return refuse(Invalid, "release", "expected a release ID")
 	}
-	if s.Configuration.Replicas < 0 {
-		return refuse(Invalid, "configuration.replicas", "expected a nonnegative signed-32-bit integer")
-	}
-	if s.Configuration.MemoryMiB < 1 {
-		return refuse(Invalid, "configuration.memoryMiB", "expected a positive signed-32-bit integer")
+	if err := s.Configuration.validate(); err != nil {
+		return err
 	}
 	if s.Grants.Exposure != "private" {
 		return refuse(Unsupported, "grants.exposure", "only private exposure is supported")
+	}
+	return nil
+}
+
+func validateImage(image, digest string) error {
+	if !imagePattern.MatchString(image) {
+		return refuse(Invalid, "artifact.image", "invalid format")
+	}
+	if !strings.HasPrefix(digest, "sha256:") {
+		return refuse(Unsupported, "artifact.digest", "only sha256 is supported")
+	}
+	if !digestPattern.MatchString(digest) {
+		return refuse(Invalid, "artifact.digest", "expected sha256 and 64 lowercase hex characters")
+	}
+	return nil
+}
+
+func validateHTTP(port int32, healthPath string, uid int32) error {
+	if port < 1 || port > 65535 {
+		return refuse(Invalid, "runtime.port", "expected an integer from 1 to 65535")
+	}
+	if !healthPattern.MatchString(healthPath) || strings.HasPrefix(healthPath, "//") {
+		return refuse(Invalid, "runtime.healthPath", "expected an absolute ASCII path, without authority, query or fragment")
+	}
+	if uid < 1 {
+		return refuse(Invalid, "runtime.uid", "expected a positive non-root signed-32-bit UID")
+	}
+	return nil
+}
+
+func validateNames(application, environment string) error {
+	if !namePattern.MatchString(application) {
+		return refuse(Invalid, "application", "expected an app name")
+	}
+	if environment != "staging" && environment != "prod" {
+		return refuse(Unsupported, "environment", "only staging and prod are supported")
+	}
+	return nil
+}
+
+func (c Configuration) validate() error {
+	if c.Replicas < 0 {
+		return refuse(Invalid, "configuration.replicas", "expected a nonnegative signed-32-bit integer")
+	}
+	if c.MemoryMiB < 1 {
+		return refuse(Invalid, "configuration.memoryMiB", "expected a positive signed-32-bit integer")
 	}
 	return nil
 }

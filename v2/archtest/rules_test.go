@@ -61,11 +61,12 @@ var Rules = []Rule{
 // (one per external dependency, speaking domain terms), 2 commands that wire adapters to the model.
 var Layers = map[string]int{
 	"kernel":        0,
+	"shadow":        0,
 	"cmd/swhurl-v2": 2,
 }
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"kernel"}
+var Pure = []string{"kernel", "shadow"}
 
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
 // environment, files, network or processes. Adding one is a reviewed change to this list.

@@ -20,6 +20,7 @@ const usage = `usage:
   swhurl-v2 instance-revision INSTANCE.json
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
   swhurl-v2 resolve --snapshot SNAPSHOT.json
+  swhurl-v2 egress --snapshot SNAPSHOT.json [--previous EGRESS.json]
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--source NAME]
@@ -42,6 +43,9 @@ predecessor already declares is reported rather than assumed away. It reads only
 The snapshot is the JSON document "make v2-snapshot REVISION= OUT=" writes. With --kubeconfig it also
 reads every object a preview would create from that API server, read-only, and reports each as present,
 absent or unavailable; a failed read is never reported as absence.
+
+egress allocates one proxy port per instance, keeping every port the previous document gave and giving a
+new instance the lowest free one. compile takes the document with --egress.
 
 resolve reads one snapshot's declarations and writes the resolved connections as a v2-calls document:
 which pairs are connected, which wait for the other side and why, and which are refused. compile takes
@@ -86,23 +90,21 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		return 2
 	}
 	c := cli{out, diagnostic, readFile, writer}
-	switch r.command {
-	case "release-id":
-		return c.releaseID(r.release)
-	case "instance-revision":
-		return c.instanceRevision(r.instance)
-	case "compile":
-		return c.compile(r)
-	case "observe":
-		return c.observe(r)
-	case "preview":
-		return c.preview(r)
-	case "shadow":
-		return c.shadow(r)
-	case "resolve":
-		return c.resolve(r)
-	}
-	return c.selectRelease(r)
+	return commands[r.command](c, r)
+}
+
+// commands is every command and the step that runs it, in one table so the dispatcher and the usage check
+// cannot disagree.
+var commands = map[string]func(cli, request) int{
+	"release-id":        func(c cli, r request) int { return c.releaseID(r.release) },
+	"instance-revision": func(c cli, r request) int { return c.instanceRevision(r.instance) },
+	"select-release":    cli.selectRelease,
+	"compile":           cli.compile,
+	"observe":           cli.observe,
+	"preview":           cli.preview,
+	"shadow":            cli.shadow,
+	"resolve":           cli.resolve,
+	"egress":            cli.egress,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -111,6 +113,7 @@ type request struct {
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
 	app, settings, committed, snapshot, callFile       string
+	previous, egressFile                               string
 	outFlag                                            *once
 }
 
@@ -126,7 +129,10 @@ func parse(args []string) (request, outcome) {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		return request{}, help
 	}
-	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release", "compile", "observe", "preview", "shadow", "resolve"}, args[0]) {
+	if len(args) == 0 {
+		return request{}, misuse
+	}
+	if _, known := commands[args[0]]; !known {
 		return request{}, misuse
 	}
 	r := request{command: args[0]}
@@ -140,45 +146,57 @@ func parse(args []string) (request, outcome) {
 	return r, parsed
 }
 
-// parseFlags parses the flags select-release and compile take into r; the other commands take none.
+// parseFlags parses the flags a command takes into r; the other commands take none.
 func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	flags := flag.NewFlagSet(r.command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard) // flag errors can echo rejected values
-	if r.command == "select-release" || r.command == "compile" || r.command == "observe" {
+	r.registerInputs(flags)
+	r.registerExtras(flags, r.command)
+	return flags, flags.Parse(args)
+}
+
+// registerInputs adds the file flags the v1-style commands share.
+func (r *request) registerInputs(flags *flag.FlagSet) {
+	switch r.command {
+	case "select-release", "compile", "observe":
 		flags.Var(&once{value: &r.instance}, "instance", "instance file")
 		flags.Var(&once{value: &r.release}, "release", "release file")
-	}
-	if r.command == "shadow" {
-		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON (enables the live ownership check)")
-	}
-	if r.command == "preview" {
-		flags.Var(&once{value: &r.app}, "app", "legacy app record")
-		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")
+	case "preview":
 		flags.Var(&once{value: &r.release}, "release", "legacy release record")
-		flags.Var(&once{value: &r.committed}, "committed", "the HelmRelease the predecessor committed")
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 	}
-	if r.command == "observe" {
+}
+
+// registerExtras adds what each command alone takes: its remaining inputs, and for compile its destination.
+func (r *request) registerExtras(flags *flag.FlagSet, command string) {
+	switch command {
+	case "select-release":
+		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
+	case "compile":
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
+		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		r.outFlag = &once{value: &r.out}
+		flags.Var(r.outFlag, "out", "destination directory")
+	case "observe":
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		flags.Var(&once{value: &r.revision}, "revision", "source revision Flux should have applied")
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&once{value: &r.source}, "source", "name of the evidence source (default: the kubeconfig's current context)")
-	}
-	if r.command == "select-release" {
-		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
-	}
-	if r.command == "resolve" {
-		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
-	}
-	if r.command == "compile" {
+	case "preview":
+		flags.Var(&once{value: &r.app}, "app", "legacy app record")
+		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")
+		flags.Var(&once{value: &r.committed}, "committed", "the HelmRelease the predecessor committed")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
-		r.outFlag = &once{value: &r.out}
-		flags.Var(r.outFlag, "out", "destination directory")
+	case "shadow":
+		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON (enables the live ownership check)")
+	case "resolve":
+		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+	case "egress":
+		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+		flags.Var(&once{value: &r.previous}, "previous", "a previous allocation to keep ports from (optional)")
 	}
-	return flags, flags.Parse(args)
 }
 
 // take fills r from the arguments left after the flags; false is a usage error.
@@ -215,6 +233,8 @@ func (r *request) named() []string {
 	case "shadow":
 		return []string{r.snapshot, r.profile}
 	case "resolve":
+		return []string{r.snapshot}
+	case "egress":
 		return []string{r.snapshot}
 	}
 	return nil
@@ -300,19 +320,11 @@ func (c cli) compile(r request) int {
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	connections := kernel.Connections{}
-	if r.callFile != "" {
-		data, status := c.read(r.callFile, "calls")
-		if status != 0 {
-			return status
-		}
-		resolved, err := compileConnections(data, spec.Application, spec.Environment)
-		if err != nil {
-			return fail(c.diagnostic, err)
-		}
-		connections = resolved
+	connections, egress, status := c.resolutionFiles(r, spec)
+	if status != 0 {
+		return status
 	}
-	compiled, err := kernel.CompileWith(spec, release, profile, connections)
+	compiled, err := kernel.CompileWith(spec, release, profile, connections, egress)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}

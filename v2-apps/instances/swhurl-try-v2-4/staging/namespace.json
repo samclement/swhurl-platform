@@ -1,1 +1,0 @@
-{"apiVersion":"v1","kind":"Namespace","metadata":{"annotations":{"kustomize.toolkit.fluxcd.io/prune":"disabled"},"labels":{"platform.swhurl.com/app":"swhurl-try-v2-4","platform.swhurl.com/environment":"staging","platform.swhurl.com/exposure":"private","platform.swhurl.com/managed":"true"},"name":"swhurl-try-v2-4-staging"}}

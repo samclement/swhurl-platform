@@ -131,6 +131,8 @@ observe: const Unavailable = "unavailable"
 observe: const Unknown Verdict = "unknown"
 observe: func (*Error) Error() string
 observe: func Explain(target Target, evidence Evidence) (Report, error)
+observe: func TargetOf(helmRelease []byte, unit Ref, revision string) (Target, error)
+observe: func UnitRef(unit []byte) (Ref, error)
 observe: type Error struct {Field, Reason string}
 observe: type Evidence struct {Source string ObservedAt string Objects []Read Pods []List}
 observe: type Finding struct {Field, Outcome, Reason string}

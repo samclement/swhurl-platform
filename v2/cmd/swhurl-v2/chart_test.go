@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // need skips a test that lacks an external tool or the cached chart, or fails it under
@@ -37,6 +39,19 @@ func output(t *testing.T, program string, args ...string) string {
 	return string(out)
 }
 
+// deploymentName is the Deployment's metadata.name, from the rendered manifest.
+func deploymentName(rendered string) string {
+	if !strings.Contains(rendered, "kind: Deployment") {
+		return ""
+	}
+	for _, line := range strings.Split(rendered[strings.Index(rendered, "kind: Deployment"):], "\n") {
+		if rest, found := strings.CutPrefix(line, "  name: "); found {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
 // TestCompiledManifests renders the golden prod compilation with the tools Flux uses, offline: the
 // HelmRelease through the pinned chart from the swhurl chart cache, the files through kustomize.
 func TestCompiledManifests(t *testing.T) {
@@ -51,6 +66,7 @@ func TestCompiledManifests(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	var releaseDocument json.RawMessage
 	var release struct {
 		Metadata struct{ Name, Namespace string }
 		Spec     struct {
@@ -76,7 +92,7 @@ func TestCompiledManifests(t *testing.T) {
 		var into any
 		switch {
 		case strings.HasSuffix(file.Path, "/helmrelease.json"):
-			into = &release
+			into, releaseDocument = &release, file.Document
 		case strings.HasSuffix(file.Path, "/networkpolicy.json"):
 			into = &policy
 		default:
@@ -117,6 +133,24 @@ func TestCompiledManifests(t *testing.T) {
 			t.Errorf("the pods lack %s: %s, which the NetworkPolicy selects:\n%s", key, value, labels)
 		}
 	}
+	// The target observation derives from this HelmRelease must name what the chart renders: a chart
+	// change that moved a name or a label fails here rather than in a live read.
+	unit := observe.Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization",
+		Namespace: "flux-system", Name: "app-" + release.Metadata.Name + "-" + strings.TrimPrefix(release.Metadata.Namespace, release.Metadata.Name+"-")}
+	target, err := observe.TargetOf(releaseDocument, unit, strings.Repeat("a", 40))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name := deploymentName(rendered); name != target.Workload.Name {
+		t.Errorf("the chart renders the Deployment %q, but the target names %q", name, target.Workload.Name)
+	}
+	for _, term := range strings.Split(target.Selector, ",") {
+		key, value, _ := strings.Cut(term, "=")
+		if !strings.Contains(labels, key+": "+value+"\n") {
+			t.Errorf("the pods lack %s: %s, which the target selects:\n%s", key, value, labels)
+		}
+	}
+
 	built := output(t, kubectl, "kustomize", filepath.Join(dir, "v2-apps/instances/demo-orders/prod"))
 	for _, want := range []string{"kind: Namespace", "kind: HelmRelease", "kind: ResourceQuota", "kind: NetworkPolicy"} {
 		if !strings.Contains(built, want) {

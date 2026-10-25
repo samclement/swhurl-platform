@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Offline Go v2 | main | approved | phase 5 observation slice 1 committed 25 October 2026, offline only and reviewed | the operator's choice of the next slice: the next observation slice (reference derivation, a credential source, the report envelope) or phase 3 slice 2 (snapshot acquisition, or legacy translation) | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/` |
+| Offline Go v2 | main | in progress | phase 5 observation: slice 2a (target derivation) implemented 25 October 2026 | observation slice 2b: the credential source and an `observe` command that reads one instance (read-only) | the operator's cluster, read-only | [v2 status](v2-status.md) | `v2/`, `v2-apps/` |
 | Live platform | main | approved | the 24 open items in the plan index | M14, then B4b (records-only removal) | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

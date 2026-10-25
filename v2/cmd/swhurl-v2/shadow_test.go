@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,6 +219,99 @@ func TestShadowRefusesAnUnusableSnapshot(t *testing.T) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", status, stdout, stderr)
 			}
 		})
+	}
+}
+
+// The live check reads every object the preview would create: presence, absence and a failed read are
+// three different answers, and only a successful 404 is absence.
+func TestShadowChecksLiveOwnership(t *testing.T) {
+	// Every claim answers with its own identity, so a present object passes the adapter's check; the
+	// others fail in the three ways a read can.
+	present := map[string]map[string]any{
+		"/api/v1/namespaces/hello-staging": {"apiVersion": "v1", "kind": "Namespace",
+			"metadata": map[string]any{"name": "hello-staging"}},
+		"/apis/networking.k8s.io/v1/namespaces/hello-staging/networkpolicies/hello": {"apiVersion": "networking.k8s.io/v1",
+			"kind": "NetworkPolicy", "metadata": map[string]any{"name": "hello", "namespace": "hello-staging"}},
+		"/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/app-hello-staging": {"apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+			"kind": "Kustomization", "metadata": map[string]any{"name": "app-hello-staging", "namespace": "flux-system"}},
+	}
+	status := map[string]int{
+		"/apis/helm.toolkit.fluxcd.io/v2/namespaces/hello-staging/helmreleases/hello": http.StatusNotFound,
+		"/api/v1/namespaces/hello-staging/resourcequotas/hello":                       http.StatusForbidden,
+	}
+	requests := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if code, failed := status[r.URL.Path]; failed {
+			w.WriteHeader(code)
+			return
+		}
+		document, found := present[r.URL.Path]
+		if !found {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(document); err != nil {
+			t.Errorf("writing the answer: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	args := append(previewArgsForShadow(t), "--kubeconfig", kubeconfig(t, server))
+	var out, diagnostic bytes.Buffer
+	if code := run(args, &out, &diagnostic, os.ReadFile, files.New()); code != 0 {
+		t.Fatalf("exit %d: %s", code, diagnostic.String())
+	}
+	instance := instanceOf(t, shadowOf(t, out.String()), "hello")
+	live := map[string]map[string]any{}
+	for _, raw := range instance["live"].([]any) {
+		entry := raw.(map[string]any)
+		live[entry["object"].(string)] = entry
+	}
+	for object, want := range map[string]string{
+		"Namespace hello-staging":                                                 "present",
+		"HelmRelease.helm.toolkit.fluxcd.io hello-staging/hello":                  "absent",
+		"ResourceQuota hello-staging/hello":                                       "unavailable",
+		"NetworkPolicy.networking.k8s.io hello-staging/hello":                     "present",
+		"Kustomization.kustomize.toolkit.fluxcd.io flux-system/app-hello-staging": "present",
+	} {
+		entry, found := live[object]
+		if !found {
+			t.Errorf("no live answer for %q: %v", object, live)
+			continue
+		}
+		if entry["status"] != want {
+			t.Errorf("%s is %v, want %s", object, entry["status"], want)
+		}
+	}
+	if live["ResourceQuota hello-staging/hello"]["reason"] != "forbidden" {
+		t.Errorf("a failed read without its reason: %v", live["ResourceQuota hello-staging/hello"])
+	}
+	if live["HelmRelease.helm.toolkit.fluxcd.io hello-staging/hello"]["reason"] != "not_found" {
+		t.Errorf("absence without not_found: %v", live["HelmRelease.helm.toolkit.fluxcd.io hello-staging/hello"])
+	}
+	if requests != 5 {
+		t.Fatalf("%d requests for five claims", requests)
+	}
+}
+
+// previewArgsForShadow is the shadow command line over the fixture snapshot.
+func previewArgsForShadow(t *testing.T) []string {
+	t.Helper()
+	return []string{"shadow", "--snapshot", writeSnapshot(t, snapshotDocument(t, nil)),
+		"--profile", filepath.Join("..", "..", "testdata", "profile.json")}
+}
+
+// Without a kubeconfig nothing is read: the live list is present and empty, and no claim is reported.
+func TestShadowWithoutKubeconfigReadsNothingLive(t *testing.T) {
+	status, stdout, stderr := runShadow(t, writeSnapshot(t, snapshotDocument(t, nil)))
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	instance := instanceOf(t, shadowOf(t, stdout), "hello")
+	if live, ok := instance["live"].([]any); !ok || len(live) != 0 {
+		t.Fatalf("live: %v", instance["live"])
 	}
 }
 

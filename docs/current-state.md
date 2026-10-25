@@ -10,6 +10,8 @@ The first existing app moved from v1 ownership to v2, at the operator's confirma
 
 **The finding this migration produced — a caller cannot move alone.** v1 derives a callee's consent and policy from *v1* instances, so when `swhurl-try-11/staging` left v1, the Render workflow rewrote `swhurl-try-10` and `swhurl-try-12` without admitting it: try-10's policy peers are now `kube-system` (traefik) and `swhurl-try-12-staging`, and try-12's are `kube-system` only. The migrated instance's two outbound calls are therefore **blocked at the callee**, even though its own egress, address and token are correct. Migrating a caller and its callees together is what keeps consent working; the rule belongs in [apps](apps.md#calling-another-app) when v2 owns more than one instance in a chain.
 
+**Why the pair cannot be completed yet (checked before doing it):** the two callees need domains v2 does not have. `swhurl-try-10` keeps `database: sqlite`, and v2 renders no storage; `swhurl-try-12` publishes the `visited` event, and v2 renders no NATS user, stream or consumer. Migrating either as it stands would trade one broken behaviour for another, so the caller's two calls stay blocked until storage and events exist — a phase-7 domain slice each, not a step of this migration.
+
 **Not exercised:** an actual call from the migrated app (the callee's policy denies it), and its prod instance, which stays with v1.
 
 ## First v2 route live: signed-in exposure (25 October 2026)

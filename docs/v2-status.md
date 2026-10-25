@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: in progress
+Status: approved
 Gate: phase 3 slice 3: snapshot acquisition and the ownership inventory, or another slice the operator chooses
-Uncommitted: `v2/legacy/`, `v2/cmd/swhurl-v2/preview.go`, `v2/cmd/swhurl-v2/preview_test.go`, `v2/cmd/swhurl-v2/main.go`, `v2/archtest/api.txt`, `v2/archtest/checks_test.go`, `v2/archtest/rules_test.go`, `docs/`
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -110,6 +110,7 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged (no v1 file touched; its fixtures were converted once into v2 fixtures). 2. Pure — `legacy` has no effects and imports only allowlisted packages. 3. Bytes and identities unchanged: `kernel`, `observe` and `shadow` untouched, no golden compilation regenerated; the API baseline grows and loses nothing. 4. Refusals: a new fixed vocabulary, stated and tested field by field; nothing existing moved. 5. Failure paths tested: every refusal, an unreadable input, a deliberately changed committed digest, and the empty/never-null lists. 6. Scope: the document states a source per fact, a gap with an owner per unmodelled fact, and the comparison's assessed/unassessed scope; an unknown record field becomes a gap rather than a silent drop. 7. Offline only: records are JSON, so no YAML, Git, credential or cluster was read, and no readiness is claimed. 8. This page, the plan and the gap list change together.
 - **Evidence:** the inherited `hello`/staging fixture previews with ten fields equal, `image intentional/tag_beside_digest`, `resources.memory intentional/chosen_single_memory`, three gaps and eleven unassessed areas — the phase-3 example, demonstrated rather than asserted. `make check-v2` (11 packages), `REQUIRE_HELM=1 make check-v2`, `make check` (1012 tests), `git diff --check` and `make v2-report` pass; coverage `legacy` 84.0%, CLI 88.2%, `observe` 96.4%.
 - **Next gate:** phase 3 slice 3 — snapshot acquisition and the ownership inventory — or another slice the operator chooses.
+- **Committed:** `f355d535` (with the record flip in the commit that follows it).
 
 ## Resume
 

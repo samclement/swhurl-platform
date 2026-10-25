@@ -44,9 +44,6 @@ data:
             http_port 30105 name=swhurl-try-10-staging
             acl swhurl-try-10-staging myportname swhurl-try-10-staging
             note instance swhurl-try-10-staging swhurl-try-10-staging
-            http_port 30106 name=swhurl-try-11-staging
-            acl swhurl-try-11-staging myportname swhurl-try-11-staging
-            note instance swhurl-try-11-staging swhurl-try-11-staging
             http_port 30107 name=swhurl-try-12-staging
             acl swhurl-try-12-staging myportname swhurl-try-12-staging
             note instance swhurl-try-12-staging swhurl-try-12-staging
@@ -95,8 +92,6 @@ data:
             port: 30104
           p30105:
             port: 30105
-          p30106:
-            port: 30106
           p30107:
             port: 30107
           p30108:
@@ -162,12 +157,6 @@ spec:
           kubernetes.io/metadata.name: swhurl-try-10-staging
     ports:
     - port: 30105
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: swhurl-try-11-staging
-    ports:
-    - port: 30106
   - from:
     - namespaceSelector:
         matchLabels:

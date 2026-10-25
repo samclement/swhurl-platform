@@ -30,7 +30,7 @@ func TestConnectedPairsNeedBothSides(t *testing.T) {
 		declaration("ledger", "staging", "payments", []string{"orders"}, nil),
 	)
 	// orders allows shop by name, so ledger (another team's app) waits for consent.
-	if len(resolution.Pairs) != 1 || resolution.Pairs[0] != (calls.Pair{"shop", "orders", "staging"}) {
+	if len(resolution.Pairs) != 1 || resolution.Pairs[0] != (calls.Pair{Caller: "shop", Callee: "orders", Environment: "staging", CalleePort: 8080}) {
 		t.Fatalf("pairs: %+v", resolution.Pairs)
 	}
 	if len(resolution.Waiting) != 1 || resolution.Waiting[0] != (calls.Wait{"ledger", "orders", "staging", calls.NoConsent}) {

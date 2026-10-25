@@ -22,6 +22,8 @@ const usage = `usage:
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--source NAME]
+  swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
+      --committed HELMRELEASE.json --profile PROFILE.json
 
 Input files are never overwritten. Without --out the compilation document goes to stdout and nothing
 is written. With --out every compiled file is written under DIR, one "written PATH" or
@@ -31,6 +33,10 @@ observe compiles the instance, reads its unit, HelmRelease, Deployment and pods 
 kubeconfig names (the JSON form that "kubectl config view --raw -o json" prints), and writes the
 observation report to stdout with a one-line summary on stderr. It reads only, and --revision is the
 source revision Flux should have applied.
+
+preview renders one predecessor instance from its records and compares the result with the HelmRelease
+that predecessor committed, writing a v2-preview document to stdout. It reads only the five named JSON
+files and applies nothing: the legacy records are given as JSON, so no legacy YAML is read here.
 Exit 0: success/no-op (for observe: a report was produced, whatever its verdict); 2: usage/validation/
 refusal; 1: file or output I/O failure.
 `
@@ -76,6 +82,8 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		return c.compile(r)
 	case "observe":
 		return c.observe(r)
+	case "preview":
+		return c.preview(r)
 	}
 	return c.selectRelease(r)
 }
@@ -85,6 +93,7 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 type request struct {
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
+	app, settings, committed                           string
 	outFlag                                            *once
 }
 
@@ -100,7 +109,7 @@ func parse(args []string) (request, outcome) {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		return request{}, help
 	}
-	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release", "compile", "observe"}, args[0]) {
+	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release", "compile", "observe", "preview"}, args[0]) {
 		return request{}, misuse
 	}
 	r := request{command: args[0]}
@@ -121,6 +130,13 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	if r.command == "select-release" || r.command == "compile" || r.command == "observe" {
 		flags.Var(&once{value: &r.instance}, "instance", "instance file")
 		flags.Var(&once{value: &r.release}, "release", "release file")
+	}
+	if r.command == "preview" {
+		flags.Var(&once{value: &r.app}, "app", "legacy app record")
+		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")
+		flags.Var(&once{value: &r.release}, "release", "legacy release record")
+		flags.Var(&once{value: &r.committed}, "committed", "the HelmRelease the predecessor committed")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 	}
 	if r.command == "observe" {
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
@@ -168,6 +184,8 @@ func (r *request) named() []string {
 		return []string{r.instance, r.release, r.profile}
 	case "observe":
 		return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig}
+	case "preview":
+		return []string{r.app, r.settings, r.release, r.committed, r.profile}
 	}
 	return nil
 }
@@ -354,6 +372,19 @@ func (c cli) release(path string) (kernel.ReleaseBundle, int) {
 		return kernel.ReleaseBundle{}, fail(c.diagnostic, err)
 	}
 	return release, 0
+}
+
+// profile reads and decodes the platform profile, which the compiler and the preview both need.
+func (c cli) profile(path string) (kernel.PlatformProfile, int) {
+	data, status := c.read(path, "profile")
+	if status != 0 {
+		return kernel.PlatformProfile{}, status
+	}
+	profile, err := kernel.DecodeProfile(data)
+	if err != nil {
+		return kernel.PlatformProfile{}, fail(c.diagnostic, err)
+	}
+	return profile, 0
 }
 
 func (c cli) instance(path string) (kernel.InstanceSpec, int) {

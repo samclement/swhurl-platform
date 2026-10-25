@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: approved
-Gate: the operator's choice after observation: phase 3 slice 2 (snapshot acquisition, or legacy translation) or live verification of a v2-owned instance
-Uncommitted: none
+Status: in progress
+Gate: phase 3 slice 3: snapshot acquisition and the ownership inventory, or another slice the operator chooses
+Uncommitted: `v2/legacy/`, `v2/cmd/swhurl-v2/preview.go`, `v2/cmd/swhurl-v2/preview_test.go`, `v2/cmd/swhurl-v2/main.go`, `v2/archtest/api.txt`, `v2/archtest/checks_test.go`, `v2/archtest/rules_test.go`, `docs/`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -25,7 +25,7 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 | 4. Git delivery | done: offline half and one live instance, 25 October 2026 | [slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) |
 | 5. Observation | done through a live read: slices 1, 2a and 2b committed 25 October 2026; `observe` read `demo-orders` read-only and reported the intended artifact not running | [slice 1](iteration-2-plan.md#first-observation-slice-what-is-running-implemented-offline-25-october-2026), [2a](iteration-2-plan.md#second-observation-slice-the-target-from-compiled-output-implemented-25-october-2026) |
 | 6. First live instance | done 25 October 2026: applied, verified and removed, see the record above | [evidence](current-state.md#first-v2-instance-live-25-october-2026) |
-| 3. Shadow bridge | slice 1 done; **3.2–3.5 are the other candidate next slice** (need approval) | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
+| 3. Shadow bridge | slices 1 and 2 done: pure comparison, and legacy translation with a `preview` report (offline); acquisition and ownership inventory remain | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison), [slice 2](iteration-2-plan.md#phase-3-slice-2-legacy-translation-and-a-preview-report-implemented-offline-25-october-2026) |
 | 7. Selective replacement | proposed, not approved; needs the bridge first | [phases](iteration-2-plan.md#5-incremental-delivery) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
@@ -101,6 +101,15 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Live evidence, 25 October 2026 (read-only):** two observations of `demo-orders` through the real API server returned `unit reconciled`, `unit.revision applied`, `release settled`, `workload present`, `ready ready`; the verdicts were `not_running` because the artifact v2's fixture descriptor pins is not the running image (`image different/digest`), and staging also reported `replicas different/available_replicas`. Recorded in [current state](current-state.md#first-v2-observation-of-a-live-instance-25-october-2026).
 - **Next gate:** the operator's choice after observation: phase 3 slice 2 (snapshot acquisition, or legacy translation), or live verification of a v2-owned instance.
 - **Committed:** `671e1de6` (with the record flip in the commit that follows it).
+
+## Slice record: phase 3 translation and preview
+
+- **Outcome and the refusal it must produce:** an operator can preview one predecessor instance from its own records and compare the result with the HelmRelease that predecessor committed — `swhurl-v2 preview --app --settings --release --committed --profile` — and read, as a versioned document, the facts used with a source for each, every legacy fact the preview cannot carry with its owner, and the comparison's findings and scope. It refuses a malformed record, a record version it does not know, a release that is not `web`, a quantity spelling outside whole Mi/Gi, a committed output without its application or main controller, and a digest, replica count or memory limit no document establishes — carrying the document and field, never a value.
+- **Owners and boundaries:** `legacy` (layer 0, pure) owns legacy interpretation: which fields are facts, where each came from, and which are gaps for another owner. The renderer and comparator keep their existing ownership and are unchanged. The command owns the composition (translate → render → compare) and the `v2-preview` envelope; the records stay the predecessor's authority, and the translation is not a second one — it neither defaults a value nor writes anything back.
+- **What crosses each seam:** four documents as JSON and the profile in; a `Translation` (facts, sources, gaps) out, then the renderer's own inputs, then `shadow.CompareHTTP`'s result. No file, Git, credential, cluster or clock.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged (no v1 file touched; its fixtures were converted once into v2 fixtures). 2. Pure — `legacy` has no effects and imports only allowlisted packages. 3. Bytes and identities unchanged: `kernel`, `observe` and `shadow` untouched, no golden compilation regenerated; the API baseline grows and loses nothing. 4. Refusals: a new fixed vocabulary, stated and tested field by field; nothing existing moved. 5. Failure paths tested: every refusal, an unreadable input, a deliberately changed committed digest, and the empty/never-null lists. 6. Scope: the document states a source per fact, a gap with an owner per unmodelled fact, and the comparison's assessed/unassessed scope; an unknown record field becomes a gap rather than a silent drop. 7. Offline only: records are JSON, so no YAML, Git, credential or cluster was read, and no readiness is claimed. 8. This page, the plan and the gap list change together.
+- **Evidence:** the inherited `hello`/staging fixture previews with ten fields equal, `image intentional/tag_beside_digest`, `resources.memory intentional/chosen_single_memory`, three gaps and eleven unassessed areas — the phase-3 example, demonstrated rather than asserted. `make check-v2` (11 packages), `REQUIRE_HELM=1 make check-v2`, `make check` (1012 tests), `git diff --check` and `make v2-report` pass; coverage `legacy` 84.0%, CLI 88.2%, `observe` 96.4%.
+- **Next gate:** phase 3 slice 3 — snapshot acquisition and the ownership inventory — or another slice the operator chooses.
 
 ## Resume
 

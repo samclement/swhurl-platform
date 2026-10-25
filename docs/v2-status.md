@@ -237,7 +237,7 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 git log --oneline -3 && git status --short
 make check-v2
 make -s v2-report
-python3 -m swhurl check-docs
+make -s check-docs
 ```
 
 The report shows what the tree adds to `origin/main`: a new package, a changed exported API, a changed rule setting, a budget entry added or raised must each be explained by the slice. A changed golden compilation, a weakened budget or a silent rule change is a stop, not a fix.
@@ -248,12 +248,12 @@ The report shows what the tree adds to `origin/main`: a new package, a changed e
 
 > Work on v2 only. Read `docs/v2-status.md` first (status, authority, the resume steps), then `docs/iteration-2-plan.md` for the contracts and the gap list, and `AGENTS.md` for the repository rules. Do not re-derive the state from this prompt: check it.
 >
-> Then run, from the repository root: `git log --oneline -5`, `git status --short`, `make check-v2`, `make -s v2-report`, `python3 -m swhurl check-docs`. Report what they say before proposing anything. A check that reads the working tree can pass here and fail on a clone; CI is the reader that matters.
+> Then run, from the repository root: `git log --oneline -5`, `git status --short`, `make check-v2`, `make -s v2-report`, `make -s check-docs`. Report what they say before proposing anything. A check that reads the working tree can pass here and fail on a clone; CI is the reader that matters.
 >
-> Where v2 stands: phases 1 and 2 are done and reviewed; phase 3 slice 1 is done; the **delivery slice is done end to end** (one disposable instance applied, verified and removed on 25 October 2026); **observation is done through a live read**: the pure projection and adapter (`dc12f5d3`, reviewed), the target derived from compiled output (`2a851c61`), and a credential source plus the `observe` command, which read `demo-orders` read-only on 25 October 2026 and reported the intended artifact as not running.
+> Where v2 stands (25 October 2026): phases 1–2 committed and reviewed; routes, calls and SQLite storage render, and routes and storage were **proved live**; the **first existing app is v2-owned** — `swhurl-try-11` staging, applied by a handover, observed `running`, and still healthy — but its two calls are blocked because its callees need domains v2 lacks (`try-10` SQLite, `try-12` events). Egress part one is done: a stable port per instance, its client variables and policy, and DNS. **The proxy itself is still v1's**, so `--egress` must not be used for a v2 instance yet.
 >
-> The next gate is the operator's choice: **phase 3 slice 2** (snapshot acquisition, or legacy translation and default resolution) for the shadow bridge, or **live verification of a v2-owned instance**. Ask which; do not implement either before the operator approves that slice.
+> The next gate is **egress part two**: v2 renders the proxy (one port per allocation, identity by port, grants enforced, a policy admitting each port only from its instance's namespace) — the first platform object v2 would own. Then part three, the backup CronJob and restore, which is the risk the storage slice named. Do not start a slice the operator has not approved, and take a live step only with its word: the last ones needed a handover and a namespace deletion.
 >
-> Follow the operator's design principles: maintainable v2 contracts rather than v1 compatibility; a pure core with orchestration above it and integrations at the edges; explicit domain and data ownership; iterative transition with honestly incomplete semantics. Do not require supplemental provenance claims or complete releases merely to preview known workload facts. Answer the eight slice invariants on the status page in the same change as the code, keep the gap list current, and run `make check-v2` and `make check` before asking to commit.
+> Follow the operator's design principles: maintainable v2 contracts rather than v1 compatibility; a pure core with orchestration above it and integrations at the edges; explicit domain and data ownership; iterative transition with honestly incomplete semantics. Bring a decision brief before any costly or undecided design (the calls, storage and egress slices each had one). Answer the eight slice invariants on the status page in the same change as the code, keep the gap list current, and run `make check-v2` and `make check` before asking to commit. Identity changes are deliberate: a fact added to a release, instance or profile changes its ID, so regenerate the goldens once, recompute the fixtures' identities independently, and say why.
 >
 > The code graph is a separate workstream and a sidequest: do not build it here. Preserve unrelated work; do not commit, push, publish, access credentials or touch the live cluster without the operator's instruction, and treat any namespace or data deletion as needing explicit confirmation.

@@ -1,8 +1,8 @@
 # Code graph: dependency chains, journeys and hotspots from code
 
-**Status: steps 0 (place, policy, check wiring), 1 (the core, `snapshot`), 2 (`references`, `entries`, `reach`) and 3 (`journeys`, gate answered, grouping changed to mutual nearest neighbours) done and committed 24 October 2026; a preview page (`view`) implemented and committed 24 October 2026, for the operator's first look; step 4 next.** A read-only development aid in [`devtools/codegraph/`](../devtools/codegraph) that derives a dependency graph, entry-point journeys, hotspots and changes between commits from **v1 source and its Git history**. Independent of the v2 prototype. No push or deployment is authorised by this page.
+**Status: parked after step 3 and the preview page (`view`), committed 24 October 2026; step 4 (`diff`) needs approval.** Steps 0 (place, policy, check wiring), 1 (the core, `snapshot`), 2 (`references`, `entries`, `reach`) and 3 (`journeys`, gate answered, grouping changed to mutual nearest neighbours) are done. A read-only development aid in [`devtools/codegraph/`](../devtools/codegraph) that derives a dependency graph, entry-point journeys, hotspots and changes between commits from **v1 source and its Git history**. It is a sidequest: it blocks no other workstream, and no push or deployment is authorised by this page.
 
-[Plan section 0](plan.md#0-where-this-paused-and-what-is-left) indexes this page; it is the canonical design, plan and handoff for this workstream. **Every change applies [section 4](#4-primitives-and-contracts) and [section 5](#5-designed-for-incremental-change).**
+[Workstreams](workstreams.md) indexes this page; it is the canonical design, plan and handoff for this workstream. **Every change applies [section 4](#4-primitives-and-contracts) and [section 5](#5-designed-for-incremental-change).**
 
 ## 1. Goal
 

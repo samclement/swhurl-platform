@@ -1,8 +1,8 @@
 # Iteration 2: incremental replacement alongside the current platform
 
-**Status: phase 1 implemented and offline-verified 23 October 2026, committed 24 October 2026; phase 2's compiler implemented 25 October 2026.** The operator approved the root-level Go module, JSON-only descriptors, positional canonical identity encoding, manifest-only `linux/amd64` artifacts and empty-only bindings, and phase 2's [compiler contract](#phase-2-establish-compiler-ownership). The operator's [design principles](#design-principles) govern subsequent work; phase 3's brief is revised around scoped previews and iterative domain modelling, not mandatory v1 compatibility. Only the [first pure HTTP preview/comparison slice](#first-slice-proposal-pure-http-preview-and-comparison) of phase 3 is additionally approved and implemented, reviewed and committed (25 October 2026); the rest of phases 3–7 is not approved for implementation. v2 and the [visual change-tool investigation](visual-change-tool.md) are independent workstreams; neither is a prerequisite for the other. No publication, live migration, v1 behaviour change or feature removal is approved. Do not commit or push without instruction.
+**This page is the contract: records, identity, selection, the compiler, the phase-3 brief, the gap list and the design rules. [Status, authority and the handoff](v2-status.md) live on their own page, and [workstreams](workstreams.md) is the index. Phases 4–7 and the rest of phase 3 are proposals, not approved work.**
 
-This plan develops the recommendations in [the architecture review](architecture-review.md). [Architecture](architecture.md) remains the canonical description of deployed behaviour; [plan](plan.md) section 0 remains the index of approved work and links here for the phase-1 contract, evidence and handoff.
+This plan develops the recommendations in [the architecture review](architecture-review.md). [Architecture](architecture.md) remains the canonical description of deployed behaviour; [plan](plan.md) section 0 remains the index of approved work and links here for the v2 contracts.
 
 ## Goal and recommendation
 
@@ -851,48 +851,4 @@ Observed 23 October 2026, on the working tree before commit (nothing published):
 
 Component checklist: no deployed process, persistent store, default credential, Secret or runtime config consumer is introduced. Retention/backups, ClickStack collection, `verify-platform` health and restart wiring are not applicable. CLI exit/output failures are tested; the toolchain is pinned; operator steps are above. This offline result establishes no live readiness or supported non-empty bindings.
 
-## 8. Fresh-context handoff
-
-### State and authority
-
-**Approved:** the operator said yes to the concrete phase-1 proposal: root-level `v2/`, Go 1.26.0, JSON-only descriptors, positional canonical encoding, manifest-only `linux/amd64` artifact claims, empty-only bindings and the narrow policy exception. Phase 2's compiler and its review decisions are also approved and implemented. The operator's [design principles](#design-principles) and the revised phase-3 brief are approved as documentation/direction; only the [first pure HTTP slice](#first-slice-proposal-pure-http-preview-and-comparison) is additionally approved for implementation: v2 is not bound to v1 contracts, responsibilities/data have explicit owners, and transition may have incomplete semantics. Keep existing v1 behaviour unchanged; no platform console UI, general framework, bridge integration beyond that pure slice, credential access, integrations, v2 publication, live migration or feature removals are approved. The operator separated the [visual change-tool workstream](visual-change-tool.md) from v2; it uses v1 code/history and has its own scope and handoff. Do not implement visual tooling in this v2 thread. **Do not commit or push without instruction.**
-
-**Done:** the two value records, strict codec, identities and pure selection operation, thin offline CLI, synthetic fixtures and focused tests are implemented. Phase-1 Go tests/vet/format, the v1 baseline, full `make check`, shell syntax, repeat-build and demonstration checks passed; binary measurements and their limits are in section 7. v2's design rules are checked as code by `make check-v2` and, in pi, after each edit and before a run ends ([guardrails](#guardrails)). Phase 2's [compiler](#phase-2-establish-compiler-ownership) is implemented to its approved contract, independently reviewed and its findings resolved. Its code was pushed through `1ea1bbde`; Validate `40176776265` passed all nine jobs, reconciliation succeeded and platform verification reported 101 OK, no BAD/WARN. Those are checks of the existing platform after the code push, not a v2 deployment. The independent visual-tool brief is linked above; it is not a v2 deliverable.
-
-**Left:** of the [phase-1 independent review's findings](#phase-1-verification-evidence), the coexistence check's blind spots, deliberately not fixed. No v2 intent/resources have been published to active Flux paths. The remainder of phase 3 and phases 4–7 still need their own decisions and approval.
-
-**Next:** a proposal for the next phase-3 slice (snapshot acquisition, or legacy translation and default resolution), which needs its own approval. Slice 1 is committed: `kernel.RenderHTTP` takes release-independent inputs, `shadow.CompareHTTP` compares actual HelmRelease JSON and is owned separately, and both are covered by the evidence and the review record above. Stop before ownership integration, report orchestration or any CLI/adapter work. Those need a concrete next-slice proposal and separate approval. Read the [design principles](#design-principles) first. Do not revive mandatory supplemental claims or force complete release reconstruction. Python export remains a later integration option, not a settled architecture. Keep [deferred features](#6-deliberately-deferred) current. Do not wait for or build the visual tool here. No platform console, live-adapter or publication work is authorised by this handoff.
-
-### Read first
-
-1. Root `AGENTS.md` and inherited working preferences; inspect `git status` and relevant diffs. Other work was in progress when this was saved.
-2. This document, starting with the operator's [design principles](#design-principles), then [development layers](#4-development-layers-and-adapters) and the [phase-3 brief](#phase-3-shadow-not-synchronise); then [architecture review](architecture-review.md) (release identity, ownership, transition contracts and acceptance criteria) and [model review](model-review.html) (where v1's complexity comes from, so v2 does not repeat it).
-3. [Architecture](architecture.md), [glossary](../GLOSSARY.md), [contributing](contributing.md) and [plan section 0](plan.md#0-where-this-paused-and-what-is-left) for current behaviour, terminology, validation and other work.
-4. [Current records](../tools/swhurl/apps/model/records.py) and [model tests](../tests/test_app_model.py) for behaviour worth retaining. Read relevant tests before translating a contract.
-5. [Runner](../tools/swhurl/run.py) for later effect-boundary contracts. The phase-1 kernel itself must have no external effects.
-
-Read the actual [`kernel`](../v2/kernel/records.go), [`identity`](../v2/kernel/identity.go), [`selection`](../v2/kernel/select.go), [`codec`](../v2/kernel/json.go), [`CLI`](../v2/cmd/swhurl-v2/main.go) and tests before changing them. These references are a map, not a substitute for current inspection. Existing Go/CI boundary decisions are in sections 2, 3, 4 and 7; do not reopen them without a concrete need.
-
-### How to approach a v2 change
-
-1. Read the [design principles](#design-principles). Start from a domain scenario: the facts and their owners, the request, and the expected result/refusal with its scope and semantic gaps ([fixtures](#fixtures-and-fakes)).
-2. Use v1 behaviour as evidence, not the target contract. Classify relevant behaviour as preserve, deliberately change, remove or not yet modelled. Check review findings; track gaps in section 6 rather than forcing later domains into this slice.
-3. Write the pure functions and their tests first. Identify the orchestration above them and data crossing the integration seams; propose the smallest necessary package/check changes rather than packing every responsibility into `kernel`.
-4. Add an adapter only when the slice needs that dependency, following the [new-adapter recipe](#extension-recipes): a domain-level interface, raw fixtures, and a behavioural fake that shares one contract suite with the real adapter, failure cases included. Kubernetes goes through the API server ([why](#kubernetes-the-api-server-not-kubectl)).
-5. Run `make check-v2` ([guardrails](#guardrails), format, vet and tests) and the matching [test tiers](#test-tiers); live checks only in an approved live phase. Fix what a rule reports rather than its baseline, unless the change is intended and explained.
-
-### Working-tree preservation
-
-Other work may be in progress in the same checkout. Re-run `git status` and inspect diffs before each task; do not stage, discard, fix or incorporate other work. No implementation, policy-exception expansion, commit, push or live action is authorised without the operator's instruction.
-
-### Completed phase-1 deliverable
-
-Immutable `ReleaseBundle`, environment-owned `InstanceSpec`, pure `SelectRelease`, strict parsing/identity tests and an offline demonstration. Unsupported capabilities fail explicitly. A successful selection changes only the release reference; stale, wrong-application and incompatible requests change nothing.
-
-Build/test commands and outputs must be reported. Run the applicable repository checks before a commit; do not stage unrelated changes, commit, push or reconcile as a side effect of merely preparing the slice.
-
-The phase-1 demonstration uses different environment configuration, **not non-empty resource references**: bindings are unsupported except for `{}`. Select R42 for production, show only its release reference changes, and prove stale/incompatible requests change nothing. Do not claim storage, secret-binding or live-readiness support.
-
-### Suggested opening prompt for a fresh session
-
-> Work only on v2. Read `docs/iteration-2-plan.md`, its phase-1 contract, evidence and handoff, the repository instructions, `docs/architecture-review.md` and `docs/model-review.html`. Inspect the working tree and existing Go code/tests. Phase 1 is implemented, independently reviewed and its review findings fixed, and phase 2's compiler is implemented, reviewed and pushed; the phase-3 read-only bridge brief is revised in the same document. Start with the operator's design principles: maintainable v2 contracts rather than v1 compatibility; pure core, orchestration and integrations; domain/data ownership; iterative transition with explicit incomplete semantics. The first-slice proposal is approved, implemented, reviewed and committed: release-independent `RenderHTTP` and a separate pure `shadow.CompareHTTP` on actual HelmRelease documents, with explicit limited coverage and no integration/CLI work. Read its implementation evidence and the record of its review; the next gate is a proposal for the following slice, not further implementation. Obtain separate approval for the next slice. Do not require supplemental provenance claims or complete releases merely to preview known workload facts. The visual change tool is a separate v1/history-based workstream: do not build it or wait for it here. Preserve unrelated work. Do not commit, push, publish, access credentials or touch the live cluster.
+Status, decisions, evidence and the fresh-context handoff live in [v2 status](v2-status.md). Contracts stay here: [the gap list](#6-deliberately-deferred), [guardrails](#guardrails), the [change report](#change-report) and the [extension recipes](#extension-recipes). Nothing in this page authorises implementation beyond the approved slice.

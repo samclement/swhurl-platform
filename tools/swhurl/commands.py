@@ -222,6 +222,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command('check-otel', 'Render the OTel collectors and validate their config with that exact otelcol-k8s release', LOCAL, 'swhurl.otel:main'),
         Command('check-lint', 'Lint the Python tooling and the bash that stays (needs uv)', LOCAL),
         Command('check-codegraph', 'Unit tests for the code graph development aid (devtools/codegraph)', LOCAL),
+        Command('check-docs', 'Compare the workstream registry and its status pages with Git: state, next gate, uncommitted work, cited commits, page-per-change', LOCAL,
+                'swhurl.docs:main'),
         Command('check-v2', 'Format, vet and test the Go v2 module, its design guardrails included (needs Go 1.26.0)', LOCAL),
         Command('v2-report', 'What a change does to v2 against the merge base with BASE: API, budgets, packages, imports, files, exceptions',
                 LOCAL, takes=(Var('BASE', 'origin/main', required=False, default='origin/main'), Var('AFTER', '<rev>', required=False),

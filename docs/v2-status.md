@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: approved
-Gate: the operator's choice: verify an exposed instance live, or move to the first migration
-Uncommitted: none
+Status: in progress
+Gate: live verification of a v2 route: `swhurl-try-v2-3` is applied and waiting for its staging certificate
+Uncommitted: `v2-apps/instances`, `clusters/home/app-swhurl-try-v2-3-staging.json`, `clusters/home/kustomization.yaml`, `docs/`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 

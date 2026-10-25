@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: in progress
+Status: approved
 Gate: observation slice 2b: the credential source and an `observe` command that reads one instance (read-only)
-Uncommitted: `v2/archtest/api.txt`, `v2/cmd/swhurl-v2/chart_test.go`, `v2/observe/target.go`, `v2/observe/target_test.go`
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -90,6 +90,7 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** `make check-v2` (10 packages), `REQUIRE_HELM=1 make check-v2` (chart render and offline Kustomize), `make check`, `git diff --check`, `make -s v2-report`; `observe` coverage 96.9%; the chart render test asserts the derived Deployment name and every selector term against the pinned chart's own output, which caught a wrong assumption (`<release>-main` instead of `<release>`) before it reached anything else.
 - **Deferred rows touched:** the observation row (target derivation now exists).
 - **Next gate:** observation slice 2b — a credential source and an `observe` command that reads one instance, read-only.
+- **Committed:** `2a851c61` (with the record flip in the commit that follows it).
 
 ## Resume
 

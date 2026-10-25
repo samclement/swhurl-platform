@@ -120,7 +120,7 @@ jobs:
             rmdir "$tmp"
           fi
 
-      - name: Check the v2 prototype and its design rules
+      - name: Check v2 and its design rules
         env:
           REQUIRE_HELM: '1'
         run: make check-v2

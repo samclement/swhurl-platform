@@ -21,6 +21,7 @@ const usage = `usage:
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
   swhurl-v2 resolve --snapshot SNAPSHOT.json
   swhurl-v2 egress --snapshot SNAPSHOT.json [--previous EGRESS.json]
+  swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--source NAME]
@@ -46,6 +47,12 @@ absent or unavailable; a failed read is never reported as absence.
 
 egress allocates one proxy port per instance, keeping every port the previous document gave and giving a
 new instance the lowest free one. compile takes the document with --egress.
+
+proxy renders the platform's egress proxy from one allocation: its configuration, with a port per
+instance and the hosts each instance's grants allow, and a policy admitting each port from that
+instance's namespace only. Grants are enforced, so an instance reaches what it declares and nothing
+else. The proxy's deployment stays the platform's hand-written HelmRelease, which reads what proxy
+writes; --out writes the rendered files under DIR and nothing else.
 
 resolve reads one snapshot's declarations and writes the resolved connections as a v2-calls document:
 which pairs are connected, which wait for the other side and why, and which are refused. compile takes
@@ -105,6 +112,7 @@ var commands = map[string]func(cli, request) int{
 	"shadow":            cli.shadow,
 	"resolve":           cli.resolve,
 	"egress":            cli.egress,
+	"proxy":             cli.proxy,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -113,7 +121,7 @@ type request struct {
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
 	app, settings, committed, snapshot, callFile       string
-	previous, egressFile                               string
+	previous, egressFile, allocation                   string
 	outFlag                                            *once
 }
 
@@ -196,6 +204,11 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 	case "egress":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 		flags.Var(&once{value: &r.previous}, "previous", "a previous allocation to keep ports from (optional)")
+	case "proxy":
+		flags.Var(&once{value: &r.allocation}, "allocation", "egress allocation document")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		r.outFlag = &once{value: &r.out}
+		flags.Var(r.outFlag, "out", "destination directory")
 	}
 }
 
@@ -236,6 +249,8 @@ func (r *request) named() []string {
 		return []string{r.snapshot}
 	case "egress":
 		return []string{r.snapshot}
+	case "proxy":
+		return []string{r.allocation, r.profile}
 	}
 	return nil
 }
@@ -334,15 +349,21 @@ func (c cli) compile(r request) int {
 	return emit(c.out, c.diagnostic, kernel.EncodeCompilation(compiled))
 }
 
-// write is the only effect the CLI has: it hands the compiled files to the adapter and reports each
+// write is the only effect compile has: it hands the compiled files to the adapter and reports each
 // one. A destination inside the checkout's apps/ is refused, because that is where v1's instances are
 // recorded. Outcomes are printed before any failure, so a partly written destination is visible.
 func (c cli) write(dir string, compiled kernel.Compilation) int {
+	return c.writeFiles(dir, compiled.Files)
+}
+
+// writeFiles writes rendered files under dir and reports each one, the same way for every command that
+// writes.
+func (c cli) writeFiles(dir string, rendered []kernel.File) int {
 	if _, inside := appTree(dir); inside {
 		fmt.Fprintf(c.diagnostic, "%s: destination: %s\n", files.RefusedDestination, "inside the v1 app tree")
 		return 2
 	}
-	outcomes, err := c.writer.Write(dir, compiled.Files)
+	outcomes, err := c.writer.Write(dir, rendered)
 	for _, outcome := range outcomes {
 		if _, writeErr := fmt.Fprintf(c.out, "%s %s\n", outcome.State, outcome.Path); writeErr != nil {
 			fmt.Fprintln(c.diagnostic, "io: output: cannot write result")

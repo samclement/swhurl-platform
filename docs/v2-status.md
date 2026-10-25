@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: in progress
+Status: approved
 Gate: the operator's choice of the next domain slice: routes (authenticated-web), or the first migration decision
-Uncommitted: `v2/adapters/kube/`, `v2/cmd/swhurl-v2/shadow.go`, `v2/cmd/swhurl-v2/shadow_test.go`, `v2/cmd/swhurl-v2/main.go`, `v2/archtest/api.txt`, `docs/`
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -157,6 +157,7 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages untouched by this slice's effects; the read lives in the command and the adapter. 3. Bytes and identities unchanged; `api.txt` grows by `RefOf`. 4. New refusals stated and tested; nothing existing moved. 5. Failure paths tested: present, absent (404), forbidden (unavailable with reason), and the unconfigured case; a failed read is asserted *not* to be absence. 6. Scope: only claims are read, and the report's `live` list is empty rather than absent when not configured. 7. Offline tests and unit tests are distinguished from the real read, which is recorded as evidence. 8. This page, the plan and the gap list change together.
 - **Evidence, read-only, 25 October 2026:** `shadow` over this repository's snapshot at `HEAD` with the operator's kubeconfig in its JSON form: 50 live reads across 10 instances, all `present` — every claim a preview would create already exists, owned by the instance v1 runs; no read failed. Recorded here rather than in current state: nothing on the cluster changed.
 - **Next gate:** the operator's choice of the next domain slice — routes (`authenticated-web`), which every web instance needs and which the [candidate analysis](iteration-2-plan.md#first-migration-candidate-the-decision-with-the-evidence-25-october-2026) recommends first — or the first migration decision itself.
+- **Committed:** `545f3105` (with the record flip in the commit that follows it).
 
 ## Resume
 

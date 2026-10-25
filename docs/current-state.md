@@ -2,6 +2,15 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## First v2 observation of a live instance (25 October 2026)
+
+Read-only, from the host, with the operator's kubeconfig in its JSON form (`kubectl config view --raw -o json`) and the built `swhurl-v2 observe` from `bd5f2455`. Both reads exited 0 (a report was produced) and reported `source default`:
+
+- `demo-orders`/prod, against `v2/testdata/prod.json` + `r41.json` + `profile.json` and the pushed revision: `unit reconciled`, `unit.revision applied`, `release settled`, `workload present`, `ready ready`, `replicas as_intended`; **verdict `not_running`**, `image different/digest`. The HelmRelease is Ready and the Deployment Available, and the artifact still is not the one v2's descriptor pins: the fixture's digest is synthetic, so the only negative fact is the honest one. This is the phase-5 question answered by v2 itself, and it shows why readiness alone is not the answer.
+- `demo-orders`/staging: the same, plus `replicas different/available_replicas` (two intended, one available). Nothing about v1 is claimed as parity.
+
+Not exercised: a live unavailable read (no failure was manufactured), and anything about pods beyond the running image. Nothing was written, and no credential material or kubeconfig content is recorded here.
+
 ## Latest verification (10 October 2026)
 
 At `eac686d` (repository blueprint rebuilt with the `repository-blueprint` skill's renderer), `make flux-reconcile` fetched and applied the revision; all 22 Flux Kustomizations reached Ready at that revision. `make verify-platform` passed. `make app-status APP=hello-ts ENV=staging` showed a Ready HelmRelease, the desired image running, 1/1 replicas Ready and a Ready TLS certificate. This was a documentation-only commit. The blueprint was checked in headless Chromium against a local file server, not served by the cluster: all 286 evidence links resolve, drill-down and Back restore level, scope and camera, a card is selectable from the keyboard, and 390 px and 820 px viewports (the first with reduced motion) show no horizontal scroll.

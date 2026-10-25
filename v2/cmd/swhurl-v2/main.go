@@ -20,15 +20,24 @@ const usage = `usage:
   swhurl-v2 instance-revision INSTANCE.json
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--out DIR]
+  swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
+      --revision COMMIT --kubeconfig KUBECONFIG.json [--source NAME]
 
-Offline only, and input files are never overwritten. Without --out the compilation document goes to
-stdout and nothing is written. With --out every compiled file is written under DIR, one
-"written PATH" or "unchanged PATH" line each; DIR must not be inside apps/, and nothing outside it
-is touched.
-Exit 0: success/no-op; 2: usage/validation/refusal; 1: file or output I/O failure.
+Input files are never overwritten. Without --out the compilation document goes to stdout and nothing
+is written. With --out every compiled file is written under DIR, one "written PATH" or
+"unchanged PATH" line each; DIR must not be inside apps/, and nothing outside it is touched.
+
+observe compiles the instance, reads its unit, HelmRelease, Deployment and pods from the API server the
+kubeconfig names (the JSON form that "kubectl config view --raw -o json" prints), and writes the
+observation report to stdout with a one-line summary on stderr. It reads only, and --revision is the
+source revision Flux should have applied.
+Exit 0: success/no-op (for observe: a report was produced, whatever its verdict); 2: usage/validation/
+refusal; 1: file or output I/O failure.
 `
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, readInput, files.New())) }
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, readInput, files.New()))
+}
 
 // maxInput bounds what is read from a named file; a descriptor is a few hundred bytes.
 const maxInput = 1 << 20
@@ -65,13 +74,17 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		return c.instanceRevision(r.instance)
 	case "compile":
 		return c.compile(r)
+	case "observe":
+		return c.observe(r)
 	}
 	return c.selectRelease(r)
 }
 
-// request is one parsed command line: the command, the files and revision it names, and where to write.
+// request is one parsed command line: the command, the files, revision, credentials and source it
+// names, and where to write.
 type request struct {
 	command, instance, release, expected, profile, out string
+	revision, kubeconfig, source                       string
 	outFlag                                            *once
 }
 
@@ -87,7 +100,7 @@ func parse(args []string) (request, outcome) {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		return request{}, help
 	}
-	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release", "compile"}, args[0]) {
+	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release", "compile", "observe"}, args[0]) {
 		return request{}, misuse
 	}
 	r := request{command: args[0]}
@@ -105,9 +118,15 @@ func parse(args []string) (request, outcome) {
 func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	flags := flag.NewFlagSet(r.command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard) // flag errors can echo rejected values
-	if r.command == "select-release" || r.command == "compile" {
+	if r.command == "select-release" || r.command == "compile" || r.command == "observe" {
 		flags.Var(&once{value: &r.instance}, "instance", "instance file")
 		flags.Var(&once{value: &r.release}, "release", "release file")
+	}
+	if r.command == "observe" {
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.revision}, "revision", "source revision Flux should have applied")
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&once{value: &r.source}, "source", "name of the evidence source (default: the kubeconfig's current context)")
 	}
 	if r.command == "select-release" {
 		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
@@ -147,6 +166,8 @@ func (r *request) named() []string {
 		return []string{r.instance, r.release, r.expected}
 	case "compile":
 		return []string{r.instance, r.release, r.profile}
+	case "observe":
+		return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig}
 	}
 	return nil
 }

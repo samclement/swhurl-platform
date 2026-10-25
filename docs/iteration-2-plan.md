@@ -967,6 +967,33 @@ The first migrated app (`swhurl-try-11` staging) runs on v2, and its two calls s
 
 **Deferred, with the reason:** backup and restore wait on the **egress proxy** — a backup is the first thing that must leave the cluster, and the 25 October egress decision made the proxy the path for that; a per-instance database with no backup is a named risk that is acceptable only while it is a throwaway. Volume growth is refused rather than resized.
 
+#### Proposed slice: the egress proxy (decision brief, 25 October 2026 — not approved)
+
+Backup and restore, and any app that reaches the internet, need the proxy: it is the path the 25 October egress decision named for traffic leaving the cluster. v2 denies all egress today, which is why a database has no backup.
+
+**What v1 does, from its own records and generated platform file:**
+
+| Fact | v1's mechanism |
+| --- | --- |
+| Addressing | One **port per instance** on a shared Squid (`egress.egress.svc.cluster.local:<port>`, 30101 and up), kept in `instance.yaml` as `allocations.egressPort`, so regenerating never moves it |
+| Client variables | `HTTP_PROXY`/`HTTPS_PROXY` at that port, `NODE_USE_ENV_PROXY=1`, `JAVA_TOOL_OPTIONS` with the JVM proxy properties, `NO_PROXY` = `localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)`, and `HOST_IP` from the downward API |
+| Identity | The proxy identifies the caller **by the port it arrived on** (`note instance <app>-<env>`), not by anything the app sends, and logs `instance=… granted=… method=… host=… status=…` |
+| Grants | `egress: [host:port]` in `instance.yaml`; rendered as a HelmRelease annotation. **The proxy still allows every host** (`http_access allow all`) and logs whether a grant covers it, so enforcement can be judged from logs first — v1's deferred stage E3 |
+| Configuration | `platform/egress/proxy.yaml` is **generated from all instances** by `make app-sync`: the Squid config, the Service's ports, and a policy admitting each port only from its instance's namespace |
+| Backup | The backup CronJob uses the instance's own proxy port (`HTTP_PROXY`) |
+
+**A defect this brief found in what v2 already renders.** v2 denies all egress and, for calls, admits only the callee's pods. **DNS is denied** with it: a v2 instance cannot resolve `…svc.cluster.local`, so its calls would fail even where the callee admits it. Any egress slice must add a DNS rule (UDP and TCP 53 to the cluster's DNS) for every instance allowed to reach anything — and the calls slice stands corrected.
+
+**The five decisions:**
+
+1. **Who owns the port.** *Recommend a generated platform allocation*, not an instance field: the port is proxy configuration ("who is asking"), it must be stable, and the proxy's own config is generated from every instance anyway. The allocation is one document, produced from the snapshot like `resolve`, and `compile --egress FILE` renders the instance's variables from it. A new instance's port is the lowest free one in a deterministic order; an existing instance keeps its port because the document is in Git.
+2. **Enforcement.** *Recommend enforcing grants*, unlike v1's log-only stage: v2's model already states them, and "no unlogged, ungranted egress" is the reason the proxy exists. The cost is that a grant must be right before an app depends on it; the alternative — v1's `http_access allow all` with `granted=yes|-` logging — is the lower-risk first step if enforcement feels too strict for the first slice.
+3. **What v2 renders, and where.** The instance side (variables, annotation, policy egress to the proxy and DNS) belongs in the compiler. The proxy side is a **platform** document v2 renders from the allocation and the grants — the first platform object v2 would own, and the reason the slice needs its own approval.
+4. **The boundary with calls.** Calls stay direct pod-to-pod (already rendered and stricter than v1); the proxy is for leaving the cluster. Both rules coexist, and both need the DNS rule.
+5. **Backups and restore.** With the proxy in place, the backup CronJob does what v1 does (its own proxy port, the data volume, an S3 prefix, an age recipient); restore stays a `CONFIRM`-gated command. *Recommend* that as the slice immediately after, so a database is not left without a backup.
+
+**Not in this slice:** a per-instance proxy *deployment* (v1 shares one Squid), proxy-side caching or TLS interception (neither exists), and egress for workers and jobs until those kinds are rendered.
+
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 
 The inventory above makes the choice concrete. Of the 17 instances in this repository, **no instance is both private and a web app**: every web instance is `authenticated-web`, and every private instance is a `worker` or `job`, which v2 does not render at all. The lightest web instance is `swhurl-try-11` (no database, no events, two calls); `demo-orders` — the natural candidate — needs storage (SQLite), events, calls, routes and a backup job.
@@ -985,7 +1012,8 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 
 | Feature or semantic gap | v2 today | Decide by |
 | --- | --- | --- |
-| Egress proxy: proxy variables, port allocation, egress grants | **All egress denied** for the first instance ([decided 25 October 2026](#decision-egress-and-credentials-for-the-first-instance-decided-25-october-2026)): no proxy path, and no instance can reach outside | With the first instance that must reach outside, as a slice of its own |
+| Egress proxy: proxy variables, port allocation, egress grants | **All egress denied**: no proxy path, no allocation and no instance can reach outside; the [decision brief](#proposed-slice-the-egress-proxy-decision-brief-25-october-2026-not-approved) proposes how v2 would own it | The first instance that must reach outside — a backup, in practice |
+| DNS egress for an instance that may reach anything | **Denied with all egress.** v2 admits a callee's pods for a call but not the cluster's DNS, so a call cannot even resolve the callee's name; every egress slice must add the DNS rule | With the egress-proxy slice, as its first correction |
 | Routes: `public` exposure, a per-instance host override, route-level observation (Ingress readiness, certificate state) | `authenticated-web` renders its Ingress, TLS annotation and middleware from the profile and is `private`'s only alternative; `public` is still refused (`unsupported`), no instance stores a host, and observation does not verify a route | The first instance that needs a public route or an unusual host |
 | App kinds `worker` and `job` (a CronJob schedule); a command override | Refused (`unsupported`): only `web`, and no command | Phase 7, per app |
 | Teams: the namespace `team` label, team isolation | Not in the records; no label | Before an instance needs team isolation |

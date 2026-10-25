@@ -2,6 +2,10 @@
 
 How to change this repo without breaking the cluster or the docs. Commits go straight to `main`; CI ([`.github/workflows/validate.yml`](../.github/workflows/validate.yml)) is the gate, and Flux applies `main`.
 
+## Agent-assisted changes
+
+Use the [software change workflow](software-change-workflow.md) to agree an outcome, observable contracts, design boundaries, authority and evidence with a coding agent. It includes an operator quick start, a reusable task-record template and an illustrative promotion-preview proposal. Invoke it explicitly in your request; it is a procedure, not an installed command or permission to commit or deploy.
+
 ## Validation
 
 Run before every push:
@@ -65,6 +69,7 @@ All v1 operator logic lives in the Python package [`tools/swhurl/`](../tools/swh
   | Topic | Page |
   | --- | --- |
   | Everyday loop, task index | [README](../README.md) |
+  | Reusable agent-assisted software change procedure | [Software change workflow](software-change-workflow.md) |
   | Bare host to running platform | [bootstrap](bootstrap.md) |
   | Health, Secrets, certificates, lifecycle, chart updates, backups, troubleshooting | [operations](operations.md) |
   | Every `make` target | [commands](commands.md) |

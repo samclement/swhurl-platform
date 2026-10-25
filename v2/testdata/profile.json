@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "home-k3s",
+  "chart": {
+    "name": "app-template",
+    "version": "5.2.1",
+    "repository": "bjw-s",
+    "repositoryNamespace": "flux-system"
+  },
+  "delivery": {
+    "source": "swhurl-platform",
+    "outputRoot": "v2-apps",
+    "dependsOn": ["infra-base"]
+  },
+  "workload": {
+    "cpuRequestMilli": 10,
+    "startupSeconds": 120,
+    "startupPeriodSeconds": 5
+  },
+  "quota": {
+    "pods": 14,
+    "requestsCpuMilli": 2000,
+    "requestsMemoryMiB": 2048,
+    "limitsMemoryMiB": 4096
+  }
+}

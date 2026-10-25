@@ -16,6 +16,7 @@ const usage = `usage:
   swhurl-v2 release-id RELEASE.json
   swhurl-v2 instance-revision INSTANCE.json
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
+  swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json
 
 Offline only. Results go to stdout; input files are never overwritten.
 Exit 0: success/no-op; 2: usage/validation/refusal; 1: file/output I/O failure.
@@ -56,12 +57,14 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		return c.releaseID(r.release)
 	case "instance-revision":
 		return c.instanceRevision(r.instance)
+	case "compile":
+		return c.compile(r)
 	}
 	return c.selectRelease(r)
 }
 
 // request is one parsed command line: the command and the files and revision it names.
-type request struct{ command, instance, release, expected string }
+type request struct{ command, instance, release, expected, profile string }
 
 type outcome int
 
@@ -75,7 +78,7 @@ func parse(args []string) (request, outcome) {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		return request{}, help
 	}
-	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release"}, args[0]) {
+	if len(args) == 0 || !slices.Contains([]string{"release-id", "instance-revision", "select-release", "compile"}, args[0]) {
 		return request{}, misuse
 	}
 	r := request{command: args[0]}
@@ -89,31 +92,48 @@ func parse(args []string) (request, outcome) {
 	return r, parsed
 }
 
-// parseFlags parses the flags select-release takes into r; the other commands take none.
+// parseFlags parses the flags select-release and compile take into r; the other commands take none.
 func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	flags := flag.NewFlagSet(r.command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard) // flag errors can echo rejected values
-	if r.command == "select-release" {
+	if r.command == "select-release" || r.command == "compile" {
 		flags.Var(&once{value: &r.instance}, "instance", "instance file")
 		flags.Var(&once{value: &r.release}, "release", "release file")
+	}
+	if r.command == "select-release" {
 		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
+	}
+	if r.command == "compile" {
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 	}
 	return flags, flags.Parse(args)
 }
 
 // take fills r from the arguments left after the flags; false is a usage error.
 func (r *request) take(flags *flag.FlagSet) bool {
-	switch {
-	case r.command == "select-release":
-		return flags.NArg() == 0 && r.instance != "" && r.release != "" && r.expected != ""
-	case flags.NArg() != 1:
+	if named := r.named(); named != nil {
+		return flags.NArg() == 0 && !slices.Contains(named, "")
+	}
+	if flags.NArg() != 1 {
 		return false
-	case r.command == "release-id":
+	}
+	if r.command == "release-id" {
 		r.release = flags.Arg(0)
-	default:
+	} else {
 		r.instance = flags.Arg(0)
 	}
 	return true
+}
+
+// named is the flag values a command requires, or nil for a command that takes one file argument.
+func (r *request) named() []string {
+	switch r.command {
+	case "select-release":
+		return []string{r.instance, r.release, r.expected}
+	case "compile":
+		return []string{r.instance, r.release, r.profile}
+	}
+	return nil
 }
 
 // once is a flag that may be given at most once: a repeat is a usage error, not the last one winning.
@@ -176,6 +196,30 @@ func (c cli) selectRelease(r request) int {
 		return fail(c.diagnostic, err)
 	}
 	return emit(c.out, c.diagnostic, data)
+}
+
+func (c cli) compile(r request) int {
+	spec, status := c.instance(r.instance)
+	if status != 0 {
+		return status
+	}
+	release, status := c.release(r.release)
+	if status != 0 {
+		return status
+	}
+	data, status := c.read(r.profile, "profile")
+	if status != 0 {
+		return status
+	}
+	profile, err := kernel.DecodeProfile(data)
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
+	compiled, err := kernel.Compile(spec, release, profile)
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
+	return emit(c.out, c.diagnostic, kernel.EncodeCompilation(compiled))
 }
 
 func (c cli) release(path string) (kernel.ReleaseBundle, int) {

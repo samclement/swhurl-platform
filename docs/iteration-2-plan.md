@@ -1,6 +1,6 @@
 # Iteration 2: incremental replacement alongside the current platform
 
-**Status: phase 1 implemented and offline-verified 23 October 2026, committed 24 October 2026.** The operator approved the root-level Go module, JSON-only descriptors, positional canonical identity encoding, manifest-only `linux/amd64` artifacts and empty-only bindings. Phases 2–7 remain proposals. v2 and the [visual change-tool investigation](visual-change-tool.md) are independent workstreams; neither is a prerequisite for the other. No publication, live migration, v1 behaviour change or feature removal is approved. Do not commit or push without instruction.
+**Status: phase 1 implemented and offline-verified 23 October 2026, committed 24 October 2026; phase 2's compiler implemented 25 October 2026.** The operator approved the root-level Go module, JSON-only descriptors, positional canonical identity encoding, manifest-only `linux/amd64` artifacts and empty-only bindings, and phase 2's [compiler contract](#phase-2-establish-compiler-ownership). Phases 3–7 remain proposals. v2 and the [visual change-tool investigation](visual-change-tool.md) are independent workstreams; neither is a prerequisite for the other. No publication, live migration, v1 behaviour change or feature removal is approved. Do not commit or push without instruction.
 
 This plan develops the recommendations in [the architecture review](architecture-review.md). [Architecture](architecture.md) remains the canonical description of deployed behaviour; [plan](plan.md) section 0 remains the index of approved work and links here for the phase-1 contract, evidence and handoff.
 
@@ -221,7 +221,7 @@ Current working-tree changes must be inspected again before implementation; this
 
 ## 4. Development layers and adapters
 
-**Approved 24 October 2026 as the working method for v2.** Phases 2–7 still need their own approval; this section says how to build them, not that they are approved.
+**Approved 24 October 2026 as the working method for v2.** Phases 3–7 still need their own approval; this section says how to build them, not that they are approved.
 
 v2 has two layers, so that most work iterates offline in seconds:
 
@@ -334,7 +334,7 @@ v2 continues through the phase-1 review and separately approved delivery phases 
 
 ## 5. Incremental delivery
 
-Each phase ends in something usable and independently checkable. Only phase 1's bounded offline slice is implemented; the remaining phases require their own decisions and approval. The independent [visual-tool workstream](visual-change-tool.md) neither blocks nor authorises these phases.
+Each phase ends in something usable and independently checkable. Phases 1 and 2 are implemented, offline; the remaining phases require their own decisions and approval. The independent [visual-tool workstream](visual-change-tool.md) neither blocks nor authorises these phases.
 
 | Phase | Build | Completion gate |
 | --- | --- | --- |
@@ -354,18 +354,69 @@ Judge model clarity and ease of change as well as binary characteristics before 
 
 ### Phase 2: establish compiler ownership
 
-Use a small contract:
+**Contract approved 25 October 2026** (operator: digest-only images, one memory value, an output-based compilation ID, integrations removed for this phase, ownership checked within a compiled set and against a supplied inventory, output on stdout). Implementation status and evidence are at the end of this section.
 
 ```text
-validated instance + resolved release + platform profile
-    → resources + ownership inventory + compilation identity
+compile(instance + the release it selects + platform profile)
+  → files:          Namespace, HelmRelease, ResourceQuota, NetworkPolicy, kustomization, Flux unit
+  → inventory:      each cluster object those files create, and its owner (app/env)
+  → registrations:  the Flux unit file, for the shared list of units (a contribution, not an edit)
+  → identity:       comp-sha256 over the canonical output, beside the release ID, instance revision and profile ID
 ```
 
-No network, clock, randomness, credential generation or live reads inside compilation.
+Pure, in `kernel`: no network, clock, randomness, credential generation, file or live reads. `Compile(spec, release, profile)` builds one instance; `CheckOwnership(compiled, foreign)` refuses two compilations that claim the same object, or one that claims an object in `foreign` (objects someone else owns: empty in phase 2, filled from v1 in phase 3). The `layers` rule lets no layer-0 package import another, so the compiler shares `kernel` with the records until a split is worth a rule change.
 
-Use the existing pinned deployment primitive where practical. Rewriting the application chart is a separate decision, not a prerequisite.
+**PlatformProfile** is a third strict JSON record ([`profile.json`](../v2/testdata/profile.json)) with its own identity, `prof-sha256:` over `["swhurl.profile.v1", schemaVersion, name, chart.name, chart.version, chart.repository, chart.repositoryNamespace, delivery.source, delivery.outputRoot, delivery.dependsOn, workload.cpuRequestMilli, workload.startupSeconds, workload.startupPeriodSeconds, quota.pods, quota.requestsCpuMilli, quota.requestsMemoryMiB, quota.limitsMemoryMiB]`, encoded as in [release identity](#release-identity-and-instance-revision). It holds only what the platform owns:
 
-The initial compiler must preserve the promised private access/isolation boundary, not merely emit a Deployment that starts. Define the generated resource set and its owners explicitly, and validate it with focused tests and appropriate manifest checks.
+| Field | Accepted value |
+| --- | --- |
+| `schemaVersion` | Integer `1` |
+| `name` | App-name grammar |
+| `chart.name`, `chart.repository`, `chart.repositoryNamespace` | DNS labels: the pinned deployment primitive and its Flux `HelmRepository` |
+| `chart.version` | `MAJOR.MINOR.PATCH` |
+| `delivery.source` | DNS label: the Flux `GitRepository` the unit reads |
+| `delivery.outputRoot` | Relative path of lowercase DNS-label segments: where the instance's files go |
+| `delivery.dependsOn` | DNS labels, distinct, in order: the units every instance waits for |
+| `workload.cpuRequestMilli` | Integer `1–2147483647` |
+| `workload.startupPeriodSeconds`, `workload.startupSeconds` | Integers; the allowance is a positive multiple of the period |
+| `quota.pods`, `quota.requestsCpuMilli`, `quota.requestsMemoryMiB`, `quota.limitsMemoryMiB` | Positive integers |
+
+Timings that belong to the compiler (Helm and unit intervals, the 3-minute timeout, one remediation retry) are constants; a change to them changes the compilation ID.
+
+**What it generates**, for `demo-orders` in `prod` with `outputRoot` `v2-apps`, classified against v1's renderer (`apps/model/workload.py`, `exposure.py`, `calling.py`):
+
+| v1 behaviour | Phase 2 |
+| --- | --- |
+| Namespace `<app>-<env>` with managed, app, environment and exposure labels | **Preserve** |
+| Namespace `team` label | **Remove for now:** v2 records have no team |
+| HelmRelease of the pinned chart: timeout 3m, one install and upgrade retry | **Preserve**, chart from the profile |
+| Pod security: non-root uid, group and fsGroup from the release, `RuntimeDefault` seccomp, no service account token, read-only root, no privilege escalation, all capabilities dropped | **Preserve** |
+| Image as repository, tag and digest | **Change:** repository and digest only (`image@sha256:…`), as the release identity pins it |
+| Readiness, liveness and startup probes on the health path and port; startup allowance 120 s every 5 s | **Preserve**, allowance from the profile |
+| `/tmp` as an `emptyDir`; a Service on the release port | **Preserve** |
+| CPU and memory from image minimums and instance choices | **Change:** CPU request from the profile; memory request and limit both `configuration.memoryMiB` |
+| `replicas` optional | **Change:** always set; `0` means stopped |
+| ResourceQuota; a NetworkPolicy selecting the app's pods with no ingress for a private instance | **Preserve:** the isolation boundary |
+| `SWHURL_APP`, `SWHURL_ENV` | **Preserve** |
+| Notify URL, caller-token issuer and keys, the projected `notify` token | **Remove for phase 2:** integrations are [deferred](#6-deliberately-deferred) |
+| Image automation; the render fingerprint annotation | **Remove:** automatic deploys are deferred; the compilation ID is in the compilation document, not in the resources |
+| Flux unit `app-<app>-<env>`: `dependsOn`, prune, wait, timeout | **Preserve**, at `<outputRoot>/units/`; its registration is returned, not written |
+
+The NetworkPolicy selects `app.kubernetes.io/instance: <app>`, which the chart sets to the Helm release name; Flux names the release after the HelmRelease when it has no `targetNamespace`, so the compiler sets none. Files are JSON (YAML's subset), so the standard library writes them: `<outputRoot>/<app>/<env>/{namespace,helmrelease,resourcequota,networkpolicy}.json`, a `kustomization.yaml` listing them, and `<outputRoot>/units/app-<app>-<env>.json`. Objects the chart renders (Deployment, Service, ServiceAccount) are owned through the HelmRelease; the inventory lists the objects compiled directly, by API group, kind, namespace and name.
+
+**Refusals,** besides each record's own: `wrong_application` when the release is another application's, then `wrong_release` when it is not the one the instance selects; `ownership_conflict` from `CheckOwnership`, naming the object (an object identity is platform-chosen, not input values).
+
+**Output:** `swhurl-v2 compile --instance FILE --release FILE --profile FILE` prints one JSON document (`"kind": "v2-compilation", "version": 1`, with the inputs' identities, the files, the inventory, the registrations and the ID) to stdout and writes no file. Identical inputs give identical bytes: sorted keys, no HTML escaping, a fixed file order. Exit codes are phase 1's.
+
+**Verification required:** golden documents for both fixture instances; byte-identical repeat compilation; a change to configuration, release or profile changes only what it should; every refusal; two instances claiming one object, and a `foreign` claim; the golden HelmRelease rendered with the pinned chart (`helm template`, offline from the chart cache) showing the digest image, the replicas, the probes and pods the NetworkPolicy selects; and the files accepted by `kubectl kustomize`. Those two tool checks skip without `helm`, `kubectl` or the cached chart, and fail instead under `REQUIRE_HELM=1`, which CI sets.
+
+**Implemented 25 October 2026, before commit:** [`profile.go`](../v2/kernel/profile.go) and [`compile.go`](../v2/kernel/compile.go) in `kernel`, the [`profile.json`](../v2/testdata/profile.json) fixture, golden compilations in [`testdata/compiled/`](../v2/testdata/compiled/prod.json), and `swhurl-v2 compile`. The profile section the contract called `flux` is `delivery`: the `no-subprocess` rule reads a bare `"flux"` string as a command name, and the code was renamed rather than the rule weakened (identities are positional, so nothing else changed). Evidence:
+
+- The profile's canonical bytes and ID match an independent Python calculation ([`profile-identity.json`](../v2/testdata/profile-identity.json)); each of its 16 fields changes the ID; 13 malformed profiles get the code and field section 2's precedence gives them, without echoing input.
+- Both fixture instances compile to their golden documents, byte-identically on a repeat, from the CLI and the built binary as from the kernel. Selecting R42 for prod, stopping it, or another CPU request changes only `helmrelease.json`; another quota only `resourcequota.json`; another output root moves all six files; renaming the profile keeps the compilation ID and changes only the recorded profile ID; changing the profile afterwards does not change a compilation.
+- The output has none of what phase 2 removes (tag, notify, caller tokens, team label, route, render annotation). Refusals: `wrong_release`, `wrong_application`, an invalid instance before either, an invalid profile; `CheckOwnership` passes staging with prod, refuses a repeated instance and a `foreign` HelmRelease by name, and does not claim objects the chart renders.
+- With the cached app-template 5.2.1, `helm template` of the golden HelmRelease renders a Deployment and Service with `image: ghcr.io/samclement/demo-orders@sha256:…`, one replica, the `/healthz` probes, 256Mi, uid 65532 and no service account token, and pods labelled as the NetworkPolicy selects; `kubectl kustomize` accepts the JSON files. Without `helm` the check skips, and fails under `REQUIRE_HELM=1`, as without the chart; a broken image and a different release name each fail it. CI fetches the chart before `make check-v2`, which it runs with `REQUIRE_HELM=1`.
+- Guardrails held: `public-api` caught the 19 new declarations (all additions, `api.txt` updated); `budgets` caught a CLI function at complexity 11, which was split.
 
 ### Phase 3: shadow, not synchronise
 
@@ -480,7 +531,7 @@ v2's design principles are checked, not only described. The rules are code in [`
 
 **Verification (24 October 2026, working tree before commit):** each rule has a test on a small module written to a temporary directory, showing what it catches and what it leaves alone (a parameter that shadows a package variable, a test that starts a process); breaking a check on purpose makes those tests fail. On v2 the code rules pass; two phase-1 functions are over budget and listed. End to end, three runs of pi (Haiku 5.5, a throwaway copy of the repository, the extension loaded with `-e`): an agent asked to add a counter to the kernel got the `pure` failure on its edit, reverted it, re-ran the check and offered compliant alternatives without touching a baseline; a change made through the shell, which the edit hook does not see, was caught when the agent tried to finish, handed back once, and fixed; an agent told never to fix it got two attempts and then a message for the operator, after which the run ended. Not exercised: interactive mode after `/trust`.
 
-**CI (24 October 2026):** Validate's tooling job sets up Go with `actions/setup-go@v7` from `v2/go.mod` (no cache: there is no `go.sum`) and runs `make check-v2` after the code graph tests; a failure there holds the console deploy like any other check. First run on the push of `be041cf4` ([current state](current-state.md#v2-and-code-graph-push-24-october-2026)): `go1.26.0 linux/amd64`, all four packages passed; Go setup took 7 s and the check 11 s. `actionlint` was not run (not installed here).
+**CI (24 October 2026):** Validate's tooling job sets up Go with `actions/setup-go@v7` from `v2/go.mod` (no cache: there is no `go.sum`) and runs `make check-v2` after the code graph tests, with `REQUIRE_HELM=1` and the chart the v2 profile pins fetched into the chart cache first, so the [compiler's](#phase-2-establish-compiler-ownership) manifest check runs; a failure there holds the console deploy like any other check. First run on the push of `be041cf4` ([current state](current-state.md#v2-and-code-graph-push-24-october-2026)): `go1.26.0 linux/amd64`, all four packages passed; Go setup took 7 s and the check 11 s. `actionlint` was not run (not installed here).
 
 #### Change report
 
@@ -573,7 +624,7 @@ diff -u v2/testdata/prod.json "$selected"
 
 The diff changes only `release`; `diff` exits `1` to report that expected difference. Staging remains R42 with two replicas/128 MiB; production selects R42 with one replica/256 MiB. Both retain private grants and empty bindings. The built-binary test proves that no input file changed. Do not redirect stdout over an input filename: the shell would truncate it before the CLI starts.
 
-The three commands are `release-id FILE`, `instance-revision FILE`, and `select-release --instance FILE --release FILE --expect REVISION`. Only explicitly named files are read; there is no root discovery, registry, external command, credential/config lookup or file-write command. Valid results go to stdout, diagnostics to stderr. Exit `0` means success/no-op, `2` means usage/validation/refusal (including an input file larger than 1 MiB, which is not read past that), and `1` means file/output I/O failure. A flag given twice is a usage error, not the last one winning; flags may also be written `-instance=FILE`, and `--` ends them; `--help` or `-h` prints the usage to stdout and exits `0`. Refusal stdout is empty. If stdout is a pipe whose reader has gone, the process ends by `SIGPIPE`, as Unix tools do, rather than exiting `1` (catching it would need `syscall`, which the `no-subprocess` rule keeps out of v2). Output failures cannot retract bytes already accepted by the destination; they must return nonzero rather than claim success.
+The four commands are `release-id FILE`, `instance-revision FILE`, `select-release --instance FILE --release FILE --expect REVISION` and, from phase 2, `compile --instance FILE --release FILE --profile FILE` ([compiler](#phase-2-establish-compiler-ownership)). Only explicitly named files are read; there is no root discovery, registry, external command, credential/config lookup or file-write command. Valid results go to stdout, diagnostics to stderr. Exit `0` means success/no-op, `2` means usage/validation/refusal (including an input file larger than 1 MiB, which is not read past that), and `1` means file/output I/O failure. A flag given twice is a usage error, not the last one winning; flags may also be written `-instance=FILE`, and `--` ends them; `--help` or `-h` prints the usage to stdout and exits `0`. Refusal stdout is empty. If stdout is a pipe whose reader has gone, the process ends by `SIGPIPE`, as Unix tools do, rather than exiting `1` (catching it would need `syscall`, which the `no-subprocess` rule keeps out of v2). Output failures cannot retract bytes already accepted by the destination; they must return nonzero rather than claim success.
 
 To repeat selection, calculate `instance-revision "$selected"` and select R42 against that revision: output is identical. Selecting it against the **old** revision exits `2` with `stale_instance` and no stdout. Wrong-app and unsupported-candidate cases are exercised by `go test` using temporary synthetic inputs, with all files compared afterwards.
 
@@ -602,11 +653,11 @@ Component checklist: no deployed process, persistent store, default credential, 
 
 **Approved:** the operator said yes to the concrete phase-1 proposal: root-level `v2/`, Go 1.26.0, JSON-only descriptors, positional canonical encoding, manifest-only `linux/amd64` artifact claims, empty-only bindings and the narrow policy exception. Keep v1 unchanged; no platform console UI, general framework, compiler, bridge, credential access, integrations, publication, live changes or feature removals. The operator separated the [visual change-tool workstream](visual-change-tool.md) from v2; it uses v1 code/history and has its own scope and handoff. Do not implement visual tooling in this v2 thread. **Do not commit or push without instruction.**
 
-**Done:** the two value records, strict codec, identities and pure selection operation, thin offline CLI, synthetic fixtures and focused tests are implemented. Phase-1 Go tests/vet/format, the v1 baseline, full `make check`, shell syntax, repeat-build and demonstration checks passed; binary measurements and their limits are in section 7. v2's design rules are checked as code by `make check-v2` and, in pi, after each edit and before a run ends ([guardrails](#guardrails)). The independent visual-tool brief is linked above; it is not a v2 deliverable. No live action has been taken.
+**Done:** the two value records, strict codec, identities and pure selection operation, thin offline CLI, synthetic fixtures and focused tests are implemented. Phase-1 Go tests/vet/format, the v1 baseline, full `make check`, shell syntax, repeat-build and demonstration checks passed; binary measurements and their limits are in section 7. v2's design rules are checked as code by `make check-v2` and, in pi, after each edit and before a run ends ([guardrails](#guardrails)). Phase 2's [compiler](#phase-2-establish-compiler-ownership) is implemented to its approved contract. The independent visual-tool brief is linked above; it is not a v2 deliverable. No live action has been taken.
 
-**Left:** of the [independent review's findings](#phase-1-verification-evidence), the coexistence check's blind spots, deliberately not fixed. Nothing is published. Phases 2–7 still need their own decisions and approval.
+**Left:** of the [independent review's findings](#phase-1-verification-evidence), the coexistence check's blind spots, deliberately not fixed. Nothing is published. Phases 3–7 still need their own decisions and approval.
 
-**Next:** agree the phase-2 compiler contract and obtain approval before implementing it. Do not wait for or build the visual tool here. No platform console, live-adapter or publication work is authorised by this handoff.
+**Next:** phase 3, the read-only v1 bridge, needs its own proposal and approval before implementing it. Do not wait for or build the visual tool here. No platform console, live-adapter or publication work is authorised by this handoff.
 
 ### Read first
 
@@ -640,4 +691,4 @@ The phase-1 demonstration uses different environment configuration, **not non-em
 
 ### Suggested opening prompt for a fresh session
 
-> Work only on v2. Read `docs/iteration-2-plan.md`, its phase-1 contract, evidence and handoff, the repository instructions, `docs/architecture-review.md` and `docs/model-review.html`. Inspect the working tree and existing Go code/tests. Phase 1 is implemented, independently reviewed and its review findings fixed; the next step is agreement and approval of the phase-2 compiler contract. The visual change tool is a separate v1/history-based workstream: do not build it or wait for it here. Preserve unrelated work. Do not commit, push, publish, access credentials or touch the live cluster.
+> Work only on v2. Read `docs/iteration-2-plan.md`, its phase-1 contract, evidence and handoff, the repository instructions, `docs/architecture-review.md` and `docs/model-review.html`. Inspect the working tree and existing Go code/tests. Phase 1 is implemented, independently reviewed and its review findings fixed, and phase 2's compiler is implemented; the next step is a proposal for phase 3, the read-only v1 bridge. The visual change tool is a separate v1/history-based workstream: do not build it or wait for it here. Preserve unrelated work. Do not commit, push, publish, access credentials or touch the live cluster.

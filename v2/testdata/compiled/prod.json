@@ -1,0 +1,289 @@
+{
+  "kind": "v2-compilation",
+  "version": 1,
+  "id": "comp-sha256:e461121ec5712fa0e3ab36dabf48f8bf6de1853a8e457796391e578a9b8af1f0",
+  "inputs": {
+    "release": "rel-sha256:c0a198380d8ad269805e5ffdec3f94715acba8946a1deda4f9e2c66e7c673ea0",
+    "instance": "inst-sha256:cfee25aa1b381a71cc9a01bd03e2e865120ccbb78d7a73195998e3d4a4d92f60",
+    "profile": "prof-sha256:841fa52e70ce2e61f9f3cef8cbb7c575b9a38d5dd833c19614949488e7583829"
+  },
+  "files": [
+    {
+      "path": "v2-apps/demo-orders/prod/namespace.json",
+      "document": {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+          "labels": {
+            "platform.swhurl.com/app": "demo-orders",
+            "platform.swhurl.com/environment": "prod",
+            "platform.swhurl.com/exposure": "private",
+            "platform.swhurl.com/managed": "true"
+          },
+          "name": "demo-orders-prod"
+        }
+      }
+    },
+    {
+      "path": "v2-apps/demo-orders/prod/helmrelease.json",
+      "document": {
+        "apiVersion": "helm.toolkit.fluxcd.io/v2",
+        "kind": "HelmRelease",
+        "metadata": {
+          "name": "demo-orders",
+          "namespace": "demo-orders-prod"
+        },
+        "spec": {
+          "chart": {
+            "spec": {
+              "chart": "app-template",
+              "interval": "30m",
+              "sourceRef": {
+                "kind": "HelmRepository",
+                "name": "bjw-s",
+                "namespace": "flux-system"
+              },
+              "version": "5.2.1"
+            }
+          },
+          "install": {
+            "remediation": {
+              "retries": 1
+            }
+          },
+          "interval": "30m",
+          "timeout": "3m",
+          "upgrade": {
+            "remediation": {
+              "retries": 1
+            }
+          },
+          "values": {
+            "controllers": {
+              "main": {
+                "containers": {
+                  "main": {
+                    "env": {
+                      "SWHURL_APP": "demo-orders",
+                      "SWHURL_ENV": "prod"
+                    },
+                    "image": {
+                      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "repository": "ghcr.io/samclement/demo-orders"
+                    },
+                    "probes": {
+                      "liveness": {
+                        "custom": true,
+                        "enabled": true,
+                        "spec": {
+                          "httpGet": {
+                            "path": "/healthz",
+                            "port": 8080
+                          }
+                        }
+                      },
+                      "readiness": {
+                        "custom": true,
+                        "enabled": true,
+                        "spec": {
+                          "httpGet": {
+                            "path": "/healthz",
+                            "port": 8080
+                          }
+                        }
+                      },
+                      "startup": {
+                        "custom": true,
+                        "enabled": true,
+                        "spec": {
+                          "failureThreshold": 24,
+                          "httpGet": {
+                            "path": "/healthz",
+                            "port": 8080
+                          },
+                          "periodSeconds": 5
+                        }
+                      }
+                    },
+                    "resources": {
+                      "limits": {
+                        "memory": "256Mi"
+                      },
+                      "requests": {
+                        "cpu": "10m",
+                        "memory": "256Mi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true
+                    }
+                  }
+                },
+                "replicas": 1
+              }
+            },
+            "defaultPodOptions": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "fsGroup": 65532,
+                "runAsGroup": 65532,
+                "runAsNonRoot": true,
+                "runAsUser": 65532,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              }
+            },
+            "persistence": {
+              "tmp": {
+                "globalMounts": [
+                  {
+                    "path": "/tmp"
+                  }
+                ],
+                "type": "emptyDir"
+              }
+            },
+            "service": {
+              "main": {
+                "controller": "main",
+                "ports": {
+                  "http": {
+                    "port": 8080
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": "v2-apps/demo-orders/prod/resourcequota.json",
+      "document": {
+        "apiVersion": "v1",
+        "kind": "ResourceQuota",
+        "metadata": {
+          "name": "demo-orders",
+          "namespace": "demo-orders-prod"
+        },
+        "spec": {
+          "hard": {
+            "limits.memory": "4Gi",
+            "pods": "14",
+            "requests.cpu": "2",
+            "requests.memory": "2Gi"
+          }
+        }
+      }
+    },
+    {
+      "path": "v2-apps/demo-orders/prod/networkpolicy.json",
+      "document": {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "NetworkPolicy",
+        "metadata": {
+          "name": "demo-orders",
+          "namespace": "demo-orders-prod"
+        },
+        "spec": {
+          "ingress": [],
+          "podSelector": {
+            "matchLabels": {
+              "app.kubernetes.io/instance": "demo-orders"
+            }
+          },
+          "policyTypes": [
+            "Ingress"
+          ]
+        }
+      }
+    },
+    {
+      "path": "v2-apps/demo-orders/prod/kustomization.yaml",
+      "document": {
+        "apiVersion": "kustomize.config.k8s.io/v1beta1",
+        "kind": "Kustomization",
+        "resources": [
+          "namespace.json",
+          "helmrelease.json",
+          "resourcequota.json",
+          "networkpolicy.json"
+        ]
+      }
+    },
+    {
+      "path": "v2-apps/units/app-demo-orders-prod.json",
+      "document": {
+        "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+        "kind": "Kustomization",
+        "metadata": {
+          "name": "app-demo-orders-prod",
+          "namespace": "flux-system"
+        },
+        "spec": {
+          "dependsOn": [
+            {
+              "name": "infra-base"
+            }
+          ],
+          "interval": "10m",
+          "path": "./v2-apps/demo-orders/prod",
+          "prune": true,
+          "sourceRef": {
+            "kind": "GitRepository",
+            "name": "swhurl-platform"
+          },
+          "timeout": "3m",
+          "wait": true
+        }
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "group": "",
+      "kind": "Namespace",
+      "namespace": "",
+      "name": "demo-orders-prod",
+      "owner": "demo-orders/prod"
+    },
+    {
+      "group": "helm.toolkit.fluxcd.io",
+      "kind": "HelmRelease",
+      "namespace": "demo-orders-prod",
+      "name": "demo-orders",
+      "owner": "demo-orders/prod"
+    },
+    {
+      "group": "",
+      "kind": "ResourceQuota",
+      "namespace": "demo-orders-prod",
+      "name": "demo-orders",
+      "owner": "demo-orders/prod"
+    },
+    {
+      "group": "networking.k8s.io",
+      "kind": "NetworkPolicy",
+      "namespace": "demo-orders-prod",
+      "name": "demo-orders",
+      "owner": "demo-orders/prod"
+    },
+    {
+      "group": "kustomize.toolkit.fluxcd.io",
+      "kind": "Kustomization",
+      "namespace": "flux-system",
+      "name": "app-demo-orders-prod",
+      "owner": "demo-orders/prod"
+    }
+  ],
+  "registrations": [
+    "v2-apps/units/app-demo-orders-prod.json"
+  ]
+}

@@ -2,6 +2,16 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## First migration: `swhurl-try-11` staging is owned by v2 (25 October 2026)
+
+The first existing app moved from v1 ownership to v2, at the operator's confirmation, in two pushes: v1's records, rendered manifests and unit were removed and Flux pruned the namespace (`581a53e22`-era commit), then v2's compiled output took the same namespace and host name (`e5adf24e`, rebased over a Render-workflow commit).
+
+**Verified live afterwards:** the unit is Ready in 25 s; the pod is `1/1 Running` on `ghcr.io/samclement/swhurl-try-11@sha256:63a4e954…`; the Deployment is `1/1` available; the Ingress carries the derived host `staging-swhurl-try-11.homelab.swhurl.com`; the certificate is `Ready=True` from **`letsencrypt-prod`** (v2's route with a trusted issuer, unlike the earlier throwaway); signed-out `GET /` is a `302` to the shared sign-in; and v2's own `observe` reports **`verdict running`** for the migrated instance. v2 rendered its two calls: addresses for `swhurl-try-10` and `swhurl-try-12`, audience-scoped projected tokens, and egress admitted only to those two.
+
+**The finding this migration produced — a caller cannot move alone.** v1 derives a callee's consent and policy from *v1* instances, so when `swhurl-try-11/staging` left v1, the Render workflow rewrote `swhurl-try-10` and `swhurl-try-12` without admitting it: try-10's policy peers are now `kube-system` (traefik) and `swhurl-try-12-staging`, and try-12's are `kube-system` only. The migrated instance's two outbound calls are therefore **blocked at the callee**, even though its own egress, address and token are correct. Migrating a caller and its callees together is what keeps consent working; the rule belongs in [apps](apps.md#calling-another-app) when v2 owns more than one instance in a chain.
+
+**Not exercised:** an actual call from the migrated app (the callee's policy denies it), and its prod instance, which stays with v1.
+
 ## First v2 route live: signed-in exposure (25 October 2026)
 
 `swhurl-try-v2-3` in staging is compiled output only, exposed as `authenticated-web`, with a throwaway profile that pins **`letsencrypt-staging`** so the first route test does not consume production issuance. Pushed `ec48f21`-era output; `make flux-reconcile` made the unit Ready in 22 s.

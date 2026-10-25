@@ -14,7 +14,11 @@ What has been verified on the live cluster, and when: current facts first, then 
 - The Service has the pod as an endpoint on 8080, and the app answers `200 {"ok":true}` on `/healthz` (checked through `kubectl port-forward`, which bypasses the NetworkPolicy; the policy itself was applied exactly as compiled — traefik-only ingress on 8080, egress denied).
 - v2's own `observe`, with the throwaway descriptors and the pushed revision: **`verdict running`** — unit reconciled, revision applied, release settled, workload present, image running, ready, replicas as intended. Observation does not check routes, so the route facts above are the host's evidence, not v2's.
 
-**Not verified:** the signed-in hop end to end — that needs a real Google login in a browser, which is the operator's to do; and ingress from a *sibling* pod was not re-tested (the policy as applied is traefik-only, and the earlier isolation test covers the same compiled shape).
+**The signed-in hop, confirmed by the operator in a browser:** after Google sign-in the app answered with its own JSON, reporting `"caller":{"type":"user","id":"<the operator's identity>"}` — so the middleware authenticated the request, forwarded the identity header, and the app read it. The full chain is proven: DNS, certificate, ingress, shared sign-in, application.
+
+**Removed the same day:** deleting the six compiled files and the unit's registration and pushing was the whole removal. `make flux-reconcile` completed; the namespace `swhurl-try-v2-3-staging`, its Ingress, Certificate, HelmRelease, quota, policy and unit are gone; managed namespaces are back to 28, the units to 37 with every one Ready, `demo-orders/staging` still runs its own digest, and `make verify-platform` passed.
+
+**Not verified:** ingress from a sibling pod was not re-tested (the applied policy is traefik-only; the earlier isolation test covers the same compiled shape), and no production-issued certificate has been exercised.
 
 ## Third v2-owned instance, observed by v2 itself (25 October 2026)
 

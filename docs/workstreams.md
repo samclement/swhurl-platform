@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Offline Go v2 | main | in progress | live route verification complete, the signed-in hop included; removing `swhurl-try-v2-3` | live verification of a v2 route: done, the signed-in hop included; the instance is being removed | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/` |
+| Offline Go v2 | main | approved | routes committed and verified live through the shared sign-in, 25 October 2026; the throwaway is removed | the first migration: implement the relationship slice an existing app needs (calls between apps), then migrate `swhurl-try-11` staging | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/` |
 | Live platform | main | approved | the 24 open items in the plan index | M14, then B4b (records-only removal) | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

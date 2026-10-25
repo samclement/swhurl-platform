@@ -2,7 +2,7 @@
 
 Status: approved
 Gate: the live half of the delivery slice: one disposable instance applied by Flux, then removed with the operator's confirmation
-Uncommitted: none
+Uncommitted: `v2-apps/`, `clusters/home/`, `docs/workstreams.md`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 

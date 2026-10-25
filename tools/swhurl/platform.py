@@ -53,8 +53,12 @@ def github_repository(root: Path = ROOT) -> str:
 
 
 def flux_unit_documents(root: Path = ROOT) -> Iterator[tuple[Path, dict]]:
-    """Every Flux Kustomization defined in Git, with the file that defines it."""
-    files = [root / ROOT_UNITS, *sorted(p for p in (root / CLUSTER).iterdir() if p.suffix in ('.yaml', '.yml'))]
+    """Every Flux Kustomization defined in Git, with the file that defines it.
+
+    A unit file may be YAML or JSON: JSON is a YAML subset, both are read the same way, and the v2
+    compiler writes its units as JSON. Either must be found, or a unit Flux applies goes unchecked.
+    """
+    files = [root / ROOT_UNITS, *sorted(p for p in (root / CLUSTER).iterdir() if p.suffix in ('.yaml', '.yml', '.json'))]
     for path in files:
         for doc in yamlio.load_all(path.read_text()):
             if (isinstance(doc, dict) and doc.get('apiVersion') == 'kustomize.toolkit.fluxcd.io/v1'

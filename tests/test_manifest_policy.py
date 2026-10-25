@@ -1,16 +1,40 @@
 """Rules about what is in Git: sign-in, Flux unit deletion and dependencies, Reloader scope, Traefik."""
 import base64
+import json
 import os
 import re
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
 
 import yaml
 
 from swhurl import ROOT, platform
 from swhurl.apps import policy as app_policy
 from swhurl.run import Runner
+
+
+class UnitDiscoveryTests(unittest.TestCase):
+    """A unit is found whatever holds it: a JSON unit Flux applies must not go unchecked."""
+
+    def test_yaml_and_json_units_are_discovered(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        (root / platform.ROOT_UNITS).parent.mkdir(parents=True)
+        (root / platform.ROOT_UNITS).write_text('')
+        unit = {'apiVersion': 'kustomize.toolkit.fluxcd.io/v1', 'kind': 'Kustomization',
+                'metadata': {'name': 'app-json-staging', 'namespace': 'flux-system'},
+                'spec': {'path': './v2-apps/instances/x/staging', 'prune': True, 'dependsOn': [{'name': 'infra-base'}]}}
+        (root / platform.CLUSTER / 'app-json-staging.json').write_text(json.dumps(unit))
+        shared = dict(unit, metadata={'name': 'platform-shared', 'namespace': 'flux-system'})
+        (root / platform.CLUSTER / 'platform-shared.yaml').write_text(yaml.safe_dump(shared))
+        units = {discovered.name: discovered for discovered in platform.units(root)}
+        self.assertEqual(set(units), {'app-json-staging', 'platform-shared'})
+        self.assertTrue(units['app-json-staging'].is_app)
+        self.assertFalse(units['platform-shared'].is_app)
+        self.assertEqual(units['app-json-staging'].path, Path('v2-apps/instances/x/staging'))
+        self.assertEqual(units['app-json-staging'].depends_on, ('infra-base',))
 
 
 class ManifestPolicyTests(unittest.TestCase):

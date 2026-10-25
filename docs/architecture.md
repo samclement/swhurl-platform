@@ -60,6 +60,8 @@ One request through that chain is one trace: `reports` and `orders` each name th
 
 Arrows mean **must be Ready before**. The stack unit creates all the others; that ownership is separate from their dependencies.
 
+A unit file is YAML, or JSON (a YAML subset, which the v2 compiler writes): `cluster-stack` applies whichever `clusters/home` lists, and `make check-repo` renders every unit Git defines, whatever holds it.
+
 ```mermaid
 flowchart LR
   sources[cluster-sources] --> stack[cluster-stack]

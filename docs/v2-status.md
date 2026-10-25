@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: approved
-Gate: the operator's choice of the next slice: the next observation slice (reference derivation, a credential source, the report envelope) or phase 3 slice 2 (snapshot acquisition, or legacy translation)
-Uncommitted: none
+Status: in progress
+Gate: observation slice 2b: the credential source and an `observe` command that reads one instance (read-only)
+Uncommitted: `v2/archtest/api.txt`, `v2/cmd/swhurl-v2/chart_test.go`, `v2/observe/target.go`, `v2/observe/target_test.go`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -23,7 +23,7 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 | 1. Release-selection kernel | done, reviewed, committed 24 October 2026 | [contract](iteration-2-plan.md#2-phase-1-model-and-contract), [evidence](iteration-2-plan.md#phase-1-verification-evidence) |
 | 2. Deterministic compiler | done, reviewed, committed 25 October 2026 | [contract](iteration-2-plan.md#phase-2-establish-compiler-ownership) |
 | 4. Git delivery | done: offline half and one live instance, 25 October 2026 | [slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) |
-| 5. Observation | slice 1 done: implemented offline, independently reviewed (one blocker, six should-fix and eight nits, all fixed) and committed 25 October 2026 | [slice](iteration-2-plan.md#first-observation-slice-what-is-running-implemented-offline-25-october-2026) |
+| 5. Observation | slices 1 and 2a done: 2a derives the target from compiled output, committed 25 October 2026 | [slice 1](iteration-2-plan.md#first-observation-slice-what-is-running-implemented-offline-25-october-2026), [2a](iteration-2-plan.md#second-observation-slice-the-target-from-compiled-output-implemented-25-october-2026) |
 | 6. First live instance | done 25 October 2026: applied, verified and removed, see the record above | [evidence](current-state.md#first-v2-instance-live-25-october-2026) |
 | 3. Shadow bridge | slice 1 done; **3.2–3.5 are the other candidate next slice** (need approval) | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
 | 7. Selective replacement | proposed, not approved; needs the bridge first | [phases](iteration-2-plan.md#5-incremental-delivery) |
@@ -80,6 +80,16 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Committed:** `dc12f5d3`, on `main` (not pushed).
 - **Deferred rows touched:** [observation of what is running](iteration-2-plan.md#6-deliberately-deferred), [a credential source](iteration-2-plan.md#6-deliberately-deferred), [an operator-facing report](iteration-2-plan.md#6-deliberately-deferred) and the render-fingerprint row (observation did not need it in the cluster).
 - **Next gate:** the operator's choice of the next slice: the next observation slice (reference derivation, a credential source, the report envelope) or phase 3 slice 2 (snapshot acquisition, or legacy translation).
+
+## Slice record: phase 5 observation, target derivation
+
+- **Outcome and the refusal it must produce:** given one instance's compiled HelmRelease, its unit and the source revision Flux should have applied, an operator can obtain the complete observation target — objects, selector, container, digest, replicas — without supplying any of them by hand. It refuses a document shape the compiler does not render: more than one controller, a controller that is not the chart's default Deployment, a missing container, digest or replica count, or missing metadata.
+- **Owners and boundaries:** `observe` owns the derivation, as a pure function over document bytes; it reuses its own target validation, so a derived target is one `Explain` accepts. The chart's naming conventions are a fact about the pinned chart, asserted against that chart's render in `cmd/swhurl-v2`'s existing offline Helm test. The caller keeps the two facts the document cannot state: the owning unit (read from the compiled unit document, not re-derived from a naming convention) and the intended source revision.
+- **What crosses each seam:** compiled document bytes in, one `Target` out; no filesystem, Git, cluster or clock.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged (no v1 file touched). 2. Pure — `observe` still imports only allowlisted packages; the derivation has no effects. 3. Bytes and identities unchanged: `kernel` and `shadow` are untouched, and no golden compilation was regenerated. 4. Refusals: a new fixed vocabulary, stated above and tested; nothing existing moved. 5. Failure paths tested: both golden compilations and every refusal case. 6. Scope: the derivation produces only the target; what the report can then claim is unchanged. 7. Offline only — the chart render is local and no cluster is read. 8. This page, the plan and the gap list change together.
+- **Evidence:** `make check-v2` (10 packages), `REQUIRE_HELM=1 make check-v2` (chart render and offline Kustomize), `make check`, `git diff --check`, `make -s v2-report`; `observe` coverage 96.9%; the chart render test asserts the derived Deployment name and every selector term against the pinned chart's own output, which caught a wrong assumption (`<release>-main` instead of `<release>`) before it reached anything else.
+- **Deferred rows touched:** the observation row (target derivation now exists).
+- **Next gate:** observation slice 2b — a credential source and an `observe` command that reads one instance, read-only.
 
 ## Resume
 

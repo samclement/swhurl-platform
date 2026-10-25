@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
-Status: approved
-Gate: phase 3 slice 3: snapshot acquisition and the ownership inventory, or another slice the operator chooses
-Uncommitted: none
+Status: in progress
+Gate: the operator's choice: phase 6/7 live verification of a v2-owned instance, or the bridge's remaining ownership work
+Uncommitted: `v2/legacy/`, `v2/kernel/compile.go`, `v2/cmd/swhurl-v2/shadow.go`, `v2/cmd/swhurl-v2/shadow_test.go`, `v2/cmd/swhurl-v2/chart_test.go`, `v2/cmd/swhurl-v2/main.go`, `v2/archtest/api.txt`, `tools/swhurl/v2snapshot.py`, `tools/swhurl/commands.py`, `tests/test_v2_snapshot.py`, `Makefile`, `docs/`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -16,6 +16,26 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 
 **Implementing more needs the operator's approval of a concrete slice** — design approval and permission to push are separate decisions.
 
+## Progress towards the goals
+
+The goal is a v2 that can own instances without breaking the running platform. This table is the standing summary; each slice record below carries its evidence, and it is updated in the same commit as the work.
+
+| Phase | What it proves | State |
+| --- | --- | --- |
+| 1. Release selection | A reviewed target cannot be silently replaced | **Done** (reviewed) |
+| 2. Compiler | Byte-identical resources from validated records, with fixed refusals | **Done** (reviewed) |
+| 4. Git delivery | Compiled intent reaches the cluster through Git; no egress | **Done end to end** (one disposable instance, applied and removed 25 Oct) |
+| 5. Observation | What a cluster actually runs: intended digest, readiness, and unavailable ≠ absent | **Done through a live read** (25 Oct) |
+| 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, and an ownership inventory | **Slices 1–3 done, offline** |
+| 6. First live instance | A v2-owned instance published, observed and removed | **Done 25 Oct** (one throwaway, removed) |
+| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Not started**; needs the bridge's remaining ownership work and a migration decision |
+
+**Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
+
+**Not yet true, and what would make it true:** no v2 command publishes or reconciles an instance (delivery is manual: compile, commit, push); no v2-owned app exists beyond the removed throwaway; v2 renders no routes, storage, secrets, calls, events, teams, alarms or telemetry, so most instances cannot be migrated without new domain models; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+
+**Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); and the console image's coupling to `tools/`, which any exporter change re-deploys.
+
 ## Where it stands
 
 | Phase | State | Evidence |
@@ -25,7 +45,7 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 | 4. Git delivery | done: offline half and one live instance, 25 October 2026 | [slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) |
 | 5. Observation | done through a live read: slices 1, 2a and 2b committed 25 October 2026; `observe` read `demo-orders` read-only and reported the intended artifact not running | [slice 1](iteration-2-plan.md#first-observation-slice-what-is-running-implemented-offline-25-october-2026), [2a](iteration-2-plan.md#second-observation-slice-the-target-from-compiled-output-implemented-25-october-2026) |
 | 6. First live instance | done 25 October 2026: applied, verified and removed, see the record above | [evidence](current-state.md#first-v2-instance-live-25-october-2026) |
-| 3. Shadow bridge | slices 1 and 2 done: pure comparison, and legacy translation with a `preview` report (offline); acquisition and ownership inventory remain | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison), [slice 2](iteration-2-plan.md#phase-3-slice-2-legacy-translation-and-a-preview-report-implemented-offline-25-october-2026) |
+| 3. Shadow bridge | slices 1–3 done, offline: pure comparison; legacy translation with `preview`; snapshot export and the ownership inventory with `shadow` | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison), [2](iteration-2-plan.md#phase-3-slice-2-legacy-translation-and-a-preview-report-implemented-offline-25-october-2026), [3](iteration-2-plan.md#phase-3-slice-3-snapshot-acquisition-and-the-ownership-inventory-implemented-25-october-2026) |
 | 7. Selective replacement | proposed, not approved; needs the bridge first | [phases](iteration-2-plan.md#5-incremental-delivery) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
@@ -111,6 +131,15 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** the inherited `hello`/staging fixture previews with ten fields equal, `image intentional/tag_beside_digest`, `resources.memory intentional/chosen_single_memory`, three gaps and eleven unassessed areas — the phase-3 example, demonstrated rather than asserted. `make check-v2` (11 packages), `REQUIRE_HELM=1 make check-v2`, `make check` (1012 tests), `git diff --check` and `make v2-report` pass; coverage `legacy` 84.0%, CLI 88.2%, `observe` 96.4%.
 - **Next gate:** phase 3 slice 3 — snapshot acquisition and the ownership inventory — or another slice the operator chooses.
 - **Committed:** `f355d535` (with the record flip in the commit that follows it).
+
+## Slice record: phase 3 snapshot export and ownership inventory
+
+- **Outcome and the refusal it must produce:** an operator can pin one revision and read, as a versioned document, what the bridge concludes about every instance in it — the preview's facts, the comparison with each instance's own committed HelmRelease, every legacy fact not carried, every ownership collision with all its owners, and the snapshot's coverage. `make v2-snapshot REVISION= OUT=` exports the snapshot; `swhurl-v2 shadow --snapshot FILE --profile FILE` analyses it. It refuses a snapshot whose version it does not know, a revision that is not a commit, and an instance with no identity — and it names an instance it cannot compare rather than dropping it.
+- **Owners and boundaries:** the exporter (Python, operator tooling) owns reading one revision and deciding nothing; `legacy` owns interpretation; the renderer and comparator are unchanged; `kernel.Ownership` owns the ownership rule in its plural form, and `CheckOwnership` now uses it so there is one implementation; the command owns the composition and the `v2-shadow` envelope. SOPS files are never read and no manifest body is exported.
+- **What crosses each seam:** one JSON snapshot into the command; per instance a translation, a rendered resource set, a comparison and claims; one report out. No cluster, credential or clock.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged: no v1 module or record changed; the new command is additive, the catalogue/table test passes. 2. Pure (`legacy`, `observe`, `kernel`) takes no effects; the exporter and the command hold the I/O. 3. Golden compilations and compilation IDs unchanged; `CheckOwnership`'s behaviour and message are unchanged and its test still asserts them. 4. Refusals: the new snapshot/analysis vocabulary is stated; no existing code moved. 5. Failure paths tested: a cross-instance conflict, an instance with no records, residual units, a snapshot with the wrong version or revision, a non-web kind, a missing record, a mutation the comparison must see. 6. Scope: coverage counts, unavailable instances with reasons, and a fixed not-covered list; a missing record is named, not invented. 7. Offline only: the snapshot is read from Git's objects, so nothing live was touched and no readiness is claimed. 8. This page, the plan and the gap list change together.
+- **Evidence:** over this repository's own snapshot at `2d4e06ed`: 135 declared objects, 10 instances compared, 7 unavailable (all non-web kinds, each named), **no field differences** in scope and **no cross-instance ownership conflict**; each compared instance reports its own five expected collisions. `make check-v2` (11 packages), `REQUIRE_HELM=1 make check-v2` (including the chart-default assertion), `make check` (1012 tests) and `make v2-report` pass; the exporter's tests cover the pinned revision, a dirty tree, a missing record, SOPS exclusion and determinism.
+- **Next gate:** the operator's choice — phase 6/7 live verification of a v2-owned instance, or the bridge's remaining ownership work (declared objects for output no record explains *live*, and the migration decision itself).
 
 ## Resume
 

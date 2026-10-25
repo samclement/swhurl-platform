@@ -187,6 +187,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         _edit('app-scale', 'cli:main_scale', "Change replicas or resources (never below the image's minimum)", APP, ENV, args('"--replicas N --cpu Q --memory Q --memory-limit Q"')),
         _edit('app-remove', 'cli:main_remove', "Delete an instance's files and unregister its unit (Flux uninstalls on push)", APP, ENV),
         Command('console-image', 'Pin platform/console to the image published for this commit', GIT, 'swhurl.images:main'),
+        Command('v2-snapshot', "Export one pinned revision as the JSON snapshot v2's shadow report reads (records and object identities, SOPS files skipped)", LOCAL,
+                'swhurl.v2snapshot:main', takes=(Var('REVISION', '<rev>', flag='--revision'), Var('OUT', '<file>', flag='--out')), dry_run=PLAN),
         Command('console-dev', 'Web console on http://127.0.0.1:8080 as a fixed dev identity (needs uv)', CLUSTER, 'swhurl.console.server:main',
                 takes=('--dev', Var('PORT', '8080', required=False, flag='--port', default='8080')), uv=True),
     )),

@@ -165,20 +165,46 @@ func EncodeCompilation(c Compilation) []byte {
 // CheckOwnership refuses an object claimed by two compilations, or by one and foreign (objects
 // someone else owns). It reports the first such object in compilation and file order.
 func CheckOwnership(compiled []Compilation, foreign []Object) error {
-	owners := map[Object]string{}
+	claims := make([]Claim, 0, len(foreign))
 	for _, object := range foreign {
-		owners[object] = "another owner"
+		claims = append(claims, Claim{object, "another owner"})
 	}
 	for _, c := range compiled {
-		for _, claim := range c.Inventory {
-			if previous, taken := owners[claim.Object]; taken {
-				return refuse(OwnershipConflict, objectText(claim.Object),
-					"claimed by "+claim.Owner+" and "+previous)
-			}
-			owners[claim.Object] = claim.Owner
-		}
+		claims = append(claims, c.Inventory...)
+	}
+	// The first object two claims name, in claim order: what a compilation must refuse to apply.
+	if conflicts := Ownership(claims); len(conflicts) > 0 {
+		owners := conflicts[0].Owners
+		return refuse(OwnershipConflict, objectText(conflicts[0].Object),
+			"claimed by "+owners[1]+" and "+owners[0])
 	}
 	return nil
+}
+
+// Conflict is one object more than one owner claims, with the owners in the order they claimed it.
+type Conflict struct {
+	Object Object
+	Owners []string
+}
+
+// Ownership reports every object more than one claim names, in the order the claims first appear. It is
+// the plural form of CheckOwnership: a bridge needs all the collisions, not the first one.
+func Ownership(claims []Claim) []Conflict {
+	owners := map[Object][]string{}
+	var order []Object
+	for _, claim := range claims {
+		if _, seen := owners[claim.Object]; !seen {
+			order = append(order, claim.Object)
+		}
+		owners[claim.Object] = append(owners[claim.Object], claim.Owner)
+	}
+	var conflicts []Conflict
+	for _, object := range order {
+		if len(owners[object]) > 1 {
+			conflicts = append(conflicts, Conflict{object, owners[object]})
+		}
+	}
+	return conflicts
 }
 
 // objectText names an object as Kubernetes tools do: "HelmRelease.helm.toolkit.fluxcd.io ns/name".

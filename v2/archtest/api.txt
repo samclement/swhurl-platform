@@ -56,6 +56,7 @@ kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
 kernel: func EncodeCompilation(c Compilation) []byte
 kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
 kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
+kernel: func Ownership(claims []Claim) []Conflict
 kernel: func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (ResourceSet, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"` MediaType string `json:"mediaType"` Platform string `json:"platform"`}
@@ -66,6 +67,7 @@ kernel: type Code string
 kernel: type Compilation struct {ID CompilationID `json:"id"` Inputs Inputs `json:"inputs"` Files []File `json:"files"` Inventory []Claim `json:"inventory"` Registrations []string `json:"registrations"`}
 kernel: type CompilationID string
 kernel: type Configuration struct {Replicas int32 `json:"replicas"` MemoryMiB int32 `json:"memoryMiB"`}
+kernel: type Conflict struct {Object Object Owners []string}
 kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `json:"outputRoot"` UnitsRoot string `json:"unitsRoot"` DependsOn []string `json:"dependsOn"`}
 kernel: type Error struct {Code Code Field string Reason string}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}

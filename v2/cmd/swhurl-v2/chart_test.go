@@ -39,6 +39,19 @@ func output(t *testing.T, program string, args ...string) string {
 	return string(out)
 }
 
+// withoutReplicasJSON is the compiled values without the controller's replica count, so the chart's
+// default is what renders.
+func withoutReplicasJSON(values []byte) ([]byte, error) {
+	var document map[string]any
+	if err := json.Unmarshal(values, &document); err != nil {
+		return nil, err
+	}
+	controllers, _ := document["controllers"].(map[string]any)
+	main, _ := controllers["main"].(map[string]any)
+	delete(main, "replicas")
+	return json.Marshal(document)
+}
+
 // deploymentName is the Deployment's metadata.name, from the rendered manifest.
 func deploymentName(rendered string) string {
 	if !strings.Contains(rendered, "kind: Deployment") {
@@ -133,6 +146,20 @@ func TestCompiledManifests(t *testing.T) {
 			t.Errorf("the pods lack %s: %s, which the NetworkPolicy selects:\n%s", key, value, labels)
 		}
 	}
+	// legacy.Translate materialises a replica count neither record nor committed output states from the
+	// pinned chart's default, so that default must be one: render the same values without it.
+	withoutReplicas, err := withoutReplicasJSON(release.Spec.Values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values = filepath.Join(dir, "values-without-replicas.json")
+	if err := os.WriteFile(values, withoutReplicas, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rendered := output(t, helm, "template", release.Metadata.Name, chart, "-n", release.Metadata.Namespace, "-f", values); !strings.Contains(rendered, "replicas: 1") {
+		t.Error("the pinned chart's default replica count is not one")
+	}
+
 	// The target observation derives from this HelmRelease must name what the chart renders: a chart
 	// change that moved a name or a label fails here rather than in a live read.
 	unit := observe.Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization",

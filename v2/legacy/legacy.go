@@ -195,7 +195,9 @@ func (t *Translation) settings(instance *record, committed effective) error {
 	case committed.replicas != nil:
 		replicas, t.Sources["instance.replicas"] = *committed.replicas, "committed HelmRelease"
 	default:
-		return refuse(Missing, "instance.yaml: replicas", "no_identified_default")
+		// The pinned chart's default, which its own render test proves is one: a committed output that
+		// omits the count is rendered with one replica, so that is what the instance has.
+		replicas, t.Sources["instance.replicas"] = 1, "pinned chart default"
 	}
 	t.Instance.Replicas = replicas
 	memory, ok, err := memoryMiB(committed.memoryLimit)

@@ -16,7 +16,7 @@ COMMANDS := help reconcile verify-platform notifications-check notifications-hea
 	app-team app-alerts platform-signing-keys app-calls app-allows app-egress app-events app-offers app-deploy app-secret app-sync app-promote \
 	app-status app-logs app-reconcile app-check app-scale app-schedule app-remove console-image console-dev \
 	platform-certs-staging platform-certs-prod suspend resume destroy-data backup-mongodb backup-sqlite restore-sqlite \
-	check-repo check-apps check-templates check-otel check-secrets check-docs \
+	check-repo check-apps check-templates check-otel check-secrets check-docs v2-snapshot \
 	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb live-test-restore-sqlite \
 	live-test-call-identity live-test-network-policy live-test-team-scenario
 

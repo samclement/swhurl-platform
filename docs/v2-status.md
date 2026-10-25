@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: the live half of the delivery slice: one disposable instance applied by Flux, then removed with the operator's confirmation
+Gate: removal of swhurl-try-v2-1: delete its files and its unit line, push, and confirm prune removes only it
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -20,7 +20,7 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 | --- | --- | --- |
 | 1. Release-selection kernel | done, reviewed, committed 24 October 2026 | [contract](iteration-2-plan.md#2-phase-1-model-and-contract), [evidence](iteration-2-plan.md#phase-1-verification-evidence) |
 | 2. Deterministic compiler | done, reviewed, committed 25 October 2026 | [contract](iteration-2-plan.md#phase-2-establish-compiler-ownership) |
-| 4. Git delivery | offline half done 25 October 2026; the live half is next | [slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) |
+| 4. Git delivery | done: offline half and one live instance, 25 October 2026 | [slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) |
 | 5. Observation | after delivery: the first real adapter | [gate](iteration-2-plan.md#phase-5-explain-current-state-honestly) |
 | 6. First live instance | after observation: one disposable instance, then removal | [decision](iteration-2-plan.md#decision-egress-and-credentials-for-the-first-instance-decided-25-october-2026) |
 | 3. Shadow bridge | slice 1 done; 3.2–3.5 after the first live instance | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
@@ -43,7 +43,8 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** `make check-v2` (7 packages), `REQUIRE_HELM=1 make check-v2` (chart render and Kustomize ran), `make check`, `git diff --check`, `make v2-report`. Coverage: kernel 95.3%, `adapters/files` 85.7%, `filestest` 83.3%, CLI 93.3%.
 - **Gaps touched:** the egress row now says egress is denied and the proxy path is due with the first instance that needs it; the delivery row records that the unit is written and its one-line registration is the operator's edit.
 - **Independent read-only review, before commit:** should-fix findings, all fixed — the `apps/` refusal read the destination as typed, so `--out .` from inside `apps/` or a symlink to it wrote into the v1 tree (now resolved, with the checkout's own `apps/` identified by `.git` or `clusters/` beside it, which also stops it refusing an unrelated folder called `apps`); a mid-write failure left earlier files written without saying so (now reported, and each file is atomic); the new profile refusals had no tests (now four cases); and this page still said the slice awaited approval. Nits fixed: the fake no longer keeps a partial write, and the shared `Contract` proves a refusal wrote nothing; `--out ""` is a usage error; a `/` destination is accepted; refusals no longer echo the destination; the adapter fixtures are the compiler's exact bytes. Not changed: a `/` destination as the filesystem root still writes into it if the operator asks for it — the `apps/` refusal is the guard, not a sandbox.
-- **Next gate:** the live half, which needs the operator.
+- **The live half, 25 October 2026.** `swhurl-try-v2-1` runs in staging, owned only by v2: unit and HelmRelease Ready, the pod `1/1` on the compiled digest, unreachable from a sibling pod and from another namespace, no egress from the pod, and all 37 v1 units unchanged. Three findings, recorded in [current state](current-state.md#first-v2-instance-live-25-october-2026): the first image kept SQLite and crash-looped (the model was right, the image was wrong — a deferred row, not a defect); a timed-out *install* leaves a release Flux cannot roll back (`Stalled`, fixed with `flux reconcile helmrelease --force`, now in the troubleshooting table); and the egress policy is enforced only after a few seconds for a newly created pod, so a fresh pod can egress until then. CI also failed both pushes on the page's cited hash after a rebase, which is why the check now requires a cited commit to be reachable from a ref.
+- **Next gate:** removal, which is a namespace deletion and needs the operator.
 
 ## Slice record: phase 3 slice 1
 
@@ -53,7 +54,7 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** v1 unchanged (no v1 file touched; `coexistence_test.go` passes). Pure — no clock, network, filesystem, environment, randomness or subprocess in `kernel` or `shadow` (the `pure` rule). Golden compilations byte-identical with unchanged compilation IDs, not regenerated. Refusal codes and precedence unchanged (40,495 differential cases against the previous commit). Failure paths tested: invalid and ambiguous JSON, wrong types, missing facts, an overridden or disabled controller, absent quantities. Assessed and unassessed scope stated per field, with no parity claim for anything unread. Offline only: nothing is published, so no readiness is claimed. This page and the gap list change in the same commit.
 - **Evidence:** `make check-v2` and `REQUIRE_HELM=1 make check-v2` (chart render and offline Kustomize ran, not skipped), `make check` (987 tests), `git diff --check`, `make v2-report`; kernel coverage 95.3%, shadow 96.7%. Independent read-only review: OK with notes, no blockers; its two should-fix findings were both false parity and are fixed — see [the record](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison).
 - **Gaps touched:** the [deferred list](iteration-2-plan.md#6-deliberately-deferred) rows for scoped preview/comparison and for complete release semantics.
-- **Committed:** `354aae1e`, on the tree pushed through `1ea1bbde`.
+- **Committed:** `c44aef98`, on the tree pushed through `1ea1bbde`.
 
 ## Resume
 

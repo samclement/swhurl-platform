@@ -1,14 +1,14 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: a phase 3 slice-2 proposal: snapshot acquisition, or legacy translation and default resolution
+Gate: the egress and credentials decision for one disposable instance
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
 ## Authority
 
-**Approved:** the operator said yes to the concrete phase-1 proposal: root-level `v2/`, Go 1.26.0, JSON-only descriptors, positional canonical encoding, manifest-only `linux/amd64` artifact claims, empty-only bindings and the narrow policy exception. Phase 2's compiler and its review decisions are approved and implemented. The operator's [design principles](iteration-2-plan.md#design-principles) and the revised [phase-3 brief](iteration-2-plan.md#phase-3-shadow-not-synchronise) are approved as direction; only the [first pure HTTP slice](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) is additionally approved for implementation: v2 is not bound to v1 contracts, responsibilities and data have explicit owners, and transition may have incomplete semantics.
+**Approved:** the operator said yes to the concrete phase-1 proposal: root-level `v2/`, Go 1.26.0, JSON-only descriptors, positional canonical encoding, manifest-only `linux/amd64` artifact claims, empty-only bindings and the narrow policy exception. Phase 2's compiler and its review decisions are approved and implemented. The operator's [design principles](iteration-2-plan.md#design-principles) and the revised [phase-3 brief](iteration-2-plan.md#phase-3-shadow-not-synchronise) are approved as direction; only the [first pure HTTP slice](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) is additionally approved for implementation: v2 is not bound to v1 contracts, responsibilities and data have explicit owners, and transition may have incomplete semantics. **Order approved 25 October 2026:** retire risk, not phase numbers — one disposable instance through delivery, observation and removal (phases 4–6) comes before the rest of the bridge, which is still required before any existing app is migrated ([why](iteration-2-plan.md#5-incremental-delivery)).
 
 **Not approved:** v1 behaviour changes, a platform console UI, a general framework, bridge integration beyond that slice, adapters, credentials, v2 publication, live migration or feature removal. The [code graph](visual-change-tool.md) is a separate workstream; do not build it in this thread.
 
@@ -20,10 +20,17 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 | --- | --- | --- |
 | 1. Release-selection kernel | done, reviewed, committed 24 October 2026 | [contract](iteration-2-plan.md#2-phase-1-model-and-contract), [evidence](iteration-2-plan.md#phase-1-verification-evidence) |
 | 2. Deterministic compiler | done, reviewed, committed 25 October 2026 | [contract](iteration-2-plan.md#phase-2-establish-compiler-ownership) |
-| 3. Shadow bridge | slice 1 done, reviewed, committed 25 October 2026; the rest needs a proposal | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
-| 4–7. Delivery, observation, first live instance, replacement | proposed, not approved | [phases](iteration-2-plan.md#5-incremental-delivery) |
+| 4. Git delivery | **next**, after the decision below | [contract](iteration-2-plan.md#phase-4-settle-publication-before-automation) |
+| 5. Observation | after delivery: the first real adapter | [gate](iteration-2-plan.md#phase-5-explain-current-state-honestly) |
+| 6. First live instance | after observation: one disposable instance, then removal | [decision](iteration-2-plan.md#decision-needed-egress-and-credentials-for-the-first-instance) |
+| 3. Shadow bridge | slice 1 done; 3.2–3.5 after the first live instance | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
+| 7. Selective replacement | proposed, not approved; needs the bridge first | [phases](iteration-2-plan.md#5-incremental-delivery) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
+
+## Decision needed
+
+The next gate is a decision, not a slice: **egress and credentials for the first disposable instance**, with four egress options and three credential options and a recommendation for each in [the brief](iteration-2-plan.md#decision-needed-egress-and-credentials-for-the-first-instance). Until it is answered, the delivery slice cannot be specified: the compiler's egress policy and who holds the credential are its two inputs.
 
 ## Slice record: phase 3 slice 1
 

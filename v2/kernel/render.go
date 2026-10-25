@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 )
 
 // HTTPWorkload is supplied rendering evidence, not a complete or verified release.
@@ -15,11 +17,20 @@ type HTTPWorkload struct {
 }
 
 // HTTPInstance contains the environment-owned facts for an HTTP preview. An empty Exposure means
-// private; any other value must be one the renderer supports.
+// private; any other value must be one the renderer supports. Calls and Callers are the connected pairs
+// the relationship resolver established, so rendering never decides consent.
 type HTTPInstance struct {
 	Application, Environment string
 	Configuration            Configuration
 	Exposure                 string
+	Calls                    []Call
+	Callers                  []string
+}
+
+// Call is one connected callee: the app and the port its Service listens on.
+type Call struct {
+	Callee string
+	Port   int32
 }
 
 // ResourceSet owns fresh resource bytes and slices, without release identities or readiness.
@@ -43,6 +54,9 @@ func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (
 	}
 	exposure, err := exposureOf(spec.Exposure, profile)
 	if err != nil {
+		return ResourceSet{}, err
+	}
+	if err := validateCalls(spec, profile); err != nil {
 		return ResourceSet{}, err
 	}
 	if err := spec.Configuration.validate(); err != nil {
@@ -108,23 +122,63 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload) manifest {
 		"runAsNonRoot": true, "runAsUser": uid, "runAsGroup": uid, "fsGroup": uid,
 		"seccompProfile": manifest{"type": "RuntimeDefault"}}}
 	controller := manifest{"replicas": spec.Configuration.Replicas, "containers": manifest{"main": container(spec, http, workload)}}
+	persistence := manifest{"tmp": manifest{"type": "emptyDir", "globalMounts": []any{manifest{"path": "/tmp"}}}}
+	if len(spec.Calls) > 0 {
+		persistence["tokens"] = tokensPersistence(spec.Calls)
+	}
 	return manifest{"defaultPodOptions": pod, "controllers": manifest{"main": controller},
-		"persistence": manifest{"tmp": manifest{"type": "emptyDir", "globalMounts": []any{manifest{"path": "/tmp"}}}},
+		"persistence": persistence,
 		"service": manifest{"main": manifest{"controller": "main",
 			"ports": manifest{"http": manifest{"port": http.Port}}}}}
 }
 
 func container(spec HTTPInstance, http HTTPWorkload, workload Workload) manifest {
 	memory := fmt.Sprintf("%dMi", spec.Configuration.MemoryMiB)
-	return manifest{
+	env := manifest{"SWHURL_APP": spec.Application, "SWHURL_ENV": spec.Environment}
+	for _, call := range spec.Calls {
+		env[callVariable(call.Callee)] = calleeAddress(call, spec.Environment)
+	}
+	container := manifest{
 		"image": manifest{"repository": http.Image, "digest": http.Digest},
 		"resources": manifest{"requests": manifest{"cpu": fmt.Sprintf("%dm", workload.CPURequestMilli), "memory": memory},
 			"limits": manifest{"memory": memory}},
 		"securityContext": manifest{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true,
 			"capabilities": manifest{"drop": []any{"ALL"}}},
-		"env":    manifest{"SWHURL_APP": spec.Application, "SWHURL_ENV": spec.Environment},
+		"env":    env,
 		"probes": probes(http, workload),
 	}
+	if len(spec.Callers) > 0 {
+		callers := slices.Clone(spec.Callers)
+		slices.Sort(callers)
+		env["SWHURL_ALLOWED_CALLERS"] = strings.Join(callers, ",")
+		// The keys come from the platform's own ConfigMap in this namespace, not from the values.
+		container["envFrom"] = []any{manifest{"configMapRef": manifest{"name": spec.Application + "-auth"}}}
+	}
+	return container
+}
+
+// callVariable is the variable an app reads one callee's address from: the callee's name in the
+// platform's spelling.
+func callVariable(callee string) string {
+	return "SWHURL_SERVICE_" + strings.ToUpper(strings.ReplaceAll(callee, "-", "_")) + "_URL"
+}
+
+// calleeAddress is the callee's Service in the caller's own environment. It is rendered in full rather
+// than through the kubelet's env expansion, so the value says what it is.
+func calleeAddress(call Call, environment string) string {
+	return fmt.Sprintf("http://%s.%s-%s.svc.cluster.local:%d", call.Callee, call.Callee, environment, call.Port)
+}
+
+// tokensPersistence is one projected volume carrying a service-account token per callee, each issued for
+// that callee's audience only and renewed by the kubelet before it expires.
+func tokensPersistence(calls []Call) manifest {
+	sources := make([]any, 0, len(calls))
+	for _, call := range calls {
+		sources = append(sources, manifest{"serviceAccountToken": manifest{
+			"audience": call.Callee, "expirationSeconds": 600, "path": call.Callee + "/token"}})
+	}
+	return manifest{"type": "projected", "sources": sources,
+		"globalMounts": []any{manifest{"path": "/var/run/swhurl/tokens", "readOnly": true}}}
 }
 
 // probes: liveness waits until the app first answers, for up to the profile's startup allowance.
@@ -180,10 +234,34 @@ func networkPolicy(spec HTTPInstance, exposure string, http HTTPWorkload, profil
 			"ports": []any{manifest{"port": http.Port, "protocol": "TCP"}},
 		})
 	}
+	// A callee admits each connected caller's own pods on its port; a caller reaches each connected
+	// callee's pods on the callee's port and nothing else. Egress stays denied everywhere else.
+	for _, caller := range spec.Callers {
+		ingressRules = append(ingressRules, manifest{
+			"from":  []any{peerSelector(caller, spec.Environment)},
+			"ports": []any{manifest{"port": http.Port, "protocol": "TCP"}},
+		})
+	}
+	egressRules := []any{}
+	for _, call := range spec.Calls {
+		egressRules = append(egressRules, manifest{
+			"to":    []any{peerSelector(call.Callee, spec.Environment)},
+			"ports": []any{manifest{"port": call.Port, "protocol": "TCP"}},
+		})
+	}
 	return manifest{"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
 		"metadata": metadata(spec.Application, namespaceName(spec)),
 		"spec": manifest{"podSelector": manifest{"matchLabels": manifest{instanceLabel: spec.Application}},
-			"policyTypes": []any{"Ingress", "Egress"}, "ingress": ingressRules, "egress": []any{}}}
+			"policyTypes": []any{"Ingress", "Egress"}, "ingress": ingressRules, "egress": egressRules}}
+}
+
+// peerSelector is one instance's own pods in its own environment: the only peer a call or a consent
+// needs. The namespace carries the environment, so staging never reaches production.
+func peerSelector(application, environment string) manifest {
+	return manifest{
+		"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": application + "-" + environment}},
+		"podSelector":       manifest{"matchLabels": manifest{instanceLabel: application}},
+	}
 }
 
 // ingress is the route: a host derived from the platform's base domain, TLS from the platform's issuer and
@@ -258,7 +336,44 @@ func resourcesOf(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile, 
 			doc  manifest
 		}{"ingress.json", ingress(spec, http, profile)})
 	}
+	if len(spec.Callers) > 0 {
+		resources = append(resources, struct {
+			name string
+			doc  manifest
+		}{"auth.json", authConfigMap(spec, profile.Auth)})
+	}
 	return resources
+}
+
+// validateCalls checks the resolved pairs' shape. Consent is not decided here: the caller supplies only
+// connected pairs, and a callee needs the platform's keys to accept any of them.
+func validateCalls(spec HTTPInstance, profile PlatformProfile) error {
+	for _, call := range spec.Calls {
+		if !namePattern.MatchString(call.Callee) || call.Port < 1 || call.Port > 65535 {
+			return refuse(Invalid, "calls", "expected an app name and a port")
+		}
+	}
+	for _, caller := range spec.Callers {
+		if !namePattern.MatchString(caller) {
+			return refuse(Invalid, "callers", "expected an app name")
+		}
+	}
+	if len(spec.Callers) > 0 && !profile.Auth.configured() {
+		return refuse(Unsupported, "auth", "the profile states no signing keys, so a callee cannot verify a caller")
+	}
+	return nil
+}
+
+// configured is whether the profile states what a callee needs to verify a token.
+func (a Auth) configured() bool { return a.Issuer != "" && a.Keys != "" }
+
+// authConfigMap carries the platform's token verification facts into one instance's namespace. A pod
+// cannot read another namespace's ConfigMap, so each callee gets its own copy of the same platform data;
+// the HelmRelease consumes it with envFrom rather than embedding the keys.
+func authConfigMap(spec HTTPInstance, auth Auth) manifest {
+	return manifest{"apiVersion": "v1", "kind": "ConfigMap",
+		"metadata": metadata(spec.Application+"-auth", namespaceName(spec)),
+		"data":     manifest{"SWHURL_AUTH_ISSUER": auth.Issuer, "SWHURL_AUTH_KEYS": auth.Keys}}
 }
 
 // inventory is every cluster object the files create, in file order.
@@ -272,6 +387,9 @@ func inventory(spec HTTPInstance) []Claim {
 	}
 	if spec.Exposure == "authenticated-web" {
 		claims = append(claims, Claim{Object{"networking.k8s.io", "Ingress", namespace, spec.Application}, by})
+	}
+	if len(spec.Callers) > 0 {
+		claims = append(claims, Claim{Object{"", "ConfigMap", namespace, spec.Application + "-auth"}, by})
 	}
 	return append(claims, Claim{Object{"kustomize.toolkit.fluxcd.io", "Kustomization", "flux-system", unitName(spec)}, by})
 }

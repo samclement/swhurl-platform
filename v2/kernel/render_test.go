@@ -8,7 +8,7 @@ import (
 )
 
 func previewFacts() (HTTPInstance, HTTPWorkload) {
-	return HTTPInstance{"hello", "staging", Configuration{1, 128}, ""}, HTTPWorkload{"docker.io/nginxinc/nginx-unprivileged", "sha256:" + strings.Repeat("a", 64), 8080, "/", 101}
+	return HTTPInstance{Application: "hello", Environment: "staging", Configuration: Configuration{1, 128}}, HTTPWorkload{"docker.io/nginxinc/nginx-unprivileged", "sha256:" + strings.Repeat("a", 64), 8080, "/", 101}
 }
 
 // No source, commit, media type, platform, selection or release identity is available here.
@@ -302,4 +302,110 @@ func documentOf(t *testing.T, resources ResourceSet, name string) map[string]any
 	}
 	t.Fatalf("no %s among the rendered files", name)
 	return nil
+}
+
+// A connected pair renders both halves: the caller gets the callee's address and a token only the callee
+// accepts, the callee gets its callers, the platform's keys through a ConfigMap of its own, and each side's
+// policy admits the other's pods on the port the call uses.
+func TestConnectedPairRendersBothHalves(t *testing.T) {
+	caller, workload := previewFacts()
+	caller.Exposure = "authenticated-web"
+	caller.Calls = []Call{{Callee: "orders", Port: 8081}}
+	caller.Callers = []string{"billing"}
+	callee := HTTPInstance{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
+		Exposure: "authenticated-web", Callers: []string{"billing", "hello"}}
+	profile := profile(t)
+
+	rendered, err := RenderHTTP(caller, HTTPWorkload{"docker.io/x/y", "sha256:" + strings.Repeat("b", 64), 8080, "/", 101}, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
+	container := values["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)
+	env := container["env"].(map[string]any)
+	if env["SWHURL_SERVICE_ORDERS_URL"] != "http://orders.orders-staging.svc.cluster.local:8081" {
+		t.Fatalf("the callee's address: %v", env["SWHURL_SERVICE_ORDERS_URL"])
+	}
+	if env["SWHURL_ALLOWED_CALLERS"] != "billing" {
+		t.Fatalf("the caller's own callers: %v", env["SWHURL_ALLOWED_CALLERS"])
+	}
+	envFrom := container["envFrom"].([]any)[0].(map[string]any)["configMapRef"].(map[string]any)
+	if envFrom["name"] != "hello-auth" {
+		t.Fatalf("the auth ConfigMap reference: %v", envFrom)
+	}
+	tokens := values["persistence"].(map[string]any)["tokens"].(map[string]any)
+	source := tokens["sources"].([]any)[0].(map[string]any)["serviceAccountToken"].(map[string]any)
+	if source["audience"] != "orders" || source["expirationSeconds"] != float64(600) || source["path"] != "orders/token" {
+		t.Fatalf("the projected token: %v", source)
+	}
+	if mount := tokens["globalMounts"].([]any)[0].(map[string]any); mount["path"] != "/var/run/swhurl/tokens" || mount["readOnly"] != true {
+		t.Fatalf("the token mount: %v", mount)
+	}
+	// The policy reaches out only to the callee, on the callee's port, and admits only the caller's pods.
+	callerPolicy := documentOf(t, rendered, "networkpolicy.json")["spec"].(map[string]any)
+	egress := callerPolicy["egress"].([]any)
+	if len(egress) != 1 {
+		t.Fatalf("caller egress: %v", egress)
+	}
+	to := egress[0].(map[string]any)["to"].([]any)[0].(map[string]any)
+	if to["namespaceSelector"].(map[string]any)["matchLabels"].(map[string]any)["kubernetes.io/metadata.name"] != "orders-staging" {
+		t.Fatalf("caller egress peer: %v", to)
+	}
+	if port := egress[0].(map[string]any)["ports"].([]any)[0].(map[string]any); port["port"] != float64(8081) {
+		t.Fatalf("caller egress port: %v", port)
+	}
+
+	// The callee side: the keys arrive in its own namespace, and its policy admits each caller's pods.
+	rendered, err = RenderHTTP(callee, workload, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := documentOf(t, rendered, "auth.json")
+	data := auth["data"].(map[string]any)
+	if auth["kind"] != "ConfigMap" || data["SWHURL_AUTH_ISSUER"] != profile.Auth.Issuer || data["SWHURL_AUTH_KEYS"] != profile.Auth.Keys {
+		t.Fatalf("the auth ConfigMap: %v", auth)
+	}
+	calleeValues := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
+	calleeContainer := calleeValues["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)
+	if calleeContainer["env"].(map[string]any)["SWHURL_ALLOWED_CALLERS"] != "billing,hello" {
+		t.Fatalf("the callee's callers: %v", calleeContainer["env"])
+	}
+	calleePolicy := documentOf(t, rendered, "networkpolicy.json")["spec"].(map[string]any)
+	ingress := calleePolicy["ingress"].([]any)
+	// traefik (the route) and two callers: every peer is a namespace and one instance's pods.
+	if len(ingress) != 3 {
+		t.Fatalf("callee ingress: %v", ingress)
+	}
+	if len(calleePolicy["egress"].([]any)) != 0 {
+		t.Fatalf("a callee with no calls egresses: %v", calleePolicy["egress"])
+	}
+	// The ConfigMap is a claimed object, so ownership sees it.
+	claimed := map[string]bool{}
+	for _, claim := range rendered.Inventory {
+		claimed[claim.Object.Kind+" "+claim.Object.Namespace+"/"+claim.Object.Name] = true
+	}
+	if !claimed["ConfigMap orders-staging/orders-auth"] {
+		t.Fatalf("the auth ConfigMap is not claimed: %v", claimed)
+	}
+}
+
+// A callee needs the platform's keys: without them it could accept no caller it could check, so the
+// preview is refused rather than rendered with an unverifiable consent.
+func TestCallsNeedPlatformAuth(t *testing.T) {
+	instance, workload := previewFacts()
+	instance.Callers = []string{"orders"}
+	without := profile(t)
+	without.Auth = Auth{}
+	if _, err := RenderHTTP(instance, workload, without); err != nil {
+		refusal(t, err, Unsupported, "auth")
+	} else {
+		t.Fatal("a callee rendered without the platform's keys")
+	}
+	bad := profile(t)
+	bad.Auth.Keys = "not a key set"
+	if _, err := RenderHTTP(instance, workload, bad); err != nil {
+		refusal(t, err, Invalid, "auth.keys")
+	} else {
+		t.Fatal("a key set that is not a JWKS was accepted")
+	}
 }

@@ -874,30 +874,29 @@ Let the next migration supply the capability requirement:
 3. Add selected console commands only after the domain and delivery contracts work through Git/CLI.
 4. Retire a v1 path only once its replacement owns the relevant inputs, output and operations.
 
-#### Proposed slice: calls between apps (decision brief, 25 October 2026 — not approved)
+#### Calls between apps: resolver and pair rendering (implemented offline 25 October 2026)
 
-Every web instance in this repository needs at least one domain v2 lacks, and `swhurl-try-11` staging needs only **calls** (two, no events, no database). This brief states what v1 does, what v2 would have to own, and the four decisions that are the operator's.
+**Decided with the operator on 25 October 2026:** both-sided consent, direct in-cluster egress to a declared callee, the projected audience token, and a **per-instance auth ConfigMap** with one platform ConfigMap plus replication as the deferred end state (see the [gap list](#6-deliberately-deferred)).
 
-**What v1 does, from its own records and rendered objects:**
+**What v1 does, and what v2 now does:**
 
-| Fact | v1's mechanism |
-| --- | --- |
-| Consent | The caller declares `calls: [app]`; the callee declares `allows: [app]` or `allows: [team:<team>]`. A pair is *connected* only when both agree; a missing half is pending, not an error |
-| Address | Caller env `SWHURL_SERVICE_<CALLEE>_URL` = `http://<callee>.<callee>-$(SWHURL_ENV).svc.cluster.local:<port>` — the callee in the caller's own environment, over its Service |
-| Credential | A **projected service-account token** at `/var/run/swhurl/tokens/<callee>/token`, `audience: <callee>`, ten minutes, kubelet-rotated; the Kubernetes API refuses it and so does any app other than the callee |
-| Verification | The callee's app verifies the token with `SWHURL_AUTH_ISSUER` and `SWHURL_AUTH_KEYS` (the cluster's public keys, inlined in env from `apps/signing-keys.json`) and accepts only callers listed in `SWHURL_ALLOWED_CALLERS` |
-| Network | The callee's policy admits each allowed caller's pods on its port. **v1's caller has no egress policy at all**, which is where v2 differs |
+| Fact | v1 | v2 |
+| --- | --- | --- |
+| Consent | Caller `calls`, callee `allows` (app or `team:<team>`); connected, pending, or refused | The same, as a pure resolver over supplied declarations |
+| Address | `SWHURL_SERVICE_<CALLEE>_URL`, callee in the caller's own environment | The same variable; the value is rendered in full rather than through the kubelet's `$(SWHURL_ENV)` expansion |
+| Credential | Projected service-account token, `audience: <callee>`, 600 s, kubelet-rotated | The same projection at `/var/run/swhurl/tokens/<callee>/token` |
+| Verification | Callee checks the token with `SWHURL_AUTH_ISSUER`/`SWHURL_AUTH_KEYS` | The same two variables, **from a ConfigMap in the instance's own namespace** and consumed with `envFrom`; the keys stay in the platform profile, so they remain identity-bearing |
+| Network | Callee admits each caller's pods; the caller's own egress is unrestricted | Callee admits each caller's pods on its port; the caller reaches each declared callee's pods on the callee's port, and nothing else — **stricter than v1** |
 
-**What v2 would own, and the four decisions:**
+**Ownership.** [`calls`](../v2/calls/calls.go) (layer 0, pure) owns the consent rule and the three outcomes; it decides nothing else and reads nothing. `kernel` owns rendering of a *connected* pair it is given — consent is never re-decided there — and refuses a callee without the platform's keys, because it could admit no caller it could check. The caller supplies the declarations (in a later slice, from the snapshot).
 
-1. **Consent model — both sides or the caller alone?** *Recommend keeping both*: the callee's `allows` is a real authorisation, and v1's pending/connected distinction is worth preserving. It forces one thing: a connection cannot be resolved by one instance, so rendering needs all instances' declarations — a pure resolver over supplied declarations, run where the snapshot already is.
-2. **Egress path for a call — direct, or through the egress proxy?** *Recommend direct*: a call is intra-cluster traffic to a Service. v2's "deny all egress" would then gain exactly one narrow exception per declared callee (an egress rule admitting that callee's pods on its port), which is **stronger than v1** rather than weaker. The proxy stays what it is for: internet egress, still deferred.
-3. **Credential — the projected audience token, or something simpler?** *Recommend the projection*: it is the platform's actual security property, the `call-tokens` rule already forbids audience-less projections, and the app templates verify exactly this token. A shared secret would be a second mechanism to rotate and a weaker one.
-4. **Where the verification keys come from.** *Recommend the platform profile*, as `auth.issuer` and `auth.keys` (the public keys from `apps/signing-keys.json`). They are rendered into every instance's env, so they are genuinely part of its identity: rotating them changes the profile ID and every compilation, which is correct rather than churn to avoid. The alternative — a platform-owned ConfigMap mounted into pods — avoids that, but needs a `valueFrom`-style env the renderer does not have and a new platform object v2 must own.
+**Refusals, fixed:** `invalid: allows: invalid_team`, `invalid: allows: invalid_app`, `invalid: calls: invalid_app`, `invalid: calls: repeated_instance`; and from rendering, `unsupported: auth` (a callee without keys) and `invalid: auth.keys` (a key set that is not a JWKS). A waiting declaration is **not** an error: `callee_absent` and `no_consent` render nothing for that pair.
 
-**Scope of the slice if approved:** a pure resolver (connected, pending-with-reason, and the three errors v1 defines: a self-call, a callee that is a worker or job, a malformed declaration) and rendering for one connected pair — caller env and token projection, callee `SWHURL_ALLOWED_CALLERS`, `SWHURL_AUTH_ISSUER`/`SWHURL_AUTH_KEYS` on both sides, and policy rules both ways. Offline tests render and compare the pair; the bridge's `calls` gap closes; observation and the comparator still do not verify a live call (named as out of scope). Live verification would come with the migration itself, not as a separate throwaway.
+**The identity change, explained again:** the profile now covers `auth.issuer` and `auth.keys`, so its canonical form and ID changed once more; the two golden compilations changed only in their `id` and `inputs.profile` lines, and `profile-identity.json` was recomputed independently in Python. The keys are rendered into the ConfigMap, so they must be identity-bearing: a key rotation is a new compilation, which is correct.
 
-**Not in this slice:** calls to an app in another environment (v1 allows only the same one), internet egress and its proxy, `team:<team>` grants resolved from `apps/teams.yaml` beyond what the declaration states, and the `x-swhurl-user` on-behalf-of header (the app's own behaviour, unchanged).
+**Evidence, offline:** 12 packages pass, including the resolver's connected/team/pending/refused/malformed/deterministic cases and the renderer's pair test (address, token projection, `SWHURL_ALLOWED_CALLERS`, the ConfigMap and its claim, the caller's egress rule on the callee's port, the callee's ingress rule per caller, and the refusal without keys). `make check-v2`, `REQUIRE_HELM=1 make check-v2` and `make check` pass.
+
+**What this slice does not do, and what the next one must:** the bridge still reports `calls` as a gap and `compile` cannot yet deliver an instance with calls — both need the resolution document (`--calls`) that the migration slice will define. Nothing with a call has been applied, so no live call has been made.
 
 Existing-instance migration follows the [documented staged Flux ownership handover](architecture.md#flux-units). Do not change the old unit's path in the cutover commit or permit it to prune handed-over resources.
 
@@ -947,7 +946,8 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | Routes: `public` exposure, a per-instance host override, route-level observation (Ingress readiness, certificate state) | `authenticated-web` renders its Ingress, TLS annotation and middleware from the profile and is `private`'s only alternative; `public` is still refused (`unsupported`), no instance stores a host, and observation does not verify a route | The first instance that needs a public route or an unusual host |
 | App kinds `worker` and `job` (a CronJob schedule); a command override | Refused (`unsupported`): only `web`, and no command | Phase 7, per app |
 | Teams: the namespace `team` label, team isolation | Not in the records; no label | Before an instance needs team isolation |
-| Calls between apps: caller tokens and signing keys, `SWHURL_<APP>_URL`, callers in the NetworkPolicy | Not generated | Phase 7, with the first app that calls another |
+| Calls between apps: caller tokens and signing keys, `SWHURL_<APP>_URL`, callers in the NetworkPolicy | The [resolver and pair rendering](#calls-between-apps-resolver-and-pair-rendering-implemented-offline-25-october-2026) exist: consent is decided purely, and a connected pair renders both halves, with egress admitted only to the declared callee. `compile` cannot yet deliver an instance with calls, and the bridge still reports calls as a gap | The migration slice: a resolution document for `compile`, the bridge's `calls` gap closing, then the first migrated app |
+| One platform ConfigMap for token verification, replicated into each managed namespace | Not built: each callee renders its own ConfigMap copy from the profile's keys, so a rotation changes every callee's compilation | When rotation frequency or object count justifies a second writer to namespaces; the better end state as decided 25 October 2026 |
 | Notifications: `SWHURL_NOTIFY_URL`, the projected `notify` token | Not generated | Phase 7 |
 | Events: NATS users, streams and consumers | Not generated | Phase 7 |
 | Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |

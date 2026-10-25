@@ -21,9 +21,9 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 | 1. Release-selection kernel | done, reviewed, committed 24 October 2026 | [contract](iteration-2-plan.md#2-phase-1-model-and-contract), [evidence](iteration-2-plan.md#phase-1-verification-evidence) |
 | 2. Deterministic compiler | done, reviewed, committed 25 October 2026 | [contract](iteration-2-plan.md#phase-2-establish-compiler-ownership) |
 | 4. Git delivery | done: offline half and one live instance, 25 October 2026 | [slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) |
-| 5. Observation | after delivery: the first real adapter | [gate](iteration-2-plan.md#phase-5-explain-current-state-honestly) |
-| 6. First live instance | after observation: one disposable instance, then removal | [decision](iteration-2-plan.md#decision-egress-and-credentials-for-the-first-instance-decided-25-october-2026) |
-| 3. Shadow bridge | slice 1 done; 3.2–3.5 after the first live instance | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
+| 5. Observation | **a candidate next slice** (needs approval): the first real adapter | [gate](iteration-2-plan.md#phase-5-explain-current-state-honestly) |
+| 6. First live instance | done 25 October 2026: applied, verified and removed, see the record above | [evidence](current-state.md#first-v2-instance-live-25-october-2026) |
+| 3. Shadow bridge | slice 1 done; **3.2–3.5 are the other candidate next slice** (need approval) | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
 | 7. Selective replacement | proposed, not approved; needs the bridge first | [phases](iteration-2-plan.md#5-incremental-delivery) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
@@ -88,4 +88,14 @@ The report shows what the tree adds to `origin/main`: a new package, a changed e
 
 ## Suggested opening prompt for a fresh session
 
-> Work only on v2. Read `docs/v2-status.md` (status, authority, resume steps), `docs/iteration-2-plan.md` (the contracts), `docs/architecture-review.md` and `docs/model-review.html`, plus the repository instructions. Inspect the working tree and the existing Go code and tests. Phases 1 and 2 and phase 3's first slice are implemented, independently reviewed and committed; the next gate is a **proposal** for the next slice (phase 3 slice 2, or the delivery slice — whatever the operator approved), which needs separate approval — do not implement it before that. Start from the operator's design principles: maintainable v2 contracts rather than v1 compatibility; pure core with orchestration above it and integrations at the edges; explicit domain and data ownership; iterative transition with honestly incomplete semantics. Do not require supplemental provenance claims or complete releases merely to preview known workload facts. Answer the slice invariants on the status page in the same change as the code, keep the gap list current, and run `make check-v2` and `make check`. The code graph is a separate workstream: do not build it here. Preserve unrelated work; do not commit, push, publish, access credentials or touch the live cluster.
+> Work on v2 only. Read `docs/v2-status.md` first (status, authority, the resume steps), then `docs/iteration-2-plan.md` for the contracts and the gap list, and `AGENTS.md` for the repository rules. Do not re-derive the state from this prompt: check it.
+>
+> Then run, from the repository root: `git log --oneline -5`, `git status --short`, `make check-v2`, `make -s v2-report`, `python3 -m swhurl check-docs`. Report what they say before proposing anything. A check that reads the working tree can pass here and fail on a clone; CI is the reader that matters.
+>
+> Where v2 stands: phases 1 and 2 are done and reviewed; phase 3 slice 1 (release-independent `RenderHTTP` and the pure `shadow.CompareHTTP`) is done; the **delivery slice is done end to end**, including one disposable instance that was applied by Flux, verified (digest, readiness, isolation, no egress) and removed on 25 October 2026. Nothing is in flight and nothing is uncommitted.
+>
+> The next gate is the operator's choice between two candidate slices, neither approved yet: **phase 3 slice 2** (snapshot acquisition, or legacy translation and default resolution) for the shadow bridge, or **phase 5 observation** (the first real adapter: is the intended digest running, is it Ready, is it unreachable — unavailable must not read as absent). Ask which; do not implement either before the operator approves that slice.
+>
+> Follow the operator's design principles: maintainable v2 contracts rather than v1 compatibility; a pure core with orchestration above it and integrations at the edges; explicit domain and data ownership; iterative transition with honestly incomplete semantics. Do not require supplemental provenance claims or complete releases merely to preview known workload facts. Answer the eight slice invariants on the status page in the same change as the code, keep the gap list current, and run `make check-v2` and `make check` before asking to commit.
+>
+> The code graph is a separate workstream and a sidequest: do not build it here. Preserve unrelated work; do not commit, push, publish, access credentials or touch the live cluster without the operator's instruction, and treat any namespace or data deletion as needing explicit confirmation.

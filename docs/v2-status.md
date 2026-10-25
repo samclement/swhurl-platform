@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: the egress and credentials decision for one disposable instance
+Gate: approval of the delivery slice proposal for one disposable instance
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -20,17 +20,19 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 | --- | --- | --- |
 | 1. Release-selection kernel | done, reviewed, committed 24 October 2026 | [contract](iteration-2-plan.md#2-phase-1-model-and-contract), [evidence](iteration-2-plan.md#phase-1-verification-evidence) |
 | 2. Deterministic compiler | done, reviewed, committed 25 October 2026 | [contract](iteration-2-plan.md#phase-2-establish-compiler-ownership) |
-| 4. Git delivery | **next**, after the decision below | [contract](iteration-2-plan.md#phase-4-settle-publication-before-automation) |
+| 4. Git delivery | **next:** a [proposal](iteration-2-plan.md#first-delivery-slice-proposal-one-disposable-instance-operator-run) awaiting approval | [contract](iteration-2-plan.md#phase-4-settle-publication-before-automation) |
 | 5. Observation | after delivery: the first real adapter | [gate](iteration-2-plan.md#phase-5-explain-current-state-honestly) |
-| 6. First live instance | after observation: one disposable instance, then removal | [decision](iteration-2-plan.md#decision-needed-egress-and-credentials-for-the-first-instance) |
+| 6. First live instance | after observation: one disposable instance, then removal | [decision](iteration-2-plan.md#decision-egress-and-credentials-for-the-first-instance-decided-25-october-2026) |
 | 3. Shadow bridge | slice 1 done; 3.2–3.5 after the first live instance | [slice 1](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) |
 | 7. Selective replacement | proposed, not approved; needs the bridge first | [phases](iteration-2-plan.md#5-incremental-delivery) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
 
-## Decision needed
+## Decisions
 
-The next gate is a decision, not a slice: **egress and credentials for the first disposable instance**, with four egress options and three credential options and a recommendation for each in [the brief](iteration-2-plan.md#decision-needed-egress-and-credentials-for-the-first-instance). Until it is answered, the delivery slice cannot be specified: the compiler's egress policy and who holds the credential are its two inputs.
+**25 October 2026 — egress and credentials for the first instance (decided, in the operator's words, by accepting both recommendations):** all egress is denied for the first disposable instance (`policyTypes: [Ingress, Egress]`, no rules) rather than routed through the proxy or left open, and delivery and observation use the operator's own credentials from the host rather than a new Secret, runner or control plane. [The record](iteration-2-plan.md#decision-egress-and-credentials-for-the-first-instance-decided-25-october-2026) states what each answer changes, why the alternatives lost, and what reopens them.
+
+**The next gate is a proposal, not an implementation:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-proposal-one-disposable-instance-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it — awaits the operator's approval. Its three parts, its write contract, its acceptance per invariant and the costs of approval are all on that page, so approving it is a decision about a specified change rather than a direction.
 
 ## Slice record: phase 3 slice 1
 

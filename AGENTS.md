@@ -10,7 +10,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 
 ## Rules
 
-- Update documentation in the same change as behaviour. Each topic has one canonical page (map below); link, don't copy. Describe what is, not what was.
+- Update documentation in the same change as behaviour. Each topic has one canonical page (map below); link, don't copy. Describe what is, not what was. A change under `v2/` or `devtools/codegraph/` updates that workstream's page in `docs/workstreams.md` too; `make check-docs` checks the registry's state, next gate and uncommitted work against Git, so a record that goes stale fails a check rather than waiting to be re-read.
 - Validate before every commit: `make check` (CI also runs `make check-templates`; run it yourself before pinning a template or changing app types or `app-new`). For script, Makefile or layout changes also run `for f in host/*.sh tests/fixtures/*.sh; do bash -n "$f"; done` (`make test` runs every dry run that only plans).
 - Commit to `main` after validation, push, `make flux-reconcile`, verify on the cluster (`make verify-platform`, `make app-status`), then record dated evidence in `docs/current-state.md`.
 - Confirm with the user before hard-to-reverse live actions: deleting data (`make destroy-data`, namespaces, PVs), rotating real credentials, changing where backups go, or anything under `flux-system`. `make app-repo` and the console's **Start a new app** create a real public GitHub repository and package; name throwaway ones `swhurl-try-<n>`. Once a throwaway's instance is removed, delete its repository and package with the tokens in the gitignored `secrets/` (`github-cleanup.sops.yaml` for repositories, `github-packages.sops.yaml` for packages; decrypt with `SOPS_AGE_KEY_FILE=./age.agekey`, and check the token is not empty: `gh` falls back to its own login, which cannot delete). Any other repository is the user's to delete.
@@ -42,6 +42,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 | Flux units, dependencies, ownership, deletion, how changes reach the cluster | `docs/architecture.md` |
 | Validation, change checklist, docs and diagram conventions | `docs/contributing.md` |
 | Run a bounded change with a coding agent | `docs/software-change-workflow.md` |
+| Where each workstream stands and what finishes it | `docs/workstreams.md` |
 | What app, environment, instance and unit mean | `GLOSSARY.md` |
 | Dated live evidence and unexercised paths | `docs/current-state.md` |
 | Code graph development aid: design, contracts, roadmap | `docs/visual-change-tool.md` |

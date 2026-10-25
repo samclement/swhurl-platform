@@ -82,7 +82,7 @@ func DecodeRelease(data []byte) (ReleaseBundle, error) {
 	if err := document(data); err != nil {
 		return ReleaseBundle{}, err
 	}
-	root, err := fields(data, "release", []string{"schemaVersion", "application", "source", "artifact", "runtime"}, "releaseId")
+	root, err := fields(data, "release", []string{"schemaVersion", "application", "source", "artifact", "runtime"}, "releaseId", "database")
 	if err != nil {
 		return ReleaseBundle{}, err
 	}
@@ -116,7 +116,7 @@ func DecodeInstance(data []byte) (InstanceSpec, error) {
 	if err := document(data); err != nil {
 		return InstanceSpec{}, err
 	}
-	root, err := fields(data, "instance", []string{"schemaVersion", "application", "environment", "release", "configuration", "grants", "bindings"})
+	root, err := fields(data, "instance", []string{"schemaVersion", "application", "environment", "release", "configuration", "grants", "bindings"}, "storage")
 	if err != nil {
 		return InstanceSpec{}, err
 	}

@@ -25,6 +25,14 @@ type PlatformProfile struct {
 	// Auth is what an app needs to verify a call: the cluster's token issuer and its public signing keys.
 	// A callee cannot be rendered without it, because it would accept no caller it could not check.
 	Auth Auth `json:"auth"`
+	// Storage is the platform's class for an instance's data volume. A database instance cannot be
+	// rendered without it; the size belongs to the instance.
+	Storage PlatformStorage `json:"storage"`
+}
+
+// PlatformStorage is where a data volume lives and what survives its instance.
+type PlatformStorage struct {
+	Class string `json:"class"`
 }
 
 // Auth is the platform's token verification facts. Keys is the JWKS text exactly as an instance receives
@@ -102,7 +110,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 	if err := document(data); err != nil {
 		return PlatformProfile{}, err
 	}
-	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing", "auth")
+	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing", "auth", "storage")
 	if err != nil {
 		return PlatformProfile{}, err
 	}
@@ -118,6 +126,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		// needs neither, and an absent block is valid.
 		{"routing", []string{"baseDomain", "class", "middleware", "issuer", "ingressNamespace", "ingressLabels"}},
 		{"auth", []string{"issuer", "keys"}},
+		{"storage", []string{"class"}},
 	} {
 		if _, present := root[part.key]; !present {
 			continue
@@ -158,6 +167,9 @@ func (p PlatformProfile) validate() error {
 	}
 	if err := p.Routing.validate(); err != nil {
 		return err
+	}
+	if p.Storage.Class != "" && !labelPattern.MatchString(p.Storage.Class) {
+		return refuse(Invalid, "storage.class", "expected a DNS label")
 	}
 	return p.Auth.validate()
 }
@@ -308,7 +320,7 @@ func profileCanonical(p PlatformProfile) []byte {
 		// the profile's identity; an absent block encodes as empty values rather than being omitted.
 		p.Routing.BaseDomain, p.Routing.Class, p.Routing.Middleware, p.Routing.Issuer,
 		p.Routing.IngressNamespace, labelPairs(p.Routing.IngressLabels),
-		p.Auth.Issuer, p.Auth.Keys})
+		p.Auth.Issuer, p.Auth.Keys, p.Storage.Class})
 }
 
 func (p PlatformProfile) ID() (ProfileID, error) {

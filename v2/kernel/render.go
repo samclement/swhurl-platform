@@ -25,6 +25,8 @@ type HTTPInstance struct {
 	Exposure                 string
 	Calls                    []Call
 	Callers                  []string
+	Database                 string // "sqlite", or empty for an image that keeps no state
+	Storage                  Storage
 }
 
 // Call is one connected callee: the app and the port its Service listens on.
@@ -56,9 +58,6 @@ func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (
 	if err != nil {
 		return ResourceSet{}, err
 	}
-	if err := validateCalls(spec, profile); err != nil {
-		return ResourceSet{}, err
-	}
 	if err := spec.Configuration.validate(); err != nil {
 		return ResourceSet{}, err
 	}
@@ -66,6 +65,9 @@ func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (
 		return ResourceSet{}, err
 	}
 	if err := fits(spec.Configuration, profile); err != nil {
+		return ResourceSet{}, err
+	}
+	if err := spec.validateResources(profile); err != nil {
 		return ResourceSet{}, err
 	}
 	// Instances under the instance root; units under the profile's unit root, which kustomize can list.
@@ -100,8 +102,21 @@ func metadata(name, namespace string) manifest {
 func namespaceManifest(spec HTTPInstance) manifest {
 	meta := metadata(namespaceName(spec), "")
 	meta["labels"] = manifest{labelDomain + "managed": "true", labelDomain + "app": spec.Application,
-		labelDomain + "environment": spec.Environment, labelDomain + "exposure": "private"}
+		labelDomain + "environment": spec.Environment, labelDomain + "exposure": exposureLabel(spec)}
+	if spec.Database != "" {
+		// Deleting the instance's files must not delete its data: Flux keeps the namespace, and the
+		// retained volume class keeps the claim's data. Deleting either is a separate, deliberate action.
+		meta["annotations"] = manifest{"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+	}
 	return manifest{"apiVersion": "v1", "kind": "Namespace", "metadata": meta}
+}
+
+// exposureLabel is the instance's exposure as a label, private when it states none.
+func exposureLabel(spec HTTPInstance) string {
+	if spec.Exposure == "" {
+		return "private"
+	}
+	return spec.Exposure
 }
 
 func helmRelease(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) manifest {
@@ -112,17 +127,26 @@ func helmRelease(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) 
 		"metadata": metadata(spec.Application, namespaceName(spec)),
 		"spec": manifest{"interval": helmInterval, "timeout": failAfter, "chart": manifest{"spec": chart},
 			"install": remediation, "upgrade": manifest{"remediation": manifest{"retries": retries}},
-			"values": values(spec, http, profile.Workload)}}
+			"values": values(spec, http, profile.Workload, profile.Storage.Class)}}
 }
 
 // values are the chart's values: one controller, one container, its Service and /tmp.
-func values(spec HTTPInstance, http HTTPWorkload, workload Workload) manifest {
+func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClass string) manifest {
 	uid := http.UID
 	pod := manifest{"automountServiceAccountToken": false, "securityContext": manifest{
 		"runAsNonRoot": true, "runAsUser": uid, "runAsGroup": uid, "fsGroup": uid,
 		"seccompProfile": manifest{"type": "RuntimeDefault"}}}
 	controller := manifest{"replicas": spec.Configuration.Replicas, "containers": manifest{"main": container(spec, http, workload)}}
+	if spec.Database == "sqlite" {
+		// One pod at a time: a rolling update would open one database file twice.
+		controller["strategy"] = "Recreate"
+	}
 	persistence := manifest{"tmp": manifest{"type": "emptyDir", "globalMounts": []any{manifest{"path": "/tmp"}}}}
+	if spec.Database == "sqlite" {
+		persistence["data"] = manifest{"type": "persistentVolumeClaim", "storageClass": storageClass,
+			"accessMode": "ReadWriteOnce", "size": fmt.Sprintf("%dMi", spec.Storage.SizeMiB), "retain": true,
+			"globalMounts": []any{manifest{"path": "/data"}}}
+	}
 	if len(spec.Calls) > 0 {
 		persistence["tokens"] = tokensPersistence(spec.Calls)
 	}
@@ -135,6 +159,9 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload) manifest {
 func container(spec HTTPInstance, http HTTPWorkload, workload Workload) manifest {
 	memory := fmt.Sprintf("%dMi", spec.Configuration.MemoryMiB)
 	env := manifest{"SWHURL_APP": spec.Application, "SWHURL_ENV": spec.Environment}
+	if spec.Database == "sqlite" {
+		env["DATABASE_PATH"] = "/data/app.db"
+	}
 	for _, call := range spec.Calls {
 		env[callVariable(call.Callee)] = calleeAddress(call, spec.Environment)
 	}
@@ -343,6 +370,39 @@ func resourcesOf(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile, 
 		}{"auth.json", authConfigMap(spec, profile.Auth)})
 	}
 	return resources
+}
+
+// validateResources checks what an instance adds to its workload: the pairs it takes part in and the volume
+// it asks for.
+func (spec HTTPInstance) validateResources(profile PlatformProfile) error {
+	if err := validateCalls(spec, profile); err != nil {
+		return err
+	}
+	return spec.validateStorage(profile)
+}
+
+// validateStorage checks the volume an instance asks for against what its image needs and what the
+// platform provides. A database admits one writer, so more than one replica is refused rather than
+// silently reduced, and a size with nothing to put in it is refused too.
+func (spec HTTPInstance) validateStorage(profile PlatformProfile) error {
+	switch {
+	case spec.Database == "" && spec.Storage.SizeMiB > 0:
+		return refuse(Invalid, "storage", "the release keeps no database, so a volume would hold nothing")
+	case spec.Database == "":
+		return nil
+	case spec.Database != "sqlite":
+		return refuse(Unsupported, "database", "only sqlite is supported")
+	}
+	if spec.Storage.SizeMiB < 1 {
+		return refuse(Invalid, "storage.sizeMiB", "a database needs a volume size")
+	}
+	if profile.Storage.Class == "" {
+		return refuse(Unsupported, "storage.class", "the profile states no storage class")
+	}
+	if spec.Configuration.Replicas > 1 {
+		return refuse(Invalid, "configuration.replicas", "a database admits one writer")
+	}
+	return nil
 }
 
 // validateCalls checks the resolved pairs' shape. Consent is not decided here: the caller supplies only

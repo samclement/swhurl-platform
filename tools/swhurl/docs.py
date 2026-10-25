@@ -163,6 +163,11 @@ def uncommitted_problems(rows: list[Row], runner: Runner, root: Path = ROOT) -> 
     return found
 
 
+def shallow(runner: Runner) -> bool:
+    """Whether the checkout has no history to check a citation against (a shallow CI clone)."""
+    return runner.output(['git', 'rev-parse', '--is-shallow-repository']).strip() == 'true'
+
+
 def cited_problems(rows: list[Row], runner: Runner, root: Path = ROOT) -> list[str]:
     """Every commit a status page cites must be reachable from a ref, not merely in the object store.
 
@@ -223,7 +228,10 @@ def check(runner: Runner, report: Report, root: Path = ROOT) -> None:
     summarize(report, [p for row in pages for p in block_problems(row, root)],
               f'{len(pages)} status page(s) agree with the registry')
     summarize(report, uncommitted_problems(rows, runner, root), 'uncommitted work matches each status page')
-    summarize(report, cited_problems(rows, runner, root), 'every cited commit exists')
+    if shallow(runner):
+        report.warn('the checkout is shallow, so cited commits were not checked against history')
+    else:
+        summarize(report, cited_problems(rows, runner, root), 'every cited commit is reachable from a ref')
     summarize(report, changed_problems(rows, runner, root), 'no workstream code changed without its page')
     summarize(report, orphan_problems(rows, runner, root), 'every status page is named by the registry')
 

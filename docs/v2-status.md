@@ -30,7 +30,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Routes | A signed-in route from platform facts, verified live through the shared sign-in | **Done, live** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
 | Calls | Consent decided purely, a pair rendered both ways, and delivery wired (`resolve` → `compile --calls`) | **Done offline** |
-| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Next**; routes are live and calls render, but delivery cannot yet compile one |
+| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **First one live**: `swhurl-try-11` staging is v2-owned, healthy and observed; its calls wait for its callees to move |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
@@ -194,7 +194,7 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Owners and boundaries:** the resolver still decides consent; the document carries its result as evidence, naming the revision it was read at; `compile` selects edges and records their identity in `Inputs.calls` without re-deciding anything. The compilation ID hashes rendered output, so a changed resolution changes it exactly when the output changes.
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages untouched by the new effects; the command holds the reads. 3. Identities: the goldens gained `"calls": ""` and nothing else; no compilation ID moved, because the ID hashes output rather than inputs. 4. Refusals stated and tested. 5. Failure paths tested: a non-`v2-calls` document, a bad revision, an instance with no side in the pair, and the two sides of one pair having different connection identities. 6. Scope: the document states only connected pairs, waits and refusals; the bridge's own calls section is still missing. 7. Offline only: nothing with a call has run. 8. This page, the plan and the gap list change together.
 - **Evidence:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make v2-report`; over this repository's snapshot the resolver reports the 9 pairs v1's declarations imply, and the compiled caller renders the callee's address while the callee renders its caller list.
-- **Next gate:** the first migration — a handover of `swhurl-try-11` staging from v1 ownership to v2, ordered so v1 stops applying before v2 starts, with `git revert` as the rollback; it needs the operator's live confirmation.
+- **Next gate:** the first migration — completed as a handover of `swhurl-try-11` staging; the callee-side consent consequence and the choice to complete the pair or roll back are recorded in [current state](current-state.md#first-migration-swhurl-try-11-staging-is-owned-by-v2-25-october-2026).
 - **Committed:** in the commit that follows this record.
 
 ## Resume

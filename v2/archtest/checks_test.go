@@ -98,6 +98,7 @@ func f(count int) int {
 }
 `,
 		"kernel/b.go":        "package kernel\n\nfunc g() { count = 2 }\n",
+		"legacy/legacy.go":   "package legacy\n",
 		"observe/explain.go": "package observe\n",
 		"shadow/http.go":     "package shadow\n",
 	})

@@ -85,6 +85,17 @@ kernel: type ResourceSet struct {Files []File Inventory []Claim Registrations []
 kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` HealthPath string `json:"healthPath"` UID int32 `json:"uid"`}
 kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
+legacy: const Invalid = "invalid"
+legacy: const Missing = "missing"
+legacy: const Unsupported = "unsupported"
+legacy: func (*Error) Error() string
+legacy: func Translate(records Records) (Translation, error)
+legacy: type Error struct {Code, Field, Reason string}
+legacy: type Gap struct {Where, Fact, Owner string}
+legacy: type Instance struct {Exposure string Replicas int32 MemoryMiB int32 Team string}
+legacy: type Records struct {App, Instance, Release, Committed []byte}
+legacy: type Translation struct {Application, Environment string Workload Workload Instance Instance Sources map[string]string Gaps []Gap}
+legacy: type Workload struct {Image, Tag, Digest string Kind string Port int32 HealthPath string UID int32}
 observe: const Absent = "absent"
 observe: const Applied = "applied"
 observe: const AsIntended = "as_intended"

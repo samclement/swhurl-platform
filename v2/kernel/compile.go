@@ -74,7 +74,8 @@ func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) 
 		return Compilation{}, err
 	}
 	resources, err := RenderHTTP(
-		HTTPInstance{spec.Application, spec.Environment, spec.Configuration, spec.Grants.Exposure},
+		HTTPInstance{Application: spec.Application, Environment: spec.Environment,
+			Configuration: spec.Configuration, Exposure: spec.Grants.Exposure},
 		HTTPWorkload{release.Artifact.Image, release.Artifact.Digest, release.Runtime.Port, release.Runtime.HealthPath, release.Runtime.UID}, profile)
 	if err != nil {
 		return Compilation{}, err

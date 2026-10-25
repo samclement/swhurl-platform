@@ -22,6 +22,16 @@ type PlatformProfile struct {
 	// Routing is how a signed-in or public route reaches an instance. A profile without it cannot compile
 	// an exposed instance; a private instance never uses it.
 	Routing Routing `json:"routing"`
+	// Auth is what an app needs to verify a call: the cluster's token issuer and its public signing keys.
+	// A callee cannot be rendered without it, because it would accept no caller it could not check.
+	Auth Auth `json:"auth"`
+}
+
+// Auth is the platform's token verification facts. Keys is the JWKS text exactly as an instance receives
+// it, so a rotation changes the profile's identity and every compilation that renders it.
+type Auth struct {
+	Issuer string `json:"issuer"`
+	Keys   string `json:"keys"`
 }
 
 // Routing is the platform's own facts about routes: the domain names hang off, the ingress class, the
@@ -74,6 +84,8 @@ var (
 	issuerPattern     = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 	middlewarePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?(@[a-z]+)?$`)
 	labelKeyPattern   = regexp.MustCompile(`^([a-z0-9]([a-z0-9.-]*[a-z0-9])?/)?[a-z0-9]([a-z0-9._-]*[a-z0-9])?$`)
+	issuerURLPattern  = regexp.MustCompile(`^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$`)
+	jwksPattern       = regexp.MustCompile(`"keys"\s*:\s*\[`)
 )
 
 // sortedKeys is a map's keys in order, so validation and identity encoding are deterministic.
@@ -90,7 +102,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 	if err := document(data); err != nil {
 		return PlatformProfile{}, err
 	}
-	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing")
+	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing", "auth")
 	if err != nil {
 		return PlatformProfile{}, err
 	}
@@ -102,8 +114,14 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"delivery", []string{"source", "outputRoot", "unitsRoot", "dependsOn"}},
 		{"workload", []string{"cpuRequestMilli", "startupSeconds", "startupPeriodSeconds"}},
 		{"quota", []string{"pods", "requestsCpuMilli", "requestsMemoryMiB", "limitsMemoryMiB"}},
+		// routing and auth are optional blocks: a profile that renders only private, call-less instances
+		// needs neither, and an absent block is valid.
 		{"routing", []string{"baseDomain", "class", "middleware", "issuer", "ingressNamespace", "ingressLabels"}},
+		{"auth", []string{"issuer", "keys"}},
 	} {
+		if _, present := root[part.key]; !present {
+			continue
+		}
 		if _, err := fields(root[part.key], part.key, part.required); err != nil {
 			return PlatformProfile{}, err
 		}
@@ -138,7 +156,24 @@ func (p PlatformProfile) validate() error {
 	if err := p.Quota.validate(); err != nil {
 		return err
 	}
-	return p.Routing.validate()
+	if err := p.Routing.validate(); err != nil {
+		return err
+	}
+	return p.Auth.validate()
+}
+
+// validate checks a configured auth block: an https issuer, and keys that are a JWKS document.
+func (a Auth) validate() error {
+	if a.Issuer == "" && a.Keys == "" {
+		return nil
+	}
+	if !issuerURLPattern.MatchString(a.Issuer) {
+		return refuse(Invalid, "auth.issuer", "expected an https issuer URL")
+	}
+	if !json.Valid([]byte(a.Keys)) || !jwksPattern.MatchString(a.Keys) {
+		return refuse(Invalid, "auth.keys", "expected a JSON Web Key Set")
+	}
+	return nil
 }
 
 // validate checks a configured routing block. An absent block is valid: a profile that compiles only
@@ -269,10 +304,11 @@ func profileCanonical(p PlatformProfile) []byte {
 		p.Delivery.Source, p.Delivery.OutputRoot, p.Delivery.UnitsRoot, dependsOn,
 		p.Workload.CPURequestMilli, p.Workload.StartupSeconds, p.Workload.StartupPeriodSeconds,
 		p.Quota.Pods, p.Quota.RequestsCPUMilli, p.Quota.RequestsMemoryMiB, p.Quota.LimitsMemoryMiB,
-		// Routing is a platform fact, so a changed domain, issuer or middleware changes the profile's
-		// identity; an absent block encodes as empty values rather than being omitted.
+		// Routing and auth are platform facts, so a changed domain, issuer, middleware or key set changes
+		// the profile's identity; an absent block encodes as empty values rather than being omitted.
 		p.Routing.BaseDomain, p.Routing.Class, p.Routing.Middleware, p.Routing.Issuer,
-		p.Routing.IngressNamespace, labelPairs(p.Routing.IngressLabels)})
+		p.Routing.IngressNamespace, labelPairs(p.Routing.IngressLabels),
+		p.Auth.Issuer, p.Auth.Keys})
 }
 
 func (p PlatformProfile) ID() (ProfileID, error) {

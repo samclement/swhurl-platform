@@ -60,6 +60,7 @@ var Rules = []Rule{
 // Layers: a package may import v2 packages only from lower layers. 0 is the pure model, 1 adapters
 // (one per external dependency, speaking domain terms), 2 commands that wire adapters to the model.
 var Layers = map[string]int{
+	"calls":                    0,
 	"kernel":                   0,
 	"legacy":                   0,
 	"observe":                  0,
@@ -72,7 +73,7 @@ var Layers = map[string]int{
 }
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"kernel", "legacy", "observe", "shadow"}
+var Pure = []string{"calls", "kernel", "legacy", "observe", "shadow"}
 
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
 // environment, files, network or processes. Adding one is a reviewed change to this list.

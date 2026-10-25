@@ -29,7 +29,8 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, an ownership inventory, and a read-only live check of the claims | **Slices 1–4 done** |
 | Routes | A signed-in route from platform facts, verified live through the shared sign-in | **Done, live** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
-| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Next**; the precondition (routes) is live, and the first candidate needs calls |
+| Calls | Consent decided purely; a connected pair rendered with address, token, keys and policy both ways | **Done offline** (delivery wiring next) |
+| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Next**; routes are live and calls render, but delivery cannot yet compile one |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
@@ -177,6 +178,15 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Not exercised:** a production-issued certificate (the test used the staging issuer, so browsers warn), a sibling-pod ingress test, and `public` exposure — still deferred.
 - **Evidence:** [current state](current-state.md#first-v2-route-live-signed-in-exposure-25-october-2026), including the certificate issuer, the 302, the signed-in confirmation and what pruning removed.
 - **Next gate:** the first migration — implement calls between apps (the only relationship `swhurl-try-11` needs) and then migrate it to v2 ownership.
+
+## Slice record: calls between apps, resolved and rendered
+
+- **Outcome and the refusal it must produce:** a pair connects only when the caller declares the call and the callee consents by app name or team; connected pairs render both halves — the callee's address and a token only it accepts on the caller, `SWHURL_ALLOWED_CALLERS` and the platform's keys on the callee, and each side's policy admitting only the other's pods on the port the call uses. It refuses a malformed declaration, a repeated instance, a callee without the platform's keys, and a key set that is not a JWKS. A waiting pair is not an error.
+- **Owners and boundaries:** `calls` (layer 0, pure) owns consent and the three outcomes; `kernel` renders a connected pair it is given and never re-decides consent; the platform profile owns the issuer and keys. The keys are carried into each callee's namespace by a ConfigMap of its own (decision 4A), so rotation changes the compilation — the platform-wide single ConfigMap is the deferred end state.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure — `calls` has no effects and no clock. 3. Identities changed deliberately: the profile covers auth, so its ID and the two compilation IDs changed; only the `id`/`inputs.profile` lines moved, and the profile identity was recomputed independently. 4. New refusals stated; nothing existing moved. 5. Failure paths tested: no consent, absent callee, worker callee, self-call, malformed names, repeated instance, missing keys, non-JWKS keys. 6. Scope: rendering covers the declared pair; the bridge and delivery do not yet consume a resolution. 7. Offline only: nothing with a call has run. 8. This page, the plan and the gap list change together.
+- **Evidence:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make v2-report`; the pair test asserts the address, the token projection, the caller list, the ConfigMap and its ownership claim, the caller's egress rule on the callee's port and the callee's ingress rule per caller.
+- **Next gate:** the first migration — a resolution document so `compile` can deliver an instance with calls, the bridge's `calls` gap closing, then `swhurl-try-11` staging.
+- **Committed:** in the commit that follows this record.
 
 ## Resume
 

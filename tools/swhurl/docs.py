@@ -164,18 +164,20 @@ def uncommitted_problems(rows: list[Row], runner: Runner, root: Path = ROOT) -> 
 
 
 def cited_problems(rows: list[Row], runner: Runner, root: Path = ROOT) -> list[str]:
-    """Every commit a status page cites must exist, so evidence cannot be invented."""
+    """Every commit a status page cites must be reachable from a ref, not merely in the object store.
+
+    A rewritten commit still resolves locally through the reflog, so `git cat-file` says it exists
+    while no reader of the repository can find it. Reachability is what a reader has.
+    """
     cited: dict[str, str] = {}
     for row in (r for r in rows if status_page(r, root) and page_file(r, root).is_file()):
         for sha in CITED.findall(page_file(row, root).read_text()):
             cited.setdefault(sha, str(page_file(row, root).relative_to(root)))
     if not cited:
         return []
-    asked = '\n'.join(cited) + '\n'
-    answer = runner.output(['git', 'cat-file', '--batch-check'], input=asked).splitlines()
-    return [f'{page}: cites {sha}, which is not a commit in this history'
-            for (sha, page), line in zip(cited.items(), answer, strict=False)
-            if line.endswith(' missing') or ' commit ' not in line]
+    reachable = runner.output(['git', 'rev-list', '--all']).splitlines()
+    return [f'{page}: cites {sha}, which no ref reaches (rewritten by a rebase, or never committed)'
+            for sha, page in cited.items() if not any(commit.startswith(sha) for commit in reachable)]
 
 
 def changed_problems(rows: list[Row], runner: Runner, root: Path = ROOT) -> list[str]:

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from swhurl import ROOT, docs
 from swhurl.report import Report
-from swhurl.run import FakeRunner, Result, Runner
+from swhurl.run import FakeRunner, Runner
 
 HEAD = ('| Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |\n'
         '| --- | --- | --- | --- | --- | --- | --- | --- |\n')
@@ -23,17 +23,13 @@ def row(name='Alpha', kind='main', state='approved', gate='a decision', needs='o
     return f'| {name} | {kind} | {state} | a slice | {gate} | {needs} | {page} | {paths} |\n'
 
 
-def fake(status='', diff='', catfile=None, pages='docs/alpha-status.md\n'):
-    """A runner answering the four Git reads; ``catfile`` lists the commits that exist."""
-    def batch(argv, stdin):
-        known = catfile or set()
-        answer = ''.join(f'{sha} commit 40\n' if sha in known else f'{sha} missing\n'
-                         for sha in (stdin or '').splitlines() if sha)
-        return Result(argv, 0, answer)
+def fake(status='', diff='', commits=(), pages='docs/alpha-status.md\n'):
+    """A runner answering the four Git reads; ``commits`` are the hashes some ref reaches."""
+    reachable = ''.join(f'{commit}0000000000000000000000000000000000\n' for commit in commits)
     return (FakeRunner()
             .on('git', 'status', '--porcelain', stdout=status)
             .on('git', 'diff', '--name-only', stdout=diff)
-            .on('git', 'cat-file', '--batch-check', handler=batch)
+            .on('git', 'rev-list', stdout=reachable)
             .on('git', 'ls-files', stdout=pages))
 
 
@@ -145,11 +141,11 @@ class GitTests(Tree):
         report, output = self.check(page=page, runner=fake(status=' M v2/kernel/render.go\n'))
         self.assertEqual(report.failures, 0, output)
 
-    def test_a_cited_commit_must_exist(self):
+    def test_a_cited_commit_must_be_reachable_from_a_ref(self):
         page = PAGE + '\nCommitted in `abcdef1234`.\n'
-        report, output = self.check(page=page, runner=fake(catfile={'deadbeef'}))
-        self.assertIn('cites abcdef1234, which is not a commit', output)
-        report, output = self.check(page=page, runner=fake(catfile={'abcdef1234'}))
+        report, output = self.check(page=page, runner=fake(commits={'deadbeef'}))
+        self.assertIn('cites abcdef1234, which no ref reaches', output)
+        report, output = self.check(page=page, runner=fake(commits={'abcdef1234'}))
         self.assertEqual(report.failures, 0, output)
 
     def test_changing_a_workstream_without_its_page_fails(self):

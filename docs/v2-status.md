@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: the bridge slice that translates those records into compile's inputs, or the read-only backup observation
+Gate: the live diagnosis of the policy controller and the call's policy shape, or the bridge slice translating records into compile's inputs
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -277,8 +277,8 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Owners:** v1 owns its instances' records in `apps/`; v2 owns a migrated instance's, in its own tree, so v1 neither renders nor checks them; the snapshot is the one place both are read.
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged (no file under `apps/` changed for v1-owned instances). 2. Pure packages take no new effects. 3. No identity changed. 4. One allocator rule changed, stated above: no port without a need. 5. Failure paths tested: a v2-owned instance read from v2's tree, the app record still found in v1's, a missing record named, and no port for an instance that needs none. 6. Scope: recompiling a v2-owned instance still needs hand-written v2 records — the gap is narrowed, not closed. 7. Offline only. 8. This page, the plan and the gap list change together.
 - **Evidence:** `make check` (1018 tests), `make check-v2` (12 packages), `make check-lint`, the exporter's tests.
-- **What it made possible:** the snapshot now sees both v2-owned instances, so `resolve` reports the pair **`swhurl-try-11` → `swhurl-try-10`** among nine connected pairs (and `swhurl-try-12` → `swhurl-try-10`), and `compile --calls` renders `swhurl-try-10`'s **callee side**: `SWHURL_ALLOWED_CALLERS=swhurl-try-11,swhurl-try-12`, the platform's keys as its auth ConfigMap, and ingress from the two callers' own namespaces. That is the first pair between two v2-owned instances, rendered on both sides.
-- **Next gate:** the bridge slice that translates these records into `compile`'s inputs, or the read-only backup observation.
+- **What it made possible:** the snapshot now sees both v2-owned instances, so `resolve` reports the pair **`swhurl-try-11` → `swhurl-try-10`** among nine connected pairs, and `swhurl-try-10` is live with its **callee side** — `SWHURL_ALLOWED_CALLERS`, the platform's keys as its auth ConfigMap, and ingress from each caller's namespace and label. **The pair renders on both sides; it does not connect.** A probe carrying a caller's exact namespace and label is refused by the callee (`curl (7)`, no request in the callee's log), and the same probe for the v1 pair (`demo-shop` → `demo-orders`) is refused too — so no call has ever connected live, in v1 or v2, and the cause is the cluster's policy admission, not this render ([the finding](current-state.md#a-call-between-two-v2-owned-instances-renders-but-does-not-connect-26-october-2026)).
+- **Next gate:** the live diagnosis of the policy controller and the call's policy shape, or the bridge slice that translates a v2-owned instance's records into `compile`'s inputs.
 
 ## Resume
 

@@ -31,14 +31,77 @@ type Answers struct {
 type Fake struct {
 	Answers   Answers
 	Reads     []observe.Ref
+	Writes    []observe.Ref
+	ReadLogs  []observe.Ref
+	Log       string
 	Selectors []string // the selectors it was asked for
 	Refuse    error    // returned instead of an answer, after the call is recorded
 }
 
 var _ kube.Reader = (*Fake)(nil)
+var _ kube.Writer = (*Fake)(nil)
 
 // New returns a fake that answers from the scenario.
 func New(answers Answers) *Fake { return &Fake{Answers: answers} }
+
+// Patch, Create and Delete record the change and refuse it when the fake was told to, as the adapter's own
+// refusal is: a fake that silently succeeded would let a caller believe an effect happened.
+func (f *Fake) Patch(_ context.Context, ref observe.Ref, _ []byte) error {
+	f.Writes = append(f.Writes, ref)
+	return f.Refuse
+}
+
+func (f *Fake) Create(_ context.Context, ref observe.Ref, _ []byte) error {
+	f.Writes = append(f.Writes, ref)
+	return f.Refuse
+}
+
+func (f *Fake) Delete(_ context.Context, ref observe.Ref) error {
+	f.Writes = append(f.Writes, ref)
+	return f.Refuse
+}
+
+// Logs answers the scripted log tail.
+func (f *Fake) Logs(_ context.Context, ref observe.Ref, _ int64) (string, error) {
+	f.ReadLogs = append(f.ReadLogs, ref)
+	if f.Refuse != nil {
+		return "", f.Refuse
+	}
+	return f.Log, nil
+}
+
+// WriteContract is the behaviour every kube.Writer must have: the three changes reach the object they name,
+// and a pod's log comes back as it was answered. Refusals are each adapter's own, tested beside it.
+func WriteContract(t *testing.T, log string, open func(*testing.T, string) kube.Writer) {
+	t.Helper()
+	writer := open(t, log)
+	run, err := kube.RefOf("batch", "Job", "hello-staging", "restore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod, err := kube.RefOf("", "Pod", "hello-staging", "restore-pod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []struct {
+		name string
+		call func() error
+	}{
+		{"patch", func() error { return writer.Patch(context.Background(), run, []byte(`{"spec":{"suspend":true}}`)) }},
+		{"create", func() error {
+			return writer.Create(context.Background(), run, []byte(`{"apiVersion":"batch/v1","kind":"Job"}`))
+		}},
+		{"delete", func() error { return writer.Delete(context.Background(), run) }},
+	} {
+		if err := change.call(); err != nil {
+			t.Fatalf("%s: %v", change.name, err)
+		}
+	}
+	body, err := writer.Logs(context.Background(), pod, 20)
+	if err != nil || body != log {
+		t.Fatalf("logs %q, %v", body, err)
+	}
+}
 
 // Read answers from the scenario, and refuses anything the scenario does not name.
 func (f *Fake) Read(_ context.Context, ref observe.Ref) (observe.Read, error) {

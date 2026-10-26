@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
-Status: approved
-Gate: v2 performing a restore: the first write path and the age-key decision (a brief before implementation)
+Status: in progress
+Gate: the restore job and its sequence: which command a pod runs, how the write path is used, and the first live restore
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -14,7 +14,7 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 
 **Approved 25 October 2026: phase 5 observation, offline half only** — the pure evidence projection and the first real adapter, with no cluster read, no credential, no command and nothing published. The [slice record](#slice-record-phase-5-observation-offline-half) below states what it does and does not do. Everything else about that phase, including reference derivation, a credential source, the report envelope and any live read, is still not approved.
 
-**Approved 26 October 2026: restore, option 1 then option 2** — v2 first *plans and verifies* a restore while v1 performs it (implemented, below), then v2 performs it, which needs the first write path and a decision about age decryption. The second step is not implemented and its brief is the gate.
+**Approved 26 October 2026: restore, option 1 then option 2** — v2 first *plans and verifies* a restore while v1 performs it (implemented, below), then v2 performs it (**2a**: v2 orchestrates, a pod decrypts; the operator chose this over a vendored age dependency). 2a is in progress: its write primitives are in, its restore Job and sequence are not.
 
 **Approved 26 October 2026: the object-store read, route 1 with the operator's own credentials** — `observe --archive` lists the instance's own prefix with a hand-written SigV4 signer (no dependency), the region comes from the bucket itself (no profile field, so no identity moves), and the credential is the operator's environment for the live read only: no new Secret. The live read is taken and recorded.
 
@@ -68,6 +68,8 @@ The goal is a v2 that can own instances without breaking the running platform. T
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
 
 ## Decisions
+
+**26 October 2026 — option 2a: v2 orchestrates, a pod decrypts (approved).** v2 performs the restore itself: it suspends the release, scales the workload to zero, creates a restore Job from the platform's backup image (which already carries `age`, the AWS CLI and SQLite), hands that pod a **presigned read URL** for the one archive rather than a long-lived key, mounts the operator's age key from a **Secret that v2 creates and deletes**, waits, reads the Job's log, scales back and resumes. No dependency, so `stdlib-only` stands; the upload key stays upload-only. What reopens it: if the pod must decrypt with something the image lacks, or if a presigned URL is refused by the proxy.
 
 **26 October 2026 — restore, option 1: a plan, not a restore (approved before implementation).** `swhurl-v2 restore` writes a `v2-restore` plan from the bucket and the cluster, read-only: the chosen archive (the newest, or `--from KEY`), the record the backup job published beside it (checksum, table count, `source` as `<namespace>/<application>`), the instance's claim, mount, database path and uid, the observation it was decided from, and the v1 command that performs the restore. It refuses a stateless instance, and its state is `ready`, `stale`, `incomplete`, `no_archive` or `unavailable` — never "restored". v1 remains the executor until option 2, which needs the write path and the age decision this page's gate names. What reopens it: option 2.
 
@@ -370,6 +372,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check` (1019 tests), `make check-lint`, `make -s check-docs`. Coverage: `observe` 92.8%, `adapters/s3` 88.4%, CLI 87.0%. **Live, read-only, 22:33Z:** `ready` from `sqlite-20261026T082103Z.db.age` (14h old, sha256 `85c53132…`, 2 tables, `source` this instance).
 - **What it deliberately does not do:** restore, decrypt, stop the app, or judge which point in time the operator wants.
 - **Next gate:** option 2 — v2 performing the restore, which needs the first write path and a decision about age decryption.
+
+## Slice record: the restore's write primitives (option 2a, part one)
+
+- **Outcome:** v2 has its **first write path** to a cluster, and it is deliberately small: `adapters/kube.Writer` — a JSON merge patch, a create, a delete, and a pod's log tail — with a kind table of its own. `Secret` is writable there and still unreadable through `Reader`: creating the restore's age-key Secret does not make Secrets readable, and a test proves the reader still refuses one.
+- **Owners and boundaries:** the adapter owns the request shapes, the paths from the stated tables (`RefOf`, and `WritableRefOf` for a create), the token, the bounded bodies, and a fixed `failed: write: <reason>` for a refused change. It decides nothing about what to change. `Connection.Writer()` builds it from the same material as the reader.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages untouched. 3. **No identity changed**, no golden regenerated; the API baseline grows. 4. New refusals stated and tested (`failed: write: forbidden|status|not_found`, a kind the write table does not state, a name a non-create write needs); a delete of an object already gone is **done**, not an error. 5. Failure paths tested: each status, the absent-object delete, the log tail and its bound, the paths and content types of all three changes, and that a Secret is writable but not readable. 6. Scope: **this is infrastructure, not a capability** — nothing calls it yet, so no instance can be restored by v2. 7. Offline only: every test is a fake server; no cluster was touched. 8. This page, the plan and the registry change together.
+- **Evidence:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Coverage: `adapters/kube` 96.1%.
+- **What remains for 2a:** the **restore Job** and the **sequence** (suspend, scale, wait, secret, job, logs, scale back, resume, delete), the **presigned read** the pod uses instead of a key, the operator's age key as a Secret, and the first live restore — on `try-10`, restoring its newest archive over itself. The decision still open: **where the restore's steps live** — a `restore-job-sqlite` command added to the backup image in this repository (v1 tooling, an image rebuild), or a script rendered inside the Job (no image change, a contract to test).
 
 ## Resume
 

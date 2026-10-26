@@ -14,27 +14,40 @@ adapters/files: type Disk struct {}
 adapters/files: type Error struct {Code string Path string Reason string}
 adapters/files: type Outcome struct {Path string `json:"path"` State string `json:"state"`}
 adapters/files: type Writer interface {Write(dir string, files []kernel.File) ([]Outcome, error)}
+adapters/kube/kubetest: func (*Fake) Create(_ context.Context, ref observe.Ref, _ []byte) error
+adapters/kube/kubetest: func (*Fake) Delete(_ context.Context, ref observe.Ref) error
 adapters/kube/kubetest: func (*Fake) List(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
+adapters/kube/kubetest: func (*Fake) Logs(_ context.Context, ref observe.Ref, _ int64) (string, error)
+adapters/kube/kubetest: func (*Fake) Patch(_ context.Context, ref observe.Ref, _ []byte) error
 adapters/kube/kubetest: func (*Fake) Read(_ context.Context, ref observe.Ref) (observe.Read, error)
 adapters/kube/kubetest: func Contract(t *testing.T, answers Answers, open func(*testing.T, Answers) kube.Reader)
 adapters/kube/kubetest: func New(answers Answers) *Fake
+adapters/kube/kubetest: func WriteContract(t *testing.T, log string, open func(*testing.T, string) kube.Writer)
 adapters/kube/kubetest: type Answers struct {Object observe.Ref Document []byte Missing observe.Ref Failed observe.Ref Malformed observe.Ref Mismatched observe.Ref Pods observe.Ref Selector string Items [][]byte}
-adapters/kube/kubetest: type Fake struct {Answers Answers Reads []observe.Ref Selectors []string Refuse error}
+adapters/kube/kubetest: type Fake struct {Answers Answers Reads []observe.Ref Writes []observe.Ref ReadLogs []observe.Ref Log string Selectors []string Refuse error}
 adapters/kube: const BadCredentials = "credentials"
+adapters/kube: const Failed = "failed"
 adapters/kube: const RefusedRequest = "refused_request"
+adapters/kube: func (*API) Create(ctx context.Context, ref observe.Ref, document []byte) error
+adapters/kube: func (*API) Delete(ctx context.Context, ref observe.Ref) error
 adapters/kube: func (*API) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
+adapters/kube: func (*API) Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)
+adapters/kube: func (*API) Patch(ctx context.Context, ref observe.Ref, patch []byte) error
 adapters/kube: func (*API) Read(ctx context.Context, ref observe.Ref) (observe.Read, error)
 adapters/kube: func (*Error) Error() string
 adapters/kube: func (Connection) Reader() (Reader, error)
+adapters/kube: func (Connection) Writer() (Writer, error)
 adapters/kube: func Client(credentials Credentials) (*http.Client, error)
 adapters/kube: func Connect(data []byte) (Connection, error)
 adapters/kube: func New(endpoint string, client *http.Client, token string) (Reader, error)
 adapters/kube: func RefOf(group, kind, namespace, name string) (observe.Ref, error)
+adapters/kube: func WritableRefOf(group, kind, namespace, name string) (observe.Ref, error)
 adapters/kube: type API struct {}
 adapters/kube: type Connection struct {Endpoint string Credentials Credentials Token string Context string}
 adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
 adapters/kube: type Error struct {Code, Subject, Reason string}
 adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)}
+adapters/kube: type Writer interface {// Patch applies a JSON merge patch to one object: the shape the platform uses to suspend a release or // set a replica count. Patch(ctx context.Context, ref observe.Ref, patch []byte) error // Create creates one object from its document. Create(ctx context.Context, ref observe.Ref, document []byte) error // Delete removes one object. An object that is already gone is not an error. Delete(ctx context.Context, ref observe.Ref) error // Logs reads the last lines of one pod's log: the evidence a restore job leaves about what it did. Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)}
 adapters/s3/s3test: func (*Fake) Get(_ context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
 adapters/s3/s3test: func (*Fake) List(_ context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
 adapters/s3/s3test: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) s3.Reader)

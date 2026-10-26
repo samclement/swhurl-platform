@@ -17,6 +17,8 @@ type Scenario struct {
 	Objects   []observe.Archive
 	Forbidden observe.ArchiveQuery
 	Empty     observe.ArchiveQuery
+	// Key is one object under Query, with its bytes; Missing is a key the bucket does not hold.
+	Key, Body, Missing string
 }
 
 // Fake answers a scripted listing and records what it was asked. It copies the objects it returns, as the
@@ -24,6 +26,7 @@ type Scenario struct {
 type Fake struct {
 	Scenario Scenario
 	Lists    []observe.ArchiveQuery
+	Gets     []string
 	Refuse   error // returned instead of a listing, after the call is recorded
 }
 
@@ -31,6 +34,21 @@ var _ s3.Reader = (*Fake)(nil)
 
 // New returns a fake that answers from the scenario.
 func New(scenario Scenario) *Fake { return &Fake{Scenario: scenario} }
+
+// Get answers the scenario's object, its absence, and refuses a key it does not name.
+func (f *Fake) Get(_ context.Context, query observe.ArchiveQuery, key string) ([]byte, error) {
+	f.Gets = append(f.Gets, key)
+	if f.Refuse != nil {
+		return nil, f.Refuse
+	}
+	switch {
+	case query == f.Scenario.Query && key == f.Scenario.Key:
+		return []byte(f.Scenario.Body), nil
+	case query == f.Scenario.Query && key == f.Scenario.Missing:
+		return nil, &s3.Error{Code: "not_found", Subject: "object", Reason: observe.ReasonNotFound}
+	}
+	return nil, &s3.Error{Code: s3.RefusedRequest, Subject: "key", Reason: "not_under_the_prefix"}
+}
 
 // List answers from the scenario, and refuses what the scenario does not name.
 func (f *Fake) List(_ context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error) {
@@ -61,6 +79,31 @@ func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) s
 	listsObjects(t, reader, scenario)
 	refusedIsUnavailable(t, reader, scenario)
 	refusesWhatItCannotAsk(t, reader, scenario)
+	readsOneObject(t, reader, scenario)
+}
+
+// readsOneObject: one object comes back with its bytes, its absence is the not_found code rather than an
+// empty body, and a key outside the prefix is refused.
+func readsOneObject(t *testing.T, reader s3.Reader, scenario Scenario) {
+	t.Helper()
+	if scenario.Key == "" {
+		return
+	}
+	body, err := reader.Get(context.Background(), scenario.Query, scenario.Key)
+	if err != nil {
+		t.Fatalf("reading a present object: %v", err)
+	}
+	if string(body) != scenario.Body {
+		t.Fatalf("object body %q", body)
+	}
+	if _, err := reader.Get(context.Background(), scenario.Query, scenario.Missing); err == nil {
+		t.Fatal("a missing object was answered")
+	} else if refusal, ok := err.(*s3.Error); !ok || refusal.Code != "not_found" {
+		t.Fatalf("missing object: %v", err)
+	}
+	if _, err := reader.Get(context.Background(), scenario.Query, "elsewhere/key"); err == nil {
+		t.Fatal("a key outside the prefix was read")
+	}
 }
 
 // listsObjects: a listing is present with its objects, copies and all.

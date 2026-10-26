@@ -8,9 +8,10 @@ import (
 
 // The object store's own answer, in the same words the job's answer uses.
 const (
-	ReasonNoArchive  = "no_archive"
-	ReasonArchiveOld = "last_archive_too_old"
-	ReasonConfined   = "not_confined_to_the_instance"
+	ReasonNoArchive      = "no_archive"
+	ReasonArchiveMissing = "chosen_archive_absent"
+	ReasonArchiveOld     = "last_archive_too_old"
+	ReasonConfined       = "not_confined_to_the_instance"
 )
 
 // archiveSuffix is what a complete SQLite archive is called: the job publishes `sqlite-<UTC>.db.age`.
@@ -71,12 +72,37 @@ func archiveOf(target Target, evidence Evidence, now time.Time) (ArchiveReport, 
 		report.State, report.Reason = BackupNotAssessed, NotRead
 		return report, nil
 	}
-	newest, found, err := newestArchive(listed.Objects, listed.Query.Prefix)
+	return judgeArchive(report, listed.Objects, "", now)
+}
+
+// SelectArchive is one archive out of a listing: the newest, or the one the operator names. A named archive
+// the bucket does not hold is `no_archive`, not the newest by default: a restore is a point-in-time choice.
+func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error) {
+	report := ArchiveReport{Bucket: listed.Query.Bucket, Prefix: prefix, MaxAge: maxAge}
+	switch listed.Status {
+	case Present:
+	case Unavailable:
+		report.State, report.Reason = BackupUnavailable, reasonOf(listed.Reason)
+		return report, nil
+	default:
+		report.State, report.Reason = BackupNotAssessed, NotRead
+		return report, nil
+	}
+	return judgeArchive(report, listed.Objects, key, now)
+}
+
+// judgeArchive states which archive was chosen, how old it is, and whether that is recent enough. A named key
+// that is not in the listing is no archive at all.
+func judgeArchive(report ArchiveReport, objects []Archive, key string, now time.Time) (ArchiveReport, error) {
+	newest, found, err := newestArchive(objects, report.Prefix, key)
 	if err != nil {
 		return ArchiveReport{}, err
 	}
 	if !found {
 		report.State, report.Reason = BackupStale, ReasonNoArchive
+		if key != "" {
+			report.Reason = ReasonArchiveMissing
+		}
 		return report, nil
 	}
 	report.Newest = newest.Key
@@ -105,10 +131,13 @@ func validateArchiveQuery(query ArchiveQuery, namespace string) error {
 // newestArchive is the newest complete archive among the listed objects. A key under another prefix, or an
 // object whose time was not read, is a refusal: this layer judges the objects it was given, and both would
 // make that judgement wrong.
-func newestArchive(objects []Archive, prefix string) (Archive, bool, error) {
+func newestArchive(objects []Archive, prefix, key string) (Archive, bool, error) {
 	newest, found := Archive{}, false
 	for _, object := range objects {
 		if !strings.HasPrefix(object.Key, prefix) || !strings.HasSuffix(object.Key, archiveSuffix) {
+			continue
+		}
+		if key != "" && object.Key != key {
 			continue
 		}
 		if object.LastModified.IsZero() {

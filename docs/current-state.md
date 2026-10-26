@@ -2,6 +2,19 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The first restore plan for a v2-owned instance: `swhurl-try-10` staging (26 October 2026)
+
+v2 planned, and verified, the restore of the migrated stateful instance — **read-only**, at `22:33:28Z`, against the API server and the bucket, at `origin/main` `12f21f6b`:
+
+- **`plan.state: ready`** — the newest archive `app-sqlite/swhurl-try-10-staging/sqlite-20261026T082103Z.db.age`, written `08:21:10Z`, fourteen hours old against the 26h threshold, and the record the backup job published beside it: **sha256 `85c53132…`, 2 tables, `source: swhurl-try-10-staging/swhurl-try-10`**.
+- **The instance's own facts**: claim `swhurl-try-10`, mount `/data`, database `/data/app.db`, uid `65532` — the same four the application runs with.
+- **The observation it was decided from**: `verdict running`, `backup current`, `archive current`.
+- **The command it hands over**: `make restore-sqlite APP=swhurl-try-10 ENV=staging CONFIRM=swhurl-try-10/staging` with `AGE_KEY_FILE=./age.agekey`.
+
+**What the live read caught.** The first plan said `incomplete/metadata_names_another_instance`: the backup job records the instance as `<namespace>/<application>`, and v2 compared the whole string with the namespace alone. The check now compares it with `<namespace>/<application>`, and the same archive is `ready`. This is why the plan reads the metadata rather than naming the archive and trusting it.
+
+**Not exercised:** the restore itself. `make restore-sqlite` has not been run against a v2-owned instance; the plan's `ready` says the archive verifies, not that the data is wanted or that a restore succeeds. The next step is a throwaway database instance (write a row, force a backup, write another, restore, compare) before `try-10` is touched.
+
 ## The first backup observation of a v2-owned instance: `swhurl-try-10` staging (26 October 2026)
 
 v2 observed the migrated stateful instance's protection itself, **read-only**, at `21:07:48Z` against the API server its kubeconfig names (context `default`), at `origin/main` `78e09494`:

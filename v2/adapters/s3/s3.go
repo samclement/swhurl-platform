@@ -28,10 +28,12 @@ func (e *Error) Error() string { return fmt.Sprintf("%s: %s: %s", e.Code, e.Subj
 
 func refuse(subject, reason string) error { return &Error{RefusedRequest, subject, reason} }
 
-// Reader lists one bucket prefix. A listing the server answers with — including a refusal — is evidence; a
-// request it cannot make is an error.
+// Reader lists one bucket prefix and reads one object under it. A listing the server answers with —
+// including a refusal — is evidence; a request it cannot make is an error. Get reports absence as the
+// "not_found" code, so a caller can tell an incomplete upload from a bucket it could not reach.
 type Reader interface {
 	List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
+	Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
 }
 
 const (
@@ -214,6 +216,75 @@ func (c Client) request(ctx context.Context, query observe.ArchiveQuery, token s
 	}
 	sign(request, c.region, c.credentials, time.Now())
 	return request, nil
+}
+
+// Get reads one object under the prefix, bounded like a listing page. A 404 is the "not_found" code; every
+// other failure is the reason the report would carry.
+func (c Client) Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error) {
+	if query.Bucket == "" || key == "" {
+		return nil, refuse("key", "required")
+	}
+	if !strings.HasPrefix(key, query.Prefix) {
+		return nil, refuse("key", "not_under_the_prefix")
+	}
+	request, err := c.objectRequest(ctx, query.Bucket, key)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return nil, &Error{"status", "object", reasonOf(err)}
+	}
+	defer response.Body.Close()
+	if failure := objectFailure(response.StatusCode); failure != nil {
+		return nil, failure
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxBody+1))
+	if err != nil || len(body) > maxBody {
+		return nil, &Error{"status", "object", observe.ReasonTooLarge}
+	}
+	return body, nil
+}
+
+// objectRequest is one signed GET for an object under a bucket, discovering the region when it is not known.
+func (c Client) objectRequest(ctx context.Context, bucket, key string) (*http.Request, error) {
+	if c.region == "" {
+		region, err := DiscoverRegion(ctx, bucket, c.http)
+		if err != nil {
+			return nil, err
+		}
+		c.region = region
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://"+bucket+".s3."+c.region+".amazonaws.com/"+awsEscapePath(key), nil)
+	if err != nil {
+		return nil, refuse("key", "invalid")
+	}
+	sign(request, c.region, c.credentials, time.Now())
+	return request, nil
+}
+
+// objectFailure is the code and reason one object read's status means: a 404 is the only absence, and every
+// other non-200 is a failed read.
+func objectFailure(status int) *Error {
+	switch status {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return &Error{"not_found", "object", observe.ReasonNotFound}
+	case http.StatusForbidden, http.StatusUnauthorized:
+		return &Error{"status", "object", observe.ReasonForbidden}
+	}
+	return &Error{"status", "object", observe.ReasonStatus}
+}
+
+// awsEscapePath encodes an object key's path segments the way the canonical request does.
+func awsEscapePath(key string) string {
+	segments := strings.Split(key, "/")
+	for i, segment := range segments {
+		segments[i] = awsEscape(segment)
+	}
+	return strings.Join(segments, "/")
 }
 
 func unavailable(query observe.ArchiveQuery, reason string) observe.ArchiveList {

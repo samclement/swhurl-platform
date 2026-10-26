@@ -1245,6 +1245,18 @@ The job's answer is that it ran; it is not that an archive is there. `observe --
 
 **Checks:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Offline fixtures plus one live read.
 
+#### The restore plan (implemented 26 October 2026)
+
+The observation says an archive exists; it does not say the archive is restorable, and v2 cannot yet replace a database. This slice closes the first half without taking the two architectural firsts the second half needs.
+
+**The definition.** `swhurl-v2 restore` is a *check and a command*. It lists the instance's prefix, chooses the newest archive or the one named with `--from`, reads the metadata the backup job published beside it (`sqlite-<STAMP>.json` — v1's own naming, checked in the live read), and states the instance's claim, mount, database path and uid from v2's records and the compiler's constants. The plan is `ready` only when the archive is within `--max-age`, its metadata names **this** instance (`source` is `<namespace>/<application>`) and records a checksum and a table count; otherwise `stale`, `incomplete`, `no_archive` or `unavailable`, each with a fixed reason. It hands over the v1 command and says what to verify afterwards. It restores nothing, stops nothing, and holds no credential beyond the read ones.
+
+**Why not let v2 perform it now.** A restore is the first operation that would need a *write* path to Kubernetes (suspend a HelmRelease, scale a Deployment, run a pod) and the first that would need to decrypt age — a dependency (`filippo.io/age`) inside a `stdlib-only` module, or the age private key handed to v2 or put in a cluster Secret. Both are decisions worth their own slice, and a restore is a poor place to debut them.
+
+**The live read found a real defect:** the metadata's `source` is `<namespace>/<application>`, not the namespace; the first live plan said `incomplete/metadata_names_another_instance`, and the fix made it `ready`. Without reading the metadata, v2 would have called an unverifiable archive ready.
+
+**Checks:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Offline fixtures plus one read-only live plan.
+
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 
 The inventory above makes the choice concrete. Of the 17 instances in this repository, **no instance is both private and a web app**: every web instance is `authenticated-web`, and every private instance is a `worker` or `job`, which v2 does not render at all. The lightest web instance is `swhurl-try-11` (no database, no events, two calls); `demo-orders` — the natural candidate — needs storage (SQLite), events, calls, routes and a backup job.
@@ -1280,7 +1292,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |
 | Telemetry: the OTLP endpoint and its variables | Not generated | Phase 7 |
 | SQLite storage: the volume, its path and the single writer | The [storage slice](#sqlite-storage-the-volume-implemented-and-proved-live-25-october-2026) renders a retained 1 GiB-class volume, `DATABASE_PATH`, `Recreate`, and a namespace Flux will not prune, and now a claim that already exists can be [adopted](#a-stateful-handover-an-allocation-outlives-the-records-and-a-volume-can-be-adopted-implemented-26-october-2026) instead; proved live including restart and removal survival | Done for the volume; growth is refused |
-| SQLite backup and restore | The [backup job is rendered](#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026): its Secret, CronJob, policy, unit dependency and substitution, tied field for field to v1's committed job. Restore is not generated | Restore: it stops the app, streams into a pod and moves data, so it needs its own approval, adapters and a live proof |
+| SQLite backup and restore | The backup job is rendered, its job and its newest archive are [observed live](#the-backup-observation-implemented-offline-26-october-2026), and a [restore is planned and verified](#the-restore-plan-implemented-26-october-2026) — the archive, its metadata, the instance's facts and the v1 command. **v2 does not perform a restore**: it has no write path and no age decryption | Option 2: v2 performs it, which needs a write adapter and a decision about age decryption |
 | Alerts | Not generated | Phase 7, per app |
 | Resources from the image's minimums; a per-instance CPU choice | CPU from the profile; one memory value for request and limit | When an app needs more |
 | Quota headroom for an instance's other pods | The backup pod is counted (`replicas + 1` for a rolling update, plus one for the backup, with the job's own requests); no other second workload exists | The next feature that adds pods to an instance's namespace |

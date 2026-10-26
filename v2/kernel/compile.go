@@ -104,9 +104,10 @@ const (
 	// backupUnit is the platform unit that holds the upload key and the MongoDB job; a database
 	// instance's unit waits for it.
 	backupUnit = "platform-backup"
-	// dataMount is where a database instance's volume is mounted, and databasePath the file inside it.
-	dataMount    = "/data"
-	databasePath = dataMount + "/app.db"
+	// DataMount is where a database instance's volume is mounted, and DatabasePath the file inside it. A
+	// restore writes to the same two places, so they are stated once, here.
+	DataMount    = "/data"
+	DatabasePath = DataMount + "/app.db"
 )
 
 // manifest is a Kubernetes object or kustomization as the compiler builds it: fresh maps only.

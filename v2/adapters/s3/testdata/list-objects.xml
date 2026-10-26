@@ -13,7 +13,7 @@
     <StorageClass>STANDARD</StorageClass>
   </Contents>
   <Contents>
-    <Key>app-sqlite/hello-staging/sqlite-20261026T082103Z.db.age.json</Key>
+    <Key>app-sqlite/hello-staging/sqlite-20261026T082103Z.json</Key>
     <LastModified>2026-10-26T08:21:22.000Z</LastModified>
     <ETag>&quot;a1b2c3d4&quot;</ETag>
     <Size>512</Size>

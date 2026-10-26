@@ -440,11 +440,11 @@ func TestSQLiteInstanceRendersItsVolume(t *testing.T) {
 		data["accessMode"] != "ReadWriteOnce" || data["size"] != "1024Mi" || data["retain"] != true {
 		t.Fatalf("the data volume: %v", data)
 	}
-	if mount := data["globalMounts"].([]any)[0].(map[string]any); mount["path"] != dataMount {
+	if mount := data["globalMounts"].([]any)[0].(map[string]any); mount["path"] != DataMount {
 		t.Fatalf("the data mount: %v", mount)
 	}
 	container := controller["containers"].(map[string]any)["main"].(map[string]any)
-	if container["env"].(map[string]any)["DATABASE_PATH"] != databasePath {
+	if container["env"].(map[string]any)["DATABASE_PATH"] != DatabasePath {
 		t.Fatalf("the database path: %v", container["env"])
 	}
 	namespace := documentOf(t, rendered, "namespace.json")["metadata"].(map[string]any)

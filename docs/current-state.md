@@ -2,6 +2,23 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The egress cutover: v2 renders the proxy, and grants are enforced (26 October 2026)
+
+The platform's egress proxy now runs **v2's** configuration (`platform/egress/{allocation,configmap,networkpolicy}.json`, commit `a41f9027`) instead of v1's generated `proxy.yaml`. Grants are enforced: an instance reaches the hosts and ports its own grants name, and nothing else.
+
+**The precondition, from the proxy's own logs (read before the switch):** the retained week held exactly one kind of request and no other — the six SQLite backup jobs, two runs each, every one to `swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443`, and every one `granted=-`. The six instances were granted that host first (commit `c37c61cf`), which v1 logged `granted=yes` under its still-permissive configuration.
+
+**Verified live after the push and `make flux-reconcile`:**
+
+- `platform-egress` reconciled `[OK]` and the `egress` Deployment rolled out (2/2) with the chart's checksum annotation changed, so the new configuration is what runs.
+- The served ConfigMap (`egress/egress`) carries the enforced configuration: one `http_port` per instance, six `http_access allow <instance> <instance>-443 port-443` lines, then `http_access deny all`.
+- The live NetworkPolicy is `policyTypes: [Ingress]` with 16 rules, selecting `app.kubernetes.io/name: egress` (the profile's labels), one namespace-and-port pair per instance — the same 16 pairs v1 served.
+- **The allowed path, with real data:** `make backup-sqlite` ran all six jobs; each published its archive and metadata to S3 (`sqlite-2026102…db.age`, integrity ok), and the proxy logged `instance=<ns> granted=yes method=CONNECT host=…s3.eu-west-2.amazonaws.com:443 status=200/TCP_TUNNEL`.
+- **The refused path:** a throwaway probe pod in `demo-orders-staging`, labelled as the platform's backup, asked the proxy (port 30102) for `example.com:443` — `403/TCP_DENIED`, logged `instance=demo-orders-staging granted=-`, so the caller is identified by its port and refused. The same pod's request to the granted bucket host completed a tunnel (`200/TCP_TUNNEL`). The probe pod was deleted; the ResourceQuota refused a run without resources, so the namespace's quota is enforced too.
+- `make verify-platform` passed, including the egress check (`2 replicas`, `16 instance(s) each have a port of their own`).
+
+**Not exercised:** a real app (not a backup job) reaching outside the cluster — none declares a grant yet, so any such request would be refused; `--egress` is now usable for a v2 instance; and the rollback path (revert plus reconcile) is stated but untried.
+
 ## SQLite storage proved live (25 October 2026)
 
 `swhurl-try-v2-4` staging was compiled by v2 with `database: sqlite`, a 1 GiB volume and the `demo-orders` image — the same image that crash-looped without storage in the first live test, so a running pod is evidence that the volume answers at `DATABASE_PATH`.

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "application": "swhurl-try-11",
+  "source": {
+    "repository": "samclement/swhurl-try-11",
+    "commit": "d771828acf7bc301ed79df502f75c5866c65b774"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/swhurl-try-11",
+    "digest": "sha256:63a4e954464150c9574981bd54900b46872f9e98ba0fb0a535702662462ccc5d",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "web",
+    "port": 8080,
+    "healthPath": "/healthz",
+    "uid": 65532
+  }
+}

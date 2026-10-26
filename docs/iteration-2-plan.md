@@ -1224,7 +1224,7 @@ The last hand-written step before a migration was the record pair in `v2-records
 
 **What it refuses:** a CronJob or run document it cannot decode, a timestamp it cannot parse (in the CronJob's status, a pod's creation time, a run's, or the observation time), a threshold that is not positive, and backup evidence supplied for an instance whose target names no backup. `Target` validates the CronJob as a named role in the instance's namespace and the job's pods as a second collection of the same kind, so the instance's own pod list and the job's are two reads with two selectors.
 
-**Scope, stated in the report.** `notCovered` gains `backup_archive` and `backup_restore`: the object store is not read, so "the job succeeded" is not "the data is in S3", and nothing about restoring is claimed. The live half — one read-only observation of `swhurl-try-10` staging — is recorded in [current state](current-state.md) when the operator runs it.
+**Scope, stated in the report.** `notCovered` gains `backup_archive` and `backup_restore`: the object store is not read, so "the job succeeded" is not "the data is in S3", and nothing about restoring is claimed. The live half ran on 26 October: one read-only observation of `swhurl-try-10` staging returned `running` with backup `current` (the newest run complete, twelve hours inside the threshold), recorded in [current state](current-state.md#the-first-backup-observation-of-a-v2-owned-instance-swhurl-try-10-staging-26-october-2026).
 
 **Checks:** `make check-v2` (13 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Offline only: the fixtures are recorded API documents and the fake answers them; no cluster or credential was read for this slice.
 

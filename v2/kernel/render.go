@@ -158,7 +158,7 @@ func container(spec HTTPInstance, http HTTPWorkload, workload Workload, egressAd
 	memory := fmt.Sprintf("%dMi", spec.Configuration.MemoryMiB)
 	env := manifest{"SWHURL_APP": spec.Application, "SWHURL_ENV": spec.Environment}
 	if spec.Database == "sqlite" {
-		env["DATABASE_PATH"] = databasePath
+		env["DATABASE_PATH"] = DatabasePath
 	}
 	if spec.Egress != nil {
 		// Every client library must use the proxy, and the JVM keeps its own list.
@@ -505,7 +505,7 @@ func backupCronJob(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile
 			"limits": manifest{"memory": fmt.Sprintf("%dMi", backupLimitMiB)}},
 		"securityContext": manifest{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true,
 			"capabilities": manifest{"drop": []any{"ALL"}}},
-		"volumeMounts": []any{manifest{"name": "data", "mountPath": dataMount},
+		"volumeMounts": []any{manifest{"name": "data", "mountPath": DataMount},
 			manifest{"name": "scratch", "mountPath": "/scratch"}, manifest{"name": "tmp", "mountPath": "/tmp"}},
 	}
 	uid := http.UID
@@ -544,7 +544,7 @@ func backupEnv(spec HTTPInstance, profile PlatformProfile) []any {
 		manifest{"name": "AGE_RECIPIENT", "value": profile.Backup.Recipient},
 		manifest{"name": "BACKUP_S3_URI", "value": profile.Backup.S3URI + namespaceName(spec) + "/"},
 		manifest{"name": "BACKUP_SOURCE", "value": namespaceName(spec) + "/" + spec.Application},
-		manifest{"name": "DATABASE_PATH", "value": databasePath})
+		manifest{"name": "DATABASE_PATH", "value": DatabasePath})
 }
 
 // backupPolicy admits nothing to the job's pod and lets it reach only the name service and the instance's
@@ -655,7 +655,7 @@ func (spec HTTPInstance) validateVolume(profile PlatformProfile) error {
 // dataVolume is the instance's volume as the chart takes it: a claim it creates from the platform's class,
 // or the claim of a volume that already exists — a migrated instance's data, adopted rather than replaced.
 func dataVolume(storage Storage, storageClass string) manifest {
-	mounts := []any{manifest{"path": dataMount}}
+	mounts := []any{manifest{"path": DataMount}}
 	if storage.ClaimName != "" {
 		return manifest{"type": "persistentVolumeClaim", "existingClaim": storage.ClaimName, "globalMounts": mounts}
 	}

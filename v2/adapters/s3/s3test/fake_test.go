@@ -23,6 +23,9 @@ func scenario() s3test.Scenario {
 		Objects:   []observe.Archive{{Key: "app-sqlite/hello-staging/sqlite-1.db.age", LastModified: modified}},
 		Forbidden: observe.ArchiveQuery{Bucket: "backups", Prefix: "app-sqlite/refused/"},
 		Empty:     observe.ArchiveQuery{},
+		Key:       "app-sqlite/hello-staging/sqlite-1.json",
+		Body:      `{"tables":2}`,
+		Missing:   "app-sqlite/hello-staging/sqlite-missing.json",
 	}
 }
 

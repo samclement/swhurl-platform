@@ -36,6 +36,9 @@ const usage = `usage:
   swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json [--kubeconfig KUBECONFIG.json]
   swhurl-v2 migrate --snapshot SNAPSHOT.json --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
       --source-repository OWNER/NAME --source-commit COMMIT --out DIR [--calls CALLS.json] [--egress EGRESS.json]
+  swhurl-v2 restore --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
+      --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] \
+      [--max-age DURATION] [--from KEY] [--region REGION]
 
 Input files are never overwritten. Without --out the compilation document goes to stdout and nothing
 is written. With --out every compiled file is written under DIR, one "written PATH" or
@@ -85,6 +88,13 @@ checked against it, never expanded from it. The report on stdout says which file
 recorded fact came from, which of the predecessor's declarations the resolution does not connect, and
 every legacy fact the pair cannot carry. It deletes nothing: removing v1's records, manifests and unit is
 the handover step, and the unit's registration stays a reviewed edit.
+
+restore writes a v2-restore plan for one instance: the archive it would be restored from (the newest, or
+--from KEY), what the bucket records beside it (checksum, table count, source instance), the instance's own
+claim, path and user, the observation it was decided from, and the v1 command that performs the restore.
+It reads only, and restores nothing. Its state is ready, stale (older than --max-age), incomplete (no
+metadata, or metadata that does not verify), no_archive or unavailable.
+
 Exit 0: success/no-op (for observe: a report was produced, whatever its verdict); 2: usage/validation/
 refusal; 1: file or output I/O failure.
 `
@@ -165,6 +175,7 @@ var commands = map[string]func(cli, request) int{
 	"egress":            cli.egress,
 	"proxy":             cli.proxy,
 	"migrate":           cli.migrate,
+	"restore":           cli.restore,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -173,6 +184,7 @@ type request struct {
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
 	region                                             string
+	from                                               string
 	archive                                            bool
 	app, settings, committed, snapshot, callFile       string
 	env, sourceRepository, sourceCommit, maxAge        string
@@ -221,7 +233,7 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 // registerInputs adds the file flags the v1-style commands share.
 func (r *request) registerInputs(flags *flag.FlagSet) {
 	switch r.command {
-	case "select-release", "compile", "observe":
+	case "select-release", "compile", "observe", "restore":
 		flags.Var(&once{value: &r.instance}, "instance", "instance file")
 		flags.Var(&once{value: &r.release}, "release", "release file")
 	case "preview":
@@ -229,32 +241,45 @@ func (r *request) registerInputs(flags *flag.FlagSet) {
 	}
 }
 
-// registerExtras adds what each command alone takes: its remaining inputs, and for compile its destination.
+// registerExtras adds what each command alone takes: its remaining inputs, and where a command writes.
 func (r *request) registerExtras(flags *flag.FlagSet, command string) {
+	if r.registerRecordFlags(flags, command) {
+		return
+	}
+	r.registerBridgeFlags(flags, command)
+}
+
+// registerRecordFlags adds the flags of the commands that work from one instance's records, and reports
+// whether it handled the command.
+func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
 	case "select-release":
 		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
 	case "compile":
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		r.registerRecords(flags)
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
-		r.outFlag = &once{value: &r.out}
-		flags.Var(r.outFlag, "out", "destination directory")
+		r.registerOut(flags)
 	case "observe":
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
-		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
-		flags.Var(&once{value: &r.revision}, "revision", "source revision Flux should have applied")
-		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
-		flags.Var(&once{value: &r.source}, "source", "name of the evidence source (default: the kubeconfig's current context)")
-		flags.Var(&once{value: &r.maxAge}, "max-age", "the oldest acceptable successful backup (default 26h)")
-		flags.Var(&once{value: &r.region}, "region", "the bucket's region (default: discovered from the bucket)")
+		r.registerLive(flags)
 		flags.Var(&onceBool{value: &r.archive}, "archive", "also read the newest archive from the object store (needs AWS credentials)")
+	case "restore":
+		r.registerLive(flags)
+		flags.Var(&once{value: &r.from}, "from", "the archive to restore (default: the newest)")
 	case "preview":
 		flags.Var(&once{value: &r.app}, "app", "legacy app record")
 		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")
 		flags.Var(&once{value: &r.committed}, "committed", "the HelmRelease the predecessor committed")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+	default:
+		return false
+	}
+	return true
+}
+
+// registerBridgeFlags adds the flags of the commands that read a snapshot or render the platform's own files.
+func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
+	switch command {
 	case "shadow":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
@@ -267,8 +292,7 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 	case "proxy":
 		flags.Var(&once{value: &r.allocation}, "allocation", "egress allocation document")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-		r.outFlag = &once{value: &r.out}
-		flags.Var(r.outFlag, "out", "destination directory")
+		r.registerOut(flags)
 	case "migrate":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 		flags.Var(&once{value: &r.app}, "app", "application to migrate")
@@ -278,9 +302,32 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.sourceCommit}, "source-commit", "the full commit its image was built from")
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
-		r.outFlag = &once{value: &r.out}
-		flags.Var(r.outFlag, "out", "destination directory")
+		r.registerOut(flags)
 	}
+}
+
+// registerRecords adds the instance, its release and the profile.
+func (r *request) registerRecords(flags *flag.FlagSet) {
+	flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+}
+
+// registerOut adds the destination a command writes its files under.
+func (r *request) registerOut(flags *flag.FlagSet) {
+	r.outFlag = &once{value: &r.out}
+	flags.Var(r.outFlag, "out", "destination directory")
+}
+
+// registerLive adds the flags a live observation and a restore plan share: the documents, the source revision,
+// the cluster credential, and the archive's threshold and region.
+func (r *request) registerLive(flags *flag.FlagSet) {
+	flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+	flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
+	flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+	flags.Var(&once{value: &r.revision}, "revision", "source revision Flux should have applied")
+	flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+	flags.Var(&once{value: &r.source}, "source", "name of the evidence source (default: the kubeconfig's current context)")
+	flags.Var(&once{value: &r.maxAge}, "max-age", "the oldest acceptable backup (default 26h)")
+	flags.Var(&once{value: &r.region}, "region", "the bucket's region (default: discovered from the bucket)")
 }
 
 // take fills r from the arguments left after the flags; false is a usage error.
@@ -306,26 +353,25 @@ func (r *request) take(flags *flag.FlagSet) bool {
 // named is the flag values a command requires, or nil for a command that takes one file argument.
 func (r *request) named() []string {
 	switch r.command {
-	case "select-release":
-		return []string{r.instance, r.release, r.expected}
-	case "compile":
-		return []string{r.instance, r.release, r.profile}
-	case "observe":
-		return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig}
-	case "preview":
-		return []string{r.app, r.settings, r.release, r.committed, r.profile}
-	case "shadow":
-		return []string{r.snapshot, r.profile}
-	case "resolve":
-		return []string{r.snapshot}
-	case "egress":
+	case "release-id", "instance-revision":
+		return nil
+	case "resolve", "egress":
 		return []string{r.snapshot}
 	case "proxy":
 		return []string{r.allocation, r.profile}
+	case "shadow":
+		return []string{r.snapshot, r.profile}
 	case "migrate":
 		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}
+	case "preview":
+		return []string{r.app, r.settings, r.release, r.committed, r.profile}
+	case "select-release":
+		return []string{r.instance, r.release, r.expected}
+	case "observe", "restore":
+		// A live read needs the instance, its release, the profile, the revision to expect and a credential.
+		return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig}
 	}
-	return nil
+	return []string{r.instance, r.release, r.profile}
 }
 
 // onceBool is a boolean flag that may be given at most once, like every other flag.

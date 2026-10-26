@@ -116,7 +116,7 @@ func TestBackupRendersForADatabaseInstance(t *testing.T) {
 		"AGE_RECIPIENT": profile(t).Backup.Recipient,
 		"BACKUP_S3_URI": "s3://swhurl-platform-backups-110927251694/app-sqlite/demo-orders-staging/",
 		"BACKUP_SOURCE": "demo-orders-staging/demo-orders",
-		"DATABASE_PATH": databasePath,
+		"DATABASE_PATH": DatabasePath,
 	} {
 		if env[name] != want {
 			t.Fatalf("the job's %s is %v, want %v", name, env[name], want)
@@ -312,7 +312,7 @@ func TestStorageAdoptsAnExistingClaim(t *testing.T) {
 			t.Fatalf("an adopted claim states %s: %v", absent, data)
 		}
 	}
-	if mount := data["globalMounts"].([]any)[0].(map[string]any); mount["path"] != dataMount {
+	if mount := data["globalMounts"].([]any)[0].(map[string]any); mount["path"] != DataMount {
 		t.Fatalf("the adopted volume is mounted at %v", mount)
 	}
 	pod := fileOf(t, rendered, "backup-cronjob.json")["spec"].(map[string]any)["jobTemplate"].(map[string]any)["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)

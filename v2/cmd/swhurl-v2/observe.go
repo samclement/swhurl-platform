@@ -90,15 +90,10 @@ func (c cli) readArchive(r request, target observe.Target, evidence *observe.Evi
 		// An instance that renders no backup has no archive to read; the report says so.
 		return 0
 	}
-	profile, status := c.profile(r.profile)
+	query, status := c.archiveQuery(r, target)
 	if status != 0 {
 		return status
 	}
-	root, err := s3.ParseURL(profile.Backup.S3URI)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	query := observe.ArchiveQuery{Bucket: root.Bucket, Prefix: root.Prefix + target.Namespace + "/"}
 	reader, err := c.archives(query.Bucket, r.region)
 	if err != nil {
 		return fail(c.diagnostic, err)
@@ -111,6 +106,19 @@ func (c cli) readArchive(r request, target observe.Target, evidence *observe.Evi
 	}
 	evidence.Backup.Archive = &listed
 	return 0
+}
+
+// archiveQuery is the instance's own prefix: the profile's root and the instance's namespace.
+func (c cli) archiveQuery(r request, target observe.Target) (observe.ArchiveQuery, int) {
+	profile, status := c.profile(r.profile)
+	if status != 0 {
+		return observe.ArchiveQuery{}, status
+	}
+	root, err := s3.ParseURL(profile.Backup.S3URI)
+	if err != nil {
+		return observe.ArchiveQuery{}, fail(c.diagnostic, err)
+	}
+	return observe.ArchiveQuery{Bucket: root.Bucket, Prefix: root.Prefix + target.Namespace + "/"}, 0
 }
 
 // observationTarget compiles the instance with the same use case compile runs and derives what the

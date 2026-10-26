@@ -39,7 +39,7 @@ func listedObjects(t *testing.T) []observe.Archive {
 	}
 	return []observe.Archive{
 		{Key: "app-sqlite/hello-staging/sqlite-20261026T082103Z.db.age", LastModified: archive},
-		{Key: "app-sqlite/hello-staging/sqlite-20261026T082103Z.db.age.json", LastModified: metadata},
+		{Key: "app-sqlite/hello-staging/sqlite-20261026T082103Z.json", LastModified: metadata},
 	}
 }
 
@@ -53,7 +53,10 @@ func answers(t *testing.T) s3test.Scenario {
 		Objects: listedObjects(t),
 		Forbidden: observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694",
 			Prefix: "app-sqlite/refused/"},
-		Empty: observe.ArchiveQuery{},
+		Empty:   observe.ArchiveQuery{},
+		Key:     "app-sqlite/hello-staging/sqlite-20261026T082103Z.json",
+		Body:    `{"sha256":"` + strings.Repeat("a", 64) + `","tables":2,"source":"hello-staging"}`,
+		Missing: "app-sqlite/hello-staging/sqlite-missing.db.age.json",
 	}
 }
 
@@ -69,6 +72,17 @@ func (s *server) serve(t *testing.T) *httptest.Server {
 		s.requests = append(s.requests, r)
 		if s.answer != nil {
 			s.answer(t, w, r)
+			return
+		}
+		if r.URL.Query().Get("list-type") == "" { // one object, not a listing
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/sqlite-20261026T082103Z.json"):
+				write(t, w, []byte(`{"sha256":"`+strings.Repeat("a", 64)+`","tables":2,"source":"hello-staging"}`))
+			case strings.HasSuffix(r.URL.Path, "/sqlite-missing.db.age.json"):
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				w.WriteHeader(http.StatusBadRequest)
+			}
 			return
 		}
 		switch r.URL.Query().Get("prefix") {

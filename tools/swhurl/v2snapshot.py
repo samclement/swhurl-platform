@@ -22,6 +22,10 @@ USAGE = 'usage: v2-snapshot --revision REV --out FILE'
 INSTANCE_RECORD = 'instance.yaml'
 RECORDS = ('instance.yaml', 'release.yaml', 'helmrelease.yaml')
 UNIT_ROOT = 'clusters/home/'
+# An instance v2 owns keeps its records here, out of apps/ so v1 neither renders nor checks it, and its
+# compiled output is v2's own root: both are read at the same revision as everything else.
+OWNED_ROOT = 'v2-records'
+OWNED_OUTPUT = 'v2-apps/instances'
 
 
 class SnapshotError(Exception):
@@ -83,17 +87,21 @@ def resolve(runner: Runner, revision: str) -> str:
 
 def tracked(runner: Runner, revision: str) -> list[str]:
     """The paths this export reads, from that revision's tree, sorted so the export is reproducible."""
-    listed = runner.output(['git', 'ls-tree', '-r', '--name-only', revision, '--', 'apps', 'clusters/home'])
+    listed = runner.output(['git', 'ls-tree', '-r', '--name-only', revision, '--',
+                            'apps', 'clusters/home', OWNED_ROOT, 'v2-apps'])
     return sorted(line for line in listed.splitlines() if line)
 
 
 def snapshot(runner: Runner, revision: str, paths: list[str]) -> dict:
     documents = set(paths)
-    instances = [instance_path(path) for path in paths if path.count('/') == 3 and path.endswith('/' + INSTANCE_RECORD)]
+    instances = [instance_path(path) for path in paths
+                 if path.count('/') == 3 and path.endswith('/' + INSTANCE_RECORD)
+                 and (path.startswith('apps/') or path.startswith(OWNED_ROOT + '/'))]
     document = {'version': 1, 'revision': revision, 'instances': [], 'residual': []}
     for application, environment in sorted(instances):
-        base = f'apps/{application}/{environment}'
-        records, missing = read_records(runner, revision, documents, application, environment)
+        record_root, output_root = roots(paths, application, environment)
+        records, missing = read_records(runner, revision, documents, application, environment, record_root)
+        base = f'{output_root}/{application}/{environment}'
         objects = declared(runner, revision, documents, sorted(p for p in paths if p.startswith(base + '/')))
         objects += [object_of(records[role]) for role in ('helmrelease',) if object_of(records.get(role)) is not None]
         if unit := unit_object(runner, revision, documents, application, environment):
@@ -108,20 +116,34 @@ def snapshot(runner: Runner, revision: str, paths: list[str]) -> dict:
 
 
 def instance_path(path: str) -> tuple[str, str]:
-    """``apps/<app>/<env>/instance.yaml`` names one instance."""
+    """``apps/<app>/<env>/instance.yaml`` or ``v2-records/<app>/<env>/instance.yaml`` names one instance."""
     _, application, environment, _ = path.split('/')
     return application, environment
 
 
-def read_records(runner: Runner, revision: str, documents: set[str], application: str, environment: str) -> tuple[dict, list[str]]:
-    """The four records as JSON. A record the revision does not hold is named, not invented."""
-    wanted = {f'apps/{application}/app.yaml': 'app'}
+def roots(paths: list[str], application: str, environment: str) -> tuple[str, str]:
+    """Where one instance's records and committed manifests are: v1's trees, or v2's for an instance v2 owns."""
+    if f'{OWNED_ROOT}/{application}/{environment}/{INSTANCE_RECORD}' in paths:
+        return OWNED_ROOT, OWNED_OUTPUT
+    return 'apps', 'apps'
+
+
+def read_records(runner: Runner, revision: str, documents: set[str], application: str, environment: str,
+                 record_root: str = 'apps') -> tuple[dict, list[str]]:
+    """The four records as JSON. A record the revision does not hold is named, not invented.
+
+    An app record may be v2's or v1's wherever the app still has a v1 instance, so it is looked for in both
+    places; the instance's own records are read only from the root its instance record was found in."""
+    sought = {f'{record_root}/{application}/app.yaml': 'app', f'apps/{application}/app.yaml': 'app'}
     for name in RECORDS:
-        wanted[f'apps/{application}/{environment}/{name}'] = name.removesuffix('.yaml')
+        sought[f'{record_root}/{application}/{environment}/{name}'] = name.removesuffix('.yaml')
     records, missing = {}, []
-    for path, role in wanted.items():
+    for path, role in sought.items():
+        if role in records:
+            continue
         if path not in documents:
-            missing.append(path)
+            if role != 'app':
+                missing.append(path)
             continue
         text = runner.output(['git', 'show', f'{revision}:{path}'])
         try:
@@ -139,7 +161,9 @@ def declared(runner: Runner, revision: str, documents: set[str], paths: list[str
     """
     objects = []
     for path in paths:
-        if not path.endswith('.yaml') or path.endswith('.sops.yaml') or path.rsplit('/', 1)[-1] in RECORDS:
+        if path.rsplit('/', 1)[-1] in RECORDS or not path.endswith(('.yaml', '.json')):
+            continue
+        if path.endswith('.sops.yaml'):
             continue
         if path not in documents:
             continue
@@ -157,13 +181,15 @@ def declared(runner: Runner, revision: str, documents: set[str], paths: list[str
 
 def unit_object(runner: Runner, revision: str, documents: set[str], application: str, environment: str) -> dict | None:
     """The instance's own Flux unit: the object that applies everything else it declares."""
-    path = f'clusters/home/app-{application}-{environment}.yaml'
-    if path not in documents:
-        return None
-    try:
-        return object_of(yamlio.load(runner.output(['git', 'show', f'{revision}:{path}'])))
-    except yaml.YAMLError:
-        raise SnapshotError(f'a unit is not YAML: {path}') from None
+    for suffix in ('.yaml', '.json'):
+        path = f'clusters/home/app-{application}-{environment}{suffix}'
+        if path not in documents:
+            continue
+        try:
+            return object_of(yamlio.load(runner.output(['git', 'show', f'{revision}:{path}'])))
+        except yaml.YAMLError:
+            raise SnapshotError(f'a unit is not YAML: {path}') from None
+    return None
 
 
 def object_of(manifest: object) -> dict | None:
@@ -183,9 +209,9 @@ def residual(runner: Runner, revision: str, documents: set[str], paths: list[str
     """Units that apply output no instance record explains: their objects are ownership evidence too."""
     found = []
     for path in paths:
-        if not (path.startswith(UNIT_ROOT) and path.endswith('.yaml')):
+        if not (path.startswith(UNIT_ROOT) and path.endswith(('.yaml', '.json'))):
             continue
-        unit = path.removeprefix(UNIT_ROOT).removesuffix('.yaml')
+        unit = path.removeprefix(UNIT_ROOT).rsplit('.', 1)[0]
         if not unit.startswith('app-') or unit in known or path not in documents:
             continue
         text = runner.output(['git', 'show', f'{revision}:{path}'])

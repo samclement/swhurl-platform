@@ -120,3 +120,45 @@ class SnapshotExportTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OwnedInstanceTests(unittest.TestCase):
+    """An instance v2 owns keeps its records in v2's tree, and the export reads them like any other."""
+
+    PATHS = [
+        'v2-records/owned/staging/instance.yaml',
+        'v2-records/owned/staging/release.yaml',
+        'v2-apps/instances/owned/staging/namespace.json',
+        'v2-apps/instances/owned/staging/kustomization.yaml',
+        'apps/owned/app.yaml',
+        'clusters/home/app-owned-staging.json',
+    ]
+    FILES = {
+        'v2-records/owned/staging/instance.yaml': 'version: 1\nexposure: authenticated-web\nallows: [caller]\n',
+        'v2-records/owned/staging/release.yaml': 'version: 1\nkind: web\nport: 8080\nuid: 65532\nhealthPath: /healthz\ndatabase: sqlite\n',
+        'apps/owned/app.yaml': 'version: 1\nteam: demo\n',
+        'v2-apps/instances/owned/staging/namespace.json': '{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "owned-staging"}}',
+        'v2-apps/instances/owned/staging/kustomization.yaml': 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources: []\n',
+        'clusters/home/app-owned-staging.json': '{"apiVersion": "kustomize.toolkit.fluxcd.io/v1", "kind": "Kustomization", "metadata": {"name": "app-owned-staging", "namespace": "flux-system"}}',
+    }
+
+    def runner(self) -> FakeRunner:
+        runner = FakeRunner().on('git', 'rev-parse', stdout=REVISION + '\n').on('git', 'ls-tree', stdout='\n'.join(self.PATHS) + '\n')
+        for path, text in self.FILES.items():
+            runner.on('git', 'show', f'{REVISION}:{path}', stdout=text)
+        return runner
+
+    def test_a_v2_owned_instance_is_read_from_v2s_tree(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            document = export(directory, self.runner())
+        self.assertEqual([(i['application'], i['environment']) for i in document['instances']], [('owned', 'staging')])
+        instance = document['instances'][0]
+        # The app record still lives where v1 keeps it, while the instance's own records are v2's.
+        self.assertEqual(sorted(instance['records']), ['app', 'instance', 'release'])
+        self.assertEqual(instance['records']['instance']['allows'], ['caller'])
+        self.assertEqual(instance['missing'], ['v2-records/owned/staging/helmrelease.yaml'])
+        # Its compiled output is the evidence of what it declares, and its .json unit is its own, not residual.
+        self.assertEqual([(entry['kind'], entry['name']) for entry in instance['objects']],
+                         [('Kustomization', 'app-owned-staging'), ('Namespace', 'owned-staging')])
+        self.assertEqual(document['residual'], [])

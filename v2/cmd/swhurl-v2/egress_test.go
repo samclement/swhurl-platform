@@ -143,3 +143,22 @@ func TestEgressKeepsAnInstanceTheSnapshotNoLongerHas(t *testing.T) {
 		}
 	}
 }
+
+// An instance that declares nothing to reach outside, and keeps no database, gets no port: the proxy serves
+// ports for the instances that need one, not for every instance that exists.
+func TestEgressSkipsAnInstanceThatNeedsNoWayOut(t *testing.T) {
+	document := twoInstances(t)
+	settings := document["instances"].([]any)[0].(map[string]any)["records"].(map[string]any)["instance"].(map[string]any)
+	delete(settings, "egress")
+	status, stdout, stderr := runEgress(t, writeSnapshot(t, document))
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	ports := portsOf(t, allocationOf(t, stdout))
+	if _, given := ports["staging/shop"]; given {
+		t.Fatalf("an instance that needs no way out was allocated one: %v", ports)
+	}
+	if ports["staging/orders"] != 30101 {
+		t.Fatalf("the instance that does need one: %v", ports)
+	}
+}

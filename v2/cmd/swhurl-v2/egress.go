@@ -87,15 +87,10 @@ func allocate(pinned snapshot, previous egressDocument) egressDocument {
 	}
 	next := int32(firstPort)
 	for _, instance := range pinned.Instances {
-		port, had := kept[instance.Environment+"/"+instance.Application]
-		if !had {
-			for used[next] {
-				next++
-			}
-			port, used[next] = next, true
+		allocated, given := allocateOne(instance, kept, used, &next)
+		if given {
+			document.Instances = append(document.Instances, allocated)
 		}
-		document.Instances = append(document.Instances, egressAllocated{Application: instance.Application,
-			Environment: instance.Environment, Port: port, Grants: declaredGrants(instance)})
 	}
 	for _, allocated := range previous.Instances {
 		if !present[allocated.Environment+"/"+allocated.Application] {
@@ -107,6 +102,36 @@ func allocate(pinned snapshot, previous egressDocument) egressDocument {
 		return a.Environment+" "+a.Application < b.Environment+" "+b.Application
 	})
 	return document
+}
+
+// allocateOne is one instance's allocation: the port it already had, the lowest free one, or none when
+// nothing about it leaves the cluster. next is the lowest port not yet tried, so the search stays linear.
+func allocateOne(instance snapshotInstance, kept map[string]int32, used map[int32]bool, next *int32) (egressAllocated, bool) {
+	grants := declaredGrants(instance)
+	port, had := kept[instance.Environment+"/"+instance.Application]
+	if !had && !needsEgress(instance) {
+		return egressAllocated{}, false
+	}
+	if !had {
+		for used[*next] {
+			*next++
+		}
+		port, used[*next] = *next, true
+	}
+	return egressAllocated{Application: instance.Application, Environment: instance.Environment,
+		Port: port, Grants: grants}, true
+}
+
+// needsEgress is whether an instance depends on the proxy at all: a grant it declares, or a database whose
+// backup uploads through the instance's own port. An instance with neither is given none.
+func needsEgress(instance snapshotInstance) bool {
+	if len(declaredGrants(instance)) > 0 {
+		return true
+	}
+	var release struct {
+		Database string
+	}
+	return json.Unmarshal(instance.Records["release"], &release) == nil && release.Database != ""
 }
 
 // declaredPort is the port an instance already holds in the proxy's configuration, or zero.

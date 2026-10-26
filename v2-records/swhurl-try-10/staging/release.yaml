@@ -1,0 +1,18 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/swhurl-try-10
+  tag: 54-e01ce48
+  digest: sha256:9c48c58a6f76447d129925a942bc64fc9a167a6f75bfc85afcbb4b3c7c79a674
+kind: web
+uid: 65532
+stack: typescript
+port: 8080
+healthPath: /healthz
+telemetry: true
+database: sqlite
+description: 'throwaway: team platform T2 callee (orders), delete me'
+apiPath: /openapi.json
+publishes:
+- visited
+offers: e01ce48

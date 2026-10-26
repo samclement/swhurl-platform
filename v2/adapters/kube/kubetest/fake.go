@@ -170,7 +170,7 @@ func unusableAnswersAreUnavailable(t *testing.T, reader kube.Reader, answers Ans
 // caller never mistakes "I did not read" for evidence about an object.
 func refusesWhatItCannotAsk(t *testing.T, reader kube.Reader, answers Answers) {
 	t.Helper()
-	unsupported := observe.Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: answers.Object.Namespace, Name: "nightly"}
+	unsupported := observe.Ref{APIVersion: "v1", Kind: "Secret", Namespace: answers.Object.Namespace, Name: "nightly"}
 	if _, err := reader.Read(context.Background(), unsupported); !refused(err, "unsupported_kind") {
 		t.Fatalf("an unsupported kind: %v", err)
 	}

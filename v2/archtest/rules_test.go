@@ -89,14 +89,18 @@ var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt
 var Pure = []string{"calls", "kernel", "legacy", "observe", "shadow"}
 
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
-// environment, files, network or processes. Adding one is a reviewed change to this list.
+// environment, files, network or processes. `time` is here for the timestamps a caller supplies — parsing,
+// formatting and comparing them — not for the clock, which pureBannedCalls still refuses. Adding one is a
+// reviewed change to this list.
 var PureImports = []string{
 	"bytes", "crypto/sha256", "encoding/hex", "encoding/json", "errors", "fmt", "maps", "math", "regexp",
-	"slices", "sort", "strconv", "strings", "unicode", "unicode/utf8",
+	"slices", "sort", "strconv", "strings", "time", "unicode", "unicode/utf8",
 }
 
-// Printing is an effect even with an allowed package.
-var pureBannedCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println"}
+// Printing is an effect even with an allowed package, and so is asking for the current time: a pure package
+// formats and compares the times it was given, never the clock.
+var pureBannedCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "time.Now", "time.Since", "time.Until",
+	"time.After", "time.Tick", "time.Sleep", "time.NewTimer", "time.NewTicker", "time.AfterFunc"}
 
 // Where each layer lives: adapters under adapters/, use cases under orchestration/, commands under cmd/.
 const adapterRoot, orchestrationRoot, commandRoot = "adapters/", "orchestration/", "cmd/"

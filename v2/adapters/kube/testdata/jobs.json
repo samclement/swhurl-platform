@@ -1,0 +1,23 @@
+{
+  "apiVersion": "v1",
+  "kind": "JobList",
+  "metadata": {"resourceVersion": "1"},
+  "items": [
+    {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "name": "hello-backup-29345678",
+        "namespace": "hello-staging",
+        "labels": {"platform.swhurl.com/backup": "true"},
+        "creationTimestamp": "2026-10-26T03:35:00Z"
+      },
+      "status": {
+        "startTime": "2026-10-26T03:35:01Z",
+        "completionTime": "2026-10-26T03:36:12Z",
+        "succeeded": 1,
+        "conditions": [{"type": "Complete", "status": "True", "reason": "CompletionsReached"}]
+      }
+    }
+  ]
+}

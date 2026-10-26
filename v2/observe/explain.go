@@ -31,6 +31,8 @@ type Target struct {
 	Digest    string // the intended artifact, compared by digest: the same content under another name is not a difference
 	Replicas  int32
 	Revision  string // the source revision Flux should have applied; empty when it was not supplied
+	// Backup is a database instance's nightly protection; nil when the instance renders none.
+	Backup *BackupTarget
 }
 
 // A read's status, and the outcomes a finding can have. The same word means the same thing wherever
@@ -111,6 +113,9 @@ type Evidence struct {
 	ObservedAt string
 	Objects    []Read
 	Pods       []List
+	// Backup is the protection's evidence; nil when the caller made no such read, which is reported as
+	// unassessed rather than assumed.
+	Backup *BackupEvidence
 }
 
 // Finding is one fact: whether it was established, what was found, and why not.
@@ -136,6 +141,8 @@ type Report struct {
 	ObservedAt string
 	Findings   []Finding // fixed order: unit, unit.revision, release, workload, image, ready, replicas
 	Verdict    Verdict
+	// Backup is the protection's own answer, which the verdict never uses.
+	Backup     BackupReport
 	Assessed   []string // findings this report established
 	Unassessed []string // findings it could not establish, and why is in the finding's reason
 	NotCovered []string // facts this slice never looks at, whatever the evidence says
@@ -162,8 +169,12 @@ func Explain(target Target, evidence Evidence) (Report, error) {
 		return Report{}, err
 	}
 	findings := findingsOf(target, facts)
+	backup, err := backupOf(target, evidence)
+	if err != nil {
+		return Report{}, err
+	}
 	report := Report{Target: target, Source: evidence.Source, ObservedAt: evidence.ObservedAt,
-		Findings: findings, NotCovered: notCovered(), Assessed: []string{}, Unassessed: []string{}}
+		Findings: findings, Backup: backup, NotCovered: notCovered(), Assessed: []string{}, Unassessed: []string{}}
 	report.Verdict = verdict(findings)
 	for _, finding := range findings {
 		if finding.Outcome == NotAssessed {
@@ -443,18 +454,24 @@ func (t Target) validate() error {
 	return t.validateFacts()
 }
 
-// validateRoles checks the four references against each other and against the instance's namespace.
+// role is one object the target reads, and whether it must sit in the instance's namespace.
+type role struct {
+	field       string
+	ref         Ref
+	inNamespace bool
+	named       bool
+}
+
+// validateRoles checks every reference against each other and against the instance's namespace.
 func validateRoles(t Target) error {
-	roles := []struct {
-		field       string
-		ref         Ref
-		inNamespace bool
-		named       bool
-	}{
+	roles := []role{
 		{"unit", t.Unit, false, true},
 		{"release", t.Release, true, true},
 		{"workload", t.Workload, true, true},
 		{"pods", t.Pods, true, false},
+	}
+	if t.Backup != nil {
+		roles = append(roles, role{"backup", t.Backup.CronJob, true, true})
 	}
 	for i, role := range roles {
 		for _, other := range roles[:i] {
@@ -489,6 +506,28 @@ func (t Target) validateFacts() error {
 	if t.Revision != "" && !revisionPattern().MatchString(t.Revision) {
 		return invalid("revision", "expected_a_commit")
 	}
+	if t.Backup == nil {
+		return nil
+	}
+	return validateBackup(*t.Backup, t.Namespace)
+}
+
+// validateBackup checks the protection's own facts: its pods are their own collection — the same kind and
+// namespace as the instance's pods with another selector — so they are validated and never mistaken for the
+// instance's own pod list.
+func validateBackup(backup BackupTarget, namespace string) error {
+	if err := validateRef("backup.pods", backup.Pods, false); err != nil {
+		return err
+	}
+	if backup.Pods.Namespace != namespace {
+		return invalid("backup.pods", "namespace_mismatch")
+	}
+	if !selectorPattern().MatchString(backup.Selector) {
+		return invalid("backup.selector", "expected_a_simple_label_selector")
+	}
+	if strings.TrimSpace(backup.Schedule) == "" {
+		return invalid("backup.schedule", "expected_a_schedule")
+	}
 	return nil
 }
 
@@ -519,7 +558,7 @@ func validateRef(field string, ref Ref, named bool) error {
 // notCovered lists the facts this slice never looks at, so "running" cannot be read as parity.
 func notCovered() []string {
 	return []string{"history", "git_publication", "source_build", "pods", "routes", "storage", "secrets",
-		"calls", "events", "team", "quota", "foreign_ownership"}
+		"calls", "events", "team", "quota", "backup_archive", "backup_restore", "foreign_ownership"}
 }
 
 // The grammars. The pure rule forbids package variables, so they compile per call; they are repeated

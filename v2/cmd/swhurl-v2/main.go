@@ -25,7 +25,8 @@ const usage = `usage:
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
-      --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME]
+      --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
+      [--max-age DURATION]
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
       --committed HELMRELEASE.json --profile PROFILE.json
   swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json [--kubeconfig KUBECONFIG.json]
@@ -39,7 +40,9 @@ is written. With --out every compiled file is written under DIR, one "written PA
 observe compiles the instance, reads its unit, HelmRelease, Deployment and pods from the API server the
 kubeconfig names (the JSON form that "kubectl config view --raw -o json" prints), and writes the
 observation report to stdout with a one-line summary on stderr. It reads only, and --revision is the
-source revision Flux should have applied.
+source revision Flux should have applied. A database instance's report also carries its protection: the
+backup CronJob and the runs its labels select, judged against --max-age (26h by default). It says whether
+the job runs and whether its last run finished; the archive in the object store is not read.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
@@ -137,7 +140,7 @@ type request struct {
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
 	app, settings, committed, snapshot, callFile       string
-	env, sourceRepository, sourceCommit                string
+	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
 	outFlag                                            *once
 }
@@ -209,6 +212,7 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.revision}, "revision", "source revision Flux should have applied")
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&once{value: &r.source}, "source", "name of the evidence source (default: the kubeconfig's current context)")
+		flags.Var(&once{value: &r.maxAge}, "max-age", "the oldest acceptable successful backup (default 26h)")
 	case "preview":
 		flags.Var(&once{value: &r.app}, "app", "legacy app record")
 		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")

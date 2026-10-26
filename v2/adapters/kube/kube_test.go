@@ -194,6 +194,8 @@ func fixtures(t *testing.T) map[string][]byte {
 		"deployments/hello-main":           document(t, "deployment.json"),
 		"kustomizations/app-hello-staging": document(t, "kustomization.json"),
 		"helmreleases/hello":               document(t, "helmrelease.json"),
+		"cronjobs/hello-backup":            document(t, "cronjob.json"),
+		"jobs/hello-backup-29345678":       itemsOf(t, document(t, "jobs.json"))[0],
 	}
 }
 
@@ -236,11 +238,22 @@ func TestPathsAreStatedPerKind(t *testing.T) {
 	if _, err := reader.List(context.Background(), scenario.Pods, scenario.Selector); err != nil {
 		t.Fatal(err)
 	}
+	cronJob := refOf(t, document(t, "cronjob.json"))
+	if _, err := reader.Read(context.Background(), cronJob); err != nil {
+		t.Fatal(err)
+	}
+	// A run is read by name, the name its pod's owner reference gives.
+	run := refOf(t, itemsOf(t, document(t, "jobs.json"))[0])
+	if _, err := reader.Read(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
 	want := []string{
 		"/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/app-hello-staging",
 		"/apis/helm.toolkit.fluxcd.io/v2/namespaces/hello-staging/helmreleases/hello",
 		"/apis/apps/v1/namespaces/hello-staging/deployments/hello-main",
 		"/api/v1/namespaces/hello-staging/pods",
+		"/apis/batch/v1/namespaces/hello-staging/cronjobs/hello-backup",
+		"/apis/batch/v1/namespaces/hello-staging/jobs/hello-backup-29345678",
 	}
 	if len(server.requests) != len(want) {
 		t.Fatalf("%d requests for %d refs", len(server.requests), len(want))
@@ -619,13 +632,15 @@ func TestRefOfStatesTheVersion(t *testing.T) {
 		{"networking.k8s.io", "NetworkPolicy", "networking.k8s.io/v1"},
 		{"helm.toolkit.fluxcd.io", "HelmRelease", "helm.toolkit.fluxcd.io/v2"},
 		{"kustomize.toolkit.fluxcd.io", "Kustomization", "kustomize.toolkit.fluxcd.io/v1"},
+		{"batch", "CronJob", "batch/v1"},
+		{"batch", "Job", "batch/v1"},
 	} {
 		ref, err := kube.RefOf(tt.group, tt.kind, "hello-staging", "hello")
 		if err != nil || ref.APIVersion != tt.apiVersion || ref.Kind != tt.kind {
 			t.Errorf("%s/%s: %+v %v", tt.group, tt.kind, ref, err)
 		}
 	}
-	if _, err := kube.RefOf("batch", "CronJob", "hello-staging", "nightly"); !refused(err, "unsupported_kind") {
+	if _, err := kube.RefOf("", "Secret", "hello-staging", "nightly"); !refused(err, "unsupported_kind") {
 		t.Errorf("a kind outside the table: %v", err)
 	}
 }

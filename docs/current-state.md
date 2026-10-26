@@ -2,6 +2,17 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The first backup observation of a v2-owned instance: `swhurl-try-10` staging (26 October 2026)
+
+v2 observed the migrated stateful instance's protection itself, **read-only**, at `21:07:48Z` against the API server its kubeconfig names (context `default`), at `origin/main` `78e09494`:
+
+- **Verdict `running`**, all seven facts positive: unit reconciled, `unit.revision applied` (the unit's applied revision is `78e09494`, the pushed commit), release settled, workload present, the compiled digest `sha256:9c48c58a…` running, ready, replicas as intended.
+- **Backup `current`**: schedule `58 3 * * *`, last scheduled `2026-10-26T03:58:00Z`, last successful `2026-10-26T08:21:21Z`, threshold 26h. The newest run is `swhurl-try-10-backup-manual-20261026t082054z` — created `08:20:55Z`, completed `08:21:21Z`, **complete** — the manual run taken during the stateful handover, not the `03:58` scheduled one.
+
+**What that proves.** The observation reaches a CronJob, the pods its runs create and the newest run's Job through the pod's owner reference, and judges the age against the threshold the caller states — for a v2-owned instance that `verify-platform` cannot see at all. It read five objects (the unit, HelmRelease, Deployment, CronJob and the run's Job) and two pod lists (the instance's and the backup job's), and wrote nothing.
+
+**What it does not prove.** That an archive exists in S3 or is younger than the threshold (`backup_archive` is in the report's `notCovered`), that a restore works, or that the **next scheduled** run succeeds: the newest run observed is the manual one, so the `27 October 03:58 UTC` run is the first scheduled run to re-observe. Nothing about the job's own configuration was changed by this slice.
+
 ## The first call between two v2-owned instances (26 October 2026)
 
 `swhurl-try-11` calls `swhurl-try-10` and it answers: the callee logs `status: 200, caller.type: app, caller.id: swhurl-try-11`. The pair renders on both sides — the caller's address and audience token, the callee's `SWHURL_ALLOWED_CALLERS=swhurl-try-11,swhurl-try-12`, its `swhurl-try-10-auth` key set and ingress on its port — and the call is proved with a probe pod in the caller's namespace carrying an audience `swhurl-try-10` projected token.

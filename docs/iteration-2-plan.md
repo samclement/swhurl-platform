@@ -293,6 +293,7 @@ An adapter owns one external dependency and speaks domain terms ("read workload 
 | ClickStack | Dashboards, alerts, webhooks, queries | Response fixtures, fake inventory | Service-specific update and authentication |
 | Notification delivery | Send to ntfy or elsewhere | Captured messages; rejection and timeout | Real transport |
 | Backups and storage | Object storage, snapshots, volumes, restore | Backup manifests, object listings, fault scenarios | Restorable data, incomplete uploads |
+| S3 (object store) | Listing one bucket prefix: its URI, SigV4, `ListObjectsV2` and its pages | Recorded `ListBucketResult`, AWS's published signing vector | Real credentials, real region discovery, many pages |
 | Identity | Authenticate a request, establish who is acting | Explicit test principals | Proxy header trust, sign-in integration |
 | Clock, randomness, environment | Time, sleep, identifiers, configuration | Explicit timestamps, deterministic generators, supplied config | Selected adapter checks |
 
@@ -1228,6 +1229,22 @@ The last hand-written step before a migration was the record pair in `v2-records
 
 **Checks:** `make check-v2` (13 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Offline only: the fixtures are recorded API documents and the fake answers them; no cluster or credential was read for this slice.
 
+#### The object-store read (implemented 26 October 2026)
+
+The job's answer is that it ran; it is not that an archive is there. `observe --archive` lists the instance's own prefix with the operator's own credentials and answers the bucket's question too.
+
+**The decision, before implementation:** route 1 (v2 lists the bucket) rather than scraping the job's log or making v1's check read `v2-records`; the operator's environment for the live read only, no new Secret; a hand-written SigV4 in `stdlib-only` rather than `aws-sdk-go-v2`; the region from the bucket's own `x-amz-bucket-region` header, so no profile field and no identity moves; and an opt-in flag, so an observation stays credential-free by default.
+
+**The shape.** `observe` owns the decision: a key is an archive when it ends `.db.age` under the instance's prefix, the newest is by S3's `LastModified`, and its age is compared with the same `--max-age`. `adapters/s3` owns S3's formats and answers in the evidence vocabulary: `ListObjectsV2`, pages, the status-to-reason mapping, and the signer. The report's `backup.archive` is beside `backup.state`, never folded into it, because a job can report success and leave no archive, and an archive can be current while the job that wrote it has since failed — that disagreement is what the check is for. The listing is confined to `<profile.backup.s3Uri><namespace>/`, and a prefix that is not the instance's own is refused.
+
+**The signer is proved without a bucket:** AWS's published example for a signed GET Object is a test, field for field — canonical request, string to sign, signing key and signature `f0e8bdb8…` — so a wrong canonicalisation fails offline. A session token is signed when present; the canonical query is sorted and encoded once.
+
+**Live (26 October, read-only):** `swhurl-try-10` staging reported `archive current` — `sqlite-20261026T082103Z.db.age`, `LastModified 08:21:10Z`, thirteen hours old against 26h, eleven seconds before the run that uploaded it completed. The job and the bucket agree; `notCovered` keeps only `backup_restore`.
+
+**What it deliberately does not do:** restore, read the bucket's root, judge a v1-owned instance's archives (v1's check still builds its list from `apps/`), or hold a credential of its own.
+
+**Checks:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Offline fixtures plus one live read.
+
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 
 The inventory above makes the choice concrete. Of the 17 instances in this repository, **no instance is both private and a web app**: every web instance is `authenticated-web`, and every private instance is a `worker` or `job`, which v2 does not render at all. The lightest web instance is `swhurl-try-11` (no database, no events, two calls); `demo-orders` — the natural candidate — needs storage (SQLite), events, calls, routes and a backup job.
@@ -1250,7 +1267,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | The proxy's configuration as the live one | `make app-sync` still writes `platform/egress/proxy.yaml`, which Flux applies; what v2 renders is compared with it offline and applied nowhere. No instance declares a grant, so an enforced proxy would refuse every outbound host | A live slice after v1's `granted=-` history has been granted or explained ([stage E3b](plan.md#stage-5-egress-grants)); needs the operator |
 | An instance that must not reach outside | Every instance in the snapshot is allocated a port, and nothing withholds one | The first kind that must not egress |
 | A v2-owned instance's records | Kept in `v2-records/`: v2's own `instance.json`/`release.json` and the committed resolution `calls.json`, so the instance [recompiles from Git alone](#a-v2-owned-instance-recompiles-from-git-alone-implemented-26-october-2026) and CI fails on a stale file. **The translation is now a use case** ([`migrate`](#the-migrate-use-case-implemented-26-october-2026)): v1's records out of a pinned snapshot, the supplied source, one write of the pair and the compiled files. The v1-shaped records remain because `resolve` reads them, and a migrated instance's relationships are reported, not translated | `resolve` reading the committed resolution as its starting point, so the v1-shaped set can go |
-| Freshness of a v2-owned instance's backups | **The job is now observed**: `observe` reads the CronJob, the pods its runs create and the newest run's Job, and answers `current`, `stale`, `failing`, `suspended`, `absent`, `unavailable` or `not_applicable` ([slice](#the-backup-observation-implemented-offline-26-october-2026)). `verify-platform` still builds its expected list from the app records in `apps/`, so a v2-owned instance's *archives* are invisible to it, and v2 reads no object store | The object-store read: whether the newest archive exists and is younger than the threshold — a credential decision of its own |
+| Freshness of a v2-owned instance's backups | **Both facts are observed**: the job (`observe` reads the CronJob, the pods its runs create and the newest run's Job) and the newest archive (`observe --archive` lists the instance's own prefix with the operator's credentials). `verify-platform` still builds its expected list from the app records in `apps/`, so a v1-side check cannot see a v2-owned instance; v2 can | Done; the archive's credential is the operator's environment, and a standing key for a console check is the next step if one is wanted |
 | The egress namespace's own egress | Not restricted: the rendered policy states `Ingress` only, as v1's does, and the proxy's way out is the platform's existing state | A platform-wide decision to default-deny the platform's own namespaces (v1's E3a covers instances only) |
 | DNS egress for an instance that may reach anything | Rendered: an instance with a call or an allocation admits the cluster's DNS (UDP and TCP 53) alongside its callee and the proxy | Done; it was the calls slice's defect |
 | Routes: `public` exposure, a per-instance host override, route-level observation (Ingress readiness, certificate state) | `authenticated-web` renders its Ingress, TLS annotation and middleware from the profile and is `private`'s only alternative; `public` is still refused (`unsupported`), no instance stores a host, and observation does not verify a route | The first instance that needs a public route or an unusual host |

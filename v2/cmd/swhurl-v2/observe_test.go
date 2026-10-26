@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/s3"
+	"github.com/samclement/swhurl-platform/v2/adapters/s3/s3test"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -436,6 +438,11 @@ func TestObserveReportsTheBackupOfADatabaseInstance(t *testing.T) {
 	if !strings.Contains(stderr, "backup current") {
 		t.Fatalf("summary %q", stderr)
 	}
+	// Without --archive the object store is not read, and the report says so rather than implying it was.
+	if archive := backup["archive"].(map[string]any); archive["state"] != observe.BackupNotAssessed ||
+		archive["reason"] != observe.NotRead {
+		t.Fatalf("archive %v", archive)
+	}
 	// The last success is two hours old, so an hour's threshold is not met — and the verdict is untouched.
 	status, stdout, stderr = runObserve(t, append(args, "--max-age", "1h")...)
 	if status != 0 {
@@ -452,5 +459,78 @@ func TestObserveReportsTheBackupOfADatabaseInstance(t *testing.T) {
 	// A threshold the command cannot parse is a usage error, not a report judged by nothing.
 	if status, stdout, _ := runObserve(t, append(args, "--max-age", "soon")...); status != 2 || stdout != "" {
 		t.Fatalf("an unreadable threshold: exit %d, stdout %q", status, stdout)
+	}
+}
+
+// runObserveArchive runs the command with a supplied object-store reader, so a listing needs no credential.
+func runObserveArchive(t *testing.T, archives func(bucket, region string) (s3.Reader, error), args ...string) (int, string, string) {
+	t.Helper()
+	var out, diagnostic bytes.Buffer
+	status := runWithArchives(args, &out, &diagnostic, os.ReadFile, files.New(), archives)
+	return status, out.String(), diagnostic.String()
+}
+
+// With --archive the report carries the object store's answer: the newest archive under the instance's own
+// prefix, and how old it is.
+func TestObserveReadsTheArchiveWhenAsked(t *testing.T) {
+	api := &api{namespace: "demo-orders-staging", digest: digestOf(t, "r43.json"), backup: true}
+	server := api.serve(t)
+	prefix := "app-sqlite/demo-orders-staging/"
+	snapshot := s3test.Scenario{
+		Query: observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: prefix},
+		Objects: []observe.Archive{{Key: prefix + "sqlite-20261026T071500Z.db.age",
+			LastModified: time.Now().UTC().Add(-2 * time.Hour)}},
+		Forbidden: observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "app-sqlite/refused/"},
+	}
+	fake := s3test.New(snapshot)
+	args := observeArgsOf(t, kubeconfig(t, server), "sqlite.json", "r43.json",
+		"--egress", filepath.Join("..", "..", "..", "platform", "egress", "allocation.json"), "--archive")
+	status, stdout, stderr := runObserveArchive(t, func(string, string) (s3.Reader, error) { return fake, nil }, args...)
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	report := document(t, stdout)
+	archive := report["backup"].(map[string]any)["archive"].(map[string]any)
+	if archive["state"] != observe.BackupCurrent || archive["reason"] != nil {
+		t.Fatalf("archive %v", archive)
+	}
+	if archive["newest"] != prefix+"sqlite-20261026T071500Z.db.age" || archive["prefix"] != prefix {
+		t.Fatalf("archive facts %v", archive)
+	}
+	if archive["ageSeconds"] == nil || archive["maxAgeSeconds"] != float64(26*3600) {
+		t.Fatalf("archive ages %v", archive)
+	}
+	// The reader was asked for the instance's own directory, and only it.
+	if len(fake.Lists) != 1 || fake.Lists[0] != snapshot.Query {
+		t.Fatalf("the listing was asked for %v", fake.Lists)
+	}
+	if !strings.Contains(stderr, "archive current") {
+		t.Fatalf("summary %q", stderr)
+	}
+}
+
+// Without --archive the report says the archive was not read, and no object-store reader is built; without
+// credentials the command refuses before listing anything.
+func TestObserveWithoutArchiveOrCredentials(t *testing.T) {
+	api := &api{namespace: "demo-orders-staging", digest: digestOf(t, "r43.json"), backup: true}
+	server := api.serve(t)
+	args := observeArgsOf(t, kubeconfig(t, server), "sqlite.json", "r43.json",
+		"--egress", filepath.Join("..", "..", "..", "platform", "egress", "allocation.json"))
+	status, stdout, stderr := runObserve(t, args...)
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	archive := document(t, stdout)["backup"].(map[string]any)["archive"].(map[string]any)
+	if archive["state"] != observe.BackupNotAssessed || archive["reason"] != observe.NotRead {
+		t.Fatalf("archive %v", archive)
+	}
+	// The operator's own credentials come from the environment; without them the read is refused, and the
+	// message names no value.
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	if status, stdout, stderr := runObserve(t, append(args, "--archive")...); status != 2 || stdout != "" ||
+		!strings.Contains(stderr, "invalid: credentials: aws_credentials_are_not_set") {
+		t.Fatalf("no credentials: exit %d, stdout %q, stderr %q", status, stdout, stderr)
 	}
 }

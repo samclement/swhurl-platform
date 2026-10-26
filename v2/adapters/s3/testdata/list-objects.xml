@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>swhurl-platform-backups-110927251694</Name>
+  <Prefix>app-sqlite/hello-staging/</Prefix>
+  <KeyCount>2</KeyCount>
+  <MaxKeys>1000</MaxKeys>
+  <IsTruncated>false</IsTruncated>
+  <Contents>
+    <Key>app-sqlite/hello-staging/sqlite-20261026T082103Z.db.age</Key>
+    <LastModified>2026-10-26T08:21:21.000Z</LastModified>
+    <ETag>&quot;6f5c1c1f&quot;</ETag>
+    <Size>16384</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <Contents>
+    <Key>app-sqlite/hello-staging/sqlite-20261026T082103Z.db.age.json</Key>
+    <LastModified>2026-10-26T08:21:22.000Z</LastModified>
+    <ETag>&quot;a1b2c3d4&quot;</ETag>
+    <Size>512</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+</ListBucketResult>

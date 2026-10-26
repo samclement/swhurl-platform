@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
@@ -34,17 +35,32 @@ func (c cli) observe(r request) int {
 	if status != 0 {
 		return status
 	}
-	kubeconfig, status := c.read(r.kubeconfig, "kubeconfig")
+	report, status := c.observeLive(r, target, maxAge)
 	if status != 0 {
 		return status
 	}
-	connection, err := kube.Connect(kubeconfig)
+	document, err := observe.EncodeReport(report)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
+	fmt.Fprintln(c.diagnostic, summarize(report))
+	return emit(c.out, c.diagnostic, document)
+}
+
+// observeLive reads the target from the API server — and, when asked, its archive from the object store — and
+// projects the report.
+func (c cli) observeLive(r request, target observe.Target, maxAge time.Duration) (observe.Report, int) {
+	kubeconfig, status := c.read(r.kubeconfig, "kubeconfig")
+	if status != 0 {
+		return observe.Report{}, status
+	}
+	connection, err := kube.Connect(kubeconfig)
+	if err != nil {
+		return observe.Report{}, fail(c.diagnostic, err)
+	}
 	reader, err := connection.Reader()
 	if err != nil {
-		return fail(c.diagnostic, err)
+		return observe.Report{}, fail(c.diagnostic, err)
 	}
 	// The evidence's source is the context that answered, unless the operator names it.
 	source := connection.Context
@@ -53,18 +69,48 @@ func (c cli) observe(r request) int {
 	}
 	evidence, err := read(c.diagnostic, reader, target, source, maxAge)
 	if err != nil {
-		return fail(c.diagnostic, err)
+		return observe.Report{}, fail(c.diagnostic, err)
+	}
+	if r.archive {
+		if status := c.readArchive(r, target, &evidence); status != 0 {
+			return observe.Report{}, status
+		}
 	}
 	report, err := observe.Explain(target, evidence)
 	if err != nil {
-		return fail(c.diagnostic, err)
+		return observe.Report{}, fail(c.diagnostic, err)
 	}
-	document, err := observe.EncodeReport(report)
+	return report, 0
+}
+
+// readArchive lists the instance's own prefix in the object store, when the operator asked for it: the
+// credential is theirs, the bucket and root are the platform profile's, and the prefix is the instance's.
+func (c cli) readArchive(r request, target observe.Target, evidence *observe.Evidence) int {
+	if evidence.Backup == nil {
+		// An instance that renders no backup has no archive to read; the report says so.
+		return 0
+	}
+	profile, status := c.profile(r.profile)
+	if status != 0 {
+		return status
+	}
+	root, err := s3.ParseURL(profile.Backup.S3URI)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	fmt.Fprintln(c.diagnostic, summarize(report))
-	return emit(c.out, c.diagnostic, document)
+	query := observe.ArchiveQuery{Bucket: root.Bucket, Prefix: root.Prefix + target.Namespace + "/"}
+	reader, err := c.archives(query.Bucket, r.region)
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+	defer cancel()
+	listed, err := reader.List(ctx, query)
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
+	evidence.Backup.Archive = &listed
+	return 0
 }
 
 // observationTarget compiles the instance with the same use case compile runs and derives what the
@@ -219,6 +265,12 @@ func summarize(report observe.Report) string {
 		summary += "; backup " + report.Backup.State
 		if report.Backup.Reason != "" {
 			summary += "/" + report.Backup.Reason
+		}
+	}
+	if report.Backup.Archive.State != observe.BackupNotApplicable {
+		summary += "; archive " + report.Backup.Archive.State
+		if report.Backup.Archive.Reason != "" {
+			summary += "/" + report.Backup.Archive.Reason
 		}
 	}
 	return summary

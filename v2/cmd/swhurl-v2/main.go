@@ -6,12 +6,16 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
@@ -26,7 +30,7 @@ const usage = `usage:
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
-      [--max-age DURATION]
+      [--max-age DURATION] [--archive [--region REGION]]
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
       --committed HELMRELEASE.json --profile PROFILE.json
   swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json [--kubeconfig KUBECONFIG.json]
@@ -42,7 +46,9 @@ kubeconfig names (the JSON form that "kubectl config view --raw -o json" prints)
 observation report to stdout with a one-line summary on stderr. It reads only, and --revision is the
 source revision Flux should have applied. A database instance's report also carries its protection: the
 backup CronJob and the runs its labels select, judged against --max-age (26h by default). It says whether
-the job runs and whether its last run finished; the archive in the object store is not read.
+the job runs and whether its last run finished. With --archive it also lists the instance's own prefix in
+the object store, with the operator's AWS credentials from the environment, and says whether an archive
+exists and how old the newest one is; the region is discovered from the bucket unless --region states it.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
@@ -114,8 +120,35 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		fmt.Fprint(diagnostic, usage)
 		return 2
 	}
-	c := cli{out, diagnostic, readFile, writer}
+	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archiveReader}
 	return commands[r.command](c, r)
+}
+
+// runWithArchives runs one command with a supplied object-store reader, so a test can answer a listing
+// without a credential or a network.
+func runWithArchives(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error),
+	writer files.Writer, archives func(bucket, region string) (s3.Reader, error)) int {
+	r, outcome := parse(args)
+	switch outcome {
+	case help:
+		return emit(out, diagnostic, []byte(usage))
+	case misuse:
+		fmt.Fprint(diagnostic, usage)
+		return 2
+	}
+	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archives}
+	return commands[r.command](c, r)
+}
+
+// archiveReader is the object-store reader the command builds from the operator's own credentials. They are
+// read from the environment and never written down, and the region is the bucket's own when none is given.
+func archiveReader(bucket, region string) (s3.Reader, error) {
+	credentials := s3.Credentials{AccessKey: os.Getenv("AWS_ACCESS_KEY_ID"),
+		SecretKey: os.Getenv("AWS_SECRET_ACCESS_KEY"), SessionToken: os.Getenv("AWS_SESSION_TOKEN")}
+	if credentials.AccessKey == "" || credentials.SecretKey == "" {
+		return nil, errors.New("invalid: credentials: aws_credentials_are_not_set")
+	}
+	return s3.New(region, credentials, &http.Client{Timeout: 30 * time.Second}), nil
 }
 
 // commands is every command and the step that runs it, in one table so the dispatcher and the usage check
@@ -139,6 +172,8 @@ var commands = map[string]func(cli, request) int{
 type request struct {
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
+	region                                             string
+	archive                                            bool
 	app, settings, committed, snapshot, callFile       string
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
@@ -213,6 +248,8 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&once{value: &r.source}, "source", "name of the evidence source (default: the kubeconfig's current context)")
 		flags.Var(&once{value: &r.maxAge}, "max-age", "the oldest acceptable successful backup (default 26h)")
+		flags.Var(&once{value: &r.region}, "region", "the bucket's region (default: discovered from the bucket)")
+		flags.Var(&onceBool{value: &r.archive}, "archive", "also read the newest archive from the object store (needs AWS credentials)")
 	case "preview":
 		flags.Var(&once{value: &r.app}, "app", "legacy app record")
 		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")
@@ -291,6 +328,29 @@ func (r *request) named() []string {
 	return nil
 }
 
+// onceBool is a boolean flag that may be given at most once, like every other flag.
+type onceBool struct {
+	value *bool
+	set   bool
+}
+
+func (o *onceBool) String() string { return "" }
+
+func (o *onceBool) Set(value string) error {
+	if o.set {
+		return errors.New("flag repeated")
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	o.set, *o.value = true, parsed
+	return nil
+}
+
+// IsBoolFlag makes -archive, without a value, set the flag.
+func (o *onceBool) IsBoolFlag() bool { return true }
+
 // once is a flag that may be given at most once: a repeat is a usage error, not the last one winning.
 type once struct {
 	value *string
@@ -312,6 +372,8 @@ type cli struct {
 	out, diagnostic io.Writer
 	readFile        func(string) ([]byte, error)
 	writer          files.Writer
+	// archives builds the object-store reader; a test supplies one that answers without a network.
+	archives func(bucket, region string) (s3.Reader, error)
 }
 
 func (c cli) releaseID(path string) int {

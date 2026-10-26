@@ -4,9 +4,9 @@ instance is asking without trusting anything the app sends.
 
 The port is kept in instance.yaml as Settings.allocations.egressPort, so regenerating never
 moves it: make app-sync (apps/model/write.py) gives an instance without one the lowest free port.
-It renders the instance's proxy variables (including HTTPS_PROXY) and platform/egress/proxy.yaml:
-the proxy's configuration and Service ports (values for its HelmRelease) and the NetworkPolicy
-that admits each port only from its instance's namespace.
+This module owns the instance's side — the variables that point its clients at that port, and its
+grants. The proxy's own configuration is v2's (v2/kernel/proxy.go): it renders the module's ports and
+grants from the allocation, with grants enforced, and this module no longer writes it.
 
 Grants (make app-egress) are the hosts an instance may reach, kept in instance.yaml as
 Settings.egress, not in the rendered HelmRelease annotation. make app-sync renders that
@@ -22,14 +22,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import yaml
-
 from swhurl import interface
 from swhurl.apps.contract import otlp_variables
 from swhurl.apps.instance import Instance
 
 NAMESPACE = NAME = 'egress'
-PROXY_FILE = Path('platform/egress/proxy.yaml')
+DIRECTORY = Path('platform/egress')
 HOST = f'{NAME}.{NAMESPACE}.svc.cluster.local'
 FIRST_PORT = 30101
 HEALTH_PORT = 3128  # probes only: the NetworkPolicy admits no pod to it
@@ -105,87 +103,6 @@ def free_port(taken: set[int]) -> int:
     return port
 
 
-def squid_conf(assigned: dict[Instance, int], allowed: dict[Instance, list[str]] | None = None) -> str:
-    """Squid's configuration: a port per instance and, for each grant's port, a list of the hosts it
-    may reach there (``dstdomain``, where ``.example.com`` is example.com and every name under it)."""
-    allowed = allowed or {}
-    lines = [
-        '# Squid, one port per app instance; every request is logged with the instance that sent it,',
-        '# and whether a grant (make app-egress) covers it.',
-        'pid_filename none',
-        'pinger_enable off',
-        'cache deny all',
-        'via off',
-        'forwarded_for delete',
-        'shutdown_lifetime 3 seconds',
-        'logformat egress instance=%{instance}note granted=%{granted}note client=%>a method=%rm host=%>rd:%>rP '
-        'status=%>Hs/%Ss bytes=%<st ms=%tr',
-        f'http_port {HEALTH_PORT} name=health',
-        'acl health myportname health',
-        'http_access deny health',
-        '# Requests only: the kubelet\'s probes connect every few seconds and send none.',
-        'acl request has request',
-        'access_log stdio:/dev/stdout logformat=egress request',
-        'cache_log stdio:/dev/stderr',
-    ]
-    by_port: dict[int, dict[Instance, list[str]]] = {}
-    for each, names in allowed.items():
-        if each in assigned:
-            for name in names:
-                if name not in covered(names):
-                    host, _, port = name.rpartition(':')
-                    by_port.setdefault(int(port), {}).setdefault(each, []).append(host.removeprefix('*'))
-    for port in sorted(by_port):
-        lines.append(f'acl port-{port} port {port}')
-    for each, port in sorted(assigned.items(), key=lambda item: item[1]):
-        lines += [f'http_port {port} name={each.namespace}', f'acl {each.namespace} myportname {each.namespace}',
-                  f'note instance {each.namespace} {each.namespace}']
-        for target in sorted(by_port):
-            if each in by_port[target]:
-                hosts = sorted(by_port[target][each])
-                lines += [f'acl {each.namespace}-{target} dstdomain -n {" ".join(hosts)}',
-                          f'note granted yes {each.namespace} {each.namespace}-{target} port-{target}']
-    lines += ['# Every host for now: refusing what no grant covers comes later.', 'http_access allow all']
-    return '\n'.join(lines) + '\n'
-
-
-class _Literal(yaml.SafeDumper):
-    """Writes a string of several lines as a block (``|``), so the generated file reads as Squid's own."""
-
-
-_Literal.add_representer(str, lambda dumper, text: dumper.represent_scalar(
-    'tag:yaml.org,2002:str', text, style='|' if '\n' in text else None))
-
-
-def dump(document: dict) -> str:
-    return yaml.dump(document, Dumper=_Literal, sort_keys=False, default_flow_style=False)
-
-
-def proxy_documents(assigned: dict[Instance, int], allowed: dict[Instance, list[str]] | None = None) -> list[dict]:
-    """The values the proxy's HelmRelease reads (configuration and Service ports), and its NetworkPolicy."""
-    values = {'configMaps': {'config': {'data': {'squid.conf': squid_conf(assigned, allowed)}}},
-              'service': {'main': {'ports': {f'p{port}': {'port': port} for port in sorted(assigned.values())}}}}
-    configmap = {'apiVersion': 'v1', 'kind': 'ConfigMap',
-                 'metadata': {'name': 'egress-proxy', 'namespace': NAMESPACE,
-                              'labels': {'reconcile.fluxcd.io/watch': 'Enabled'}},
-                 'data': {'values.yaml': dump(values)}}
-    policy = {'apiVersion': 'networking.k8s.io/v1', 'kind': 'NetworkPolicy',
-              'metadata': {'name': 'egress-port-per-instance', 'namespace': NAMESPACE},
-              'spec': {'podSelector': {'matchLabels': {'app.kubernetes.io/instance': NAME}},
-                       'policyTypes': ['Ingress'],
-                       'ingress': [{'from': [{'namespaceSelector': {'matchLabels': {
-                                       'kubernetes.io/metadata.name': each.namespace}}}],
-                                    'ports': [{'port': port}]}
-                                   for each, port in sorted(assigned.items(), key=lambda item: item[1])]}}
-    return [configmap, policy]
-
-
-def proxy_text(documents: list[dict]) -> str:
-    """The proxy's generated file."""
-    return ('# Generated by make app-sync from the instances under apps/: do not edit.\n'
-            '# Each port is kept in its instance\'s HTTPS_PROXY variable.\n' + '---\n'.join(dump(doc) for doc in documents))
-
-
 def grant_problems(each: Instance, names: list[str]) -> list[str]:
     """Rule egress-grants: each grant well formed, once, and not inside another of the same instance."""
     found = [f'egress-grants: {each.app}/{each.env}: {problem}' for name in names if (problem := grant_problem(name))]
@@ -196,9 +113,9 @@ def grant_problems(each: Instance, names: list[str]) -> list[str]:
 
 
 def problems(root: Path) -> list[str]:
-    """Whether every instance has a port of its own and well-formed grants, and the proxy's file is what
-    they generate (rules egress-ports and egress-grants)."""
-    from swhurl.apps.model import generated, render, store
+    """Whether every instance has a port of its own and well-formed grants (rules egress-ports and
+    egress-grants). The proxy's configuration is v2's to render, so this no longer compares a file."""
+    from swhurl.apps.model import store
 
     world, errors = store.world(root)
     if errors:
@@ -221,6 +138,4 @@ def problems(root: Path) -> list[str]:
         if len(held) > 1:
             found.append(f'egress-ports: port {port} is in {", ".join(str(e) for e in sorted(held, key=lambda e: e.env != "staging"))}; '
                          'remove allocations.egressPort from all but one instance.yaml and run make app-sync')
-    if not generated.same(root / PROXY_FILE, proxy_text(render.shared(world, platform).egress_proxy)):
-        found.append(f'egress-ports: {PROXY_FILE} is not what the instances declare; make app-sync rewrites it')
     return found

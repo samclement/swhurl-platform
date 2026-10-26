@@ -482,7 +482,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         problems = egress.problems(ROOT)
         if problems:
             failed += 1
-            print(f'[BAD] {egress.PROXY_FILE}')
+            print('[BAD] egress ports and grants')
             for problem in problems:
                 print(f'       {problem}')
         problems = channels.problems(ROOT)

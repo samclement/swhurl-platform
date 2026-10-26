@@ -36,7 +36,7 @@ HEADER = '# Written by the platform\'s commands (make app-*): docs/apps.md. Rend
 def platform(root: Path, base: Path = Path('apps')) -> Platform:
     def key(path: Path) -> str:
         return (root / path).read_text().strip() if (root / path).is_file() else ''
-    return Platform(signing_keys(root), (root / egress.PROXY_FILE).parent.is_dir(),
+    return Platform(signing_keys(root), (root / egress.DIRECTORY).is_dir(),
                     key(events.CONTROLLER_KEY_FILE), key(events.CONSOLE_KEY_FILE), base, backup.suspended(root))
 
 

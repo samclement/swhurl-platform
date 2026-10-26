@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import yamlio
-from swhurl.apps import egress, events
+from swhurl.apps import events
 from swhurl.apps.contract import teams
 from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import render, store
@@ -135,8 +135,6 @@ def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance]
     except RenderError as error:
         return [*found, f'shared files: cannot render: {error}']
     found += nats_problems(root, world, shared.nats_users)
-    if shared.egress_proxy is not None and (root / egress.PROXY_FILE).is_file():
-        found += file_problems(egress.PROXY_FILE, root / egress.PROXY_FILE, egress.proxy_text(shared.egress_proxy))
     if (root / RELOADER_FILE).is_file():
         try:
             watched = yamlio.load((root / RELOADER_FILE).read_text())['spec']['values']['reloader']['namespaces']

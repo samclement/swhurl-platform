@@ -431,9 +431,7 @@ class NewAppRenderTargetTests(unittest.TestCase):
             for path, data in records.items():
                 (root / path).parent.mkdir(parents=True, exist_ok=True)
                 (root / path).write_bytes(data)
-            proxy = root / egress.PROXY_FILE
-            proxy.parent.mkdir(parents=True)
-            shutil.copyfile(ROOT / egress.PROXY_FILE, proxy)
+            shutil.copytree(ROOT / egress.DIRECTORY, root / egress.DIRECTORY, dirs_exist_ok=True)
             model_sync.sync(root)
             rendered = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*') if p.is_file()}
         self.assertIn('egressPort', yaml.safe_load(rendered['apps/hello/staging/instance.yaml'])['allocations'])
@@ -757,9 +755,7 @@ class FormTests(unittest.TestCase):
             path = request.full_url.split('/contents/', 1)[1].split('?', 1)[0]
             return documents[path].encode()
         def create(tree):
-            proxy = tree / egress.PROXY_FILE
-            proxy.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ROOT / egress.PROXY_FILE, proxy)
+            shutil.copytree(ROOT / egress.DIRECTORY, tree / egress.DIRECTORY, dirs_exist_ok=True)
             with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(model_sync.nkeys, 'generate', return_value=('fixture-secret', public)), \
                     mock.patch.object(model_sync, 'Runner', return_value=FakeRunner().on('sops', stdout=yaml.safe_dump(encrypted))):
                 self.assertEqual(new.main([*commands[0].argv, '--root', str(tree), '--no-policy-check'], opener), 0)

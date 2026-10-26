@@ -122,6 +122,18 @@ jobs:
             rmdir "$tmp"
           fi
 
+      - name: Check the egress proxy is what the records render
+        run: |
+          make v2-snapshot REVISION=HEAD OUT=/tmp/v2-egress-snapshot.json
+          cd v2
+          go run ./cmd/swhurl-v2 egress --snapshot /tmp/v2-egress-snapshot.json \
+            --previous ../platform/egress/allocation.json > /tmp/allocation.json
+          mv /tmp/allocation.json ../platform/egress/allocation.json
+          go run ./cmd/swhurl-v2 proxy --allocation ../platform/egress/allocation.json \
+            --profile testdata/profile.json --out ../platform
+          cd ..
+          git diff --exit-code -- platform/egress
+
       - name: Check v2 and its design rules
         env:
           REQUIRE_HELM: '1'

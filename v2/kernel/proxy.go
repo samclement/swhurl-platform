@@ -40,15 +40,6 @@ const (
 	grantWildcard = "*"
 )
 
-// EgressAllocation is one instance's place on the proxy: who it is, the port that names it, and the
-// hosts it declares it needs. The allocation belongs to the platform; a renderer only states what it
-// is given.
-type EgressAllocation struct {
-	Application, Environment string
-	Port                     int32
-	Grants                   []string
-}
-
 // RenderProxy builds the proxy's objects from the allocation: its configuration, with a port per
 // instance and the hosts its grants allow, and a policy admitting each port from its own namespace.
 func RenderProxy(allocations []EgressAllocation, profile PlatformProfile) (ResourceSet, error) {

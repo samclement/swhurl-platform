@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/samclement/swhurl-platform/v2/kernel"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +55,8 @@ func TestEgressKeepsPorts(t *testing.T) {
 		t.Fatalf("envelope: %v", document)
 	}
 	ports := portsOf(t, document)
-	if ports["staging/shop"] != 30101 || ports["staging/orders"] != 30102 {
+	// A new port is the lowest free one in the document's own order — by environment, then application.
+	if ports["staging/orders"] != 30101 || ports["staging/shop"] != 30102 {
 		t.Fatalf("a first allocation: %v", ports)
 	}
 	previous := filepath.Join(t.TempDir(), "previous.json")
@@ -75,7 +77,7 @@ func TestEgressKeepsPorts(t *testing.T) {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
 	ports = portsOf(t, allocationOf(t, stdout))
-	if ports["staging/shop"] != 30101 || ports["staging/orders"] != 30102 || ports["staging/billing"] != 30103 {
+	if ports["staging/orders"] != 30101 || ports["staging/shop"] != 30102 || ports["staging/billing"] != 30103 {
 		t.Fatalf("growing the allocation: %v", ports)
 	}
 }
@@ -91,15 +93,19 @@ func TestCompileTakesTheAllocation(t *testing.T) {
 	if err := os.WriteFile(allocationPath, []byte(stdout), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	egress, err := compileEgress([]byte(stdout), "shop", "staging")
-	if err != nil || egress == nil || egress.Port != 30101 || len(egress.Grants) != 1 || egress.Grants[0] != "api.stripe.com" {
+	document, decodeErr := kernel.DecodeEgressDocument([]byte(stdout))
+	egress, err := document.EgressOf("shop", "staging")
+	if decodeErr != nil {
+		err = decodeErr
+	}
+	if err != nil || egress == nil || egress.Port != 30102 || len(egress.Grants) != 1 || egress.Grants[0] != "api.stripe.com" {
 		t.Fatalf("the allocation: %+v %v", egress, err)
 	}
-	if _, err := compileEgress([]byte(stdout), "absent", "staging"); err == nil {
+	if _, err := document.EgressOf("absent", "staging"); err == nil {
 		t.Fatal("an instance with no allocation was accepted")
 	}
 	// A document this command did not write is refused.
-	if _, err := compileEgress([]byte(`{"kind":"v2-calls","version":1}`), "shop", "staging"); err == nil {
+	if _, err := kernel.DecodeEgressDocument([]byte(`{"kind":"v2-calls","version":1}`)); err == nil {
 		t.Fatal("another document kind was accepted")
 	}
 }

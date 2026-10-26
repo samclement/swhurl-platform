@@ -31,15 +31,11 @@ type proxyInputs struct {
 // grants allow, and a policy admitting each port from its own namespace. It reads the two named files
 // and, with --out, writes the rendered files and nothing else.
 func (c cli) proxy(r request) int {
-	data, status := c.read(r.allocation, "allocation")
+	allocation, status := c.allocation(r.allocation, "allocation")
 	if status != 0 {
 		return status
 	}
-	allocation, err := checkedEgress(data)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	data, status = c.read(r.profile, "profile")
+	data, status := c.read(r.profile, "profile")
 	if status != 0 {
 		return status
 	}
@@ -51,7 +47,7 @@ func (c cli) proxy(r request) int {
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	rendered, err := kernel.RenderProxy(proxyAllocations(allocation), profile)
+	rendered, err := kernel.RenderProxy(allocation.Instances, profile)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -66,16 +62,6 @@ func (c cli) proxy(r request) int {
 		return c.writeFiles(r.out, rendered.Files)
 	}
 	return emit(c.out, c.diagnostic, encoded)
-}
-
-// proxyAllocations is the allocation document as the renderer's own input.
-func proxyAllocations(document egressDocument) []kernel.EgressAllocation {
-	allocations := make([]kernel.EgressAllocation, 0, len(document.Instances))
-	for _, allocated := range document.Instances {
-		allocations = append(allocations, kernel.EgressAllocation{Application: allocated.Application,
-			Environment: allocated.Environment, Port: allocated.Port, Grants: allocated.Grants})
-	}
-	return allocations
 }
 
 func encodeProxy(document proxyDocument) ([]byte, error) {

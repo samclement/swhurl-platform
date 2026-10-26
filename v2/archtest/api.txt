@@ -48,6 +48,7 @@ calls: type Refusal struct {Application, Environment, Callee, Reason string}
 calls: type Resolution struct {Pairs []Pair Waiting []Wait Refused []Refusal}
 calls: type Wait struct {Caller, Callee, Environment, Reason string}
 kernel: const AppTree = "apps"
+kernel: const FirstPort int32 = 30101
 kernel: const IdentityMismatch Code = "identity_mismatch"
 kernel: const Invalid Code = "invalid"
 kernel: const ManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
@@ -59,16 +60,22 @@ kernel: const WrongApplication Code = "wrong_application"
 kernel: const WrongRelease Code = "wrong_release"
 kernel: func (*Error) Error() string
 kernel: func (Connections) ID() ConnectionsID
+kernel: func (EgressDocument) EgressOf(application, environment string) (*Egress, error)
+kernel: func (EgressFacts) NeedsEgress() bool
 kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
 kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
+kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation) ([]EgressAllocation, error)
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
 kernel: func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error)
 kernel: func CompileWith(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, connections Connections, egress *Egress) (Compilation, error)
+kernel: func ConnectionsOf(data []byte, application, environment string) (Connections, error)
+kernel: func DecodeEgressDocument(data []byte) (EgressDocument, error)
 kernel: func DecodeInstance(data []byte) (InstanceSpec, error)
 kernel: func DecodeProfile(data []byte) (PlatformProfile, error)
 kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
 kernel: func EncodeCompilation(c Compilation) []byte
+kernel: func EncodeEgressDocument(document EgressDocument) ([]byte, error)
 kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
 kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
 kernel: func Ownership(claims []Claim) []Conflict
@@ -88,11 +95,17 @@ kernel: type CompilationID string
 kernel: type Configuration struct {Replicas int32 `json:"replicas"` MemoryMiB int32 `json:"memoryMiB"`}
 kernel: type Conflict struct {Object Object Owners []string}
 kernel: type Connections struct {Calls []Call Callers []string}
+kernel: type ConnectionsDocument struct {Kind string `json:"kind"` Version int `json:"version"` Revision string `json:"revision"` Pairs []ConnectionsPair `json:"pairs"` Waiting []ConnectionsWaiting `json:"waiting"` Refused []ConnectionsRefusal `json:"refused"`}
 kernel: type ConnectionsID string
+kernel: type ConnectionsPair struct {Caller string `json:"caller"` Callee string `json:"callee"` Environment string `json:"environment"` Port int32 `json:"port"`}
+kernel: type ConnectionsRefusal struct {Application string `json:"application"` Callee string `json:"callee"` Environment string `json:"environment"` Reason string `json:"reason"`}
+kernel: type ConnectionsWaiting struct {Caller string `json:"caller"` Callee string `json:"callee"` Environment string `json:"environment"` Reason string `json:"reason"`}
 kernel: type DNS struct {Namespace string `json:"namespace"` Labels map[string]string `json:"labels"`}
 kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `json:"outputRoot"` UnitsRoot string `json:"unitsRoot"` DependsOn []string `json:"dependsOn"`}
 kernel: type Egress struct {Port int32 Grants []string}
-kernel: type EgressAllocation struct {Application, Environment string Port int32 Grants []string}
+kernel: type EgressAllocation struct {Application string `json:"application"` Environment string `json:"environment"` Port int32 `json:"port"` Grants []string `json:"grants"`}
+kernel: type EgressDocument struct {Kind string `json:"kind"` Version int `json:"version"` Revision string `json:"revision"` Instances []EgressAllocation `json:"instances"`}
+kernel: type EgressFacts struct {Application string Environment string Port int32 Grants []string Database bool}
 kernel: type EgressProxy struct {Address string `json:"address"` Namespace string `json:"namespace"` Labels map[string]string `json:"labels"`}
 kernel: type Error struct {Code Code Field string Reason string}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
@@ -189,6 +202,10 @@ observe: type Ref struct {APIVersion, Kind, Namespace, Name string}
 observe: type Report struct {Target Target Source string ObservedAt string Findings []Finding Verdict Verdict Assessed []string Unassessed []string NotCovered []string}
 observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string}
 observe: type Verdict string
+orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
+orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
+orchestration: type Inputs struct {Instance, Release, Profile []byte Calls, Egress []byte}
+orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
 shadow: func (*Error) Error() string
 shadow: func CompareHTTP(before, after []byte, choices ResourceChoices) (HTTPComparison, error)
 shadow: type Error struct {Field, Reason string}

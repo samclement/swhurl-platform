@@ -91,9 +91,12 @@ type InstanceSpec struct {
 	Storage Storage `json:"storage,omitempty"`
 }
 
-// Storage is one instance's data volume. A size of zero means the instance asks for none.
+// Storage is one instance's data volume: a size to create, or the claim of a volume that already exists —
+// the shape a migrated instance takes, so its data is the same bytes before and after the handover. A size
+// of zero with no claim means the instance asks for none.
 type Storage struct {
-	SizeMiB int32 `json:"sizeMiB,omitempty"`
+	SizeMiB   int32  `json:"sizeMiB,omitempty"`
+	ClaimName string `json:"claimName,omitempty"`
 }
 
 var (
@@ -176,6 +179,9 @@ func (s InstanceSpec) validate() error {
 	}
 	if s.Storage.SizeMiB < 0 {
 		return refuse(Invalid, "storage.sizeMiB", "expected a nonnegative signed-32-bit integer")
+	}
+	if s.Storage.ClaimName != "" && !labelPattern.MatchString(s.Storage.ClaimName) {
+		return refuse(Invalid, "storage.claimName", "expected a DNS label")
 	}
 	if s.Grants.Exposure != "private" && s.Grants.Exposure != "authenticated-web" {
 		return refuse(Unsupported, "grants.exposure", "only private and authenticated-web exposure are supported")

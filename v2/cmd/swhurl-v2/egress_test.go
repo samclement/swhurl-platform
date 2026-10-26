@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
@@ -111,4 +112,34 @@ func snapshotWithEgress(t *testing.T, grants []string) map[string]any {
 	settings := instance["records"].(map[string]any)["instance"].(map[string]any)
 	settings["egress"] = grants
 	return document
+}
+
+// An instance whose records a handover removed keeps its allocation: v2 owns it now, and the port is how the
+// proxy names it, so dropping it would take the migrated instance's way out away with the records.
+func TestEgressKeepsAnInstanceTheSnapshotNoLongerHas(t *testing.T) {
+	previous := `{"kind":"v2-egress","version":1,"revision":"` + strings.Repeat("b", 40) + `","instances":[
+		{"application":"shop","environment":"staging","port":30101,"grants":[]},
+		{"application":"ghost","environment":"staging","port":30105,"grants":["api.example.com:443"]}]}`
+	path := filepath.Join(t.TempDir(), "previous.json")
+	if err := os.WriteFile(path, []byte(previous), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	status, stdout, stderr := runEgress(t, writeSnapshot(t, twoInstances(t)), "--previous", path)
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	document := allocationOf(t, stdout)
+	ports := portsOf(t, document)
+	if ports["staging/ghost"] != 30105 || ports["staging/shop"] != 30101 {
+		t.Fatalf("a migrated instance lost its port: %v", ports)
+	}
+	// Its grants stay with it: they are what the proxy allows it, and the records that held them are gone.
+	for _, raw := range document["instances"].([]any) {
+		entry := raw.(map[string]any)
+		if entry["application"] == "ghost" {
+			if grants := entry["grants"].([]any); len(grants) != 1 || grants[0] != "api.example.com:443" {
+				t.Fatalf("the migrated instance's grants: %v", grants)
+			}
+		}
+	}
 }

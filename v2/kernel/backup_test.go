@@ -292,3 +292,65 @@ func TestQuotaCountsTheBackupPod(t *testing.T) {
 		refusal(t, err, OverQuota, "quota.requestsCpuMilli")
 	}
 }
+
+// A migrated instance adopts the claim its data already lives on instead of creating one: the chart mounts
+// the same volume, the backup job mounts the same volume, and nothing asks for a new one.
+func TestStorageAdoptsAnExistingClaim(t *testing.T) {
+	instance, workload := databaseInstance()
+	instance.Storage = Storage{ClaimName: "demo-orders"}
+	rendered, err := RenderHTTP(instance, workload, profile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := fileOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
+	data := values["persistence"].(map[string]any)["data"].(map[string]any)
+	if data["existingClaim"] != "demo-orders" {
+		t.Fatalf("the volume is %v", data)
+	}
+	for _, absent := range []string{"storageClass", "size", "accessMode", "retain"} {
+		if _, given := data[absent]; given {
+			t.Fatalf("an adopted claim states %s: %v", absent, data)
+		}
+	}
+	if mount := data["globalMounts"].([]any)[0].(map[string]any); mount["path"] != dataMount {
+		t.Fatalf("the adopted volume is mounted at %v", mount)
+	}
+	pod := fileOf(t, rendered, "backup-cronjob.json")["spec"].(map[string]any)["jobTemplate"].(map[string]any)["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
+	if claim := pod["volumes"].([]any)[0].(map[string]any)["persistentVolumeClaim"].(map[string]any)["claimName"]; claim != "demo-orders" {
+		t.Fatalf("the backup job mounts %v", claim)
+	}
+	// The identity moved deliberately when the record gained the fact, and both shapes stay valid.
+	if _, err := RenderHTTP(func() HTTPInstance {
+		other, _ := databaseInstance()
+		other.Storage = Storage{SizeMiB: 1024}
+		return other
+	}(), workload, profile(t)); err != nil {
+		t.Fatalf("a created volume no longer renders: %v", err)
+	}
+}
+
+// A volume is created or adopted, never both, and a database needs one of them.
+func TestStorageClaimRefusals(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		storage Storage
+		field   string
+	}{
+		{"size and claim", Storage{SizeMiB: 1024, ClaimName: "demo-orders"}, "storage"},
+		{"neither", Storage{}, "storage.sizeMiB"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			instance, workload := databaseInstance()
+			instance.Storage = tt.storage
+			rendered, err := RenderHTTP(instance, workload, profile(t))
+			refusal(t, err, Invalid, tt.field)
+			if !reflect.DeepEqual(rendered, ResourceSet{}) {
+				t.Fatal("a refusal rendered something")
+			}
+		})
+	}
+	// The record's own boundary: a claim is a DNS label.
+	spec := instance(t, "prod.json")
+	spec.Storage = Storage{ClaimName: "Not A Label"}
+	code(t, spec.validate(), Invalid)
+}

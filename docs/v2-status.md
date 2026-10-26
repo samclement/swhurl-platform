@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: the operator's choice: migrate a database instance now that egress is live and a backup renders, or a read-only backup observation first
+Gate: the first stateful migration: swhurl-try-10 staging moves to v2 with its volume adopted
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -253,6 +253,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence (offline):** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check` (1018 tests), `make check-lint`, `kubectl kustomize platform/egress`, the new values rendered through the pinned chart with the live HelmRelease, and CI's new regenerate-and-diff step.
 - **Rollback:** revert the cutover commit, `make flux-reconcile`; the object names are unchanged, so Flux updates the same ConfigMap and NetworkPolicy.
 - **Next gate:** the operator's choice: migrate a database instance now that egress is live and a backup renders, or a read-only backup observation first.
+
+## Slice record: the stateful handover primitives
+
+- **Outcome:** `swhurl-v2 egress` keeps an allocation for an instance the snapshot no longer has (port and grants), and a database instance may adopt an existing claim (`storage.claimName`) instead of creating one, so a migrated instance keeps its data and its proxy port.
+- **Owners:** the allocation stays the authority for ports, now explicitly outliving the records; the instance record states which volume it adopts; the chart mounts it, and the backup job mounts the same claim.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure renderer still takes no effects. 3. **Identities moved once, deliberately:** the instance canonical gained `claimName`; `identities.json` recomputed independently, goldens moved in `inputs.instance` only. 4. New refusal for a volume both created and adopted, and for a database with neither; no existing code moved. 5. Failure paths tested: carried-over allocation with grants, adopted claim's values and backup mount, both storage refusals, a claim that is not a label. 6. Scope: adopted claims create nothing, so the platform's class is required only where something is created. 7. Offline only. 8. This page, the plan and the gap list change together.
+- **Evidence:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make v2-report`.
+- **Next gate:** the migration itself.
 
 ## Resume
 

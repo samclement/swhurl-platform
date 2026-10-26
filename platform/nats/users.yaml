@@ -97,19 +97,6 @@ data:
               subscribe:
                 allow:
                 - _INBOX.staging.demo-shopper.>
-          - nkey: UDI2RINKCVTQFX5S4IXXG4P3EFI4CXM235HJ3FPCNWJHDIMHTINQVZWX
-            permissions:
-              publish:
-                allow:
-                - $JS.API.INFO
-                - $JS.API.STREAM.INFO.KV_flags-staging
-                - $JS.API.CONSUMER.CREATE.KV_flags-staging.*.$KV.flags-staging.staging.swhurl-try-10.>
-                - $JS.API.CONSUMER.DELETE.KV_flags-staging.*
-                - $JS.API.CONSUMER.INFO.KV_flags-staging.*
-                - staging.swhurl-try-10.>
-              subscribe:
-                allow:
-                - _INBOX.staging.swhurl-try-10.>
           - nkey: UAJUO75UCZ2KQUCMEXSZIJPHME3WN26A6NEA5772V2JGY5FUBQLGHYU6
             permissions:
               publish:
@@ -133,10 +120,6 @@ data:
                 - $JS.API.CONSUMER.DELETE.KV_flags-staging.*
                 - $JS.API.CONSUMER.INFO.KV_flags-staging.*
                 - staging.swhurl-try-13.>
-                - $JS.API.CONSUMER.INFO.staging-swhurl-try-10.swhurl-try-13_visited
-                - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-10.swhurl-try-13_visited
-                - $JS.ACK.staging-swhurl-try-10.swhurl-try-13_visited.>
-                - $JS.API.STREAM.INFO.staging-swhurl-try-10
                 - $JS.API.CONSUMER.INFO.staging-swhurl-try-12.swhurl-try-13_visited
                 - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-12.swhurl-try-13_visited
                 - $JS.ACK.staging-swhurl-try-12.swhurl-try-13_visited.>

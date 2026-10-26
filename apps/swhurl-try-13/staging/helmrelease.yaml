@@ -5,7 +5,7 @@ metadata:
   namespace: swhurl-try-13-staging
   annotations:
     platform.swhurl.com/offers: af5146d
-    platform.swhurl.com/render: 3b4ec72ae7d2c8580aa5e166aa107f4e67717431ca52d16596516a7c345c174d
+    platform.swhurl.com/render: 94fb79e0fb20b930ecd2e3b902b4f1df51ff7a06f052d188f5153fc9aa3824fc
 spec:
   interval: 30m
   timeout: 3m
@@ -67,7 +67,7 @@ spec:
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-13
               SWHURL_EVENTS_PUBLISH: worked
-              SWHURL_EVENTS_SUBSCRIBE: swhurl-try-10.visited,swhurl-try-12.visited
+              SWHURL_EVENTS_SUBSCRIBE: swhurl-try-12.visited
               SWHURL_EVENTS_NKEY: UD2OPEOUJ7C3V2TCCLNQBNGYT67UJUPQQU7D3HWQG6MU5XVVGAWQEXI5
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
               HTTP_PROXY: http://egress.egress.svc.cluster.local:30108

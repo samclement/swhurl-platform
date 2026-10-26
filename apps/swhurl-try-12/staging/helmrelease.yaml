@@ -6,7 +6,7 @@ metadata:
   annotations:
     platform.swhurl.com/api-description: /openapi.yaml
     platform.swhurl.com/offers: e66954f
-    platform.swhurl.com/render: 3e37fbd28b9ad2f6efc414ddca4ac250575fe10ffe75bcf505eb5215356e8389
+    platform.swhurl.com/render: 8bc6f14105dfd88fff4e4cd8d4304be1d62da33a19da10369f7b70c8bf2f0cb9
 spec:
   interval: 30m
   timeout: 3m
@@ -68,7 +68,6 @@ spec:
               OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-12
-              SWHURL_SERVICE_SWHURL_TRY_10_URL: http://swhurl-try-10.swhurl-try-10-$(SWHURL_ENV).svc.cluster.local:8080
               SWHURL_EVENTS_PUBLISH: visited
               SWHURL_EVENTS_NKEY: UAJUO75UCZ2KQUCMEXSZIJPHME3WN26A6NEA5772V2JGY5FUBQLGHYU6
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
@@ -114,10 +113,6 @@ spec:
       tokens:
         type: projected
         sources:
-        - serviceAccountToken:
-            audience: swhurl-try-10
-            expirationSeconds: 600
-            path: swhurl-try-10/token
         - serviceAccountToken:
             audience: notify
             expirationSeconds: 600

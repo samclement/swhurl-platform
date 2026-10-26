@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: the first stateful migration: swhurl-try-10 staging moves to v2 with its volume adopted
+Gate: the operator's choice: keep a v2-owned instance's facts so it can be recompiled, or the read-only backup observation
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -261,6 +261,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure renderer still takes no effects. 3. **Identities moved once, deliberately:** the instance canonical gained `claimName`; `identities.json` recomputed independently, goldens moved in `inputs.instance` only. 4. New refusal for a volume both created and adopted, and for a database with neither; no existing code moved. 5. Failure paths tested: carried-over allocation with grants, adopted claim's values and backup mount, both storage refusals, a claim that is not a label. 6. Scope: adopted claims create nothing, so the platform's class is required only where something is created. 7. Offline only. 8. This page, the plan and the gap list change together.
 - **Evidence:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make v2-report`.
 - **Next gate:** the migration itself.
+
+## Slice record: the first stateful migration (`swhurl-try-10` staging)
+
+- **Outcome:** `swhurl-try-10` staging moved from v1 to v2 in one handover: v1's records, rendered manifests, events identity, image automation and unit removed, and v2's compiled instance took the same namespace and host — a database instance with an **adopted** volume, an egress grant, a nightly backup and a signed-in route, all rendered by v2.
+- **Why the primitives came first:** with its records gone the instance leaves the snapshot, and this is the first migration where that mattered — so `swhurl-v2 egress` was taught to keep a previous allocation for an absent instance (its port and grants), and a database instance gained the adopted claim that keeps its data across the handover.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1's live behaviour changed **deliberately, at the operator's instruction**: `swhurl-try-12` and `swhurl-try-13` lost their v1-rendered relationship with this instance (a call and a subscription), and the instance stopped publishing its `visited` event. 2. Pure packages take no new effects. 3. No identity changed by this commit. 4. No refusal moved. 5. Failure paths: CI's regenerate-and-diff keeps the allocation and the proxy honest after the records are gone; the adopted claim's refusal cases are tested. 6. Scope: the instance's compiled output is now frozen — a v2-owned instance cannot be recompiled from a snapshot, which is a new deferred row. 7. **Live:** the unit, the volume (same PV), the route, `observe` and a backup run are verified and dated in [current state](current-state.md). 8. This page, the plan's records, the gap list and the registry change together.
+- **Not exercised:** a call into the instance (its v2 caller is itself v2-owned, so no snapshot sees the pair); a restore; and its prod instance, which stays with v1.
+- **Next gate:** the operator's choice: keep a v2-owned instance's facts so it can be recompiled (v2-owned records), or the read-only backup observation.
 
 ## Resume
 

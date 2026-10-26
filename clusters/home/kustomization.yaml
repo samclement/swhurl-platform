@@ -4,7 +4,7 @@ resources:
   - infra.yaml
   - platform.yaml
   - platform-notify.yaml
-  - app-swhurl-try-10-staging.yaml
+  - app-swhurl-try-10-staging.json
   - app-swhurl-try-12-staging.yaml
   - app-swhurl-try-13-staging.yaml
   - app-swhurl-try-10-prod.yaml

@@ -1,6 +1,0 @@
-# Read from the app's repository by make app-offers: do not edit.
-repository: samclement/swhurl-try-10
-commit: e01ce48
-api: openapi.json
-events: asyncapi.yaml
-flags: flags.json

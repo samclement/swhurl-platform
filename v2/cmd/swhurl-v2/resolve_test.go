@@ -34,8 +34,10 @@ func twoInstances(t *testing.T) map[string]any {
 				"helmrelease": record("helmrelease")},
 		}
 	}
-	callerSettings := map[string]any{"version": 1, "exposure": "private", "replicas": 1, "calls": []any{"orders"}}
-	calleeSettings := map[string]any{"version": 1, "exposure": "private", "replicas": 1, "allows": []any{"team:demo"}}
+	callerSettings := map[string]any{"version": 1, "exposure": "private", "replicas": 1, "calls": []any{"orders"},
+		"egress": []any{"api.example.com:443"}}
+	calleeSettings := map[string]any{"version": 1, "exposure": "private", "replicas": 1, "allows": []any{"team:demo"},
+		"egress": []any{"api.example.com:443"}}
 	release := record("release")
 	release["port"] = 8080
 	return map[string]any{"version": 1, "revision": strings.Repeat("a", 40), "residual": []any{},

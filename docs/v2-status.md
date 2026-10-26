@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: the operator's choice: keep a v2-owned instance's facts so it can be recompiled, or the read-only backup observation
+Gate: the bridge slice that translates those records into compile's inputs, or the read-only backup observation
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -270,6 +270,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** live and dated in [current state](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026): the unit Ready at the pushed revision, the **same PV** bound through the adopted claim, the same digest, the allocation's port 30105 surviving the records' deletion, v2's route with a production certificate, a backup run from the adopted volume through the enforced proxy, and `observe` `verdict running`. `observe` gained `--calls` and `--egress` in the same change: without them it could not compile a database instance at all.
 - **Not exercised:** a call into the instance (its v2 caller is itself v2-owned, so no snapshot sees the pair); a restore; and its prod instance, which stays with v1.
 - **Next gate:** the operator's choice: keep a v2-owned instance's facts so it can be recompiled (v2-owned records), or the read-only backup observation.
+
+## Slice record: a migrated instance keeps its records
+
+- **Outcome:** a v2-owned instance's records live in `v2-records/<app>/<env>/`, the snapshot export reads them (with v2's compiled output as its declared objects and its `.json` unit as its own), and a port is allocated only to an instance that has something to reach outside or a database whose backup must upload.
+- **Owners:** v1 owns its instances' records in `apps/`; v2 owns a migrated instance's, in its own tree, so v1 neither renders nor checks them; the snapshot is the one place both are read.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged (no file under `apps/` changed for v1-owned instances). 2. Pure packages take no new effects. 3. No identity changed. 4. One allocator rule changed, stated above: no port without a need. 5. Failure paths tested: a v2-owned instance read from v2's tree, the app record still found in v1's, a missing record named, and no port for an instance that needs none. 6. Scope: recompiling a v2-owned instance still needs hand-written v2 records — the gap is narrowed, not closed. 7. Offline only. 8. This page, the plan and the gap list change together.
+- **Evidence:** `make check` (1018 tests), `make check-v2` (12 packages), `make check-lint`, the exporter's tests.
+- **Next gate:** the bridge slice that translates these records into `compile`'s inputs, or the read-only backup observation.
 
 ## Resume
 

@@ -256,7 +256,7 @@ entry point → orchestration → pure core functions
                integrations → Git, files, registry, Kubernetes, ...
 ```
 
-This is a responsibility model. The current checked layout is `kernel` (layer 0), adapters (layer 1), and command wiring (layer 2); it does not yet provide a separate orchestration package. A later slice should introduce or revise package boundaries only where its use case needs them, rather than treating the numbers as a permanent domain architecture.
+This is a responsibility model, and since 26 October 2026 it is also the checked layout: **layer 0** the pure model (`kernel`, `calls`, `legacy`, `observe`, `shadow`), **layer 1** one adapter per dependency (`adapters/files`, `adapters/kube`), **layer 2** the use cases (`orchestration`), **layer 3** the command (`cmd/swhurl-v2`). `orchestration` assembles the inputs a use case needs, calls the kernel's decisions in order, performs the use case's one effect through an adapter, and reports either the result or where it stopped; it parses no arguments, prints nothing, chooses no exit status and holds no mutable state (the `orchestration-wires` rule). A command is then flags, I/O, exit codes and output. Boundaries are still revised only where a use case needs it, not for the numbers' own sake.
 
 ### The pure model
 
@@ -1169,6 +1169,20 @@ The stateful migration left the instance's records in v2's tree but its compiled
 
 **Checks:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`. Offline only.
 
+#### The orchestration layer (implemented 26 October 2026)
+
+The `cmd` package had become the orchestrator as well as the CLI: 1.8k lines, 26 functions in `main.go`, five separate inputs for `compile`, a snapshot type three commands shared, and a **pure decision — the port allocation — living at layer 2**, contrary to the model above.
+
+**What changed.** `orchestration` is the use-case layer, with one use case so far: *compile an instance* (`Compile` without an effect, `CompileInto` writing through the file adapter and reporting each outcome). `compile` and `observe` are its consumers — the second had already needed `--calls`/`--egress` retrofitted because it assembled the same inputs its own way. The allocation decision moved to `kernel` (`Allocate` over `EgressFacts`), and the two documents a compilation takes moved with it (`DecodeEgressDocument`/`EgressOf`, `ConnectionsOf`), since a layer-2 use case may not import a layer-3 command. A destination inside the checkout's `apps/` remains the command's refusal: it is a rule about this checkout, not about a use case.
+
+**The rule, as code:** `orchestration-wires` — the use-case layer imports no `flag`, `os`, `log` or `testing`, prints nothing, calls no `panic`, and assigns no package variable; `places` holds layer 2 to `orchestration` and layer 3 to a `main` package under `cmd/`. The archtest's own fixtures were updated with the new numbering, and the plan's guardrails table with the new rule.
+
+**One behaviour changed, deliberately:** a new instance's port is now the lowest free one in the *document's* order (environment, then application) rather than the order the snapshot happened to list, so the same facts always give the same document. Every existing instance keeps its recorded port, so `platform/egress/allocation.json` is unchanged — which CI's regenerate-and-diff confirms.
+
+**What it does not yet hold:** `migrate` (translate → compile → write), which is the next use case and the reason the layer exists; and `resolve`, `egress`, `proxy`, `preview`, `shadow`, whose input assembly stays in the command until a second consumer needs it.
+
+**Checks:** `make check-v2` (13 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make v2-report` (the report names the new layer and rule, and the three command functions the move removed). Offline only.
+
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 
 The inventory above makes the choice concrete. Of the 17 instances in this repository, **no instance is both private and a web app**: every web instance is `authenticated-web`, and every private instance is a `worker` or `job`, which v2 does not render at all. The lightest web instance is `swhurl-try-11` (no database, no events, two calls); `demo-orders` — the natural candidate — needs storage (SQLite), events, calls, routes and a backup job.
@@ -1190,7 +1204,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | Egress proxy: proxy variables, port allocation, egress grants | The [instance side](#egress-part-one-the-allocation-and-the-instance-side-implemented-offline-25-october-2026) and the [proxy's configuration](#egress-part-two-the-proxys-configuration-implemented-offline-25-october-2026) are rendered: a stable port per instance, the client variables, the grants annotation and policy, and the proxy's Squid configuration, Service ports and per-port policy with grants enforced. **The platform still runs v1's generated file**, so `--egress` must not be used for a v2 instance yet | The cutover slice, once the grants it enforces exist |
 | The proxy's configuration as the live one | `make app-sync` still writes `platform/egress/proxy.yaml`, which Flux applies; what v2 renders is compared with it offline and applied nowhere. No instance declares a grant, so an enforced proxy would refuse every outbound host | A live slice after v1's `granted=-` history has been granted or explained ([stage E3b](plan.md#stage-5-egress-grants)); needs the operator |
 | An instance that must not reach outside | Every instance in the snapshot is allocated a port, and nothing withholds one | The first kind that must not egress |
-| A v2-owned instance's records | Kept in `v2-records/`: v2's own `instance.json`/`release.json` and the committed resolution `calls.json`, so the instance [recompiles from Git alone](#a-v2-owned-instance-recompiles-from-git-alone-implemented-26-october-2026) and CI fails on a stale file. The v1-shaped records remain for `resolve`, and **the translation** from v1's records to the v2 pair is still written by hand at migration | The bridge command that translates records into `compile`'s inputs; then drop the v1-shaped set once calls come from the committed resolution |
+| A v2-owned instance's records | Kept in `v2-records/`: v2's own `instance.json`/`release.json` and the committed resolution `calls.json`, so the instance [recompiles from Git alone](#a-v2-owned-instance-recompiles-from-git-alone-implemented-26-october-2026) and CI fails on a stale file. The v1-shaped records remain for `resolve`, and **the translation** from v1's records to the v2 pair is still written by hand at migration | A `migrate` use case in [`orchestration`](#the-orchestration-layer-implemented-26-october-2026): translate, compile, write; then drop the v1-shaped set once calls come from the committed resolution |
 | Freshness of a v2-owned instance's backups | Not checked: `verify-platform` judges freshness from the app records in `apps/`, so an instance v2 owns is invisible to it, and v2 renders no observation of a CronJob or an archive | The backup observation: the job exists, when it last succeeded, how old the newest archive is |
 | The egress namespace's own egress | Not restricted: the rendered policy states `Ingress` only, as v1's does, and the proxy's way out is the platform's existing state | A platform-wide decision to default-deny the platform's own namespaces (v1's E3a covers instances only) |
 | DNS egress for an instance that may reach anything | Rendered: an instance with a call or an allocation admits the cluster's DNS (UDP and TCP 53) alongside its callee and the proxy | Done; it was the calls slice's defect |
@@ -1246,13 +1260,14 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 | Rule | What it enforces |
 | --- | --- |
 | `stdlib-only` | v2 imports only the standard library and its own packages; `go.mod` requires nothing ([why](#kubernetes-the-api-server-not-kubectl)). A dependency needs the operator's approval first. |
-| `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
+| `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
 | `pure` | Pure packages (`kernel`, `shadow`) import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments. |
 | `no-subprocess` | v2 code (not its tests) starts no process and names no `kubectl` or `flux` command ([why](#kubernetes-the-api-server-not-kubectl)). |
 | `public-api` | The exported API of every library package matches `archtest/api.txt`, so an interface change is a deliberate, reviewed diff. |
 | `budgets` | No function exceeds complexity 10 or 60 lines unless `archtest/budgets.json` lists it with a reason; a listed function may shrink but not grow, and its entry goes once it fits. |
-| `places` | A package's place matches its layer: layer 0 is listed in `Pure`, layer 1 is under `adapters/`, layer 2 is a `main` package under `cmd/` ([why](#extension-recipes)). |
+| `places` | A package's place matches its layer: layer 0 is listed in `Pure`, layer 1 is under `adapters/`, layer 2 is `orchestration`, layer 3 is a `main` package under `cmd/` ([why](#extension-recipes)). |
 | `adapter-complete` | Each adapter `adapters/<name>` follows the [new-adapter recipe](#extension-recipes): it exports an interface, has raw fixtures in `testdata/`, and its fake in `adapters/<name>/<name>test` satisfies each interface and shares one `Contract` suite with the real adapter; only tests import a fake ([why](#fixtures-and-fakes)). |
+| `orchestration-wires` | The use-case layer (`orchestration`) parses no arguments, prints nothing, chooses no exit status and keeps no mutable package state: it assembles, sequences and reports, and the command above it does the rest ([why](#4-development-layers-and-adapters)). |
 | `rules-documented` | This table lists exactly the rules in code, each rule's principle link resolves, and `AGENTS.md` names `make check-v2`. |
 
 **Run** `make check-v2` from the repository root: `gofmt`, `go vet` and `go test` (with the rules) on the pinned toolchain with network access off, in about two seconds. CI runs it in Validate's tooling job, with Go set up from the version in `v2/go.mod`; it is not part of `make check`. A failure prints one line per violation (rule, file and line, what is wrong), then each broken rule's fix and the section explaining why.

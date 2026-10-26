@@ -51,6 +51,7 @@ func readRepo(t *testing.T, path string) string {
 func TestStdlibOnly(t *testing.T)      { report(t, checkStdlibOnly(module(t))) }
 func TestLayers(t *testing.T)          { report(t, checkLayers(module(t))) }
 func TestPure(t *testing.T)            { report(t, checkPure(module(t))) }
+func TestOrchestration(t *testing.T)   { report(t, checkOrchestration(module(t), Orchestration)) }
 func TestNoSubprocess(t *testing.T)    { report(t, checkNoSubprocess(module(t))) }
 func TestPlaces(t *testing.T)          { report(t, checkPlaces(module(t), Layers, Pure)) }
 func TestAdapterComplete(t *testing.T) { report(t, checkAdapters(module(t))) }

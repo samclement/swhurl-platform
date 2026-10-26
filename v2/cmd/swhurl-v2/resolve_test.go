@@ -102,7 +102,7 @@ func compileWithCalls(t *testing.T, callsPath, application string, release kerne
 	if err != nil {
 		t.Fatal(err)
 	}
-	connections, err := compileConnections(data, application, "staging")
+	connections, err := kernel.ConnectionsOf(data, application, "staging")
 	if err != nil {
 		t.Fatal(err)
 	}

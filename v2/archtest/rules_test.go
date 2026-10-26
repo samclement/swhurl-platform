@@ -31,7 +31,7 @@ var Rules = []Rule{
 	{"stdlib-only", "v2 imports only the Go standard library and its own packages, and go.mod requires nothing",
 		"remove the import; a third-party dependency needs the operator's approval first",
 		"kubernetes-the-api-server-not-kubectl"},
-	{"layers", "every v2 package has a declared layer and imports only v2 packages in lower layers",
+	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers",
 		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down",
 		"4-development-layers-and-adapters"},
 	{"pure", "pure packages import only allowlisted standard packages, print nothing and keep no mutable package state",
@@ -46,12 +46,15 @@ var Rules = []Rule{
 	{"budgets", "no function exceeds the complexity and length limits in archtest/budgets.json unless listed there, and listed ones never grow",
 		"split the function; only if it truly cannot be split, add it to budgets.json with a reason (reviewed)",
 		"guardrails"},
-	{"places", "a package's place matches its layer: layer 0 is listed in Pure, layer 1 is under adapters/, layer 2 is a main package under cmd/",
+	{"places", "a package's place matches its layer: layer 0 is listed in Pure, layer 1 is under adapters/, layer 2 is orchestration, layer 3 is a main package under cmd/",
 		"move the package, or correct its entry in Layers or Pure (archtest/rules_test.go)",
 		"extension-recipes"},
 	{"adapter-complete", "each adapter adapters/<name> exports an interface, has raw fixtures in testdata/, and a fake in adapters/<name>/<name>test that satisfies each interface and runs one Contract suite with the real adapter; only tests import a fake",
 		"add the missing piece the violation names, following the new-adapter recipe",
 		"fixtures-and-fakes"},
+	{"orchestration-wires", "orchestration packages parse no arguments, print nothing, choose no exit code and hold no mutable package state: they assemble, sequence and report, and the command above them does the rest",
+		"move the argument parsing, printing or exit status into the command, and the decision into a pure package",
+		"4-development-layers-and-adapters"},
 	{"rules-documented", "the plan's Guardrails table lists exactly these rules and every principle link resolves",
 		"update the table in docs/iteration-2-plan.md (or this file) so both say the same",
 		"guardrails"},
@@ -69,8 +72,18 @@ var Layers = map[string]int{
 	"adapters/files/filestest": 1,
 	"adapters/kube":            1,
 	"adapters/kube/kubetest":   1,
-	"cmd/swhurl-v2":            2,
+	"orchestration":            2,
+	"cmd/swhurl-v2":            3,
 }
+
+// Orchestration is the published list of packages that run use cases: they sequence pure decisions and the
+// one effect a use case performs, and they are held to OrchestrationNot.
+var Orchestration = []string{"orchestration"}
+
+// OrchestrationImports are the packages a use case may not import: arguments, printing and process exit are
+// the command's business, and a mutable package variable would make a use case's result depend on history.
+var OrchestrationImports = []string{"flag", "os", "log", "testing"}
+var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
 var Pure = []string{"calls", "kernel", "legacy", "observe", "shadow"}
@@ -85,8 +98,8 @@ var PureImports = []string{
 // Printing is an effect even with an allowed package.
 var pureBannedCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println"}
 
-// Where each layer lives: adapters under adapters/, commands under cmd/.
-const adapterRoot, commandRoot = "adapters/", "cmd/"
+// Where each layer lives: adapters under adapters/, use cases under orchestration/, commands under cmd/.
+const adapterRoot, orchestrationRoot, commandRoot = "adapters/", "orchestration/", "cmd/"
 
 var subprocessImports = []string{"os/exec", "syscall"}
 var subprocessCalls = []string{"os.StartProcess"}
@@ -367,6 +380,59 @@ func stateName(target ast.Expr, state map[string]bool, top map[*ast.Object]bool)
 	}
 }
 
+// checkOrchestration holds the use-case layer to its contract: it may not parse arguments, print, exit or keep
+// mutable package state, because those belong to the command above it, and a history-dependent use case is
+// not a use case.
+func checkOrchestration(m *Module, orchestration []string) []Violation {
+	var found []Violation
+	for _, dir := range m.Dirs() {
+		if !slices.Contains(orchestration, dir) {
+			continue
+		}
+		state := map[string]bool{}
+		for _, file := range m.Packages[dir].Source() {
+			for _, decl := range file.AST.Decls {
+				if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.VAR {
+					for _, spec := range gen.Specs {
+						for _, name := range spec.(*ast.ValueSpec).Names {
+							state[name.Name] = true
+						}
+					}
+				}
+			}
+		}
+		for _, file := range m.Packages[dir].Source() {
+			top := map[*ast.Object]bool{}
+			for _, object := range file.AST.Scope.Objects {
+				top[object] = true
+			}
+			for _, spec := range file.AST.Imports {
+				if path := importPath(spec); slices.Contains(OrchestrationImports, path) {
+					found = append(found, Violation{"orchestration-wires", m.at(file, spec.Pos()), "imports " + path})
+				}
+			}
+			ast.Inspect(file.AST, func(node ast.Node) bool {
+				switch node := node.(type) {
+				case *ast.CallExpr:
+					if call := selector(node); slices.Contains(OrchestrationCalls, call) {
+						found = append(found, Violation{"orchestration-wires", m.at(file, node.Pos()), "calls " + call})
+					}
+				case *ast.AssignStmt:
+					if node.Tok != token.DEFINE {
+						for _, target := range node.Lhs {
+							if name := stateName(target, state, top); name != "" {
+								found = append(found, Violation{"orchestration-wires", m.at(file, node.Pos()), "assigns package variable " + name})
+							}
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+	return found
+}
+
 func checkNoSubprocess(m *Module) []Violation {
 	var found []Violation
 	for _, dir := range m.Dirs() {
@@ -414,10 +480,13 @@ func checkPlaces(m *Module, layers map[string]int, pure []string) []Violation {
 
 // placeProblem is what is wrong with a package's place for its layer, or "".
 func placeProblem(dir string, layer int, pure, main bool) string {
-	adapter, command := strings.HasPrefix(dir, adapterRoot), strings.HasPrefix(dir, commandRoot)
+	adapter := strings.HasPrefix(dir, adapterRoot)
+	// The use-case layer is one package, so its own directory is the root.
+	orchestration := dir == strings.TrimSuffix(orchestrationRoot, "/") || strings.HasPrefix(dir, orchestrationRoot)
+	command := strings.HasPrefix(dir, commandRoot)
 	switch {
-	case layer < 0 || layer > 2:
-		return fmt.Sprintf("%s has layer %d; the layers are 0 (pure model), 1 (adapters) and 2 (commands)", dir, layer)
+	case layer < 0 || layer > 3:
+		return fmt.Sprintf("%s has layer %d; the layers are 0 (pure model), 1 (adapters), 2 (use cases) and 3 (commands)", dir, layer)
 	case layer == 0 && !pure:
 		return dir + " is layer 0, the pure model, but is not listed in Pure"
 	case layer != 0 && pure:
@@ -426,9 +495,13 @@ func placeProblem(dir string, layer int, pure, main bool) string {
 		return dir + " is layer 1 (adapters) but is not under " + adapterRoot
 	case layer != 1 && adapter:
 		return fmt.Sprintf("%s is under %s but is layer %d", dir, adapterRoot, layer)
-	case layer == 2 && !(command && main):
-		return dir + " is layer 2 (commands) but is not a main package under " + commandRoot
-	case layer != 2 && command:
+	case layer == 2 && !orchestration:
+		return dir + " is layer 2 (use cases) but is not " + orchestrationRoot
+	case layer != 2 && orchestration:
+		return fmt.Sprintf("%s is %s but is layer %d", dir, orchestrationRoot, layer)
+	case layer == 3 && !(command && main):
+		return dir + " is layer 3 (commands) but is not a main package under " + commandRoot
+	case layer != 3 && command:
 		return fmt.Sprintf("%s is under %s but is layer %d", dir, commandRoot, layer)
 	}
 	return ""

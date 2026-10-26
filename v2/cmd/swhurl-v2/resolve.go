@@ -4,11 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"sort"
 
 	"github.com/samclement/swhurl-platform/v2/calls"
-	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
 // resolutionDocument is the versioned document `resolve` writes and `compile --calls` reads: every
@@ -129,34 +126,4 @@ func encodeResolution(document resolutionDocument) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimSuffix(out.Bytes(), []byte{'\n'}), nil
-}
-
-// compileConnections picks one instance's edges out of a resolution document: what it calls and who may
-// call it, in its own environment.
-func compileConnections(data []byte, application, environment string) (kernel.Connections, error) {
-	var document resolutionDocument
-	if err := json.Unmarshal(data, &document); err != nil {
-		return kernel.Connections{}, fmt.Errorf("invalid: calls: single_json_object_required")
-	}
-	if document.Version != 1 || document.Kind != "v2-calls" {
-		return kernel.Connections{}, fmt.Errorf("unsupported: calls: only v2-calls version 1")
-	}
-	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(document.Revision) {
-		return kernel.Connections{}, fmt.Errorf("invalid: calls: revision_required")
-	}
-	connections := kernel.Connections{}
-	for _, pair := range document.Pairs {
-		if pair.Environment != environment {
-			continue
-		}
-		if pair.Caller == application {
-			connections.Calls = append(connections.Calls, kernel.Call{Callee: pair.Callee, Port: pair.Port})
-		}
-		if pair.Callee == application {
-			connections.Callers = append(connections.Callers, pair.Caller)
-		}
-	}
-	sort.Slice(connections.Calls, func(i, j int) bool { return connections.Calls[i].Callee < connections.Calls[j].Callee })
-	sort.Strings(connections.Callers)
-	return connections, nil
 }

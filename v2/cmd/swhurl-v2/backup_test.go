@@ -121,7 +121,7 @@ func committedFile(t *testing.T, path string) []byte {
 // own generator's output here; from the cutover, v2's render is the authority, so a changed grant, port or
 // profile fact that is not re-rendered fails this check instead of waiting to be noticed in the cluster.
 func TestCommittedProxyIsWhatTheAllocationRenders(t *testing.T) {
-	allocation, err := checkedEgress(committedFile(t, "platform/egress/allocation.json"))
+	allocation, err := kernel.DecodeEgressDocument(committedFile(t, "platform/egress/allocation.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestCommittedProxyIsWhatTheAllocationRenders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered, err := kernel.RenderProxy(proxyAllocations(allocation), profile)
+	rendered, err := kernel.RenderProxy(allocation.Instances, profile)
 	if err != nil {
 		t.Fatal(err)
 	}

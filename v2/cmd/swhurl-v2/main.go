@@ -13,6 +13,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 const usage = `usage:
@@ -324,51 +325,54 @@ func (c cli) selectRelease(r request) int {
 }
 
 func (c cli) compile(r request) int {
-	spec, status := c.instance(r.instance)
+	inputs, status := c.inputs(r)
 	if status != 0 {
 		return status
-	}
-	release, status := c.release(r.release)
-	if status != 0 {
-		return status
-	}
-	data, status := c.read(r.profile, "profile")
-	if status != 0 {
-		return status
-	}
-	profile, err := kernel.DecodeProfile(data)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	connections, egress, status := c.resolutionFiles(r, spec)
-	if status != 0 {
-		return status
-	}
-	compiled, err := kernel.CompileWith(spec, release, profile, connections, egress)
-	if err != nil {
-		return fail(c.diagnostic, err)
 	}
 	if r.out != "" {
-		return c.write(r.out, compiled)
+		if c.appTreeRefused(r.out) {
+			return 2
+		}
+		result, err := orchestration.CompileInto(inputs, r.out, c.writer)
+		return c.wrote(result.Written, err)
+	}
+	compiled, err := orchestration.Compile(inputs)
+	if err != nil {
+		return fail(c.diagnostic, err)
 	}
 	return emit(c.out, c.diagnostic, kernel.EncodeCompilation(compiled))
 }
 
-// write is the only effect compile has: it hands the compiled files to the adapter and reports each
-// one. A destination inside the checkout's apps/ is refused, because that is where v1's instances are
-// recorded. Outcomes are printed before any failure, so a partly written destination is visible.
-func (c cli) write(dir string, compiled kernel.Compilation) int {
-	return c.writeFiles(dir, compiled.Files)
+// inputs reads the documents a compilation takes: the instance's records, the profile, and the two optional
+// documents. Which of them a use case needs is the kernel's to refuse, not this command's to remember.
+func (c cli) inputs(r request) (orchestration.Inputs, int) {
+	var inputs orchestration.Inputs
+	for _, read := range []struct {
+		path   string
+		what   string
+		target *[]byte
+	}{
+		{r.instance, "instance", &inputs.Instance},
+		{r.release, "release", &inputs.Release},
+		{r.profile, "profile", &inputs.Profile},
+		{r.callFile, "", &inputs.Calls},
+		{r.egressFile, "", &inputs.Egress},
+	} {
+		if read.path == "" {
+			continue // an optional document the operator did not give
+		}
+		data, status := c.read(read.path, read.what)
+		if status != 0 {
+			return orchestration.Inputs{}, status
+		}
+		*read.target = data
+	}
+	return inputs, 0
 }
 
-// writeFiles writes rendered files under dir and reports each one, the same way for every command that
-// writes.
-func (c cli) writeFiles(dir string, rendered []kernel.File) int {
-	if _, inside := appTree(dir); inside {
-		fmt.Fprintf(c.diagnostic, "%s: destination: %s\n", files.RefusedDestination, "inside the v1 app tree")
-		return 2
-	}
-	outcomes, err := c.writer.Write(dir, rendered)
+// wrote reports a use case's file outcomes and maps its failure to an exit status. Outcomes are printed
+// before the failure, so a partly written destination is visible.
+func (c cli) wrote(outcomes []files.Outcome, err error) int {
 	for _, outcome := range outcomes {
 		if _, writeErr := fmt.Fprintf(c.out, "%s %s\n", outcome.State, outcome.Path); writeErr != nil {
 			fmt.Fprintln(c.diagnostic, "io: output: cannot write result")
@@ -384,6 +388,26 @@ func (c cli) writeFiles(dir string, rendered []kernel.File) int {
 		return 2
 	}
 	return 1
+}
+
+// writeFiles writes rendered files under dir and reports each one, for a command whose use case returns the
+// files rather than writing them. A destination inside the checkout's apps/ is refused here: that tree is
+// where v1's instances are recorded, which is this checkout's rule rather than a use case's.
+func (c cli) writeFiles(dir string, rendered []kernel.File) int {
+	if c.appTreeRefused(dir) {
+		return 2
+	}
+	outcomes, err := c.writer.Write(dir, rendered)
+	return c.wrote(outcomes, err)
+}
+
+// appTreeRefused reports and refuses a destination inside the checkout's apps/ tree.
+func (c cli) appTreeRefused(dir string) bool {
+	if _, inside := appTree(dir); !inside {
+		return false
+	}
+	fmt.Fprintf(c.diagnostic, "%s: destination: %s\n", files.RefusedDestination, "inside the v1 app tree")
+	return true
 }
 
 // appTree reports the v1 app tree a destination would write into, if any: the apps/ directory of the

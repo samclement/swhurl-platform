@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: the bridge command that translates v1's records into a v2-owned instance's records, so a migration needs no hand-written JSON
+Gate: the `migrate` use case: v1 records translated to v2 records, compiled and written in one task
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -295,6 +295,15 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages take no new effects. 3. No identity changed. 4. No refusal moved. 5. Failure paths tested: a file Git does not hold, a file that differs, and an instance with no records to check are all failures. 6. Scope: the *translation* into those records is still manual — the gap is narrowed to one step, and named. 7. Offline only. 8. This page, the plan and the gap list change together.
 - **Evidence:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`.
 - **Next gate:** the bridge command that translates v1's records into the v2 pair, so a migration needs no hand-written JSON; then the v1-shaped records can go.
+
+## Slice record: the orchestration layer
+
+- **Outcome:** a use-case layer exists (`v2/orchestration`, layer 2) with one use case — *compile an instance*, with or without writing — consumed by `compile` and `observe`; the port allocation decision and the two documents a compilation takes moved down to the pure kernel; the command keeps flags, I/O, exit codes, output and the checkout's own `apps/` refusal.
+- **Why:** `cmd` was the orchestrator as well as the CLI — five separate inputs for `compile`, the snapshot type shared by three commands, `observe` retrofitted with `--calls`/`--egress`, and a pure decision living at layer 2.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages take no new effects; the allocation decision became one, with its own tests. 3. No golden or identity changed. 4. No refusal code moved; one behaviour changed deliberately (below). 5. Failure paths tested: a malformed document is refused even when the instance needs nothing from it, a refusal writes nothing, and the use case's compilation equals the kernel's for the same values. 6. Scope: `migrate`, `resolve`, `egress`, `proxy`, `preview`, `shadow` stay in the command until a second consumer needs their assembly. 7. Offline only. 8. This page, the plan's layers and guardrails, the gap list and the registry change together.
+- **The deliberate behaviour change:** a new instance's port is the lowest free one in the *document's* order (environment, then application), not the snapshot's listing order, so the same facts give the same document. Existing instances keep their recorded ports and the committed allocation is unchanged, which CI confirms.
+- **Evidence:** `make check-v2` (13 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make v2-report` (new layer and rule; three command functions removed by the move).
+- **Next gate:** `migrate` in `orchestration` — translate v1's records into the v2 pair, compile, write — so a migration needs no hand-written JSON.
 
 ## Resume
 

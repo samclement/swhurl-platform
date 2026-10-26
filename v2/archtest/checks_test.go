@@ -72,7 +72,7 @@ func TestCheckLayers(t *testing.T) {
 		"only/b_test.go":        "package only\n",
 	})
 	expect(t, checkLayers(m),
-		"layers kernel/a.go:3: kernel (layer 0) imports cmd/swhurl-v2 (layer 2)",
+		"layers kernel/a.go:3: kernel (layer 0) imports cmd/swhurl-v2 (layer 3)",
 		"layers newpkg/b.go: package newpkg has no declared layer")
 }
 
@@ -129,6 +129,7 @@ func TestCheckPlaces(t *testing.T) {
 		"kernel/a.go":         "package kernel\n",
 		"adapters/git/git.go": "package git\n",
 		"cmd/tool/main.go":    "package main\n",
+		"orchestration/o.go":  "package orchestration\n",
 		"undeclared/u.go":     "package undeclared\n",
 		"only/o_test.go":      "package only\n",
 		"model/a.go":          "package model\n",
@@ -140,17 +141,17 @@ func TestCheckPlaces(t *testing.T) {
 		"cmd/pure/p.go":       "package pure\n",
 		"odd/o.go":            "package odd\n",
 	})
-	layers := map[string]int{"kernel": 0, "adapters/git": 1, "cmd/tool": 2, "only": 2, "model": 0, "listed": 1, "store": 1,
-		"adapters/bad": 2, "cmd/lib": 2, "tools/x": 2, "cmd/pure": 0, "odd": 3}
+	layers := map[string]int{"kernel": 0, "adapters/git": 1, "cmd/tool": 3, "orchestration": 2, "only": 3, "model": 0,
+		"listed": 1, "store": 1, "adapters/bad": 2, "cmd/lib": 2, "tools/x": 3, "cmd/pure": 0, "odd": 4}
 	expect(t, checkPlaces(m, layers, []string{"kernel", "listed", "cmd/pure"}),
 		"places adapters/bad/b.go: adapters/bad is under adapters/ but is layer 2",
-		"places cmd/lib/lib.go: cmd/lib is layer 2 (commands) but is not a main package under cmd/",
+		"places cmd/lib/lib.go: cmd/lib is layer 2 (use cases) but is not orchestration/",
 		"places cmd/pure/p.go: cmd/pure is under cmd/ but is layer 0",
 		"places listed/l.go: listed is listed in Pure but is layer 1",
 		"places model/a.go: model is layer 0, the pure model, but is not listed in Pure",
-		"places odd/o.go: odd has layer 3; the layers are 0 (pure model), 1 (adapters) and 2 (commands)",
+		"places odd/o.go: odd has layer 4; the layers are 0 (pure model), 1 (adapters), 2 (use cases) and 3 (commands)",
 		"places store/s.go: store is layer 1 (adapters) but is not under adapters/",
-		"places tools/x/main.go: tools/x is layer 2 (commands) but is not a main package under cmd/")
+		"places tools/x/main.go: tools/x is layer 3 (commands) but is not a main package under cmd/")
 }
 
 // completeAdapter is an adapter that follows the new-adapter recipe, used by a command and its test.

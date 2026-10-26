@@ -6,7 +6,8 @@ metadata:
   annotations:
     platform.swhurl.com/api-description: /openapi.json
     platform.swhurl.com/offers: af4d55c
-    platform.swhurl.com/render: 9865722aee3729e35f78bd7213dfc7ff76ebfeac218f00768fc4e269972e344d
+    platform.swhurl.com/egress: swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443
+    platform.swhurl.com/render: c4be2d11cc07ba181f334b364a1ce36c2b6323cd5c70f74cb1a548bf7dd66427
 spec:
   interval: 30m
   timeout: 3m

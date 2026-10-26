@@ -5,7 +5,8 @@ metadata:
   namespace: demo-shop-prod
   annotations:
     platform.swhurl.com/offers: a244f82
-    platform.swhurl.com/render: 9cfc4ed0a8eb3d13ebe4f30375365be39e28c85bb926e99cab7c8e8023f6002e
+    platform.swhurl.com/egress: swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443
+    platform.swhurl.com/render: 57dff4a3668e95bc12ccd962a6c5aca6687db44a52d9ae7dcc9b4f97dd6c97cc
 spec:
   interval: 30m
   timeout: 3m

@@ -270,6 +270,8 @@ func kinds() map[pathKey]resource {
 		{"", "Pod"}:                                      {"v1", "pods", true},
 		{"", "ResourceQuota"}:                            {"v1", "resourcequotas", true},
 		{"apps", "Deployment"}:                           {"apps/v1", "deployments", true},
+		{"batch", "CronJob"}:                             {"batch/v1", "cronjobs", true},
+		{"batch", "Job"}:                                 {"batch/v1", "jobs", true},
 		{"networking.k8s.io", "NetworkPolicy"}:           {"networking.k8s.io/v1", "networkpolicies", true},
 		{"networking.k8s.io", "Ingress"}:                 {"networking.k8s.io/v1", "ingresses", true},
 		{"helm.toolkit.fluxcd.io", "HelmRelease"}:        {"helm.toolkit.fluxcd.io/v2", "helmreleases", true},

@@ -94,7 +94,8 @@ func f(count int) int {
 	count++ // a parameter shadows the package variable
 	table["x"] = pattern
 	fmt.Println(os.Getenv("HOME"), time.Now())
-	return fmt.Sprint(count) == "" && pattern > 0
+	at, _ := time.Parse(time.RFC3339, "2026-10-26T00:00:00Z")
+	return fmt.Sprint(count) == "" && pattern > 0 && at.IsZero()
 }
 `,
 		"kernel/b.go":        "package kernel\n\nfunc g() { count = 2 }\n",
@@ -105,9 +106,10 @@ func f(count int) int {
 	})
 	expect(t, checkPure(m),
 		"pure kernel/a.go:5: imports os, which is not in PureImports",
-		"pure kernel/a.go:6: imports time, which is not in PureImports",
 		"pure kernel/a.go:15: assigns package variable table",
 		"pure kernel/a.go:16: calls fmt.Println",
+		// The clock is refused by call, so a supplied timestamp is still a pure computation.
+		"pure kernel/a.go:16: calls time.Now",
 		"pure kernel/b.go:3: assigns package variable count")
 }
 

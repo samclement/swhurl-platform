@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/observe"
@@ -27,13 +28,24 @@ const (
 
 // api is the server-side scenario: the documents for one instance, and the requests that were made.
 type api struct {
-	requests []*http.Request
-	status   map[string]int // path → status override, for the failure cases
+	requests  []*http.Request
+	status    map[string]int // path → status override, for the failure cases
+	namespace string         // the instance's namespace; prod's by default
+	digest    string         // the artifact the compiled release pins; the prod fixture's by default
+	backup    bool           // whether the instance renders a backup CronJob
 }
 
 // serve answers the four paths one observation reads, in the shape the API server writes them.
 func (a *api) serve(t *testing.T) *httptest.Server {
 	t.Helper()
+	namespace := a.namespace
+	if namespace == "" {
+		namespace = "demo-orders-prod"
+	}
+	digest := a.digest
+	if digest == "" {
+		digest = compiledDigest
+	}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.requests = append(a.requests, r)
 		if status, overridden := a.status[r.URL.Path]; overridden {
@@ -45,32 +57,88 @@ func (a *api) serve(t *testing.T) *httptest.Server {
 			return
 		}
 		switch r.URL.Path {
-		case "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/app-demo-orders-prod":
-			writeDocument(t, w, flux("kustomize.toolkit.fluxcd.io/v1", "Kustomization", "app-demo-orders-prod", "flux-system", map[string]any{
+		case "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/app-" + namespace:
+			writeDocument(t, w, flux("kustomize.toolkit.fluxcd.io/v1", "Kustomization", "app-"+namespace, "flux-system", map[string]any{
 				"lastAppliedRevision": "main@sha1:" + observedRevision,
 			}))
-		case "/apis/helm.toolkit.fluxcd.io/v2/namespaces/demo-orders-prod/helmreleases/demo-orders":
-			writeDocument(t, w, flux("helm.toolkit.fluxcd.io/v2", "HelmRelease", "demo-orders", "demo-orders-prod", nil))
-		case "/apis/apps/v1/namespaces/demo-orders-prod/deployments/demo-orders":
+		case "/apis/helm.toolkit.fluxcd.io/v2/namespaces/" + namespace + "/helmreleases/demo-orders":
+			writeDocument(t, w, flux("helm.toolkit.fluxcd.io/v2", "HelmRelease", "demo-orders", namespace, nil))
+		case "/apis/apps/v1/namespaces/" + namespace + "/deployments/demo-orders":
 			writeDocument(t, w, map[string]any{
 				"apiVersion": "apps/v1", "kind": "Deployment",
-				"metadata": map[string]any{"name": "demo-orders", "namespace": "demo-orders-prod", "generation": 4},
+				"metadata": map[string]any{"name": "demo-orders", "namespace": namespace, "generation": 4},
 				"status": map[string]any{"observedGeneration": 4, "availableReplicas": 1,
 					"conditions": []any{map[string]any{"type": "Available", "status": "True"}}},
 			})
-		case "/api/v1/namespaces/demo-orders-prod/pods":
-			if got := r.URL.Query().Get("labelSelector"); got != selector {
+		case "/api/v1/namespaces/" + namespace + "/pods":
+			switch r.URL.Query().Get("labelSelector") {
+			case selector:
+				writeDocument(t, w, map[string]any{"kind": "PodList", "apiVersion": "v1",
+					"items": []any{pod(namespace, "docker.io/example/demo-orders@"+digest)}})
+			case backupSelector:
+				writeDocument(t, w, map[string]any{"kind": "PodList", "apiVersion": "v1",
+					"items": []any{backupPod(namespace)}})
+			default:
 				w.WriteHeader(http.StatusBadRequest)
+			}
+		case "/apis/batch/v1/namespaces/" + namespace + "/cronjobs/demo-orders-backup":
+			if !a.backup {
+				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			writeDocument(t, w, map[string]any{"kind": "PodList", "apiVersion": "v1",
-				"items": []any{pod("docker.io/example/demo-orders@" + compiledDigest)}})
+			writeDocument(t, w, backupCronJob(namespace))
+		case "/apis/batch/v1/namespaces/" + namespace + "/jobs/demo-orders-backup-29345678":
+			if !a.backup {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			writeDocument(t, w, backupRun(namespace))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	t.Cleanup(server.Close)
 	return server
+}
+
+// backupSelector is the label the compiled backup job and its runs carry.
+const backupSelector = "platform.swhurl.com/backup=true"
+
+// backupCronJob is a database instance's backup job, as the cluster holds it: scheduled, and last run
+// finishing successfully two hours ago.
+func backupCronJob(namespace string) map[string]any {
+	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	return map[string]any{
+		"apiVersion": "batch/v1", "kind": "CronJob",
+		"metadata": map[string]any{"name": "demo-orders-backup", "namespace": namespace,
+			"labels": map[string]any{"platform.swhurl.com/backup": "true"}},
+		"spec":   map[string]any{"schedule": "58 3 * * *", "suspend": false},
+		"status": map[string]any{"lastScheduleTime": twoHoursAgo, "lastSuccessfulTime": twoHoursAgo},
+	}
+}
+
+// backupPod is the pod that run created: its owner reference names the run's Job, which is how the
+// observation reaches a Job the CronJob's labels cannot select.
+func backupPod(namespace string) map[string]any {
+	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	return map[string]any{
+		"apiVersion": "v1", "kind": "Pod",
+		"metadata": map[string]any{"name": "demo-orders-backup-29345678-x7k2p", "namespace": namespace,
+			"creationTimestamp": twoHoursAgo,
+			"ownerReferences":   []any{map[string]any{"apiVersion": "batch/v1", "kind": "Job", "name": "demo-orders-backup-29345678"}}},
+	}
+}
+
+// backupRun is the Job that run created.
+func backupRun(namespace string) map[string]any {
+	twoHoursAgo := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	return map[string]any{
+		"apiVersion": "batch/v1", "kind": "Job",
+		"metadata": map[string]any{"name": "demo-orders-backup-29345678", "namespace": namespace,
+			"creationTimestamp": twoHoursAgo},
+		"status": map[string]any{"completionTime": twoHoursAgo, "succeeded": 1,
+			"conditions": []any{map[string]any{"type": "Complete", "status": "True"}}},
+	}
 }
 
 // flux is a Flux object document: a Ready condition about the generation it observed.
@@ -87,10 +155,10 @@ func flux(apiVersion, kind, name, namespace string, status map[string]any) map[s
 }
 
 // pod is the one pod that runs the instance's container, already pulled.
-func pod(image string) map[string]any {
+func pod(namespace, image string) map[string]any {
 	return map[string]any{
 		"apiVersion": "v1", "kind": "Pod",
-		"metadata": map[string]any{"name": "demo-orders-abc", "namespace": "demo-orders-prod"},
+		"metadata": map[string]any{"name": "demo-orders-abc", "namespace": namespace},
 		"spec":     map[string]any{"containers": []any{map[string]any{"name": "main", "image": image}}},
 		"status": map[string]any{"containerStatuses": []any{
 			map[string]any{"name": "main", "image": image, "imageID": "docker-pullable://" + image}}},
@@ -133,11 +201,17 @@ func kubeconfig(t *testing.T, server *httptest.Server) string {
 
 // observeArgs is the command line for the compiled prod instance.
 func observeArgs(t *testing.T, kubeconfigPath string, extra ...string) []string {
+	return observeArgsOf(t, kubeconfigPath, "prod.json", "r41.json", extra...)
+}
+
+// observeArgsOf is the command line for one compiled fixture instance, with its documents written beside
+// each other.
+func observeArgsOf(t *testing.T, kubeconfigPath, instance, release string, extra ...string) []string {
 	t.Helper()
 	dir := t.TempDir()
 	paths := map[string][]byte{
-		"instance.json": fixture(t, "prod.json"),
-		"release.json":  fixture(t, "r41.json"),
+		"instance.json": fixture(t, instance),
+		"release.json":  fixture(t, release),
 		"profile.json":  fixture(t, "profile.json"),
 	}
 	written := map[string]string{}
@@ -192,7 +266,7 @@ func TestObserveReportsTheRunningInstance(t *testing.T) {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
 	report := document(t, stdout)
-	if report["kind"] != "v2-observation" || report["version"] != float64(1) {
+	if report["kind"] != "v2-observation" || report["version"] != float64(2) {
 		t.Fatalf("the report envelope is %v/%v", report["kind"], report["version"])
 	}
 	if report["verdict"] != string(observe.IsRunning) {
@@ -210,6 +284,10 @@ func TestObserveReportsTheRunningInstance(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "verdict running") {
 		t.Fatalf("summary %q", stderr)
+	}
+	// A stateless instance renders no backup, and the report says so rather than leaving a gap.
+	if backup := report["backup"].(map[string]any); backup["state"] != observe.BackupNotApplicable {
+		t.Fatalf("backup %v", backup)
 	}
 	// The four reads went to the four stated paths, with the token, and the list asked for this
 	// instance's pods.
@@ -310,5 +388,69 @@ func TestTestServerCertificateParses(t *testing.T) {
 	server := (&api{}).serve(t)
 	if _, err := x509.ParseCertificate(server.Certificate().Raw); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// digestOf is the artifact a release fixture pins, so the scenario serves the image the instance intends.
+func digestOf(t *testing.T, release string) string {
+	t.Helper()
+	var document struct {
+		Artifact struct {
+			Digest string `json:"digest"`
+		} `json:"artifact"`
+	}
+	if err := json.Unmarshal(fixture(t, release), &document); err != nil {
+		t.Fatal(err)
+	}
+	return document.Artifact.Digest
+}
+
+// A database instance's report also answers whether its backup job runs: current under the default
+// threshold, stale under one the operator states, and the running verdict is unchanged by either.
+func TestObserveReportsTheBackupOfADatabaseInstance(t *testing.T) {
+	api := &api{namespace: "demo-orders-staging", digest: digestOf(t, "r43.json"), backup: true}
+	server := api.serve(t)
+	args := observeArgsOf(t, kubeconfig(t, server), "sqlite.json", "r43.json",
+		"--egress", filepath.Join("..", "..", "..", "platform", "egress", "allocation.json"))
+	status, stdout, stderr := runObserve(t, args...)
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	report := document(t, stdout)
+	backup := report["backup"].(map[string]any)
+	if backup["state"] != observe.BackupCurrent || backup["reason"] != nil {
+		t.Fatalf("backup %v", backup)
+	}
+	target := report["target"].(map[string]any)["backup"].(map[string]any)
+	if backup["schedule"] != target["schedule"] || backup["schedule"] == "" || backup["maxAgeSeconds"] != float64(26*3600) {
+		t.Fatalf("backup facts %v", backup)
+	}
+	newest := backup["newestRun"].(map[string]any)
+	if newest["name"] != "demo-orders-backup-29345678" || newest["outcome"] != observe.RunComplete {
+		t.Fatalf("newest run %v", newest)
+	}
+	if target["cronJob"].(map[string]any)["name"] != "demo-orders-backup" ||
+		target["pods"].(map[string]any)["kind"] != "Pod" || target["selector"] != backupSelector {
+		t.Fatalf("the target's protection %v", target)
+	}
+	if !strings.Contains(stderr, "backup current") {
+		t.Fatalf("summary %q", stderr)
+	}
+	// The last success is two hours old, so an hour's threshold is not met — and the verdict is untouched.
+	status, stdout, stderr = runObserve(t, append(args, "--max-age", "1h")...)
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	report = document(t, stdout)
+	backup = report["backup"].(map[string]any)
+	if backup["state"] != observe.BackupStale || backup["reason"] != observe.ReasonTooOld {
+		t.Fatalf("one hour: %v", backup)
+	}
+	if report["verdict"] != string(observe.IsRunning) || !strings.Contains(stderr, "backup stale/last_success_too_old") {
+		t.Fatalf("verdict %v, summary %q", report["verdict"], stderr)
+	}
+	// A threshold the command cannot parse is a usage error, not a report judged by nothing.
+	if status, stdout, _ := runObserve(t, append(args, "--max-age", "soon")...); status != 2 || stdout != "" {
+		t.Fatalf("an unreadable threshold: exit %d, stdout %q", status, stdout)
 	}
 }

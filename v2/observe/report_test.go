@@ -30,7 +30,7 @@ func TestEncodeReportIsStableAndComplete(t *testing.T) {
 	if err := json.Unmarshal(first, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document["kind"] != "v2-observation" || document["version"] != float64(1) {
+	if document["kind"] != "v2-observation" || document["version"] != float64(2) {
 		t.Fatalf("envelope: %v %v", document["kind"], document["version"])
 	}
 	if document["verdict"] != string(observe.IsRunning) || document["source"] != report.Source {

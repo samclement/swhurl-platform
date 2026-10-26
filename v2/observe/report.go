@@ -3,18 +3,20 @@ package observe
 import (
 	"bytes"
 	"encoding/json"
+	"time"
 )
 
 // EncodeReport is one observation as a versioned JSON document: the target it is about, the evidence's
-// source and time, every finding in order, what was assessed, and what this slice never looks at.
-// Identical reports encode to identical bytes, and no list is ever null.
+// source and time, every finding in order, the protection's own answer, what was assessed, and what this
+// slice never looks at. Identical reports encode to identical bytes, and no list is ever null.
 func EncodeReport(report Report) ([]byte, error) {
 	document := reportDocument{
 		Kind:       "v2-observation",
-		Version:    1,
+		Version:    2,
 		Source:     report.Source,
 		ObservedAt: report.ObservedAt,
 		Verdict:    report.Verdict,
+		Backup:     backupDocumentOf(report.Backup),
 		Findings:   make([]findingDocument, 0, len(report.Findings)),
 		Assessed:   nonNil(report.Assessed),
 		Unassessed: nonNil(report.Unassessed),
@@ -41,11 +43,42 @@ type reportDocument struct {
 	Source     string            `json:"source"`
 	ObservedAt string            `json:"observedAt"`
 	Verdict    Verdict           `json:"verdict"`
+	Backup     backupDocument    `json:"backup"`
 	Findings   []findingDocument `json:"findings"`
 	Assessed   []string          `json:"assessed"`
 	Unassessed []string          `json:"unassessed"`
 	NotCovered []string          `json:"notCovered"`
 	Target     targetDocument    `json:"target"`
+}
+
+// backupDocument is the protection's answer: its state and reason, the schedule's own facts, and the newest
+// run. The threshold is the caller's, in seconds, so a reader of the document needs no clock either.
+type backupDocument struct {
+	State           string       `json:"state"`
+	Reason          string       `json:"reason,omitempty"`
+	Schedule        string       `json:"schedule,omitempty"`
+	LastScheduledAt string       `json:"lastScheduledAt,omitempty"`
+	LastSucceededAt string       `json:"lastSucceededAt,omitempty"`
+	MaxAgeSeconds   int64        `json:"maxAgeSeconds,omitempty"`
+	NewestRun       *runDocument `json:"newestRun,omitempty"`
+}
+
+type runDocument struct {
+	Name        string `json:"name"`
+	CreatedAt   string `json:"createdAt,omitempty"`
+	CompletedAt string `json:"completedAt,omitempty"`
+	Outcome     string `json:"outcome"`
+}
+
+func backupDocumentOf(report BackupReport) backupDocument {
+	document := backupDocument{State: report.State, Reason: report.Reason, Schedule: report.Schedule,
+		LastScheduledAt: report.LastScheduledAt, LastSucceededAt: report.LastSucceededAt,
+		MaxAgeSeconds: int64(report.MaxAge / time.Second)}
+	if report.NewestRun != nil {
+		document.NewestRun = &runDocument{Name: report.NewestRun.Name, CreatedAt: report.NewestRun.CreatedAt,
+			CompletedAt: report.NewestRun.CompletedAt, Outcome: report.NewestRun.Outcome}
+	}
+	return document
 }
 
 type findingDocument struct {
@@ -55,16 +88,26 @@ type findingDocument struct {
 }
 
 type targetDocument struct {
-	Namespace string      `json:"namespace"`
-	Unit      refDocument `json:"unit"`
-	Release   refDocument `json:"release"`
-	Workload  refDocument `json:"workload"`
-	Pods      refDocument `json:"pods"`
-	Selector  string      `json:"selector"`
-	Container string      `json:"container"`
-	Digest    string      `json:"digest"`
-	Replicas  int32       `json:"replicas"`
-	Revision  string      `json:"revision,omitempty"`
+	Namespace string                `json:"namespace"`
+	Unit      refDocument           `json:"unit"`
+	Release   refDocument           `json:"release"`
+	Workload  refDocument           `json:"workload"`
+	Pods      refDocument           `json:"pods"`
+	Backup    *backupTargetDocument `json:"backup,omitempty"`
+	Selector  string                `json:"selector"`
+	Container string                `json:"container"`
+	Digest    string                `json:"digest"`
+	Replicas  int32                 `json:"replicas"`
+	Revision  string                `json:"revision,omitempty"`
+}
+
+// backupTargetDocument is what a protection observation read: the CronJob, the collection of its runs, and
+// the selector that finds them.
+type backupTargetDocument struct {
+	CronJob  refDocument `json:"cronJob"`
+	Pods     refDocument `json:"pods"`
+	Selector string      `json:"selector"`
+	Schedule string      `json:"schedule"`
 }
 
 type refDocument struct {
@@ -81,12 +124,21 @@ func targetDocumentOf(target Target) targetDocument {
 		Release:   refDocumentOf(target.Release),
 		Workload:  refDocumentOf(target.Workload),
 		Pods:      refDocumentOf(target.Pods),
+		Backup:    backupTargetDocumentOf(target.Backup),
 		Selector:  target.Selector,
 		Container: target.Container,
 		Digest:    target.Digest,
 		Replicas:  target.Replicas,
 		Revision:  target.Revision,
 	}
+}
+
+func backupTargetDocumentOf(target *BackupTarget) *backupTargetDocument {
+	if target == nil {
+		return nil
+	}
+	return &backupTargetDocument{CronJob: refDocumentOf(target.CronJob), Pods: refDocumentOf(target.Pods),
+		Selector: target.Selector, Schedule: target.Schedule}
 }
 
 func refDocumentOf(ref Ref) refDocument {

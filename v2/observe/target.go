@@ -1,5 +1,10 @@
 package observe
 
+import (
+	"sort"
+	"strings"
+)
+
 // TargetOf derives the target an instance's compiled HelmRelease describes: its objects, selector and
 // intended artifact. It recognises the shape the compiler renders and refuses anything else, so a
 // chart change that moved a name or a label fails here rather than reading another workload.
@@ -126,4 +131,63 @@ func (r release) replicas() int32 {
 		return *declared
 	}
 	return 0
+}
+
+// BackupTargetOf derives the protection a database instance's compiled CronJob describes: the job to read,
+// the collection its runs land in, the labels they carry and the schedule it runs on. It refuses a document
+// that is not the CronJob this compiler renders, rather than reading another workload's history.
+func BackupTargetOf(cronJob []byte) (BackupTarget, error) {
+	var document struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string `json:"kind"`
+		Metadata   struct {
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
+		} `json:"metadata"`
+		Spec struct {
+			Schedule    string `json:"schedule"`
+			JobTemplate struct {
+				Spec struct {
+					Template struct {
+						Metadata struct {
+							Labels map[string]string `json:"labels"`
+						} `json:"metadata"`
+					} `json:"template"`
+				} `json:"spec"`
+			} `json:"jobTemplate"`
+		} `json:"spec"`
+	}
+	if err := decodeDocument(cronJob, &document, "backup"); err != nil {
+		return BackupTarget{}, err
+	}
+	if document.Kind != "CronJob" || document.APIVersion != "batch/v1" {
+		return BackupTarget{}, invalid("backup", "expected_a_cronjob")
+	}
+	target := BackupTarget{
+		CronJob:  Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: document.Metadata.Namespace, Name: document.Metadata.Name},
+		Pods:     Ref{APIVersion: "v1", Kind: "Pod", Namespace: document.Metadata.Namespace},
+		Selector: selectorOf(document.Spec.JobTemplate.Spec.Template.Metadata.Labels),
+		Schedule: document.Spec.Schedule,
+	}
+	if target.Selector == "" {
+		return BackupTarget{}, invalid("backup", "expected_a_selector")
+	}
+	return target, nil
+}
+
+// selectorOf is a label map as a selector: sorted keys, so the same labels always give the same request.
+func selectorOf(labels map[string]string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	terms := make([]string, 0, len(keys))
+	for _, key := range keys {
+		terms = append(terms, key+"="+labels[key])
+	}
+	return strings.Join(terms, ",")
 }

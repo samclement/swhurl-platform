@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Offline Go v2 | main | approved | the `migrate` use case writes v2's record pair from v1's records: the translation is a second pure `legacy` function, the source is supplied and corroborated against what the records abbreviate, and the two real migrations reproduce byte for byte, 26 October 2026 | the read-only backup observation: whether a v2-owned instance's job runs and how old its newest archive is | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/` |
+| Offline Go v2 | main | approved | a database instance's backup job is observed from the cluster: `observe` answers current/stale/failing/suspended from the CronJob, its runs' pods and the newest run's Job, and `migrate` writes v2's records from v1's, 26 October 2026 | the object-store read: whether a v2-owned instance's newest archive exists and is younger than the threshold (a credential decision) | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/` |
 | Live platform | main | approved | the 24 open items in the plan index | M14, then B4b (records-only removal) | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

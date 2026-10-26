@@ -1,0 +1,30 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "CronJob",
+  "metadata": {
+    "name": "hello-backup",
+    "namespace": "hello-staging",
+    "labels": {"platform.swhurl.com/backup": "true"}
+  },
+  "spec": {
+    "schedule": "35 3 * * *",
+    "timeZone": "Etc/UTC",
+    "concurrencyPolicy": "Forbid",
+    "startingDeadlineSeconds": 3600,
+    "successfulJobsHistoryLimit": 1,
+    "failedJobsHistoryLimit": 3,
+    "suspend": false,
+    "jobTemplate": {
+      "metadata": {"labels": {"platform.swhurl.com/backup": "true"}},
+      "spec": {
+        "backoffLimit": 2,
+        "activeDeadlineSeconds": 900,
+        "template": {"spec": {"containers": [{"name": "backup", "args": ["backup-job-sqlite"]}]}}
+      }
+    }
+  },
+  "status": {
+    "lastScheduleTime": "2026-10-26T03:35:00Z",
+    "lastSuccessfulTime": "2026-10-26T03:36:12Z"
+  }
+}

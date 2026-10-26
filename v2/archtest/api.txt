@@ -147,6 +147,14 @@ legacy: type Workload struct {Image, Tag, Digest string Kind string Port int32 H
 observe: const Absent = "absent"
 observe: const Applied = "applied"
 observe: const AsIntended = "as_intended"
+observe: const BackupAbsent = "absent"
+observe: const BackupCurrent = "current"
+observe: const BackupFailing = "failing"
+observe: const BackupNotApplicable = "not_applicable"
+observe: const BackupNotAssessed = "not_assessed"
+observe: const BackupStale = "stale"
+observe: const BackupSuspended = "suspended"
+observe: const BackupUnavailable = "unavailable"
 observe: const Different = "different"
 observe: const IsNotRunning Verdict = "not_running"
 observe: const IsRunning Verdict = "running"
@@ -162,49 +170,68 @@ observe: const Ready = "ready"
 observe: const ReasonDigest = "digest"
 observe: const ReasonForbidden = "forbidden"
 observe: const ReasonMalformed = "malformed"
+observe: const ReasonMaxAge = "max_age_required"
 observe: const ReasonNoCondition = "condition_absent"
 observe: const ReasonNoContainer = "container_absent"
+observe: const ReasonNoOwner = "no_owner_job"
 observe: const ReasonNoPods = "no_pods"
 observe: const ReasonNoReplicas = "no_replicas_intended"
+observe: const ReasonNoRuns = "no_runs"
+observe: const ReasonNoSuccess = "no_successful_run"
 observe: const ReasonNotAppliedRev = "revision_not_applied"
 observe: const ReasonNotAvailable = "condition_not_available"
 observe: const ReasonNotFound = "not_found"
 observe: const ReasonNotPulled = "not_pulled"
 observe: const ReasonNotSupplied = "revision_not_supplied"
 observe: const ReasonNotTrue = "condition_not_ready"
+observe: const ReasonObservedTime = "observed_at"
 observe: const ReasonPodsDown = "pods_unavailable"
 observe: const ReasonReplicas = "available_replicas"
 observe: const ReasonRevisionShape = "unrecognised_revision"
+observe: const ReasonRunFailed = "last_run_failed"
+observe: const ReasonRunsDown = "runs_unavailable"
 observe: const ReasonStale = "status_stale"
 observe: const ReasonStatus = "status"
 observe: const ReasonSuspended = "suspended"
 observe: const ReasonTimedOut = "timed_out"
 observe: const ReasonTooLarge = "response_too_large"
+observe: const ReasonTooOld = "last_success_too_old"
 observe: const ReasonTransport = "transport"
+observe: const ReasonUnexpected = "unexpected_backup"
 observe: const ReasonUnitDown = "unit_unavailable"
 observe: const ReasonUnitGone = "unit_absent"
 observe: const ReasonUnpinnedPod = "unpinned_pod_image"
 observe: const ReasonWorkloadDown = "workload_unavailable"
 observe: const ReasonWorkloadGone = "workload_absent"
 observe: const Reconciled = "reconciled"
+observe: const RunComplete = "complete"
+observe: const RunFailed = "failed"
+observe: const RunRunning = "running"
+observe: const RunUnknown = "unknown"
 observe: const Running = "running"
 observe: const Settled = "settled"
 observe: const Unavailable = "unavailable"
 observe: const Unknown Verdict = "unknown"
 observe: func (*Error) Error() string
+observe: func BackupTargetOf(cronJob []byte) (BackupTarget, error)
 observe: func EncodeReport(report Report) ([]byte, error)
 observe: func Explain(target Target, evidence Evidence) (Report, error)
 observe: func IsPositive(outcome string) bool
+observe: func NewestRun(items [][]byte) (string, bool, error)
 observe: func TargetOf(helmRelease []byte, unit Ref, revision string) (Target, error)
 observe: func UnitRef(unit []byte) (Ref, error)
+observe: type BackupEvidence struct {CronJob Read Pods List Run *Read MaxAge time.Duration}
+observe: type BackupReport struct {State string Reason string Schedule string LastScheduledAt string LastSucceededAt string MaxAge time.Duration NewestRun *RunReport}
+observe: type BackupTarget struct {CronJob Ref Pods Ref Selector string Schedule string}
 observe: type Error struct {Field, Reason string}
-observe: type Evidence struct {Source string ObservedAt string Objects []Read Pods []List}
+observe: type Evidence struct {Source string ObservedAt string Objects []Read Pods []List Backup *BackupEvidence}
 observe: type Finding struct {Field, Outcome, Reason string}
 observe: type List struct {Ref Ref Selector string Status string Reason string Items [][]byte}
 observe: type Read struct {Ref Ref Status string Reason string Object []byte}
 observe: type Ref struct {APIVersion, Kind, Namespace, Name string}
-observe: type Report struct {Target Target Source string ObservedAt string Findings []Finding Verdict Verdict Assessed []string Unassessed []string NotCovered []string}
-observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string}
+observe: type Report struct {Target Target Source string ObservedAt string Findings []Finding Verdict Verdict Backup BackupReport Assessed []string Unassessed []string NotCovered []string}
+observe: type RunReport struct {Name string CreatedAt string CompletedAt string Outcome string}
+observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string Backup *BackupTarget}
 observe: type Verdict string
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)

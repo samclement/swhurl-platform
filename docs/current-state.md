@@ -2,6 +2,16 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## A call between two v2-owned instances renders, but does not connect (26 October 2026)
+
+After the first stateful migration kept its records, the snapshot saw both v2-owned instances for the first time: `resolve` connected **`swhurl-try-11` → `swhurl-try-10`** (and `swhurl-try-12` → `swhurl-try-10`), and `swhurl-try-10` was recompiled with its **callee side** — `SWHURL_ALLOWED_CALLERS=swhurl-try-11,swhurl-try-12`, the platform's keys as its `swhurl-try-10-auth` ConfigMap, and ingress rules admitting each caller's namespace and label. That is live and correct as rendered.
+
+**The call does not connect, and the reason is not v2's render.** A probe pod created in `swhurl-try-11-staging` with that instance's label and a projected token for audience `swhurl-try-10` reached neither the Service name, its ClusterIP, nor the callee's pod IP: `curl: (7) Failed to connect … Could not connect to server`, `000` in every case, and the callee's log shows no request at all. The same probe shape in `swhurl-try-12-staging` failed identically. **The decisive test:** the same probe in `demo-shop-staging` with `demo-shop`'s label, against `demo-orders`' pod — the v1 pair the platform believes is connected — is **also refused**. DNS resolves in all cases (the ClusterIP is returned), so name resolution is not the problem.
+
+So the live behaviour is: a pod in one app's namespace is not admitted to another app's pod by a NetworkPolicy peer naming that namespace and that instance label — for v1's policies and v2's, which have the same shape. Traefik (the ingress controller) *is* admitted by the equivalent rule, so the mechanism works for that peer; what differs is not yet established, and the candidate causes are the cluster's policy controller (k3s's kube-router) with combined `namespaceSelector`+`podSelector` peers, or an ipset built from a different label set than the rules name.
+
+**Not verified, therefore:** any live call, in v1 or v2. The calls workstream's earlier "connected pair" evidence is render-only, and the plan's `calls` row now says so. The next step is a live diagnosis of the policy controller and then a decision on the call's policy shape — namespace-only ingress on the callee's port, or a pod-CIDR `ipBlock` — with a re-run of this probe as the proof. Left as found: the probe pods were deleted, and nothing in Git or on the cluster changed in this step.
+
 ## The first stateful migration: `swhurl-try-10` staging keeps its volume (26 October 2026)
 
 `swhurl-try-10` staging is the first database instance v2 owns. The handover (commit `6651aee7`) removed v1's records, rendered manifests, events identity, image automation and unit, and v2's compiled instance took the same namespace and host name.

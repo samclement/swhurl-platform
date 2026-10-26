@@ -51,21 +51,9 @@ func compiledDatabase(t *testing.T) map[string]map[string]any {
 // YAML and v2 reads none, so kubectl parses it offline.
 func committedBackup(t *testing.T) (secret, job map[string]any) {
 	t.Helper()
-	kubectl := tool(t, "kubectl")
-	parsed := output(t, kubectl, "create", "--dry-run=client", "-o", "json", "--validate=false",
-		"-f", "../../../apps/demo-orders/staging/backup.yaml")
-	// A multi-document file prints one JSON object per document, not a list.
-	decoder := json.NewDecoder(strings.NewReader(parsed))
-	var items []map[string]any
-	for decoder.More() {
-		item := map[string]any{}
-		if err := decoder.Decode(&item); err != nil {
-			t.Fatalf("v1's backup is not JSON: %v\n%s", err, parsed)
-		}
-		items = append(items, item)
-	}
+	items := yamlDocuments(t, "../../../apps/demo-orders/staging/backup.yaml")
 	if len(items) != 2 {
-		t.Fatalf("v1's backup holds %d objects: %s", len(items), parsed)
+		t.Fatalf("v1's backup holds %d objects", len(items))
 	}
 	for _, item := range items {
 		// The tools add fields a manifest does not carry.

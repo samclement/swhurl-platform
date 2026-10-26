@@ -13,6 +13,24 @@ import (
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
+// yamlDocuments reads a committed YAML file as JSON objects, with PyYAML: it parses locally, where
+// kubectl's client-side dry run still asks the server to recognise an unknown kind, so a test must not
+// depend on a cluster for it. The repository has PyYAML for its own tooling, and CI installs it.
+func yamlDocuments(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	python := tool(t, "python3")
+	out := output(t, python, "-c",
+		"import json,sys,yaml; print(json.dumps([d for d in yaml.safe_load_all(open(sys.argv[1]).read()) if d]))", path)
+	var documents []map[string]any
+	if err := json.Unmarshal([]byte(out), &documents); err != nil {
+		t.Fatalf("%s is not YAML: %v\n%s", path, err, out)
+	}
+	if len(documents) == 0 {
+		t.Fatalf("%s holds no objects", path)
+	}
+	return documents
+}
+
 // need skips a test that lacks an external tool or the cached chart, or fails it under
 // REQUIRE_HELM, as CI sets it, so the check cannot silently stop running there.
 func need(t *testing.T, what string) {
@@ -214,7 +232,7 @@ func serviceOf(rendered string) (name, namespace string) {
 // pod labels the rendered policy selects. Each of those is a fact written twice — once by v2, once by
 // the platform's own file — so a rename on either side fails here instead of silently breaking egress.
 func TestProxyManifests(t *testing.T) {
-	helm, kubectl := tool(t, "helm"), tool(t, "kubectl")
+	helm := tool(t, "helm")
 	profile, err := kernel.DecodeProfile(fixture(t, "profile.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -237,8 +255,6 @@ func TestProxyManifests(t *testing.T) {
 		}
 	}
 	// The proxy's own deployment is the platform's file, not v2's: read it as the tools do.
-	live := output(t, kubectl, "create", "--dry-run=client", "-o", "json", "--validate=false",
-		"-f", "../../../platform/egress/helmrelease.yaml")
 	var release struct {
 		Metadata struct{ Name, Namespace string }
 		Spec     struct {
@@ -249,8 +265,13 @@ func TestProxyManifests(t *testing.T) {
 			Values     map[string]any
 		}
 	}
-	if err := json.Unmarshal([]byte(live), &release); err != nil {
-		t.Fatalf("the HelmRelease is not JSON: %v\n%s", err, live)
+	live := yamlDocuments(t, "../../../platform/egress/helmrelease.yaml")[0]
+	encoded, err := json.Marshal(live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &release); err != nil {
+		t.Fatalf("the HelmRelease is not what this test reads: %v", err)
 	}
 	var configMap struct {
 		Metadata struct{ Name, Namespace string }

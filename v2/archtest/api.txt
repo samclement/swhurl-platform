@@ -35,6 +35,21 @@ adapters/kube: type Connection struct {Endpoint string Credentials Credentials T
 adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
 adapters/kube: type Error struct {Code, Subject, Reason string}
 adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)}
+adapters/s3/s3test: func (*Fake) List(_ context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
+adapters/s3/s3test: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) s3.Reader)
+adapters/s3/s3test: func New(scenario Scenario) *Fake
+adapters/s3/s3test: type Fake struct {Scenario Scenario Lists []observe.ArchiveQuery Refuse error}
+adapters/s3/s3test: type Scenario struct {Query observe.ArchiveQuery Objects []observe.Archive Forbidden observe.ArchiveQuery Empty observe.ArchiveQuery}
+adapters/s3: const RefusedRequest = "refused_request"
+adapters/s3: func (*Error) Error() string
+adapters/s3: func (Client) List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
+adapters/s3: func DiscoverRegion(ctx context.Context, bucket string, client *http.Client) (string, error)
+adapters/s3: func New(region string, credentials Credentials, client *http.Client) Reader
+adapters/s3: func ParseURL(uri string) (observe.ArchiveQuery, error)
+adapters/s3: type Client struct {}
+adapters/s3: type Credentials struct {AccessKey, SecretKey, SessionToken string}
+adapters/s3: type Error struct {Code, Subject, Reason string}
+adapters/s3: type Reader interface {List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)}
 calls: const CalleeAbsent = "callee_absent"
 calls: const CalleeNotWeb = "callee_not_web"
 calls: const NoConsent = "no_consent"
@@ -167,10 +182,13 @@ observe: const NotRunning = "not_running"
 observe: const NotSettled = "not_settled"
 observe: const Present = "present"
 observe: const Ready = "ready"
+observe: const ReasonArchiveOld = "last_archive_too_old"
+observe: const ReasonConfined = "not_confined_to_the_instance"
 observe: const ReasonDigest = "digest"
 observe: const ReasonForbidden = "forbidden"
 observe: const ReasonMalformed = "malformed"
 observe: const ReasonMaxAge = "max_age_required"
+observe: const ReasonNoArchive = "no_archive"
 observe: const ReasonNoCondition = "condition_absent"
 observe: const ReasonNoContainer = "container_absent"
 observe: const ReasonNoOwner = "no_owner_job"
@@ -220,8 +238,12 @@ observe: func IsPositive(outcome string) bool
 observe: func NewestRun(items [][]byte) (string, bool, error)
 observe: func TargetOf(helmRelease []byte, unit Ref, revision string) (Target, error)
 observe: func UnitRef(unit []byte) (Ref, error)
-observe: type BackupEvidence struct {CronJob Read Pods List Run *Read MaxAge time.Duration}
-observe: type BackupReport struct {State string Reason string Schedule string LastScheduledAt string LastSucceededAt string MaxAge time.Duration NewestRun *RunReport}
+observe: type Archive struct {Key string LastModified time.Time}
+observe: type ArchiveList struct {Query ArchiveQuery Status string Reason string Objects []Archive}
+observe: type ArchiveQuery struct {Bucket, Prefix string}
+observe: type ArchiveReport struct {State string Reason string Bucket string Prefix string Newest string LastModified string Age time.Duration MaxAge time.Duration}
+observe: type BackupEvidence struct {CronJob Read Pods List Run *Read Archive *ArchiveList MaxAge time.Duration}
+observe: type BackupReport struct {State string Reason string Schedule string LastScheduledAt string LastSucceededAt string MaxAge time.Duration NewestRun *RunReport Archive ArchiveReport}
 observe: type BackupTarget struct {CronJob Ref Pods Ref Selector string Schedule string}
 observe: type Error struct {Field, Reason string}
 observe: type Evidence struct {Source string ObservedAt string Objects []Read Pods []List Backup *BackupEvidence}

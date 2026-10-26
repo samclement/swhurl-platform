@@ -54,6 +54,8 @@ type BackupEvidence struct {
 	CronJob Read
 	Pods    List
 	Run     *Read
+	// Archive is the object store's listing for the instance's prefix, or the read the caller did not make.
+	Archive *ArchiveList
 	MaxAge  time.Duration
 }
 
@@ -67,6 +69,8 @@ type BackupReport struct {
 	LastSucceededAt string
 	MaxAge          time.Duration
 	NewestRun       *RunReport
+	// Archive is the object store's own answer, beside the job's and never folded into it.
+	Archive ArchiveReport
 }
 
 // RunReport is the newest run's own facts. Outcome is the Job's verdict, not this layer's: a run that
@@ -123,10 +127,11 @@ func backupOf(target Target, evidence Evidence) (BackupReport, error) {
 		if evidence.Backup != nil {
 			return BackupReport{}, invalid("evidence", ReasonUnexpected)
 		}
-		return BackupReport{State: BackupNotApplicable}, nil
+		return BackupReport{State: BackupNotApplicable, Archive: ArchiveReport{State: BackupNotApplicable}}, nil
 	}
 	if evidence.Backup == nil {
-		return BackupReport{State: BackupNotAssessed, Reason: NotRead, Schedule: target.Backup.Schedule}, nil
+		return BackupReport{State: BackupNotAssessed, Reason: NotRead, Schedule: target.Backup.Schedule,
+			Archive: ArchiveReport{State: BackupNotAssessed, Reason: NotRead}}, nil
 	}
 	report := BackupReport{Schedule: target.Backup.Schedule, MaxAge: evidence.Backup.MaxAge}
 	if report.MaxAge <= 0 {
@@ -136,9 +141,16 @@ func backupOf(target Target, evidence Evidence) (BackupReport, error) {
 	if err != nil {
 		return BackupReport{}, err
 	}
-	report.State, report.Reason, err = cronJobState(evidence.Backup.CronJob, &report)
-	if err != nil || report.State != "" {
-		return report, err
+	if report.Archive, err = archiveOf(target, evidence, now); err != nil {
+		return BackupReport{}, err
+	}
+	state, reason, err := cronJobState(evidence.Backup.CronJob, &report)
+	if err != nil {
+		return BackupReport{}, err
+	}
+	if state != "" {
+		report.State, report.Reason = state, reason
+		return report, nil
 	}
 	report.State, report.Reason, err = runState(evidence.Backup, &report, now)
 	return report, err

@@ -72,6 +72,8 @@ var Layers = map[string]int{
 	"adapters/files/filestest": 1,
 	"adapters/kube":            1,
 	"adapters/kube/kubetest":   1,
+	"adapters/s3":              1,
+	"adapters/s3/s3test":       1,
 	"orchestration":            2,
 	"cmd/swhurl-v2":            3,
 }

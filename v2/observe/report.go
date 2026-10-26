@@ -54,13 +54,14 @@ type reportDocument struct {
 // backupDocument is the protection's answer: its state and reason, the schedule's own facts, and the newest
 // run. The threshold is the caller's, in seconds, so a reader of the document needs no clock either.
 type backupDocument struct {
-	State           string       `json:"state"`
-	Reason          string       `json:"reason,omitempty"`
-	Schedule        string       `json:"schedule,omitempty"`
-	LastScheduledAt string       `json:"lastScheduledAt,omitempty"`
-	LastSucceededAt string       `json:"lastSucceededAt,omitempty"`
-	MaxAgeSeconds   int64        `json:"maxAgeSeconds,omitempty"`
-	NewestRun       *runDocument `json:"newestRun,omitempty"`
+	State           string          `json:"state"`
+	Reason          string          `json:"reason,omitempty"`
+	Schedule        string          `json:"schedule,omitempty"`
+	LastScheduledAt string          `json:"lastScheduledAt,omitempty"`
+	LastSucceededAt string          `json:"lastSucceededAt,omitempty"`
+	MaxAgeSeconds   int64           `json:"maxAgeSeconds,omitempty"`
+	NewestRun       *runDocument    `json:"newestRun,omitempty"`
+	Archive         archiveDocument `json:"archive"`
 }
 
 type runDocument struct {
@@ -70,10 +71,28 @@ type runDocument struct {
 	Outcome     string `json:"outcome"`
 }
 
+// archiveDocument is the object store's answer: the newest archive, how old it is, and what was read.
+type archiveDocument struct {
+	State         string `json:"state"`
+	Reason        string `json:"reason,omitempty"`
+	Bucket        string `json:"bucket,omitempty"`
+	Prefix        string `json:"prefix,omitempty"`
+	Newest        string `json:"newest,omitempty"`
+	LastModified  string `json:"lastModified,omitempty"`
+	AgeSeconds    int64  `json:"ageSeconds,omitempty"`
+	MaxAgeSeconds int64  `json:"maxAgeSeconds,omitempty"`
+}
+
+func archiveDocumentOf(report ArchiveReport) archiveDocument {
+	return archiveDocument{State: report.State, Reason: report.Reason, Bucket: report.Bucket, Prefix: report.Prefix,
+		Newest: report.Newest, LastModified: report.LastModified,
+		AgeSeconds: int64(report.Age / time.Second), MaxAgeSeconds: int64(report.MaxAge / time.Second)}
+}
+
 func backupDocumentOf(report BackupReport) backupDocument {
 	document := backupDocument{State: report.State, Reason: report.Reason, Schedule: report.Schedule,
 		LastScheduledAt: report.LastScheduledAt, LastSucceededAt: report.LastSucceededAt,
-		MaxAgeSeconds: int64(report.MaxAge / time.Second)}
+		MaxAgeSeconds: int64(report.MaxAge / time.Second), Archive: archiveDocumentOf(report.Archive)}
 	if report.NewestRun != nil {
 		document.NewestRun = &runDocument{Name: report.NewestRun.Name, CreatedAt: report.NewestRun.CreatedAt,
 			CompletedAt: report.NewestRun.CompletedAt, Outcome: report.NewestRun.Outcome}

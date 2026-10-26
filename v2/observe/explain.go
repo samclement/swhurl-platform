@@ -558,7 +558,7 @@ func validateRef(field string, ref Ref, named bool) error {
 // notCovered lists the facts this slice never looks at, so "running" cannot be read as parity.
 func notCovered() []string {
 	return []string{"history", "git_publication", "source_build", "pods", "routes", "storage", "secrets",
-		"calls", "events", "team", "quota", "backup_archive", "backup_restore", "foreign_ownership"}
+		"calls", "events", "team", "quota", "backup_restore", "foreign_ownership"}
 }
 
 // The grammars. The pure rule forbids package variables, so they compile per call; they are repeated

@@ -11,7 +11,9 @@ v2 observed the migrated stateful instance's protection itself, **read-only**, a
 
 **What that proves.** The observation reaches a CronJob, the pods its runs create and the newest run's Job through the pod's owner reference, and judges the age against the threshold the caller states — for a v2-owned instance that `verify-platform` cannot see at all. It read five objects (the unit, HelmRelease, Deployment, CronJob and the run's Job) and two pod lists (the instance's and the backup job's), and wrote nothing.
 
-**What it does not prove.** That an archive exists in S3 or is younger than the threshold (`backup_archive` is in the report's `notCovered`), that a restore works, or that the **next scheduled** run succeeds: the newest run observed is the manual one, so the `27 October 03:58 UTC` run is the first scheduled run to re-observe. Nothing about the job's own configuration was changed by this slice.
+**The archive, read from the object store (21:12Z, `--archive`).** The same observation then listed the instance's own prefix, `s3://swhurl-platform-backups-110927251694/app-sqlite/swhurl-try-10-staging/`, with the operator's own credentials from the environment for that one process (never written down or printed, removed with the kubeconfig afterwards). It reported **`archive current`**: the newest key `sqlite-20261026T082103Z.db.age`, `LastModified 08:21:10Z`, thirteen hours old against the 26h threshold — written *eleven seconds before* the run that uploaded it completed at `08:21:21Z`, so the job's answer and the bucket's agree. `notCovered` now names only `backup_restore`. The request is SigV4-signed by v2 itself, and the signer reproduces AWS's published test vector in `adapters/s3`.
+
+**What it does not prove.** That a restore works, or that the **next scheduled** run succeeds: the newest run observed is still the manual one, so the `27 October 03:58 UTC` run is the first scheduled run to re-observe. Nothing about the job's own configuration or the bucket was changed by these reads.
 
 ## The first call between two v2-owned instances (26 October 2026)
 

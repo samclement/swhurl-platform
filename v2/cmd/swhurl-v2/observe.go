@@ -58,6 +58,21 @@ func (c cli) observe(r request) int {
 	return emit(c.out, c.diagnostic, document)
 }
 
+// compiledInstance is what the instance renders with the same documents compile takes: a database instance
+// needs its allocation to compile at all, and a pair needs its resolution, or the target would be derived
+// from files the instance does not run.
+func (c cli) compiledInstance(r request, spec kernel.InstanceSpec, release kernel.ReleaseBundle, profile kernel.PlatformProfile) (kernel.Compilation, int) {
+	connections, egress, status := c.resolutionFiles(r, spec)
+	if status != 0 {
+		return kernel.Compilation{}, status
+	}
+	compiled, err := kernel.CompileWith(spec, release, profile, connections, egress)
+	if err != nil {
+		return kernel.Compilation{}, fail(c.diagnostic, err)
+	}
+	return compiled, 0
+}
+
 // observationTarget compiles the instance and derives what the observation is about, without reading
 // anything but the three named files.
 func (c cli) observationTarget(r request) (observe.Target, int) {
@@ -77,9 +92,9 @@ func (c cli) observationTarget(r request) (observe.Target, int) {
 	if err != nil {
 		return observe.Target{}, fail(c.diagnostic, err)
 	}
-	compiled, err := kernel.Compile(spec, release, profile)
-	if err != nil {
-		return observe.Target{}, fail(c.diagnostic, err)
+	compiled, status := c.compiledInstance(r, spec, release, profile)
+	if status != 0 {
+		return observe.Target{}, status
 	}
 	helmRelease, unit, err := compiledDocuments(compiled)
 	if err != nil {

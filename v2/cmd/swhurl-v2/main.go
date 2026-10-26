@@ -24,7 +24,7 @@ const usage = `usage:
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
-      --revision COMMIT --kubeconfig KUBECONFIG.json [--source NAME]
+      --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME]
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
       --committed HELMRELEASE.json --profile PROFILE.json
   swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json [--kubeconfig KUBECONFIG.json]
@@ -190,6 +190,8 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		flags.Var(r.outFlag, "out", "destination directory")
 	case "observe":
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
+		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
 		flags.Var(&once{value: &r.revision}, "revision", "source revision Flux should have applied")
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&once{value: &r.source}, "source", "name of the evidence source (default: the kubeconfig's current context)")

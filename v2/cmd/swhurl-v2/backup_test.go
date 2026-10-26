@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
 // compiledDatabase is the CLI's compilation of the SQLite fixture, allocated at v1's port for that
@@ -113,5 +115,43 @@ func TestBackupMatchesTheCommittedJob(t *testing.T) {
 	}
 	if !strings.HasPrefix(committedImage, "ghcr.io/samclement/swhurl-backup:") || committedImage[strings.Index(committedImage, "@"):] != renderedImage[strings.Index(renderedImage, "@"):] {
 		t.Fatalf("v1 runs %q, which is not the same artifact as %q", committedImage, renderedImage)
+	}
+}
+
+// committedFile is a file of this repository, read as the operator's tree has it.
+func committedFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile("../../../" + path)
+	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	return data
+}
+
+// TestCommittedProxyIsWhatTheAllocationRenders keeps the platform's live proxy configuration truthful: the
+// committed objects are exactly what the committed allocation and the profile render. v1 used to compare its
+// own generator's output here; from the cutover, v2's render is the authority, so a changed grant, port or
+// profile fact that is not re-rendered fails this check instead of waiting to be noticed in the cluster.
+func TestCommittedProxyIsWhatTheAllocationRenders(t *testing.T) {
+	allocation, err := checkedEgress(committedFile(t, "platform/egress/allocation.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := kernel.DecodeProfile(committedFile(t, "v2/testdata/profile.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := kernel.RenderProxy(proxyAllocations(allocation), profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rendered.Files) != 2 {
+		t.Fatalf("the render holds %d files", len(rendered.Files))
+	}
+	for _, file := range rendered.Files {
+		committed := committedFile(t, "platform/"+file.Path)
+		if string(committed) != string(file.Document) {
+			t.Errorf("platform/%s is not what the allocation renders; run `make v2-egress`", file.Path)
+		}
 	}
 }

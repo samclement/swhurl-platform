@@ -260,7 +260,6 @@ class ShadowTests(unittest.TestCase):
 
     def test_settings_written_by_the_commands_render_as_written(self):
         (self.root / 'platform/egress').mkdir(parents=True)
-        shutil.copy(ROOT / 'platform/egress/proxy.yaml', self.root / 'platform/egress/proxy.yaml')
         with redirect_stdout(io.StringIO()):
             edit.sync(self.root)  # every instance gets its egress port, as on the cluster
             edit.expose(self.root, 'hello', 'prod', 'public', 'hello.example.com')
@@ -341,7 +340,6 @@ class ShadowTests(unittest.TestCase):
         self.assertNotIn('hello-prod', (self.root / render.RELOADER_FILE).read_text())
         self.assertIn('namespaces: [ingress, logging, console, hello-staging]', (self.root / render.RELOADER_FILE).read_text())
         self.assertNotIn('UPROD', (self.root / 'platform/nats/users.yaml').read_text())
-        self.assertNotIn('hello-prod', (self.root / 'platform/egress/proxy.yaml').read_text())
         registry = (self.root / render.REGISTRY_FILE).read_text()
         self.assertNotIn('app-hello-prod.yaml', registry)
         self.assertIn('app-hello-staging.yaml', registry)

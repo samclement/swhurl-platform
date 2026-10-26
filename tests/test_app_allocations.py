@@ -110,9 +110,7 @@ class AllocationTests(unittest.TestCase):
         self.put(self.each, settings=Settings(allocations=Allocations(30102)))
         self.put(Instance('alpha', 'prod'))
         self.put(Instance('zebra', 'staging'))
-        proxy = self.root / egress.PROXY_FILE
-        proxy.parent.mkdir(parents=True)
-        shutil.copyfile(ROOT / egress.PROXY_FILE, proxy)
+        shutil.copytree(ROOT / egress.DIRECTORY, self.root / egress.DIRECTORY, dirs_exist_ok=True)
         self.sync(runner=FakeRunner())
         ports = {str(i): e.settings.allocations.egress_port for i, e in write.read(self.root)[0].items()}
         self.assertEqual(ports, {'alpha/prod': 30103, 'orders/staging': 30102, 'zebra/staging': 30101})

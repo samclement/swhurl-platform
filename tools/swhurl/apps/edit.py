@@ -106,7 +106,7 @@ def set_egress(root: Path, app: str, env: str, *, add: list[str] | None = None, 
     instance = instance_dir(root, app, env)
     world, platform = write.read(root)
     if not platform.egress:
-        raise EditError(f'{egress.PROXY_FILE} is missing: this tree has no egress proxy')
+        raise EditError(f'{egress.DIRECTORY} is missing: this tree has no egress proxy')
     now = transitions.changed_list('hosts', list(world[Instance(app, env)].settings.grants.egress), None, add, remove)
     within = egress.covered(now)
     if within:

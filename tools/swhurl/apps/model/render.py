@@ -72,7 +72,6 @@ def instance(each: Instance, world: World, platform: Platform) -> dict[Path, lis
 class Shared:
     """What every instance contributes to: None where the root has no such service."""
     nats_users: list[dict] | None
-    egress_proxy: list[dict] | None
     reloaded: frozenset[str]  # the namespaces Reloader watches for the apps
     units: frozenset[str]  # the app unit files registered in clusters/home/kustomization.yaml
 
@@ -80,5 +79,5 @@ class Shared:
 def shared(world: World, platform: Platform) -> Shared:
     reloaded = frozenset(each.namespace for each, entry in world.items()
                          if events.keyed(entry) or entry.release.secrets or (APP_SECRET in entry.encrypted or APP_SECRET in entry.pending))
-    return Shared(events.users(world, platform), egress.proxy(world, platform), reloaded,
+    return Shared(events.users(world, platform), reloaded,
                   frozenset(f'{each.unit}.yaml' for each in world))

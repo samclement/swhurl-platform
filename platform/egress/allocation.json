@@ -1,0 +1,115 @@
+{
+  "kind": "v2-egress",
+  "version": 1,
+  "revision": "c37c61cf81ac0dd4c21347f4d237c06b21a97628",
+  "instances": [
+    {
+      "application": "demo-orders",
+      "environment": "prod",
+      "port": 30111,
+      "grants": [
+        "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
+      ]
+    },
+    {
+      "application": "demo-shop",
+      "environment": "prod",
+      "port": 30112,
+      "grants": [
+        "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
+      ]
+    },
+    {
+      "application": "swhurl-try-10",
+      "environment": "prod",
+      "port": 30113,
+      "grants": [
+        "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
+      ]
+    },
+    {
+      "application": "swhurl-try-11",
+      "environment": "prod",
+      "port": 30114,
+      "grants": []
+    },
+    {
+      "application": "swhurl-try-12",
+      "environment": "prod",
+      "port": 30115,
+      "grants": []
+    },
+    {
+      "application": "swhurl-try-30",
+      "environment": "prod",
+      "port": 30110,
+      "grants": []
+    },
+    {
+      "application": "demo-notifier",
+      "environment": "staging",
+      "port": 30101,
+      "grants": []
+    },
+    {
+      "application": "demo-orders",
+      "environment": "staging",
+      "port": 30102,
+      "grants": [
+        "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
+      ]
+    },
+    {
+      "application": "demo-shop",
+      "environment": "staging",
+      "port": 30103,
+      "grants": [
+        "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
+      ]
+    },
+    {
+      "application": "demo-shopper",
+      "environment": "staging",
+      "port": 30104,
+      "grants": []
+    },
+    {
+      "application": "swhurl-try-10",
+      "environment": "staging",
+      "port": 30105,
+      "grants": [
+        "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
+      ]
+    },
+    {
+      "application": "swhurl-try-12",
+      "environment": "staging",
+      "port": 30107,
+      "grants": []
+    },
+    {
+      "application": "swhurl-try-13",
+      "environment": "staging",
+      "port": 30108,
+      "grants": []
+    },
+    {
+      "application": "swhurl-try-30",
+      "environment": "staging",
+      "port": 30109,
+      "grants": []
+    },
+    {
+      "application": "swhurl-try-31",
+      "environment": "staging",
+      "port": 30117,
+      "grants": []
+    },
+    {
+      "application": "swhurl-try-32",
+      "environment": "staging",
+      "port": 30116,
+      "grants": []
+    }
+  ]
+}

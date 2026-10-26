@@ -60,6 +60,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 
 ## Lessons not obvious from the code
 
+- **The egress proxy's configuration is v2's** (`platform/egress/{allocation,configmap,networkpolicy}.json`); v1 no longer writes it and `make check-apps` keeps only the grants' format. Regenerate it by direct CLI invocation from `v2/`: `swhurl-v2 egress --snapshot … --previous ../platform/egress/allocation.json`, then `swhurl-v2 proxy --allocation … --profile testdata/profile.json --out ../platform`; `make check-v2` fails when the committed objects differ from that render, and CI regenerates and diffs them so a changed grant or new instance cannot be left un-rendered. Grants are **enforced**: an ungranted host gets 403 and logs `granted=-`, and the instance's policy admits only DNS, its proxy port and its callers, so a client that ignores the proxy fails rather than escaping unseen.
 - **Flux substitution** consumes unescaped `${...}` in any manifest of a unit with `postBuild.substituteFrom`; escape literal references there as `$${...}` (`make check-repo` fails on an unresolved one). Units without substitution, such as `platform-otel` with its `${env:...}` collector references, need no escaping.
 - **Double base64** has caused one outage: `data` values are encoded exactly once; prefer `stringData`.
 - **Traefik 3 (k3s chart 38)** ignores `ports.web.redirectTo`; the redirect is `ports.web.redirections.entryPoint`. The chart renders the redirect target as `:443`.

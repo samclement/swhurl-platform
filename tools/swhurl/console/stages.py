@@ -158,7 +158,7 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
                     path = Path(*Path(member.name).parts[1:])
                     if path.is_absolute() or '..' in path.parts:
                         raise ValueError('invalid archive path')
-                    proxy |= path == egress.PROXY_FILE or egress.PROXY_FILE.parent in path.parents
+                    proxy |= egress.DIRECTORY in path.parents
                     if path == backup.MONGODB_JOB.parent or backup.MONGODB_JOB.parent in path.parents:
                         (root / backup.MONGODB_JOB.parent).mkdir(parents=True, exist_ok=True)  # present: its file must be read
                     if not member.isfile():

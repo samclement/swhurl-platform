@@ -153,10 +153,8 @@ def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance
             keep(path, text)
     except RenderError as error:
         raise EditError(str(error)) from None
-    for path, text in ((events.USERS_FILE, shared.nats_users is not None and events.users_configmap(shared.nats_users)),
-                       (egress.PROXY_FILE, shared.egress_proxy is not None and egress.proxy_text(shared.egress_proxy))):
-        if text:
-            keep(path, text)
+    if shared.nats_users is not None:
+        keep(events.USERS_FILE, events.users_configmap(shared.nats_users))
     for path, wanted, key, managed in (
             (REGISTRY_FILE, shared.units, 'resources', lambda name: Instance.of_unit(str(name).removesuffix('.yaml'))),
             (RELOADER_FILE, shared.reloaded, 'namespaces', Instance.of_namespace)):

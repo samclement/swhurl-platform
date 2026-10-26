@@ -27,7 +27,6 @@ class RecordReaderTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         shutil.copytree(ROOT / 'tests/fixtures/instance/apps', self.root / 'apps')
-        (self.root / egress.PROXY_FILE).parent.mkdir(parents=True)
         (self.root / events.CONTROLLER_KEY_FILE).parent.mkdir(parents=True)
         (self.root / events.CONTROLLER_KEY_FILE).write_text('UCONTROLLER')
         (self.root / events.CONSOLE_KEY_FILE).write_text('UCONSOLE')
@@ -42,7 +41,6 @@ class RecordReaderTests(unittest.TestCase):
         world, _ = store.world(self.root)
         shared = render.shared(world, store.platform(self.root))
         (self.root / events.USERS_FILE).write_text(events.users_configmap(shared.nats_users))
-        (self.root / egress.PROXY_FILE).write_text(egress.proxy_text(shared.egress_proxy))
 
     def break_rendered(self):
         (self.root / 'apps/hello/staging/helmrelease.yaml').write_text('invalid: [')
@@ -55,16 +53,17 @@ class RecordReaderTests(unittest.TestCase):
         world, _ = store.world(self.root)
         shared = render.shared(world, store.platform(self.root))
         self.assertEqual([u['nkey'] for u in shared.nats_users], ['UCONTROLLER', 'UCONSOLE', 'USTAGING', 'UPROD'])
-        rules = shared.egress_proxy[1]['spec']['ingress']
-        self.assertEqual([r['ports'][0]['port'] for r in rules], [30101, 30102])
         # A record changed without its shared output is stale, even though the app output is unreadable.
         settings = self.root / 'apps/hello/staging/instance.yaml'
         doc = yamlio.load(settings.read_text())
         doc['allocations']['eventsKey'] = 'UCHANGED'
-        doc['egress'] = ['api.example.com:443']
         settings.write_text(yamlio.dump(doc))
         self.assertTrue(any(str(events.USERS_FILE) in p for p in generated.problems(self.root)))
-        self.assertTrue(any('not what the instances declare' in p for p in egress.problems(self.root)))
+        # The egress proxy's configuration is v2's output, so a changed grant is not stale here: v2 renders
+        # it from the allocation, and its own check compares the committed objects with that render.
+        doc['egress'] = ['api.example.com:443']
+        settings.write_text(yamlio.dump(doc))
+        self.assertEqual(egress.problems(self.root), [])
 
     def test_invalid_world_becomes_existing_policy_report_and_cli_errors(self):
         (self.root / 'apps/hello/prod/instance.yaml').write_text('invalid: [')

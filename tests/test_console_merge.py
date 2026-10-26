@@ -419,8 +419,7 @@ class NewAppGateTests(GateCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / 'main'
         shutil.copytree(baseline(), self.root)
-        (self.root / egress.PROXY_FILE).parent.mkdir(parents=True)
-        shutil.copy(ROOT / egress.PROXY_FILE, self.root / egress.PROXY_FILE)
+        shutil.copytree(ROOT / egress.DIRECTORY, self.root / egress.DIRECTORY, dirs_exist_ok=True)
         self.staged = []
         self.pr = {'state': 'open', 'head': {'ref': 'console/new-fresh-staging-aaaaaaa', 'sha': HEAD,
                                            'repo': {'full_name': REPO}}, 'base': {'ref': 'main'},

@@ -1,0 +1,63 @@
+{
+  "kind": "v2-calls",
+  "version": 1,
+  "revision": "c96859bff732aad679fa4e47817f0897ada48d00",
+  "pairs": [
+    {
+      "caller": "demo-shop",
+      "callee": "demo-orders",
+      "environment": "prod",
+      "port": 8080
+    },
+    {
+      "caller": "swhurl-try-11",
+      "callee": "swhurl-try-10",
+      "environment": "prod",
+      "port": 8080
+    },
+    {
+      "caller": "swhurl-try-11",
+      "callee": "swhurl-try-12",
+      "environment": "prod",
+      "port": 8080
+    },
+    {
+      "caller": "swhurl-try-12",
+      "callee": "swhurl-try-10",
+      "environment": "prod",
+      "port": 8080
+    },
+    {
+      "caller": "demo-shop",
+      "callee": "demo-orders",
+      "environment": "staging",
+      "port": 8080
+    },
+    {
+      "caller": "demo-shopper",
+      "callee": "demo-shop",
+      "environment": "staging",
+      "port": 8080
+    },
+    {
+      "caller": "swhurl-try-11",
+      "callee": "swhurl-try-10",
+      "environment": "staging",
+      "port": 8080
+    },
+    {
+      "caller": "swhurl-try-11",
+      "callee": "swhurl-try-12",
+      "environment": "staging",
+      "port": 8080
+    },
+    {
+      "caller": "swhurl-try-12",
+      "callee": "swhurl-try-10",
+      "environment": "staging",
+      "port": 8080
+    }
+  ],
+  "waiting": [],
+  "refused": []
+}

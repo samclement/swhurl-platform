@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: the bridge slice translating a v2-owned instance's records into compile's inputs, or a policy implementation honouring selectors
+Gate: the bridge command that translates v1's records into a v2-owned instance's records, so a migration needs no hand-written JSON
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -287,6 +287,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages take no new effects. 3. **Identity moved once, deliberately:** the profile gained `network`; `profile-identity.json` recomputed independently; goldens moved in their `profile`/`id` lines only. 4. One new refusal (`unsupported: network`), appended after the shape checks. 5. Failure paths tested: the block on both sides, one callee rule for two callers, and the profile's CIDR refusal. 6. Scope: the rules admit the whole pod block; that is the trade, stated. 7. **Live:** the probe re-run is recorded in [current state](current-state.md). 8. This page, the plan and the gap list change together.
 - **Evidence:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`; both v2-owned instances recompiled (`swhurl-try-10`'s callee rule, `swhurl-try-11`'s caller rules and its namespace label corrected to `authenticated-web`). **Live, same day:** the call answers — the callee logs `caller.type: app, caller.id: swhurl-try-11` — with the network by the pod block and the identity by the audience token ([evidence](current-state.md#the-first-call-between-two-v2-owned-instances-26-october-2026)). The probe first failed with `401` because it used the `default` service account: the callee's contract requires the caller's pod to run as the service account named after the app.
 - **Next gate:** the bridge slice that translates a v2-owned instance's records into `compile`'s inputs, or a policy implementation that honours selectors.
+
+## Slice record: a v2-owned instance recompiles from Git alone
+
+- **Outcome:** each v2-owned instance's own records (`v2-records/<app>/<env>/{instance,release}.json`) and the resolution it was compiled from (`v2-records/calls.json`) are in Git, and a CI test recompiles every one of them — with the profile, the committed allocation and the resolution — and compares every written file byte for byte with what Git holds.
+- **Owners:** v2's records are the instance's facts; the resolution document is the pair's authority; the allocation remains the authority for ports. The v1-shaped records stay only because `resolve` reads them.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages take no new effects. 3. No identity changed. 4. No refusal moved. 5. Failure paths tested: a file Git does not hold, a file that differs, and an instance with no records to check are all failures. 6. Scope: the *translation* into those records is still manual — the gap is narrowed to one step, and named. 7. Offline only. 8. This page, the plan and the gap list change together.
+- **Evidence:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`.
+- **Next gate:** the bridge command that translates v1's records into the v2 pair, so a migration needs no hand-written JSON; then the v1-shaped records can go.
 
 ## Resume
 

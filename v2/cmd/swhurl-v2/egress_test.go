@@ -162,3 +162,68 @@ func TestEgressSkipsAnInstanceThatNeedsNoWayOut(t *testing.T) {
 		t.Fatalf("the instance that does need one: %v", ports)
 	}
 }
+
+// TestOwnedInstancesRecompileFromGit recompiles every v2-owned instance from the records and documents Git
+// holds — its v2 records, the committed resolution, the committed allocation and the profile — writes the
+// files as an operator does, and asserts every one is byte-for-byte what Git holds. A migrated instance is
+// then maintainable from the repository alone: a changed profile, allocation or pair reaches it with no
+// hand-written JSON.
+func TestOwnedInstancesRecompileFromGit(t *testing.T) {
+	instances, err := filepath.Glob("../../../v2-records/*/*/instance.json")
+	if err != nil || len(instances) == 0 {
+		t.Fatalf("no v2-owned instance records: %v", err)
+	}
+	for _, instancePath := range instances {
+		folder := filepath.Dir(instancePath)
+		releasePath := filepath.Join(folder, "release.json")
+		release, err := os.ReadFile(releasePath)
+		if err != nil {
+			t.Fatalf("%s: %v", releasePath, err)
+		}
+		var record struct{ Database string }
+		if err := json.Unmarshal(release, &record); err != nil {
+			t.Fatalf("%s: %v", releasePath, err)
+		}
+		destination := t.TempDir()
+		args := []string{"compile", "--instance", instancePath, "--release", releasePath,
+			"--profile", "../../testdata/profile.json", "--calls", "../../../v2-records/calls.json",
+			"--out", destination}
+		if record.Database != "" {
+			// A database instance needs its allocation, the same document its files were compiled with.
+			args = append(args, "--egress", "../../../platform/egress/allocation.json")
+		}
+		var out, diagnostic bytes.Buffer
+		if status := run(args, &out, &diagnostic, os.ReadFile, files.New()); status != 0 {
+			t.Fatalf("%s: exit %d: %s", folder, status, diagnostic.String())
+		}
+		checked := 0
+		if err := filepath.WalkDir(destination, func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return err
+			}
+			relative, err := filepath.Rel(destination, path)
+			if err != nil {
+				return err
+			}
+			fresh, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			committed, err := os.ReadFile("../../../" + filepath.ToSlash(relative))
+			if err != nil {
+				t.Errorf("%s: %v (the records render a file Git does not hold)", folder, err)
+				return nil
+			}
+			if string(fresh) != string(committed) {
+				t.Errorf("%s: %s is not what its records render; recompile and commit it", folder, relative)
+			}
+			checked++
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if checked == 0 {
+			t.Fatalf("%s: nothing was compared", folder)
+		}
+	}
+}

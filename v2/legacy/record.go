@@ -47,6 +47,38 @@ func (r *record) text(field string) (string, error) {
 	return value, nil
 }
 
+// texts is one list-of-strings field, empty when the document does not state it.
+func (r *record) texts(field string) ([]string, error) {
+	raw, found := r.take(field)
+	if !found {
+		return nil, nil
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, refuse(Invalid, r.name+": "+field, "expected_a_list_of_strings")
+	}
+	for _, value := range values {
+		if value == "" {
+			return nil, refuse(Invalid, r.name+": "+field, "expected_a_list_of_strings")
+		}
+	}
+	return values, nil
+}
+
+// peek reads one string field without taking it: a fact the translation reads only as evidence stays
+// reported as unused, so it is not silently dropped by being looked at.
+func (r *record) peek(field string) (string, error) {
+	raw, found := r.fields[field]
+	if !found {
+		return "", nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", refuse(Invalid, r.name+": "+field, "expected_a_string")
+	}
+	return value, nil
+}
+
 // integer is one integer field the preview requires, zero when the document does not state it.
 func (r *record) integer(field string) (int32, error) {
 	value, _, err := r.optionalInteger(field)

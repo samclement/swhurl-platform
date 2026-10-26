@@ -1,13 +1,22 @@
 {
   "schemaVersion": 1,
   "application": "swhurl-try-10",
-  "source": {"repository": "samclement/swhurl-try-10", "commit": "e01ce488e4e9a1d8e31516026e38acfc48f465f4"},
+  "source": {
+    "repository": "samclement/swhurl-try-10",
+    "commit": "e01ce488e4e9a1d8e31516026e38acfc48f465f4"
+  },
   "artifact": {
     "image": "ghcr.io/samclement/swhurl-try-10",
     "digest": "sha256:9c48c58a6f76447d129925a942bc64fc9a167a6f75bfc85afcbb4b3c7c79a674",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
-  "runtime": {"kind": "web", "port": 8080, "healthPath": "/healthz", "uid": 65532},
-  "database": "sqlite"
+  "runtime": {
+    "kind": "web",
+    "port": 8080,
+    "healthPath": "/healthz",
+    "uid": 65532
+  },
+  "database": "sqlite",
+  "releaseId": "rel-sha256:7991eeecc170ea0ac4d02c6d37ff6d1502cb4f146ab670be629881501b2c7406"
 }

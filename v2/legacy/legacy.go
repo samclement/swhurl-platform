@@ -95,8 +95,13 @@ func Translate(records Records) (Translation, error) {
 	if err := translation.workload(release); err != nil {
 		return Translation{}, err
 	}
-	if err := translation.settings(instance, committed); err != nil {
+	configuration, settings, err := settings(instance, committed)
+	if err != nil {
 		return Translation{}, err
+	}
+	translation.Instance = configuration
+	for name, source := range settings {
+		translation.Sources[name] = source
 	}
 	if team, err := app.text("team"); err != nil {
 		return Translation{}, err
@@ -107,10 +112,17 @@ func Translate(records Records) (Translation, error) {
 	translation.Gaps = append(translation.Gaps, gaps(app, instance, release, translation.Instance)...)
 	translation.Gaps = append(translation.Gaps, Gap{Where: "release.yaml: image", Fact: "image.provenance",
 		Owner: "release/build"})
-	sort.Slice(translation.Gaps, func(i, j int) bool {
-		return translation.Gaps[i].Where+" "+translation.Gaps[i].Fact < translation.Gaps[j].Where+" "+translation.Gaps[j].Fact
-	})
+	translation.Gaps = sortGaps(translation.Gaps)
 	return translation, nil
+}
+
+// sortGaps orders a translation's gaps by where they are, so a report is the same bytes for the same
+// records.
+func sortGaps(gaps []Gap) []Gap {
+	sort.Slice(gaps, func(i, j int) bool {
+		return gaps[i].Where+" "+gaps[i].Fact < gaps[j].Where+" "+gaps[j].Fact
+	})
+	return gaps
 }
 
 // workload takes the facts the HTTP preview renders. Only a web release has them, and the preview is
@@ -172,44 +184,47 @@ func workloadOf(release *record) (Workload, []string, error) {
 	return workload, image.unused(), nil
 }
 
-// settings takes the environment's configuration. A replica count or a memory limit that the record
+// settings reads the environment's configuration. A replica count or a memory limit that the record
 // omits is taken from the committed output only when that output states it: an absent value is never
-// replaced by a guess.
-func (t *Translation) settings(instance *record, committed effective) error {
+// replaced by a guess. Both the preview and the migration read the environment this way, so the two
+// cannot disagree about what it says.
+func settings(instance *record, committed effective) (Instance, map[string]string, error) {
+	configuration := Instance{}
+	sources := map[string]string{}
 	exposure, err := instance.text("exposure")
 	if err != nil {
-		return err
+		return Instance{}, nil, err
 	}
 	if exposure == "" {
 		exposure = "private"
 	}
-	t.Instance.Exposure = exposure
-	t.Sources["instance.exposure"] = "instance.yaml"
+	configuration.Exposure = exposure
+	sources["instance.exposure"] = "instance.yaml"
 	replicas, stated, err := instance.optionalInteger("replicas")
 	if err != nil {
-		return err
+		return Instance{}, nil, err
 	}
 	switch {
 	case stated:
-		t.Sources["instance.replicas"] = "instance.yaml"
+		sources["instance.replicas"] = "instance.yaml"
 	case committed.replicas != nil:
-		replicas, t.Sources["instance.replicas"] = *committed.replicas, "committed HelmRelease"
+		replicas, sources["instance.replicas"] = *committed.replicas, "committed HelmRelease"
 	default:
 		// The pinned chart's default, which its own render test proves is one: a committed output that
 		// omits the count is rendered with one replica, so that is what the instance has.
-		replicas, t.Sources["instance.replicas"] = 1, "pinned chart default"
+		replicas, sources["instance.replicas"] = 1, "pinned chart default"
 	}
-	t.Instance.Replicas = replicas
+	configuration.Replicas = replicas
 	memory, ok, err := memoryMiB(committed.memoryLimit)
 	if err != nil {
-		return err
+		return Instance{}, nil, err
 	}
 	if !ok {
-		return refuse(Missing, "committed HelmRelease: values.controllers.main.containers.main.resources.limits.memory", "no_identified_value")
+		return Instance{}, nil, refuse(Missing, "committed HelmRelease: values.controllers.main.containers.main.resources.limits.memory", "no_identified_value")
 	}
-	t.Instance.MemoryMiB = memory
-	t.Sources["instance.memory"] = "committed HelmRelease"
-	return nil
+	configuration.MemoryMiB = memory
+	sources["instance.memory"] = "committed HelmRelease"
+	return configuration, sources, nil
 }
 
 // gaps names every legacy fact the preview cannot carry: a field the records state that the preview does
@@ -265,6 +280,10 @@ type effective struct {
 	application, environment string
 	replicas                 *int32
 	memoryLimit              string
+	// hasVolume is whether the release declared a data volume, and existingClaim the claim it named. A
+	// claim the release did not name is one the chart generated, which is what a migration adopts.
+	hasVolume     bool
+	existingClaim string
 }
 
 // openCommitted reads the predecessor's own output: the deployment's identity and the values only
@@ -277,6 +296,9 @@ func openCommitted(data []byte) (effective, error) {
 		} `json:"metadata"`
 		Spec struct {
 			Values struct {
+				Persistence map[string]struct {
+					ExistingClaim string `json:"existingClaim"`
+				} `json:"persistence"`
 				Controllers map[string]struct {
 					Replicas   *int32 `json:"replicas"`
 					Containers map[string]struct {
@@ -305,6 +327,10 @@ func openCommitted(data []byte) (effective, error) {
 	result.replicas = controller.Replicas
 	if container, found := controller.Containers["main"]; found {
 		result.memoryLimit = container.Resources.Limits.Memory
+	}
+	if volume, found := document.Spec.Values.Persistence["data"]; found {
+		result.hasVolume = true
+		result.existingClaim = volume.ExistingClaim
 	}
 	return result, nil
 }

@@ -29,21 +29,28 @@ data:
             acl request has request
             access_log stdio:/dev/stdout logformat=egress request
             cache_log stdio:/dev/stderr
+            acl port-443 port 443
             http_port 30101 name=demo-notifier-staging
             acl demo-notifier-staging myportname demo-notifier-staging
             note instance demo-notifier-staging demo-notifier-staging
             http_port 30102 name=demo-orders-staging
             acl demo-orders-staging myportname demo-orders-staging
             note instance demo-orders-staging demo-orders-staging
+            acl demo-orders-staging-443 dstdomain -n swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com
+            note granted yes demo-orders-staging demo-orders-staging-443 port-443
             http_port 30103 name=demo-shop-staging
             acl demo-shop-staging myportname demo-shop-staging
             note instance demo-shop-staging demo-shop-staging
+            acl demo-shop-staging-443 dstdomain -n swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com
+            note granted yes demo-shop-staging demo-shop-staging-443 port-443
             http_port 30104 name=demo-shopper-staging
             acl demo-shopper-staging myportname demo-shopper-staging
             note instance demo-shopper-staging demo-shopper-staging
             http_port 30105 name=swhurl-try-10-staging
             acl swhurl-try-10-staging myportname swhurl-try-10-staging
             note instance swhurl-try-10-staging swhurl-try-10-staging
+            acl swhurl-try-10-staging-443 dstdomain -n swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com
+            note granted yes swhurl-try-10-staging swhurl-try-10-staging-443 port-443
             http_port 30107 name=swhurl-try-12-staging
             acl swhurl-try-12-staging myportname swhurl-try-12-staging
             note instance swhurl-try-12-staging swhurl-try-12-staging
@@ -59,12 +66,18 @@ data:
             http_port 30111 name=demo-orders-prod
             acl demo-orders-prod myportname demo-orders-prod
             note instance demo-orders-prod demo-orders-prod
+            acl demo-orders-prod-443 dstdomain -n swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com
+            note granted yes demo-orders-prod demo-orders-prod-443 port-443
             http_port 30112 name=demo-shop-prod
             acl demo-shop-prod myportname demo-shop-prod
             note instance demo-shop-prod demo-shop-prod
+            acl demo-shop-prod-443 dstdomain -n swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com
+            note granted yes demo-shop-prod demo-shop-prod-443 port-443
             http_port 30113 name=swhurl-try-10-prod
             acl swhurl-try-10-prod myportname swhurl-try-10-prod
             note instance swhurl-try-10-prod swhurl-try-10-prod
+            acl swhurl-try-10-prod-443 dstdomain -n swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com
+            note granted yes swhurl-try-10-prod swhurl-try-10-prod-443 port-443
             http_port 30114 name=swhurl-try-11-prod
             acl swhurl-try-11-prod myportname swhurl-try-11-prod
             note instance swhurl-try-11-prod swhurl-try-11-prod

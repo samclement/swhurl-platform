@@ -5,6 +5,8 @@ calls:
 - demo-orders
 allows:
 - team:demo
+egress:
+- swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443
 allocations:
   egressPort: 30103
   eventsKey: UA7ZLBBXHVDXOTNNDGOPVWCXCH4OBVFBR7TQFRDUKWJ3NAZVV64DXEV4

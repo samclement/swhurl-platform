@@ -113,7 +113,7 @@ kernel: type ResourceSet struct {Files []File Inventory []Claim Registrations []
 kernel: type Routing struct {BaseDomain string `json:"baseDomain"` Class string `json:"class"` Middleware string `json:"middleware"` Issuer string `json:"issuer"` IngressNamespace string `json:"ingressNamespace"` IngressLabels map[string]string `json:"ingressLabels"`}
 kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` HealthPath string `json:"healthPath"` UID int32 `json:"uid"`}
 kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}
-kernel: type Storage struct {SizeMiB int32 `json:"sizeMiB,omitempty"`}
+kernel: type Storage struct {SizeMiB int32 `json:"sizeMiB,omitempty"` ClaimName string `json:"claimName,omitempty"`}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
 legacy: const Invalid = "invalid"
 legacy: const Missing = "missing"

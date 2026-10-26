@@ -143,9 +143,7 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClas
 	}
 	persistence := manifest{"tmp": manifest{"type": "emptyDir", "globalMounts": []any{manifest{"path": "/tmp"}}}}
 	if spec.Database == "sqlite" {
-		persistence["data"] = manifest{"type": "persistentVolumeClaim", "storageClass": storageClass,
-			"accessMode": "ReadWriteOnce", "size": fmt.Sprintf("%dMi", spec.Storage.SizeMiB), "retain": true,
-			"globalMounts": []any{manifest{"path": dataMount}}}
+		persistence["data"] = dataVolume(spec.Storage, storageClass)
 	}
 	if len(spec.Calls) > 0 {
 		persistence["tokens"] = tokensPersistence(spec.Calls)
@@ -520,7 +518,7 @@ func backupCronJob(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile
 			"containers": []any{container},
 			// The app's own claim: one node, so a second pod on it is admitted while the app runs.
 			"volumes": []any{
-				manifest{"name": "data", "persistentVolumeClaim": manifest{"claimName": spec.Application}},
+				manifest{"name": "data", "persistentVolumeClaim": manifest{"claimName": claimName(spec)}},
 				manifest{"name": "scratch", "emptyDir": manifest{"sizeLimit": backupScratch}},
 				manifest{"name": "tmp", "emptyDir": manifest{}}}}}
 	return manifest{"apiVersion": "batch/v1", "kind": "CronJob",
@@ -616,18 +614,15 @@ func (spec HTTPInstance) validateResources(profile PlatformProfile) error {
 // silently reduced, and a size with nothing to put in it is refused too.
 func (spec HTTPInstance) validateStorage(profile PlatformProfile) error {
 	switch {
-	case spec.Database == "" && spec.Storage.SizeMiB > 0:
+	case spec.Database == "" && (spec.Storage.SizeMiB > 0 || spec.Storage.ClaimName != ""):
 		return refuse(Invalid, "storage", "the release keeps no database, so a volume would hold nothing")
 	case spec.Database == "":
 		return nil
 	case spec.Database != "sqlite":
 		return refuse(Unsupported, "database", "only sqlite is supported")
 	}
-	if spec.Storage.SizeMiB < 1 {
-		return refuse(Invalid, "storage.sizeMiB", "a database needs a volume size")
-	}
-	if profile.Storage.Class == "" {
-		return refuse(Unsupported, "storage.class", "the profile states no storage class")
+	if err := spec.validateVolume(profile); err != nil {
+		return err
 	}
 	if spec.Configuration.Replicas > 1 {
 		return refuse(Invalid, "configuration.replicas", "a database admits one writer")
@@ -641,6 +636,41 @@ func (spec HTTPInstance) validateStorage(profile PlatformProfile) error {
 		return refuse(Unsupported, "backup.egress", "a backup must leave the cluster through the proxy, so the instance needs an allocation")
 	}
 	return nil
+}
+
+// validateVolume checks the volume a database asks for: a size to create or the claim of the volume it keeps,
+// never both, and a class only where something is created.
+func (spec HTTPInstance) validateVolume(profile PlatformProfile) error {
+	if spec.Storage.SizeMiB > 0 && spec.Storage.ClaimName != "" {
+		return refuse(Invalid, "storage", "a volume is either created from a size or adopted from its claim, not both")
+	}
+	if spec.Storage.SizeMiB < 1 && spec.Storage.ClaimName == "" {
+		return refuse(Invalid, "storage.sizeMiB", "a database needs a volume size, or the claim of the one it keeps")
+	}
+	if profile.Storage.Class == "" && spec.Storage.ClaimName == "" {
+		return refuse(Unsupported, "storage.class", "the profile states no storage class")
+	}
+	return nil
+}
+
+// dataVolume is the instance's volume as the chart takes it: a claim it creates from the platform's class,
+// or the claim of a volume that already exists — a migrated instance's data, adopted rather than replaced.
+func dataVolume(storage Storage, storageClass string) manifest {
+	mounts := []any{manifest{"path": dataMount}}
+	if storage.ClaimName != "" {
+		return manifest{"type": "persistentVolumeClaim", "existingClaim": storage.ClaimName, "globalMounts": mounts}
+	}
+	return manifest{"type": "persistentVolumeClaim", "storageClass": storageClass, "accessMode": "ReadWriteOnce",
+		"size": fmt.Sprintf("%dMi", storage.SizeMiB), "retain": true, "globalMounts": mounts}
+}
+
+// claimName is the volume an instance's data lives on: the one it creates, named after itself, or the one
+// it adopted.
+func claimName(spec HTTPInstance) string {
+	if spec.Storage.ClaimName != "" {
+		return spec.Storage.ClaimName
+	}
+	return spec.Application
 }
 
 // validateCalls checks the resolved pairs' shape. Consent is not decided here: the caller supplies only

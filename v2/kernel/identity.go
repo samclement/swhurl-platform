@@ -19,7 +19,7 @@ func releaseCanonical(r ReleaseBundle) []byte {
 func instanceCanonical(s InstanceSpec) []byte {
 	return canonical([]any{"swhurl.instance.v1", s.SchemaVersion, s.Application,
 		s.Environment, s.Release, s.Configuration.Replicas, s.Configuration.MemoryMiB,
-		s.Grants.Exposure, s.Bindings, s.Storage.SizeMiB})
+		s.Grants.Exposure, s.Bindings, s.Storage.SizeMiB, s.Storage.ClaimName})
 }
 
 // labelPairs is a label set as sorted "key=value" strings: a map's iteration order is not an identity.

@@ -59,7 +59,10 @@ func (c cli) egress(r request) int {
 	return emit(c.out, c.diagnostic, encoded)
 }
 
-// allocate gives every instance in the snapshot a port: the one it already had, or the lowest free one.
+// allocate gives every instance in the snapshot a port: the one it already had, or the lowest free one. An
+// allocation whose instance the snapshot no longer has is kept as it was: v1 deletes an instance's records
+// when v2 takes it over, and the port is that instance's identity to the proxy — losing it would take the
+// migrated instance's way out away with the records.
 func allocate(pinned snapshot, previous egressDocument) egressDocument {
 	kept := map[string]int32{}
 	used := map[int32]bool{}
@@ -78,6 +81,10 @@ func allocate(pinned snapshot, previous egressDocument) egressDocument {
 	}
 	document := egressDocument{Kind: "v2-egress", Version: 1, Revision: pinned.Revision,
 		Instances: make([]egressAllocated, 0, len(pinned.Instances))}
+	present := make(map[string]bool, len(pinned.Instances))
+	for _, instance := range pinned.Instances {
+		present[instance.Environment+"/"+instance.Application] = true
+	}
 	next := int32(firstPort)
 	for _, instance := range pinned.Instances {
 		port, had := kept[instance.Environment+"/"+instance.Application]
@@ -89,6 +96,11 @@ func allocate(pinned snapshot, previous egressDocument) egressDocument {
 		}
 		document.Instances = append(document.Instances, egressAllocated{Application: instance.Application,
 			Environment: instance.Environment, Port: port, Grants: declaredGrants(instance)})
+	}
+	for _, allocated := range previous.Instances {
+		if !present[allocated.Environment+"/"+allocated.Application] {
+			document.Instances = append(document.Instances, allocated)
+		}
 	}
 	sort.Slice(document.Instances, func(i, j int) bool {
 		a, b := document.Instances[i], document.Instances[j]

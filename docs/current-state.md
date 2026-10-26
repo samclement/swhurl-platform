@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The first stateful migration: `swhurl-try-10` staging keeps its volume (26 October 2026)
+
+`swhurl-try-10` staging is the first database instance v2 owns. The handover (commit `6651aee7`) removed v1's records, rendered manifests, events identity, image automation and unit, and v2's compiled instance took the same namespace and host name.
+
+**The volume is the same bytes.** The claim was **adopted** rather than created (`storage.claimName`): the PVC is still `swhurl-try-10` and still bound to the **same** PV, `pvc-b26d3380-ff7e-4b62-b13e-c3f0a486087b`, 1Gi on `local-path-retain`. Had v1's HelmRelease been re-created without that, Helm would have failed on the existing name and the instance would not have started.
+
+**Verified live:**
+
+- Unit `app-swhurl-try-10-staging` `Ready=True` at `main@6651aee7`; pod `1/1 Running`; the Deployment runs the same digest v1 ran (`sha256:9c48c58a…`), `Recreate`, mounting claim `swhurl-try-10` at `/data` with `DATABASE_PATH=/data/app.db`.
+- The env is v2's: `HTTP(S)_PROXY` at the allocation's port 30105 — the port survived the deletion of the instance's records, because the allocation outlived them. No `SWHURL_ALLOWED_CALLERS`: no call resolves into this instance (see below).
+- The route is v2's own: `staging-swhurl-try-10.homelab.swhurl.com`, TLS secret `swhurl-try-10-tls` `Ready=True` from **`letsencrypt-prod`**, and a signed-out `GET /` is a `302` to the shared Google sign-in.
+- The backup job renders at v1's slot for this namespace (`58 3 * * *`), and a run **now** published from the adopted volume through the enforced proxy: `sqlite-20261026T082103Z.db.age` (2 tables, integrity ok), `granted=yes … 200/TCP_TUNNEL`.
+- v2's own `observe` (given the allocation, which it now accepts): **`verdict running`** — unit reconciled, revision applied, release settled, workload present, the intended digest running, ready, replicas as intended.
+
+**What the handover cost, from v1's render afterwards.** v1 derives relationships from v1 instances, so moving this one out of v1's graph removed it from v1's pairs: `swhurl-try-12` lost its call to it (`SWHURL_SERVICE_SWHURL_TRY_10_URL` and its token) and `swhurl-try-13` lost its subscription to its `visited` event (its consumer object and permission are gone), and the instance no longer publishes at all — v2 renders no NATS identity. Its own caller, v2-owned `swhurl-try-11`, still cannot reach it: a snapshot sees neither instance, so no resolution exists for the pair.
+
+**Not exercised:** a call into the migrated instance; a restore; the rollback of a stateful migration (the volume is adopted, so reverting to v1 means giving the claim back to v1's HelmRelease, which recreates nothing); and its prod instance, which stays with v1.
+
 ## The egress cutover: v2 renders the proxy, and grants are enforced (26 October 2026)
 
 The platform's egress proxy now runs **v2's** configuration (`platform/egress/{allocation,configmap,networkpolicy}.json`, commit `a41f9027`) instead of v1's generated `proxy.yaml`. Grants are enforced: an instance reaches the hosts and ports its own grants name, and nothing else.

@@ -385,3 +385,46 @@ func proxyValuesKey(t *testing.T, data map[string]string) string {
 	t.Fatal("the ConfigMap holds no values")
 	return ""
 }
+
+// claimName is a generated PersistentVolumeClaim's metadata.name, from the rendered manifest.
+func claimName(rendered string) string {
+	if !strings.Contains(rendered, "kind: PersistentVolumeClaim") {
+		return ""
+	}
+	for _, line := range strings.Split(rendered[strings.Index(rendered, "kind: PersistentVolumeClaim"):], "\n") {
+		if rest, found := strings.CutPrefix(line, "  name: "); found {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+// TestClaimConvention ties the claim a migration adopts to the pinned chart. A predecessor's release declares
+// a data volume without naming its claim, so the chart generates one named after the release; that is the
+// claim storage.claimName names, and the chart's convention is what the migration reads it from.
+func TestClaimConvention(t *testing.T) {
+	helm := tool(t, "helm")
+	release := yamlDocuments(t, "../../../apps/demo-orders/staging/helmrelease.yaml")[0]
+	metadata := release["metadata"].(map[string]any)
+	spec := release["spec"].(map[string]any)
+	chartSpec := spec["chart"].(map[string]any)["spec"].(map[string]any)
+	values, err := json.Marshal(spec["values"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, namespace := metadata["name"].(string), metadata["namespace"].(string)
+	cache, _ := os.UserCacheDir()
+	chart := filepath.Join(cache, "swhurl-platform", "charts",
+		chartSpec["chart"].(string)+"-"+chartSpec["version"].(string))
+	if _, err := os.Stat(filepath.Join(chart, "Chart.yaml")); err != nil {
+		need(t, "the pinned chart in "+chart+" (make check-apps fetches it)")
+	}
+	valuesPath := filepath.Join(t.TempDir(), "values.json")
+	if err := os.WriteFile(valuesPath, values, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rendered := output(t, helm, "template", name, chart, "-n", namespace, "-f", valuesPath)
+	if got := claimName(rendered); got != name {
+		t.Errorf("the chart generates the claim %q; the migration adopts the release's name %q", got, name)
+	}
+}

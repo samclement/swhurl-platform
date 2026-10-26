@@ -1,0 +1,321 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/kernel"
+)
+
+// runMigrate runs the command against real files and returns its status and streams.
+func runMigrate(t *testing.T, args ...string) (int, string, string) {
+	t.Helper()
+	var out, diagnostic bytes.Buffer
+	status := run(append([]string{"migrate"}, args...), &out, &diagnostic, os.ReadFile, files.New())
+	return status, out.String(), diagnostic.String()
+}
+
+// migrationOf decodes the report a successful migration writes.
+func migrationOf(t *testing.T, stdout string) map[string]any {
+	t.Helper()
+	var document map[string]any
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("the report is not JSON: %v\n%s", err, stdout)
+	}
+	if document["kind"] != "v2-migration" || document["version"] != float64(1) {
+		t.Fatalf("kind %v version %v", document["kind"], document["version"])
+	}
+	return document
+}
+
+// readFile is a named file's bytes, for comparing a migration's output with what Git holds.
+func readFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// TestMigrateReproducesCommittedInstances runs the migration over the v1-shaped record copies of every
+// v2-owned instance and asserts it writes the record identities Git holds and byte-for-byte the files Git
+// holds. The two real migrations are then the translation's own acceptance test, the stateful one included.
+func TestMigrateReproducesCommittedInstances(t *testing.T) {
+	instances, err := filepath.Glob("../../../v2-records/*/*/instance.json")
+	if err != nil || len(instances) == 0 {
+		t.Fatalf("no v2-owned instance records: %v", err)
+	}
+	for _, instancePath := range instances {
+		folder := filepath.Dir(instancePath)
+		segments := strings.Split(filepath.ToSlash(folder), "/")
+		application, environment := segments[len(segments)-2], segments[len(segments)-1]
+		committedRecord, committedInstance := readFile(t, instancePath),
+			readFile(t, filepath.Join(folder, "release.json"))
+		release, err := kernel.DecodeRelease(committedInstance)
+		if err != nil {
+			t.Fatalf("%s: %v", folder, err)
+		}
+		spec, err := kernel.DecodeInstance(committedRecord)
+		if err != nil {
+			t.Fatalf("%s: %v", folder, err)
+		}
+		snapshot := writeSnapshot(t, predecessor(t, application, environment))
+		destination := t.TempDir()
+		args := []string{"--snapshot", snapshot, "--app", application, "--env", environment,
+			"--profile", filepath.Join("..", "..", "testdata", "profile.json"),
+			"--source-repository", release.Source.Repository, "--source-commit", release.Source.Commit,
+			"--calls", "../../../v2-records/calls.json", "--out", destination}
+		if release.Database != "" {
+			args = append(args, "--egress", "../../../platform/egress/allocation.json")
+		}
+		status, stdout, diagnostic := runMigrate(t, args...)
+		if status != 0 {
+			t.Fatalf("%s: exit %d: %s", folder, status, diagnostic)
+		}
+		report := migrationOf(t, stdout)
+		if release.Database != "" {
+			// A database instance renders from its allocation: the report states the port the proxy
+			// names it by, not a port re-derived from the record.
+			allocated := allocatedPort(t, application, environment)
+			if egress, ok := report["egress"].(map[string]any); !ok || egress["port"] != allocated {
+				t.Errorf("%s: egress %v, the allocation names port %v", folder, report["egress"], allocated)
+			}
+		}
+		identities := report["identities"].(map[string]any)
+		if identities["release"] != string(release.ReleaseID) || identities["instance"] != string(mustRevision(t, spec)) {
+			t.Errorf("%s: identities %v", folder, identities)
+		}
+		if got, want := report["source"].(map[string]any)["corroborated"], float64(len(release.Source.Commit)); got == nil {
+			t.Errorf("%s: corroboration %v (commit length %v)", folder, got, want)
+		}
+		migrated := filepath.Join(destination, "v2-records", application, environment)
+		for _, name := range []string{"release.json", "instance.json"} {
+			if !bytes.Equal(readFile(t, filepath.Join(migrated, name)), readFile(t, filepath.Join(folder, name))) {
+				t.Errorf("%s: the %s record is not what Git holds", folder, name)
+			}
+		}
+		// Every other file is what Git holds, byte for byte: the translation reproduces a real migration.
+		compared := 0
+		for _, written := range report["files"].([]any) {
+			path := written.(map[string]any)["path"].(string)
+			if strings.HasPrefix(path, "v2-records/") {
+				continue
+			}
+			if string(readFile(t, filepath.Join(destination, filepath.FromSlash(path)))) !=
+				string(readFile(t, filepath.Join("../../../", filepath.FromSlash(path)))) {
+				t.Errorf("%s: %s is not what Git holds", folder, path)
+			}
+			compared++
+		}
+		if compared == 0 {
+			t.Fatalf("%s: nothing was compared", folder)
+		}
+	}
+}
+
+// mustRevision is an instance record's revision, which the caller has already decoded.
+func mustRevision(t *testing.T, spec kernel.InstanceSpec) kernel.InstanceRevision {
+	t.Helper()
+	revision, err := spec.Revision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return revision
+}
+
+// allocatedPort is the port the committed allocation gives one instance.
+func allocatedPort(t *testing.T, application, environment string) float64 {
+	t.Helper()
+	ports := portsOf(t, allocationOf(t, string(readFile(t, "../../../platform/egress/allocation.json"))))
+	port, found := ports[environment+"/"+application]
+	if !found {
+		t.Fatalf("the allocation names %s/%s nowhere", application, environment)
+	}
+	return port
+}
+
+// predecessor is a snapshot in the exporter's shape for one instance: the v1-shaped records the snapshot
+// carries beside the committed output v2 holds for it.
+func predecessor(t *testing.T, application, environment string) map[string]any {
+	t.Helper()
+	recordRoot := filepath.Join("../../../v2-records", application, environment)
+	documents := map[string]any{}
+	// The snapshot exporter reads the records as YAML and carries the objects as JSON; the test reads them
+	// the same way, with the parser the repository's own tooling uses.
+	for role, path := range map[string]string{
+		"app":         filepath.Join("../../../apps", application, "app.yaml"),
+		"instance":    filepath.Join(recordRoot, "instance.yaml"),
+		"release":     filepath.Join(recordRoot, "release.yaml"),
+		"helmrelease": filepath.Join("../../../v2-apps/instances", application, environment, "helmrelease.json"),
+	} {
+		if strings.HasSuffix(path, ".yaml") {
+			documents[role] = yamlDocuments(t, path)[0]
+			continue
+		}
+		var document any
+		if err := json.Unmarshal(readFile(t, path), &document); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		documents[role] = document
+	}
+	return map[string]any{"version": 1, "revision": strings.Repeat("c", 40), "residual": []any{},
+		"instances": []any{map[string]any{"application": application, "environment": environment,
+			"records": documents, "missing": []any{}, "objects": []any{}}}}
+}
+
+// A migration writes a record pair `compile` reads back: the same files, so a migrated instance is
+// maintainable from Git without hand-written JSON.
+func TestMigrateWritesAPairCompileCanRecompile(t *testing.T) {
+	snapshot := writeSnapshot(t, snapshotDocument(t, map[string]any{}))
+	profile := filepath.Join("..", "..", "testdata", "profile.json")
+	destination := t.TempDir()
+	status, stdout, diagnostic := runMigrate(t,
+		"--snapshot", snapshot, "--app", "hello", "--env", "staging", "--profile", profile,
+		"--source-repository", "nginxinc/nginx-unprivileged", "--source-commit", strings.Repeat("b", 40),
+		"--out", destination)
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, diagnostic)
+	}
+	report := migrationOf(t, stdout)
+	if report["snapshot"] != strings.Repeat("a", 40) {
+		t.Errorf("snapshot revision %v", report["snapshot"])
+	}
+	source := report["source"].(map[string]any)
+	if source["repository"] != "nginxinc/nginx-unprivileged" || source["commit"] != strings.Repeat("b", 40) {
+		t.Errorf("source %v", source)
+	}
+	if corroborated, ok := source["corroborated"].([]any); !ok || len(corroborated) != 0 {
+		t.Errorf("the fixture's tag abbreviates nothing: %v", source["corroborated"])
+	}
+	if report["egress"] != nil {
+		t.Errorf("a stateless instance has no allocation: %v", report["egress"])
+	}
+	if report["note"] != migrationNote || len(report["gaps"].([]any)) == 0 {
+		t.Errorf("note %v, gaps %v", report["note"], report["gaps"])
+	}
+	pair := filepath.Join(destination, "v2-records", "hello", "staging")
+	recompiled := t.TempDir()
+	// recompile reads the pair back through the compile command, into a second destination.
+	status = run([]string{"compile",
+		"--instance", filepath.Join(pair, "instance.json"), "--release", filepath.Join(pair, "release.json"),
+		"--profile", profile, "--out", recompiled}, &bytes.Buffer{}, &bytes.Buffer{}, os.ReadFile, files.New())
+	if status != 0 {
+		t.Fatalf("the record pair does not compile: exit %d", status)
+	}
+	written := 0
+	for _, entry := range report["files"].([]any) {
+		path := entry.(map[string]any)["path"].(string)
+		if strings.HasPrefix(path, "v2-records/") {
+			continue
+		}
+		first, second := readFile(t, filepath.Join(destination, filepath.FromSlash(path))),
+			readFile(t, filepath.Join(recompiled, filepath.FromSlash(path)))
+		if !bytes.Equal(first, second) {
+			t.Errorf("%s differs between the migration and a recompilation", path)
+		}
+		written++
+	}
+	if written == 0 {
+		t.Fatal("the migration wrote no compiled file")
+	}
+}
+
+// A declaration the resolution does not connect is reported as such: the migration never lets a relationship
+// disappear because a document was not supplied.
+func TestMigrateReportsUnconnectedDeclarations(t *testing.T) {
+	snapshot := writeSnapshot(t, snapshotDocument(t, map[string]any{"instance": map[string]any{
+		"version": 1, "exposure": "authenticated-web", "replicas": 1,
+		"calls": []any{"billing"}, "allows": []any{"team:demo", "swhurl-try-11"},
+	}}))
+	status, stdout, diagnostic := runMigrate(t, "--snapshot", snapshot, "--app", "hello", "--env", "staging",
+		"--profile", filepath.Join("..", "..", "testdata", "profile.json"),
+		"--source-repository", "nginxinc/nginx-unprivileged", "--source-commit", strings.Repeat("b", 40),
+		"--out", t.TempDir())
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, diagnostic)
+	}
+	edges := migrationOf(t, stdout)["relationships"].(map[string]any)
+	if unmet := edges["unmetCalls"].([]any); len(unmet) != 1 || unmet[0] != "billing" {
+		t.Errorf("unmet calls %v", unmet)
+	}
+	// A team grant is expanded by the resolver, so it has no caller of its own to compare; the app name does.
+	if unmet := edges["unmetCallers"].([]any); len(unmet) != 1 || unmet[0] != "swhurl-try-11" {
+		t.Errorf("unmet callers %v", unmet)
+	}
+	if declared := edges["declaredCallers"].([]any); len(declared) != 2 {
+		t.Errorf("declared callers %v", declared)
+	}
+	if !strings.Contains(diagnostic, "unresolved declarations reported") {
+		t.Errorf("the summary does not name them: %q", diagnostic)
+	}
+}
+
+// Every migration refusal names what is missing or refused, writes nothing, and leaves the destination
+// untouched.
+func TestMigrateRefusals(t *testing.T) {
+	profile := filepath.Join("..", "..", "testdata", "profile.json")
+	snapshot := writeSnapshot(t, snapshotDocument(t, map[string]any{}))
+	abbreviated := snapshotDocument(t, map[string]any{"release": map[string]any{
+		"version": 1, "image": map[string]any{"repository": "docker.io/nginxinc/nginx-unprivileged",
+			"tag": "12-9f3ab21", "digest": "sha256:" + strings.Repeat("e", 64)},
+		"kind": "web", "uid": 101, "port": 8080, "healthPath": "/", "offers": "9f3ab21",
+	}})
+	missingRecords := snapshotDocument(t, map[string]any{})
+	missingRecords["instances"].([]any)[0].(map[string]any)["missing"] = []any{"apps/hello/staging/helmrelease.yaml"}
+	for _, tt := range []struct {
+		name               string
+		snapshot           map[string]any
+		app, env           string
+		repository, commit string
+		want               string
+	}{
+		{"absent", snapshotDocument(t, map[string]any{}), "nope", "staging", "nginxinc/nginx-unprivileged", strings.Repeat("b", 40), "missing: snapshot: instance_not_found"},
+		{"missing record", missingRecords, "hello", "staging", "nginxinc/nginx-unprivileged", strings.Repeat("b", 40), "missing: snapshot: apps/hello/staging/helmrelease.yaml"},
+		{"source", abbreviated, "hello", "staging", "nginxinc/other", strings.Repeat("b", 40), "invalid: supplied: source.repository"},
+		{"commit", abbreviated, "hello", "staging", "nginxinc/nginx-unprivileged", strings.Repeat("b", 40), "invalid: supplied: source.commit: does_not_match_the_tag"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			destination := t.TempDir()
+			status, stdout, diagnostic := runMigrate(t, "--snapshot", writeSnapshot(t, tt.snapshot),
+				"--app", tt.app, "--env", tt.env, "--profile", profile, "--source-repository", tt.repository,
+				"--source-commit", tt.commit, "--out", destination)
+			if status != 2 || !strings.Contains(diagnostic, tt.want) {
+				t.Fatalf("exit %d: %q, want %q", status, diagnostic, tt.want)
+			}
+			if stdout != "" {
+				t.Fatalf("a refusal wrote a report: %q", stdout)
+			}
+			if entries, err := os.ReadDir(destination); err != nil || len(entries) != 0 {
+				t.Fatalf("a refusal wrote %v files: %v", len(entries), err)
+			}
+		})
+	}
+	// A destination inside this checkout's v1 app tree is this checkout's rule, refused before anything is
+	// written.
+	checkout := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(checkout, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	status, _, diagnostic := runMigrate(t, "--snapshot", snapshot, "--app", "hello", "--env", "staging",
+		"--profile", profile, "--source-repository", "nginxinc/nginx-unprivileged",
+		"--source-commit", strings.Repeat("b", 40), "--out", filepath.Join(checkout, "apps", "hello"))
+	if status != 2 || !strings.Contains(diagnostic, files.RefusedDestination) {
+		t.Fatalf("exit %d: %q", status, diagnostic)
+	}
+	// The flags a migration cannot run without are a usage error, not a half-checked migration.
+	for _, args := range [][]string{
+		{"--snapshot", snapshot, "--app", "hello", "--env", "staging", "--profile", profile, "--out", t.TempDir()},
+		{"--snapshot", snapshot, "--app", "hello", "--env", "staging", "--profile", profile,
+			"--source-repository", "nginxinc/nginx-unprivileged", "--source-commit", strings.Repeat("b", 40)},
+	} {
+		if status, _, diagnostic := runMigrate(t, args...); status != 2 || !strings.Contains(diagnostic, "usage") {
+			t.Fatalf("%v: exit %d: %q", args, status, diagnostic)
+		}
+	}
+}

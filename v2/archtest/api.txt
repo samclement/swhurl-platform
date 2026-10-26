@@ -133,11 +133,15 @@ legacy: const Invalid = "invalid"
 legacy: const Missing = "missing"
 legacy: const Unsupported = "unsupported"
 legacy: func (*Error) Error() string
+legacy: func Migrate(records Records, supplied Supplied) (Migration, error)
 legacy: func Translate(records Records) (Translation, error)
 legacy: type Error struct {Code, Field, Reason string}
 legacy: type Gap struct {Where, Fact, Owner string}
 legacy: type Instance struct {Exposure string Replicas int32 MemoryMiB int32 Team string}
+legacy: type Migration struct {Application, Environment string Source Source Workload Workload Instance Instance Database string Claim string Corroborated []string Calls, Callers []string Sources map[string]string Gaps []Gap}
 legacy: type Records struct {App, Instance, Release, Committed []byte}
+legacy: type Source struct {Repository, Commit string}
+legacy: type Supplied struct {Repository, Commit string}
 legacy: type Translation struct {Application, Environment string Workload Workload Instance Instance Sources map[string]string Gaps []Gap}
 legacy: type Workload struct {Image, Tag, Digest string Kind string Port int32 HealthPath string UID int32}
 observe: const Absent = "absent"
@@ -204,7 +208,10 @@ observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref 
 observe: type Verdict string
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
+orchestration: func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error)
 orchestration: type Inputs struct {Instance, Release, Profile []byte Calls, Egress []byte}
+orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}
+orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte}
 orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
 shadow: func (*Error) Error() string
 shadow: func CompareHTTP(before, after []byte, choices ResourceChoices) (HTTPComparison, error)

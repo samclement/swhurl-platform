@@ -16,5 +16,6 @@
     "port": 8080,
     "healthPath": "/healthz",
     "uid": 65532
-  }
+  },
+  "releaseId": "rel-sha256:781a997291cdc92afdf0fdedc8cbdd6c230645a59ba5fd276cbad85001730ed3"
 }

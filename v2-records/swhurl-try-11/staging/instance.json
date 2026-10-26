@@ -3,7 +3,13 @@
   "application": "swhurl-try-11",
   "environment": "staging",
   "release": "rel-sha256:781a997291cdc92afdf0fdedc8cbdd6c230645a59ba5fd276cbad85001730ed3",
-  "configuration": {"replicas": 1, "memoryMiB": 128},
-  "grants": {"exposure": "authenticated-web"},
-  "bindings": {}
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "authenticated-web"
+  },
+  "bindings": {},
+  "storage": {}
 }

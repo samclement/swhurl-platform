@@ -60,6 +60,8 @@ func TestCLI(t *testing.T) {
 		{nil, 2, "", "usage"},
 		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "profile"}, 0, `"kind": "v2-compilation"`, ""},
 		{[]string{"compile", "--instance", "prod", "--release", "release", "--profile", "profile"}, 2, "", "wrong_release: release:"},
+		// A refusal is a refusal with --out too: the destination is only an effect, not a different answer.
+		{[]string{"compile", "--instance", "prod", "--release", "release", "--profile", "profile", "--out", "destination"}, 2, "", "wrong_release: release:"},
 		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "bad"}, 2, "", "invalid: document:"},
 		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "huge"}, 2, "", "invalid: profile: input file is larger than 1 MiB"},
 		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "unreadable"}, 1, "", "io: profile: cannot read input file"},

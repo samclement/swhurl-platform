@@ -1,0 +1,147 @@
+package orchestration
+
+import (
+	"slices"
+	"strings"
+
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/legacy"
+)
+
+// recordsRoot is where a v2-owned instance keeps its own records, under the checkout the caller writes
+// into: the same root the snapshot exporter reads, so a migrated instance recompiles from Git alone. It is
+// this use case's own output and becomes a profile fact only if a second writer needs it.
+const recordsRoot = "v2-records"
+
+// artifactPlatform is the platform's own fact about the images it runs: one amd64 node. The kernel accepts
+// no other platform and no other media type, so a migration asserts what the compiler already enforces.
+const artifactPlatform = "linux/amd64"
+
+// MigrationInputs is what a migration takes: the predecessor's records, the source no record in this
+// repository states, the platform profile, and the two optional documents.
+type MigrationInputs struct {
+	Records                legacy.Records
+	Supplied               legacy.Supplied
+	Profile, Calls, Egress []byte
+}
+
+// Migration is what a migration produced: the translated facts with their sources and gaps, the record pair
+// it wrote, the compilation that pair renders, the resolution's own edges for the instance, the
+// predecessor's declarations it does not connect, the allocation's place for it, and every file outcome in
+// the order they were written.
+type Migration struct {
+	Facts        legacy.Migration
+	Release      kernel.ReleaseBundle
+	Instance     kernel.InstanceSpec
+	Compilation  kernel.Compilation
+	Rendered     kernel.Connections
+	UnmetCalls   []string
+	UnmetCallers []string
+	Egress       *kernel.Egress
+	Written      []files.Outcome
+}
+
+// Migrate translates one predecessor instance into v2's record pair, compiles the pair with the platform's
+// documents, and writes the pair and the compiled files under destination. The compilation is the compile
+// use case's own — the translation sits above it and decides nothing the kernel decides.
+func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error) {
+	facts, err := legacy.Migrate(inputs.Records, inputs.Supplied)
+	if err != nil {
+		return Migration{}, err
+	}
+	release, spec, err := recordsOf(facts)
+	if err != nil {
+		return Migration{}, err
+	}
+	releaseDocument, err := kernel.EncodeRelease(release)
+	if err != nil {
+		return Migration{}, err
+	}
+	instanceDocument, err := kernel.EncodeInstance(spec)
+	if err != nil {
+		return Migration{}, err
+	}
+	compiled, err := Compile(Inputs{Instance: instanceDocument, Release: releaseDocument,
+		Profile: inputs.Profile, Calls: inputs.Calls, Egress: inputs.Egress})
+	if err != nil {
+		return Migration{}, err
+	}
+	// The same helper the compilation used, so the report names the edges and the port the files were
+	// rendered from rather than a second reading of them.
+	compilation := Inputs{Instance: instanceDocument, Release: releaseDocument, Profile: inputs.Profile,
+		Calls: inputs.Calls, Egress: inputs.Egress}
+	rendered, egress, err := documents(compilation, facts.Application, facts.Environment)
+	if err != nil {
+		return Migration{}, err
+	}
+	result := Migration{Facts: facts, Release: release, Instance: spec, Compilation: compiled,
+		Rendered: rendered, Egress: egress, UnmetCalls: unmet(facts.Calls, callees(rendered)),
+		UnmetCallers: unmet(facts.Callers, rendered.Callers)}
+	written := append(recordFiles(facts.Application, facts.Environment, releaseDocument, instanceDocument),
+		compiled.Files...)
+	result.Written, err = writer.Write(destination, written)
+	return result, err
+}
+
+// recordsOf turns one predecessor's translated facts into v2's record pair. It maps fields and lets the
+// kernel decide what a record may say: identity, validation and encoding stay there.
+func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpec, error) {
+	release := kernel.ReleaseBundle{
+		SchemaVersion: 1,
+		Application:   facts.Application,
+		Source:        kernel.Source{Repository: facts.Source.Repository, Commit: facts.Source.Commit},
+		Artifact: kernel.Artifact{Image: facts.Workload.Image, Digest: facts.Workload.Digest,
+			MediaType: kernel.ManifestMediaType, Platform: artifactPlatform},
+		Runtime: kernel.Runtime{Kind: facts.Workload.Kind, Port: facts.Workload.Port,
+			HealthPath: facts.Workload.HealthPath, UID: facts.Workload.UID},
+		Database: facts.Database,
+	}
+	identity, err := release.ID()
+	if err != nil {
+		return kernel.ReleaseBundle{}, kernel.InstanceSpec{}, err
+	}
+	release.ReleaseID = identity
+	spec := kernel.InstanceSpec{
+		SchemaVersion: 1,
+		Application:   facts.Application,
+		Environment:   facts.Environment,
+		Release:       identity,
+		Configuration: kernel.Configuration{Replicas: facts.Instance.Replicas, MemoryMiB: facts.Instance.MemoryMiB},
+		Grants:        kernel.Grants{Exposure: facts.Instance.Exposure},
+		Storage:       kernel.Storage{ClaimName: facts.Claim},
+	}
+	return release, spec, nil
+}
+
+// recordFiles is the pair of records a migration writes, under the root the snapshot exporter reads.
+func recordFiles(application, environment string, release, instance []byte) []kernel.File {
+	folder := recordsRoot + "/" + application + "/" + environment
+	return []kernel.File{
+		{Path: folder + "/release.json", Document: release},
+		{Path: folder + "/instance.json", Document: instance},
+	}
+}
+
+// callees is the names a resolution's calls point at: what a predecessor's own declarations are compared
+// with.
+func callees(connections kernel.Connections) []string {
+	names := make([]string, 0, len(connections.Calls))
+	for _, call := range connections.Calls {
+		names = append(names, call.Callee)
+	}
+	return names
+}
+
+// unmet is the declarations the resolution does not connect. A team grant has no caller of its own — the
+// resolver expands it — so it is not compared; its effect appears in the rendered callers.
+func unmet(declared, resolved []string) []string {
+	missing := []string{}
+	for _, name := range declared {
+		if strings.HasPrefix(name, "team:") || slices.Contains(resolved, name) {
+			continue
+		}
+		missing = append(missing, name)
+	}
+	return missing
+}

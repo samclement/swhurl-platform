@@ -29,6 +29,8 @@ const usage = `usage:
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
       --committed HELMRELEASE.json --profile PROFILE.json
   swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json [--kubeconfig KUBECONFIG.json]
+  swhurl-v2 migrate --snapshot SNAPSHOT.json --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
+      --source-repository OWNER/NAME --source-commit COMMIT --out DIR [--calls CALLS.json] [--egress EGRESS.json]
 
 Input files are never overwritten. Without --out the compilation document goes to stdout and nothing
 is written. With --out every compiled file is written under DIR, one "written PATH" or
@@ -65,6 +67,15 @@ that document with --calls and renders only the pairs it names for the instance 
 preview renders one predecessor instance from its records and compares the result with the HelmRelease
 that predecessor committed, writing a v2-preview document to stdout. It reads only the five named JSON
 files and applies nothing: the legacy records are given as JSON, so no legacy YAML is read here.
+
+migrate turns one instance out of a pinned snapshot into v2's own records, compiles them with the profile
+and the optional resolution and allocation, and writes both under --out: the record pair at
+v2-records/APPLICATION/ENVIRONMENT/ and the compiled files. The source repository and the full commit
+its image was built from are the operator's, because the records keep only an abbreviation: they are
+checked against it, never expanded from it. The report on stdout says which files it wrote, where every
+recorded fact came from, which of the predecessor's declarations the resolution does not connect, and
+every legacy fact the pair cannot carry. It deletes nothing: removing v1's records, manifests and unit is
+the handover step, and the unit's registration stays a reviewed edit.
 Exit 0: success/no-op (for observe: a report was produced, whatever its verdict); 2: usage/validation/
 refusal; 1: file or output I/O failure.
 `
@@ -117,6 +128,7 @@ var commands = map[string]func(cli, request) int{
 	"resolve":           cli.resolve,
 	"egress":            cli.egress,
 	"proxy":             cli.proxy,
+	"migrate":           cli.migrate,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -125,6 +137,7 @@ type request struct {
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
 	app, settings, committed, snapshot, callFile       string
+	env, sourceRepository, sourceCommit                string
 	previous, egressFile, allocation                   string
 	outFlag                                            *once
 }
@@ -215,6 +228,17 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		r.outFlag = &once{value: &r.out}
 		flags.Var(r.outFlag, "out", "destination directory")
+	case "migrate":
+		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+		flags.Var(&once{value: &r.app}, "app", "application to migrate")
+		flags.Var(&once{value: &r.env}, "env", "environment to migrate")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.sourceRepository}, "source-repository", "the app's source repository, owner/name")
+		flags.Var(&once{value: &r.sourceCommit}, "source-commit", "the full commit its image was built from")
+		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
+		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		r.outFlag = &once{value: &r.out}
+		flags.Var(r.outFlag, "out", "destination directory")
 	}
 }
 
@@ -257,6 +281,8 @@ func (r *request) named() []string {
 		return []string{r.snapshot}
 	case "proxy":
 		return []string{r.allocation, r.profile}
+	case "migrate":
+		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}
 	}
 	return nil
 }
@@ -382,12 +408,19 @@ func (c cli) wrote(outcomes []files.Outcome, err error) int {
 	if err == nil {
 		return 0
 	}
+	return c.failure(err)
+}
+
+// failure reports a use case's error and maps it to an exit status. Reading an input is the command's own
+// step and already reports its I/O as 1, so what reaches here is a refusal or validation (2) unless the
+// filesystem itself failed while writing (1).
+func (c cli) failure(err error) int {
 	fmt.Fprintln(c.diagnostic, err)
-	var refusal *files.Error
-	if errors.As(err, &refusal) && refusal.Code == files.RefusedDestination {
-		return 2
+	var failure *files.Error
+	if errors.As(err, &failure) && failure.Code == files.IO {
+		return 1
 	}
-	return 1
+	return 2
 }
 
 // writeFiles writes rendered files under dir and reports each one, for a command whose use case returns the

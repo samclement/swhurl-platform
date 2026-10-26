@@ -270,18 +270,20 @@ func networkPolicy(spec HTTPInstance, exposure string, http HTTPWorkload, profil
 			"ports": []any{manifest{"port": http.Port, "protocol": "TCP"}},
 		})
 	}
-	// A callee admits each connected caller's own pods on its port; a caller reaches each connected
-	// callee's pods on the callee's port and nothing else. Egress stays denied everywhere else.
-	for _, caller := range spec.Callers {
+	// A call's rules name the cluster's pod network, not the other instance's pods: this cluster's policy
+	// controller honours address blocks and ignores pod and namespace selectors (docs/current-state.md), so
+	// a callee admits the network on its port and a caller reaches the network on the callee's port. The
+	// caller's identity is its token — the callee checks who may call it — and the port is the boundary.
+	if len(spec.Callers) > 0 {
 		ingressRules = append(ingressRules, manifest{
-			"from":  []any{peerSelector(caller, spec.Environment)},
+			"from":  []any{podNetwork(profile)},
 			"ports": []any{manifest{"port": http.Port, "protocol": "TCP"}},
 		})
 	}
 	egressRules := []any{}
 	for _, call := range spec.Calls {
 		egressRules = append(egressRules, manifest{
-			"to":    []any{peerSelector(call.Callee, spec.Environment)},
+			"to":    []any{podNetwork(profile)},
 			"ports": []any{manifest{"port": call.Port, "protocol": "TCP"}},
 		})
 	}
@@ -320,13 +322,10 @@ func labelManifest(labels map[string]string) manifest {
 	return out
 }
 
-// peerSelector is one instance's own pods in its own environment: the only peer a call or a consent
-// needs. The namespace carries the environment, so staging never reaches production.
-func peerSelector(application, environment string) manifest {
-	return manifest{
-		"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": application + "-" + environment}},
-		"podSelector":       manifest{"matchLabels": manifest{instanceLabel: application}},
-	}
+// podNetwork is the cluster's pod address block, the peer shape a call's rules use. The platform states it
+// in the profile; a profile without one cannot render a call, because it could not say who may reach whom.
+func podNetwork(profile PlatformProfile) manifest {
+	return manifest{"ipBlock": manifest{"cidr": profile.Network.PodCIDR}}
 }
 
 // ingress is the route: a host derived from the platform's base domain, TLS from the platform's issuer and
@@ -676,18 +675,30 @@ func claimName(spec HTTPInstance) string {
 // validateCalls checks the resolved pairs' shape. Consent is not decided here: the caller supplies only
 // connected pairs, and a callee needs the platform's keys to accept any of them.
 func validateCalls(spec HTTPInstance, profile PlatformProfile) error {
-	for _, call := range spec.Calls {
+	if err := validateCallShape(spec.Calls, spec.Callers); err != nil {
+		return err
+	}
+	// A call states its peers as the cluster's pod network, so a profile without one cannot render it.
+	if len(spec.Callers) > 0 && !profile.Auth.configured() {
+		return refuse(Unsupported, "auth", "the profile states no signing keys, so a callee cannot verify a caller")
+	}
+	if (len(spec.Calls) > 0 || len(spec.Callers) > 0) && profile.Network.PodCIDR == "" {
+		return refuse(Unsupported, "network", "the profile states no pod network, so a call has no peer")
+	}
+	return nil
+}
+
+// validateCallShape checks the pairs' shape: a callee is an app name with a port, a caller an app name.
+func validateCallShape(calls []Call, callers []string) error {
+	for _, call := range calls {
 		if !namePattern.MatchString(call.Callee) || call.Port < 1 || call.Port > 65535 {
 			return refuse(Invalid, "calls", "expected an app name and a port")
 		}
 	}
-	for _, caller := range spec.Callers {
+	for _, caller := range callers {
 		if !namePattern.MatchString(caller) {
 			return refuse(Invalid, "callers", "expected an app name")
 		}
-	}
-	if len(spec.Callers) > 0 && !profile.Auth.configured() {
-		return refuse(Unsupported, "auth", "the profile states no signing keys, so a callee cannot verify a caller")
 	}
 	return nil
 }

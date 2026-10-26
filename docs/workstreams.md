@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Offline Go v2 | main | approved | the first pair between two v2-owned instances renders on both sides, 26 October 2026; diagnosed that this cluster honours `ipBlock` peers and ignores namespace/pod peers, so no call can be admitted by selector (v1 included) | the operator's decision on the call's policy shape (pod-CIDR ipBlock plus token identity, or a different CNI), then the token half of the probe | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/` |
+| Offline Go v2 | main | approved | calls state the cluster's pod block with the token as the caller's identity, per the operator's choice, and both v2-owned instances were recompiled, 26 October 2026 | the token half of the call proved live, then the bridge slice translating records into compile's inputs | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/` |
 | Live platform | main | approved | the 24 open items in the plan index | M14, then B4b (records-only removal) | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: approved
-Gate: the operator's decision on the call's policy shape (pod-CIDR ipBlock plus token identity, or a different CNI), then the token half of the probe
+Gate: the token half of the call proved live, then the bridge slice translating records into compile's inputs
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -279,6 +279,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** `make check` (1018 tests), `make check-v2` (12 packages), `make check-lint`, the exporter's tests.
 - **What it made possible:** the snapshot now sees both v2-owned instances, so `resolve` reports the pair **`swhurl-try-11` → `swhurl-try-10`** among nine connected pairs, and `swhurl-try-10` is live with its **callee side** — `SWHURL_ALLOWED_CALLERS`, the platform's keys as its auth ConfigMap, and ingress from each caller's namespace and label. **The pair renders on both sides; it does not connect.** A probe carrying a caller's exact namespace and label is refused by the callee (`curl (7)`, no request in the callee's log), and the same probe for the v1 pair (`demo-shop` → `demo-orders`) is refused too — so no call has ever connected live, in v1 or v2, and the cause is the cluster's policy admission, not this render ([the finding](current-state.md#a-call-between-two-v2-owned-instances-renders-but-does-not-connect-26-october-2026)). **Diagnosed:** `ipBlock` peers are honoured and `namespaceSelector`/`podSelector` peers are ignored by this cluster's controller, so a callee admits a caller only by pod CIDR on its port, with the token as the identity — a decision for the operator.
 - **Next gate:** the live diagnosis of the policy controller and the call's policy shape, or the bridge slice that translates a v2-owned instance's records into `compile`'s inputs.
+
+## Slice record: calls on the pod network
+
+- **Outcome:** a call's rules state `PlatformProfile.network.podCIDR` — the caller reaches the block on the callee's port, the callee admits it there once for all callers — with the token, its audience and `SWHURL_ALLOWED_CALLERS` as the identity, because this cluster honours `ipBlock` peers and ignores selector peers.
+- **The cost:** the callee's port admits every pod in the cluster; the token is what decides who may call. Network-level identity needs a different policy implementation.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages take no new effects. 3. **Identity moved once, deliberately:** the profile gained `network`; `profile-identity.json` recomputed independently; goldens moved in their `profile`/`id` lines only. 4. One new refusal (`unsupported: network`), appended after the shape checks. 5. Failure paths tested: the block on both sides, one callee rule for two callers, and the profile's CIDR refusal. 6. Scope: the rules admit the whole pod block; that is the trade, stated. 7. **Live:** the probe re-run is recorded in [current state](current-state.md). 8. This page, the plan and the gap list change together.
+- **Evidence:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`; both v2-owned instances recompiled (`swhurl-try-10`'s callee rule, `swhurl-try-11`'s caller rules and its namespace label corrected to `authenticated-web`).
+- **Next gate:** the token half of the call proved live, then the bridge translation.
 
 ## Resume
 

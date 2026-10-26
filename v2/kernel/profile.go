@@ -36,6 +36,15 @@ type PlatformProfile struct {
 	// Backup is how the platform protects an instance's data: the job image, where it publishes, the key
 	// that encrypts the archive, the Secret its upload key is substituted from, and whether schedules run.
 	Backup Backup `json:"backup"`
+	// Network is the cluster's pod network. A call's rules are stated as this block rather than as peers of
+	// pods, because the platform's policy controller honours address blocks and ignores pod and namespace
+	// selectors (docs/current-state.md): the caller's identity is its token, not its address.
+	Network Network `json:"network"`
+}
+
+// Network is the cluster's pod address block, as a call's rules need it.
+type Network struct {
+	PodCIDR string `json:"podCIDR"`
 }
 
 // Backup is the platform's backup contract for an instance's SQLite database. The recipient is a public
@@ -133,6 +142,7 @@ var (
 	// An S3 URI is a bucket and a prefix ending in "/", so a namespace appends to it unambiguously.
 	backupURIPattern    = regexp.MustCompile(`^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/[A-Za-z0-9._/-]*/$`)
 	ageRecipientPattern = regexp.MustCompile(`^age1[0-9a-z]{58}$`)
+	cidrPattern         = regexp.MustCompile(`^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$`)
 )
 
 // sortedKeys is a map's keys in order, so validation and identity encoding are deterministic.
@@ -149,7 +159,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 	if err := document(data); err != nil {
 		return PlatformProfile{}, err
 	}
-	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing", "auth", "storage", "egress", "dns", "backup")
+	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing", "auth", "storage", "egress", "dns", "backup", "network")
 	if err != nil {
 		return PlatformProfile{}, err
 	}
@@ -169,6 +179,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"egress", []string{"address", "namespace", "labels"}},
 		{"dns", []string{"namespace", "labels"}},
 		{"backup", []string{"image", "digest", "s3Uri", "recipient", "writerNamespace", "writerName", "suspended"}},
+		{"network", []string{"podCIDR"}},
 	} {
 		if _, present := root[part.key]; !present {
 			continue
@@ -213,7 +224,7 @@ func (p PlatformProfile) validate() error {
 // validateBlocks checks the platform's optional blocks, in the order of the field table: routing, egress,
 // DNS, storage, auth and backup.
 func (p PlatformProfile) validateBlocks() error {
-	for _, block := range []interface{ validate() error }{p.Routing, p.Egress, p.DNS, p.Auth, p.Backup} {
+	for _, block := range []interface{ validate() error }{p.Routing, p.Egress, p.DNS, p.Auth, p.Backup, p.Network} {
 		if err := block.validate(); err != nil {
 			return err
 		}
@@ -251,6 +262,17 @@ func (e EgressProxy) validate() error {
 		return refuse(Invalid, "egress.namespace", "expected a DNS label")
 	}
 	return validateLabels("egress.labels", e.Labels)
+}
+
+// validate checks the pod network when the profile states one.
+func (n Network) validate() error {
+	if n.PodCIDR == "" {
+		return nil
+	}
+	if !cidrPattern.MatchString(n.PodCIDR) {
+		return refuse(Invalid, "network.podCIDR", "expected an IPv4 address block, as 10.42.0.0/16")
+	}
+	return nil
 }
 
 // validate checks a configured backup block: an image by digest, an S3 prefix, an age public key, and the
@@ -450,7 +472,9 @@ func profileCanonical(p PlatformProfile) []byte {
 		p.DNS.Namespace, labelPairs(p.DNS.Labels),
 		// The backup facts are platform facts too: another bucket, image or key set is another identity.
 		p.Backup.Image, p.Backup.Digest, p.Backup.S3URI, p.Backup.Recipient,
-		p.Backup.WriterNamespace, p.Backup.WriterName, strconv.FormatBool(p.Backup.Suspended)})
+		p.Backup.WriterNamespace, p.Backup.WriterName, strconv.FormatBool(p.Backup.Suspended),
+		// The pod network is a platform fact too: another block is another cluster's identity.
+		p.Network.PodCIDR})
 }
 
 func (p PlatformProfile) ID() (ProfileID, error) {

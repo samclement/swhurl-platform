@@ -349,7 +349,9 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 		t.Fatalf("caller egress: %v", egress)
 	}
 	to := egress[0].(map[string]any)["to"].([]any)[0].(map[string]any)
-	if to["namespaceSelector"].(map[string]any)["matchLabels"].(map[string]any)["kubernetes.io/metadata.name"] != "orders-staging" {
+	// The peer is the cluster's pod network: this cluster honours address blocks, not pod selectors, and
+	// the callee checks the caller's token.
+	if to["ipBlock"].(map[string]any)["cidr"] != profile.Network.PodCIDR {
 		t.Fatalf("caller egress peer: %v", to)
 	}
 	if port := egress[0].(map[string]any)["ports"].([]any)[0].(map[string]any); port["port"] != float64(8081) {
@@ -373,9 +375,13 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 	}
 	calleePolicy := documentOf(t, rendered, "networkpolicy.json")["spec"].(map[string]any)
 	ingress := calleePolicy["ingress"].([]any)
-	// traefik (the route) and two callers: every peer is a namespace and one instance's pods.
-	if len(ingress) != 3 {
+	// The route's ingress controller, and one rule for every caller on the callee's port: the address
+	// block says where a caller may come from, and the token says who it is.
+	if len(ingress) != 2 {
 		t.Fatalf("callee ingress: %v", ingress)
+	}
+	if peer := ingress[1].(map[string]any)["from"].([]any)[0].(map[string]any)["ipBlock"].(map[string]any)["cidr"]; peer != profile.Network.PodCIDR {
+		t.Fatalf("the callee's caller peer: %v", peer)
 	}
 	if len(calleePolicy["egress"].([]any)) != 0 {
 		t.Fatalf("a callee with no calls egresses: %v", calleePolicy["egress"])

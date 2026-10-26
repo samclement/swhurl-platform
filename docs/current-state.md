@@ -2,30 +2,26 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
-## A call between two v2-owned instances renders, but does not connect (26 October 2026)
+## The first call between two v2-owned instances (26 October 2026)
 
-After the first stateful migration kept its records, the snapshot saw both v2-owned instances for the first time: `resolve` connected **`swhurl-try-11` → `swhurl-try-10`** (and `swhurl-try-12` → `swhurl-try-10`), and `swhurl-try-10` was recompiled with its **callee side** — `SWHURL_ALLOWED_CALLERS=swhurl-try-11,swhurl-try-12`, the platform's keys as its `swhurl-try-10-auth` ConfigMap, and ingress rules admitting each caller's namespace and label. That is live and correct as rendered.
+`swhurl-try-11` calls `swhurl-try-10` and it answers: the callee logs `status: 200, caller.type: app, caller.id: swhurl-try-11`. The pair renders on both sides — the caller's address and audience token, the callee's `SWHURL_ALLOWED_CALLERS=swhurl-try-11,swhurl-try-12`, its `swhurl-try-10-auth` key set and ingress on its port — and the call is proved with a probe pod in the caller's namespace carrying an audience `swhurl-try-10` projected token.
 
-**The call does not connect, and the reason is not v2's render.** A probe pod created in `swhurl-try-11-staging` with that instance's label and a projected token for audience `swhurl-try-10` reached neither the Service name, its ClusterIP, nor the callee's pod IP: `curl: (7) Failed to connect … Could not connect to server`, `000` in every case, and the callee's log shows no request at all. The same probe shape in `swhurl-try-12-staging` failed identically. **The decisive test:** the same probe in `demo-shop-staging` with `demo-shop`'s label, against `demo-orders`' pod — the v1 pair the platform believes is connected — is **also refused**. DNS resolves in all cases (the ClusterIP is returned), so name resolution is not the problem.
+**Two things had to be right, and both were found by measurement, not by reading the render.**
 
-So the live behaviour is: a pod in one app's namespace is not admitted to another app's pod by a NetworkPolicy peer naming that namespace and that instance label — for v1's policies and v2's, which have the same shape. Traefik (the ingress controller) *is* admitted by the equivalent rule, so the mechanism works for that peer; what differs is not yet established, and the candidate causes are the cluster's policy controller (k3s's kube-router) with combined `namespaceSelector`+`podSelector` peers, or an ipset built from a different label set than the rules name.
+*The network.* This cluster's policy controller (`v1.34.4+k3s1`) honours `ipBlock` peers and **ignores `namespaceSelector`/`podSelector` peers** — for ingress; egress selector peers do work, which is why DNS and the proxy path always functioned. Bisected live, from a refused probe to a working one:
 
-**The diagnosis, same day (live, additive test policies created and deleted; nothing left behind).** Starting from a refused probe, the working and failing shapes were bisected:
-
-| Shape on the callee's ingress (egress allow-all on the caller) | Result |
+| Callee ingress rule (caller's egress allowed outright) | Result |
 | --- | --- |
-| the app's own caller rule (namespace + instance label) | refused |
+| the app's own rule, naming the caller's namespace and instance label | refused |
 | a temporary namespace-only rule for the caller's namespace | refused |
-| a temporary allow-all ingress rule (`ingress: [{}]`) | **connected**, the app answered `401` |
-| a temporary `ipBlock: 10.42.0.0/16` peer on the port | **connected**, the app answered `401` |
+| a temporary rule with no peer (`ingress: [{}]`) | connected, app answered |
+| a temporary `ipBlock: 10.42.0.0/16` peer on the port | connected, app answered |
 
-So on k3s `v1.34.4+k3s1` (its embedded policy controller) **`ipBlock` peers are honoured and `namespaceSelector`/`podSelector` peers are not**, while a rule with no peer admits everything. That fits every other observation: the *denial* half of the policies works (a pod a policy selects, with no matching rule, is cut off — which is why isolation looked proven), the ingress controller reaches apps because it runs on the host network and its traffic is node-originated, and the proxy admitted the backup pod only because the backup pod's *egress* policy allowed the route — the proxy's own namespace peers were never actually exercised. The callee's own egress rules are equally inert.
+That also explains the older puzzles: isolation looked proven because the *denial* half works; the ingress controller reaches apps because it runs on the host network; and the proxy's own namespace peers were never exercised — the backup pod needed only its own egress rule. So the call's rules now state `PlatformProfile.network.podCIDR`, the **port is the network boundary** and the **token is the identity** ([the decision](iteration-2-plan.md#calls-on-the-pod-network-with-the-token-as-the-callers-identity-implemented-26-october-2026)).
 
-**Consequence for the call contract:** a callee cannot admit "each caller's pods" by selector on this cluster. The shapes that work are a pod-CIDR `ipBlock` on the callee's port — admitting every pod in the cluster to that port, with the audience token doing the authentication — or allowing everything, which is the same thing without the port bound. The first is a policy decision for the operator: it trades network-level caller identity for token identity, which is exactly what the [calls brief](iteration-2-plan.md#calls-between-apps-resolver-and-pair-rendering-implemented-offline-25-october-2026) chose to keep *both* of.
+*The token's subject.* With the network fixed, the callee answered `401` with `"token is not from an app in this environment"`. Its source states the contract exactly: `sub` must be `system:serviceaccount:<app>-<env>:<app>`, i.e. **the caller's pod must run as the service account named after the app**. The app does, by the chart's default; the first probe did not (it used `default`), which is why it was refused. The same probe run with `serviceAccountName: swhurl-try-11` is the one that succeeded. A caller that is not the app — a probe, a job — is not a caller by this contract.
 
-The token half is still unverified: the two connections that succeeded answered `401`, which the app returns for a missing or rejected token, so whether the projected audience token is accepted remains to be checked once admission is settled.
-
-**Not verified, therefore:** any live call, in v1 or v2. The calls workstream's earlier "connected pair" evidence is render-only, and the plan's `calls` row now says so. The next step is a live diagnosis of the policy controller and then a decision on the call's policy shape — namespace-only ingress on the callee's port, or a pod-CIDR `ipBlock` — with a re-run of this probe as the proof. Left as found: the probe pods were deleted, and nothing in Git or on the cluster changed in this step.
+**Not exercised:** a call from the app's own code path through the browser (the probe used the app's service account and token instead), a call into a v1-owned callee, and any call with a token the callee should reject (the refusal path was exercised only by the wrong service account).
 
 ## The first stateful migration: `swhurl-try-10` staging keeps its volume (26 October 2026)
 

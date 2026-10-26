@@ -43,6 +43,9 @@ const maxBytes = 1 << 20
 // credential material it cannot use.
 const (
 	RefusedRequest = "refused_request"
+	// Failed is a change the server refused or could not answer: the writer's counterpart to unavailable
+	// evidence.
+	Failed         = "failed"
 	BadCredentials = "credentials"
 )
 

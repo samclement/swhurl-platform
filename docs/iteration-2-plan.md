@@ -1257,6 +1257,18 @@ The observation says an archive exists; it does not say the archive is restorabl
 
 **Checks:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Offline fixtures plus one read-only live plan.
 
+#### The restore's write primitives (option 2a, part one — 26 October 2026)
+
+A restore is the first thing v2 would *do* to a cluster, so the write path is built and tested before anything uses it.
+
+**`adapters/kube.Writer`** is four operations — a JSON merge patch, a create, a delete, and a pod's log tail — and a second kind table (`WritableRefOf`). `Secret` is writable and still **not readable**: `kinds` refuses it for `Reader`, so creating the restore's age-key Secret cannot become a way to read Secrets, and a test asserts the reader still refuses one. A delete of an object that is already gone is done, not an error; every other refusal is `failed: write: <reason>` and carries no content. `Connection.Writer()` builds it from the same endpoint, TLS material and token as the reader.
+
+**What it is not:** a capability. Nothing calls it yet, so no instance can be restored by v2; the adapter exists because the approved next step needs it, and the plan's "add an adapter when a slice needs it" is satisfied by the slice, not by a speculative consumer.
+
+**What remains:** the restore Job (from the platform's backup image, which already carries `age`, the AWS CLI and SQLite), the sequence — suspend, scale to zero, wait, create the age-key Secret, create the Job, wait, read its log, scale back, resume, delete — and the **presigned read URL** the pod uses instead of a long-lived key. The open decision is where the restore's *steps* live: a `restore-job-sqlite` command in the backup image (this repository's `tools/swhurl` and `images/backup`, a v1 change and an image rebuild) or a script rendered inside the Job (no image change, and a contract to test).
+
+**Checks:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Offline only.
+
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 
 The inventory above makes the choice concrete. Of the 17 instances in this repository, **no instance is both private and a web app**: every web instance is `authenticated-web`, and every private instance is a `worker` or `job`, which v2 does not render at all. The lightest web instance is `swhurl-try-11` (no database, no events, two calls); `demo-orders` — the natural candidate — needs storage (SQLite), events, calls, routes and a backup job.

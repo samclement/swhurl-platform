@@ -113,6 +113,19 @@ func credentialOf(user kubeUser) (Credentials, string, error) {
 }
 
 // Reader builds the reader this connection describes.
+// Writer is the writer over the same API server, from the same material as the reader.
+func (c Connection) Writer() (Writer, error) {
+	client, err := Client(c.Credentials)
+	if err != nil {
+		return nil, err
+	}
+	api, err := New(c.Endpoint, client, c.Token)
+	if err != nil {
+		return nil, err
+	}
+	return api.(Writer), nil
+}
+
 func (c Connection) Reader() (Reader, error) {
 	client, err := Client(c.Credentials)
 	if err != nil {

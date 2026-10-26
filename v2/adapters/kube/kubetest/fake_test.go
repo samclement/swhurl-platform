@@ -29,6 +29,15 @@ func scenario() kubetest.Answers {
 	}
 }
 
+// The fake runs the writer contract too, so a caller's fake cannot drift from the real adapter.
+func TestWriteContract(t *testing.T) {
+	kubetest.WriteContract(t, "2 tables, integrity ok\n", func(t *testing.T, log string) kube.Writer {
+		fake := kubetest.New(scenario())
+		fake.Log = log
+		return fake
+	})
+}
+
 func TestContract(t *testing.T) {
 	kubetest.Contract(t, scenario(), func(t *testing.T, answers kubetest.Answers) kube.Reader {
 		return kubetest.New(answers)

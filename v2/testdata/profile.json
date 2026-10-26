@@ -36,6 +36,7 @@
   "egress": {"address": "egress.egress.svc.cluster.local", "namespace": "egress",
              "labels": {"app.kubernetes.io/name": "egress"}},
   "dns": {"namespace": "kube-system", "labels": {"k8s-app": "kube-dns"}},
+  "network": {"podCIDR": "10.42.0.0/16"},
   "backup": {
     "image": "ghcr.io/samclement/swhurl-backup",
     "digest": "sha256:f1637924110353f687277141adde4114a461622f7de19fe41098f1a1a5eea7b5",

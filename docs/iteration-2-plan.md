@@ -1269,6 +1269,35 @@ A restore is the first thing v2 would *do* to a cluster, so the write path is bu
 
 **Checks:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Offline only.
 
+#### The backup image in Go (option C part one, 27 October 2026)
+
+The backup image is 134 MB compressed because it carries Python, a uv venv and the AWS CLI; the database
+copy, the encryption and the upload need none of them. Its **SQLite job is now Go**, in a module of its own,
+with the platform's contract unchanged.
+
+**The contract it keeps**, because v1's restore, `verify-platform` and this repository's own metadata reader
+all depend on it: the archive is `sqlite-<UTC>.db.age` and the record beside it `sqlite-<UTC>.json`, published
+**second** (a backup counts only once its metadata is there); the metadata keys are `created`, `source`,
+`path`, `tables`, `integrity_check`, `bytes`, `plain_sha256`, `age_recipient`, `sha256`; and the upload sends
+the payload's SHA-256 as S3's checksum with `If-None-Match: *`, so an existing object is refused rather than
+replaced. The plaintext copy is taken with SQLite's `VACUUM INTO` (a consistent copy while the app writes),
+checked with `PRAGMA integrity_check`, and its table count, size and SHA-256 are what the metadata records —
+the same facts the Python job records under the same names.
+
+**Where it lives and why.** `images/backup/tool` is its own Go module: `filippo.io/age` for encryption and
+`modernc.org/sqlite` for the copy are dependencies, and they must not enter `v2/`, whose `stdlib-only` rule
+stands. The binary replaces `python -m swhurl backup-job-sqlite`; `go test ./...` in that module runs its tests, and CI's tooling job does so beside `make check-v2`
+(there is no `make` target: the command catalogue documents every target).
+
+**What is not done:** `restore-job-sqlite`, the MongoDB job (which still shells out to `mongodump`, a 21 MB
+glibc binary, so the image base cannot yet be `scratch`), the image itself, the digest move and the live proof.
+The image remains the Python one until the whole tool and its image are ready together.
+
+**Checks:** `go test ./...` in `images/backup/tool` (settings, the online copy, an age round trip, the
+metadata keys, the S3 upload's headers and refusals, and the whole job end to end against a fake bucket),
+`make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`.
+Offline only.
+
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 
 The inventory above makes the choice concrete. Of the 17 instances in this repository, **no instance is both private and a web app**: every web instance is `authenticated-web`, and every private instance is a `worker` or `job`, which v2 does not render at all. The lightest web instance is `swhurl-try-11` (no database, no events, two calls); `demo-orders` — the natural candidate — needs storage (SQLite), events, calls, routes and a backup job.

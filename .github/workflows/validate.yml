@@ -141,6 +141,16 @@ jobs:
           REQUIRE_HELM: '1'
         run: make check-v2
 
+      # The backup image's Go tool is its own module (images/backup/tool): dependencies, no make target the
+      # command catalogue would have to document.
+      - name: Check the backup image's Go tool
+        run: |
+          cd images/backup/tool
+          export GOTOOLCHAIN=go1.26.0 CGO_ENABLED=0
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test -count=1 ./...
+
       # The dry runs are not listed here: make test runs every target whose DRY_RUN=true only plans
       # (tools/swhurl/commands.py says which).
       - name: Render the lifecycle test fixture

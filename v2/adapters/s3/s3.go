@@ -34,6 +34,9 @@ func refuse(subject, reason string) error { return &Error{RefusedRequest, subjec
 type Reader interface {
 	List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
 	Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
+	// PresignURL is a time-limited read of one object, for a caller that must hand the read to someone
+	// else — a restore pod — without giving it the bucket credential.
+	PresignURL(ctx context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)
 }
 
 const (
@@ -41,6 +44,9 @@ const (
 	maxBody = 1 << 20
 	// maxPages bounds how many pages one listing follows, so a wrong prefix cannot walk a bucket.
 	maxPages = 10
+	// MaxPresignTTL is SigV4's own ceiling for a query-string signature: the longest a caller may hand a
+	// read of one object to someone else.
+	MaxPresignTTL = 7 * 24 * time.Hour
 )
 
 // ParseURL reads the s3:// URI the platform profile states: a bucket and the prefix under it.
@@ -262,6 +268,31 @@ func (c Client) objectRequest(ctx context.Context, bucket, key string) (*http.Re
 	}
 	sign(request, c.region, c.credentials, time.Now())
 	return request, nil
+}
+
+// PresignURL signs one GET in the query string, so the holder can read that one object until the URL
+// expires. It is the same credentials and the same canonicalisation as a read, confined to the instance's own
+// prefix like Get, and the expiry is bounded by SigV4's own maximum.
+func (c Client) PresignURL(ctx context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error) {
+	if query.Bucket == "" || key == "" {
+		return "", refuse("key", "required")
+	}
+	if !strings.HasPrefix(key, query.Prefix) {
+		return "", refuse("key", "not_under_the_prefix")
+	}
+	if ttl <= 0 || ttl > MaxPresignTTL {
+		return "", refuse("ttl", "expected_a_duration_up_to_seven_days")
+	}
+	region := c.region
+	if region == "" {
+		discovered, err := DiscoverRegion(ctx, query.Bucket, c.http)
+		if err != nil {
+			return "", err
+		}
+		region = discovered
+	}
+	host := query.Bucket + ".s3." + region + ".amazonaws.com"
+	return presignedURL(host, "/"+awsEscapePath(key), region, c.credentials, ttl, time.Now()), nil
 }
 
 // objectFailure is the code and reason one object read's status means: a 404 is the only absence, and every

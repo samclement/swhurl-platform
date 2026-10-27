@@ -50,21 +50,24 @@ adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref)
 adapters/kube: type Writer interface {// Patch applies a JSON merge patch to one object: the shape the platform uses to suspend a release or // set a replica count. Patch(ctx context.Context, ref observe.Ref, patch []byte) error // Create creates one object from its document. Create(ctx context.Context, ref observe.Ref, document []byte) error // Delete removes one object. An object that is already gone is not an error. Delete(ctx context.Context, ref observe.Ref) error // Logs reads the last lines of one pod's log: the evidence a restore job leaves about what it did. Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)}
 adapters/s3/s3test: func (*Fake) Get(_ context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
 adapters/s3/s3test: func (*Fake) List(_ context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
+adapters/s3/s3test: func (*Fake) PresignURL(_ context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)
 adapters/s3/s3test: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) s3.Reader)
 adapters/s3/s3test: func New(scenario Scenario) *Fake
-adapters/s3/s3test: type Fake struct {Scenario Scenario Lists []observe.ArchiveQuery Gets []string Refuse error}
+adapters/s3/s3test: type Fake struct {Scenario Scenario Lists []observe.ArchiveQuery Gets []string Presigns []string Refuse error}
 adapters/s3/s3test: type Scenario struct {Query observe.ArchiveQuery Objects []observe.Archive Forbidden observe.ArchiveQuery Empty observe.ArchiveQuery Key, Body, Missing string}
+adapters/s3: const MaxPresignTTL = 7 * 24 * time.Hour
 adapters/s3: const RefusedRequest = "refused_request"
 adapters/s3: func (*Error) Error() string
 adapters/s3: func (Client) Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
 adapters/s3: func (Client) List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
+adapters/s3: func (Client) PresignURL(ctx context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)
 adapters/s3: func DiscoverRegion(ctx context.Context, bucket string, client *http.Client) (string, error)
 adapters/s3: func New(region string, credentials Credentials, client *http.Client) Reader
 adapters/s3: func ParseURL(uri string) (observe.ArchiveQuery, error)
 adapters/s3: type Client struct {}
 adapters/s3: type Credentials struct {AccessKey, SecretKey, SessionToken string}
 adapters/s3: type Error struct {Code, Subject, Reason string}
-adapters/s3: type Reader interface {List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error) Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error)}
+adapters/s3: type Reader interface {List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error) Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error) // PresignURL is a time-limited read of one object, for a caller that must hand the read to someone // else — a restore pod — without giving it the bucket credential. PresignURL(ctx context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)}
 calls: const CalleeAbsent = "callee_absent"
 calls: const CalleeNotWeb = "callee_not_web"
 calls: const NoConsent = "no_consent"
@@ -86,6 +89,8 @@ kernel: const Invalid Code = "invalid"
 kernel: const ManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
 kernel: const OverQuota Code = "over_quota"
 kernel: const OwnershipConflict Code = "ownership_conflict"
+kernel: const RestoreDeadline = 15 * time.Minute
+kernel: const RestoreLabel = labelDomain + "restore"
 kernel: const StaleInstance Code = "stale_instance"
 kernel: const Unsupported Code = "unsupported"
 kernel: const WrongApplication Code = "wrong_application"
@@ -113,6 +118,8 @@ kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
 kernel: func Ownership(claims []Claim) []Conflict
 kernel: func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderProxy(allocations []EgressAllocation, profile PlatformProfile) (ResourceSet, error)
+kernel: func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, egress *Egress, job RestoreJob) (RestoreObjects, error)
+kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"` MediaType string `json:"mediaType"` Platform string `json:"platform"`}
 kernel: type Auth struct {Issuer string `json:"issuer"` Keys string `json:"keys"`}
@@ -156,6 +163,9 @@ kernel: type Quota struct {Pods int32 `json:"pods"` RequestsCPUMilli int32 `json
 kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` Database string `json:"database,omitempty"` ReleaseID ReleaseID `json:"releaseId"`}
 kernel: type ReleaseID string
 kernel: type ResourceSet struct {Files []File Inventory []Claim Registrations []string}
+kernel: type RestoreJob struct {Name string Archive string ArchiveSHA256, PlainSHA256 string Tables int32 AgeIdentity, ReadURL string}
+kernel: type RestoreObject struct {Name string Document []byte}
+kernel: type RestoreObjects struct {Secret, Job RestoreObject}
 kernel: type Routing struct {BaseDomain string `json:"baseDomain"` Class string `json:"class"` Middleware string `json:"middleware"` Issuer string `json:"issuer"` IngressNamespace string `json:"ingressNamespace"` IngressLabels map[string]string `json:"ingressLabels"`}
 kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` HealthPath string `json:"healthPath"` UID int32 `json:"uid"`}
 kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}
@@ -215,6 +225,7 @@ observe: const ReasonNoChecksum = "metadata_has_no_checksum"
 observe: const ReasonNoCondition = "condition_absent"
 observe: const ReasonNoContainer = "container_absent"
 observe: const ReasonNoOwner = "no_owner_job"
+observe: const ReasonNoPlainChecksum = "metadata_has_no_plain_checksum"
 observe: const ReasonNoPods = "no_pods"
 observe: const ReasonNoReplicas = "no_replicas_intended"
 observe: const ReasonNoRuns = "no_runs"
@@ -261,6 +272,7 @@ observe: const Settled = "settled"
 observe: const Unavailable = "unavailable"
 observe: const Unknown Verdict = "unknown"
 observe: func (*Error) Error() string
+observe: func (RestorePlan) Ready() bool
 observe: func ArchiveMetadataOf(document []byte) (ArchiveMetadata, error)
 observe: func BackupTargetOf(cronJob []byte) (BackupTarget, error)
 observe: func EncodeReport(report Report) ([]byte, error)
@@ -273,7 +285,7 @@ observe: func TargetOf(helmRelease []byte, unit Ref, revision string) (Target, e
 observe: func UnitRef(unit []byte) (Ref, error)
 observe: type Archive struct {Key string LastModified time.Time}
 observe: type ArchiveList struct {Query ArchiveQuery Status string Reason string Objects []Archive}
-observe: type ArchiveMetadata struct {SHA256 string Tables int32 Source string}
+observe: type ArchiveMetadata struct {SHA256, PlainSHA256 string Tables int32 Source string}
 observe: type ArchiveQuery struct {Bucket, Prefix string}
 observe: type ArchiveReport struct {State string Reason string Bucket string Prefix string Newest string LastModified string Age time.Duration MaxAge time.Duration}
 observe: type BackupEvidence struct {CronJob Read Pods List Run *Read Archive *ArchiveList MaxAge time.Duration}
@@ -291,12 +303,33 @@ observe: type RestorePlan struct {State string Reason string Archive ArchiveRepo
 observe: type RunReport struct {Name string CreatedAt string CompletedAt string Outcome string}
 observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string Backup *BackupTarget}
 observe: type Verdict string
+orchestration: const AppRunning = "running"
+orchestration: const AppStopped = "stopped"
+orchestration: const AppUnknown = "unknown"
+orchestration: const JobComplete = "complete"
+orchestration: const JobFailed = "failed"
+orchestration: const JobRunning = "running"
+orchestration: const JobUnknown = "unknown"
+orchestration: const RestoreFailed = "failed"
+orchestration: const RestoreRestored = "restored"
+orchestration: const StepDone = "done"
+orchestration: const StepFailed = "failed"
+orchestration: const StepNotRead = "not_read"
+orchestration: func (*Refusal) Error() string
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
 orchestration: func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error)
+orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
+orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type Inputs struct {Instance, Release, Profile []byte Calls, Egress []byte}
 orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}
 orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte}
+orchestration: type Refusal struct {Subject, Reason string}
+orchestration: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}
+orchestration: type RestoreInputs struct {Instance, Release, Profile, Egress []byte Plan observe.RestorePlan Target observe.Target AgeIdentity, ReadURL string Cluster Cluster Sleep func(time.Duration) Now func() time.Time}
+orchestration: type RestoreJobOutcome struct {Name string State string Log string LogReason string}
+orchestration: type RestoreOutcome struct {State string Reason string Steps []RestoreStep Job RestoreJobOutcome App RestoreApp Started time.Time Finished time.Time}
+orchestration: type RestoreStep struct {Name string Outcome string Detail string}
 orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
 shadow: func (*Error) Error() string
 shadow: func CompareHTTP(before, after []byte, choices ResourceChoices) (HTTPComparison, error)

@@ -163,16 +163,26 @@ func BackupTargetOf(cronJob []byte) (BackupTarget, error) {
 	if document.Kind != "CronJob" || document.APIVersion != "batch/v1" {
 		return BackupTarget{}, invalid("backup", "expected_a_cronjob")
 	}
-	target := BackupTarget{
-		CronJob:  Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: document.Metadata.Namespace, Name: document.Metadata.Name},
-		Pods:     Ref{APIVersion: "v1", Kind: "Pod", Namespace: document.Metadata.Namespace},
-		Selector: selectorOf(document.Spec.JobTemplate.Spec.Template.Metadata.Labels),
-		Schedule: document.Spec.Schedule,
-	}
-	if target.Selector == "" {
+	runs := selectorOf(document.Spec.JobTemplate.Spec.Template.Metadata.Labels)
+	if runs == "" {
 		return BackupTarget{}, invalid("backup", "expected_a_selector")
 	}
-	return target, nil
+	return BackupTarget{
+		CronJob:  Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: document.Metadata.Namespace, Name: document.Metadata.Name},
+		Pods:     Ref{APIVersion: "v1", Kind: "Pod", Namespace: document.Metadata.Namespace},
+		Selector: backupRunSelector(runs),
+		Schedule: document.Spec.Schedule,
+	}, nil
+}
+
+// restorePodLabel is what a restore's own pod carries, stated here as well as in the kernel because this layer
+// may not import it; a command test ties the two words together.
+const restorePodLabel = "platform.swhurl.com/restore"
+
+// backupRunSelector is the pods that are backup runs: the job's own labels, without the instance's restore
+// pods. A restore pod carries the backup label so the backup policy admits it, and it is not a run.
+func backupRunSelector(selector string) string {
+	return selector + ",!" + restorePodLabel
 }
 
 // selectorOf is a label map as a selector: sorted keys, so the same labels always give the same request.

@@ -19,33 +19,40 @@ const (
 	ReasonMetadataDown       = "archive_metadata_unavailable"
 	ReasonAnotherInstance    = "metadata_names_another_instance"
 	ReasonNoChecksum         = "metadata_has_no_checksum"
+	ReasonNoPlainChecksum    = "metadata_has_no_plain_checksum"
 	ReasonNoTables           = "metadata_has_no_table_count"
 	ReasonNotRestorableStale = "archive_older_than_the_threshold"
 )
 
-// ArchiveMetadata is what the backup job records beside an archive: the plaintext's checksum, its table
-// count, and the instance it came from. A restore cannot verify without it, so an archive without it is
-// incomplete rather than current.
+// ArchiveMetadata is what the backup job records beside an archive: the archive's own checksum, the
+// plaintext's, its table count, and the instance it came from. A restore cannot verify without them, so an
+// archive without them is incomplete rather than current.
 type ArchiveMetadata struct {
-	SHA256 string
-	Tables int32
-	Source string
+	SHA256, PlainSHA256 string
+	Tables              int32
+	Source              string
 }
 
 // ArchiveMetadataOf reads the metadata document the backup job publishes next to its archive.
 func ArchiveMetadataOf(document []byte) (ArchiveMetadata, error) {
 	var record struct {
-		SHA256 string `json:"sha256"`
-		Tables int32  `json:"tables"`
-		Source string `json:"source"`
+		SHA256      string `json:"sha256"`
+		PlainSHA256 string `json:"plain_sha256"`
+		Tables      int32  `json:"tables"`
+		Source      string `json:"source"`
 	}
 	if err := decodeDocument(document, &record, "metadata"); err != nil {
 		return ArchiveMetadata{}, err
 	}
-	if record.SHA256 != "" && !checksumPattern().MatchString(record.SHA256) {
-		return ArchiveMetadata{}, invalid("metadata.sha256", "expected_a_sha256_checksum")
+	for _, checksum := range []struct{ field, value string }{
+		{"metadata.sha256", record.SHA256}, {"metadata.plain_sha256", record.PlainSHA256},
+	} {
+		if checksum.value != "" && !checksumPattern().MatchString(checksum.value) {
+			return ArchiveMetadata{}, invalid(checksum.field, "expected_a_sha256_checksum")
+		}
 	}
-	return ArchiveMetadata{SHA256: record.SHA256, Tables: record.Tables, Source: record.Source}, nil
+	return ArchiveMetadata{SHA256: record.SHA256, PlainSHA256: record.PlainSHA256, Tables: record.Tables,
+		Source: record.Source}, nil
 }
 
 // RestoreInput is what a restore plan is decided from: the archive chosen, what the bucket says about it, and
@@ -121,11 +128,17 @@ func metadataReadiness(input RestoreInput) (string, string) {
 		return RestoreIncomplete, ReasonAnotherInstance
 	case input.Metadata.SHA256 == "":
 		return RestoreIncomplete, ReasonNoChecksum
+	case input.Metadata.PlainSHA256 == "":
+		return RestoreIncomplete, ReasonNoPlainChecksum
 	case input.Metadata.Tables < 1:
 		return RestoreIncomplete, ReasonNoTables
 	}
 	return "", ""
 }
+
+// Ready is whether the plan may be performed: only a ready plan names an archive whose own checksums and
+// table count a restore can verify, so a caller never has to re-read the state itself.
+func (p RestorePlan) Ready() bool { return p.State == RestoreReady }
 
 // checksumPattern is a SHA-256 checksum as the backup job records it.
 func checksumPattern() *regexp.Regexp {

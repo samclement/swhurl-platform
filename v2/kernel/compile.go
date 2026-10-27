@@ -129,18 +129,28 @@ func CompileWith(spec InstanceSpec, release ReleaseBundle, profile PlatformProfi
 	if err != nil {
 		return Compilation{}, err
 	}
-	resources, err := RenderHTTP(
-		HTTPInstance{Application: spec.Application, Environment: spec.Environment,
-			Configuration: spec.Configuration, Exposure: spec.Grants.Exposure,
-			Calls: connections.Calls, Callers: connections.Callers,
-			Database: release.Database, Storage: spec.Storage, Egress: egress},
-		HTTPWorkload{release.Artifact.Image, release.Artifact.Digest, release.Runtime.Port, release.Runtime.HealthPath, release.Runtime.UID}, profile)
+	resources, err := RenderHTTP(instanceOf(spec, release, connections, egress), workloadOf(release), profile)
 	if err != nil {
 		return Compilation{}, err
 	}
 	c := Compilation{Inputs: inputs, Files: resources.Files, Inventory: resources.Inventory, Registrations: resources.Registrations}
 	c.ID = CompilationID(hash("comp-sha256:", compilationCanonical(c)))
 	return c, nil
+}
+
+// instanceOf is the rendering input the records state: the compiler and the restore build it the same way,
+// so a restore pod runs as the app runs and mounts the volume the app mounts.
+func instanceOf(spec InstanceSpec, release ReleaseBundle, connections Connections, egress *Egress) HTTPInstance {
+	return HTTPInstance{Application: spec.Application, Environment: spec.Environment,
+		Configuration: spec.Configuration, Exposure: spec.Grants.Exposure,
+		Calls: connections.Calls, Callers: connections.Callers,
+		Database: release.Database, Storage: spec.Storage, Egress: egress}
+}
+
+// workloadOf is the runtime facts a release states: what the chart runs and as whom.
+func workloadOf(release ReleaseBundle) HTTPWorkload {
+	return HTTPWorkload{release.Artifact.Image, release.Artifact.Digest, release.Runtime.Port,
+		release.Runtime.HealthPath, release.Runtime.UID}
 }
 
 func compileInputs(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Inputs, error) {

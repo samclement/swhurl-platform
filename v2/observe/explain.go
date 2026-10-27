@@ -579,8 +579,11 @@ func kindPattern() *regexp.Regexp { return regexp.MustCompile(`^[A-Z][A-Za-z]*$`
 
 func digestPattern() *regexp.Regexp { return regexp.MustCompile(`^sha256:[0-9a-f]{64}$`) }
 
+// selectorPattern is the selector a target states: a key, a key=value pair, or a key that must not be present
+// — nothing here needs the rest of the selector language. A backup's selector uses the last form to exclude
+// the instance's restore pods.
 func selectorPattern() *regexp.Regexp {
-	term := `[A-Za-z0-9]([A-Za-z0-9._/-]*[A-Za-z0-9])?(=[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?)?`
+	term := `!?[A-Za-z0-9]([A-Za-z0-9._/-]*[A-Za-z0-9])?(=[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?)?`
 	return regexp.MustCompile(`^` + term + `(,` + term + `)*$`)
 }
 

@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +19,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3/s3test"
+	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -30,12 +33,19 @@ const (
 
 // api is the server-side scenario: the documents for one instance, and the requests that were made.
 type api struct {
-	requests  []*http.Request
-	status    map[string]int // path → status override, for the failure cases
-	namespace string         // the instance's namespace; prod's by default
-	digest    string         // the artifact the compiled release pins; the prod fixture's by default
-	backup    bool           // whether the instance renders a backup CronJob
+	requests   []*http.Request
+	changes    []change       // every request that is not a read, in order
+	status     map[string]int // path → status override, for the failure cases
+	namespace  string         // the instance's namespace; prod's by default
+	digest     string         // the artifact the compiled release pins; the prod fixture's by default
+	backup     bool           // whether the instance renders a backup CronJob
+	scaledTo   *int32         // what a patch last set the Deployment's replica count to
+	jobFailed  bool           // whether a restore's own Job reports Failed instead of Complete
+	restoreJob bool           // whether a restore's Job (and so its pod) exists
 }
+
+// change is one request that changes something, with its body: what a restore's own objects are created from.
+type change struct{ method, path, body string }
 
 // serve answers the four paths one observation reads, in the shape the API server writes them.
 func (a *api) serve(t *testing.T) *httptest.Server {
@@ -58,6 +68,48 @@ func (a *api) serve(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		if r.Method != http.MethodGet {
+			body, _ := io.ReadAll(r.Body)
+			a.changes = append(a.changes, change{r.Method, r.URL.Path, string(body)})
+			var patch struct {
+				Spec struct {
+					Replicas *int32 `json:"replicas"`
+				} `json:"spec"`
+			}
+			if err := json.Unmarshal(body, &patch); err == nil && patch.Spec.Replicas != nil {
+				a.scaledTo = patch.Spec.Replicas
+			}
+			switch {
+			case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/jobs"):
+				a.restoreJob = true
+			case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/jobs/"):
+				a.restoreJob = false
+			}
+			if r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusCreated)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/apis/batch/v1/namespaces/"+namespace+"/jobs/demo-orders-restore-") {
+			// A restore's own Job, as the pod runs it: the command names it by the second it started.
+			condition := "Complete"
+			if a.jobFailed {
+				condition = "Failed"
+			}
+			writeDocument(t, w, map[string]any{"apiVersion": "batch/v1", "kind": "Job",
+				"metadata": map[string]any{"name": strings.TrimPrefix(r.URL.Path,
+					"/apis/batch/v1/namespaces/"+namespace+"/jobs/"), "namespace": namespace},
+				"status": map[string]any{"conditions": []any{map[string]any{
+					"type": condition, "status": "True"}}}})
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/log") {
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, restoreLog)
+			return
+		}
 		switch r.URL.Path {
 		case "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/app-" + namespace:
 			writeDocument(t, w, flux("kustomize.toolkit.fluxcd.io/v1", "Kustomization", "app-"+namespace, "flux-system", map[string]any{
@@ -66,18 +118,39 @@ func (a *api) serve(t *testing.T) *httptest.Server {
 		case "/apis/helm.toolkit.fluxcd.io/v2/namespaces/" + namespace + "/helmreleases/demo-orders":
 			writeDocument(t, w, flux("helm.toolkit.fluxcd.io/v2", "HelmRelease", "demo-orders", namespace, nil))
 		case "/apis/apps/v1/namespaces/" + namespace + "/deployments/demo-orders":
+			replicas := int32(1)
+			if a.scaledTo != nil {
+				replicas = *a.scaledTo
+			}
 			writeDocument(t, w, map[string]any{
 				"apiVersion": "apps/v1", "kind": "Deployment",
 				"metadata": map[string]any{"name": "demo-orders", "namespace": namespace, "generation": 4},
-				"status": map[string]any{"observedGeneration": 4, "availableReplicas": 1,
+				"spec":     map[string]any{"replicas": replicas},
+				"status": map[string]any{"observedGeneration": 4, "availableReplicas": replicas,
 					"conditions": []any{map[string]any{"type": "Available", "status": "True"}}},
 			})
 		case "/api/v1/namespaces/" + namespace + "/pods":
-			switch r.URL.Query().Get("labelSelector") {
-			case selector:
-				writeDocument(t, w, map[string]any{"kind": "PodList", "apiVersion": "v1",
-					"items": []any{pod(namespace, "docker.io/example/demo-orders@"+digest)}})
-			case backupSelector:
+			switch selected := r.URL.Query().Get("labelSelector"); {
+			case selected == kernel.RestoreLabel:
+				// No restore is running: the preflight's own answer.
+				writeDocument(t, w, map[string]any{"kind": "PodList", "apiVersion": "v1", "items": []any{}})
+			case strings.HasPrefix(selected, kernel.RestoreLabel+"="):
+				// The restore's own pod: it exists while its Job does, and goes with it.
+				items := []any{}
+				if a.restoreJob {
+					items = []any{map[string]any{"apiVersion": "v1", "kind": "Pod",
+						"metadata": map[string]any{"name": "demo-orders-restore-pod", "namespace": namespace}}}
+				}
+				writeDocument(t, w, map[string]any{"kind": "PodList", "apiVersion": "v1", "items": items})
+			case selected == selector:
+				// The app's own pods: gone once the restore has scaled the Deployment to zero, which is what
+				// the pods-gone wait is for.
+				items := []any{pod(namespace, "docker.io/example/demo-orders@"+digest)}
+				if a.scaledTo != nil && *a.scaledTo == 0 {
+					items = []any{}
+				}
+				writeDocument(t, w, map[string]any{"kind": "PodList", "apiVersion": "v1", "items": items})
+			case selected == backupSelector:
 				writeDocument(t, w, map[string]any{"kind": "PodList", "apiVersion": "v1",
 					"items": []any{backupPod(namespace)}})
 			default:
@@ -103,8 +176,13 @@ func (a *api) serve(t *testing.T) *httptest.Server {
 	return server
 }
 
-// backupSelector is the label the compiled backup job and its runs carry.
-const backupSelector = "platform.swhurl.com/backup=true"
+// restoreLog is what the restore image prints on success: the fact the report carries as evidence.
+const restoreLog = "[OK] Restored the archive into /data/app.db (2 tables, integrity ok); " +
+	"the replaced files are in /data/before-restore-20261027T030405Z\n"
+
+// backupSelector is what the observation asks for: the compiled backup job's own label, without the instance's
+// restore pods (which carry it so the backup policy admits them).
+const backupSelector = "platform.swhurl.com/backup=true,!" + kernel.RestoreLabel
 
 // backupCronJob is a database instance's backup job, as the cluster holds it: scheduled, and last run
 // finishing successfully two hours ago.

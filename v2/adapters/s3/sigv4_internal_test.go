@@ -35,6 +35,33 @@ func TestSignMatchesThePublishedVector(t *testing.T) {
 	}
 }
 
+// AWS's published example for a presigned GET, reproduced exactly: the canonical query, the scope and the
+// signature. A restore pod reads one archive with this URL, so a wrong canonicalisation would be invisible
+// until a pod could not fetch its backup.
+func TestPresignMatchesThePublishedVector(t *testing.T) {
+	at := time.Date(2013, 5, 24, 0, 0, 0, 0, time.UTC)
+	got := presignedURL("examplebucket.s3.amazonaws.com", "/test.txt", "us-east-1",
+		Credentials{AccessKey: "AKIAIOSFODNN7EXAMPLE", SecretKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"},
+		24*time.Hour, at)
+	want := "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256" +
+		"&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request" +
+		"&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host" +
+		"&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404"
+	if got != want {
+		t.Fatalf("presigned URL\n%s\nwant\n%s", got, want)
+	}
+}
+
+// A session token is a signed query parameter, so the URL works with temporary credentials and no header.
+func TestPresignCarriesTheSessionToken(t *testing.T) {
+	address := presignedURL("bucket.s3.eu-west-2.amazonaws.com", "/a%20b/x.db.age", "eu-west-2",
+		Credentials{AccessKey: "AKIA", SecretKey: "secret", SessionToken: "token"}, time.Hour,
+		time.Date(2026, 10, 27, 3, 4, 5, 0, time.UTC))
+	if !strings.Contains(address, "X-Amz-Security-Token=token") || !strings.Contains(address, "/a%20b/x.db.age?") {
+		t.Fatalf("presigned URL %q", address)
+	}
+}
+
 // A session token travels signed, as S3 requires, and an unsigned payload is stated when the caller did not.
 func TestSignIncludesTheSessionToken(t *testing.T) {
 	request, err := http.NewRequest(http.MethodGet, "https://bucket.s3.eu-west-2.amazonaws.com/?list-type=2&prefix=a%2Fb%2F", nil)

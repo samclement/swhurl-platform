@@ -231,6 +231,8 @@ aws s3 ls s3://swhurl-platform-backups-110927251694/app-sqlite/notes-prod/   # a
 make restore-sqlite APP=notes ENV=prod CONFIRM=notes/prod BACKUP_FILE="$HOME/restore/sqlite-YYYYMMDDTHHMMSSZ.db.age"
 ```
 
+A **v2-owned** instance is restored by v2 itself instead, which needs no host decryption: `swhurl-v2 restore` takes the same documents as an observation plus `--confirm <app>/<env>`, and performs the sequence with a presigned read of the one archive and the age identity from `--age-key-file`. It is the v2 path, not this one; the [plan](iteration-2-plan.md#the-restore-v2-performs-option-2a-offline-half--27-october-2026) states what it does and what it reports, and it had not yet been run live when this page was written.
+
 It refuses a backup whose checksum or source instance does not match, then suspends the instance's HelmRelease (so no upgrade starts the app mid-restore), scales the app to 0, and streams `age -d` into a pod running as the app's user on its claim. The received file must match the backup's plaintext SHA-256, pass `integrity_check` and have the recorded table count, or the live database is left untouched. The current database and its `-wal`/`-shm` files move to `before-restore-<UTC>/` beside it (delete that directory yourself once you are happy); then the app is scaled back, the HelmRelease resumed and the rollout awaited, even when a step fails. `make live-test-restore-sqlite` proves the whole cycle on a throwaway app: the same backup job publishes to `app-sqlite/sqlite-restore-test/`, and the restore downloads it from there.
 
 **Targets:** at most 24 hours of MongoDB or app database changes lost (daily backups); about an hour from a bare host to working ClickStack.

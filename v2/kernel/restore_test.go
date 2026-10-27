@@ -237,3 +237,22 @@ func envByName(t *testing.T, container map[string]any) map[string]any {
 	}
 	return env
 }
+
+// A restore mounts the claim the instance adopted, not one named after it: the live try-10 restore used an
+// adopted claim, and there its name happened to equal the application's, so only a differently named claim
+// can tell the two apart.
+func TestRestoreUsesTheAdoptedClaim(t *testing.T) {
+	spec := instance(t, "sqlite.json")
+	spec.Storage.ClaimName = "orders-data"
+	objects, err := RenderRestore(spec, releaseFile(t, "r43.json"), profile(t), &Egress{Port: 30102},
+		restoreFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := restoreDocument(t, objects.Job.Document)
+	volumes := job["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["volumes"].([]any)
+	claim := volumes[0].(map[string]any)["persistentVolumeClaim"].(map[string]any)["claimName"]
+	if claim != "orders-data" {
+		t.Fatalf("the restore mounts %v, not the adopted claim", claim)
+	}
+}

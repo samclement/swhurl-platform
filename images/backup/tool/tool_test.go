@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,6 +20,13 @@ import (
 	"filippo.io/age"
 	"time"
 )
+
+// TestMain runs the suite without the retry pause: the retries are the subject of one test, not the timing
+// of every other.
+func TestMain(m *testing.M) {
+	transportBackoff = 0
+	os.Exit(m.Run())
+}
 
 // environ is a job's environment, without the values a test does not care about.
 func timeAt(t *testing.T, value string) time.Time {
@@ -283,5 +291,46 @@ func TestBackupJob(t *testing.T) {
 	if !strings.Contains(out.String(), "[OK] hello-staging/hello: sqlite-") ||
 		!strings.Contains(out.String(), "Published") {
 		t.Fatalf("output %q", out.String())
+	}
+}
+
+// failing is a transport that refuses the first attempts and answers afterwards: a pod's first seconds.
+type failing struct {
+	remaining int
+	attempts  int
+}
+
+func (f *failing) RoundTrip(request *http.Request) (*http.Response, error) {
+	f.attempts++
+	if f.remaining > 0 {
+		f.remaining--
+		return nil, &net.DNSError{Err: "no such host", Name: "egress"}
+	}
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")),
+		Header: http.Header{}, Request: request}, nil
+}
+
+// A transport failure is retried until it succeeds, and one that never does names the cause and the attempts.
+func TestPutObjectRetriesATransportFailure(t *testing.T) {
+	job, err := settingsOf(environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "a.age")
+	if err := os.WriteFile(file, []byte("bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recovering := &failing{remaining: 2}
+	job.Endpoint = "https://example.invalid"
+	if err := putObject(context.Background(), job, &http.Client{Transport: recovering}, "backups", "k", file); err != nil {
+		t.Fatal(err)
+	}
+	if recovering.attempts != 3 {
+		t.Fatalf("%d attempts", recovering.attempts)
+	}
+	never := &failing{remaining: 99}
+	if err := putObject(context.Background(), job, &http.Client{Transport: never}, "backups", "k", file); err == nil ||
+		!strings.Contains(err.Error(), "dns after 5 attempts") {
+		t.Fatalf("error = %v", err)
 	}
 }

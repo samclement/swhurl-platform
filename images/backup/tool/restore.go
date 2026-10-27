@@ -133,9 +133,9 @@ func download(ctx context.Context, client *http.Client, address, destination str
 	if err != nil {
 		return fmt.Errorf("cannot build the download")
 	}
-	response, err := client.Do(request)
+	response, err := doWithRetry(client, request)
 	if err != nil {
-		return fmt.Errorf("the archive could not be downloaded")
+		return fmt.Errorf("the archive could not be downloaded (%v)", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {

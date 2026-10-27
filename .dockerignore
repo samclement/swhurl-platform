@@ -1,5 +1,6 @@
 # Image builds (images/*/Dockerfile) see only what they copy; never keys or Secrets.
 *
+!images/backup/
 !pyproject.toml
 !uv.lock
 !tools/

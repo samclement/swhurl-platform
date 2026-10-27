@@ -1304,9 +1304,15 @@ dependency — and publishes `clickstack-mongodb-<UTC>.archive.gz.age` with its 
 the Python job publishes. `mongodump` (21 MB, glibc + krb5) is the one thing the tool cannot replace, and it is
 why the image base cannot yet be `scratch`.
 
-**What is not done:** the image itself (the Go binary plus `mongodump` on one base), the presigned read URL on
-v2's side, the digest move and the live proof. The image remains the Python one until its replacement is
-built and tested together.
+**The image is now the Go one** ([`images/backup/Dockerfile`](../images/backup/Dockerfile)): a builder stage
+compiles the tool, the runtime is `debian:bookworm-slim` + `libgssapi-krb5-2` + `mongodump` + the stripped
+binary, and the entrypoint is the binary, so the CronJobs' arguments do not change. **48.1 MB compressed**
+(measured by building it locally), against 134 MB today; the binary is 13.4 MB stripped. `mongodump --version`
+runs inside it, the usage lists the three commands, and `backup-job-sqlite` refuses with no configuration.
+Nothing is deployed: the rendered jobs still name the old digest.
+
+**What is not done:** the digest move (the rendered jobs and the profile's `backup.digest`), the presigned read
+URL on v2's side, and the live proof — a backup and a restore through the new image.
 
 **Checks:** `go test ./...` in `images/backup/tool` (10 tests: settings for the three jobs, the online copy,
 an age round trip, the metadata keys, the S3 upload's headers and refusals, the SQLite backup end to end

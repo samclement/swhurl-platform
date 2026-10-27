@@ -43,7 +43,7 @@ spec:
               type: RuntimeDefault
           containers:
           - name: backup
-            image: ghcr.io/samclement/swhurl-backup:src-caf51b4f61fadd4a@sha256:49474ad990df0f69a31cadd365ce28f20dad48a8e4edebac0c84ab080450250c
+            image: ghcr.io/samclement/swhurl-backup:src-05b9898196028050@sha256:bfe284ede5bfa59cb04b33459bb73c4501298ead7c11a77819051ccfffa7af1a
             args:
             - backup-job-sqlite
             env:

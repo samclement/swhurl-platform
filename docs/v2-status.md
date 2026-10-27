@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the restore job and its sequence: which command a pod runs, how the write path is used, and the first live restore
+Gate: the backup tool's remaining commands and its image: restore-job-sqlite, the MongoDB command, the image and its digest move
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -380,6 +380,15 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages untouched. 3. **No identity changed**, no golden regenerated; the API baseline grows. 4. New refusals stated and tested (`failed: write: forbidden|status|not_found`, a kind the write table does not state, a name a non-create write needs); a delete of an object already gone is **done**, not an error. 5. Failure paths tested: each status, the absent-object delete, the log tail and its bound, the paths and content types of all three changes, and that a Secret is writable but not readable. 6. Scope: **this is infrastructure, not a capability** — nothing calls it yet, so no instance can be restored by v2. 7. Offline only: every test is a fake server; no cluster was touched. 8. This page, the plan and the registry change together.
 - **Evidence:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Coverage: `adapters/kube` 96.1%.
 - **What remains for 2a:** the **restore Job** and the **sequence** (suspend, scale, wait, secret, job, logs, scale back, resume, delete), the **presigned read** the pod uses instead of a key, the operator's age key as a Secret, and the first live restore — on `try-10`, restoring its newest archive over itself. The decision still open: **where the restore's steps live** — a `restore-job-sqlite` command added to the backup image in this repository (v1 tooling, an image rebuild), or a script rendered inside the Job (no image change, a contract to test).
+
+## Slice record: the backup image's Go tool, part one
+
+- **Outcome:** the SQLite backup job runs as Go instead of `python -m swhurl backup-job-sqlite`, with the platform's contract unchanged: `sqlite-<UTC>.db.age` + `sqlite-<UTC>.json` published second, the same nine metadata keys, the plaintext's `plain_sha256`, and the upload's own checksum with `If-None-Match: *`. The copy is SQLite's `VACUUM INTO` (consistent while the app writes) checked with `PRAGMA integrity_check`.
+- **Owners and boundaries:** `images/backup/tool` is a **separate Go module** with its own dependencies (`filippo.io/age`, `modernc.org/sqlite`), so v2's `stdlib-only` rule is untouched; the image, the profile and the rendered jobs are unchanged by this slice.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. **v1 unchanged** — nothing under `apps/`, `clusters/`, `platform/` or `tools/` was touched; the Python job still runs in the image. 2. **Pure** — no v2 package changed at all. 3. **No identity changed** — no profile field, no digest, no golden. 4. **Refusals stated and tested** — a missing setting is named; an archive smaller than the copy is refused; an existing S3 object is refused; a failed upload names the file. 5. **Failure paths tested** — settings, the copy of a missing database, an age round trip and a malformed recipient, the upload's headers and three refusals, and the whole job against a fake bucket with the archive decrypted back to the recorded checksum. 6. **Scope stated** — the image still runs Python; nothing has been deployed or released. 7. **Offline only** — every test is local; no bucket, cluster or credential. 8. **Recorded in the same change** — this page, the plan's slice, the registry and `AGENTS.md`'s exception.
+- **Evidence:** `go test ./...` in `images/backup/tool` (6 tests: settings, names, the online copy, the round trip, the upload, the job end to end), `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check` (1019 tests), `make check-lint`, `make -s check-docs`.
+- **What is not done:** `restore-job-sqlite`, the MongoDB job (still `mongodump`), the image and its base, the digest move, and any live run.
+- **Next gate:** the remaining commands and the image — `restore-job-sqlite`, the MongoDB command, then the image, its digest and a live backup/restore proof.
 
 ## Resume
 

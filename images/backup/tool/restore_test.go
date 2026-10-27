@@ -202,3 +202,23 @@ func replace(env []string, name, value string) []string {
 	}
 	return out
 }
+
+// The decrypted copy is staged beside the database, not in the scratch directory: the final move must be a
+// rename inside the claim's own filesystem (a rename across filesystems fails with EXDEV, which is how the
+// first live restore failed after it had already moved the live database aside).
+func TestRestoreStagesTheCopyBesideTheDatabase(t *testing.T) {
+	if got := stagingPath("/data/app.db"); got != "/data/app.db.restore" {
+		t.Fatalf("staging path %q", got)
+	}
+	f := fixture(t, 2, "")
+	var out strings.Builder
+	if err := restoreSQLite(context.Background(), f.withURL(), &out, f.server.Client()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stagingPath(f.current)); !os.IsNotExist(err) {
+		t.Fatalf("the staged copy was left behind: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(f.current)); err != nil {
+		t.Fatal(err)
+	}
+}

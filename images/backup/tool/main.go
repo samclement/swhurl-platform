@@ -12,7 +12,7 @@ import (
 
 const usage = `usage:
   swhurl-backup backup-job-sqlite    copy, check, encrypt and publish one SQLite database
-  swhurl-backup restore-job-sqlite   restore one SQLite database from its newest archive (not built yet)
+  swhurl-backup restore-job-sqlite   restore one SQLite database from its newest archive
 `
 
 func main() {
@@ -25,6 +25,8 @@ func main() {
 	switch os.Args[1] {
 	case "backup-job-sqlite":
 		err = backupSQLite(context.Background(), environ, os.Stdout, nil)
+	case "restore-job-sqlite":
+		err = restoreSQLite(context.Background(), environ, os.Stdout, nil)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)

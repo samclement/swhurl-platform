@@ -1289,14 +1289,23 @@ the same facts the Python job records under the same names.
 stands. The binary replaces `python -m swhurl backup-job-sqlite`; `go test ./...` in that module runs its tests, and CI's tooling job does so beside `make check-v2`
 (there is no `make` target: the command catalogue documents every target).
 
-**What is not done:** `restore-job-sqlite`, the MongoDB job (which still shells out to `mongodump`, a 21 MB
-glibc binary, so the image base cannot yet be `scratch`), the image itself, the digest move and the live proof.
-The image remains the Python one until the whole tool and its image are ready together.
+**`restore-job-sqlite` is the second command**, and it is the one option 2a's Job will run: it fetches the
+encrypted archive from a **read URL** (v2 will supply a presigned one, so a restore pod holds no standing
+bucket credential), checks the archive's SHA-256, decrypts with the mounted age key, checks the plaintext's
+SHA-256, `integrity_check` and the table count against the metadata, and only then replaces the database —
+keeping the database and its `-wal`/`-shm` in `before-restore-<UTC>/` beside it. Every check refuses *before*
+the live database is touched, and a refused restore keeps no folder: the tests assert both, and that no
+plaintext copy is left behind.
 
-**Checks:** `go test ./...` in `images/backup/tool` (settings, the online copy, an age round trip, the
-metadata keys, the S3 upload's headers and refusals, and the whole job end to end against a fake bucket),
-`make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`.
-Offline only.
+**What is not done:** the MongoDB job (which still shells out to `mongodump`, a 21 MB glibc binary, so the
+image base cannot yet be `scratch`), the image itself, the presigned URL on the v2 side, the digest move and
+the live proof. The image remains the Python one until the whole tool and its image are ready together.
+
+**Checks:** `go test ./...` in `images/backup/tool` (8 tests: settings for both jobs, the online copy, an
+age round trip, the metadata keys, the S3 upload's headers and refusals, the backup end to end against a fake
+bucket, and the restore — replaced and kept aside, plus five refusals that leave the live database
+untouched), `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`,
+`make -s check-docs`. Offline only.
 
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 

@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Offline Go v2 | main | in progress | option 2a started: `adapters/kube.Writer` (patch, create, delete, pod log) is v2's first write path, tested and unused; the backup image is Go (48.1 MB against 134 MB) and every rendered job names it, in Git but not pushed, 27 October 2026 | the fixed backup image's digest move, then a clean six-job run and a restore through it | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/` |
+| Offline Go v2 | main | in progress | option 2a started: `adapters/kube.Writer` (patch, create, delete, pod log) is v2's first write path, tested and unused; the backup image is Go (48.1 MB against 134 MB) and every rendered job names it, in Git but not pushed, 27 October 2026 | a restore of one archive through restore-job-sqlite in a Job, then 2a's restore Job and sequence | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/` |
 | Live platform | main | approved | the 24 open items in the plan index | M14, then B4b (records-only removal) | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

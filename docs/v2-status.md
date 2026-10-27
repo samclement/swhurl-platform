@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the fixed backup image's digest move, then a clean six-job run and a restore through it
+Gate: a restore of one archive through restore-job-sqlite in a Job, then 2a's restore Job and sequence
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -400,10 +400,10 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. **v1's live behaviour changes deliberately**: its five rendered backup jobs pin a new image, which is the point of the move; no other v1 behaviour changed. 2. **Pure packages untouched.** 3. **Identities moved once, deliberately:** the profile's `backup.digest` changed, so its canonical form and ID moved to `prof-sha256:e94c3d69…`; `profile-identity.json` was recomputed independently in Python, the two goldens were regenerated once, and `v2-apps/instances/swhurl-try-10/staging/backup-cronjob.json` was recompiled — one line, the image. 4. **No refusal moved.** 5. **Failure paths:** the tie test comparing v2's job with v1's committed job, and v1's pre-M6 render hash, each pin the image; both were updated with the reason recorded here and in the comment beside the hash. 6. **Scope:** the archives, their names, their metadata and the restore procedure are unchanged, so an archive written by either image is readable by both. 7. **Nothing is live yet** — the digests are in Git but not pushed: the rollout is the next act. 8. This page, the plan, the registry and `docs/operations.md` change together.
 - **The three pins that moved, and why:** the goldens' `inputs.profile` line (the profile ID); the tie test's literal digest (v2 renders `image@digest`, v1 `tag@digest`); v1's pre-M6 render hash for `('web', True)` only — the one scenario with a database, whose `backup.yaml` carries the image. The fixture renders (`tests/fixtures/apps`) moved in `backup.yaml` and the HelmRelease's `platform.swhurl.com/render` fingerprint, which is what that annotation is for.
 - **Evidence:** `make check` (1019 tests), `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check-lint`, `make -s check-docs`. The image: `ghcr.io/samclement/swhurl-backup:src-caf51b4f61fadd4a@sha256:49474ad990df0f69a31cadd365ce28f20dad48a8e4edebac0c84ab080450250c`.
-- **The fixed image is `src-05b9898196028050@sha256:bfe284ed…`:** the retry is in it, the digest moved once more with the same procedure (identity `prof-sha256:ec3cb701…`, goldens once, the one render hash), and the six-job run through it is the next evidence.
+- **The fixed image, live:** `src-05b9898196028050@sha256:bfe284ed…` is pinned and reconciled, and `make backup-sqlite` published through it from **all six** database instances (2–3 tables each, with metadata), as did `make backup-mongodb` (14 collections). The retry turned the start-up transient into successful uploads. [Evidence](current-state.md#the-backup-images-first-live-night-a-start-up-transient-and-the-retry-that-fixes-it-27-october-2026).
 - **The live night found a defect:** the rollout worked and MongoDB's backup published through the Go image, but all six SQLite jobs failed their upload — a new pod's first requests cannot reach the proxy's ClusterIP, which the AWS CLI's default retries had hidden in the Python image. The tool now retries a transport failure (five attempts, five seconds apart) and names the cause; a new image follows, so the digest moves once more. [Evidence](current-state.md#the-backup-images-first-live-night-a-start-up-transient-and-the-retry-that-fixes-it-27-october-2026).
-- **Not done:** the digest move to the fixed image and a live backup and restore through it.
-- **Next gate:** the fixed image's digest move, then a clean six-job run and a restore through it; then 2a's restore Job and sequence.
+- **Not done:** a restore through the image, and the nightly schedule's own run on it.
+- **Next gate:** a restore of one of these archives through `restore-job-sqlite` in a Job, then 2a's restore Job and sequence.
 
 ## Resume
 

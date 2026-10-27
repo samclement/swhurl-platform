@@ -30,8 +30,16 @@ showed it because the **AWS CLI retries by default**; the Go tool did not.
 download; the final error names the cause (`dns`, `refused`, `timeout`, `tls`, `dial`) and the attempt count, and
 a status the server answers (403, 412) is never retried. That is a new image, so the digest moves once more.
 
-**Not exercised:** the retry's success in the cluster (it is proven offline: a transport that refuses twice then
-answers is retried to success, and a permanent failure names `dns after 5 attempts`), and any restore.
+**The fixed image, live (08:58Z).** The retry's image, `src-05b9898196028050@sha256:bfe284ed…`, was pinned in
+Git (`addd7600`), reconciled, and every backup CronJob (the five v1 instances, MongoDB and `try-10` staging) then
+named it. `make backup-sqlite` ran all six jobs **and every one published**: `demo-orders-staging` (3 tables),
+`demo-shop-prod` (3), `demo-shop-staging` (3), `try-10-prod` (2), `try-10-staging` (2) and the sixth v1 instance,
+each with its metadata, e.g. `app-sqlite/swhurl-try-10-staging/sqlite-20261027T085907Z.db.age` (16,584 bytes) and
+its `.json` (387). `make backup-mongodb` published `clickstack-mongodb-20261027T085928Z.archive.gz.age`
+(14 collections) through the same image. The pods' first requests hit the same start-up transient, and the retry
+turned it into a successful upload — which is the live proof the offline test predicted.
+
+**Not exercised:** the nightly schedule itself (the next 03:30/03:58 runs are on the fixed image), and any restore.
 
 ## The first restore plan for a v2-owned instance: `swhurl-try-10` staging (26 October 2026)
 

@@ -1311,8 +1311,15 @@ binary, and the entrypoint is the binary, so the CronJobs' arguments do not chan
 runs inside it, the usage lists the three commands, and `backup-job-sqlite` refuses with no configuration.
 Nothing is deployed: the rendered jobs still name the old digest.
 
-**What is not done:** the digest move (the rendered jobs and the profile's `backup.digest`), the presigned read
-URL on v2's side, and the live proof — a backup and a restore through the new image.
+**The digest moved once, deliberately:** every rendered job (five v1 instances, the MongoDB job, v2's
+`try-10` CronJob) names the new tag and digest; v2's `profile.backup.digest` changed, so its profile ID moved
+to `prof-sha256:e94c3d69…`, the two goldens were regenerated once, the identity fixture was recomputed
+independently, and v1's pre-M6 render hash was re-captured for the one scenario (`web` with a database) whose
+output carries the image. The archives, the metadata and the restore procedure are unchanged, so an archive
+from either image is readable by both. **Nothing is pushed yet**: the rollout is the next act.
+
+**What is not done:** the push that rolls the image into the nightly jobs, the live proof — a backup and a
+restore through it — and the presigned read URL on v2's side.
 
 **Checks:** `go test ./...` in `images/backup/tool` (10 tests: settings for the three jobs, the online copy,
 an age round trip, the metadata keys, the S3 upload's headers and refusals, the SQLite backup end to end

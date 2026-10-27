@@ -39,7 +39,7 @@
   "network": {"podCIDR": "10.42.0.0/16"},
   "backup": {
     "image": "ghcr.io/samclement/swhurl-backup",
-    "digest": "sha256:f1637924110353f687277141adde4114a461622f7de19fe41098f1a1a5eea7b5",
+    "digest": "sha256:49474ad990df0f69a31cadd365ce28f20dad48a8e4edebac0c84ab080450250c",
     "s3Uri": "s3://swhurl-platform-backups-110927251694/app-sqlite/",
     "recipient": "age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h",
     "writerNamespace": "flux-system",

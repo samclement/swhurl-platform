@@ -5,7 +5,7 @@ metadata:
   namespace: smoke-data-prod
   annotations:
     platform.swhurl.com/secrets: GREETING
-    platform.swhurl.com/render: d774ce008bae1be794bd1b197c1df893a3b76b44673adc1a20038eea0e5b2b41
+    platform.swhurl.com/render: 92edf0673ee500b8b6932fdb7b8e6ad8800198f35a560bdd94561931823a3c5c
 spec:
   interval: 30m
   timeout: 3m

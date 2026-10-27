@@ -98,7 +98,7 @@ func TestBackupMatchesTheCommittedJob(t *testing.T) {
 	if !reflect.DeepEqual(renderedJob, committedJob) {
 		t.Fatalf("the CronJob differs:\nv2 %v\nv1 %v", renderedJob, committedJob)
 	}
-	if renderedImage != "ghcr.io/samclement/swhurl-backup@sha256:f1637924110353f687277141adde4114a461622f7de19fe41098f1a1a5eea7b5" {
+	if renderedImage != "ghcr.io/samclement/swhurl-backup@sha256:49474ad990df0f69a31cadd365ce28f20dad48a8e4edebac0c84ab080450250c" {
 		t.Fatalf("v2 renders the image %q", renderedImage)
 	}
 	if !strings.HasPrefix(committedImage, "ghcr.io/samclement/swhurl-backup:") || committedImage[strings.Index(committedImage, "@"):] != renderedImage[strings.Index(renderedImage, "@"):] {

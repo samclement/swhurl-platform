@@ -6,7 +6,7 @@ metadata:
   annotations:
     platform.swhurl.com/offers: a244f82
     platform.swhurl.com/egress: swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443
-    platform.swhurl.com/render: 57dff4a3668e95bc12ccd962a6c5aca6687db44a52d9ae7dcc9b4f97dd6c97cc
+    platform.swhurl.com/render: d2e0703e82cf70b6adc8138b506e8dd64b8323e26b6ae4c8f2215195c6d20058
 spec:
   interval: 30m
   timeout: 3m

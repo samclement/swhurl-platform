@@ -19,8 +19,8 @@ DEFAULT_DATABASE_SIZE = '1Gi'
 # image): published by Validate's backup-image job, encrypting to the age recipient in .sops.yaml.
 BACKUP_FILE = 'backup.yaml'
 BACKUP_LABEL = interface.label('backup')  # on the backup job and its pods: the platform's, not the app's
-BACKUP_IMAGE = ('ghcr.io/samclement/swhurl-backup:src-05b9898196028050'
-                '@sha256:bfe284ede5bfa59cb04b33459bb73c4501298ead7c11a77819051ccfffa7af1a')
+BACKUP_IMAGE = ('ghcr.io/samclement/swhurl-backup:src-92042b331d76ba64'
+                '@sha256:b730422b4789b6377ca1b39705cedef61d0c64a0a8161ccb64652dbc7b1db74a')
 BACKUP_RECIPIENT = 'age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h'
 BACKUP_UNIT = 'platform-backup'
 BACKUP_WRITER = 'backup-writer'  # the Secret an instance's unit substitutes the upload-only key from

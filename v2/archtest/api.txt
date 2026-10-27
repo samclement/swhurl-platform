@@ -328,7 +328,7 @@ orchestration: type Refusal struct {Subject, Reason string}
 orchestration: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}
 orchestration: type RestoreInputs struct {Instance, Release, Profile, Egress []byte Plan observe.RestorePlan Target observe.Target AgeIdentity, ReadURL string Cluster Cluster Sleep func(time.Duration) Now func() time.Time}
 orchestration: type RestoreJobOutcome struct {Name string State string Log string LogReason string}
-orchestration: type RestoreOutcome struct {State string Reason string Steps []RestoreStep Job RestoreJobOutcome App RestoreApp Started time.Time Finished time.Time}
+orchestration: type RestoreOutcome struct {State string Reason string Steps []RestoreStep Job RestoreJobOutcome App RestoreApp BackupSuspended bool Started time.Time Finished time.Time}
 orchestration: type RestoreStep struct {Name string Outcome string Detail string}
 orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
 shadow: func (*Error) Error() string

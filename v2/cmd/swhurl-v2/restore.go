@@ -376,6 +376,9 @@ type restoreActionDocument struct {
 	Steps      []restoreActionStep `json:"steps"`
 	Job        *restoreJobEvidence `json:"job,omitempty"`
 	App        *restoreAppDocument `json:"app,omitempty"`
+	// BackupSuspended is true only when the run left the backup schedule suspended: a restore pod may still
+	// hold the claim, so the undo stopped before putting the schedule back.
+	BackupSuspended bool `json:"backupSuspended,omitempty"`
 }
 
 type restoreActionStep struct {
@@ -468,6 +471,7 @@ func restorePerformedAction(outcome orchestration.RestoreOutcome) restoreActionD
 		action.Steps = append(action.Steps, restoreActionStep{Name: step.Name, Outcome: step.Outcome,
 			Detail: step.Detail})
 	}
+	action.BackupSuspended = outcome.BackupSuspended
 	action.Job = &restoreJobEvidence{Name: outcome.Job.Name, State: outcome.Job.State,
 		Log: outcome.Job.Log, LogReason: outcome.Job.LogReason}
 	action.App = &restoreAppDocument{Replicas: outcome.App.Replicas, Suspended: outcome.App.Suspended,
@@ -516,6 +520,9 @@ func restoreActionSummary(outcome orchestration.RestoreOutcome) string {
 		if outcome.App.Suspended {
 			summary += ", release still suspended"
 		}
+	}
+	if outcome.BackupSuspended {
+		summary += ", backup schedule still suspended"
 	}
 	return summary
 }

@@ -43,6 +43,11 @@ func restoreTarget() observe.Target {
 		Workload: observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: namespace, Name: "demo-orders"},
 		Pods:     observe.Ref{APIVersion: "v1", Kind: "Pod", Namespace: namespace},
 		Selector: "app.kubernetes.io/name=demo-orders", Container: "main", Replicas: 1,
+		Backup: &observe.BackupTarget{
+			CronJob:  observe.Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: namespace, Name: "demo-orders-backup"},
+			Pods:     observe.Ref{APIVersion: "v1", Kind: "Pod", Namespace: namespace},
+			Selector: "platform.swhurl.com/backup=true,!" + kernel.RestoreLabel, Schedule: "35 3 * * *",
+		},
 	}
 }
 
@@ -103,13 +108,15 @@ type fakeCluster struct {
 	jobReadFailures int
 	// cancelOn cancels the run's own context when the named event happens, so a test can show what the undo
 	// runs on.
-	cancelOn    string
-	cancel      context.CancelFunc
-	available   int32
-	jobStates   []string
-	restorePods int
-	appPods     int
-	log         string
+	cancelOn string
+	cancel   context.CancelFunc
+	// backupSuspended is the CronJob's state as the cluster holds it: a schedule the operator suspended.
+	backupSuspended bool
+	available       int32
+	jobStates       []string
+	restorePods     int
+	appPods         int
+	log             string
 }
 
 func (f *fakeCluster) record(ctx context.Context, event string) error {
@@ -151,6 +158,9 @@ func (f *fakeCluster) Read(ctx context.Context, ref observe.Ref) (observe.Read, 
 		document := fmt.Sprintf(`{"metadata":{"generation":2},"spec":{"replicas":%d},`+
 			`"status":{"observedGeneration":2,"availableReplicas":%d}}`, f.replicas, available)
 		return observe.Read{Ref: ref, Status: observe.Present, Object: []byte(document)}, nil
+	case "CronJob":
+		return observe.Read{Ref: ref, Status: observe.Present,
+			Object: []byte(fmt.Sprintf(`{"spec":{"suspend":%v}}`, f.backupSuspended))}, nil
 	case "Job":
 		state := f.nextJobState()
 		return observe.Read{Ref: ref, Status: observe.Present, Object: []byte(`{"status":{"conditions":[{"type":"` +
@@ -266,8 +276,8 @@ func TestRestorePerformsTheSequence(t *testing.T) {
 	for _, step := range outcome.Steps {
 		names = append(names, step.Name)
 	}
-	if got, want := strings.Join(names, " "), "suspend scale-down pods-gone secret job job-finished log "+
-		"job-result delete-job delete-secret scale-up resume available"; got != want {
+	if got, want := strings.Join(names, " "), "suspend backup-suspend scale-down pods-gone secret job "+
+		"job-finished log job-result delete-job delete-secret backup-resume scale-up resume available"; got != want {
 		t.Fatalf("steps\n%s\nwant\n%s", got, want)
 	}
 	for i, step := range outcome.Steps {
@@ -277,7 +287,10 @@ func TestRestorePerformsTheSequence(t *testing.T) {
 	}
 	// The order is the safety contract: suspend before stopping, and resume only after scaling back.
 	for _, pair := range [][2]string{
-		{"patch:HelmRelease:{\"spec\":{\"suspend\":true}}", "patch:Deployment:{\"spec\":{\"replicas\":0}}"},
+		{"patch:HelmRelease:{\"spec\":{\"suspend\":true}}", "patch:CronJob:{\"spec\":{\"suspend\":true}}"},
+		{"patch:CronJob:{\"spec\":{\"suspend\":true}}", "patch:Deployment:{\"spec\":{\"replicas\":0}}"},
+		{"delete:Secret:", "patch:CronJob:{\"spec\":{\"suspend\":false}}"},
+		{"patch:CronJob:{\"spec\":{\"suspend\":false}}", "patch:Deployment:{\"spec\":{\"replicas\":1}}"},
 		{"create:Secret:", "create:Job:"},
 		{"delete:Job:", "delete:Secret:"},
 		{"patch:Deployment:{\"spec\":{\"replicas\":1}}", "patch:HelmRelease:{\"spec\":{\"suspend\":false}}"},
@@ -315,26 +328,29 @@ func TestRestoreUndoesAndRefuses(t *testing.T) {
 		// that may still hold the claim stopped it.
 		replicas  int32
 		suspended bool
+		// backupSuspended is whether the run leaves the backup schedule suspended: the undo stops before
+		// putting it back while a restore pod may still hold the claim.
+		backupSuspended bool
 	}{
-		{"app pods do not stop", func(f *fakeCluster) { f.appPods = 1 }, []string{"scale-up", "resume"}, AppUnknown, "pods-gone", 1, false},
+		{"app pods do not stop", func(f *fakeCluster) { f.appPods = 1 }, []string{"backup-resume", "scale-up", "resume"}, AppUnknown, "pods-gone", 1, false, false},
 		{"secret cannot be created", func(f *fakeCluster) { f.failOn = "create:Secret" },
-			[]string{"delete-secret", "scale-up", "resume"}, AppUnknown, "secret", 1, false},
+			[]string{"delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "secret", 1, false, false},
 		{"job cannot be created", func(f *fakeCluster) { f.failOn = "create:Job" },
-			[]string{"delete-job", "delete-secret", "scale-up", "resume"}, AppUnknown, "job", 1, false},
+			[]string{"delete-job", "delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "job", 1, false, false},
 		{"job reports failure", func(f *fakeCluster) { f.jobStates = []string{"Running", "Failed"} },
-			[]string{"delete-job", "delete-secret", "scale-up", "resume"}, AppUnknown, "job-result", 1, false},
+			[]string{"delete-job", "delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "job-result", 1, false, false},
 		{"job times out", func(f *fakeCluster) { f.jobStates = []string{"Running"} },
-			[]string{"log", "delete-job", "delete-secret", "scale-up", "resume"}, AppUnknown, "job-finished", 1, false},
+			[]string{"log", "delete-job", "delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "job-finished", 1, false, false},
 		{"job cannot be deleted", func(f *fakeCluster) { f.failOn = "delete:Job" },
-			[]string{"delete-job", "delete-secret"}, AppStopped, "delete-job", 0, true},
+			[]string{"delete-job", "delete-secret"}, AppStopped, "delete-job", 0, true, true},
 		{"the restore pod outlives its Job", func(f *fakeCluster) { f.podsStay = true },
-			[]string{"delete-job", "delete-secret"}, AppStopped, "delete-job", 0, true},
+			[]string{"delete-job", "delete-secret"}, AppStopped, "delete-job", 0, true, true},
 		{"the app does not scale back", func(f *fakeCluster) { f.failOn = "patch:Deployment:{\"spec\":{\"replicas\":1}}" },
-			[]string{"scale-up", "resume"}, AppStopped, "scale-up", 0, false},
+			[]string{"scale-up", "resume"}, AppStopped, "scale-up", 0, false, false},
 		{"the release does not resume", func(f *fakeCluster) { f.failOn = "patch:HelmRelease:{\"spec\":{\"suspend\":false}}" },
-			[]string{"resume"}, AppStopped, "resume", 1, true},
+			[]string{"resume"}, AppStopped, "resume", 1, true, false},
 		{"the app does not come back", func(f *fakeCluster) { f.neverAvailable = true },
-			nil, AppUnknown, "available", 1, false},
+			nil, AppUnknown, "available", 1, false, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cluster := &fakeCluster{replicas: 1, log: "[OK] Restored\n"}
@@ -366,9 +382,11 @@ func TestRestoreUndoesAndRefuses(t *testing.T) {
 			}
 			// The live count, not the outcome's copy of the target: a run that could not put the app back must
 			// leave it where it is and say so.
-			if cluster.replicas != tt.replicas || outcome.App.Suspended != tt.suspended {
-				t.Fatalf("the app is at %d replicas, suspended %v; want %d/%v",
-					cluster.replicas, outcome.App.Suspended, tt.replicas, tt.suspended)
+			if cluster.replicas != tt.replicas || outcome.App.Suspended != tt.suspended ||
+				outcome.BackupSuspended != tt.backupSuspended {
+				t.Fatalf("the app is at %d replicas, suspended %v, backup suspended %v; want %d/%v/%v",
+					cluster.replicas, outcome.App.Suspended, outcome.BackupSuspended, tt.replicas, tt.suspended,
+					tt.backupSuspended)
 			}
 		})
 	}
@@ -502,6 +520,43 @@ func TestRestoreUnwindsOnItsOwnContext(t *testing.T) {
 		`patch:HelmRelease:{"spec":{"suspend":false}}`} {
 		if indexOf(cluster.events, event) < 0 {
 			t.Fatalf("%s did not run on the undo's own context:\n%s", event, strings.Join(cluster.events, "\n"))
+		}
+	}
+}
+
+// A schedule the operator had already suspended stays suspended: the run does not resume a schedule it did not
+// stop, and it does not claim to have left one behind.
+func TestRestoreLeavesAnAlreadySuspendedBackupAlone(t *testing.T) {
+	cluster := &fakeCluster{replicas: 1, backupSuspended: true}
+	outcome, err := Restore(context.Background(), restoreInputs(t, cluster))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.State != RestoreRestored || outcome.BackupSuspended {
+		t.Fatalf("outcome %+v", outcome)
+	}
+	if indexOf(cluster.events, `patch:CronJob:{"spec":{"suspend":false}}`) >= 0 {
+		t.Fatal("it resumed a schedule the operator had suspended")
+	}
+	if stepNamed(outcome.Steps, "backup-resume").Outcome != StepDone {
+		t.Fatalf("the schedule's own state is not recorded: %+v", outcome.Steps)
+	}
+}
+
+// An instance that renders no backup has no archive to restore, and the run refuses before it changes anything.
+func TestRestoreRefusesAnInstanceWithNoBackup(t *testing.T) {
+	cluster := &fakeCluster{replicas: 1}
+	inputs := restoreInputs(t, cluster)
+	inputs.Target.Backup = nil
+	_, err := Restore(context.Background(), inputs)
+	var refusal *Refusal
+	if !errors.As(err, &refusal) || refusal.Reason != "no_backup" {
+		t.Fatalf("error %v is not a no-backup refusal", err)
+	}
+	for _, event := range cluster.events {
+		if strings.HasPrefix(event, "patch:") || strings.HasPrefix(event, "create:") ||
+			strings.HasPrefix(event, "delete:") {
+			t.Fatalf("a refused restore changed something: %s", event)
 		}
 	}
 }

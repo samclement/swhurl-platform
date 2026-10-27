@@ -217,7 +217,7 @@ func TestRestorePerformsItWhenConfirmed(t *testing.T) {
 	for _, changed := range api.changes {
 		switch {
 		case changed.method == http.MethodPatch:
-			order = append(order, "patch "+changed.body)
+			order = append(order, "patch "+changedKind(changed.path)+" "+changed.body)
 		case changed.method == http.MethodPost && strings.Contains(changed.path, "/secrets"):
 			order = append(order, "create secret")
 			secretBody = changed.body
@@ -231,8 +231,10 @@ func TestRestorePerformsItWhenConfirmed(t *testing.T) {
 		}
 	}
 	want := []string{
-		`patch {"spec":{"suspend":true}}`, `patch {"spec":{"replicas":0}}`, "create secret", "create job",
-		"delete job", "delete secret", `patch {"spec":{"replicas":1}}`, `patch {"spec":{"suspend":false}}`,
+		`patch helmreleases {"spec":{"suspend":true}}`, `patch cronjobs {"spec":{"suspend":true}}`,
+		`patch deployments {"spec":{"replicas":0}}`, "create secret", "create job", "delete job", "delete secret",
+		`patch cronjobs {"spec":{"suspend":false}}`, `patch deployments {"spec":{"replicas":1}}`,
+		`patch helmreleases {"spec":{"suspend":false}}`,
 	}
 	if strings.Join(order, "|") != strings.Join(want, "|") {
 		t.Fatalf("the changes are\n%s\nwant\n%s", strings.Join(order, "\n"), strings.Join(want, "\n"))
@@ -325,7 +327,7 @@ func TestRestoreReportsAFailedJob(t *testing.T) {
 		t.Fatalf("the job's evidence is %v", job)
 	}
 	// The undo ran: the app's replicas are back and the release is not left suspended.
-	for _, name := range []string{"delete-job", "delete-secret", "scale-up", "resume"} {
+	for _, name := range []string{"delete-job", "delete-secret", "backup-resume", "scale-up", "resume"} {
 		if step := stepOf(action["steps"].([]any), name); step == nil || step["outcome"] != "done" {
 			t.Fatalf("the undo's %s is %v", name, step)
 		}
@@ -333,6 +335,17 @@ func TestRestoreReportsAFailedJob(t *testing.T) {
 	if !strings.Contains(stderr, "restore: failed/job-result") {
 		t.Fatalf("summary %q", stderr)
 	}
+}
+
+// changedKind is which object a change's path names, so two merge patches with the same body are not confused:
+// the release and the backup schedule are both suspended with {"spec":{"suspend":true}}.
+func changedKind(path string) string {
+	for _, kind := range []string{"helmreleases", "deployments", "cronjobs"} {
+		if strings.Contains(path, "/"+kind+"/") {
+			return kind
+		}
+	}
+	return "unknown"
 }
 
 // stepOf is one recorded step by name, or nil.

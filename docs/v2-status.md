@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the backup tool's MongoDB command and its image: the remaining Python job, the image and its digest move
+Gate: the backup image: the Go binary and mongodump on one base, its digest move, and a live backup and restore
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -383,13 +383,14 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 
 ## Slice record: the backup image's Go tool, part one
 
-- **Outcome:** the SQLite **backup and restore** jobs run as Go instead of `python -m swhurl backup-job-sqlite`, with the platform's contract unchanged: `sqlite-<UTC>.db.age` + `sqlite-<UTC>.json` published second, the same nine metadata keys, the plaintext's `plain_sha256`, and the upload's own checksum with `If-None-Match: *`. The copy is SQLite's `VACUUM INTO` (consistent while the app writes) checked with `PRAGMA integrity_check`.
+- **Outcome:** all three of the image's jobs are Go — `backup-job-sqlite`, `restore-job-sqlite` and `backup-job-mongodb` — with the platform's contract unchanged: `sqlite-<UTC>.db.age` + `sqlite-<UTC>.json` published second, the same nine metadata keys, the plaintext's `plain_sha256`, and the upload's own checksum with `If-None-Match: *`. The copy is SQLite's `VACUUM INTO` (consistent while the app writes) checked with `PRAGMA integrity_check`.
 - **Owners and boundaries:** `images/backup/tool` is a **separate Go module** with its own dependencies (`filippo.io/age`, `modernc.org/sqlite`), so v2's `stdlib-only` rule is untouched; the image, the profile and the rendered jobs are unchanged by this slice.
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. **v1 unchanged** — nothing under `apps/`, `clusters/`, `platform/` or `tools/` was touched; the Python job still runs in the image. 2. **Pure** — no v2 package changed at all. 3. **No identity changed** — no profile field, no digest, no golden. 4. **Refusals stated and tested** — a missing setting is named; an archive smaller than the copy is refused; an existing S3 object is refused; a failed upload names the file. 5. **Failure paths tested** — settings, the copy of a missing database, an age round trip and a malformed recipient, the upload's headers and three refusals, and the whole job against a fake bucket with the archive decrypted back to the recorded checksum. 6. **Scope stated** — the image still runs Python; nothing has been deployed or released. 7. **Offline only** — every test is local; no bucket, cluster or credential. 8. **Recorded in the same change** — this page, the plan's slice, the registry and `AGENTS.md`'s exception.
-- **Evidence:** `go test ./...` in `images/backup/tool` (8 tests: settings for both jobs, names, the online copy, the round trip, the upload, the backup job end to end, the restore, and its refusals), `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check` (1019 tests), `make check-lint`, `make -s check-docs`.
+- **Evidence:** `go test ./...` in `images/backup/tool` (10 tests: settings for the three jobs, names, the online copy, the round trip, the upload, the SQLite backup end to end, the restore and its refusals, and the MongoDB job and its refusals), `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check` (1019 tests), `make check-lint`, `make -s check-docs`.
 - **The restore command** fetches the archive from a read URL (a presigned one, from v2), checks the archive's and the plaintext's SHA-256, integrity and the table count, and only then replaces the database, keeping it in `before-restore-<UTC>/`; five refusals are tested to leave the live database untouched and no folder behind.
-- **What is not done:** the MongoDB job (still `mongodump`), the image and its base, the presigned URL on the v2 side, the digest move, and any live run.
-- **Next gate:** the MongoDB command, then the image, its digest and a live backup/restore proof.
+- **The MongoDB command** pipes `mongodump` straight into age (connection string on stdin, no plaintext copy), reads the version and per-collection counts with `mongo-go-driver`, and publishes the same archive and metadata names the Python job does; `mongodump` itself is the one piece the tool cannot replace, and the reason the image base cannot be `scratch`.
+- **What is not done:** the image and its base, the presigned read URL on v2's side, the digest move, and any live run. The binary is 19.6 MB static (10.7 MB gzipped).
+- **Next gate:** the image — the Go binary and `mongodump` on one base — then its digest move, a live backup and restore, and 2a's restore sequence.
 
 ## Resume
 

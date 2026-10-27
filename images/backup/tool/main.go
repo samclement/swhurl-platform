@@ -13,6 +13,7 @@ import (
 const usage = `usage:
   swhurl-backup backup-job-sqlite    copy, check, encrypt and publish one SQLite database
   swhurl-backup restore-job-sqlite   restore one SQLite database from its newest archive
+  swhurl-backup backup-job-mongodb   dump, encrypt and publish one MongoDB database
 `
 
 func main() {
@@ -27,6 +28,8 @@ func main() {
 		err = backupSQLite(context.Background(), environ, os.Stdout, nil)
 	case "restore-job-sqlite":
 		err = restoreSQLite(context.Background(), environ, os.Stdout, nil)
+	case "backup-job-mongodb":
+		err = backupMongoDB(context.Background(), environ, os.Stdout, nil, driverFacts{})
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)

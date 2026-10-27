@@ -30,10 +30,6 @@ func timeAt(t *testing.T, value string) time.Time {
 	return at
 }
 
-func sha256Bytes(value []byte) []byte { sum := sha256.Sum256(value); return sum[:] }
-
-func hexBytes(value []byte) string { return hex.EncodeToString(value) }
-
 func environ(extra ...string) []string {
 	base := []string{"AGE_RECIPIENT=age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p",
 		"BACKUP_S3_URI=s3://backups/app-sqlite/hello-staging/", "BACKUP_SOURCE=hello-staging/hello",
@@ -186,11 +182,11 @@ func TestPutObject(t *testing.T) {
 	if request.Method != http.MethodPut || request.URL.Path != "/backups/app-sqlite/hello-staging/sqlite-1.db.age" {
 		t.Fatalf("request %s %s", request.Method, request.URL.Path)
 	}
-	sum := sha256Bytes([]byte("archive bytes"))
-	if got := request.Header.Get("x-amz-checksum-sha256"); got != base64.StdEncoding.EncodeToString(sum) {
+	sum := sha256.Sum256([]byte("archive bytes"))
+	if got := request.Header.Get("x-amz-checksum-sha256"); got != base64.StdEncoding.EncodeToString(sum[:]) {
 		t.Fatalf("checksum %q", got)
 	}
-	if got := request.Header.Get("x-amz-content-sha256"); got != hexBytes(sum) {
+	if got := request.Header.Get("x-amz-content-sha256"); got != hex.EncodeToString(sum[:]) {
 		t.Fatalf("payload hash %q", got)
 	}
 	if request.Header.Get("If-None-Match") != "*" {

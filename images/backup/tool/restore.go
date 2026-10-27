@@ -83,7 +83,9 @@ func restoreSQLite(ctx context.Context, environ []string, out io.Writer, client 
 		return fmt.Errorf("cannot prepare the scratch directory: %v", err)
 	}
 	archive := filepath.Join(job.Directory, "restored.db.age")
-	plaintext := filepath.Join(job.Directory, "restored.db")
+	// The decrypted copy is staged beside the database, not in the scratch directory: the swap is three
+	// renames inside the claim's own filesystem, and a rename across filesystems fails (EXDEV).
+	plaintext := stagingPath(job.Database)
 	for _, stale := range []string{archive, plaintext} {
 		_ = os.Remove(stale)
 	}
@@ -116,6 +118,7 @@ func restoreSQLite(ctx context.Context, environ []string, out io.Writer, client 
 	}
 	replaced, err := replaceDatabase(job.Database, plaintext, time.Now().UTC())
 	if err != nil {
+		_ = os.Remove(plaintext)
 		return err
 	}
 	fmt.Fprintf(out, "[OK] Restored the archive into %s (%d tables, integrity ok); the replaced files are in %s\n",
@@ -172,6 +175,11 @@ func checkDatabase(ctx context.Context, path string) (int64, error) {
 	}
 	return tables, nil
 }
+
+// stagingPath is where the decrypted copy is written: beside the database, on the same filesystem, so the
+// final move is a rename rather than a copy across devices. The plaintext is on the claim for that moment,
+// exactly as the operator's own restore procedure stages it.
+func stagingPath(database string) string { return database + ".restore" }
 
 // replaceDatabase puts the checked copy in place, keeping the database and its -wal/-shm files in
 // before-restore-<UTC>/ beside it. The directory is created only when the copy is ready to be moved.

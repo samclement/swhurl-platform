@@ -39,7 +39,19 @@ its `.json` (387). `make backup-mongodb` published `clickstack-mongodb-20261027T
 (14 collections) through the same image. The pods' first requests hit the same start-up transient, and the retry
 turned it into a successful upload — which is the live proof the offline test predicted.
 
-**Not exercised:** the nightly schedule itself (the next 03:30/03:58 runs are on the fixed image), and any restore.
+**The first restore attempt, and the defect it found (17:52Z).** A hand-made Job ran `restore-job-sqlite` on
+`try-10` staging against the newest archive, with the age key as a short-lived Secret and a presigned read. It
+failed at the **last step**: `cannot put the restored database in place: rename /scratch/restored.db /data/app.db:
+invalid cross-device link` — the decrypted copy was staged on the scratch `emptyDir` and renamed into the
+claim, which are different filesystems. By then the live database had been moved into
+`before-restore-20261027T175241Z/`, as designed. **Recovered** by copying that file back into place (`/data/app.db`,
+16,384 bytes), scaling the Deployment to 1 and resuming the HelmRelease; the pod came up `1/1` on the same
+digest. The fix: the copy is staged **beside the database** (`/data/app.db.restore`), so the swap is a rename
+inside the claim's own filesystem, as the operator's procedure does — a test pins the staging path, and the
+live re-run is below.
+
+**Not exercised:** the nightly schedule itself (the next 03:30/03:58 runs are on the fixed image), and the
+fixed restore (below).
 
 ## The first restore plan for a v2-owned instance: `swhurl-try-10` staging (26 October 2026)
 

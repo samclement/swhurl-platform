@@ -1318,8 +1318,17 @@ independently, and v1's pre-M6 render hash was re-captured for the one scenario 
 output carries the image. The archives, the metadata and the restore procedure are unchanged, so an archive
 from either image is readable by both. **Nothing is pushed yet**: the rollout is the next act.
 
-**What is not done:** the push that rolls the image into the nightly jobs, the live proof — a backup and a
-restore through it — and the presigned read URL on v2's side.
+**The first live night found a real defect.** The rollout worked — every CronJob named the new digest, and the
+MongoDB backup published through the Go image — but all six SQLite jobs failed their upload with `the upload did
+not complete`. Diagnosed live: the request never reached the proxy; `GODEBUG=netdns=go+2` showed the resolver
+looking up the proxy's name, and **the same binary in the same pod succeeded forty-five seconds later**, so a
+new pod's first seconds cannot reach the proxy's ClusterIP. The Python image had hidden it: `aws` retries by
+default. The tool now retries a **transport** failure (five attempts, five seconds apart) and names the cause
+(`dns`, `refused`, `timeout`, `tls`, `dial`) with the attempt count; a status the server answers is never
+retried. That fix is its own image, so the digest moves once more.
+
+**What is not done:** the digest move to the fixed image and the live proof through it, the presigned read URL
+on v2's side, and any restore.
 
 **Checks:** `go test ./...` in `images/backup/tool` (10 tests: settings for the three jobs, the online copy,
 an age round trip, the metadata keys, the S3 upload's headers and refusals, the SQLite backup end to end

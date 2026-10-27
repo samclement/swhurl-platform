@@ -2,6 +2,37 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The backup image's first live night: a start-up transient, and the retry that fixes it (27 October 2026)
+
+The Go backup image (`src-caf51b4f61fadd4a`, 48.1 MB) was rolled out by `make flux-reconcile` at `08:38Z`: the
+five v1-rendered backup CronJobs, `observability/backup-mongodb` and `try-10` staging's CronJob all named
+`sha256:49474ad9…`, and `try-10`'s unit was at `main@4243ec5b`.
+
+**What worked.** `make backup-mongodb` published `clickstack-mongodb-20261027T083920Z.archive.gz.age` through
+the Go binary — 14 collections, MongoDB 5.0.32, metadata keys identical to the Python job's, 1.38 MB archive.
+
+**What failed, and why.** `make backup-sqlite` then ran all six SQLite jobs (the five v1 instances and
+`try-10` staging); **every one failed** with `cannot publish sqlite-….db.age: the upload did not complete`.
+Evidence, in order:
+
+- the egress proxy logged **no CONNECT** from any job pod, so the request never reached it;
+- a probe pod in the instance's namespace with the backup label reached the proxy and tunnelled to the bucket
+  (`granted=yes … 200/TCP_TUNNEL`), so policy, DNS and the proxy were sound;
+- the **same image's binary**, run by hand in the same namespace, uploaded and published successfully — three
+  times;
+- a job that ran the binary **immediately** at pod start failed, the same job with a 45-second pause succeeded;
+- `GODEBUG=netdns=go+2` in a job pod showed the resolver looking up the proxy's name before the failure.
+
+So a brand-new pod's first requests cannot reach the proxy's ClusterIP for some seconds. The Python image never
+showed it because the **AWS CLI retries by default**; the Go tool did not.
+
+**The fix.** A transport failure is retried five times, five seconds apart, in both the upload and the restore's
+download; the final error names the cause (`dns`, `refused`, `timeout`, `tls`, `dial`) and the attempt count, and
+a status the server answers (403, 412) is never retried. That is a new image, so the digest moves once more.
+
+**Not exercised:** the retry's success in the cluster (it is proven offline: a transport that refuses twice then
+answers is retried to success, and a permanent failure names `dns after 5 attempts`), and any restore.
+
 ## The first restore plan for a v2-owned instance: `swhurl-try-10` staging (26 October 2026)
 
 v2 planned, and verified, the restore of the migrated stateful instance — **read-only**, at `22:33:28Z`, against the API server and the bucket, at `origin/main` `12f21f6b`:

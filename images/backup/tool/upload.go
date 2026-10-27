@@ -7,13 +7,16 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -39,9 +42,9 @@ func putObject(ctx context.Context, job settings, client *http.Client, bucket, k
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Minute, Transport: &http.Transport{Proxy: http.ProxyFromEnvironment}}
 	}
-	response, err := client.Do(request)
+	response, err := doWithRetry(client, request)
 	if err != nil {
-		return fmt.Errorf("the upload did not complete")
+		return fmt.Errorf("the upload did not complete (%v)", err)
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, response.Body)
@@ -54,6 +57,64 @@ func putObject(ctx context.Context, job settings, client *http.Client, bucket, k
 		return fmt.Errorf("the upload was refused (403)")
 	}
 	return fmt.Errorf("the upload was refused (%d)", response.StatusCode)
+}
+
+// Attempts and the gap between them: a pod's first seconds can fail to reach a Service before the node's
+// rules are programmed, and the AWS CLI this replaces retried by default. A backup is not lost to that.
+const transportAttempts = 5
+
+// transportBackoff is the gap between attempts; a test sets it to zero.
+var transportBackoff = 5 * time.Second
+
+// doWithRetry sends one request, retrying a transport failure until the attempts are used. A status the
+// server answers is not retried: that is an answer, not a transient.
+func doWithRetry(client *http.Client, request *http.Request) (*http.Response, error) {
+	var failure error
+	for attempt := 1; attempt <= transportAttempts; attempt++ {
+		response, err := client.Do(request)
+		if err == nil {
+			return response, nil
+		}
+		failure = err
+		if attempt == transportAttempts {
+			break
+		}
+		time.Sleep(transportBackoff)
+		if request.GetBody != nil {
+			body, err := request.GetBody()
+			if err != nil {
+				return nil, fmt.Errorf("%s, and the request could not be replayed", transportReason(failure))
+			}
+			request.Body = body
+		}
+	}
+	return nil, fmt.Errorf("%s after %d attempts", transportReason(failure), transportAttempts)
+}
+
+// transportReason names why a request never completed: a resolved name, a refused connection, a timeout, a
+// TLS failure or the proxy. It carries no URL and no content, so a job's log stays safe to read.
+func transportReason(err error) string {
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return "dns"
+	}
+	var operation *net.OpError
+	if errors.As(err, &operation) {
+		if operation.Timeout() {
+			return "timeout"
+		}
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			return "refused"
+		}
+		return "dial"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if strings.Contains(err.Error(), "tls:") {
+		return "tls"
+	}
+	return "transport"
 }
 
 // endpointOf is the bucket's endpoint: the override when one is set, else AWS's virtual-hosted form.

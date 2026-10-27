@@ -2,6 +2,73 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The first restore v2 performs: `swhurl-try-10` staging, newest archive over itself (27 October 2026)
+
+`swhurl-v2 restore --confirm swhurl-try-10/staging` performed the whole restore at `21:09:45Z` and finished at
+`21:10:15Z` — **30 seconds**, exit 0, `restore: restored; app running`. Every step was `done`: suspend, scale
+down, pods gone, the Secret, the Job, the wait, the log, the Job's own result, delete the Job, delete the
+Secret, scale back, resume, available.
+
+**What it restored.** The plan was `ready` from `app-sqlite/swhurl-try-10-staging/sqlite-20261027T085907Z.db.age`
+(16,584 bytes, 12h8m old at 21:07Z, inside the 26h default). Its metadata: archive sha256 `71ad3cd9…`,
+plaintext `1b20b6d7…`, 2 tables, `source` `swhurl-try-10-staging/swhurl-try-10`. The Job
+`swhurl-try-10-restore-20261027t210945z` completed, and the log read:
+
+`[OK] Restored the archive into /data/app.db (2 tables, integrity ok); the replaced files are in /data/before-restore-20261027T210953Z`
+
+**The credentials, as designed.** The bucket was listed and that one archive read with the operator's own
+environment credentials; the pod held a **presigned read of that one object** and the age identity from
+`./age.agekey`, both in a Secret the run created and deleted. Nothing of either reached the document, the
+diagnostic or Git, and no standing bucket credential was created.
+
+**What the run proves, and what it does not.** The archive's and the plaintext's checksums, `integrity_check`
+and the recorded table count passed *before* the swap, and the app is back at one replica on the restored file
+with its release resumed. It does **not** prove the rows are the point in time wanted, nor that they differ
+from what the app had written after 08:59Z: the pre-restore database and its `-wal`/`-shm` were kept in
+`/data/before-restore-20261027T210953Z/` for exactly that comparison.
+
+**A post-restore observation, `21:15:39Z` (read-only).** `verdict running` with all seven findings positive —
+unit reconciled, `unit.revision applied` at `f2bafc01`, release settled, workload present, the compiled digest
+(`sha256:9c48c58a…`) running, ready, replicas as intended. The backup is `current` with newest run
+`swhurl-try-10-backup-manual-20261027t085837z` (complete `08:59:16Z`) — **the 08:59 archive came from a manual
+run**, not the schedule — and the archive is `not_assessed/not_read` because `--archive` was not passed. Two
+facts in that report are worth keeping: the backup target's selector is now the live
+`platform.swhurl.com/backup=true,!platform.swhurl.com/restore`, so the restore pod was not read as a backup run;
+and `lastScheduledAt` `03:58Z` has no successful run beside it, because that run started **before** the fixed
+image was pinned at `08:38Z` — it is the start-up transient the retry fixed, and the first nightly on the fixed
+image is 28 October's.
+
+**What is actually on the claim, `21:25Z` (read-only, one-shot pod).** `app.db` (16,384 bytes), its `-shm` and
+`-wal`, all written at `21:10Z` — the restored file — beside **three** `before-restore-*` folders:
+
+```
+before-restore-20261027T175241Z   (17:52Z)
+before-restore-20261027T181947Z   (18:19Z)
+before-restore-20261027T210953Z   (21:09Z)  ← this run
+```
+
+The first two are from the restores recorded in the backup image's live night earlier today, not from this run:
+the instance's data has now been replaced three times in a day, and each run kept what was there. Deleting them
+is the operator's, not the tool's.
+
+**`kubectl exec` cannot inspect a claim here.** The app image has no `ls` and no `sh` (`exec: "ls": executable
+file not found`), and the namespace's ResourceQuota refuses a pod without `requests.cpu`, `requests.memory` and
+`limits.memory` (`failed quota: … must specify …`). The listing above came from a one-shot `busybox` pod with the
+claim mounted read-only and the backup job's own resource numbers; `operations.md` carries the command.
+
+**A second observation, `21:26Z` (read-only).** The same seven findings, `running`, backup `current` with the
+manual run as its newest, and the archive `not_assessed/not_read` without `--archive`.
+
+**What was left behind, deliberately:** that folder on the claim, for the operator to delete once satisfied.
+Nothing else — the Job, its pod and the Secret were deleted by the run, in that order, and `delete-job` waits
+for the pod before the app is scaled back up.
+
+**Residual risk, unchanged:** a nightly backup can still start inside that 30-second window; its copy would fail
+its own integrity checks rather than upload a bad archive, but the night's run would be missing.
+
+**Not exercised:** a restore whose content differs *by design* (write, then restore an older archive and see the
+write gone), another instance's archive, MongoDB, and any failure path live — the offline suite covers each undo.
+
 ## The backup image's first live night: a start-up transient, and the retry that fixes it (27 October 2026)
 
 The Go backup image (`src-caf51b4f61fadd4a`, 48.1 MB) was rolled out by `make flux-reconcile` at `08:38Z`: the

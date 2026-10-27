@@ -1425,9 +1425,16 @@ findings and seven nits; all are fixed, and five of them are behaviour rather th
   backup observation's selector **excludes the restore pod** (`!platform.swhurl.com/restore`), which otherwise
   would be read as a backup run and make the instance's protection look broken.
 
-**What it deliberately does not do:** run live (the next act), restore a content change, restore another
-instance's archive, choose a point in time, restore MongoDB, retain or prune `before-restore-<UTC>/`, or hold a
-credential of its own. **Residual risks, stated:** a pod killed between the tool's renames can leave a
+**Live, 27 October 2026.** `swhurl-try-10` staging was restored over its newest archive
+(`sqlite-20261027T085907Z.db.age`, 12h8m old, 2 tables) in **30 seconds**: every step `done`, the Job complete
+with `[OK] Restored the archive into /data/app.db (2 tables, integrity ok); the replaced files are in
+/data/before-restore-20261027T210953Z`, the app back at one replica with its release resumed and observed
+available. The bucket was read with the operator's own credentials, the pod held only a presigned read of that
+one object, and the Secret that carried it was deleted by the run. [Evidence](current-state.md#the-first-restore-v2-performs-swhurl-try-10-staging-newest-archive-over-itself-27-october-2026).
+
+**What it deliberately does not do:** restore a content change by design, restore another instance's archive,
+choose a point in time, restore MongoDB, retain or prune `before-restore-<UTC>/`, or hold a credential of its
+own. **Residual risks, stated:** a pod killed between the tool's renames can leave a
 `.restore` file and a `before-restore-<UTC>/` holding the live database; a run killed by a signal that does not
 unwind leaves its Job and Secret for the next run's preflight; and a scheduled backup can still start during
 the swap window — its copy fails its own integrity checks rather than uploading a bad archive, but that

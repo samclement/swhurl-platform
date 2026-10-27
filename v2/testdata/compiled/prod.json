@@ -5,7 +5,7 @@
   "inputs": {
     "release": "rel-sha256:88aa6d1f40771e7b355c7adc8a48eed0c467fc0d171ab9f26ac43454e280b2b7",
     "instance": "inst-sha256:b85c9d14a1af2dbeb654f5e977550768daf6b1686c686eea34bfc284ad88240b",
-    "profile": "prof-sha256:e94c3d6965183bd4e59d865c11c113cf8a3530e313cdd84cf573fa9ce74eaf47",
+    "profile": "prof-sha256:ec3cb7018ad55ddbf8812e39fa6379791826a4835d0a18edc240c71843c07ca2",
     "calls": ""
   },
   "files": [

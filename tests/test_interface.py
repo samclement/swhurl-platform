@@ -242,7 +242,7 @@ class InterfaceTests(unittest.TestCase):
         # one: no other scenario renders a backup job, and nothing else in the payload changed.
         expected = {
             ('web', False): '4464c72b9ec7e36081511be14e4a1d99531422c7f8d3524e5bb8aff6947448ff',
-            ('web', True): 'a0b964e12b4605edf305ae19d606b6e05c09dbf2fdb01688b0e7a64c25ee07f6',
+            ('web', True): 'eb996da38ea87e3cdccc8023fa34ac16903a6b77585e11acd27956ae2e9f39a2',
             ('worker', False): '9dac7f1aea85e32d306295ba0d5571710d6e295cebec0696452c21ef46c0c860',
             ('worker', True): 'ae588cb93769a110cdc004b0b9c6a433b8f91a1ce1765bf2006b33cc2002cb43',
             ('job', False): '4e03395306aef0aa605789439b32b2190a9a649e8e51317afc5f95b63c357978',

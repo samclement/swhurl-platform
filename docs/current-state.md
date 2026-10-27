@@ -50,8 +50,10 @@ digest. The fix: the copy is staged **beside the database** (`/data/app.db.resto
 inside the claim's own filesystem, as the operator's procedure does — a test pins the staging path, and the
 live re-run is below.
 
-**Not exercised:** the nightly schedule itself (the next 03:30/03:58 runs are on the fixed image), and the
-fixed restore (below).
+**What it proves:** the Go restore command works in the cluster with no standing bucket credential (a presigned
+read for one object), a key Secret that exists only for the restore, the app stopped and resumed, and v2's own
+observation of the result. **Not exercised:** a restore that changes content (rows written after the archive),
+restoring another instance, and the nightly schedule's own run on the fixed image.
 
 ## The first restore plan for a v2-owned instance: `swhurl-try-10` staging (26 October 2026)
 

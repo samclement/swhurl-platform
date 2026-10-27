@@ -293,9 +293,10 @@ func TestBackupTargetOfReadsTheCompiledCronJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := observe.BackupTarget{
-		CronJob:  observe.Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "hello-staging", Name: "hello-backup"},
-		Pods:     observe.Ref{APIVersion: "v1", Kind: "Pod", Namespace: "hello-staging"},
-		Selector: "app=hello,platform.swhurl.com/backup=true",
+		CronJob: observe.Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "hello-staging", Name: "hello-backup"},
+		Pods:    observe.Ref{APIVersion: "v1", Kind: "Pod", Namespace: "hello-staging"},
+		// The run's own labels, without the instance's restore pods.
+		Selector: "app=hello,platform.swhurl.com/backup=true,!platform.swhurl.com/restore",
 		Schedule: "35 3 * * *",
 	}
 	if protected != want {

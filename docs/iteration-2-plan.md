@@ -1337,6 +1337,102 @@ untouched — and the MongoDB job with a stand-in `mongodump` and a facts seam, 
 `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. The
 binary is 19.6 MB static (10.7 MB gzipped). Offline only.
 
+#### The restore v2 performs (option 2a, offline half — 27 October 2026)
+
+**The definition.** `swhurl-v2 restore` keeps its plan as the default: without a flag it reads, decides and
+writes `v2-restore`, and changes nothing. With `--confirm APPLICATION/ENVIRONMENT` it **performs** that plan:
+v2 suspends the release, scales the app to zero, waits for its pods to go, creates a Secret holding the age
+identity and a presigned read URL for that one archive, creates a Job from the backup image that runs
+`restore-job-sqlite`, waits for it, reads its log, deletes the Job and the Secret, scales the app back, resumes
+the release, and waits for the app to be available. It is the first use of `adapters/kube.Writer`, and the
+first thing v2 does *to* a cluster.
+
+**Five decisions, all as the brief recommended (approved 27 October 2026).**
+
+1. **The presigned read lives in `adapters/s3`** as `Reader.PresignURL(ctx, query, key, ttl)`: query-string
+   SigV4, the same canonicalisation and signing key as a signed read, refused for a key outside the instance's
+   prefix and for an expiry outside SigV4's own seven-day ceiling (the CLI defaults to 1h). It is proved by
+   AWS's published presigned-GET vector — canonical query, scope and signature `aeeed9bb…` — beside the
+   header-signing vector, so a wrong canonicalisation fails without a bucket. The command supplies the
+   operator's environment credentials and nothing else: a restore pod holds no standing bucket credential.
+2. **The URL goes in the Secret**, not the Job document: the Job reads it with a `secretKeyRef`, so a copied
+   Job, a log line or the report cannot carry it. The Secret holds two keys — the age identity at `age.key`
+   (mounted at `/keys`) and the read URL at `archive-url` — and is deleted by the same run that created it.
+3. **The Job is named `<app>-restore-<UTC second>`**, bounded to the cluster's 63 characters. Two runs of one
+   instance differ, so a run interrupted by a signal is still findable by name, and there is no
+   delete-before-create step that could remove a running restore's evidence.
+4. **The pod reuses the instance's backup policy** by carrying `platform.swhurl.com/backup=true`: no new policy
+   object, the same rules (no ingress, DNS and the instance's proxy port only). A second label,
+   `platform.swhurl.com/restore=<job>`, is how v2 finds the run's own pod to read its log — v2's own label, not
+   one the cluster generates.
+5. **`--confirm` is the gate, and the plan stays the default.** A confirmation for another instance, a plan
+   that is not `ready`, and an identity that is not an age key are refusals (exit 2) before anything is
+   presigned or changed.
+
+**Where the Job's document comes from.** `kernel.RenderRestore(spec, release, profile, egress, job)` sits beside
+`backupCronJob` and shares its pod shape — a helper now builds both, so the release's uid, the instance's own
+claim, the scratch and `/tmp` emptyDirs, the proxy environment and the hardening cannot drift apart. Its facts
+are the instance's (namespace, application, database path, claim, port), the release's uid, the profile's
+backup image and proxy address, and the restore's own facts — the archive, both checksums, the table count and
+the two credentials. It refuses a release that is not `sqlite`, a profile with no backup block, an instance
+with no allocation, and a restore fact that is not one (empty, a name that is not a Kubernetes name, an
+identity that is not an age key, a URL that is not https, a checksum that is not SHA-256, `tables < 1`). The
+two objects are **not compiled intent**: no `Claim`, no `ResourceSet`, never written under `v2-apps/` or Git,
+so CI's regenerate-and-diff and `TestOwnedInstancesRecompileFromGit` are untouched.
+
+**Where the sequence lives.** `orchestration.Restore` (layer 2), in three acts — stop, restore, put back — with
+every wait bounded and every step recorded. The undo is explicit rather than a stack: the run tracks whether it
+suspended, scaled, created the Secret and created the Job, and a failure unwinds in reverse order (Job,
+Secret, replicas, release), attempting each undo even when an earlier one failed. **Suspend precedes scaling**
+so Flux cannot start an upgrade or revert the scale; **resume follows the scale-back** so the app is not
+restarted while its database is being replaced. The use case takes a `Reader` and a `Writer` as one `Cluster`
+port (a restore that could not read the Deployment it scales would have to guess), plus `Sleep` and `Now` from
+the command, so its tests run on a fake clock. A `Refusal` means nothing was changed; a failure after the first
+step is never one, and a failed undo is recorded as such — that is what leaves an app stopped, and the report
+names it.
+
+**What restore reports.** `v2-restore` rises to version 2: the plan block unchanged, plus `action` (state
+`restored`/`failed`/`not_attempted`, the failing step, start and finish, and every step with its outcome), the
+`job`'s own state and its log — read whatever the Job's answer was, with `not_read` and a reason when it could
+not be — and an `app` block (replicas, suspended, available, state) **beside** `action`, because "the data was
+replaced" and "the app runs" are different facts. Exit 0 means restored *and* the app is back; 1 is an
+attempted restore that did not complete (the document is still written); 2 is a refusal, cluster untouched. A
+failed `restore-job-sqlite` still leaves the live database untouched — the tool's own five refusal tests prove
+that — and `backoffLimit: 0` stops a retry on top of a database it may already have moved.
+
+**Two deliberate semantic changes.** The plan now requires the metadata's **plaintext** checksum as well as the
+archive's (`metadata_has_no_plain_checksum`), because the tool refuses to run without it: an archive whose
+record lacks it is `incomplete`, not `ready` — the live try-10 record has both. And a create through
+`adapters/kube.Writer` now takes only a kind the write table states (`Secret`, `Job`), while a patch or delete
+still takes any kind the reader can name: readability is not permission to create.
+
+**After the review (27 October 2026).** The independent read-only review found two blockers, four should-fix
+findings and seven nits; all are fixed, and five of them are behaviour rather than wording:
+
+- A Job delete sends **background propagation** and the run **waits until the restore pod is gone** before
+  scaling the app back up. If that cannot be confirmed, the undo deletes the Secret and stops: the app stays at
+  zero replicas with its release suspended, and the report says `stopped` — restarting an app over a pod that
+  may still hold the claim is worse than leaving it stopped for the operator.
+- The **age key file is read as `age-keygen` writes it** — comment lines, then one `AGE-SECRET-KEY-1` line —
+  because the default `./age.agekey` is that shape. The command refuses a file with no key or with two.
+- A wait **retries three consecutive failed reads** before failing its step: one refused request during a
+  fifteen-minute wait is not evidence that the work stopped.
+- The run **records its intent before each request**, so a create that timed out but was applied is still
+  cleaned up, and the **undo runs on its own bounded context** so a run that has used its own can still put the
+  app back. An interrupt unwinds the same way.
+- The log is read **even when the Job's wait failed**, and a **restore of an app already at zero replicas
+  reports `stopped`** rather than `running`. `--url-ttl` has a floor of the restore's own window, and the
+  backup observation's selector **excludes the restore pod** (`!platform.swhurl.com/restore`), which otherwise
+  would be read as a backup run and make the instance's protection look broken.
+
+**What it deliberately does not do:** run live (the next act), restore a content change, restore another
+instance's archive, choose a point in time, restore MongoDB, retain or prune `before-restore-<UTC>/`, or hold a
+credential of its own. **Residual risks, stated:** a pod killed between the tool's renames can leave a
+`.restore` file and a `before-restore-<UTC>/` holding the live database; a run killed by a signal that does not
+unwind leaves its Job and Secret for the next run's preflight; and a scheduled backup can still start during
+the swap window — its copy fails its own integrity checks rather than uploading a bad archive, but that
+night's run would be missing. Suspending the backup CronJob for the window is the next tightening.
+
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 
 The inventory above makes the choice concrete. Of the 17 instances in this repository, **no instance is both private and a web app**: every web instance is `authenticated-web`, and every private instance is a `worker` or `job`, which v2 does not render at all. The lightest web instance is `swhurl-try-11` (no database, no events, two calls); `demo-orders` — the natural candidate — needs storage (SQLite), events, calls, routes and a backup job.
@@ -1372,7 +1468,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |
 | Telemetry: the OTLP endpoint and its variables | Not generated | Phase 7 |
 | SQLite storage: the volume, its path and the single writer | The [storage slice](#sqlite-storage-the-volume-implemented-and-proved-live-25-october-2026) renders a retained 1 GiB-class volume, `DATABASE_PATH`, `Recreate`, and a namespace Flux will not prune, and now a claim that already exists can be [adopted](#a-stateful-handover-an-allocation-outlives-the-records-and-a-volume-can-be-adopted-implemented-26-october-2026) instead; proved live including restart and removal survival | Done for the volume; growth is refused |
-| SQLite backup and restore | The backup job is rendered, its job and its newest archive are [observed live](#the-backup-observation-implemented-offline-26-october-2026), and a [restore is planned and verified](#the-restore-plan-implemented-26-october-2026) — the archive, its metadata, the instance's facts and the v1 command. **v2 does not perform a restore**: it has no write path and no age decryption | Option 2: v2 performs it, which needs a write adapter and a decision about age decryption |
+| SQLite backup and restore | The backup job is rendered, its job and its newest archive are [observed live](#the-backup-observation-implemented-offline-26-october-2026), a [restore is planned and verified](#the-restore-plan-implemented-26-october-2026), and **v2 now performs the restore**: the age-key and read-URL Secret, the Job, the sequence with its undo, and the report — [offline half implemented](#the-restore-v2-performs-option-2a-offline-half--27-october-2026), **not yet run live**. A content-changing restore, another instance's archive and a point in time remain | A live restore of `swhurl-try-10` staging over its newest archive, then a content-changing one |
 | Alerts | Not generated | Phase 7, per app |
 | Resources from the image's minimums; a per-instance CPU choice | CPU from the profile; one memory value for request and limit | When an app needs more |
 | Quota headroom for an instance's other pods | The backup pod is counted (`replicas + 1` for a rolling update, plus one for the backup, with the job's own requests); no other second workload exists | The next feature that adds pods to an instance's namespace |

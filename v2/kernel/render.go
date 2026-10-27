@@ -497,29 +497,9 @@ func backupSecret(spec HTTPInstance) manifest {
 // reads is the data the app wrote.
 func backupCronJob(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) manifest {
 	name := backupName(spec)
-	container := manifest{
-		"name": "backup", "image": profile.Backup.Image + "@" + profile.Backup.Digest, "args": []any{"backup-job-sqlite"},
-		"env":     backupEnv(spec, profile),
-		"envFrom": []any{manifest{"secretRef": manifest{"name": name}}},
-		"resources": manifest{"requests": manifest{"cpu": fmt.Sprintf("%dm", backupCPURequestMilli), "memory": fmt.Sprintf("%dMi", backupMemoryMiB)},
-			"limits": manifest{"memory": fmt.Sprintf("%dMi", backupLimitMiB)}},
-		"securityContext": manifest{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true,
-			"capabilities": manifest{"drop": []any{"ALL"}}},
-		"volumeMounts": []any{manifest{"name": "data", "mountPath": DataMount},
-			manifest{"name": "scratch", "mountPath": "/scratch"}, manifest{"name": "tmp", "mountPath": "/tmp"}},
-	}
-	uid := http.UID
-	pod := manifest{
-		"metadata": manifest{"labels": manifest{backupLabel: "true"}},
-		"spec": manifest{"restartPolicy": "Never", "automountServiceAccountToken": false,
-			"securityContext": manifest{"runAsNonRoot": true, "runAsUser": uid, "runAsGroup": uid, "fsGroup": uid,
-				"seccompProfile": manifest{"type": "RuntimeDefault"}},
-			"containers": []any{container},
-			// The app's own claim: one node, so a second pod on it is admitted while the app runs.
-			"volumes": []any{
-				manifest{"name": "data", "persistentVolumeClaim": manifest{"claimName": claimName(spec)}},
-				manifest{"name": "scratch", "emptyDir": manifest{"sizeLimit": backupScratch}},
-				manifest{"name": "tmp", "emptyDir": manifest{}}}}}
+	container := jobContainer("backup", profile.Backup.Image+"@"+profile.Backup.Digest, []any{"backup-job-sqlite"},
+		backupEnv(spec, profile), []any{manifest{"secretRef": manifest{"name": name}}}, jobMounts())
+	pod := jobPod(http.UID, claimName(spec), manifest{backupLabel: "true"}, container, nil)
 	return manifest{"apiVersion": "batch/v1", "kind": "CronJob",
 		"metadata": manifest{"name": name, "namespace": namespaceName(spec), "labels": manifest{backupLabel: "true"}},
 		"spec": manifest{"schedule": backupSchedule(namespaceName(spec)), "timeZone": "Etc/UTC",
@@ -529,18 +509,65 @@ func backupCronJob(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile
 				"template": pod}}}}
 }
 
-// backupEnv is what the job reads: how to reach the proxy, where to publish, and which database file to
-// copy. $(HOST_IP) is the kubelet's own expansion of the field reference above it, not Flux's.
-func backupEnv(spec HTTPInstance, profile PlatformProfile) []any {
-	env := []any{manifest{"name": "HOST_IP", "valueFrom": manifest{"fieldRef": manifest{"fieldPath": "status.hostIP"}}}}
-	if spec.Egress != nil {
-		address := fmt.Sprintf("http://%s:%d", profile.Egress.Address, spec.Egress.Port)
-		env = append(env,
-			manifest{"name": "HTTP_PROXY", "value": address},
-			manifest{"name": "HTTPS_PROXY", "value": address},
-			manifest{"name": "NO_PROXY", "value": "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)"})
+// jobPod is the shape every out-of-app job pod has: restartPolicy Never, no service-account token, the
+// release's own user and group, the instance's own claim, and the scratch and /tmp emptyDirs the backup
+// image writes into. The backup CronJob and the restore Job share it, so hardening one hardens both.
+func jobPod(uid int32, claim string, labels, container manifest, extra []any) manifest {
+	return manifest{
+		"metadata": manifest{"labels": labels},
+		"spec": manifest{"restartPolicy": "Never", "automountServiceAccountToken": false,
+			"securityContext": manifest{"runAsNonRoot": true, "runAsUser": uid, "runAsGroup": uid, "fsGroup": uid,
+				"seccompProfile": manifest{"type": "RuntimeDefault"}},
+			"containers": []any{container},
+			// The app's own claim: one node, so a second pod on it is admitted while the app runs.
+			"volumes": append([]any{
+				manifest{"name": "data", "persistentVolumeClaim": manifest{"claimName": claim}},
+				manifest{"name": "scratch", "emptyDir": manifest{"sizeLimit": backupScratch}},
+				manifest{"name": "tmp", "emptyDir": manifest{}}}, extra...)}}
+}
+
+// jobMounts is where every job pod mounts the claim and its scratch space, plus whatever it alone needs.
+func jobMounts(extra ...any) []any {
+	mounts := []any{manifest{"name": "data", "mountPath": DataMount},
+		manifest{"name": "scratch", "mountPath": "/scratch"}, manifest{"name": "tmp", "mountPath": "/tmp"}}
+	return append(mounts, extra...)
+}
+
+// jobContainer is one job's container: the image by digest, its command, and the hardening every job pod
+// carries, so the two jobs cannot drift apart.
+func jobContainer(name, image string, args, env, from, mounts []any) manifest {
+	container := manifest{
+		"name": name, "image": image, "args": args, "env": env,
+		"resources": manifest{"requests": manifest{"cpu": fmt.Sprintf("%dm", backupCPURequestMilli),
+			"memory": fmt.Sprintf("%dMi", backupMemoryMiB)}, "limits": manifest{"memory": fmt.Sprintf("%dMi", backupLimitMiB)}},
+		"securityContext": manifest{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true,
+			"capabilities": manifest{"drop": []any{"ALL"}}},
+		"volumeMounts": mounts}
+	if len(from) > 0 {
+		container["envFrom"] = from
 	}
+	return container
+}
+
+// proxyEnv is how a job pod reaches the instance's own proxy port: the kubelet's own HOST_IP expansion and
+// the proxy variables, when the instance has an allocation. $(HOST_IP) is the kubelet's expansion of the
+// field reference above it, not Flux's.
+func proxyEnv(spec HTTPInstance, profile PlatformProfile) []any {
+	env := []any{manifest{"name": "HOST_IP", "valueFrom": manifest{"fieldRef": manifest{"fieldPath": "status.hostIP"}}}}
+	if spec.Egress == nil {
+		return env
+	}
+	address := fmt.Sprintf("http://%s:%d", profile.Egress.Address, spec.Egress.Port)
 	return append(env,
+		manifest{"name": "HTTP_PROXY", "value": address},
+		manifest{"name": "HTTPS_PROXY", "value": address},
+		manifest{"name": "NO_PROXY", "value": "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)"})
+}
+
+// backupEnv is what the job reads: how to reach the proxy, where to publish, and which database file to
+// copy.
+func backupEnv(spec HTTPInstance, profile PlatformProfile) []any {
+	return append(proxyEnv(spec, profile),
 		manifest{"name": "AGE_RECIPIENT", "value": profile.Backup.Recipient},
 		manifest{"name": "BACKUP_S3_URI", "value": profile.Backup.S3URI + namespaceName(spec) + "/"},
 		manifest{"name": "BACKUP_SOURCE", "value": namespaceName(spec) + "/" + spec.Application},

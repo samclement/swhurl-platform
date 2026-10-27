@@ -38,7 +38,8 @@ const usage = `usage:
       --source-repository OWNER/NAME --source-commit COMMIT --out DIR [--calls CALLS.json] [--egress EGRESS.json]
   swhurl-v2 restore --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] \
-      [--max-age DURATION] [--from KEY] [--region REGION]
+      [--max-age DURATION] [--from KEY] [--region REGION] \
+      [--confirm APPLICATION/ENVIRONMENT [--age-key-file FILE] [--url-ttl DURATION]]
 
 Input files are never overwritten. Without --out the compilation document goes to stdout and nothing
 is written. With --out every compiled file is written under DIR, one "written PATH" or
@@ -90,13 +91,19 @@ every legacy fact the pair cannot carry. It deletes nothing: removing v1's recor
 the handover step, and the unit's registration stays a reviewed edit.
 
 restore writes a v2-restore plan for one instance: the archive it would be restored from (the newest, or
---from KEY), what the bucket records beside it (checksum, table count, source instance), the instance's own
-claim, path and user, the observation it was decided from, and the v1 command that performs the restore.
-It reads only, and restores nothing. Its state is ready, stale (older than --max-age), incomplete (no
-metadata, or metadata that does not verify), no_archive or unavailable.
+--from KEY), what the bucket records beside it (both checksums, table count, source instance), the
+instance's own claim, path and user, the observation it was decided from, and the v1 command that performs
+the restore. It reads only, and restores nothing. Its state is ready, stale (older than --max-age),
+incomplete (no metadata, or metadata that does not verify), no_archive or unavailable. With --confirm
+APPLICATION/ENVIRONMENT it performs the restore instead: v2 suspends the release, stops the app, runs the
+backup image's restore job with a presigned read of that one archive and the age identity from
+--age-key-file (default ./age.agekey), then scales the app back and resumes the release. The document then
+carries what each step did, the job's log as evidence, and the app's own state; the read URL is valid for
+--url-ttl (default 1h) and travels in a Secret this command creates and deletes.
 
-Exit 0: success/no-op (for observe: a report was produced, whatever its verdict); 2: usage/validation/
-refusal; 1: file or output I/O failure.
+Exit 0: success/no-op (for observe: a report was produced, whatever its verdict; for restore --confirm: the
+data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
+started but did not complete, or file and output I/O failure.
 `
 
 func main() {
@@ -189,6 +196,9 @@ type request struct {
 	app, settings, committed, snapshot, callFile       string
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
+	confirm, ageKey                                    string
+	urlTTL                                             time.Duration
+	urlTTLSet                                          bool
 	outFlag                                            *once
 }
 
@@ -266,6 +276,10 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 	case "restore":
 		r.registerLive(flags)
 		flags.Var(&once{value: &r.from}, "from", "the archive to restore (default: the newest)")
+		flags.Var(&once{value: &r.confirm}, "confirm", "APPLICATION/ENVIRONMENT: perform the restore")
+		flags.Var(&once{value: &r.ageKey}, "age-key-file", "the age identity that decrypts the archive (default ./age.agekey)")
+		flags.Var(&onceDuration{value: &r.urlTTL, set: &r.urlTTLSet}, "url-ttl",
+			"how long the pod's read URL stays valid (default 1h)")
 	case "preview":
 		flags.Var(&once{value: &r.app}, "app", "legacy app record")
 		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")
@@ -410,6 +424,26 @@ func (o *once) Set(value string) error {
 		return errors.New("flag repeated")
 	}
 	o.set, *o.value = true, value
+	return nil
+}
+
+// onceDuration is a duration flag that may be given at most once, like every other flag.
+type onceDuration struct {
+	value *time.Duration
+	set   *bool
+}
+
+func (o *onceDuration) String() string { return "" }
+
+func (o *onceDuration) Set(value string) error {
+	if *o.set {
+		return errors.New("flag repeated")
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return err
+	}
+	*o.set, *o.value = true, parsed
 	return nil
 }
 

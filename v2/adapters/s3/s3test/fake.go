@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/observe"
@@ -27,6 +28,7 @@ type Fake struct {
 	Scenario Scenario
 	Lists    []observe.ArchiveQuery
 	Gets     []string
+	Presigns []string
 	Refuse   error // returned instead of a listing, after the call is recorded
 }
 
@@ -48,6 +50,22 @@ func (f *Fake) Get(_ context.Context, query observe.ArchiveQuery, key string) ([
 		return nil, &s3.Error{Code: "not_found", Subject: "object", Reason: observe.ReasonNotFound}
 	}
 	return nil, &s3.Error{Code: s3.RefusedRequest, Subject: "key", Reason: "not_under_the_prefix"}
+}
+
+// PresignURL answers a read URL for the scenario's own key, and refuses exactly what the adapter refuses: a
+// key outside the prefix and an expiry outside SigV4's range.
+func (f *Fake) PresignURL(_ context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error) {
+	f.Presigns = append(f.Presigns, key)
+	if f.Refuse != nil {
+		return "", f.Refuse
+	}
+	if query.Bucket == "" || key == "" || !strings.HasPrefix(key, query.Prefix) {
+		return "", &s3.Error{Code: s3.RefusedRequest, Subject: "key", Reason: "not_under_the_prefix"}
+	}
+	if ttl <= 0 || ttl > s3.MaxPresignTTL {
+		return "", &s3.Error{Code: s3.RefusedRequest, Subject: "ttl", Reason: "out_of_range"}
+	}
+	return "https://" + query.Bucket + ".s3.us-east-1.amazonaws.com/" + key + "?X-Amz-Signature=fake", nil
 }
 
 // List answers from the scenario, and refuses what the scenario does not name.
@@ -80,6 +98,7 @@ func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) s
 	refusedIsUnavailable(t, reader, scenario)
 	refusesWhatItCannotAsk(t, reader, scenario)
 	readsOneObject(t, reader, scenario)
+	presignsOneObject(t, reader, scenario)
 }
 
 // readsOneObject: one object comes back with its bytes, its absence is the not_found code rather than an
@@ -103,6 +122,32 @@ func readsOneObject(t *testing.T, reader s3.Reader, scenario Scenario) {
 	}
 	if _, err := reader.Get(context.Background(), scenario.Query, "elsewhere/key"); err == nil {
 		t.Fatal("a key outside the prefix was read")
+	}
+}
+
+// presignsOneObject: a presigned read is an https URL for that one key, and one for a key outside the
+// instance's prefix, or an expiry outside SigV4's range, is refused rather than shortened or clamped.
+func presignsOneObject(t *testing.T, reader s3.Reader, scenario Scenario) {
+	t.Helper()
+	if scenario.Key == "" {
+		return
+	}
+	address, err := reader.PresignURL(context.Background(), scenario.Query, scenario.Key, time.Hour)
+	if err != nil || !strings.HasPrefix(address, "https://") || !strings.Contains(address, scenario.Key) {
+		t.Fatalf("presigned read %q, %v", address, err)
+	}
+	for _, call := range []struct {
+		name string
+		key  string
+		ttl  time.Duration
+	}{
+		{"another prefix", "elsewhere/key", time.Hour},
+		{"no expiry", scenario.Key, 0},
+		{"too long", scenario.Key, s3.MaxPresignTTL + time.Hour},
+	} {
+		if _, err := reader.PresignURL(context.Background(), scenario.Query, call.key, call.ttl); err == nil {
+			t.Fatalf("%s was presigned", call.name)
+		}
 	}
 }
 

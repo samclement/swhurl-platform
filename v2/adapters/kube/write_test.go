@@ -77,11 +77,24 @@ func TestWriterChangesObjects(t *testing.T) {
 	if err := w.Create(context.Background(), key, []byte(`{"apiVersion":"v1","kind":"Secret"}`)); err != nil {
 		t.Fatal(err)
 	}
+	// A Job is creatable too, and only the two table kinds are: a Deployment can be patched and deleted
+	// because it can be named, but never created.
+	restore, err := kube.WritableRefOf("batch", "Job", "hello-staging", "restore-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Create(context.Background(), restore, []byte(`{"apiVersion":"batch/v1","kind":"Job"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Create(context.Background(), replicas, []byte(`{"apiVersion":"apps/v1","kind":"Deployment"}`)); err == nil {
+		t.Fatal("a Deployment was created through the writer")
+	}
 	want := []struct{ method, path string }{
 		{http.MethodPatch, "/apis/batch/v1/namespaces/hello-staging/jobs/restore"},
 		{http.MethodPatch, "/apis/apps/v1/namespaces/hello-staging/deployments/hello"},
 		{http.MethodDelete, "/apis/batch/v1/namespaces/hello-staging/jobs/restore"},
 		{http.MethodPost, "/api/v1/namespaces/hello-staging/secrets"},
+		{http.MethodPost, "/apis/batch/v1/namespaces/hello-staging/jobs"},
 	}
 	if len(server.requests) != len(want) {
 		t.Fatalf("%d requests", len(server.requests))
@@ -93,6 +106,11 @@ func TestWriterChangesObjects(t *testing.T) {
 		if got := server.requests[i].Header.Get("Authorization"); got != "Bearer token" {
 			t.Errorf("request %d authorization %q", i, got)
 		}
+	}
+	// A delete takes the Job's pod with it: the API's own default would orphan it, and a restore would then
+	// put the app back over a pod that still holds the claim.
+	if got := server.requests[2].URL.Query().Get("propagationPolicy"); got != "Background" {
+		t.Fatalf("the delete's propagation is %q", got)
 	}
 	if server.requests[0].Header.Get("Content-Type") != "application/merge-patch+json" ||
 		server.bodies[0] != `{"spec":{"suspend":true}}` {
@@ -128,6 +146,11 @@ func TestWriterRefusals(t *testing.T) {
 	}
 	if query := logs.requests[0].URL.Query().Get("tailLines"); query != "50" {
 		t.Fatalf("tailLines %q", query)
+	}
+	// The restore's Job is a kind the write table states, so a create can name it; a Deployment is readable but
+	// not creatable.
+	if _, err := kube.WritableRefOf("batch", "Job", "hello-staging", "restore-1"); err != nil {
+		t.Fatalf("the restore's Job is not writable: %v", err)
 	}
 	// A kind the write table does not state cannot be created, and a Secret is still not readable.
 	if _, err := kube.WritableRefOf("apps", "Deployment", "hello-staging", "hello"); err == nil {

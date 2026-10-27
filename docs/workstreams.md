@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Offline Go v2 | main | in progress | option 2a started: `adapters/kube.Writer` (patch, create, delete, pod log) is v2's first write path, tested and unused; the backup image is Go (48.1 MB against 134 MB) and every rendered job names it, in Git but not pushed, 27 October 2026 | 2a's restore Job and sequence in v2: the presigned read URL, the write path's use, and try-10's restore through v2 | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/` |
+| Offline Go v2 | main | in progress | 2a's offline half is in: `restore --confirm` performs the sequence — suspend, stop, a Secret holding the age identity and a presigned read URL for one archive, the Job from the backup image, its log, scale back, resume — and every failure unwinds the app; `adapters/kube.Writer` has its first caller; the backup image is Go (48.1 MB against 134 MB) and every rendered job pins it, 27 October 2026 | 2a's live half: try-10 restoring its newest archive through v2, then a content-changing restore | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/` |
 | Live platform | main | approved | the 24 open items in the plan index | M14, then B4b (records-only removal) | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

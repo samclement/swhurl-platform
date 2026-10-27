@@ -19,7 +19,8 @@ func current(t *testing.T) observe.ArchiveReport {
 // metadata is what the backup job records beside the archive.
 func metadata(t *testing.T) *observe.ArchiveMetadata {
 	t.Helper()
-	return &observe.ArchiveMetadata{SHA256: strings.Repeat("a", 64), Tables: 2, Source: "hello-staging/hello"}
+	return &observe.ArchiveMetadata{SHA256: strings.Repeat("a", 64), PlainSHA256: strings.Repeat("b", 64),
+		Tables: 2, Source: "hello-staging/hello"}
 }
 
 // A current archive with metadata that names this instance, a checksum and a table count is ready.
@@ -64,13 +65,18 @@ func TestRestoreStates(t *testing.T) {
 		{"metadata unreachable", observe.RestoreInput{Namespace: "hello-staging", Application: "hello", Archive: current(t),
 			Failure: observe.ReasonMetadataDown}, observe.RestoreUnavailable, observe.ReasonMetadataDown},
 		{"another instance", observe.RestoreInput{Namespace: "hello-staging", Application: "hello", Archive: current(t),
-			Metadata: &observe.ArchiveMetadata{SHA256: strings.Repeat("a", 64), Tables: 2, Source: "other-staging/other"}},
+			Metadata: &observe.ArchiveMetadata{SHA256: strings.Repeat("a", 64), PlainSHA256: strings.Repeat("b", 64),
+				Tables: 2, Source: "other-staging/other"}},
 			observe.RestoreIncomplete, observe.ReasonAnotherInstance},
 		{"no checksum", observe.RestoreInput{Namespace: "hello-staging", Application: "hello", Archive: current(t),
 			Metadata: &observe.ArchiveMetadata{Tables: 2, Source: "hello-staging/hello"}},
 			observe.RestoreIncomplete, observe.ReasonNoChecksum},
+		{"no plaintext checksum", observe.RestoreInput{Namespace: "hello-staging", Application: "hello", Archive: current(t),
+			Metadata: &observe.ArchiveMetadata{SHA256: strings.Repeat("a", 64), Tables: 2,
+				Source: "hello-staging/hello"}}, observe.RestoreIncomplete, observe.ReasonNoPlainChecksum},
 		{"no tables", observe.RestoreInput{Namespace: "hello-staging", Application: "hello", Archive: current(t),
-			Metadata: &observe.ArchiveMetadata{SHA256: strings.Repeat("a", 64), Source: "hello-staging/hello"}},
+			Metadata: &observe.ArchiveMetadata{SHA256: strings.Repeat("a", 64), PlainSHA256: strings.Repeat("b", 64),
+				Source: "hello-staging/hello"}},
 			observe.RestoreIncomplete, observe.ReasonNoTables},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -117,13 +123,15 @@ func TestSelectArchiveChoosesWhatWasAsked(t *testing.T) {
 // checksum of the wrong shape is refused rather than recorded.
 func TestArchiveMetadataOf(t *testing.T) {
 	metadata, err := observe.ArchiveMetadataOf([]byte(`{"sha256":"` + strings.Repeat("b", 64) +
-		`","tables":2,"source":"hello-staging"}`))
-	if err != nil || metadata.Tables != 2 || metadata.Source != "hello-staging" {
+		`","plain_sha256":"` + strings.Repeat("c", 64) + `","tables":2,"source":"hello-staging"}`))
+	if err != nil || metadata.Tables != 2 || metadata.Source != "hello-staging" ||
+		metadata.PlainSHA256 != strings.Repeat("c", 64) {
 		t.Fatalf("metadata %+v %v", metadata, err)
 	}
-	if _, err := observe.ArchiveMetadataOf([]byte(`{"sha256":"abc","tables":2}`)); err == nil ||
-		err.Error() != "invalid: metadata.sha256: expected_a_sha256_checksum" {
-		t.Fatalf("a short checksum: %v", err)
+	for _, document := range []string{`{"sha256":"abc","tables":2}`, `{"plain_sha256":"abc","tables":2}`} {
+		if _, err := observe.ArchiveMetadataOf([]byte(document)); err == nil {
+			t.Fatalf("a short checksum was recorded: %s", document)
+		}
 	}
 	if _, err := observe.ArchiveMetadataOf([]byte("not json")); err == nil {
 		t.Fatal("a document that is not JSON was accepted")

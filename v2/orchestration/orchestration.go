@@ -75,16 +75,22 @@ func documents(inputs Inputs, application, environment string) (kernel.Connectio
 		}
 		connections = read
 	}
-	if inputs.Egress == nil {
-		return connections, nil, nil
-	}
-	allocation, err := kernel.DecodeEgressDocument(inputs.Egress)
-	if err != nil {
-		return kernel.Connections{}, nil, err
-	}
-	egress, err := allocation.EgressOf(application, environment)
+	egress, err := egressOf(inputs.Egress, application, environment)
 	if err != nil {
 		return kernel.Connections{}, nil, err
 	}
 	return connections, egress, nil
+}
+
+// egressOf reads the allocation's place for one instance. A caller with no allocation passes nil and gets
+// nil; whether an instance may be without one is the renderer's refusal, not this helper's.
+func egressOf(document []byte, application, environment string) (*kernel.Egress, error) {
+	if document == nil {
+		return nil, nil
+	}
+	allocation, err := kernel.DecodeEgressDocument(document)
+	if err != nil {
+		return nil, err
+	}
+	return allocation.EgressOf(application, environment)
 }

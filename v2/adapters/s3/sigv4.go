@@ -3,6 +3,8 @@ package s3
 import (
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 
 	"crypto/hmac"
@@ -40,6 +42,33 @@ func sign(request *http.Request, region string, credentials Credentials, now tim
 	request.Header.Set("Authorization", fmt.Sprintf(
 		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
 		credentials.AccessKey, scope, signed, hex.EncodeToString(hmacSHA256(key, stringToSign))))
+}
+
+// presignedURL is SigV4's query-string form for one GET: the same canonical request and signing key as a
+// signed header, with the scope, the expiry and the signature in the query instead. It is a credential for
+// exactly one object until it expires, so a caller hands it to the pod that needs that object and no other.
+func presignedURL(host, path, region string, credentials Credentials, ttl time.Duration, now time.Time) string {
+	date := now.UTC().Format("20060102")
+	stamp := now.UTC().Format("20060102T150405Z")
+	scope := strings.Join([]string{date, region, "s3", "aws4_request"}, "/")
+	values := url.Values{
+		"X-Amz-Algorithm":     {"AWS4-HMAC-SHA256"},
+		"X-Amz-Credential":    {credentials.AccessKey + "/" + scope},
+		"X-Amz-Date":          {stamp},
+		"X-Amz-Expires":       {strconv.FormatInt(int64(ttl/time.Second), 10)},
+		"X-Amz-SignedHeaders": {"host"},
+	}
+	if credentials.SessionToken != "" {
+		values.Set("X-Amz-Security-Token", credentials.SessionToken)
+	}
+	query := canonicalQuery(values.Encode())
+	canonicalRequest := strings.Join([]string{
+		http.MethodGet, path, query, "host:" + host + "\n", "host", "UNSIGNED-PAYLOAD",
+	}, "\n")
+	stringToSign := strings.Join([]string{"AWS4-HMAC-SHA256", stamp, scope,
+		hexSHA256([]byte(canonicalRequest))}, "\n")
+	signature := hex.EncodeToString(hmacSHA256(signingKey(credentials.SecretKey, date, region), stringToSign))
+	return "https://" + host + path + "?" + query + "&X-Amz-Signature=" + signature
 }
 
 // canonical is the request's signed header list, its canonical headers and its canonical query.

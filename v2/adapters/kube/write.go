@@ -28,11 +28,13 @@ type Writer interface {
 
 var _ Writer = (*API)(nil)
 
-// writableKinds is the table of objects v2 may create or delete. A Secret is writable here and still never
-// readable through Reader: `kinds` refuses it, so this table is not an invitation to read one.
+// writableKinds is the table of objects v2 may create. A Secret is writable here and still never readable
+// through Reader: `kinds` refuses it, so this table is not an invitation to read one. A Job is the restore's
+// transient object; patching and deleting an object the reader can already name is not limited to it.
 func writableKinds() map[pathKey]resource {
 	return map[pathKey]resource{
-		{"", "Secret"}: {"v1", "secrets", true},
+		{"", "Secret"}:   {"v1", "secrets", true},
+		{"batch", "Job"}: {"batch/v1", "jobs", true},
 	}
 }
 
@@ -59,7 +61,8 @@ func (a *API) Create(ctx context.Context, ref observe.Ref, document []byte) erro
 	return a.write(ctx, http.MethodPost, ref, document, "application/json")
 }
 
-// Delete removes one object.
+// Delete removes one object, and the objects it owns: a Job's pod goes with it, so a restore cannot put the
+// app back over a pod that still holds the claim. An object that is already gone is not an error.
 func (a *API) Delete(ctx context.Context, ref observe.Ref) error {
 	return a.write(ctx, http.MethodDelete, ref, nil, "")
 }
@@ -89,10 +92,16 @@ func (a *API) write(ctx context.Context, method string, ref observe.Ref, body []
 		return err
 	}
 	path := resource.objectPath(ref)
+	query := url.Values{}
 	if method == http.MethodPost {
 		path = resource.listPath(ref)
 	}
-	_, failure := a.exchange(ctx, method, path, nil, body, contentType)
+	if method == http.MethodDelete {
+		// Background, not the API's own default: a Job's pod must not outlive the Job that owns it, because
+		// the next thing the caller does is scale the app back up over the claim.
+		query.Set("propagationPolicy", "Background")
+	}
+	_, failure := a.exchange(ctx, method, path, query, body, contentType)
 	if failure != nil {
 		if method == http.MethodDelete && failure.Reason == observe.ReasonNotFound {
 			return nil
@@ -102,18 +111,27 @@ func (a *API) write(ctx context.Context, method string, ref observe.Ref, body []
 	return nil
 }
 
-// writableResourceOf is the resource a write names: a kind the reader knows, or one only the writer may
-// create; and a name whenever the write is not a create.
+// writableResourceOf is the resource a write names: a create takes only a kind the write table states, and
+// any other change takes a kind the reader can already name — so a caller cannot create one merely because
+// v2 can read it. Every change but a create needs the object's name.
 func (a *API) writableResourceOf(ref observe.Ref, method string) (resource, error) {
+	if method == http.MethodPost {
+		writable, ok := writableKinds()[pathKey{groupOf(ref.APIVersion), ref.Kind}]
+		if !ok || ref.Name == "" {
+			return writable, &Error{RefusedRequest, "resource", "unsupported_kind"}
+		}
+		return writable, nil
+	}
 	resource, err := resourceOf(ref)
 	if err != nil {
+		// A kind only the writer states — a Secret — can be deleted, though it is never read.
 		writable, ok := writableKinds()[pathKey{groupOf(ref.APIVersion), ref.Kind}]
 		if !ok {
 			return resource, err
 		}
 		resource = writable
 	}
-	if method != http.MethodPost && ref.Name == "" {
+	if ref.Name == "" {
 		return resource, &Error{RefusedRequest, "resource", "name_required"}
 	}
 	return resource, nil

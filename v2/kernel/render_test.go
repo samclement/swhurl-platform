@@ -3,6 +3,7 @@ package kernel
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -302,6 +303,64 @@ func documentOf(t *testing.T, resources ResourceSet, name string) map[string]any
 	}
 	t.Fatalf("no %s among the rendered files", name)
 	return nil
+}
+
+// A callee's pod carries the digest of the auth material it verifies with: the platform's issuer and keys and
+// its own callers. Environment variables are fixed at container start, so this annotation is the only thing
+// that rolls the Deployment when a key rotates or a caller is added.
+func TestCalleePodCarriesTheAuthRevision(t *testing.T) {
+	_, workload := previewFacts()
+	callee := HTTPInstance{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
+		Exposure: "authenticated-web", Callers: []string{"billing", "hello"}}
+	profile := profile(t)
+	revision := func(instance HTTPInstance, p PlatformProfile) any {
+		t.Helper()
+		rendered, err := RenderHTTP(instance, workload, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		main := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)["controllers"].(map[string]any)["main"].(map[string]any)
+		pod, given := main["pod"].(map[string]any)
+		if !given {
+			return nil
+		}
+		return pod["annotations"].(map[string]any)[authRevision]
+	}
+
+	first := revision(callee, profile)
+	if first == nil || !strings.HasPrefix(first.(string), "auth-sha256:") {
+		t.Fatalf("the callee's auth revision is %v", first)
+	}
+	if again := revision(callee, profile); again != first {
+		t.Fatalf("the same facts give %v then %v", first, again)
+	}
+
+	rotated := profile
+	rotated.Auth.Keys = strings.Replace(profile.Auth.Keys, "AQAB", "AQAC", 1)
+	newIssuer := profile
+	newIssuer.Auth.Issuer = profile.Auth.Issuer + "-next"
+	moreCallers := callee
+	moreCallers.Callers = append(slices.Clone(callee.Callers), "reports")
+	for name, changed := range map[string]struct {
+		instance HTTPInstance
+		profile  PlatformProfile
+	}{
+		"a rotated key": {callee, rotated},
+		"a new issuer":  {callee, newIssuer},
+		"a new caller":  {moreCallers, profile},
+	} {
+		if revision(changed.instance, changed.profile) == first {
+			t.Fatalf("%s left the auth revision unchanged: the pods that verify with it would not roll", name)
+		}
+	}
+
+	// A caller-only instance holds no verification facts, so it carries no annotation and never rolls for them.
+	caller := callee
+	caller.Callers = nil
+	caller.Calls = []Call{{Callee: "orders", Port: 8081}}
+	if got := revision(caller, profile); got != nil {
+		t.Fatalf("a caller carries an auth revision: %v", got)
+	}
 }
 
 // A connected pair renders both halves: the caller gets the callee's address and a token only the callee

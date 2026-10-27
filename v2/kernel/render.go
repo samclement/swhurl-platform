@@ -127,16 +127,23 @@ func helmRelease(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) 
 		"metadata": meta,
 		"spec": manifest{"interval": helmInterval, "timeout": failAfter, "chart": manifest{"spec": chart},
 			"install": remediation, "upgrade": manifest{"remediation": manifest{"retries": retries}},
-			"values": values(spec, http, profile.Workload, profile.Storage.Class, profile.Egress.Address)}}
+			"values": values(spec, http, profile.Workload, profile.Storage.Class, profile.Egress.Address, profile.Auth)}}
 }
 
 // values are the chart's values: one controller, one container, its Service and /tmp.
-func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClass, egressAddress string) manifest {
+func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClass, egressAddress string,
+	auth Auth) manifest {
 	uid := http.UID
 	pod := manifest{"automountServiceAccountToken": false, "securityContext": manifest{
 		"runAsNonRoot": true, "runAsUser": uid, "runAsGroup": uid, "fsGroup": uid,
 		"seccompProfile": manifest{"type": "RuntimeDefault"}}}
 	controller := manifest{"replicas": spec.Configuration.Replicas, "containers": manifest{"main": container(spec, http, workload, egressAddress)}}
+	if len(spec.Callers) > 0 {
+		// The verification facts reach the pod as environment variables, which a running pod never re-reads:
+		// this annotation is what rolls the Deployment when the platform's keys rotate or this instance's
+		// callers change.
+		controller["pod"] = manifest{"annotations": manifest{authRevision: authDigest(spec, auth)}}
+	}
 	if spec.Database == "sqlite" {
 		// One pod at a time: a rolling update would open one database file twice.
 		controller["strategy"] = "Recreate"
@@ -733,9 +740,25 @@ func validateCallShape(calls []Call, callers []string) error {
 // configured is whether the profile states what a callee needs to verify a token.
 func (a Auth) configured() bool { return a.Issuer != "" && a.Keys != "" }
 
+// authRevision is the pod template's annotation naming the auth material the pod was rendered with: keys and
+// callers. It is the only thing that changes when a key rotates, because envFrom is read once at container
+// start.
+const authRevision = labelDomain + "auth-revision"
+
+// authDigest is the canonical digest of the facts one callee's pod verifies with: the platform's issuer and
+// keys, and this instance's callers. The keys reach the pod through a ConfigMap copied into each callee's
+// namespace today; when one platform-wide object replaces those copies, this digest and the reference in
+// container() are the two places that change, so a rotation still rolls the pods that must verify with it.
+func authDigest(spec HTTPInstance, auth Auth) string {
+	callers := slices.Clone(spec.Callers)
+	slices.Sort(callers)
+	return hash("auth-sha256:", canonical([]any{auth.Issuer, auth.Keys, callers}))
+}
+
 // authConfigMap carries the platform's token verification facts into one instance's namespace. A pod
 // cannot read another namespace's ConfigMap, so each callee gets its own copy of the same platform data;
-// the HelmRelease consumes it with envFrom rather than embedding the keys.
+// the HelmRelease consumes it with envFrom rather than embedding the keys, and authRevision is what makes a
+// rotation of that data reach a running pod.
 func authConfigMap(spec HTTPInstance, auth Auth) manifest {
 	return manifest{"apiVersion": "v1", "kind": "ConfigMap",
 		"metadata": metadata(spec.Application+"-auth", namespaceName(spec)),

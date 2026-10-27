@@ -75,13 +75,16 @@ type RestoreInputs struct {
 // log as evidence, and the app's state afterwards. It claims nothing about the data being the point in time
 // the operator wanted.
 type RestoreOutcome struct {
-	State    string
-	Reason   string // the step that failed; empty when the restore completed
-	Steps    []RestoreStep
-	Job      RestoreJobOutcome
-	App      RestoreApp
-	Started  time.Time
-	Finished time.Time
+	State  string
+	Reason string // the step that failed; empty when the restore completed
+	Steps  []RestoreStep
+	Job    RestoreJobOutcome
+	App    RestoreApp
+	// BackupSuspended is whether the run ended with the instance's backup schedule suspended: true only when
+	// a restore pod may still hold the claim and the undo stopped before the schedule was put back.
+	BackupSuspended bool
+	Started         time.Time
+	Finished        time.Time
 }
 
 // RestoreStep is one thing the run did, or failed to do.
@@ -173,6 +176,10 @@ func decodeRestoreDocuments(inputs RestoreInputs) (kernel.InstanceSpec, kernel.R
 // running, and the app's live replica count, which is what it is returned to. A failure here is a refusal:
 // nothing has been changed.
 func preflight(ctx context.Context, inputs RestoreInputs) (int32, error) {
+	if inputs.Target.Backup == nil {
+		// An archive to restore comes from a backup job; an instance that renders none cannot have one.
+		return 0, &Refusal{"restore.backup", "no_backup"}
+	}
 	listed, err := inputs.Cluster.Reader.List(ctx, inputs.Target.Pods, kernel.RestoreLabel)
 	if err != nil {
 		return 0, &Refusal{"restore.pods", failureReason(err)}
@@ -232,6 +239,10 @@ type restorer struct {
 	scaled     bool
 	secretName string
 	jobName    string
+	// backupSuspended is whether this run suspended the backup schedule and has not put it back;
+	// backupWasSuspended is what it found, so a schedule the operator had already suspended stays that way.
+	backupSuspended    bool
+	backupWasSuspended bool
 
 	steps []RestoreStep
 	out   RestoreOutcome
@@ -247,6 +258,7 @@ func (r *restorer) run(objects kernel.RestoreObjects) (RestoreOutcome, error) {
 		}
 	}
 	r.out.State = RestoreRestored
+	r.out.BackupSuspended = r.backupSuspended
 	r.out.App = RestoreApp{Replicas: r.replicas, Available: true, State: AppRunning}
 	if r.replicas == 0 {
 		// An app that was stopped before the run stays stopped: the restore returns it to what it was, and
@@ -264,7 +276,8 @@ func (r *restorer) takeDown(objects kernel.RestoreObjects) error {
 		name   string
 		action func() error
 	}{
-		{"suspend", r.suspend}, {"scale-down", r.scaleDown}, {"pods-gone", r.podsGone},
+		{"suspend", r.suspend}, {"backup-suspend", r.suspendBackup}, {"scale-down", r.scaleDown},
+		{"pods-gone", r.podsGone},
 		{"secret", func() error { return r.create("", "Secret", objects.Secret) }},
 		{"job", func() error { return r.create("batch", "Job", objects.Job) }},
 	}
@@ -295,8 +308,8 @@ func (r *restorer) putBack() error {
 		name   string
 		action func() error
 	}{
-		{"delete-job", r.deleteJob}, {"delete-secret", r.deleteSecret}, {"scale-up", r.scaleUp},
-		{"resume", r.resume}, {"available", r.waitForRollout},
+		{"delete-job", r.deleteJob}, {"delete-secret", r.deleteSecret}, {"backup-resume", r.resumeBackup},
+		{"scale-up", r.scaleUp}, {"resume", r.resume}, {"available", r.waitForRollout},
 	}
 	return r.attemptAll(steps)
 }
@@ -319,6 +332,7 @@ func (r *restorer) attemptAll(steps []struct {
 func (r *restorer) failed(err error) (RestoreOutcome, error) {
 	r.unwind()
 	r.out.State = RestoreFailed
+	r.out.BackupSuspended = r.backupSuspended
 	r.out.App = RestoreApp{Replicas: r.replicas, Suspended: r.suspended, State: r.appState()}
 	r.out.Finished = r.now()
 	return r.out, err
@@ -345,6 +359,9 @@ func (r *restorer) unwind() {
 		// stopped, so the undo stops here and the app block says so. The next restore's preflight refuses
 		// until that pod is gone.
 		return
+	}
+	if r.backupSuspended {
+		_ = r.attempt("backup-resume", r.resumeBackup)
 	}
 	if r.scaled {
 		_ = r.attempt("scale-up", r.scaleUp)
@@ -389,6 +406,54 @@ func (r *restorer) attempt(name string, action func() error) error {
 func (r *restorer) suspend() error {
 	r.suspended = true
 	return r.patch(r.target.Release, `{"spec":{"suspend":true}}`)
+}
+
+// suspendBackup stops the nightly run for the window: a backup that copied the database while the restore swaps
+// its files would publish a stale archive. The schedule's own state is read first, so one the operator had
+// already suspended is left suspended.
+func (r *restorer) suspendBackup() error {
+	read, err := r.cluster.Reader.Read(r.ctx, r.target.Backup.CronJob)
+	if err != nil {
+		return err
+	}
+	if read.Status != observe.Present {
+		return unavailable("backup", reasonOf(read))
+	}
+	suspended, err := cronJobSuspended(read.Object)
+	if err != nil {
+		return err
+	}
+	r.backupWasSuspended = suspended
+	if err := r.patch(r.target.Backup.CronJob, `{"spec":{"suspend":true}}`); err != nil {
+		return err
+	}
+	r.backupSuspended = true
+	return nil
+}
+
+// resumeBackup puts the schedule back as it was. A CronJob that was already suspended stays so, and the run no
+// longer owns it: nothing to put back.
+func (r *restorer) resumeBackup() error {
+	if !r.backupWasSuspended {
+		if err := r.patch(r.target.Backup.CronJob, `{"spec":{"suspend":false}}`); err != nil {
+			return err
+		}
+	}
+	r.backupSuspended = false
+	return nil
+}
+
+// cronJobSuspended is a CronJob's own suspension fact: absent means not suspended.
+func cronJobSuspended(document []byte) (bool, error) {
+	var cronJob struct {
+		Spec struct {
+			Suspend *bool `json:"suspend"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(document, &cronJob); err != nil {
+		return false, unavailable("backup", observe.ReasonMalformed)
+	}
+	return cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend, nil
 }
 
 // scaleDown stops the app: the restore replaces the files under it, so nothing may be writing. The intent is

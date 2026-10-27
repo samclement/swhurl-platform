@@ -1443,6 +1443,15 @@ archive's recorded `plain_sha256`, and the file it replaced is a *third* hash �
 to since the previous restore — now kept in `before-restore-<UTC>/`. The content changed, and the proof does not
 rest on the tool's own prose.
 
+**The backup schedule is suspended for the window (offline, 27 October 2026).** A backup that copied the database
+while the restore swapped its files would publish a stale archive, so the sequence now reads the instance's
+CronJob, sets `spec.suspend` before the app stops, and puts back what it found once the Job's pod is gone: a
+schedule the operator had already suspended stays suspended, and the undo waits for that pod before touching it.
+A run that cannot confirm the pod is gone reports `backupSuspended` (and says so on its summary line); an
+instance that renders no backup is refused before anything changes. An already-running backup is left alone —
+it only reads the database. Four mutations each fail a test. The live restore above predates this, so its first
+live exercise is still owed.
+
 **What it deliberately does not do:** restore another instance's archive, restore MongoDB, retain or prune
 `before-restore-<UTC>/`, or hold a credential of its own. **Residual risks, stated:** a pod killed between the tool's renames can leave a
 `.restore` file and a `before-restore-<UTC>/` holding the live database; a run killed by a signal that does not

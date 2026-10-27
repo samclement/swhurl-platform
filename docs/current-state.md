@@ -93,8 +93,9 @@ manual run as its newest, and the archive `not_assessed/not_read` without `--arc
 Nothing else — the Job, its pod and the Secret were deleted by the run, in that order, and `delete-job` waits
 for the pod before the app is scaled back up.
 
-**Residual risk, unchanged:** a nightly backup can still start inside that 30-second window; its copy would fail
-its own integrity checks rather than upload a bad archive, but the night's run would be missing.
+**Residual risk, now closed in code (offline-tested, not in this live run):** a nightly backup could start inside
+that 30-second window; the restore now suspends the instance's backup schedule for it, and this live run
+predates that change. An already-running backup is still left alone — it only reads the database.
 
 **Not exercised here:** a restore whose content differs by design — done in the section above — and still open:
 another instance's archive, MongoDB, and any failure path live (the offline suite covers each undo).

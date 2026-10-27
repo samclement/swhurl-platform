@@ -1297,15 +1297,23 @@ keeping the database and its `-wal`/`-shm` in `before-restore-<UTC>/` beside it.
 the live database is touched, and a refused restore keeps no folder: the tests assert both, and that no
 plaintext copy is left behind.
 
-**What is not done:** the MongoDB job (which still shells out to `mongodump`, a 21 MB glibc binary, so the
-image base cannot yet be `scratch`), the image itself, the presigned URL on the v2 side, the digest move and
-the live proof. The image remains the Python one until the whole tool and its image are ready together.
+**`backup-job-mongodb` is the third command**, and the last Python job: it pipes `mongodump`'s output straight
+into age (the connection string reaches the tool on stdin, never a command line, and no plaintext copy is
+made), records the server's version and each collection's count — read with `mongo-go-driver`, the tool's third
+dependency — and publishes `clickstack-mongodb-<UTC>.archive.gz.age` with its metadata, the same names and keys
+the Python job publishes. `mongodump` (21 MB, glibc + krb5) is the one thing the tool cannot replace, and it is
+why the image base cannot yet be `scratch`.
 
-**Checks:** `go test ./...` in `images/backup/tool` (8 tests: settings for both jobs, the online copy, an
-age round trip, the metadata keys, the S3 upload's headers and refusals, the backup end to end against a fake
-bucket, and the restore — replaced and kept aside, plus five refusals that leave the live database
-untouched), `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`,
-`make -s check-docs`. Offline only.
+**What is not done:** the image itself (the Go binary plus `mongodump` on one base), the presigned read URL on
+v2's side, the digest move and the live proof. The image remains the Python one until its replacement is
+built and tested together.
+
+**Checks:** `go test ./...` in `images/backup/tool` (10 tests: settings for the three jobs, the online copy,
+an age round trip, the metadata keys, the S3 upload's headers and refusals, the SQLite backup end to end
+against a fake bucket, the restore — replaced and kept aside, plus five refusals that leave the live database
+untouched — and the MongoDB job with a stand-in `mongodump` and a facts seam, plus its two refusals),
+`make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. The
+binary is 19.6 MB static (10.7 MB gzipped). Offline only.
 
 #### First migration candidate: the decision, with the evidence (25 October 2026)
 

@@ -1425,6 +1425,11 @@ findings and seven nits; all are fixed, and five of them are behaviour rather th
   backup observation's selector **excludes the restore pod** (`!platform.swhurl.com/restore`), which otherwise
   would be read as a backup run and make the instance's protection look broken.
 
+Each of these is pinned by a test, and each was mutation-checked in a throwaway copy: removing the retry,
+loosening it, ignoring the adopted claim, reporting a zero-replica app as running, letting the undo inherit a
+cancelled context, dropping the pod-gone wait, moving the read URL into the Job, removing the delete's
+propagation, widening a create to any readable kind, or ignoring a failed Job each fails at least one test.
+
 **Live, 27 October 2026.** `swhurl-try-10` staging was restored over its newest archive
 (`sqlite-20261027T085907Z.db.age`, 12h8m old, 2 tables) in **30 seconds**: every step `done`, the Job complete
 with `[OK] Restored the archive into /data/app.db (2 tables, integrity ok); the replaced files are in
@@ -1432,9 +1437,14 @@ with `[OK] Restored the archive into /data/app.db (2 tables, integrity ok); the 
 available. The bucket was read with the operator's own credentials, the pod held only a presigned read of that
 one object, and the Secret that carried it was deleted by the run. [Evidence](current-state.md#the-first-restore-v2-performs-swhurl-try-10-staging-newest-archive-over-itself-27-october-2026).
 
-**What it deliberately does not do:** restore a content change by design, restore another instance's archive,
-choose a point in time, restore MongoDB, retain or prune `before-restore-<UTC>/`, or hold a credential of its
-own. **Residual risks, stated:** a pod killed between the tool's renames can leave a
+**Content change, proved (27 October 2026, 21:31Z).** A second run restored an older archive on purpose (26 Oct,
+`--max-age 72h`, 29 seconds). SHA-256 of the files, taken from outside v2: the live `app.db` is exactly the
+archive's recorded `plain_sha256`, and the file it replaced is a *third* hash — the database the app had written
+to since the previous restore — now kept in `before-restore-<UTC>/`. The content changed, and the proof does not
+rest on the tool's own prose.
+
+**What it deliberately does not do:** restore another instance's archive, restore MongoDB, retain or prune
+`before-restore-<UTC>/`, or hold a credential of its own. **Residual risks, stated:** a pod killed between the tool's renames can leave a
 `.restore` file and a `before-restore-<UTC>/` holding the live database; a run killed by a signal that does not
 unwind leaves its Job and Secret for the next run's preflight; and a scheduled backup can still start during
 the swap window — its copy fails its own integrity checks rather than uploading a bad archive, but that

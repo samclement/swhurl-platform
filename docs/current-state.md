@@ -2,6 +2,35 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The first content-changing restore: `swhurl-try-10` staging moved back a day (27 October 2026)
+
+The restore above put back the *newest* archive, so it could not show a content change. This one deliberately
+chose an older point in time: `--from app-sqlite/swhurl-try-10-staging/sqlite-20261026T082103Z.db.age` with
+`--max-age 72h`, because the archive is 37 hours old and the plan's own threshold would otherwise refuse it.
+`21:31:02Z → 21:31:31Z`, **29 seconds**, all thirteen steps `done`, `restore: restored; app running`.
+
+**The three hashes that make it a proof.** These are SHA-256 of the database file itself, taken from outside v2
+with a read-only one-shot pod:
+
+| File | SHA-256 | What it is |
+| --- | --- | --- |
+| `/data/app.db` after the run | `e89ff542…` | exactly the 26 Oct archive's recorded `plain_sha256` |
+| `/data/before-restore-20261027T213113Z/app.db` | `4e0e65fb…` | what was live before: **neither** archive's plaintext |
+| the 08:59 archive's plaintext | `1b20b6d7…` | what the previous run put there |
+
+So the restore replaced a database the app had since written to (`4e0e65fb…` is not the archive it came from)
+with the older archive's bytes, verified by the tool against that archive's metadata before the swap — the
+content changed, and the evidence does not depend on trusting the tool's prose. The kept file also proves the
+app had written between the 21:09 restore and this one, which is the "write, then restore an older archive and
+see the write gone" case in substance.
+
+**State afterwards.** `observe` at `21:31:56Z`: `verdict running`, all seven findings positive, backup
+`current`. The instance is now on a day-old database by design; the live content from before this run is in
+`/data/before-restore-20261027T213113Z/`, and four `before-restore-*` folders now sit on the claim
+(`17:52`, `18:19`, `21:09`, `21:31`), all of them the operator's to prune.
+
+**Not exercised yet:** another instance's archive, MongoDB, and any failure path live.
+
 ## The first restore v2 performs: `swhurl-try-10` staging, newest archive over itself (27 October 2026)
 
 `swhurl-v2 restore --confirm swhurl-try-10/staging` performed the whole restore at `21:09:45Z` and finished at
@@ -34,9 +63,10 @@ unit reconciled, `unit.revision applied` at `f2bafc01`, release settled, workloa
 run**, not the schedule — and the archive is `not_assessed/not_read` because `--archive` was not passed. Two
 facts in that report are worth keeping: the backup target's selector is now the live
 `platform.swhurl.com/backup=true,!platform.swhurl.com/restore`, so the restore pod was not read as a backup run;
-and `lastScheduledAt` `03:58Z` has no successful run beside it, because that run started **before** the fixed
-image was pinned at `08:38Z` — it is the start-up transient the retry fixed, and the first nightly on the fixed
-image is 28 October's.
+and `lastScheduledAt` `03:58Z`. The bucket corrects a first reading of that: the 03:58 run **did** publish
+(`sqlite-20261027T035801Z.db.age` and its metadata, plaintext `16073814…`), on the image pinned before the Go
+roll-out, so the CronJob's `lastSuccessfulTime` names the manual run only because that Job is owned by the
+CronJob and is the newest success. The first nightly on the Go image is 28 October's.
 
 **What is actually on the claim, `21:25Z` (read-only, one-shot pod).** `app.db` (16,384 bytes), its `-shm` and
 `-wal`, all written at `21:10Z` — the restored file — beside **three** `before-restore-*` folders:
@@ -66,8 +96,8 @@ for the pod before the app is scaled back up.
 **Residual risk, unchanged:** a nightly backup can still start inside that 30-second window; its copy would fail
 its own integrity checks rather than upload a bad archive, but the night's run would be missing.
 
-**Not exercised:** a restore whose content differs *by design* (write, then restore an older archive and see the
-write gone), another instance's archive, MongoDB, and any failure path live — the offline suite covers each undo.
+**Not exercised here:** a restore whose content differs by design — done in the section above — and still open:
+another instance's archive, MongoDB, and any failure path live (the offline suite covers each undo).
 
 ## The backup image's first live night: a start-up transient, and the retry that fixes it (27 October 2026)
 

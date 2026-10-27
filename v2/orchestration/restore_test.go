@@ -98,7 +98,13 @@ type fakeCluster struct {
 	// the restore waits.
 	neverAvailable bool
 	// podsStay reproduces a pod that outlives its Job: nothing may then scale the app back up.
-	podsStay    bool
+	podsStay bool
+	// jobReadFailures makes the next Job reads fail, as a transient API error does during a wait.
+	jobReadFailures int
+	// cancelOn cancels the run's own context when the named event happens, so a test can show what the undo
+	// runs on.
+	cancelOn    string
+	cancel      context.CancelFunc
 	available   int32
 	jobStates   []string
 	restorePods int
@@ -106,8 +112,16 @@ type fakeCluster struct {
 	log         string
 }
 
-func (f *fakeCluster) record(event string) error {
+func (f *fakeCluster) record(ctx context.Context, event string) error {
+	// A request whose context is already done never reached the server, so it is not recorded: that is what
+	// lets a test tell the undo's own context from a dead one.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	f.events = append(f.events, event)
+	if f.cancelOn != "" && strings.HasPrefix(event, f.cancelOn) && f.cancel != nil {
+		f.cancel()
+	}
 	if f.failOn != "" && strings.HasPrefix(event, f.failOn) {
 		if f.failErr == nil {
 			return errors.New("failed: write: status")
@@ -117,9 +131,13 @@ func (f *fakeCluster) record(event string) error {
 	return nil
 }
 
-func (f *fakeCluster) Read(_ context.Context, ref observe.Ref) (observe.Read, error) {
-	if err := f.record("read:" + ref.Kind); err != nil {
+func (f *fakeCluster) Read(ctx context.Context, ref observe.Ref) (observe.Read, error) {
+	if err := f.record(ctx, "read:"+ref.Kind); err != nil {
 		return observe.Read{}, err
+	}
+	if ref.Kind == "Job" && f.jobReadFailures > 0 {
+		f.jobReadFailures--
+		return observe.Read{}, errors.New("failed: read: status")
 	}
 	switch ref.Kind {
 	case "Deployment":
@@ -153,8 +171,8 @@ func (f *fakeCluster) nextJobState() string {
 	return state
 }
 
-func (f *fakeCluster) List(_ context.Context, ref observe.Ref, selector string) (observe.List, error) {
-	if err := f.record("list:" + selector); err != nil {
+func (f *fakeCluster) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) {
+	if err := f.record(ctx, "list:"+selector); err != nil {
 		return observe.List{}, err
 	}
 	switch {
@@ -189,8 +207,8 @@ func (f *fakeCluster) deleted(kind string) bool {
 	return removed >= created
 }
 
-func (f *fakeCluster) Patch(_ context.Context, ref observe.Ref, patch []byte) error {
-	if err := f.record("patch:" + ref.Kind + ":" + string(patch)); err != nil {
+func (f *fakeCluster) Patch(ctx context.Context, ref observe.Ref, patch []byte) error {
+	if err := f.record(ctx, "patch:"+ref.Kind+":"+string(patch)); err != nil {
 		return err
 	}
 	var change struct {
@@ -204,16 +222,16 @@ func (f *fakeCluster) Patch(_ context.Context, ref observe.Ref, patch []byte) er
 	return nil
 }
 
-func (f *fakeCluster) Create(_ context.Context, ref observe.Ref, _ []byte) error {
-	return f.record("create:" + ref.Kind + ":" + ref.Name)
+func (f *fakeCluster) Create(ctx context.Context, ref observe.Ref, _ []byte) error {
+	return f.record(ctx, "create:"+ref.Kind+":"+ref.Name)
 }
 
-func (f *fakeCluster) Delete(_ context.Context, ref observe.Ref) error {
-	return f.record("delete:" + ref.Kind + ":" + ref.Name)
+func (f *fakeCluster) Delete(ctx context.Context, ref observe.Ref) error {
+	return f.record(ctx, "delete:"+ref.Kind+":"+ref.Name)
 }
 
-func (f *fakeCluster) Logs(_ context.Context, ref observe.Ref, _ int64) (string, error) {
-	if err := f.record("logs:" + ref.Name); err != nil {
+func (f *fakeCluster) Logs(ctx context.Context, ref observe.Ref, _ int64) (string, error) {
+	if err := f.record(ctx, "logs:"+ref.Name); err != nil {
 		return "", err
 	}
 	return f.log, nil
@@ -433,4 +451,57 @@ func stepNamed(steps []RestoreStep, name string) RestoreStep {
 		}
 	}
 	return RestoreStep{}
+}
+
+// One failed read during a wait is retried: a refused request is not evidence that the work stopped, and the
+// restore still completes. Three in a row are the wait's answer, and the run then unwinds.
+func TestRestoreRetriesATransientRead(t *testing.T) {
+	// Two, and three, are stated rather than derived from maxReadFailures: a test that reads the constant
+	// cannot catch the constant changing.
+	cluster := &fakeCluster{replicas: 1, jobReadFailures: 2, jobStates: []string{"Running", "Complete"}}
+	outcome, err := Restore(context.Background(), restoreInputs(t, cluster))
+	if err != nil || outcome.State != RestoreRestored || outcome.Job.State != JobComplete {
+		t.Fatalf("a transient read error failed the restore: %+v %v", outcome, err)
+	}
+
+	cluster = &fakeCluster{replicas: 1, jobReadFailures: 3}
+	outcome, err = Restore(context.Background(), restoreInputs(t, cluster))
+	if err == nil || outcome.State != RestoreFailed || outcome.Reason != "job-finished" {
+		t.Fatalf("reads that keep failing did not fail the step: %+v %v", outcome, err)
+	}
+}
+
+// An app that was stopped before the run stays stopped: the restore returns it to what it was, and that is
+// not "running".
+func TestRestoreOfAStoppedAppReportsStopped(t *testing.T) {
+	cluster := &fakeCluster{replicas: 0}
+	outcome, err := Restore(context.Background(), restoreInputs(t, cluster))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.State != RestoreRestored || outcome.App.State != AppStopped || outcome.App.Available ||
+		outcome.App.Replicas != 0 {
+		t.Fatalf("the app block is %+v", outcome.App)
+	}
+}
+
+// The undo runs on a context of its own: a run whose own context died must still put the app back. The fake
+// refuses any request whose context is done, so the deletes and patches below only happen on a live context.
+func TestRestoreUnwindsOnItsOwnContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cluster := &fakeCluster{replicas: 1, cancelOn: "create:Job:", cancel: cancel}
+	outcome, err := Restore(ctx, restoreInputs(t, cluster))
+	if err == nil {
+		t.Fatal("a run whose context was cancelled returned no error")
+	}
+	if outcome.State != RestoreFailed {
+		t.Fatalf("outcome %+v", outcome)
+	}
+	for _, event := range []string{"delete:Job:", "delete:Secret:", `patch:Deployment:{"spec":{"replicas":1}}`,
+		`patch:HelmRelease:{"spec":{"suspend":false}}`} {
+		if indexOf(cluster.events, event) < 0 {
+			t.Fatalf("%s did not run on the undo's own context:\n%s", event, strings.Join(cluster.events, "\n"))
+		}
+	}
 }

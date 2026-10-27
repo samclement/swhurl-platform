@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the backup image's digest move and a live backup and restore through it
+Gate: a live backup and restore through the new image, then the restore Job's sequence
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -392,6 +392,16 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The image is the Go one**: `debian:bookworm-slim` + `libgssapi-krb5-2` + `mongodump` + the stripped binary, entrypoint the binary, so the CronJobs' arguments are unchanged. **48.1 MB compressed**, measured by building it locally, against 134 MB today; `mongodump --version` runs in it and the usage lists the three commands. Nothing is deployed: the rendered jobs still name the old digest.
 - **What is not done:** the digest move (six rendered jobs and `profile.backup.digest`), the presigned read URL on v2's side, and the live proof.
 - **Next gate:** the image's digest move, then a live backup and restore through it, then 2a's restore sequence.
+
+## Slice record: the backup image's digest move
+
+- **Outcome:** every nightly backup job names the Go image — the five v1-rendered database instances, `platform/backup/mongodb.yaml` and v2's `swhurl-try-10` staging CronJob — as `ghcr.io/samclement/swhurl-backup:src-caf51b4f61fadd4a@sha256:49474ad9…`, the image CI built and published from `24db3d31` (48.1 MB compressed). The CronJobs' args, environment, mounts and metadata are unchanged: only the artifact moves.
+- **Owners and boundaries:** v1's renderer (`tools/swhurl/apps/contract.py`) owns the reference for its instances; v2's profile owns the digest for a v2-owned one; neither reads the other. The Go image was built and published by CI, not by this change.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. **v1's live behaviour changes deliberately**: its five rendered backup jobs pin a new image, which is the point of the move; no other v1 behaviour changed. 2. **Pure packages untouched.** 3. **Identities moved once, deliberately:** the profile's `backup.digest` changed, so its canonical form and ID moved to `prof-sha256:e94c3d69…`; `profile-identity.json` was recomputed independently in Python, the two goldens were regenerated once, and `v2-apps/instances/swhurl-try-10/staging/backup-cronjob.json` was recompiled — one line, the image. 4. **No refusal moved.** 5. **Failure paths:** the tie test comparing v2's job with v1's committed job, and v1's pre-M6 render hash, each pin the image; both were updated with the reason recorded here and in the comment beside the hash. 6. **Scope:** the archives, their names, their metadata and the restore procedure are unchanged, so an archive written by either image is readable by both. 7. **Nothing is live yet** — the digests are in Git but not pushed: the rollout is the next act. 8. This page, the plan, the registry and `docs/operations.md` change together.
+- **The three pins that moved, and why:** the goldens' `inputs.profile` line (the profile ID); the tie test's literal digest (v2 renders `image@digest`, v1 `tag@digest`); v1's pre-M6 render hash for `('web', True)` only — the one scenario with a database, whose `backup.yaml` carries the image. The fixture renders (`tests/fixtures/apps`) moved in `backup.yaml` and the HelmRelease's `platform.swhurl.com/render` fingerprint, which is what that annotation is for.
+- **Evidence:** `make check` (1019 tests), `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check-lint`, `make -s check-docs`. The image: `ghcr.io/samclement/swhurl-backup:src-caf51b4f61fadd4a@sha256:49474ad990df0f69a31cadd365ce28f20dad48a8e4edebac0c84ab080450250c`.
+- **Not done:** the push (which rolls the image into the nightly jobs), and any live backup or restore through it.
+- **Next gate:** a live backup and restore through the new image — a MongoDB backup and a `try-10` nightly run, then a restore of one of them — before the remaining apps' jobs are trusted to it; then 2a's restore Job and sequence.
 
 ## Resume
 

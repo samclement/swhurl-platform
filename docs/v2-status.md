@@ -39,7 +39,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, an ownership inventory, and a read-only live check of the claims | **Slices 1–4 done** |
 | Routes | A signed-in route from platform facts, verified live through the shared sign-in | **Done, live** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
-| Calls | Consent decided purely, a pair rendered both ways, and delivery wired (`resolve` → `compile --calls`) | **Done offline** |
+| Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), and a key rotation rolling the callees | **Done offline**, and proved live for the pair |
 | Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Two live** (`swhurl-try-11`, `swhurl-try-10` staging, the second stateful on its own volume), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
@@ -382,6 +382,40 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages untouched. 3. **No identity changed**, no golden regenerated; the API baseline grows. 4. New refusals stated and tested (`failed: write: forbidden|status|not_found`, a kind the write table does not state, a name a non-create write needs); a delete of an object already gone is **done**, not an error. 5. Failure paths tested: each status, the absent-object delete, the log tail and its bound, the paths and content types of all three changes, and that a Secret is writable but not readable. 6. Scope: **this is infrastructure, not a capability** — nothing calls it yet, so no instance can be restored by v2. 7. Offline only: every test is a fake server; no cluster was touched. 8. This page, the plan and the registry change together.
 - **Evidence:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Coverage: `adapters/kube` 96.1%.
 - **What remains for 2a:** the **restore Job** and the **sequence** (suspend, scale, wait, secret, job, logs, scale back, resume, delete), the **presigned read** the pod uses instead of a key, the operator's age key as a Secret, and the first live restore — on `try-10`, restoring its newest archive over itself. The decision still open: **where the restore's steps live** — a `restore-job-sqlite` command added to the backup image in this repository (v1 tooling, an image rebuild), or a script rendered inside the Job (no image change, a contract to test).
+
+## Slice record: a key rotation rolls the callees
+
+- **Outcome:** a callee's pod template now carries `platform.swhurl.com/auth-revision`, the digest of the three
+  facts a callee verifies with — the platform's issuer and keys, and its own callers — so rotating the signing
+  keys (or adding a caller) changes the pod template and rolls the Deployment. Without it the keys reached the
+  pod only through `envFrom` of the per-instance `<app>-auth` ConfigMap: a ConfigMap update changes no pod
+  template, and Reloader ignores ConfigMaps, so a rotation would have left every running callee verifying
+  against the old JWKS until something else restarted it. v1 never had the bug because it inlined the keys in
+  the HelmRelease env.
+- **Owners and boundaries:** `kernel` owns the digest and the annotation (`authDigest`, `authRevision`), computed
+  from the canonical form of `(issuer, keys, sorted callers)`. The per-instance ConfigMap copy stays for now;
+  the digest is deliberately a fact about the *material*, not about the object, so the end state — one
+  platform-wide auth object instead of a copy per namespace — changes `authConfigMap` (which object) and
+  `container()` (the reference) and keeps the digest as what rolls the pods that must verify with it.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. **v1 unchanged** — v1's renderer and
+  its manifests are untouched. 2. **Pure** — the digest hashes supplied facts; no clock, no read, no environment.
+  3. **No identity changed** (the annotation is rendered output, not an instance fact), and exactly one compiled
+  file moved: `v2-apps/instances/swhurl-try-10/staging/helmrelease.json` was recompiled with the annotation;
+  try-11 (caller only) is byte-identical, the kernel goldens have no callers so they did not move, and the unit
+  is unchanged. 4. **No refusal moved.** 5. **Failure paths tested** — the digest changes for a rotated key, a new
+  issuer and a new caller, is stable for the same facts, and is absent on a caller-only instance; three
+  mutations (no annotation, a digest without the callers, a digest without the keys) each fail a test.
+  6. **Scope** — only callees carry it: a caller's calls are literal env, which already rolls it, and the
+  pinned chart is tied by a render: `TestCompiledManifests` asserts the chart puts the annotation on the pod
+  template (and not on the Deployment's own metadata, where it would roll nothing). 7. **Offline
+  only** — nothing was applied; the one live consequence is a single rollout of `swhurl-try-10` when this
+  reaches `main`. 8. **Recorded in the same change** — this page, the plan's calls section and its gap row,
+  `apps.md` and `operations.md#signing-keys`.
+- **Evidence:** `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check` (1019 tests), `make check-lint`,
+  `make -s check-docs`, `make -s v2-report`; `kernel` coverage 93.7%, and `TestOwnedInstancesRecompileFromGit`
+  reproduces both owned instances from Git.
+- **Next gate:** unchanged — `resolve` reading the committed resolution, and after it the platform-wide auth
+  object this was shaped for.
 
 ## Slice record: the restore v2 performs (2a's offline half)
 

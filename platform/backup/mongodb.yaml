@@ -35,7 +35,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: backup
-              image: ghcr.io/samclement/swhurl-backup:src-05b9898196028050@sha256:bfe284ede5bfa59cb04b33459bb73c4501298ead7c11a77819051ccfffa7af1a
+              image: ghcr.io/samclement/swhurl-backup:src-92042b331d76ba64@sha256:b730422b4789b6377ca1b39705cedef61d0c64a0a8161ccb64652dbc7b1db74a
               args: [backup-job-mongodb]
               env:
                 - name: MONGODB_URI

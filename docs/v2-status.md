@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the backup image: the Go binary and mongodump on one base, its digest move, and a live backup and restore
+Gate: the backup image's digest move and a live backup and restore through it
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -389,8 +389,9 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** `go test ./...` in `images/backup/tool` (10 tests: settings for the three jobs, names, the online copy, the round trip, the upload, the SQLite backup end to end, the restore and its refusals, and the MongoDB job and its refusals), `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check` (1019 tests), `make check-lint`, `make -s check-docs`.
 - **The restore command** fetches the archive from a read URL (a presigned one, from v2), checks the archive's and the plaintext's SHA-256, integrity and the table count, and only then replaces the database, keeping it in `before-restore-<UTC>/`; five refusals are tested to leave the live database untouched and no folder behind.
 - **The MongoDB command** pipes `mongodump` straight into age (connection string on stdin, no plaintext copy), reads the version and per-collection counts with `mongo-go-driver`, and publishes the same archive and metadata names the Python job does; `mongodump` itself is the one piece the tool cannot replace, and the reason the image base cannot be `scratch`.
-- **What is not done:** the image and its base, the presigned read URL on v2's side, the digest move, and any live run. The binary is 19.6 MB static (10.7 MB gzipped).
-- **Next gate:** the image — the Go binary and `mongodump` on one base — then its digest move, a live backup and restore, and 2a's restore sequence.
+- **The image is the Go one**: `debian:bookworm-slim` + `libgssapi-krb5-2` + `mongodump` + the stripped binary, entrypoint the binary, so the CronJobs' arguments are unchanged. **48.1 MB compressed**, measured by building it locally, against 134 MB today; `mongodump --version` runs in it and the usage lists the three commands. Nothing is deployed: the rendered jobs still name the old digest.
+- **What is not done:** the digest move (six rendered jobs and `profile.backup.digest`), the presigned read URL on v2's side, and the live proof.
+- **Next gate:** the image's digest move, then a live backup and restore through it, then 2a's restore sequence.
 
 ## Resume
 

@@ -2,6 +2,32 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## One rendered source for the keys, live — and the first nightly on the Go image (28 October 2026)
+
+**The keys are the platform's object now.** `9dd0e035` was pushed and reconciled: the `platform-auth` unit
+applied **17 `swhurl-auth` ConfigMaps**, one per managed namespace, all identical and rendered from
+`platform/auth/`. `swhurl-try-10-staging`'s Deployment now consumes `swhurl-auth` (`envFrom`) and mounts it as the
+`auth` volume, rolled once (a new pod at `08:15:18Z`, no restarts), and Flux pruned its old
+`swhurl-try-10-auth` object (`NotFound`). The `auth-revision` annotation did not change, as it should not: the
+material is the same. `observe` immediately after: `running`, all seven findings, `unit.revision applied` at
+`9dd0e035`.
+
+**The first nightly on the Go image succeeded, for every job.** At their own schedule minutes on 28 October each of
+the six SQLite instances published a complete archive and metadata pair — `demo-orders-prod` `03:42:06Z`,
+`demo-orders-staging` `04:13:07Z`, `demo-shop-prod` `03:40:07Z`, `demo-shop-staging` `03:45:07Z`,
+`swhurl-try-10-prod` `04:07:07Z` and `try-10` staging `03:58:07Z` — and the MongoDB job published
+`clickstack-mongodb-20261028T033000Z.archive.gz.age` (1.45 MB, 14 collections, MongoDB 5.0.32). The metadata are
+the Go tool's own shape, so the scheduled runs, not just the manual ones, went through the retry and the proxy.
+`try-10` staging's newest plaintext hash is `18ae3078…`, not the `1b20b6d7…` of the 27 October archive: the app
+has written since the restore, as it should.
+
+**What this closes:** the start-up transient is fixed on the schedule; and a rotation of the platform's keys now
+touches one rendered folder (`platform/auth`) instead of every instance's compilation.
+
+**Still unexercised:** a real key rotation end to end (the files are mounted, but no app image reads them yet, so
+the annotation still rolls the apps), an added caller without a restart (same reason), and the template releases
+that retire the env forms.
+
 ## A key rotation rolls the callee: the auth revision on the pod template (27 October 2026)
 
 `d64fc10e` was pushed and reconciled: `app-swhurl-try-10-staging` applied it and Helm rolled the Deployment, and

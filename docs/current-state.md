@@ -2,6 +2,22 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The egress proxy's logs are structured in ClickStack (28 October 2026)
+
+`cf5074f2` was pushed and reconciled, and the node collector restarted with the proxy's two formats. An access line
+is now `log.parser=squid-access` with `instance`, `granted`, `client`, `method`, `host`, `status`, `bytes` and
+`duration_ms` and a one-line body; the proxy's own `cache_log` lines are `squid-log` with their timestamp and
+message, both INFO.
+
+**Proved live:** a probe from `swhurl-try-10-staging` through its own port (`30105`) to an ungranted host got
+`403/TCP_DENIED`, and ClickStack read `parser=squid-access, granted=-, status=403/TCP_DENIED, body="swhurl-try-10-staging CONNECT example.com:443 403/TCP_DENIED"`.
+The three fixtures in `tests/fixtures/logs.json` run through the same collector version, so a collector upgrade
+that changed the match fails `make check-otel` rather than silently reverting to plain text.
+
+**The start-up transient, again:** the probe's first request from a brand-new pod was refused (`curl (7)`), and the
+same request succeeded after eight seconds — the gap the backup tool retries through. Anyone testing the proxy by
+hand should expect it.
+
 ## One rendered source for the keys, live — and the first nightly on the Go image (28 October 2026)
 
 **The keys are the platform's object now.** `9dd0e035` was pushed and reconciled: the `platform-auth` unit

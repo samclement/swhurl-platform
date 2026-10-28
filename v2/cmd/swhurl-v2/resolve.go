@@ -74,30 +74,48 @@ func (c cli) resolve(r request) int {
 func declarationsOf(pinned snapshot) ([]calls.Declaration, error) {
 	declarations := make([]calls.Declaration, 0, len(pinned.Instances))
 	for _, instance := range pinned.Instances {
-		declaration := calls.Declaration{Application: instance.Application, Environment: instance.Environment}
-		var settings struct {
-			Calls, Allows []string
-		}
-		if err := json.Unmarshal(instance.Records["instance"], &settings); err != nil {
-			return nil, fmt.Errorf("invalid: instance.yaml: %s", "expected_an_object")
-		}
-		declaration.Calls, declaration.Allows = settings.Calls, settings.Allows
-		var app struct {
-			Team string
-		}
-		if err := json.Unmarshal(instance.Records["app"], &app); err == nil {
-			declaration.Team = app.Team
-		}
-		var release struct {
-			Kind string
-			Port int32
-		}
-		if err := json.Unmarshal(instance.Records["release"], &release); err == nil {
-			declaration.Kind, declaration.Port = release.Kind, release.Port
+		declaration, err := declarationOf(instance)
+		if err != nil {
+			return nil, err
 		}
 		declarations = append(declarations, declaration)
 	}
 	return declarations, nil
+}
+
+// declarationOf is one instance's side of every pair it takes part in, from whichever record shape the export
+// read: v2's own pair states the declarations and nests the runtime facts, a predecessor's records state them
+// at the top level.
+func declarationOf(instance snapshotInstance) (calls.Declaration, error) {
+	declaration := calls.Declaration{Application: instance.Application, Environment: instance.Environment}
+	var settings struct {
+		Calls, Allows []string
+	}
+	if err := json.Unmarshal(instance.Records["instance"], &settings); err != nil {
+		return calls.Declaration{}, fmt.Errorf("invalid: instance record: %s", "expected_an_object")
+	}
+	declaration.Calls, declaration.Allows = settings.Calls, settings.Allows
+	var app struct {
+		Team string
+	}
+	if err := json.Unmarshal(instance.Records["app"], &app); err == nil {
+		declaration.Team = app.Team
+	}
+	var release struct {
+		Kind    string
+		Port    int32
+		Runtime struct {
+			Kind string
+			Port int32
+		}
+	}
+	if err := json.Unmarshal(instance.Records["release"], &release); err == nil {
+		declaration.Kind, declaration.Port = release.Kind, release.Port
+		if instance.Format == "v2" {
+			declaration.Kind, declaration.Port = release.Runtime.Kind, release.Runtime.Port
+		}
+	}
+	return declaration, nil
 }
 
 // resolutionFrom is the document's shape of a resolution, in the order the resolver produced.

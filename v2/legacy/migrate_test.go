@@ -221,8 +221,8 @@ func TestMigrateReportsTheDeclarations(t *testing.T) {
 	if !slices.Equal(migration.Calls, []string{"swhurl-try-10"}) {
 		t.Fatalf("calls %v", migration.Calls)
 	}
-	if !slices.Equal(migration.Callers, []string{"swhurl-try-11", "team:demo"}) {
-		t.Fatalf("callers %v", migration.Callers)
+	if !slices.Equal(migration.Allows, []string{"swhurl-try-11", "team:demo"}) {
+		t.Fatalf("callers %v", migration.Allows)
 	}
 	for _, fact := range gapFacts(migration) {
 		if strings.HasPrefix(fact, "instance.yaml.calls") || strings.HasPrefix(fact, "instance.yaml.allows") {

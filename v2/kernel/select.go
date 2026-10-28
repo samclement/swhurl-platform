@@ -1,5 +1,7 @@
 package kernel
 
+import "slices"
+
 // SelectRelease returns a new value with only its release reference changed.
 // This is not production authorisation, publication, provisioning or promotion.
 // Validation precedes application and revision checks; stale precedes no-op.
@@ -23,5 +25,8 @@ func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected Insta
 		return InstanceSpec{}, refuse(StaleInstance, "expected", "instance changed; review its current specification")
 	}
 	current.Release = id
+	// A record with declarations carries reference-bearing members: the result owns its lists, so a caller
+	// that edits what it was given cannot reach back into the record it came from.
+	current.Calls, current.Allows = slices.Clone(current.Calls), slices.Clone(current.Allows)
 	return current, nil
 }

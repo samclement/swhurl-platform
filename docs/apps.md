@@ -437,7 +437,7 @@ For a connected pair, rendering writes both instances:
 | Callee | `SWHURL_ALLOWED_CALLERS=demo-shop` | Who it accepts |
 | Callee | Its NetworkPolicy admits `demo-shop`' pods | Anything undeclared is blocked before it reaches the app |
 
-The keys and the allow-list reach a pod as environment variables, which a running pod never re-reads, so a v2-rendered callee's pod template carries a `platform.swhurl.com/auth-revision` annotation over them: refreshing the keys, or changing who may call, rolls the app. (v1's rendered env changes the same way.)
+The keys and the allow-list reach a pod as environment variables, which a running pod never re-reads, so a v2-rendered callee's pod template carries a `platform.swhurl.com/auth-revision` annotation over them: refreshing the keys, or changing who may call, rolls the app. (v1's rendered env changes the same way.) For a v2-owned instance the declarations themselves are fields of its own record (`calls`, `allows`); a v1 app keeps them in `apps/<app>/<env>/instance.yaml`.
 
 Every instance is also told who it is (`SWHURL_APP`, `SWHURL_ENV`), and every web app gets what it needs to check a token: `SWHURL_AUTH_ISSUER` and `SWHURL_AUTH_KEYS`, the cluster's public signing keys. Apps cannot fetch those keys themselves (the API server refuses anonymous requests and apps carry no API token), so they are kept in [`apps/signing-keys.json`](../apps/signing-keys.json); `make verify-platform` fails if they differ from the cluster's, and `make platform-signing-keys` refreshes them ([operations](operations.md#signing-keys)).
 

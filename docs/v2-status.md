@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: `resolve` reading the committed resolution, so the v1-shaped record copies can go; 28 October 03:58 is the first nightly on the Go image
+Gate: centralised, file-based auth delivery — one platform-wide auth object mounted as a file the apps re-read; 28 October 03:58 is the first nightly on the Go image
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -383,6 +383,45 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Coverage: `adapters/kube` 96.1%.
 - **What remains for 2a:** the **restore Job** and the **sequence** (suspend, scale, wait, secret, job, logs, scale back, resume, delete), the **presigned read** the pod uses instead of a key, the operator's age key as a Secret, and the first live restore — on `try-10`, restoring its newest archive over itself. The decision still open: **where the restore's steps live** — a `restore-job-sqlite` command added to the backup image in this repository (v1 tooling, an image rebuild), or a script rendered inside the Job (no image change, a contract to test).
 
+## Slice record: the record states its declarations (A)
+
+- **Outcome and the refusal it must produce:** a v2-owned instance's record now states what it calls and who may
+  call it (`calls`, `allows`), so `resolve` no longer needs the v1-shaped YAML copies the handover left beside
+  the pair — and those four files are deleted. `migrate` writes the declarations from the predecessor's records
+  instead of only reporting them, and it **refuses a team grant** (`allows: teams_are_not_modelled`) because the
+  record states app names and a team grant would quietly change what the instance accepts.
+- **Owners and boundaries:** `kernel` owns the fields, their validation (app names, no repeats), their canonical
+  order and their place in the instance's identity; `legacy` owns the translation (its `Callers` renamed
+  `Allows`, matching the record and the resolver); `orchestration.Migrate` maps them and refuses a team grant;
+  the snapshot exporter owns which record shape it read and states it (`format`); `resolve` reads either shape.
+- **What crosses each seam:** the same three documents; a snapshot instance now carries `format`, and a v2-owned
+  instance's `records` are its JSON pair plus the app record from `apps/`.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 unchanged** — nothing under `apps/`, `clusters/` or `platform/` changed; the v1 renderer is untouched.
+  2. **Pure** — the new validation and canonical order are pure; `legacy` still takes no effects.
+  3. **Identity moved once, deliberately:** the instance canonical gained the two lists, so every instance's
+     revision moved — `identities.json` recomputed independently in Python, both golden compilations regenerated
+     in their `inputs.instance` line only, and the two committed pairs re-encoded by `migrate`. **`v2-apps/` is
+     untouched**: the revision lives in the compilation document, not in the rendered resources.
+  4. **Refusals stated, precedence unmoved** — `calls`/`allows`: an app name, no repeats (kernel, after the
+     existing checks); `unsupported: allows: teams_are_not_modelled` (migration, before the pair is built); the
+     exporter refuses two record shapes for one instance and a v1 record left under `v2-records/`.
+  5. **Failure paths tested** — a team grant refused with nothing written; both record shapes and a leftover YAML
+     refused by the export; a v2 pair resolving to byte-identical pairs to the records it replaced; the record's
+     declarations sorted when written and cloned when returned from selection (a record with slices is no longer
+     comparable, and `TestRecordsAreValues` now says which fields may be slices and why); the migration still
+     reproduces both committed pairs byte for byte from **frozen predecessor fixtures** (`v2/testdata/legacy/`),
+     not from mutable copies.
+  6. **Scope** — teams remain unmodelled and are refused; the resolution's 9 pairs are unchanged.
+  7. **Offline only** — no cluster, credential or bucket; the change to Git is a record pair and two deleted files.
+  8. **Recorded in the same change** — this page, the plan's `InstanceSpec` table, the records gap row and the
+     exporter notes, `apps.md` and the registry.
+- **Evidence:** `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check` (1019 tests), `make check-lint`,
+  `make -s check-docs`, `make -s v2-report`; the Python exporter suite (10 tests) and the Go command suite.
+- **Next gate:** centralised, file-based auth delivery — one platform-wide auth object, mounted as a file the
+  apps re-read, so a rotation and a new caller need no restart. The digest added earlier is already a fact about
+  the material, so that slice changes which object is rendered and what the container references.
+
 ## Slice record: a key rotation rolls the callees
 
 - **Outcome:** a callee's pod template now carries `platform.swhurl.com/auth-revision`, the digest of the three
@@ -412,8 +451,9 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
   reaches `main`. 8. **Recorded in the same change** — this page, the plan's calls section and its gap row,
   `apps.md` and `operations.md#signing-keys`.
 - **Evidence:** `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check` (1019 tests), `make check-lint`,
-  `make -s check-docs`, `make -s v2-report`; `kernel` coverage 93.7%, and `TestOwnedInstancesRecompileFromGit`
-  reproduces both owned instances from Git.
+  `make -s check-docs`, `make -s v2-report`; `kernel` coverage 93.7%, `TestOwnedInstancesRecompileFromGit`
+  reproduces both owned instances from Git, and `TestCompiledManifests` ties the pinned chart. **Live:
+  `d64fc10e`** rolled `swhurl-try-10` on the annotation alone, and `observe` read `running` at that revision.
 - **Next gate:** unchanged — `resolve` reading the committed resolution, and after it the platform-wide auth
   object this was shaped for.
 

@@ -153,7 +153,7 @@ kernel: type HTTPInstance struct {Application, Environment string Configuration 
 kernel: type HTTPWorkload struct {Image, Digest string Port int32 HealthPath string UID int32}
 kernel: type Inputs struct {Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"` Calls ConnectionsID `json:"calls"`}
 kernel: type InstanceRevision string
-kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"` Storage Storage `json:"storage,omitempty"`}
+kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"` Storage Storage `json:"storage,omitempty"` Calls []string `json:"calls,omitempty"` Allows []string `json:"allows,omitempty"`}
 kernel: type Network struct {PodCIDR string `json:"podCIDR"`}
 kernel: type Object struct {Group string `json:"group"` Kind string `json:"kind"` Namespace string `json:"namespace"` Name string `json:"name"`}
 kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Routing Routing `json:"routing"` Auth Auth `json:"auth"` Storage PlatformStorage `json:"storage"` Egress EgressProxy `json:"egress"` DNS DNS `json:"dns"` Backup Backup `json:"backup"` Network Network `json:"network"`}
@@ -180,7 +180,7 @@ legacy: func Translate(records Records) (Translation, error)
 legacy: type Error struct {Code, Field, Reason string}
 legacy: type Gap struct {Where, Fact, Owner string}
 legacy: type Instance struct {Exposure string Replicas int32 MemoryMiB int32 Team string}
-legacy: type Migration struct {Application, Environment string Source Source Workload Workload Instance Instance Database string Claim string Corroborated []string Calls, Callers []string Sources map[string]string Gaps []Gap}
+legacy: type Migration struct {Application, Environment string Source Source Workload Workload Instance Instance Database string Claim string Corroborated []string Calls, Allows []string Sources map[string]string Gaps []Gap}
 legacy: type Records struct {App, Instance, Release, Committed []byte}
 legacy: type Source struct {Repository, Commit string}
 legacy: type Supplied struct {Repository, Commit string}

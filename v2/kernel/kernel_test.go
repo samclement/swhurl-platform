@@ -74,7 +74,7 @@ func TestRoundTrips(t *testing.T) {
 			t.Fatal(err)
 		}
 		round, err := DecodeInstance(b)
-		if err != nil || round != s {
+		if err != nil || !reflect.DeepEqual(round, s) {
 			t.Fatalf("instance round-trip: %v", err)
 		}
 	}
@@ -93,10 +93,10 @@ func TestSelectionChangesOnlyRelease(t *testing.T) {
 	}
 	want := prod
 	want.Release = r.ReleaseID
-	if after != want {
+	if !reflect.DeepEqual(after, want) {
 		t.Fatalf("selection changed more than the reference: %#v", after)
 	}
-	if prod != beforeProd || r != beforeRelease || staging != beforeStaging {
+	if !reflect.DeepEqual(prod, beforeProd) || r != beforeRelease || !reflect.DeepEqual(staging, beforeStaging) {
 		t.Fatal("input mutated")
 	}
 	if prod.Configuration == staging.Configuration {
@@ -113,14 +113,14 @@ func TestSelectionChangesOnlyRelease(t *testing.T) {
 		t.Fatal("selection must change instance revision")
 	}
 	again, err := SelectRelease(after, r, newRevision)
-	if err != nil || again != after {
+	if err != nil || !reflect.DeepEqual(again, after) {
 		t.Fatalf("matching-base no-op: %v", err)
 	}
 	_, err = SelectRelease(after, r, revision)
 	code(t, err, StaleInstance) // stale must precede the already-selected short circuit
 	// Mutating the returned value cannot mutate either original (no reference-bearing members).
 	after.Configuration.MemoryMiB++
-	if prod != beforeProd || staging != beforeStaging {
+	if !reflect.DeepEqual(prod, beforeProd) || !reflect.DeepEqual(staging, beforeStaging) {
 		t.Fatal("returned value aliases an input")
 	}
 }
@@ -159,10 +159,12 @@ func TestSelectionRefusalsLeaveInputsUnchanged(t *testing.T) {
 			beforeS, beforeR := s, r
 			result, err := SelectRelease(s, r, rev)
 			code(t, err, tt.want)
-			if result != (InstanceSpec{}) {
+			if !reflect.DeepEqual(result, InstanceSpec{}) {
 				t.Fatal("refusal returned a usable result")
 			}
-			if s != beforeS || r != beforeR {
+			// A record with declaration lists is no longer comparable with ==, so "unchanged" is a deep
+			// comparison of both records.
+			if !reflect.DeepEqual(s, beforeS) || r != beforeR {
 				t.Fatal("refusal mutated inputs")
 			}
 		})
@@ -202,7 +204,7 @@ func TestGoldenIdentities(t *testing.T) {
 	_ = json.Unmarshal(fixture(t, "prod.json"), &instanceDoc)
 	b, _ = json.MarshalIndent(instanceDoc, "", "    ")
 	roundSpec, err := DecodeInstance(b)
-	if err != nil || roundSpec != s {
+	if err != nil || !reflect.DeepEqual(roundSpec, s) {
 		t.Fatalf("instance normalization: %v", err)
 	}
 }
@@ -453,18 +455,57 @@ func TestDomainValidation(t *testing.T) {
 }
 
 func TestRecordsAreValues(t *testing.T) {
-	var check func(reflect.Type)
-	check = func(typ reflect.Type) {
+	// A record is made of values — strings, int32s and nested structs of them — so copying one cannot alias
+	// another. The one exception is a declaration list: `calls` and `allows` are slices because the resolver
+	// reads them as such. A record carrying one is therefore not comparable, and every seam that returns a
+	// record clones those lists (TestSelectionDoesNotAliasDeclarations).
+	declarations := map[string]bool{"Calls": true, "Allows": true}
+	var check func(typ reflect.Type, owner string)
+	check = func(typ reflect.Type, owner string) {
 		switch typ.Kind() {
 		case reflect.Struct:
 			for i := 0; i < typ.NumField(); i++ {
-				check(typ.Field(i).Type)
+				check(typ.Field(i).Type, typ.Field(i).Name)
 			}
 		case reflect.String, reflect.Int32:
+		case reflect.Slice:
+			if typ.Elem().Kind() != reflect.String || !declarations[owner] {
+				t.Fatalf("reference-bearing or unexpected domain field: %s (in %s)", typ, owner)
+			}
 		default:
 			t.Fatalf("reference-bearing or unexpected domain field: %s", typ)
 		}
 	}
-	check(reflect.TypeFor[ReleaseBundle]())
-	check(reflect.TypeFor[InstanceSpec]())
+	check(reflect.TypeFor[ReleaseBundle](), "")
+	check(reflect.TypeFor[InstanceSpec](), "")
+}
+
+// The declaration lists are a record's only reference-bearing members, so a record that comes back from
+// selection owns its lists, and encoding sorts a copy rather than the record it was handed.
+func TestSelectionDoesNotAliasDeclarations(t *testing.T) {
+	current := instance(t, "prod.json")
+	current.Calls, current.Allows = []string{"beta", "alpha"}, []string{"gamma"}
+	revision, err := current.Revision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := SelectRelease(current, release(t), revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected.Calls[0], selected.Allows[0] = "changed", "changed"
+	if current.Calls[0] != "beta" || current.Allows[0] != "gamma" {
+		t.Fatalf("the result aliases its input: %v %v", current.Calls, current.Allows)
+	}
+	encoded, err := EncodeInstance(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Calls[0] != "beta" {
+		t.Fatal("encoding reordered the record it was given")
+	}
+	alpha, beta := bytes.Index(encoded, []byte(`"alpha"`)), bytes.Index(encoded, []byte(`"beta"`))
+	if alpha < 0 || beta < 0 || alpha > beta {
+		t.Fatalf("the record's calls are not sorted when written:\n%s", encoded)
+	}
 }

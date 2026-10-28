@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "exposure": "authenticated-web",
+  "calls": [
+    "swhurl-try-10",
+    "swhurl-try-12"
+  ]
+}

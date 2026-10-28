@@ -89,6 +89,11 @@ type InstanceSpec struct {
 	// Storage is the volume the instance asks for: a size in MiB, and nothing else. The class belongs to
 	// the platform; a size is a decision, so there is no default.
 	Storage Storage `json:"storage,omitempty"`
+	// Calls and Allows are the instance's own declarations — the apps it calls, and the apps whose calls it
+	// accepts, by app name (teams are not modelled). The resolver reads them to decide consent; the
+	// compiler renders only the connected pairs a resolution gives it, so these never reach a resource.
+	Calls  []string `json:"calls,omitempty"`
+	Allows []string `json:"allows,omitempty"`
 }
 
 // Storage is one instance's data volume: a size to create, or the claim of a volume that already exists —
@@ -185,6 +190,28 @@ func (s InstanceSpec) validate() error {
 	}
 	if s.Grants.Exposure != "private" && s.Grants.Exposure != "authenticated-web" {
 		return refuse(Unsupported, "grants.exposure", "only private and authenticated-web exposure are supported")
+	}
+	return s.validateDeclarations()
+}
+
+// validateDeclarations checks both sides of an instance's declarations: app names, each at most once. A team
+// grant is v1's spelling and not v2's: the record states app names, and migration refuses a team grant rather
+// than quietly changing what the instance accepts.
+func (s InstanceSpec) validateDeclarations() error {
+	for _, declared := range []struct {
+		field string
+		names []string
+	}{{"calls", s.Calls}, {"allows", s.Allows}} {
+		seen := map[string]bool{}
+		for _, name := range declared.names {
+			if !namePattern.MatchString(name) {
+				return refuse(Invalid, declared.field, "expected an app name")
+			}
+			if seen[name] {
+				return refuse(Invalid, declared.field, "repeated")
+			}
+			seen[name] = true
+		}
 	}
 	return nil
 }

@@ -95,6 +95,43 @@ func TestResolveThenCompileACalledInstance(t *testing.T) {
 	}
 }
 
+// A v2-owned instance's declarations come from its own pair, and its runtime facts from the nested runtime
+// object: the resolution must be the same one a predecessor's records give, or a migrated pair would silently
+// lose or invent a relationship.
+func TestResolveReadsAV2OwnedPair(t *testing.T) {
+	snapshotPath := writeSnapshot(t, twoInstances(t))
+	var fromRecords bytes.Buffer
+	if status := run([]string{"resolve", "--snapshot", snapshotPath}, &fromRecords, &bytes.Buffer{}, os.ReadFile,
+		files.New()); status != 0 {
+		t.Fatalf("resolve over v1 records: exit %d", status)
+	}
+
+	// The same two instances as v2 owns them: the declarations in the instance record, the runtime nested.
+	document := twoInstances(t)
+	for _, raw := range document["instances"].([]any) {
+		instance := raw.(map[string]any)
+		instance["format"] = "v2"
+		instance["records"].(map[string]any)["instance"] = map[string]any{
+			"schemaVersion": 1, "application": instance["application"], "environment": "staging",
+			"calls":  instance["records"].(map[string]any)["instance"].(map[string]any)["calls"],
+			"allows": instance["records"].(map[string]any)["instance"].(map[string]any)["allows"],
+		}
+		instance["records"].(map[string]any)["release"] = map[string]any{
+			"schemaVersion": 1, "runtime": map[string]any{"kind": "web", "port": 8080},
+		}
+	}
+	snapshotPath = writeSnapshot(t, document)
+	var fromPair bytes.Buffer
+	if status := run([]string{"resolve", "--snapshot", snapshotPath}, &fromPair, &bytes.Buffer{}, os.ReadFile,
+		files.New()); status != 0 {
+		t.Fatalf("resolve over v2 pairs: exit %d", status)
+	}
+	if fromPair.String() != fromRecords.String() {
+		t.Fatalf("a v2 pair resolves differently from the records it replaced:\n%s\n%s", fromPair.String(),
+			fromRecords.String())
+	}
+}
+
 // compileWithCalls builds one instance's files from the fixture profile and the given resolution.
 func compileWithCalls(t *testing.T, callsPath, application string, release kernel.ReleaseBundle) kernel.Compilation {
 	t.Helper()

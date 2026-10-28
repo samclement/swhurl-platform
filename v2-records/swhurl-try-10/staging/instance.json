@@ -13,5 +13,9 @@
   "bindings": {},
   "storage": {
     "claimName": "swhurl-try-10"
-  }
+  },
+  "allows": [
+    "swhurl-try-11",
+    "swhurl-try-12"
+  ]
 }

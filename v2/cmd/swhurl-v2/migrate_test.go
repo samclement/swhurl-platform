@@ -43,9 +43,10 @@ func readFile(t *testing.T, path string) []byte {
 	return data
 }
 
-// TestMigrateReproducesCommittedInstances runs the migration over the v1-shaped record copies of every
-// v2-owned instance and asserts it writes the record identities Git holds and byte-for-byte the files Git
-// holds. The two real migrations are then the translation's own acceptance test, the stateful one included.
+// TestMigrateReproducesCommittedInstances runs the migration over the frozen predecessor records of every
+// v2-owned instance (testdata/legacy, the v1 documents the handover removed) and asserts it writes the record
+// identities Git holds and byte-for-byte the files Git holds. The two real migrations are then the
+// translation's own acceptance test, the stateful one included.
 func TestMigrateReproducesCommittedInstances(t *testing.T) {
 	instances, err := filepath.Glob("../../../v2-records/*/*/instance.json")
 	if err != nil || len(instances) == 0 {
@@ -140,24 +141,18 @@ func allocatedPort(t *testing.T, application, environment string) float64 {
 	return port
 }
 
-// predecessor is a snapshot in the exporter's shape for one instance: the v1-shaped records the snapshot
-// carries beside the committed output v2 holds for it.
+// predecessor is a snapshot in the exporter's shape for one instance: the predecessor's frozen records
+// (testdata/legacy) beside the committed output v2 holds for it. Frozen, because a migration's input is what
+// the predecessor said, not what a record says today.
 func predecessor(t *testing.T, application, environment string) map[string]any {
 	t.Helper()
-	recordRoot := filepath.Join("../../../v2-records", application, environment)
 	documents := map[string]any{}
-	// The snapshot exporter reads the records as YAML and carries the objects as JSON; the test reads them
-	// the same way, with the parser the repository's own tooling uses.
 	for role, path := range map[string]string{
-		"app":         filepath.Join("../../../apps", application, "app.yaml"),
-		"instance":    filepath.Join(recordRoot, "instance.yaml"),
-		"release":     filepath.Join(recordRoot, "release.yaml"),
+		"app":         filepath.Join("..", "..", "testdata", "legacy", application, environment, "app.json"),
+		"instance":    filepath.Join("..", "..", "testdata", "legacy", application, environment, "instance.json"),
+		"release":     filepath.Join("..", "..", "testdata", "legacy", application, environment, "release.json"),
 		"helmrelease": filepath.Join("../../../v2-apps/instances", application, environment, "helmrelease.json"),
 	} {
-		if strings.HasSuffix(path, ".yaml") {
-			documents[role] = yamlDocuments(t, path)[0]
-			continue
-		}
 		var document any
 		if err := json.Unmarshal(readFile(t, path), &document); err != nil {
 			t.Fatalf("%s: %v", path, err)
@@ -231,7 +226,7 @@ func TestMigrateWritesAPairCompileCanRecompile(t *testing.T) {
 func TestMigrateReportsUnconnectedDeclarations(t *testing.T) {
 	snapshot := writeSnapshot(t, snapshotDocument(t, map[string]any{"instance": map[string]any{
 		"version": 1, "exposure": "authenticated-web", "replicas": 1,
-		"calls": []any{"billing"}, "allows": []any{"team:demo", "swhurl-try-11"},
+		"calls": []any{"billing"}, "allows": []any{"swhurl-try-12", "swhurl-try-11"},
 	}}))
 	status, stdout, diagnostic := runMigrate(t, "--snapshot", snapshot, "--app", "hello", "--env", "staging",
 		"--profile", filepath.Join("..", "..", "testdata", "profile.json"),
@@ -244,8 +239,9 @@ func TestMigrateReportsUnconnectedDeclarations(t *testing.T) {
 	if unmet := edges["unmetCalls"].([]any); len(unmet) != 1 || unmet[0] != "billing" {
 		t.Errorf("unmet calls %v", unmet)
 	}
-	// A team grant is expanded by the resolver, so it has no caller of its own to compare; the app name does.
-	if unmet := edges["unmetCallers"].([]any); len(unmet) != 1 || unmet[0] != "swhurl-try-11" {
+	// Both granted apps are unconnected in this fixture, so both are reported.
+	if unmet := edges["unmetCallers"].([]any); len(unmet) != 2 || unmet[0] != "swhurl-try-11" ||
+		unmet[1] != "swhurl-try-12" {
 		t.Errorf("unmet callers %v", unmet)
 	}
 	if declared := edges["declaredCallers"].([]any); len(declared) != 2 {
@@ -253,6 +249,22 @@ func TestMigrateReportsUnconnectedDeclarations(t *testing.T) {
 	}
 	if !strings.Contains(diagnostic, "unresolved declarations reported") {
 		t.Errorf("the summary does not name them: %q", diagnostic)
+	}
+}
+
+// A grant by team is a v1 fact v2 does not model: the record states app names, so the migration refuses it
+// rather than carrying a consent rule that would quietly change what the instance accepts.
+func TestMigrateRefusesATeamGrant(t *testing.T) {
+	snapshot := writeSnapshot(t, snapshotDocument(t, map[string]any{"instance": map[string]any{
+		"version": 1, "exposure": "authenticated-web", "replicas": 1,
+		"allows": []any{"team:demo"},
+	}}))
+	status, stdout, diagnostic := runMigrate(t, "--snapshot", snapshot, "--app", "hello", "--env", "staging",
+		"--profile", filepath.Join("..", "..", "testdata", "profile.json"),
+		"--source-repository", "nginxinc/nginx-unprivileged", "--source-commit", strings.Repeat("b", 40),
+		"--out", t.TempDir())
+	if status != 2 || stdout != "" || !strings.Contains(diagnostic, "allows: teams_are_not_modelled") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", status, stdout, diagnostic)
 	}
 }
 

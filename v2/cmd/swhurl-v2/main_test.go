@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -218,7 +219,9 @@ func TestBinary(t *testing.T) {
 	before, _ := kernel.DecodeInstance(originals["prod.json"])
 	want := before
 	want.Release = kernel.ReleaseID(id)
-	if after != want {
+	// A record carrying declaration lists is not comparable: "more than the release changed" is a deep
+	// comparison.
+	if !reflect.DeepEqual(after, want) {
 		t.Fatal("binary changed more than release")
 	}
 	if err := os.WriteFile(filepath.Join(dir, "selected.json"), out, 0600); err != nil {

@@ -202,7 +202,7 @@ func migrationEdges(result orchestration.Migration) migrationRelationships {
 		Calls:           make([]migrationCall, 0, len(result.Rendered.Calls)),
 		Callers:         nonNil(result.Rendered.Callers),
 		DeclaredCalls:   nonNil(result.Facts.Calls),
-		DeclaredCallers: nonNil(result.Facts.Callers),
+		DeclaredCallers: nonNil(result.Facts.Allows),
 		UnmetCalls:      nonNil(result.UnmetCalls),
 		UnmetCallers:    nonNil(result.UnmetCallers),
 	}

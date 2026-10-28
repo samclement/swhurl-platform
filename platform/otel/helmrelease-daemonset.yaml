@@ -151,6 +151,17 @@ spec:
               "^coredns-"))
             - set(cache["parser"], "coredns") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
               and IsMatch(resource.attributes["k8s.pod.name"], "^coredns-")))
+            # The egress proxy (docs/services.md#egress-proxy): one key=value access line per request, and its own
+            # cache_log lines as "<date>|<section>| message". The access line has no timestamp of its own — the
+            # file's time is the record's — so the fields carry who sent it, what it asked for and how it ended.
+            - set(cache["fields"], ExtractPatterns(cache["candidate"], "^instance=(?P<instance>\\S+) granted=(?P<granted>\\S+) client=(?P<client>\\S+) method=(?P<method>\\S+) host=(?P<host>\\S+) status=(?P<status>\\S+) bytes=(?P<bytes>\\d+) ms=(?P<duration_ms>\\d+)$"))
+              where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^egress-"))
+            - set(cache["parser"], "squid-access") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^egress-")))
+            - set(body, Concat([cache["fields"]["instance"], cache["fields"]["method"], cache["fields"]["host"], cache["fields"]["status"]], " "))
+              where cache["parser"] == "squid-access"
+            - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<timestamp>\\d{4}/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d)\\|\\s*(?:(?P<section>[A-Za-z0-9_.:/-]+)\\|\\s*)?(?P<level>FATAL|ERROR|WARNING)?:?\\s*(?P<message>.*)$"))
+              where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^egress-"))
+            - set(cache["parser"], "squid-log") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^egress-")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<level>INFO|WARN|WARNING|ERROR):\\s+(?P<client_address>\\S+)
               - \"(?P<method>\\S+) (?P<path>\\S+) (?P<protocol>[^\"]+)\" (?P<status>\\d{3}) (?P<message>.*)$")) where (cache["parser"]
               == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^console-"))
@@ -179,6 +190,9 @@ spec:
               and cache["fields"]["fields_logfmt"] != ""
             - delete_key(cache["fields"], "fields_logfmt") where IsMap(cache["fields"])
             - set(cache["level"], cache["fields"]["level"]) where (IsMap(cache["fields"]))
+            # The proxy's access and cache_log lines carry no level of their own: an access line that came
+            # through is informational, and its refusals are the granted field's business, not severity.
+            - set(cache["level"], "INFO") where (cache["level"] == nil or cache["level"] == "") and (cache["parser"] == "squid-access" or cache["parser"] == "squid-log")
             - set(cache["level"], cache["fields"]["severity"]) where (cache["level"] == nil) and ((IsMap(cache["fields"])))
             - set(cache["level"], cache["fields"]["s"]) where (cache["level"] == nil) and ((IsMap(cache["fields"])))
             - set(cache["level"], cache["fields"]["severityText"]) where (cache["level"] == nil) and ((IsMap(cache["fields"])))

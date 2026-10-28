@@ -61,6 +61,7 @@ For example, `{"level":30,"msg":"request completed","req":{"method":"GET"},"stat
 | metrics-server and older cert-manager logs | Kubernetes klog prefix (level, caller, PID, message and quoted key/value fields). |
 | oauth2-proxy | Request fields (method, path, status, client, user agent, sizes); a separate parser for application lines. |
 | CoreDNS | Bracketed level and message. |
+| Egress proxy (Squid) | An access line's `instance`, `granted`, `client`, `method`, `host`, `status`, `bytes` and `duration_ms`, with a one-line body (`instance method host status`); its own `cache_log` lines keep their timestamp and message. Both are INFO: a refusal is the `granted` field's business, not severity. |
 | local-path provisioner; older Traefik and Reloader logs | Quoted logfmt fields. |
 | Older console logs | Uvicorn access/application lines and audit prefixes. |
 | Host timers | Existing filename-to-service mapping and `[OK]`/`[WARN]`/`[BAD]`/`[ERROR]` prefixes. |

@@ -1185,9 +1185,10 @@ platform unit's next reconcile before they can mount the keys; and the allow-lis
 content is.
 
 **What each form buys.** An image that reads the files takes a rotated key or a new caller from the kubelet's
-in-place refresh — **no restart**. The env forms and the annotation stay until the templates (separate
-repositories) release a reader that prefers the file and the apps are rebuilt from it; that re-pin is the long
-pole, and it is what retires the annotation. The allow-list's object is per instance because its content is; the
+in-place refresh — **no restart**. Both templates now release such a reader (TypeScript `v0.2.19`, Kotlin
+`v0.2.18`, pinned in `STACK_REVISIONS` on 28 October 2026). The env forms and the annotation stay until the
+callees are rebuilt from them — for a v2-owned one, until a release record selects the new image — and a live
+rotation shows no new pod. The allow-list's object is per instance because its content is; the
 keys are the platform's, and moving their object into one rendered platform unit — one ConfigMap per managed
 namespace, with the instance's unit depending on it — is the next slice.
 
@@ -1525,7 +1526,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | App kinds `worker` and `job` (a CronJob schedule); a command override | Refused (`unsupported`): only `web`, and no command | Phase 7, per app |
 | Teams: the namespace `team` label, team isolation | Not in the records; no label | Before an instance needs team isolation |
 | Calls between apps: caller tokens and signing keys, `SWHURL_<APP>_URL`, callers in the NetworkPolicy | The [resolver, pair rendering, resolution document and delivery](#calls-between-apps-resolver-and-pair-rendering-implemented-offline-25-october-2026) exist, and the call's network rules now state the cluster's pod block with the token as the caller's identity ([why](#calls-on-the-pod-network-with-the-token-as-the-callers-identity-implemented-26-october-2026)). The bridge still reports calls as gaps. **Proved live 26 October 2026:** `swhurl-try-11` calls `swhurl-try-10` and the callee answers `caller.id=swhurl-try-11` — the network by the pod block, the identity by the audience token, whose subject requires the caller's pod to run as the service account named after the app | A policy implementation that honours selectors if network-level identity is wanted; otherwise the bridge's `calls` section |
-| One platform ConfigMap for token verification, replicated into each managed namespace | **Built:** `swhurl-v2 auth` renders one identical `swhurl-auth` per managed namespace into `platform/auth/`, the `platform-auth` unit applies it, and CI regenerates and diffs it. Instances mount the fixed name and claim none of it; a rotation rewrites one folder. The allow-list stays per instance, and no app unit can depend on the platform unit (namespace creation would deadlock), so a new app's pods wait one reconcile | Done; the template re-pin retires the env forms and the `auth-revision` annotation |
+| One platform ConfigMap for token verification, replicated into each managed namespace | **Built:** `swhurl-v2 auth` renders one identical `swhurl-auth` per managed namespace into `platform/auth/`, the `platform-auth` unit applies it, and CI regenerates and diffs it. Instances mount the fixed name and claim none of it; a rotation rewrites one folder. The allow-list stays per instance, and no app unit can depend on the platform unit (namespace creation would deadlock), so a new app's pods wait one reconcile | Done; the templates read the files (re-pinned 28 October 2026), so a callee rebuilt from them and proved live retires the env forms and the `auth-revision` annotation |
 | Notifications: `SWHURL_NOTIFY_URL`, the projected `notify` token | Not generated | Phase 7 |
 | Events: NATS users, streams and consumers | Not generated | Phase 7 |
 | Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |

@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the template releases that read the auth files, then the re-pin that retires the env forms and the `auth-revision` annotation
+Gate: `swhurl-try-10` rebuilt from TypeScript `v0.2.19` and its new image selected by a v2 release record, then the live proof (a key rotation and a new caller with no new pod), then retiring the env forms and the `auth-revision` annotation
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -39,7 +39,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, an ownership inventory, and a read-only live check of the claims | **Slices 1–4 done** |
 | Routes | A signed-in route from platform facts, verified live through the shared sign-in | **Done, live** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
-| Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), a rotation rolling the callees, the auth material mounted as files, and the keys rendered once for every managed namespace | **Done offline**, proved live for the pair |
+| Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), a rotation rolling the callees, the auth material mounted as files, the keys rendered once for every managed namespace, and both templates reading the files first | **Done offline**, proved live for the pair; the no-restart proof waits for a file-reading image |
 | Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Two live** (`swhurl-try-11`, `swhurl-try-10` staging, the second stateful on its own volume), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
@@ -422,6 +422,43 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Next gate:** the template releases that read the files (in the two template repositories, then a
   `STACK_REVISIONS` re-pin), which retire the env forms and the `auth-revision` annotation.
 
+## Slice record: the templates read the auth files (the re-pin)
+
+- **Outcome:** both stack templates prefer the mounted auth files and fall back to the environment, and the
+  platform's catalogue pins those releases: **TypeScript `v0.2.19`** and **Kotlin `v0.2.18`** in `STACK_REVISIONS`
+  (commits and CI runs in [current state](current-state.md#the-templates-read-the-auth-files-released-and-pinned-28-october-2026)). An app rendered or updated from them reads `SWHURL_AUTH_ISSUER_FILE`,
+  `SWHURL_AUTH_KEYS_FILE` and `SWHURL_ALLOWED_CALLERS_FILE` on each verification, so the kubelet's in-place refresh
+  of `swhurl-auth` or `<app>-callers` takes effect in the running process. A readable file wins even when empty —
+  an empty allow-list admits nobody rather than falling back to the environment's.
+- **Owners and boundaries:** each template owns its reader (`platform.ts`'s `material()`, `Platform.kt`'s
+  `material()`); this repository owns only the pin. The pin decides what a **new** app renders; an existing app
+  takes it through its own reviewed Copier update (Renovate's Copier manager reads the new tags), and a v2-owned
+  instance runs the result only when a v2 release record selects its new image.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 unchanged in behaviour** — only the pin moved; no rendered manifest, instance or record changed, and
+     every app type of both stacks still passes `app-new` and the app policy (`make check-templates`).
+  2. **Pure** — no v2 package changed.
+  3. **No identity changed** — no release, instance or profile field; no golden regenerated.
+  4. **Refusals unmoved** — both templates still refuse answers that are no app type (`check-templates`).
+  5. **Failure paths tested, in the templates:** the file wins over the environment, a rewritten callers file
+     changes who may call in the same process, an emptied one admits nobody, and (Kotlin) a rotated key verifies
+     at once while the old one is refused. Kotlin's case was built and run for all three app types on
+     `eclipse-temurin:25-jdk` in podman (26, 18 and 18 tests), and mutation-checked: the env-only `Platform.kt`
+     fails it (`reports is not allowed to call orders`). Each template's CI then passed on its tagged commit,
+     every type built and smoke-tested.
+  6. **Scope** — nothing running reads the files yet: every app's image predates these releases, so the env
+     forms and the `auth-revision` annotation stay. The pins also carry the templates' Renovate updates since
+     `v0.2.18`/`v0.2.17` (Micronaut 5.2.4, the OpenTelemetry agent 2.33.1, Gradle 9.8.2 among them).
+  7. **Live** — nothing on the cluster changed; the two tags are published, and new apps record
+     `_commit: v0.2.18` (Kotlin) or `v0.2.19` (TypeScript).
+  8. **Recorded in the same change** — this page, the registry, the plan's calls section and gap row, `apps.md`,
+     `operations.md#signing-keys` and `current-state.md`.
+- **Evidence:** `make check-templates` (9 checks, both stacks), `make check` (1022 tests), `make check-lint`,
+  `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make -s check-docs`.
+- **Next gate:** `swhurl-try-10` (TypeScript, at `v0.2.18`) takes the `v0.2.19` Copier update and builds an image;
+  a v2 release record selects its digest; then the live proof — rotate the keys and add a caller, and show both
+  take effect with no new pod — after which the env forms and the annotation retire for v2-owned callees.
+
 ## Slice record: the auth material as files (delivery, option 2)
 
 - **Outcome:** a callee's keys, issuer and allow-list are rendered **twice from the same strings**: the env forms
@@ -634,13 +671,12 @@ The report shows what the tree adds to `origin/main`: a new package, a changed e
 > material is mounted as **files** as well as env, and a v2-owned instance's own record states its `calls` and
 > `allows` — the v1-shaped YAML copies are gone.
 >
-> **The gate is the template re-pin.** The templates read the auth material from the environment only. The
-> TypeScript template's file-first change is pushed (in that repository; its CI re-renders every answer set); the Kotlin
-> half is **not written** — `Platform.kt`'s `setting()` needs a file-first `material()` and a `CallTest` case, and
-> this host has no JDK, so it belongs where a JDK or that repository's CI can prove it. After both are released:
-> bump `STACK_REVISIONS` in [`tools/swhurl/apps/contract.py`](../tools/swhurl/apps/contract.py), run
-> `make check-templates`, then the `auth-revision` annotation and the env forms retire. Prove it live: rotate the
-> keys, add a caller to a v2-owned app, and show both take effect **without a new pod**.
+> **The gate is a file-reading image under v2.** Both templates read the auth files first — TypeScript `v0.2.19`,
+> Kotlin `v0.2.18`, both pinned in `STACK_REVISIONS` — but no running app is built from them. `swhurl-try-10`
+> (TypeScript, the v2-owned callee) needs the `v0.2.19` Copier update and a new image, and a v2 release record
+> selecting that digest. Then prove it live: rotate the keys, add a caller to a v2-owned app, and show both take
+> effect **without a new pod**; only then do the `auth-revision` annotation and the env forms retire. Kotlin
+> builds here in podman (`eclipse-temurin:25-jdk`), though a cold Gradle cache takes about 18 minutes.
 >
 > The layers are checked: 0 pure (`kernel`, `calls`, `legacy`, `observe`, `shadow`), 1 adapters (`files`, `kube`,
 > `s3`), 2 use cases (`orchestration`: compile, migrate, restore), 3 the command. **Backup is done**: the job, the

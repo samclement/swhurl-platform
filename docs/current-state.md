@@ -2,6 +2,22 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Validate green again; the backup host is the platform's grant (28 October 2026)
+
+Validate had failed on every push since `4bfc82ac` (the egress freshness check), so no console deploy ran.
+`955f5d80` makes the platform grant a database instance's backup host from the profile; the allocation rendered
+from the records equals the committed one, and `platform/egress` did not change, so the proxy was not restarted.
+Validate passed on `955f5d80`, including **Deploy the console**: the bot commit `ae7a8c0c` pinned
+`src-426f89cfcbbf693d`, which also carries the template re-pin (`3f30dece`).
+
+**Verified after `make flux-reconcile`:** `make verify-platform` passed (97 checks, no warning, so the new console
+image is the one running); the console pod runs `src-426f89cfcbbf693d` with no restarts, and both checker jobs
+(`console-dashboards`, `console-notifications`) ran on it at `22:22Z`; `make app-status` read `running: matches
+desired` for `swhurl-try-10` and `swhurl-try-11` staging.
+
+**Still unexercised:** the next nightly upload of `swhurl-try-10` staging after this change (the grant is the same
+bytes as before, so no difference is expected), and a v2-owned instance that declares an outside host of its own.
+
 ## The templates read the auth files, released and pinned (28 October 2026)
 
 **Released:** TypeScript `v0.2.19` (`ad8078e`) and Kotlin `v0.2.18` (`a291cae`) prefer the mounted auth files over

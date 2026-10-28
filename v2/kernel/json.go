@@ -116,7 +116,7 @@ func DecodeInstance(data []byte) (InstanceSpec, error) {
 	if err := document(data); err != nil {
 		return InstanceSpec{}, err
 	}
-	root, err := fields(data, "instance", []string{"schemaVersion", "application", "environment", "release", "configuration", "grants", "bindings"}, "storage")
+	root, err := fields(data, "instance", []string{"schemaVersion", "application", "environment", "release", "configuration", "grants", "bindings"}, "storage", "calls", "allows")
 	if err != nil {
 		return InstanceSpec{}, err
 	}
@@ -155,5 +155,6 @@ func EncodeInstance(spec InstanceSpec) ([]byte, error) {
 	if err := spec.validate(); err != nil {
 		return nil, err
 	}
+	spec.Calls, spec.Allows = sortedNames(spec.Calls), sortedNames(spec.Allows)
 	return json.MarshalIndent(spec, "", "  ")
 }

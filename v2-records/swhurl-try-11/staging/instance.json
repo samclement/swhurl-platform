@@ -11,5 +11,9 @@
     "exposure": "authenticated-web"
   },
   "bindings": {},
-  "storage": {}
+  "storage": {},
+  "calls": [
+    "swhurl-try-10",
+    "swhurl-try-12"
+  ]
 }

@@ -112,7 +112,7 @@ type RestoreApp struct {
 	State     string
 }
 
-// Refusal is the use case's own refusal: it will not start, and nothing in the cluster was changed. A failure
+// Refusal is the use case's own refusal: it will not start, and nothing was changed. A failure
 // after the first change is never a refusal, so a caller can tell "not started" from "stopped part-way" by
 // the type alone.
 type Refusal struct{ Subject, Reason string }

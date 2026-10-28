@@ -33,11 +33,14 @@ type snapshot struct {
 }
 
 type snapshotInstance struct {
-	Application string                     `json:"application"`
-	Environment string                     `json:"environment"`
-	Records     map[string]json.RawMessage `json:"records"`
-	Missing     []string                   `json:"missing"`
-	Objects     []identity                 `json:"objects"`
+	Application string `json:"application"`
+	Environment string `json:"environment"`
+	// Format is which record shape the export read: "v2" for an instance v2 owns, whose records are its JSON
+	// pair, and "v1" (or absent, in an older snapshot) for a predecessor's YAML records.
+	Format  string                     `json:"format"`
+	Records map[string]json.RawMessage `json:"records"`
+	Missing []string                   `json:"missing"`
+	Objects []identity                 `json:"objects"`
 }
 
 type snapshotUnit struct {

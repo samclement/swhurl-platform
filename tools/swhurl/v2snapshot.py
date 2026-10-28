@@ -18,9 +18,13 @@ from swhurl.run import Runner
 
 USAGE = 'usage: v2-snapshot --revision REV --out FILE'
 
-# The records every instance keeps beside its committed manifests, and the app-level record above them.
-INSTANCE_RECORD = 'instance.yaml'
+# The record that names an instance: v1 keeps a YAML record under apps/, and a v2-owned instance keeps its JSON
+# pair under v2-records/. A record's suffix is also how it is parsed.
+INSTANCE_RECORDS = ('instance.json', 'instance.yaml')
 RECORDS = ('instance.yaml', 'release.yaml', 'helmrelease.yaml')
+# A v2-owned instance's records are its own pair; its committed manifest is the compiled HelmRelease, which the
+# export carries as a declared object rather than as a record.
+OWNED_RECORDS = ('instance.json', 'release.json')
 UNIT_ROOT = 'clusters/home/'
 # An instance v2 owns keeps its records here, out of apps/ so v1 neither renders nor checks it, and its
 # compiled output is v2's own root: both are read at the same revision as everything else.
@@ -95,8 +99,13 @@ def tracked(runner: Runner, revision: str) -> list[str]:
 def snapshot(runner: Runner, revision: str, paths: list[str]) -> dict:
     documents = set(paths)
     instances = [instance_path(path) for path in paths
-                 if path.count('/') == 3 and path.endswith('/' + INSTANCE_RECORD)
+                 if path.count('/') == 3 and path.endswith(tuple('/' + name for name in INSTANCE_RECORDS))
                  and (path.startswith('apps/') or path.startswith(OWNED_ROOT + '/'))]
+    duplicated = sorted({instance for instance in instances if instances.count(instance) > 1})
+    if duplicated:
+        # Both shapes for one instance is a contradiction, not a preference: the export refuses rather than
+        # choosing one and letting the other go stale.
+        raise SnapshotError(f'an instance keeps two record shapes: {duplicated[0][0]}/{duplicated[0][1]}')
     document = {'version': 1, 'revision': revision, 'instances': [], 'residual': []}
     for application, environment in sorted(instances):
         record_root, output_root = roots(paths, application, environment)
@@ -108,6 +117,7 @@ def snapshot(runner: Runner, revision: str, paths: list[str]) -> dict:
             objects.append(unit)
         document['instances'].append({
             'application': application, 'environment': environment,
+            'format': 'v2' if record_root == OWNED_ROOT else 'v1',
             'records': records, 'missing': missing,
             'objects': sorted(objects, key=lambda entry: (entry['kind'], entry['namespace'], entry['name'])),
         })
@@ -122,21 +132,25 @@ def instance_path(path: str) -> tuple[str, str]:
 
 
 def roots(paths: list[str], application: str, environment: str) -> tuple[str, str]:
-    """Where one instance's records and committed manifests are: v1's trees, or v2's for an instance v2 owns."""
-    if f'{OWNED_ROOT}/{application}/{environment}/{INSTANCE_RECORD}' in paths:
+    """Where one instance's records and committed manifests are: v1's trees, or v2's for an instance v2 owns.
+
+    A v2-owned instance is one whose JSON pair is under v2-records/, whatever else the tree holds."""
+    if any(f'{OWNED_ROOT}/{application}/{environment}/{name}' in paths for name in OWNED_RECORDS):
         return OWNED_ROOT, OWNED_OUTPUT
     return 'apps', 'apps'
 
 
 def read_records(runner: Runner, revision: str, documents: set[str], application: str, environment: str,
                  record_root: str = 'apps') -> tuple[dict, list[str]]:
-    """The four records as JSON. A record the revision does not hold is named, not invented.
+    """The records as JSON. A record the revision does not hold is named, not invented.
 
     An app record may be v2's or v1's wherever the app still has a v1 instance, so it is looked for in both
-    places; the instance's own records are read only from the root its instance record was found in."""
+    places; the instance's own records are read only from the root its instance record was found in. A v2-owned
+    instance keeps its pair as JSON, and the manifest that declares its objects is its compiled HelmRelease."""
     sought = {f'{record_root}/{application}/app.yaml': 'app', f'apps/{application}/app.yaml': 'app'}
-    for name in RECORDS:
-        sought[f'{record_root}/{application}/{environment}/{name}'] = name.removesuffix('.yaml')
+    names = OWNED_RECORDS if record_root == OWNED_ROOT else RECORDS
+    for name in names:
+        sought[f'{record_root}/{application}/{environment}/{name}'] = name.rsplit('.', 1)[0]
     records, missing = {}, []
     for path, role in sought.items():
         if role in records:
@@ -147,10 +161,20 @@ def read_records(runner: Runner, revision: str, documents: set[str], application
             continue
         text = runner.output(['git', 'show', f'{revision}:{path}'])
         try:
-            records[role] = yamlio.load(text) or {}
-        except yaml.YAMLError:
-            raise SnapshotError(f'a record is not YAML: {path}') from None
+            records[role] = load_record(path, text) or {}
+        except (yaml.YAMLError, ValueError):
+            raise SnapshotError(f'a record is not {record_format(path)}: {path}') from None
     return records, missing
+
+
+def record_format(path: str) -> str:
+    """What a record's suffix says it is, so a diagnostic never pretends to know."""
+    return 'JSON' if path.endswith('.json') else 'YAML'
+
+
+def load_record(path: str, text: str):
+    """One record, parsed by its suffix: v2's pair is JSON and v1's records are YAML."""
+    return json.loads(text) if path.endswith('.json') else yamlio.load(text)
 
 
 def declared(runner: Runner, revision: str, documents: set[str], paths: list[str]) -> list[dict]:

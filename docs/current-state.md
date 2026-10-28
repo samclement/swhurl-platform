@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## A key rotation rolls the callee: the auth revision on the pod template (27 October 2026)
+
+`d64fc10e` was pushed and reconciled: `app-swhurl-try-10-staging` applied it and Helm rolled the Deployment, and
+no other app restarted because no other compiled file changed. The pod template now carries
+`platform.swhurl.com/auth-revision: auth-sha256:3bb7e3f7…` — the digest of the platform's issuer and keys and
+this instance's two callers — and that annotation is what makes a rotation of `apps/signing-keys.json` reach a
+running callee: v2 injects those keys with `envFrom` a ConfigMap, which a running pod never re-reads, and
+Reloader ignores ConfigMaps. v1 never had the gap because it inlined the keys in the HelmRelease env.
+
+**Evidence.** `kubectl rollout status` succeeded; the replacement pod was created at `23:37:43Z` with no restarts;
+`observe` immediately after read `running` with all seven findings positive and `unit.revision applied` at
+`d64fc10e`. The change was the annotation alone — the same image digest, the same data volume, the same two
+tables.
+
+**Not exercised:** an actual rotation of `apps/signing-keys.json` (the digest is what would change, and the same
+annotation would roll the apps), and a caller-only app, which must *not* roll because it holds no verification
+keys — try-11 received no change, which is consistent but not a test of a caller's rotation.
+
 ## The first content-changing restore: `swhurl-try-10` staging moved back a day (27 October 2026)
 
 The restore above put back the *newest* archive, so it could not show a content change. This one deliberately

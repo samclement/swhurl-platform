@@ -126,16 +126,24 @@ class OwnedInstanceTests(unittest.TestCase):
     """An instance v2 owns keeps its records in v2's tree, and the export reads them like any other."""
 
     PATHS = [
-        'v2-records/owned/staging/instance.yaml',
-        'v2-records/owned/staging/release.yaml',
+        'v2-records/owned/staging/instance.json',
+        'v2-records/owned/staging/release.json',
         'v2-apps/instances/owned/staging/namespace.json',
         'v2-apps/instances/owned/staging/kustomization.yaml',
         'apps/owned/app.yaml',
         'clusters/home/app-owned-staging.json',
     ]
     FILES = {
-        'v2-records/owned/staging/instance.yaml': 'version: 1\nexposure: authenticated-web\nallows: [caller]\n',
-        'v2-records/owned/staging/release.yaml': 'version: 1\nkind: web\nport: 8080\nuid: 65532\nhealthPath: /healthz\ndatabase: sqlite\n',
+        'v2-records/owned/staging/instance.json': json.dumps({
+            'schemaVersion': 1, 'application': 'owned', 'environment': 'staging',
+            'release': 'rel-sha256:' + 'c' * 64, 'configuration': {'replicas': 1, 'memoryMiB': 128},
+            'grants': {'exposure': 'authenticated-web'}, 'bindings': {}, 'allows': ['caller']}),
+        'v2-records/owned/staging/release.json': json.dumps({
+            'schemaVersion': 1, 'application': 'owned', 'source': {'repository': 'x/y', 'commit': 'd' * 40},
+            'artifact': {'image': 'docker.io/x/y', 'digest': 'sha256:' + 'a' * 64,
+                         'mediaType': 'application/vnd.oci.image.manifest.v1+json', 'platform': 'linux/amd64'},
+            'runtime': {'kind': 'web', 'port': 8080, 'healthPath': '/healthz', 'uid': 65532},
+            'database': 'sqlite', 'releaseId': 'rel-sha256:' + 'c' * 64}),
         'apps/owned/app.yaml': 'version: 1\nteam: demo\n',
         'v2-apps/instances/owned/staging/namespace.json': '{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "owned-staging"}}',
         'v2-apps/instances/owned/staging/kustomization.yaml': 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources: []\n',
@@ -155,10 +163,35 @@ class OwnedInstanceTests(unittest.TestCase):
         self.assertEqual([(i['application'], i['environment']) for i in document['instances']], [('owned', 'staging')])
         instance = document['instances'][0]
         # The app record still lives where v1 keeps it, while the instance's own records are v2's.
+        self.assertEqual(instance['format'], 'v2')
         self.assertEqual(sorted(instance['records']), ['app', 'instance', 'release'])
         self.assertEqual(instance['records']['instance']['allows'], ['caller'])
-        self.assertEqual(instance['missing'], ['v2-records/owned/staging/helmrelease.yaml'])
+        self.assertEqual(instance['missing'], [])
         # Its compiled output is the evidence of what it declares, and its .json unit is its own, not residual.
         self.assertEqual([(entry['kind'], entry['name']) for entry in instance['objects']],
                          [('Kustomization', 'app-owned-staging'), ('Namespace', 'owned-staging')])
         self.assertEqual(document['residual'], [])
+
+
+# A v2-owned instance keeps its JSON pair and nothing else: neither a leftover v1 record nor a second shape.
+class V2OwnedRecordTests(unittest.TestCase):
+    """A v2-owned instance keeps its JSON pair and nothing else: no leftover v1 record, and no second shape."""
+
+    def test_a_leftover_v1_record_under_v2s_tree_is_refused(self) -> None:
+        owned = OwnedInstanceTests()
+        paths = owned.PATHS + ['v2-records/owned/staging/instance.yaml']
+        with self.assertRaises(v2snapshot.SnapshotError):
+            v2snapshot.snapshot(owned.runner(), REVISION, paths)
+
+    def test_two_record_shapes_for_one_instance_is_refused(self) -> None:
+        owned = OwnedInstanceTests()
+        paths = owned.PATHS + ['apps/owned/staging/instance.yaml']
+        with self.assertRaises(v2snapshot.SnapshotError):
+            v2snapshot.snapshot(owned.runner(), REVISION, paths)
+
+    def test_the_repository_keeps_no_yaml_record_for_a_v2_owned_instance(self) -> None:
+        # The guard that keeps the duplication from returning: a v2-owned instance's records are its pair.
+        import pathlib
+        root = pathlib.Path(v2snapshot.ROOT) / 'v2-records'
+        leftovers = sorted(str(path.relative_to(root)) for path in root.glob('*/*/instance.yaml'))
+        self.assertEqual(leftovers, [])

@@ -15,7 +15,7 @@ type Supplied struct{ Repository, Commit string }
 type Source struct{ Repository, Commit string }
 
 // Migration is one predecessor instance's facts as v2's record pair states them. Sources says where each
-// recorded fact came from and Gaps names every legacy fact the pair cannot carry. Calls and Callers are the
+// recorded fact came from and Gaps names every legacy fact the pair cannot carry. Calls and Allows are the
 // predecessor's declarations, read only so the caller can report which of them the resolution connects:
 // no record carries them, because the resolution is their authority.
 type Migration struct {
@@ -26,7 +26,7 @@ type Migration struct {
 	Database                 string
 	Claim                    string
 	Corroborated             []string
-	Calls, Callers           []string
+	Calls, Allows            []string
 	Sources                  map[string]string
 	Gaps                     []Gap
 }
@@ -136,11 +136,11 @@ func (m *Migration) declarations(instance *record) error {
 	if m.Calls, err = instance.texts("calls"); err != nil {
 		return err
 	}
-	if m.Callers, err = instance.texts("allows"); err != nil {
+	if m.Allows, err = instance.texts("allows"); err != nil {
 		return err
 	}
 	slices.Sort(m.Calls)
-	slices.Sort(m.Callers)
+	slices.Sort(m.Allows)
 	return nil
 }
 

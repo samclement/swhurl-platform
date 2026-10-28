@@ -77,7 +77,7 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 	}
 	result := Migration{Facts: facts, Release: release, Instance: spec, Compilation: compiled,
 		Rendered: rendered, Egress: egress, UnmetCalls: unmet(facts.Calls, callees(rendered)),
-		UnmetCallers: unmet(facts.Callers, rendered.Callers)}
+		UnmetCallers: unmet(facts.Allows, rendered.Callers)}
 	written := append(recordFiles(facts.Application, facts.Environment, releaseDocument, instanceDocument),
 		compiled.Files...)
 	result.Written, err = writer.Write(destination, written)
@@ -87,6 +87,14 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 // recordsOf turns one predecessor's translated facts into v2's record pair. It maps fields and lets the
 // kernel decide what a record may say: identity, validation and encoding stay there.
 func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpec, error) {
+	// Consent by team is a v1 fact v2 does not model: a record states app names only, so carrying a team grant
+	// would quietly widen or narrow what the instance accepts. Refuse instead, and name the reason.
+	for _, granted := range facts.Allows {
+		if strings.HasPrefix(granted, "team:") {
+			return kernel.ReleaseBundle{}, kernel.InstanceSpec{},
+				&Refusal{Subject: "allows", Reason: "teams_are_not_modelled"}
+		}
+	}
 	release := kernel.ReleaseBundle{
 		SchemaVersion: 1,
 		Application:   facts.Application,
@@ -110,6 +118,8 @@ func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpe
 		Configuration: kernel.Configuration{Replicas: facts.Instance.Replicas, MemoryMiB: facts.Instance.MemoryMiB},
 		Grants:        kernel.Grants{Exposure: facts.Instance.Exposure},
 		Storage:       kernel.Storage{ClaimName: facts.Claim},
+		Calls:         facts.Calls,
+		Allows:        facts.Allows,
 	}
 	return release, spec, nil
 }

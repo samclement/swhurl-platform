@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 )
 
 // Canonical identity is a versioned positional JSON array, not a serialization of
@@ -19,7 +20,8 @@ func releaseCanonical(r ReleaseBundle) []byte {
 func instanceCanonical(s InstanceSpec) []byte {
 	return canonical([]any{"swhurl.instance.v1", s.SchemaVersion, s.Application,
 		s.Environment, s.Release, s.Configuration.Replicas, s.Configuration.MemoryMiB,
-		s.Grants.Exposure, s.Bindings, s.Storage.SizeMiB, s.Storage.ClaimName})
+		s.Grants.Exposure, s.Bindings, s.Storage.SizeMiB, s.Storage.ClaimName,
+		sortedNames(s.Calls), sortedNames(s.Allows)})
 }
 
 // labelPairs is a label set as sorted "key=value" strings: a map's iteration order is not an identity.
@@ -40,6 +42,17 @@ func canonical(value []any) []byte {
 		panic(err)
 	}
 	return bytes.TrimSuffix(out.Bytes(), []byte{'\n'})
+}
+
+// sortedNames is a declaration list in its canonical order and never nil, so a record's bytes and its identity
+// do not depend on the order the operator wrote, and an empty list encodes as [] rather than null.
+func sortedNames(names []string) []string {
+	sorted := slices.Clone(names)
+	slices.Sort(sorted)
+	if sorted == nil {
+		return []string{}
+	}
+	return sorted
 }
 
 func hash(prefix string, content []byte) string {

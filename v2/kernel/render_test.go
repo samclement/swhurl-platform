@@ -329,7 +329,7 @@ func TestCalleeMountsTheAuthMaterialAsFiles(t *testing.T) {
 	}
 	persistence := values["persistence"].(map[string]any)
 	for item, want := range map[string]struct{ name, path string }{
-		"auth":    {"orders-auth", "/var/run/swhurl/auth"},
+		"auth":    {"swhurl-auth", "/var/run/swhurl/auth"},
 		"callers": {"orders-callers", "/var/run/swhurl/callers"},
 	} {
 		volume, mounted := persistence[item].(map[string]any)
@@ -441,8 +441,9 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 	if env["SWHURL_ALLOWED_CALLERS"] != "billing" {
 		t.Fatalf("the caller's own callers: %v", env["SWHURL_ALLOWED_CALLERS"])
 	}
+	// The keys are the platform's object in this namespace, not a copy of it this instance rendered.
 	envFrom := container["envFrom"].([]any)[0].(map[string]any)["configMapRef"].(map[string]any)
-	if envFrom["name"] != "hello-auth" {
+	if envFrom["name"] != "swhurl-auth" {
 		t.Fatalf("the auth ConfigMap reference: %v", envFrom)
 	}
 	tokens := values["persistence"].(map[string]any)["tokens"].(map[string]any)
@@ -475,10 +476,12 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth := documentOf(t, rendered, "auth.json")
-	data := auth["data"].(map[string]any)
-	if auth["kind"] != "ConfigMap" || data["SWHURL_AUTH_ISSUER"] != profile.Auth.Issuer || data["SWHURL_AUTH_KEYS"] != profile.Auth.Keys {
-		t.Fatalf("the auth ConfigMap: %v", auth)
+	// The keys are not this instance's file: they are rendered once for every managed namespace (RenderAuth),
+	// so the instance's own folder holds only the allow-list.
+	for _, file := range rendered.Files {
+		if strings.HasSuffix(file.Path, "/auth.json") {
+			t.Fatalf("the instance still renders its own keys: %s", file.Path)
+		}
 	}
 	calleeValues := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
 	calleeContainer := calleeValues["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)
@@ -498,13 +501,17 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 	if len(calleePolicy["egress"].([]any)) != 0 {
 		t.Fatalf("a callee with no calls egresses: %v", calleePolicy["egress"])
 	}
-	// The ConfigMap is a claimed object, so ownership sees it.
+	// The allow-list's ConfigMap is a claimed object, so ownership sees it — and the keys' object, which the
+	// platform renders, is not claimed by this instance.
 	claimed := map[string]bool{}
 	for _, claim := range rendered.Inventory {
 		claimed[claim.Object.Kind+" "+claim.Object.Namespace+"/"+claim.Object.Name] = true
 	}
-	if !claimed["ConfigMap orders-staging/orders-auth"] {
-		t.Fatalf("the auth ConfigMap is not claimed: %v", claimed)
+	if !claimed["ConfigMap orders-staging/orders-callers"] {
+		t.Fatalf("the allow-list ConfigMap is not claimed: %v", claimed)
+	}
+	if claimed["ConfigMap orders-staging/swhurl-auth"] {
+		t.Fatalf("the instance claims the platform's keys: %v", claimed)
 	}
 }
 

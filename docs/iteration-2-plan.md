@@ -1174,6 +1174,16 @@ keys in its env.
 `SWHURL_AUTH_ISSUER_FILE` and `SWHURL_ALLOWED_CALLERS_FILE` naming them. Both forms come from one source and are
 asserted equal, so they cannot drift.
 
+**One source for the keys (option 1, 27 October 2026).** A ConfigMap cannot be read across namespaces, so
+"centralised" means one rendered source fanning out: `swhurl-v2 auth --snapshot … --profile … --out platform`
+writes `platform/auth/` — one identical `swhurl-auth` ConfigMap per managed namespace, plus the folder's
+kustomization — and the `platform-auth` unit applies it. The instance no longer renders `<app>-auth`, mounts the
+fixed name, and claims none of it; a rotation changes that folder alone, and CI regenerates and diffs it beside the
+egress proxy's. Two consequences are stated rather than hidden: no app unit can `dependsOn` the keys (an app's own
+unit creates its namespace, so a dependency would deadlock), which means a **new** app's pods wait for the
+platform unit's next reconcile before they can mount the keys; and the allow-list stays per instance, because its
+content is.
+
 **What each form buys.** An image that reads the files takes a rotated key or a new caller from the kubelet's
 in-place refresh — **no restart**. The env forms and the annotation stay until the templates (separate
 repositories) release a reader that prefers the file and the apps are rebuilt from it; that re-pin is the long
@@ -1515,7 +1525,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | App kinds `worker` and `job` (a CronJob schedule); a command override | Refused (`unsupported`): only `web`, and no command | Phase 7, per app |
 | Teams: the namespace `team` label, team isolation | Not in the records; no label | Before an instance needs team isolation |
 | Calls between apps: caller tokens and signing keys, `SWHURL_<APP>_URL`, callers in the NetworkPolicy | The [resolver, pair rendering, resolution document and delivery](#calls-between-apps-resolver-and-pair-rendering-implemented-offline-25-october-2026) exist, and the call's network rules now state the cluster's pod block with the token as the caller's identity ([why](#calls-on-the-pod-network-with-the-token-as-the-callers-identity-implemented-26-october-2026)). The bridge still reports calls as gaps. **Proved live 26 October 2026:** `swhurl-try-11` calls `swhurl-try-10` and the callee answers `caller.id=swhurl-try-11` — the network by the pod block, the identity by the audience token, whose subject requires the caller's pod to run as the service account named after the app | A policy implementation that honours selectors if network-level identity is wanted; otherwise the bridge's `calls` section |
-| One platform ConfigMap for token verification, replicated into each managed namespace | Not built: each callee renders its own ConfigMap copy from the profile's keys, so a rotation changes every callee's compilation. A rotation now **rolls** the callees (`auth-revision`), and a new image reads the keys and the allow-list from mounted files, so it needs no restart at all; the env forms stay until the templates release a reader. Centralising the keys' object needs a fan-out unit (a ConfigMap cannot cross namespaces) | The next slice: one rendered platform unit holding one `swhurl-auth` per managed namespace, the instance unit depending on it; then the template re-pin retires the env forms and the annotation |
+| One platform ConfigMap for token verification, replicated into each managed namespace | **Built:** `swhurl-v2 auth` renders one identical `swhurl-auth` per managed namespace into `platform/auth/`, the `platform-auth` unit applies it, and CI regenerates and diffs it. Instances mount the fixed name and claim none of it; a rotation rewrites one folder. The allow-list stays per instance, and no app unit can depend on the platform unit (namespace creation would deadlock), so a new app's pods wait one reconcile | Done; the template re-pin retires the env forms and the `auth-revision` annotation |
 | Notifications: `SWHURL_NOTIFY_URL`, the projected `notify` token | Not generated | Phase 7 |
 | Events: NATS users, streams and consumers | Not generated | Phase 7 |
 | Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |

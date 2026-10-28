@@ -210,3 +210,45 @@ func renderedHelmReleaseOf(t *testing.T, compiled kernel.Compilation) map[string
 	t.Fatal("no HelmRelease among the compiled files")
 	return nil
 }
+
+// The platform's keys are rendered once for every managed namespace, from one pinned snapshot: the document
+// names them, the files carry them, and writing them puts them where the platform unit applies from.
+func TestAuthRendersTheKeysForEveryInstanceNamespace(t *testing.T) {
+	snapshotPath := writeSnapshot(t, twoInstances(t))
+	var out, diagnostic bytes.Buffer
+	status := run([]string{"auth", "--snapshot", snapshotPath, "--profile", filepath.Join("..", "..", "testdata", "profile.json")},
+		&out, &diagnostic, os.ReadFile, files.New())
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, diagnostic.String())
+	}
+	document := map[string]any{}
+	if err := json.Unmarshal(out.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	if document["kind"] != "v2-auth" || document["version"] != float64(1) {
+		t.Fatalf("envelope %v/%v", document["kind"], document["version"])
+	}
+	namespaces := document["namespaces"].([]any)
+	if len(namespaces) != 2 || namespaces[0] != "shop-staging" || namespaces[1] != "orders-staging" {
+		t.Fatalf("the namespaces are %v", namespaces)
+	}
+	renderedFiles := document["files"].([]any)
+	if len(renderedFiles) != 3 {
+		t.Fatalf("the files are %v", renderedFiles)
+	}
+	for _, raw := range renderedFiles {
+		file := raw.(map[string]any)
+		if file["path"] == "auth/swhurl-auth-shop-staging.json" &&
+			!strings.Contains(string(file["document"].(map[string]any)["data"].(map[string]any)["SWHURL_AUTH_KEYS"].(string)), `"keys"`) {
+			t.Fatalf("the keys are not in the rendered file: %v", file["document"])
+		}
+	}
+	destination := t.TempDir()
+	if status := run([]string{"auth", "--snapshot", snapshotPath, "--profile", filepath.Join("..", "..", "testdata", "profile.json"),
+		"--out", destination}, &bytes.Buffer{}, &diagnostic, os.ReadFile, files.New()); status != 0 {
+		t.Fatalf("writing: exit %d: %s", status, diagnostic.String())
+	}
+	if _, err := os.Stat(filepath.Join(destination, "auth", "kustomization.yaml")); err != nil {
+		t.Fatalf("the folder was not written: %v", err)
+	}
+}

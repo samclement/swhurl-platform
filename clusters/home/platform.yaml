@@ -214,6 +214,33 @@ spec:
   wait: true
   timeout: 10m
 ---
+# The platform's token-verification keys, rendered once for every managed namespace
+# (docs/apps.md#calling-another-app). A ConfigMap cannot be read across namespaces, so this unit holds one
+# `swhurl-auth` per namespace, all identical; a callee's pod mounts it by that name. No app unit depends on it —
+# an app's unit creates its own namespace — so a new app's pods wait for this unit's next reconcile before they
+# can mount the keys.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-auth
+  namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
+spec:
+  dependsOn:
+    - name: infra-base
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./platform/auth
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
+  prune: true
+  wait: true
+  timeout: 10m
+---
 # Feature flag overrides: one NATS key-value bucket per environment
 # (docs/apps.md#feature-flags). Its own unit because the KeyValue type comes
 # from the stream controller in platform-nats.

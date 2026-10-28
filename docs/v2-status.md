@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: option 1 of the auth delivery — one rendered platform unit fanning out the keys to every managed namespace, and the template releases that retire the env forms; 28 October 03:58 is the first nightly on the Go image
+Gate: the template releases that read the auth files, then the re-pin that retires the env forms and the `auth-revision` annotation; 28 October 03:58 is the first nightly on the Go image
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -39,7 +39,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, an ownership inventory, and a read-only live check of the claims | **Slices 1–4 done** |
 | Routes | A signed-in route from platform facts, verified live through the shared sign-in | **Done, live** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
-| Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), a rotation rolling the callees, and the auth material mounted as files the app can re-read | **Done offline**, proved live for the pair |
+| Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), a rotation rolling the callees, the auth material mounted as files, and the keys rendered once for every managed namespace | **Done offline**, proved live for the pair |
 | Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Two live** (`swhurl-try-11`, `swhurl-try-10` staging, the second stateful on its own volume), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
@@ -382,6 +382,42 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages untouched. 3. **No identity changed**, no golden regenerated; the API baseline grows. 4. New refusals stated and tested (`failed: write: forbidden|status|not_found`, a kind the write table does not state, a name a non-create write needs); a delete of an object already gone is **done**, not an error. 5. Failure paths tested: each status, the absent-object delete, the log tail and its bound, the paths and content types of all three changes, and that a Secret is writable but not readable. 6. Scope: **this is infrastructure, not a capability** — nothing calls it yet, so no instance can be restored by v2. 7. Offline only: every test is a fake server; no cluster was touched. 8. This page, the plan and the registry change together.
 - **Evidence:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Coverage: `adapters/kube` 96.1%.
 - **What remains for 2a:** the **restore Job** and the **sequence** (suspend, scale, wait, secret, job, logs, scale back, resume, delete), the **presigned read** the pod uses instead of a key, the operator's age key as a Secret, and the first live restore — on `try-10`, restoring its newest archive over itself. The decision still open: **where the restore's steps live** — a `restore-job-sqlite` command added to the backup image in this repository (v1 tooling, an image rebuild), or a script rendered inside the Job (no image change, a contract to test).
+
+## Slice record: one source for the keys (delivery, option 1)
+
+- **Outcome:** the platform's issuer and keys are rendered **once**, by `swhurl-v2 auth --snapshot … --profile …
+  --out platform`: `platform/auth/` holds one identical `swhurl-auth` ConfigMap for every managed namespace plus
+  the folder's kustomization, the `platform-auth` unit applies it, and CI regenerates and diffs it beside the
+  egress proxy's. A callee no longer renders `<app>-auth`: it mounts the fixed name and claims none of it, so a
+  rotation rewrites one folder instead of every instance.
+- **Owners and boundaries:** `kernel.RenderAuth` owns the objects and their `platform` claims; the command owns
+  the snapshot's namespaces, the profile and the write; the unit (`clusters/home/platform.yaml`) is the platform's
+  hand-written file, as the proxy's is; the instance owns only its allow-list (`<app>-callers`), because that
+  content is its own. A ConfigMap cannot cross namespaces, so the fan-out is one object per namespace from one
+  source — that is what "centralised" can mean here.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 unchanged** — nothing under `apps/` changed; v1's renderer is untouched.
+  2. **Pure** — the renderer is a function of namespaces and the profile; the command holds the read and the write.
+  3. **No identity changed**; the instance's compiled output moved where it must: try-10's `auth.json` is gone,
+     its HelmRelease references `swhurl-auth`, its kustomization no longer lists the old file; try-11 (caller only)
+     and the goldens are untouched.
+  4. **Refusals stated** — a profile with no signing keys, a snapshot with no instance, and a namespace that is not
+     a DNS label, each before anything is written.
+  5. **Failure paths tested** — the render's objects, names, data, claims (`platform`, never the instance), file
+     names and kustomization; the command's document and its `--out`; each refusal. The old per-instance object is
+     neither rendered nor claimed, which the instance's own test asserts.
+  6. **Scope** — the unit cannot be a dependency of an app unit (an app's unit creates its namespace, so the
+     dependency would deadlock): a **new** app's pods wait for the platform unit's next reconcile before they can
+     mount the keys. Stated in the unit's own comment and the plan.
+  7. **Live effect on push:** the platform unit appears and creates 17 ConfigMaps; try-10's pod template changes
+     (the reference name) and rolls once. The "no restart" win still needs a template release that reads the files.
+  8. **Recorded in the same change** — this page, the plan's calls section and gap row, `apps.md`,
+     `operations.md#signing-keys`, `architecture.md`'s unit table and diagram (21 units), and CI.
+- **Evidence:** `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s
+  check-docs`, `make check-repo` (the unit table), `kubectl kustomize platform/auth` (17 ConfigMaps), and the
+  recompilation of both owned instances from Git.
+- **Next gate:** the template releases that read the files (in the two template repositories, then a
+  `STACK_REVISIONS` re-pin), which retire the env forms and the `auth-revision` annotation.
 
 ## Slice record: the auth material as files (delivery, option 2)
 

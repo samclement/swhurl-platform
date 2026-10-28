@@ -128,7 +128,7 @@ make check-apps
 git add apps && git commit -m "apps: refresh signing keys" && git push
 ```
 
-Each web app restarts with the new keys when Flux applies the commit: a v1-rendered callee verifies with them
+The keys live in `platform/auth`, one `swhurl-auth` ConfigMap per managed namespace, rendered by `swhurl-v2 auth` from the profile and applied by the `platform-auth` unit — so a rotation rewrites that one folder, and every managed namespace gets it together. Each web app restarts with the new keys when Flux applies the commit: a v1-rendered callee verifies with them
 from its environment, which only a new pod reads, and a v2-rendered one carries a `platform.swhurl.com/auth-revision`
 annotation so the rotation rolls it too. A v2-rendered app also mounts the keys and the allow-list as files
 (`SWHURL_AUTH_KEYS_FILE`, `SWHURL_ALLOWED_CALLERS_FILE`): an image built from a template that reads them picks a

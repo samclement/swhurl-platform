@@ -213,7 +213,10 @@ This is the canonical list of platform-provided environment names, managed app m
 | `SWHURL_NOTIFY_TOKEN_FILE` | env override | Notify token file override; defaults to /var/run/swhurl/tokens/notify/token | Optional input to the Python notify reader; not injected |
 | `SWHURL_AUTH_ISSUER` | env | Token issuer | Web instances |
 | `SWHURL_AUTH_KEYS` | env | Public token-signing keys | Web instances |
+| `SWHURL_AUTH_KEYS_FILE` | env | Path of the same keys, mounted from a ConfigMap | A callee (v2-rendered) |
+| `SWHURL_AUTH_ISSUER_FILE` | env | Path of the issuer, mounted from the same ConfigMap | A callee (v2-rendered) |
 | `SWHURL_ALLOWED_CALLERS` | env | Accepted callers, comma-separated | At least one connected caller |
+| `SWHURL_ALLOWED_CALLERS_FILE` | env | Path of the same list, mounted from its own ConfigMap | At least one connected caller (v2-rendered) |
 | `SWHURL_DESCRIPTION` | env | Image description | Nonempty release description |
 | `SWHURL_SERVICE_<APP>_URL` | env family | Callee URL; uppercase app name with hyphens changed to underscores | Mutually granted call to an existing web instance |
 | `SWHURL_EVENTS_PUBLISH` | env | Published events, comma-separated | Keyed instance with publications |
@@ -437,7 +440,7 @@ For a connected pair, rendering writes both instances:
 | Callee | `SWHURL_ALLOWED_CALLERS=demo-shop` | Who it accepts |
 | Callee | Its NetworkPolicy admits `demo-shop`' pods | Anything undeclared is blocked before it reaches the app |
 
-The keys and the allow-list reach a pod as environment variables, which a running pod never re-reads, so a v2-rendered callee's pod template carries a `platform.swhurl.com/auth-revision` annotation over them: refreshing the keys, or changing who may call, rolls the app. (v1's rendered env changes the same way.) For a v2-owned instance the declarations themselves are fields of its own record (`calls`, `allows`); a v1 app keeps them in `apps/<app>/<env>/instance.yaml`.
+The keys and the allow-list reach a pod **twice**: as environment variables, which a running pod never re-reads, and as files under `/var/run/swhurl/auth` and `/var/run/swhurl/callers`, which the kubelet refreshes in place. An image that reads the file variables picks up a rotated key or a new caller **without a restart**; the env forms stay beside them for images that predate the files, and a v2-rendered callee's pod template carries a `platform.swhurl.com/auth-revision` annotation over them so the env path still rolls the app when they change. (v1 renders the env forms only.) The templates' readers prefer the file when it is present — that release, and the apps rebuilt from it, is what retires the annotation. For a v2-owned instance the declarations themselves are fields of its own record (`calls`, `allows`); a v1 app keeps them in `apps/<app>/<env>/instance.yaml`.
 
 Every instance is also told who it is (`SWHURL_APP`, `SWHURL_ENV`), and every web app gets what it needs to check a token: `SWHURL_AUTH_ISSUER` and `SWHURL_AUTH_KEYS`, the cluster's public signing keys. Apps cannot fetch those keys themselves (the API server refuses anonymous requests and apps carry no API token), so they are kept in [`apps/signing-keys.json`](../apps/signing-keys.json); `make verify-platform` fails if they differ from the cluster's, and `make platform-signing-keys` refreshes them ([operations](operations.md#signing-keys)).
 

@@ -305,6 +305,59 @@ func documentOf(t *testing.T, resources ResourceSet, name string) map[string]any
 	return nil
 }
 
+// A callee's auth material is mounted as files an app can re-read, and the env forms stay beside them for an
+// image that predates the files: both carry the same string, from the same object, so the two cannot drift.
+func TestCalleeMountsTheAuthMaterialAsFiles(t *testing.T) {
+	_, workload := previewFacts()
+	callee := HTTPInstance{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
+		Exposure: "authenticated-web", Callers: []string{"hello", "billing"}}
+	rendered, err := RenderHTTP(callee, workload, profile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
+	container := values["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)
+	env := container["env"].(map[string]any)
+	for name, want := range map[string]string{
+		"SWHURL_AUTH_KEYS_FILE":       "/var/run/swhurl/auth/SWHURL_AUTH_KEYS",
+		"SWHURL_AUTH_ISSUER_FILE":     "/var/run/swhurl/auth/SWHURL_AUTH_ISSUER",
+		"SWHURL_ALLOWED_CALLERS_FILE": "/var/run/swhurl/callers/SWHURL_ALLOWED_CALLERS",
+	} {
+		if env[name] != want {
+			t.Fatalf("the file variable %s is %v, want %v", name, env[name], want)
+		}
+	}
+	persistence := values["persistence"].(map[string]any)
+	for item, want := range map[string]struct{ name, path string }{
+		"auth":    {"orders-auth", "/var/run/swhurl/auth"},
+		"callers": {"orders-callers", "/var/run/swhurl/callers"},
+	} {
+		volume, mounted := persistence[item].(map[string]any)
+		if !mounted || volume["type"] != "configMap" || volume["name"] != want.name {
+			t.Fatalf("the %s volume is %v", item, persistence[item])
+		}
+		mount := volume["globalMounts"].([]any)[0].(map[string]any)
+		if mount["path"] != want.path || mount["readOnly"] != true {
+			t.Fatalf("the %s mount is %v", item, mount)
+		}
+	}
+	// One object carries the allow-list; its file content and its env form are the same sorted string.
+	callers := documentOf(t, rendered, "callers.json")
+	content := callers["data"].(map[string]any)["SWHURL_ALLOWED_CALLERS"]
+	if content != "billing,hello" || env["SWHURL_ALLOWED_CALLERS"] != content {
+		t.Fatalf("the allow-list is %v in the file and %v in the env", content, env["SWHURL_ALLOWED_CALLERS"])
+	}
+	claimed := false
+	for _, claim := range rendered.Inventory {
+		if claim.Kind == "ConfigMap" && claim.Name == "orders-callers" {
+			claimed = true
+		}
+	}
+	if !claimed {
+		t.Fatal("the callers ConfigMap is rendered but not claimed")
+	}
+}
+
 // A callee's pod carries the digest of the auth material it verifies with: the platform's issuer and keys and
 // its own callers. Environment variables are fixed at container start, so this annotation is the only thing
 // that rolls the Deployment when a key rotates or a caller is added.

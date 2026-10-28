@@ -172,8 +172,11 @@ class InterfaceTests(unittest.TestCase):
         observed.add('/var/run/swhurl/tokens/<audience>/token')
         # Inspect the actual Secret preparation with a synthetic seed and fake encryption only.
         observed.update(self.prepared_seed_names())
-        self.assertEqual(observed, {name for name, (surface, _, _) in interface.ENTRIES.items()
-                                    if surface != 'env override'})
+        # The v1 renderer emits every name in the registry except the inputs it leaves to the reader
+        # (`env override`) and the names v2 renders alone, which state that in their availability: the table is
+        # the interface, and this render is v1's share of it.
+        self.assertEqual(observed, {name for name, (surface, _, availability) in interface.ENTRIES.items()
+                                    if surface != 'env override' and '(v2-rendered)' not in availability})
         self.assertNotIn(interface.NOTIFY_TOKEN_VARIABLE, observed, 'the reader override is not injected')
 
     def test_dynamic_family_format_and_reader_preserve_names_and_order(self):

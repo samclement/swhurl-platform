@@ -207,6 +207,60 @@ func TestCompiledManifests(t *testing.T) {
 		t.Fatal("the chart rendered no Deployment")
 	}
 
+	// A ConfigMap the renderer mounts must reach the pods as a read-only file volume: that is what lets an app
+	// re-read a rotated key or a new caller without a restart.
+	mounted := map[string]any{}
+	if err := json.Unmarshal(release.Spec.Values, &mounted); err != nil {
+		t.Fatal(err)
+	}
+	mounted["persistence"] = map[string]any{"authFile": map[string]any{"type": "configMap",
+		"name": "orders-auth", "globalMounts": []any{map[string]any{"path": "/var/run/swhurl/auth", "readOnly": true}}}}
+	mountedValues, err := json.Marshal(mounted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mountedPath := filepath.Join(dir, "values-mounted.json")
+	if err := os.WriteFile(mountedPath, mountedValues, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	renderedMountedPath := filepath.Join(dir, "rendered-mounted.yaml")
+	if err := os.WriteFile(renderedMountedPath, []byte(output(t, helm, "template", release.Metadata.Name, chart,
+		"-n", release.Metadata.Namespace, "-f", mountedPath)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, document := range yamlDocuments(t, renderedMountedPath) {
+		if document["kind"] != "Deployment" {
+			continue
+		}
+		spec := document["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
+		volumes := spec["volumes"].([]any)
+		found := false
+		for _, raw := range volumes {
+			volume := raw.(map[string]any)
+			if volume["name"] != "authFile" {
+				continue
+			}
+			found = true
+			if configMap, _ := volume["configMap"].(map[string]any); configMap["name"] != "orders-auth" {
+				t.Fatalf("the mounted ConfigMap is %v", volume)
+			}
+		}
+		if !found {
+			t.Fatalf("the chart did not mount the ConfigMap: %v", volumes)
+		}
+		container := spec["containers"].([]any)[0].(map[string]any)
+		mountedReadOnly := false
+		for _, raw := range container["volumeMounts"].([]any) {
+			mount := raw.(map[string]any)
+			if mount["name"] == "authFile" && mount["mountPath"] == "/var/run/swhurl/auth" && mount["readOnly"] == true {
+				mountedReadOnly = true
+			}
+		}
+		if !mountedReadOnly {
+			t.Fatalf("the ConfigMap is not mounted read-only: %v", container["volumeMounts"])
+		}
+	}
+
 	// legacy.Translate materialises a replica count neither record nor committed output states from the
 	// pinned chart's default, so that default must be one: render the same values without it.
 	withoutReplicas, err := withoutReplicasJSON(release.Spec.Values)

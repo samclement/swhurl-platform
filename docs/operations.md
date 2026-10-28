@@ -128,9 +128,11 @@ make check-apps
 git add apps && git commit -m "apps: refresh signing keys" && git push
 ```
 
-Each web app restarts with the new keys when Flux applies the commit: a callee verifies with them from its
-environment, which only a new pod reads. v2-rendered apps carry a `platform.swhurl.com/auth-revision` annotation
-over the keys, so the rollout is what a rotation triggers; v1-rendered apps re-render their env.
+Each web app restarts with the new keys when Flux applies the commit: a v1-rendered callee verifies with them
+from its environment, which only a new pod reads, and a v2-rendered one carries a `platform.swhurl.com/auth-revision`
+annotation so the rotation rolls it too. A v2-rendered app also mounts the keys and the allow-list as files
+(`SWHURL_AUTH_KEYS_FILE`, `SWHURL_ALLOWED_CALLERS_FILE`): an image built from a template that reads them picks a
+rotation up in about a minute **without a restart**, and once every app runs such an image the annotation retires.
 
 ## Certificate mode
 

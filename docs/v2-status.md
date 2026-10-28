@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: centralised, file-based auth delivery — one platform-wide auth object mounted as a file the apps re-read; 28 October 03:58 is the first nightly on the Go image
+Gate: option 1 of the auth delivery — one rendered platform unit fanning out the keys to every managed namespace, and the template releases that retire the env forms; 28 October 03:58 is the first nightly on the Go image
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -39,7 +39,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, an ownership inventory, and a read-only live check of the claims | **Slices 1–4 done** |
 | Routes | A signed-in route from platform facts, verified live through the shared sign-in | **Done, live** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
-| Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), and a key rotation rolling the callees | **Done offline**, and proved live for the pair |
+| Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), a rotation rolling the callees, and the auth material mounted as files the app can re-read | **Done offline**, proved live for the pair |
 | Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Two live** (`swhurl-try-11`, `swhurl-try-10` staging, the second stateful on its own volume), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
@@ -382,6 +382,45 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 unchanged. 2. Pure packages untouched. 3. **No identity changed**, no golden regenerated; the API baseline grows. 4. New refusals stated and tested (`failed: write: forbidden|status|not_found`, a kind the write table does not state, a name a non-create write needs); a delete of an object already gone is **done**, not an error. 5. Failure paths tested: each status, the absent-object delete, the log tail and its bound, the paths and content types of all three changes, and that a Secret is writable but not readable. 6. Scope: **this is infrastructure, not a capability** — nothing calls it yet, so no instance can be restored by v2. 7. Offline only: every test is a fake server; no cluster was touched. 8. This page, the plan and the registry change together.
 - **Evidence:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s check-docs`. Coverage: `adapters/kube` 96.1%.
 - **What remains for 2a:** the **restore Job** and the **sequence** (suspend, scale, wait, secret, job, logs, scale back, resume, delete), the **presigned read** the pod uses instead of a key, the operator's age key as a Secret, and the first live restore — on `try-10`, restoring its newest archive over itself. The decision still open: **where the restore's steps live** — a `restore-job-sqlite` command added to the backup image in this repository (v1 tooling, an image rebuild), or a script rendered inside the Job (no image change, a contract to test).
+
+## Slice record: the auth material as files (delivery, option 2)
+
+- **Outcome:** a callee's keys, issuer and allow-list are rendered **twice from the same strings**: the env forms
+  as before, and files under `/var/run/swhurl/auth` and `/var/run/swhurl/callers`, each ConfigMap mounted
+  read-only with `SWHURL_AUTH_KEYS_FILE`, `SWHURL_AUTH_ISSUER_FILE` and `SWHURL_ALLOWED_CALLERS_FILE` naming them.
+  An image that prefers the file picks a rotated key or a new caller up from the kubelet's in-place refresh, so
+  **no pod restarts**; the env forms and the `auth-revision` annotation keep the path correct for images that
+  predate the files, so nothing breaks during the transition.
+- **Owners and boundaries:** `kernel.RenderHTTP` owns the mounts, the file variables and the new per-instance
+  callers ConfigMap (its content is the record's `allows`, sorted — the fact A made authoritative); the chart
+  owns how a ConfigMap becomes a read-only volume; the **templates** (separate repositories) own reading the file
+  and caching it, and their release plus a `STACK_REVISIONS` re-pin is what makes the win real for a running app.
+  The keys' object stays per instance for now: a ConfigMap cannot cross namespaces, so centralising them is a
+  fan-out unit — the next slice.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 unchanged** — v1's renderer and manifests are untouched; only v2-owned instances gain the mounts.
+  2. **Pure** — the mounts and the callers document are rendered from facts already in hand; no effects.
+  3. **No identity changed and no golden regenerated** (the fixture records have no callers); **one compiled
+     instance moved** — try-10's HelmRelease gains the mounts and the file variables, `callers.json` is new and
+     the kustomization lists it; try-11, a caller only, is byte-identical.
+  4. **No refusal moved.**
+  5. **Failure paths tested** — the file variables point into the mounted directories; each ConfigMap is the
+     right object, mounted read-only at the right path; the file content and the env form are the same sorted
+     string, so they cannot drift; the object is claimed. Four mutations each fail a test: no mounts, no file
+     variable, an unsorted file, an unclaimed object. The pinned chart is tied by a render: a configMap
+     persistence item becomes a read-only volume on the pods.
+  6. **Scope** — the env forms stay, so an image that predates the files keeps working and still rolls via the
+     annotation; the templates are not in this repository.
+  7. **Live effect on push:** try-10 gains a ConfigMap and a new pod template — **one rollout**, which is the
+     adoption. The "no restart" proof needs an app image that reads the files, so it follows the template
+     releases.
+  8. **Recorded in the same change** — this page, the plan's calls section, `apps.md`'s variables and contract,
+     `operations.md#signing-keys` and the registry.
+- **Evidence:** `make check-v2`, `REQUIRE_HELM=1 make check-v2` (the chart render ran), `make check` (1022
+  tests), `make check-lint`, `make -s check-docs`, `make -s v2-report`.
+- **Next gate:** option 1 — the keys' object becomes one rendered platform unit fanning out to a `swhurl-auth`
+  ConfigMap per managed namespace, with the instance's unit depending on it; then the template releases retire
+  the env forms and the annotation.
 
 ## Slice record: the record states its declarations (A)
 

@@ -155,6 +155,13 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClas
 	if len(spec.Calls) > 0 {
 		persistence["tokens"] = tokensPersistence(spec.Calls)
 	}
+	if len(spec.Callers) > 0 {
+		// Both files are mounted read-only so an image that reads them picks up a rotation, or a new caller,
+		// without a restart: the kubelet refreshes a mounted ConfigMap in place. The env forms stay beside them
+		// for an image that predates the files.
+		persistence["auth"] = configMapVolume(spec.Application+"-auth", authMount)
+		persistence["callers"] = configMapVolume(callersName(spec), callersMount)
+	}
 	return manifest{"defaultPodOptions": pod, "controllers": manifest{"main": controller},
 		"persistence": persistence,
 		"service": manifest{"main": manifest{"controller": "main",
@@ -191,9 +198,12 @@ func container(spec HTTPInstance, http HTTPWorkload, workload Workload, egressAd
 		"probes": probes(http, workload),
 	}
 	if len(spec.Callers) > 0 {
-		callers := slices.Clone(spec.Callers)
-		slices.Sort(callers)
-		env["SWHURL_ALLOWED_CALLERS"] = strings.Join(callers, ",")
+		// The env forms stay for an image that predates the files; the file forms are what a running pod can
+		// re-read, and both carry the same string from the same object.
+		env["SWHURL_ALLOWED_CALLERS"] = strings.Join(sortedNames(spec.Callers), ",")
+		env["SWHURL_ALLOWED_CALLERS_FILE"] = callersFile
+		env["SWHURL_AUTH_KEYS_FILE"] = authKeysFile
+		env["SWHURL_AUTH_ISSUER_FILE"] = authIssuerFile
 		// The keys come from the platform's own ConfigMap in this namespace, not from the values.
 		container["envFrom"] = []any{manifest{"configMapRef": manifest{"name": spec.Application + "-auth"}}}
 	}
@@ -447,10 +457,15 @@ func resourcesOf(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile, 
 		}{"ingress.json", ingress(spec, http, profile)})
 	}
 	if len(spec.Callers) > 0 {
-		resources = append(resources, struct {
-			name string
-			doc  manifest
-		}{"auth.json", authConfigMap(spec, profile.Auth)})
+		resources = append(resources,
+			struct {
+				name string
+				doc  manifest
+			}{"auth.json", authConfigMap(spec, profile.Auth)},
+			struct {
+				name string
+				doc  manifest
+			}{"callers.json", callersConfigMap(spec)})
 	}
 	if spec.Database == "sqlite" {
 		// A database is the platform's to protect: the job, the reference to the upload key it reads,
@@ -740,6 +755,33 @@ func validateCallShape(calls []Call, callers []string) error {
 // configured is whether the profile states what a callee needs to verify a token.
 func (a Auth) configured() bool { return a.Issuer != "" && a.Keys != "" }
 
+// The files the auth material is mounted at, under the directory the platform already uses for the notify
+// token. One string names both forms, so an image reads the file named after the variable it replaces.
+const (
+	authMount      = "/var/run/swhurl/auth"
+	callersMount   = "/var/run/swhurl/callers"
+	authKeysFile   = authMount + "/SWHURL_AUTH_KEYS"
+	authIssuerFile = authMount + "/SWHURL_AUTH_ISSUER"
+	callersFile    = callersMount + "/SWHURL_ALLOWED_CALLERS"
+)
+
+// configMapVolume is one ConfigMap mounted read-only at a directory: the chart's own persistence shape.
+func configMapVolume(name, mountPath string) manifest {
+	return manifest{"type": "configMap", "name": name,
+		"globalMounts": []any{manifest{"path": mountPath, "readOnly": true}}}
+}
+
+// callersName is the ConfigMap holding one instance's allow-list: its content is instance-specific, so it is
+// rendered per instance and only the keys are platform-wide.
+func callersName(spec HTTPInstance) string { return spec.Application + "-callers" }
+
+// callersConfigMap is the allow-list as a file an app can re-read: the same string as the env form.
+func callersConfigMap(spec HTTPInstance) manifest {
+	return manifest{"apiVersion": "v1", "kind": "ConfigMap",
+		"metadata": metadata(callersName(spec), namespaceName(spec)),
+		"data":     manifest{"SWHURL_ALLOWED_CALLERS": strings.Join(sortedNames(spec.Callers), ",")}}
+}
+
 // authRevision is the pod template's annotation naming the auth material the pod was rendered with: keys and
 // callers. It is the only thing that changes when a key rotates, because envFrom is read once at container
 // start.
@@ -800,7 +842,9 @@ func inventory(spec HTTPInstance) []Claim {
 		claims = append(claims, Claim{Object{"networking.k8s.io", "Ingress", namespace, spec.Application}, by})
 	}
 	if len(spec.Callers) > 0 {
-		claims = append(claims, Claim{Object{"", "ConfigMap", namespace, spec.Application + "-auth"}, by})
+		claims = append(claims,
+			Claim{Object{"", "ConfigMap", namespace, spec.Application + "-auth"}, by},
+			Claim{Object{"", "ConfigMap", namespace, callersName(spec)}, by})
 	}
 	if spec.Database == "sqlite" {
 		name := backupName(spec)

@@ -1160,6 +1160,31 @@ The [diagnosis](current-state.md#the-first-call-between-two-v2-owned-instances-2
 
 **Checks:** `make check-v2` (12 packages), `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make v2-report`; the pair test now asserts the address block on both sides and one callee rule for two callers. The live half is the probe from the diagnosis, re-run after the reconcile and recorded in [current state](current-state.md).
 
+#### A rotation rolls the callees, and the auth material is also a file (implemented 27 October 2026)
+
+**Rotation first.** The platform's keys reach a callee as environment variables (`envFrom` the instance's own
+`<app>-auth` ConfigMap), and a running pod never re-reads them; Reloader ignores ConfigMaps. So the pod template
+carries `platform.swhurl.com/auth-revision`, the digest of `(issuer, keys, sorted callers)`: rotating the keys, or
+changing who may call, changes the template and rolls the Deployment. v1 never had the gap because it inlined the
+keys in its env.
+
+**Then the files.** A callee now also mounts the same strings as files: the keys and issuer at
+`/var/run/swhurl/auth` (the `auth` ConfigMap) and the allow-list at `/var/run/swhurl/callers` (a per-instance
+`<app>-callers` ConfigMap whose content is the record's `allows`, sorted), with `SWHURL_AUTH_KEYS_FILE`,
+`SWHURL_AUTH_ISSUER_FILE` and `SWHURL_ALLOWED_CALLERS_FILE` naming them. Both forms come from one source and are
+asserted equal, so they cannot drift.
+
+**What each form buys.** An image that reads the files takes a rotated key or a new caller from the kubelet's
+in-place refresh — **no restart**. The env forms and the annotation stay until the templates (separate
+repositories) release a reader that prefers the file and the apps are rebuilt from it; that re-pin is the long
+pole, and it is what retires the annotation. The allow-list's object is per instance because its content is; the
+keys are the platform's, and moving their object into one rendered platform unit — one ConfigMap per managed
+namespace, with the instance's unit depending on it — is the next slice.
+
+**The limit, restated:** a *new call* still restarts the **caller**, because each call is a projected
+service-account token source in a volume and volumes are fixed when a pod is created. Only weakening the
+per-callee audience would avoid that, and it would weaken replay protection, so it is not taken.
+
 #### A v2-owned instance recompiles from Git alone (implemented 26 October 2026)
 
 The stateful migration left the instance's records in v2's tree but its compiled output frozen: recompiling it needed a pair of hand-written JSON records in `/tmp`. That is closed.
@@ -1490,7 +1515,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | App kinds `worker` and `job` (a CronJob schedule); a command override | Refused (`unsupported`): only `web`, and no command | Phase 7, per app |
 | Teams: the namespace `team` label, team isolation | Not in the records; no label | Before an instance needs team isolation |
 | Calls between apps: caller tokens and signing keys, `SWHURL_<APP>_URL`, callers in the NetworkPolicy | The [resolver, pair rendering, resolution document and delivery](#calls-between-apps-resolver-and-pair-rendering-implemented-offline-25-october-2026) exist, and the call's network rules now state the cluster's pod block with the token as the caller's identity ([why](#calls-on-the-pod-network-with-the-token-as-the-callers-identity-implemented-26-october-2026)). The bridge still reports calls as gaps. **Proved live 26 October 2026:** `swhurl-try-11` calls `swhurl-try-10` and the callee answers `caller.id=swhurl-try-11` — the network by the pod block, the identity by the audience token, whose subject requires the caller's pod to run as the service account named after the app | A policy implementation that honours selectors if network-level identity is wanted; otherwise the bridge's `calls` section |
-| One platform ConfigMap for token verification, replicated into each managed namespace | Not built: each callee renders its own ConfigMap copy from the profile's keys, so a rotation changes every callee's compilation. A rotation now **rolls** the callees, because the pod template carries `platform.swhurl.com/auth-revision` — without it a ConfigMap change reached no running pod | When rotation frequency or object count justifies a second writer to namespaces; the digest is already a fact about the material, so swapping the object keeps it. The better end state as decided 25 October 2026 |
+| One platform ConfigMap for token verification, replicated into each managed namespace | Not built: each callee renders its own ConfigMap copy from the profile's keys, so a rotation changes every callee's compilation. A rotation now **rolls** the callees (`auth-revision`), and a new image reads the keys and the allow-list from mounted files, so it needs no restart at all; the env forms stay until the templates release a reader. Centralising the keys' object needs a fan-out unit (a ConfigMap cannot cross namespaces) | The next slice: one rendered platform unit holding one `swhurl-auth` per managed namespace, the instance unit depending on it; then the template re-pin retires the env forms and the annotation |
 | Notifications: `SWHURL_NOTIFY_URL`, the projected `notify` token | Not generated | Phase 7 |
 | Events: NATS users, streams and consumers | Not generated | Phase 7 |
 | Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |

@@ -20,6 +20,9 @@ ENVIRONMENT_VARIABLE = 'SWHURL_ENV'
 ISSUER_VARIABLE = 'SWHURL_AUTH_ISSUER'
 KEYS_VARIABLE = 'SWHURL_AUTH_KEYS'
 CALLERS_VARIABLE = 'SWHURL_ALLOWED_CALLERS'
+ISSUER_FILE_VARIABLE = 'SWHURL_AUTH_ISSUER_FILE'
+KEYS_FILE_VARIABLE = 'SWHURL_AUTH_KEYS_FILE'
+CALLERS_FILE_VARIABLE = 'SWHURL_ALLOWED_CALLERS_FILE'
 DESCRIPTION_VARIABLE = 'SWHURL_DESCRIPTION'
 NOTIFY_VARIABLE = 'SWHURL_NOTIFY_URL'
 NOTIFY_TOKEN_VARIABLE = 'SWHURL_NOTIFY_TOKEN_FILE'
@@ -73,6 +76,9 @@ ENTRIES = {
     ISSUER_VARIABLE: ('env', 'Token issuer', 'Web instances'),
     KEYS_VARIABLE: ('env', 'Public token-signing keys', 'Web instances'),
     CALLERS_VARIABLE: ('env', 'Accepted callers, comma-separated', 'At least one connected caller'),
+    ISSUER_FILE_VARIABLE: ('env', 'Path of the issuer, mounted from the same ConfigMap', 'A callee (v2-rendered)'),
+    KEYS_FILE_VARIABLE: ('env', 'Path of the same keys, mounted from a ConfigMap', 'A callee (v2-rendered)'),
+    CALLERS_FILE_VARIABLE: ('env', 'Path of the same list, mounted from its own ConfigMap', 'At least one connected caller (v2-rendered)'),
     DESCRIPTION_VARIABLE: ('env', 'Image description', 'Nonempty release description'),
     SERVICE_VARIABLE: ('env family', 'Callee URL; uppercase app name with hyphens changed to underscores', 'Mutually granted call to an existing web instance'),
     PUBLISH_VARIABLE: ('env', 'Published events, comma-separated', 'Keyed instance with publications'),

@@ -2,6 +2,16 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The templates read the auth files, released and pinned (28 October 2026)
+
+**Released:** TypeScript `v0.2.19` (`ad8078e`) and Kotlin `v0.2.18` (`a291cae`) prefer the mounted auth files over
+the environment. Each tag sits on a commit whose Template workflow passed on `main` — TypeScript run
+`40705961703`, Kotlin run `40759306848`, every app type built and smoke-tested — and `STACK_REVISIONS` pins both,
+with `make check-templates` passing every type. A new app records `_commit: v0.2.18` (Kotlin) or `v0.2.19`.
+
+**Still unexercised:** no running app is built from them, so a rotation and a new caller still roll the callee
+through the `auth-revision` annotation; `swhurl-try-10` (TypeScript, `v0.2.18`) has not taken the update.
+
 ## The egress proxy's logs are structured in ClickStack (28 October 2026)
 
 `cf5074f2` was pushed and reconciled, and the node collector restarted with the proxy's two formats. An access line

@@ -82,7 +82,11 @@ func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (
 	return ResourceSet{files, inventory(spec), []string{unitPath}}, nil
 }
 
-func namespaceName(spec HTTPInstance) string { return spec.Application + "-" + spec.Environment }
+// NamespaceOf is the namespace an instance runs in: the one convention both renderers share, so the auth
+// fan-out and the instance's own documents cannot disagree about where an instance lives.
+func NamespaceOf(application, environment string) string { return application + "-" + environment }
+
+func namespaceName(spec HTTPInstance) string { return NamespaceOf(spec.Application, spec.Environment) }
 func unitName(spec HTTPInstance) string      { return "app-" + namespaceName(spec) }
 func owner(spec HTTPInstance) string         { return spec.Application + "/" + spec.Environment }
 
@@ -159,7 +163,7 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClas
 		// Both files are mounted read-only so an image that reads them picks up a rotation, or a new caller,
 		// without a restart: the kubelet refreshes a mounted ConfigMap in place. The env forms stay beside them
 		// for an image that predates the files.
-		persistence["auth"] = configMapVolume(spec.Application+"-auth", authMount)
+		persistence["auth"] = configMapVolume(authObjectName, authMount)
 		persistence["callers"] = configMapVolume(callersName(spec), callersMount)
 	}
 	return manifest{"defaultPodOptions": pod, "controllers": manifest{"main": controller},
@@ -204,8 +208,9 @@ func container(spec HTTPInstance, http HTTPWorkload, workload Workload, egressAd
 		env["SWHURL_ALLOWED_CALLERS_FILE"] = callersFile
 		env["SWHURL_AUTH_KEYS_FILE"] = authKeysFile
 		env["SWHURL_AUTH_ISSUER_FILE"] = authIssuerFile
-		// The keys come from the platform's own ConfigMap in this namespace, not from the values.
-		container["envFrom"] = []any{manifest{"configMapRef": manifest{"name": spec.Application + "-auth"}}}
+		// The keys come from the platform's own object in this namespace, rendered once for every managed
+		// namespace by RenderAuth rather than per instance, not from the values.
+		container["envFrom"] = []any{manifest{"configMapRef": manifest{"name": authObjectName}}}
 	}
 	return container
 }
@@ -457,15 +462,12 @@ func resourcesOf(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile, 
 		}{"ingress.json", ingress(spec, http, profile)})
 	}
 	if len(spec.Callers) > 0 {
-		resources = append(resources,
-			struct {
-				name string
-				doc  manifest
-			}{"auth.json", authConfigMap(spec, profile.Auth)},
-			struct {
-				name string
-				doc  manifest
-			}{"callers.json", callersConfigMap(spec)})
+		// The keys are the platform's object in this namespace (RenderAuth); only the allow-list, whose content
+		// is this instance's, is rendered here.
+		resources = append(resources, struct {
+			name string
+			doc  manifest
+		}{"callers.json", callersConfigMap(spec)})
 	}
 	if spec.Database == "sqlite" {
 		// A database is the platform's to protect: the job, the reference to the upload key it reads,
@@ -797,16 +799,6 @@ func authDigest(spec HTTPInstance, auth Auth) string {
 	return hash("auth-sha256:", canonical([]any{auth.Issuer, auth.Keys, callers}))
 }
 
-// authConfigMap carries the platform's token verification facts into one instance's namespace. A pod
-// cannot read another namespace's ConfigMap, so each callee gets its own copy of the same platform data;
-// the HelmRelease consumes it with envFrom rather than embedding the keys, and authRevision is what makes a
-// rotation of that data reach a running pod.
-func authConfigMap(spec HTTPInstance, auth Auth) manifest {
-	return manifest{"apiVersion": "v1", "kind": "ConfigMap",
-		"metadata": metadata(spec.Application+"-auth", namespaceName(spec)),
-		"data":     manifest{"SWHURL_AUTH_ISSUER": auth.Issuer, "SWHURL_AUTH_KEYS": auth.Keys}}
-}
-
 // substitutionProblem refuses a rendered file holding a Flux reference other than the backup's own two.
 // Substitution is switched on for every document in a database instance's folder, so a reference v2 did
 // not write on purpose would be replaced too, or fail to resolve: one document, one refusal.
@@ -842,9 +834,8 @@ func inventory(spec HTTPInstance) []Claim {
 		claims = append(claims, Claim{Object{"networking.k8s.io", "Ingress", namespace, spec.Application}, by})
 	}
 	if len(spec.Callers) > 0 {
-		claims = append(claims,
-			Claim{Object{"", "ConfigMap", namespace, spec.Application + "-auth"}, by},
-			Claim{Object{"", "ConfigMap", namespace, callersName(spec)}, by})
+		// The keys' object belongs to the platform; the allow-list's to this instance.
+		claims = append(claims, Claim{Object{"", "ConfigMap", namespace, callersName(spec)}, by})
 	}
 	if spec.Database == "sqlite" {
 		name := backupName(spec)

@@ -136,6 +136,16 @@ jobs:
           python3 -c "import json; a=json.load(open('platform/egress/allocation.json')); b=json.load(open('/tmp/allocation.json')); a.pop('revision', None); b.pop('revision', None); assert a == b, 'the allocation is stale: re-render it (docs/services.md#egress-proxy)'"
           git diff --exit-code -- platform/egress
 
+      - name: Check the platform's auth material is what the records render
+        run: |
+          set -Eeuo pipefail
+          make v2-snapshot REVISION=HEAD OUT=/tmp/v2-auth-snapshot.json
+          cd v2
+          go run ./cmd/swhurl-v2 auth --snapshot /tmp/v2-auth-snapshot.json \
+            --profile testdata/profile.json --out ../platform
+          cd ..
+          git diff --exit-code -- platform/auth
+
       - name: Check v2 and its design rules
         env:
           REQUIRE_HELM: '1'

@@ -24,6 +24,7 @@ const usage = `usage:
   swhurl-v2 release-id RELEASE.json
   swhurl-v2 instance-revision INSTANCE.json
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
+  swhurl-v2 auth --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
   swhurl-v2 resolve --snapshot SNAPSHOT.json
   swhurl-v2 egress --snapshot SNAPSHOT.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
@@ -181,6 +182,7 @@ var commands = map[string]func(cli, request) int{
 	"resolve":           cli.resolve,
 	"egress":            cli.egress,
 	"proxy":             cli.proxy,
+	"auth":              cli.auth,
 	"migrate":           cli.migrate,
 	"restore":           cli.restore,
 }
@@ -307,6 +309,10 @@ func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.allocation}, "allocation", "egress allocation document")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		r.registerOut(flags)
+	case "auth":
+		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		r.registerOut(flags)
 	case "migrate":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 		flags.Var(&once{value: &r.app}, "app", "application to migrate")
@@ -373,6 +379,8 @@ func (r *request) named() []string {
 		return []string{r.snapshot}
 	case "proxy":
 		return []string{r.allocation, r.profile}
+	case "auth":
+		return []string{r.snapshot, r.profile}
 	case "shadow":
 		return []string{r.snapshot, r.profile}
 	case "migrate":

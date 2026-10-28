@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the template releases that read the auth files, then the re-pin that retires the env forms and the `auth-revision` annotation; 28 October 03:58 is the first nightly on the Go image
+Gate: the template releases that read the auth files, then the re-pin that retires the env forms and the `auth-revision` annotation
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -409,13 +409,16 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
   6. **Scope** — the unit cannot be a dependency of an app unit (an app's unit creates its namespace, so the
      dependency would deadlock): a **new** app's pods wait for the platform unit's next reconcile before they can
      mount the keys. Stated in the unit's own comment and the plan.
-  7. **Live effect on push:** the platform unit appears and creates 17 ConfigMaps; try-10's pod template changes
-     (the reference name) and rolls once. The "no restart" win still needs a template release that reads the files.
+  7. **Live, 28 October 2026:** the unit applied **17 `swhurl-auth` ConfigMaps** (one per managed namespace),
+     try-10's Deployment consumes and mounts `swhurl-auth`, rolled once (a new pod at `08:15:18Z`, no restarts),
+     its old `swhurl-try-10-auth` was pruned, and `observe` read `running` at the pushed commit. The "no restart"
+     win still needs a template release that reads the files — [evidence](current-state.md#one-rendered-source-for-the-keys-live--and-the-first-nightly-on-the-go-image-28-october-2026).
   8. **Recorded in the same change** — this page, the plan's calls section and gap row, `apps.md`,
      `operations.md#signing-keys`, `architecture.md`'s unit table and diagram (21 units), and CI.
 - **Evidence:** `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check`, `make check-lint`, `make -s
   check-docs`, `make check-repo` (the unit table), `kubectl kustomize platform/auth` (17 ConfigMaps), and the
   recompilation of both owned instances from Git.
+- **Committed:** `9dd0e035`, on `main`, and verified live as above.
 - **Next gate:** the template releases that read the files (in the two template repositories, then a
   `STACK_REVISIONS` re-pin), which retire the env forms and the `auth-revision` annotation.
 
@@ -577,7 +580,7 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **The first live restore found a second defect:** it failed at its last step, renaming the decrypted copy from the scratch emptyDir into the claim (`EXDEV`), after the live database had been moved aside; recovered by copying the kept file back and resuming. The copy is now staged beside the database, and the fix's image `src-92042b331d76ba64@sha256:b730422b…` is pinned (identity `prof-sha256:4761e522…`). [Evidence](current-state.md#the-backup-images-first-live-night-a-start-up-transient-and-the-retry-that-fixes-it-27-october-2026).
 - **The live night found a defect:** the rollout worked and MongoDB's backup published through the Go image, but all six SQLite jobs failed their upload — a new pod's first requests cannot reach the proxy's ClusterIP, which the AWS CLI's default retries had hidden in the Python image. The tool now retries a transport failure (five attempts, five seconds apart) and names the cause; a new image follows, so the digest moves once more. [Evidence](current-state.md#the-backup-images-first-live-night-a-start-up-transient-and-the-retry-that-fixes-it-27-october-2026).
 - **Not done:** a restore through the image, and the nightly schedule's own run on it.
-- **Next gate:** a restore of one of these archives through `restore-job-sqlite` in a Job, then 2a's restore Job and sequence.
+- **Next gate:** a restore of one of these archives through `restore-job-sqlite` in a Job, then 2a's restore Job and sequence. **The first nightly on the Go image succeeded for every job on 28 October** ([evidence](current-state.md#one-rendered-source-for-the-keys-live--and-the-first-nightly-on-the-go-image-28-october-2026)).
 
 ## Resume
 

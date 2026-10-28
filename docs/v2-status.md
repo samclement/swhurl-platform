@@ -615,14 +615,50 @@ The report shows what the tree adds to `origin/main`: a new package, a changed e
 
 ## Suggested opening prompt for a fresh session
 
-> Work on v2 only. Read `docs/v2-status.md` first (status, authority, the resume steps), then `docs/iteration-2-plan.md` for the contracts and the gap list, and `AGENTS.md` for the repository rules. Do not re-derive the state from this prompt: check it.
+> Work on v2 only. Read `docs/v2-status.md` first (status, the gate, authority, the resume steps), then
+> `docs/iteration-2-plan.md` for the contracts, the layers and the gap list, and `AGENTS.md` for the repository
+> rules. Do not re-derive the state from this prompt: check it.
 >
-> Then run, from the repository root: `git log --oneline -5`, `git status --short`, `make check-v2`, `make -s v2-report`, `make -s check-docs`. Report what they say before proposing anything. A check that reads the working tree can pass here and fail on a clone; CI is the reader that matters.
+> Then run, from the repository root: `git log --oneline -5`, `git status --short`, `make check-v2`,
+> `REQUIRE_HELM=1 make check-v2`, `make -s v2-report`, `make -s check-docs`. Report what they say before proposing
+> anything. A check that reads the working tree can pass here and fail on a clone; CI is the reader that matters.
 >
-> Where v2 stands (26 October 2026): phases 1–2 reviewed and committed; delivery, observation, routes, calls, storage, egress and backup render; egress is **live and enforced** (v2 renders the proxy from `platform/egress/allocation.json`, an ungranted host gets 403) and routes and storage were **proved live**. Two existing apps are v2-owned — `swhurl-try-11` staging and, on its original volume through an adopted claim, `swhurl-try-10` staging — and the first call between two v2-owned instances answers (the callee logs `caller.id=swhurl-try-11`). A v2-owned instance **recompiles from Git alone**, proved byte for byte by `TestOwnedInstancesRecompileFromGit`, and `migrate` now writes that record pair from v1's records: the two real migrations are its acceptance test.
+> Where v2 stands (28 October 2026). The phases are done and reviewed: release selection, the compiler, Git
+> delivery, observation, routes, calls, storage, egress and backup. Two existing apps are v2-owned —
+> `swhurl-try-11` staging, and `swhurl-try-10` staging on its own adopted volume — and each **recompiles from Git
+> alone** (`TestOwnedInstancesRecompileFromGit`). The egress proxy is v2's and **enforced** (an ungranted host gets
+> 403 and logs `granted=-`). v2 **performs the restore itself**, proved live twice: newest-over-itself, then a
+> content-changing one in which the live file's hash was the older archive's plaintext and the replaced file was a
+> third hash. The backup image's first nightly on the Go tool succeeded for every job. The signing keys are one
+> rendered source (`platform/auth`, one `swhurl-auth` per managed namespace, the `platform-auth` unit), the auth
+> material is mounted as **files** as well as env, and a v2-owned instance's own record states its `calls` and
+> `allows` — the v1-shaped YAML copies are gone.
 >
-> The layers are checked: 0 pure (`kernel`, `calls`, `legacy`, `observe`, `shadow`), 1 adapters (`files`, `kube`), 2 use cases (`orchestration`: compile and migrate), 3 the command. **Backup is done**: a database instance's job and its newest archive are observed live, and **v2 performs the restore itself** — a presigned read of one archive in a Secret it creates and deletes, the backup image's `restore-job-sqlite` as a Job, the sequence with its undo, and a `v2-restore` report that keeps the data and the app's state apart. `swhurl-try-10` staging was restored over its newest archive live on 27 October 2026, in 30 seconds. **The next gate is a content-changing restore**: write, then restore an older archive, and see the write gone. Then the honest gap list: `resolve` still needs the v1-shaped record copies, and v2 renders no events, secrets, teams, alarms or telemetry. Do not start a slice the operator has not approved, and take a live step only with its word: the last ones needed a handover note and, for data, an explicit deletion instruction.
+> **The gate is the template re-pin.** The templates read the auth material from the environment only. The
+> TypeScript template's file-first change is pushed (in that repository; its CI re-renders every answer set); the Kotlin
+> half is **not written** — `Platform.kt`'s `setting()` needs a file-first `material()` and a `CallTest` case, and
+> this host has no JDK, so it belongs where a JDK or that repository's CI can prove it. After both are released:
+> bump `STACK_REVISIONS` in [`tools/swhurl/apps/contract.py`](../tools/swhurl/apps/contract.py), run
+> `make check-templates`, then the `auth-revision` annotation and the env forms retire. Prove it live: rotate the
+> keys, add a caller to a v2-owned app, and show both take effect **without a new pod**.
 >
-> Follow the operator's design principles: maintainable v2 contracts rather than v1 compatibility; a pure core with orchestration above it and integrations at the edges; explicit domain and data ownership; iterative transition with honestly incomplete semantics. Bring a decision brief before any costly or undecided design (the calls, storage and egress slices each had one). Answer the eight slice invariants on the status page in the same change as the code, keep the gap list current, and run `make check-v2` and `make check` before asking to commit. Identity changes are deliberate: a fact added to a release, instance or profile changes its ID, so regenerate the goldens once, recompute the fixtures' identities independently, and say why.
+> The layers are checked: 0 pure (`kernel`, `calls`, `legacy`, `observe`, `shadow`), 1 adapters (`files`, `kube`,
+> `s3`), 2 use cases (`orchestration`: compile, migrate, restore), 3 the command. **Backup is done**: the job, the
+> newest archive and the restore are all observed and performed by v2, the schedule is suspended for the restore
+> window, and the nightly is green. Still open, honestly: another instance's archive (blocked on a second v2-owned
+> database instance), a MongoDB restore, and the live re-run that exercises the backup-schedule suspension. v2
+> renders no events, secrets, teams, alerts or telemetry, so those apps cannot migrate yet.
 >
-> The code graph is a separate workstream and a sidequest: do not build it here. Preserve unrelated work; do not commit, push, publish, access credentials or touch the live cluster without the operator's instruction, and treat any namespace or data deletion as needing explicit confirmation.
+> Follow the operator's design principles: maintainable v2 contracts rather than v1 compatibility; a pure core with
+> orchestration above it and integrations at the edges; explicit domain and data ownership; iterative transition
+> with honestly incomplete semantics. Bring a decision brief before any costly or undecided design. Answer the
+> [eight slice invariants](workstreams.md#what-a-status-page-is) on the status page in the same change as the code,
+> keep the gap list current, and run `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check`,
+> `make check-lint` and `make -s check-docs` before asking to commit. Identity changes are deliberate: a fact added
+> to a release, instance or profile changes its ID, so regenerate the goldens once, recompute the fixtures'
+> identities independently in Python, and say why.
+>
+> The code graph is a separate workstream: do not build it here. Preserve unrelated work; do not commit, push,
+> publish, access credentials or touch the live cluster without the operator's instruction, and treat any namespace
+> or data deletion as needing explicit confirmation. The egress proxy's logs are already structured
+> (`log.parser=squid-access`/`squid-log`); do not redo that sidequest.

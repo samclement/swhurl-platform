@@ -223,6 +223,8 @@ func TestBackupRefusals(t *testing.T) {
 		{"digest", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.Digest = "sha256:short" }, Invalid, "backup.digest"},
 		{"s3 uri", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.S3URI = "s3://bucket/prefix" }, Invalid, "backup.s3Uri"},
 		{"s3 uri without prefix", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.S3URI = "s3://bucket" }, Invalid, "backup.s3Uri"},
+		{"no region", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.Region = "" }, Invalid, "backup.region"},
+		{"region", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.Region = "s3.eu-west-2" }, Invalid, "backup.region"},
 		{"recipient", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.Recipient = "age1notakey" }, Invalid, "backup.recipient"},
 		{"writer namespace", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.WriterNamespace = "Flux" }, Invalid, "backup.writerNamespace"},
 		{"writer name", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.WriterName = "" }, Invalid, "backup.writerName"},
@@ -353,4 +355,16 @@ func TestStorageClaimRefusals(t *testing.T) {
 	spec := instance(t, "prod.json")
 	spec.Storage = Storage{ClaimName: "Not A Label"}
 	code(t, spec.validate(), Invalid)
+}
+
+// The backup host is the bucket's regional endpoint, the one the job uploads to, and nothing when the profile
+// states no backup.
+func TestBackupHost(t *testing.T) {
+	p := profile(t)
+	if got, want := p.Backup.Host(), "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"; got != want {
+		t.Fatalf("host %q, want %q", got, want)
+	}
+	if got := (Backup{}).Host(); got != "" {
+		t.Fatalf("no backup has a host: %q", got)
+	}
 }

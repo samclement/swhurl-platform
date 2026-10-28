@@ -71,6 +71,8 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 
 ## Decisions
 
+**28 October 2026 — the backup host is the platform's grant (approved).** A database instance's nightly upload is granted by the platform, from `PlatformProfile.backup` (its bucket and a new `region`), not declared by the instance; `egress` takes `--profile`. The v2 instance record gains no `egress` field until a v2-owned instance needs an outside host of its own. [Why, and what was rejected](iteration-2-plan.md#the-backup-host-is-the-platforms-grant-implemented-28-october-2026). What reopens it: a second backup destination, or a v2-owned instance that must reach an outside host.
+
 **26 October 2026 — option 2a: v2 orchestrates, a pod decrypts (approved).** v2 performs the restore itself: it suspends the release, scales the workload to zero, creates a restore Job from the platform's backup image (which already carries `age`, the AWS CLI and SQLite), hands that pod a **presigned read URL** for the one archive rather than a long-lived key, mounts the operator's age key from a **Secret that v2 creates and deletes**, waits, reads the Job's log, scales back and resumes. No dependency, so `stdlib-only` stands; the upload key stays upload-only. What reopens it: if the pod must decrypt with something the image lacks, or if a presigned URL is refused by the proxy.
 
 **26 October 2026 — restore, option 1: a plan, not a restore (approved before implementation).** `swhurl-v2 restore` writes a `v2-restore` plan from the bucket and the cluster, read-only: the chosen archive (the newest, or `--from KEY`), the record the backup job published beside it (checksum, table count, `source` as `<namespace>/<application>`), the instance's claim, mount, database path and uid, the observation it was decided from, and the v1 command that performs the restore. It refuses a stateless instance, and its state is `ready`, `stale`, `incomplete`, `no_archive` or `unavailable` — never "restored". v1 remains the executor until option 2, which needs the write path and the age decision this page's gate names. What reopens it: option 2.
@@ -421,6 +423,39 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Committed:** `9dd0e035`, on `main`, and verified live as above.
 - **Next gate:** the template releases that read the files (in the two template repositories, then a
   `STACK_REVISIONS` re-pin), which retire the env forms and the `auth-revision` annotation.
+
+## Slice record: the backup host is the platform's grant
+
+- **Outcome and the refusal it must produce:** the allocation rendered from the records equals the committed one
+  again, so Validate is green. Every instance whose release keeps a database is granted the platform's backup
+  host; `egress` refuses to run without `--profile` (exit 2, nothing written), and a profile whose backup block
+  has no region, or a malformed one, is refused (`invalid: backup.region`).
+- **Owners and boundaries:** the profile owns where backups go (bucket and region); `kernel.Backup.Host` derives
+  the endpoint; `kernel.Allocate` decides who is granted it; the command reads the profile and hands the host over;
+  `check-rendered.sh` owns the comparison CI and `make check-v2` share.
+- **What crosses each seam:** the profile's host string into `Allocate`, beside the facts and the previous
+  allocation; the same allocation document out.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 unchanged** — nothing under `apps/` or `tools/` changed; `make check` passes.
+  2. **Pure** — `Host` and `Allocate` take supplied facts; the snapshot and the files stay in the command and the script.
+  3. **Identity moved once, deliberately:** `region` joined the profile's canonical form, so its ID moved to
+     `prof-sha256:ca5c1e1a…`, recomputed independently in Python; the goldens moved in `inputs.profile` only.
+     `v2-apps/`, `v2-records/` and `platform/` are byte-identical.
+  4. **Refusals stated, precedence unmoved** — `invalid: backup.region` after `backup.s3Uri`; `egress` without
+     `--profile` is a usage error like any missing flag.
+  5. **Failure paths tested** — a database instance with no declared host is granted the backup host; a host also
+     declared is granted once; a stateless instance never gets it; an empty host grants nothing; the region missing
+     from the document, absent and malformed are refused; the region changes the profile ID; and the rendered check
+     fails, naming the lost grant, when `egress` passes no host (a mutation run by hand).
+  6. **Scope** — an instance's own outside hosts are not in the v2 record (the gap list says what would add them);
+     the job's region still comes from the tool's default, not the profile.
+  7. **Offline only** — nothing live changes: the committed allocation and the proxy's objects are unchanged.
+  8. **Recorded in the same change** — this page and its decision, the plan's slice and gap row, `services.md`,
+     `commands.md`, `AGENTS.md` and CI.
+- **Evidence:** `make check-v2` (15 packages, then the rendered check), `REQUIRE_HELM=1 make check-v2`,
+  `make check`, `make check-lint`, `make -s check-docs`, `make -s v2-report` (the API adds `Backup.Region`,
+  `Backup.Host` and `Allocate`'s parameter).
+- **Next gate:** unchanged — the template-update gate below.
 
 ## Slice record: the templates read the auth files (the re-pin)
 

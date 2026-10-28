@@ -152,12 +152,13 @@ flowchart LR
 
 ```bash
 make v2-snapshot REVISION=HEAD OUT=/tmp/snapshot.json
-cd v2 && go run ./cmd/swhurl-v2 egress --snapshot /tmp/snapshot.json --previous ../platform/egress/allocation.json > /tmp/allocation.json \
+cd v2 && go run ./cmd/swhurl-v2 egress --snapshot /tmp/snapshot.json --profile testdata/profile.json \
+     --previous ../platform/egress/allocation.json > /tmp/allocation.json \
   && mv /tmp/allocation.json ../platform/egress/allocation.json \
   && go run ./cmd/swhurl-v2 proxy --allocation ../platform/egress/allocation.json --profile testdata/profile.json --out ../platform
 ```
 
-`make check-v2` fails when the committed objects are not what the allocation renders, and CI regenerates them and fails on any diff — the allocation compared without the commit it records — so a changed grant or a new instance cannot be left un-rendered; `make check-apps` (rule `egress-grants`) still refuses a malformed grant, and `make verify-platform` (check `egress`) reports the proxy's replicas and every instance's port. Do not edit them by hand.
+An instance's grants are the hosts its record declares plus, when its release keeps a database, the **platform's backup host** (the profile's bucket and `backup.region`), so a database instance never declares the bucket its nightly upload goes to. `make check-v2` renders the allocation, these two files and `platform/auth` from the records in the working tree ([`check-rendered.sh`](../v2/check-rendered.sh), which writes nothing in the checkout) and fails on any difference — the allocation compared without the commit it records — and CI runs the same target, so a changed grant or a new instance cannot be left un-rendered; `make check-apps` (rule `egress-grants`) still refuses a malformed grant, and `make verify-platform` (check `egress`) reports the proxy's replicas and every instance's port. Do not edit them by hand.
 - **A change restarts the proxy**, one replica at a time (two replicas, the chart's checksum of its configuration), so apps keep a way out meanwhile. Reloader is not involved.
 - **Logs:** one line per request (connections that send none, such as the kubelet's probes, are not logged) on stdout, which reaches ClickStack like any container's (namespace `egress`): `instance=demo-shop-staging granted=yes client=10.42.0.31 method=CONNECT host=api.example.com:443 status=200/TCP_TUNNEL bytes=5223 ms=66` (`granted=-`: no grant covers it, and the request was refused with `403/TCP_DENIED`). For HTTPS only the host and port are seen, never the path or content, and the line is written when the tunnel closes: a kept-alive connection can appear minutes after its first request. Nothing is stored: no cache, no other files.
 - **No credentials** and no admin interface. The image is Canonical's `ubuntu/squid` (Ubuntu 24.04 LTS), pinned by digest, run as its `proxy` user with a read-only root.

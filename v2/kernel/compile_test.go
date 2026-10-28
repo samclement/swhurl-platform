@@ -97,6 +97,7 @@ func TestProfileIdentity(t *testing.T) {
 		func(p *PlatformProfile) { p.Quota.RequestsCPUMilli++ },
 		func(p *PlatformProfile) { p.Quota.RequestsMemoryMiB++ },
 		func(p *PlatformProfile) { p.Quota.LimitsMemoryMiB++ },
+		func(p *PlatformProfile) { p.Backup.Region = "eu-west-1" },
 	} {
 		changed := profile(t)
 		change(&changed)
@@ -131,6 +132,7 @@ func TestProfileDecoding(t *testing.T) {
 		{"missing units root", strings.Replace(text, `"unitsRoot": "clusters/home",`, ``, 1), Invalid, "delivery.unitsRoot"},
 		{"units root in the app tree", strings.Replace(text, `"unitsRoot": "clusters/home"`, `"unitsRoot": "apps/x"`, 1), Unsupported, "delivery.unitsRoot"},
 		{"output root in the app tree", strings.Replace(text, `"outputRoot": "v2-apps"`, `"outputRoot": "apps"`, 1), Unsupported, "delivery.outputRoot"},
+		{"missing backup region", strings.Replace(text, `"region": "eu-west-2",`, ``, 1), Invalid, "backup.region"},
 		{"escaping units root", strings.Replace(text, `"unitsRoot": "clusters/home"`, `"unitsRoot": "../home"`, 1), Invalid, "delivery.unitsRoot"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

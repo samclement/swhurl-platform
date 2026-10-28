@@ -50,11 +50,13 @@ type Network struct {
 // Backup is the platform's backup contract for an instance's SQLite database. The recipient is a public
 // key, so the job encrypts before it uploads and never holds the private key; the writer is a Secret in
 // the platform's own namespace that Flux substitutes the upload-only key from, so v2 renders a reference
-// and never a credential value.
+// and never a credential value. The region is the bucket's: the job uploads to the regional endpoint, so the
+// proxy must grant that host to every instance whose backup it carries.
 type Backup struct {
 	Image           string `json:"image"`
 	Digest          string `json:"digest"`
 	S3URI           string `json:"s3Uri"`
+	Region          string `json:"region"`
 	Recipient       string `json:"recipient"`
 	WriterNamespace string `json:"writerNamespace"`
 	WriterName      string `json:"writerName"`
@@ -142,6 +144,7 @@ var (
 	// An S3 URI is a bucket and a prefix ending in "/", so a namespace appends to it unambiguously.
 	backupURIPattern    = regexp.MustCompile(`^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/[A-Za-z0-9._/-]*/$`)
 	ageRecipientPattern = regexp.MustCompile(`^age1[0-9a-z]{58}$`)
+	regionPattern       = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]$`)
 	cidrPattern         = regexp.MustCompile(`^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$`)
 )
 
@@ -178,7 +181,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"storage", []string{"class"}},
 		{"egress", []string{"address", "namespace", "labels"}},
 		{"dns", []string{"namespace", "labels"}},
-		{"backup", []string{"image", "digest", "s3Uri", "recipient", "writerNamespace", "writerName", "suspended"}},
+		{"backup", []string{"image", "digest", "s3Uri", "region", "recipient", "writerNamespace", "writerName", "suspended"}},
 		{"network", []string{"podCIDR"}},
 	} {
 		if _, present := root[part.key]; !present {
@@ -291,6 +294,9 @@ func (b Backup) validate() error {
 	if !backupURIPattern.MatchString(b.S3URI) {
 		return refuse(Invalid, "backup.s3Uri", "expected s3://<bucket>/<prefix>/")
 	}
+	if !regionPattern.MatchString(b.Region) {
+		return refuse(Invalid, "backup.region", "expected an AWS region such as eu-west-2")
+	}
 	if !ageRecipientPattern.MatchString(b.Recipient) {
 		return refuse(Invalid, "backup.recipient", "expected an age public key")
 	}
@@ -307,8 +313,18 @@ func (b Backup) validate() error {
 // absent is whether the profile states no backup at all, which is valid: only a database instance needs
 // one, and a profile that compiles none needs no facts.
 func (b Backup) absent() bool {
-	return b.Image == "" && b.Digest == "" && b.S3URI == "" && b.Recipient == "" &&
+	return b.Image == "" && b.Digest == "" && b.S3URI == "" && b.Region == "" && b.Recipient == "" &&
 		b.WriterNamespace == "" && b.WriterName == "" && !b.Suspended
+}
+
+// Host is the endpoint a database's backup uploads to, as the proxy grants it: the bucket's regional S3 host
+// on 443. It is empty when the profile states no backup, so nothing is granted for a job that is not rendered.
+func (b Backup) Host() string {
+	if b.absent() {
+		return ""
+	}
+	bucket, _, _ := strings.Cut(strings.TrimPrefix(b.S3URI, "s3://"), "/")
+	return bucket + ".s3." + b.Region + ".amazonaws.com:443"
 }
 
 // validate checks the cluster's DNS block the same way.
@@ -471,7 +487,7 @@ func profileCanonical(p PlatformProfile) []byte {
 		p.Egress.Address, p.Egress.Namespace, labelPairs(p.Egress.Labels),
 		p.DNS.Namespace, labelPairs(p.DNS.Labels),
 		// The backup facts are platform facts too: another bucket, image or key set is another identity.
-		p.Backup.Image, p.Backup.Digest, p.Backup.S3URI, p.Backup.Recipient,
+		p.Backup.Image, p.Backup.Digest, p.Backup.S3URI, p.Backup.Region, p.Backup.Recipient,
 		p.Backup.WriterNamespace, p.Backup.WriterName, strconv.FormatBool(p.Backup.Suspended),
 		// The pod network is a platform fact too: another block is another cluster's identity.
 		p.Network.PodCIDR})

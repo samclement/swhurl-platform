@@ -58,7 +58,7 @@ check-codegraph:
 check-v2:
 	cd v2 && export GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 \
 		&& unformatted=$$(gofmt -l .) && { [ -z "$$unformatted" ] || { echo "gofmt: run gofmt -w on: $$unformatted"; exit 1; }; } \
-		&& go vet ./... && go test -count=1 ./...
+		&& go vet ./... && go test -count=1 ./... && ./check-rendered.sh
 
 .PHONY: v2-report
 v2-report:

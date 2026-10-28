@@ -122,30 +122,7 @@ jobs:
             rmdir "$tmp"
           fi
 
-      - name: Check the egress proxy is what the records render
-        run: |
-          set -Eeuo pipefail
-          make v2-snapshot REVISION=HEAD OUT=/tmp/v2-egress-snapshot.json
-          cd v2
-          go run ./cmd/swhurl-v2 egress --snapshot /tmp/v2-egress-snapshot.json \
-            --previous ../platform/egress/allocation.json > /tmp/allocation.json
-          go run ./cmd/swhurl-v2 proxy --allocation /tmp/allocation.json \
-            --profile testdata/profile.json --out ../platform
-          cd ..
-          # The allocation records the commit it was taken at; every other fact must match the records.
-          python3 -c "import json; a=json.load(open('platform/egress/allocation.json')); b=json.load(open('/tmp/allocation.json')); a.pop('revision', None); b.pop('revision', None); assert a == b, 'the allocation is stale: re-render it (docs/services.md#egress-proxy)'"
-          git diff --exit-code -- platform/egress
-
-      - name: Check the platform's auth material is what the records render
-        run: |
-          set -Eeuo pipefail
-          make v2-snapshot REVISION=HEAD OUT=/tmp/v2-auth-snapshot.json
-          cd v2
-          go run ./cmd/swhurl-v2 auth --snapshot /tmp/v2-auth-snapshot.json \
-            --profile testdata/profile.json --out ../platform
-          cd ..
-          git diff --exit-code -- platform/auth
-
+      # check-v2 also renders platform/egress and platform/auth from the records and diffs them (v2/check-rendered.sh).
       - name: Check v2 and its design rules
         env:
           REQUIRE_HELM: '1'

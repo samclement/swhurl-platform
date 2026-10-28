@@ -96,13 +96,14 @@ kernel: const Unsupported Code = "unsupported"
 kernel: const WrongApplication Code = "wrong_application"
 kernel: const WrongRelease Code = "wrong_release"
 kernel: func (*Error) Error() string
+kernel: func (Backup) Host() string
 kernel: func (Connections) ID() ConnectionsID
 kernel: func (EgressDocument) EgressOf(application, environment string) (*Egress, error)
 kernel: func (EgressFacts) NeedsEgress() bool
 kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
 kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
-kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation) ([]EgressAllocation, error)
+kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation, backupHost string) ([]EgressAllocation, error)
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
 kernel: func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error)
 kernel: func CompileWith(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, connections Connections, egress *Egress) (Compilation, error)
@@ -125,7 +126,7 @@ kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"` MediaType string `json:"mediaType"` Platform string `json:"platform"`}
 kernel: type Auth struct {Issuer string `json:"issuer"` Keys string `json:"keys"`}
-kernel: type Backup struct {Image string `json:"image"` Digest string `json:"digest"` S3URI string `json:"s3Uri"` Recipient string `json:"recipient"` WriterNamespace string `json:"writerNamespace"` WriterName string `json:"writerName"` Suspended bool `json:"suspended"`}
+kernel: type Backup struct {Image string `json:"image"` Digest string `json:"digest"` S3URI string `json:"s3Uri"` Region string `json:"region"` Recipient string `json:"recipient"` WriterNamespace string `json:"writerNamespace"` WriterName string `json:"writerName"` Suspended bool `json:"suspended"`}
 kernel: type Bindings struct {}
 kernel: type Call struct {Callee string Port int32}
 kernel: type Chart struct {Name string `json:"name"` Version string `json:"version"` Repository string `json:"repository"` RepositoryNamespace string `json:"repositoryNamespace"`}

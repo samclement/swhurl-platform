@@ -7,7 +7,8 @@ import (
 
 // The platform allocates one proxy port to every instance that needs one. It is a pure decision over the
 // facts the caller supplies — the port an instance already holds, the hosts it declares, whether its release
-// keeps a database — so it is testable without a checkout, a clock or a cluster. What it produces is an
+// keeps a database, and where the platform's backups go — so it is testable without a checkout, a clock or a
+// cluster. What it produces is an
 // allocation document: the port is how the proxy names the caller, so a port, once given, is kept.
 
 // FirstPort is where a new allocation starts: above the unprivileged range and stable across runs.
@@ -33,7 +34,11 @@ func (f EgressFacts) NeedsEgress() bool { return len(f.Grants) > 0 || f.Database
 // allocation whose instance the caller no longer lists is kept as it was — deleting an instance's records
 // does not take its port away from an instance the platform still owns. Two instances on one port is a
 // refusal: the port names the caller, so one of them would answer for the other.
-func Allocate(facts []EgressFacts, previous []EgressAllocation) ([]EgressAllocation, error) {
+//
+// backupHost is the platform's backup endpoint (Backup.Host), granted to every instance that keeps a
+// database: the destination is the platform's fact, so an instance never has to declare it, and empty grants
+// nothing.
+func Allocate(facts []EgressFacts, previous []EgressAllocation, backupHost string) ([]EgressAllocation, error) {
 	kept := make(map[string]int32, len(facts)+len(previous))
 	used := make(map[int32]bool, len(facts)+len(previous))
 	for _, fact := range facts {
@@ -60,7 +65,7 @@ func Allocate(facts []EgressFacts, previous []EgressAllocation) ([]EgressAllocat
 	allocations := make([]EgressAllocation, 0, len(facts)+len(previous))
 	next := FirstPort
 	for _, fact := range ordered {
-		allocated, given := allocateOne(fact, kept, used, &next)
+		allocated, given := allocateOne(fact, kept, used, &next, backupHost)
 		if given {
 			allocations = append(allocations, allocated)
 		}
@@ -96,7 +101,7 @@ func distinctAllocationPorts(allocations []EgressAllocation) error {
 
 // allocateOne is one instance's allocation: the port it holds, the lowest free one, or none when nothing
 // about it leaves the cluster. next is the lowest port not yet tried, so the search stays linear.
-func allocateOne(fact EgressFacts, kept map[string]int32, used map[int32]bool, next *int32) (EgressAllocation, bool) {
+func allocateOne(fact EgressFacts, kept map[string]int32, used map[int32]bool, next *int32, backupHost string) (EgressAllocation, bool) {
 	port, had := kept[fact.Environment+"/"+fact.Application]
 	if !had && !fact.NeedsEgress() {
 		return EgressAllocation{}, false
@@ -107,14 +112,20 @@ func allocateOne(fact EgressFacts, kept map[string]int32, used map[int32]bool, n
 		}
 		port, used[*next] = *next, true
 	}
+	grants := slices.Clone(fact.Grants)
+	if fact.Database && backupHost != "" {
+		grants = append(grants, backupHost)
+	}
 	return EgressAllocation{Application: fact.Application, Environment: fact.Environment,
-		Port: port, Grants: sortedGrants(fact.Grants)}, true
+		Port: port, Grants: sortedGrants(grants)}, true
 }
 
-// sortedGrants is an allocation's grants in one order, so the document is the same bytes for the same facts.
+// sortedGrants is an allocation's grants in one order and once each, so the document is the same bytes for
+// the same facts — a v1 record that also lists the backup host does not grant it twice.
 func sortedGrants(grants []string) []string {
 	sorted := slices.Clone(grants)
 	slices.Sort(sorted)
+	sorted = slices.Compact(sorted)
 	if sorted == nil {
 		return []string{}
 	}

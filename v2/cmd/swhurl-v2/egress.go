@@ -8,8 +8,13 @@ import (
 )
 
 // egress allocates one proxy port per instance and writes the platform's allocation. The decision is the
-// kernel's; this reads the snapshot's facts, hands them over and prints the document.
+// kernel's; this reads the snapshot's facts and the profile's backup host, hands them over and prints the
+// document.
 func (c cli) egress(r request) int {
+	profile, status := c.profile(r.profile)
+	if status != 0 {
+		return status
+	}
 	data, status := c.read(r.snapshot, "snapshot")
 	if status != 0 {
 		return status
@@ -28,7 +33,7 @@ func (c cli) egress(r request) int {
 			return fail(c.diagnostic, err)
 		}
 	}
-	allocations, err := kernel.Allocate(egressFacts(pinned), previous.Instances)
+	allocations, err := kernel.Allocate(egressFacts(pinned), previous.Instances, profile.Backup.Host())
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}

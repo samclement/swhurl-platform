@@ -26,7 +26,7 @@ const usage = `usage:
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
   swhurl-v2 auth --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
   swhurl-v2 resolve --snapshot SNAPSHOT.json
-  swhurl-v2 egress --snapshot SNAPSHOT.json [--previous EGRESS.json]
+  swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
@@ -63,7 +63,8 @@ reads every object a preview would create from that API server, read-only, and r
 absent or unavailable; a failed read is never reported as absence.
 
 egress allocates one proxy port per instance, keeping every port the previous document gave and giving a
-new instance the lowest free one. compile takes the document with --egress.
+new instance the lowest free one. Every instance whose release keeps a database is granted the
+profile's backup host, so its nightly upload passes the proxy. compile takes the document with --egress.
 
 compile refuses a database instance without --egress: its backup job may reach only the proxy, so it
 could not upload. A database instance also renders its backup from the profile's backup facts.
@@ -304,6 +305,7 @@ func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 	case "egress":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		flags.Var(&once{value: &r.previous}, "previous", "a previous allocation to keep ports from (optional)")
 	case "proxy":
 		flags.Var(&once{value: &r.allocation}, "allocation", "egress allocation document")
@@ -375,13 +377,11 @@ func (r *request) named() []string {
 	switch r.command {
 	case "release-id", "instance-revision":
 		return nil
-	case "resolve", "egress":
+	case "resolve":
 		return []string{r.snapshot}
 	case "proxy":
 		return []string{r.allocation, r.profile}
-	case "auth":
-		return []string{r.snapshot, r.profile}
-	case "shadow":
+	case "egress", "auth", "shadow":
 		return []string{r.snapshot, r.profile}
 	case "migrate":
 		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}

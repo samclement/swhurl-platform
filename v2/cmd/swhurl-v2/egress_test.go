@@ -12,11 +12,11 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 )
 
-// runEgress runs the allocation command over a snapshot.
+// runEgress runs the allocation command over a snapshot, with the platform's profile.
 func runEgress(t *testing.T, snapshotPath string, extra ...string) (int, string, string) {
 	t.Helper()
 	var out, diagnostic bytes.Buffer
-	args := append([]string{"egress", "--snapshot", snapshotPath}, extra...)
+	args := append([]string{"egress", "--snapshot", snapshotPath, "--profile", filepath.Join("..", "..", "testdata", "profile.json")}, extra...)
 	status := run(args, &out, &diagnostic, os.ReadFile, files.New())
 	return status, out.String(), diagnostic.String()
 }
@@ -147,6 +147,40 @@ func TestEgressKeepsAnInstanceTheSnapshotNoLongerHas(t *testing.T) {
 				t.Fatalf("the migrated instance's grants: %v", grants)
 			}
 		}
+	}
+}
+
+// A database instance whose record declares no hosts — a v2 record has no egress field — is still granted the
+// profile's backup host, so its nightly upload passes the proxy; and the command will not allocate without the
+// profile that names that host.
+func TestEgressGrantsTheBackupHost(t *testing.T) {
+	document := twoInstances(t)
+	instance := document["instances"].([]any)[0].(map[string]any)
+	records := instance["records"].(map[string]any)
+	delete(records["instance"].(map[string]any), "egress")
+	release := map[string]any{}
+	for key, value := range records["release"].(map[string]any) {
+		release[key] = value
+	}
+	release["database"] = "sqlite"
+	records["release"] = release
+	snapshotPath := writeSnapshot(t, document)
+	status, stdout, stderr := runEgress(t, snapshotPath)
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	allocation, err := kernel.DecodeEgressDocument([]byte(stdout))
+	if err != nil {
+		t.Fatal(err)
+	}
+	egress, err := allocation.EgressOf("shop", "staging")
+	want := "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
+	if err != nil || egress == nil || len(egress.Grants) != 1 || egress.Grants[0] != want {
+		t.Fatalf("the database instance's grants: %+v %v", egress, err)
+	}
+	var out, diagnostic bytes.Buffer
+	if status := run([]string{"egress", "--snapshot", snapshotPath}, &out, &diagnostic, os.ReadFile, files.New()); status != 2 || out.Len() != 0 {
+		t.Fatalf("an allocation without the profile: exit %d, %q", status, out.String())
 	}
 }
 

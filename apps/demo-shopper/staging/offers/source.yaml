@@ -1,4 +1,4 @@
 # Read from the app's repository by make app-offers: do not edit.
 repository: samclement/demo-shopper
-commit: d133794
+commit: d494ab0
 events: asyncapi.yaml

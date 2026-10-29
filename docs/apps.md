@@ -745,6 +745,12 @@ app push → its workflow checks, builds and publishes ghcr.io/<owner>/<app>:<ru
 
 The [Deploy workflow](../.github/workflows/deploy.yml) also runs hourly and by hand (`gh workflow run deploy.yml`), which catches a lost webhook or dispatch, and `make app-deploy [APP=<app>]` does the same locally. A policy reports its newest image at every reconcile, so most dispatches end at the run's first step ("Staging already runs it"), before any setup. The Alert's token is in `platform/image-automation/dispatch-secret.sops.yaml` ([rotate it](operations.md#secrets)). `make verify-platform` shows, under Image Automation, each app's newest image and whether staging runs it, and its webhook under Image Webhooks (`make app-hooks` adds a missing one; until then new images wait for the hourly run).
 
+**A v2-owned staging instance** follows the same trigger: its unit carries the same `ImageRepository` and
+`ImagePolicy`, and the image states what it needs in a declaration its build writes into the image's config
+labels. `swhurl-v2 deploy` reads it, refuses a need the instance cannot take, and writes v2's records and files;
+the workflow that starts it is the next gate ([v2 status](v2-status.md#slice-record-image-automations-offline-half-29-october-2026)).
+Production still changes only through a promotion.
+
 **What the image needs comes with it.** The run reads `swhurl.yaml` at the image's commit and writes its [needs](#swhurlyaml) into the release with the tag. Example: the developer changes the code and `port: 9090` in one commit; staging's next release has the new image, Service port 9090, probes on 9090, and its callers' `SWHURL_SERVICE_*_URL` and its NetworkPolicy on 9090. An image already deployed is not read again; after a change to how the platform applies a need, `make app-deploy ARGS=--refresh` (or `gh workflow run deploy.yml -f refresh=true`) reads every staging image again.
 
 **A refused image is held.** An image whose needs or offers the instance cannot take fails the run naming the problem; that app keeps its image and the others still deploy. Needs are refused when the kind changes, the minimum resources exceed the quota or the memory limit, the uid changes on an instance with a volume, or a database is removed or resized. Everything else deploys to staging and reaches production with the image's promotion; a promotion that changes production's port, database or secret names waits for a person to merge it ([promote](#promote-to-production)).

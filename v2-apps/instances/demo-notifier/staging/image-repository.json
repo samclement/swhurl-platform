@@ -1,0 +1,1 @@
+{"apiVersion":"image.toolkit.fluxcd.io/v1","kind":"ImageRepository","metadata":{"labels":{"platform.swhurl.com/app":"demo-notifier","platform.swhurl.com/managed":"true"},"name":"demo-notifier","namespace":"flux-system"},"spec":{"image":"ghcr.io/samclement/demo-notifier","interval":"1h"}}

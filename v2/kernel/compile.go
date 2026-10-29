@@ -163,7 +163,8 @@ func instanceOf(spec InstanceSpec, release ReleaseBundle, app AppSpec, connectio
 // workloadOf is the runtime facts a release states: what the chart runs, as whom, and what it serves.
 func workloadOf(release ReleaseBundle) WorkloadFacts {
 	return WorkloadFacts{Kind: release.Runtime.Kind, Image: release.Artifact.Image, Digest: release.Artifact.Digest,
-		Port: release.Runtime.Port, HealthPath: release.Runtime.HealthPath, UID: release.Runtime.UID,
+		Source: release.Source.Repository,
+		Port:   release.Runtime.Port, HealthPath: release.Runtime.HealthPath, UID: release.Runtime.UID,
 		Telemetry: release.Telemetry, Publishes: release.Publishes}
 }
 

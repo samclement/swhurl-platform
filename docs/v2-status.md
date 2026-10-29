@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the operator's choice of the next slice: a v2 delivery path for image automation, or the next domain v2 does not render (secret names, team grants, public routes)
+Gate: the operator's choice of the next slice, with a v2-owned instance's telemetry export (its policy denies the node collector, found 29 October) recommended first
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -60,7 +60,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Two live** (`swhurl-try-11`, `swhurl-try-10` staging, the second stateful on its own volume), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
-| Always-on instance surface | Telemetry, the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: both v2-owned instances rolled, with the new env, tokens and team labels |
+| Always-on instance surface | Telemetry, the notify address and token, and the app-owned team label on every instance | **Live 29 October 2026, except telemetry's export**: the env, tokens and team labels rolled to both v2-owned instances, but an instance's own policy denies the node collector's address, so its metrics and traces do not leave (found 29 October; [evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)) |
 | Reloader watch list | A platform document v2 renders: the platform's own watched namespaces and one per instance that declares a Secret | **Done and live 29 October 2026**: `platform/reloader/values.json` replaces the list in the HelmRelease, which merges it as values |
 | App kinds | A worker release compiles to an instance that serves nothing, with every other fact intact | **Done, offline 29 October 2026** (the worker kind); `job` still refused |
 | Events | The server's user list, and per instance its key, stream, consumers and seed | **Parts one and two, offline 29 October 2026**: the user list renders identically to the platform's, and a keyed instance renders its variables, stream, consumers and unit; the seed is the encrypted file v2 copies without reading |
@@ -69,7 +69,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** delivery is manual (compile, commit, push); v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+**Not yet true, and what would make it true:** delivery is manual (compile, commit, push); v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; a v2-owned instance's telemetry cannot leave (its policy denies the node collector), and v2 renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); the egress cutover, which changes live outbound traffic and needs the grants recorded before it can refuse the rest; and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -87,7 +87,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Storage | done for the volume and proved live | [slice](iteration-2-plan.md#sqlite-storage-the-volume-implemented-and-proved-live-25-october-2026) |
 | Egress | done and live: the instance side, the proxy's configuration rendered by v2, grants enforced, v1's generator retired | [part one](iteration-2-plan.md#egress-part-one-the-allocation-and-the-instance-side-implemented-offline-25-october-2026), [part two](iteration-2-plan.md#egress-part-two-the-proxys-configuration-implemented-offline-25-october-2026), [cutover](iteration-2-plan.md#the-egress-cutover-implemented-26-october-2026) |
 | Backup | **Done and proved live 27 October 2026**: rendered, both facts observed live, a restore planned live, and **v2 performed one**: the age-key and read-URL Secret, the Job from the backup image, the sequence with its undo, the `v2-restore` version-2 report, and `swhurl-try-10` staging restored over its newest archive in 30 seconds | [render](iteration-2-plan.md#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026), [job](iteration-2-plan.md#the-backup-observation-implemented-offline-26-october-2026), [archive](iteration-2-plan.md#the-object-store-read-implemented-26-october-2026), [restore](iteration-2-plan.md#the-restore-v2-performs-option-2a-offline-half--27-october-2026) |
-| Always-on instance surface | done and live 29 October 2026: telemetry, notifications and the team label, with the app record owning the team; both v2-owned instances rolled at `1bca7990` | [slice](#slice-record-the-always-on-instance-surface-29-october-2026) |
+| Always-on instance surface | live 29 October 2026 except telemetry's export: the env, notifications and team label rolled to both v2-owned instances at `1bca7990`, and the app record owns the team; a v2 instance's policy denies the node collector, so nothing exports (found 29 October) | [slice](#slice-record-the-always-on-instance-surface-29-october-2026) |
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
 | Broker identity minting | done and live 29 October 2026: `swhurl-v2 mint` derives the pair in the pure model, encrypts the seed through `adapters/sops` (the one command v2 starts) to `sops.recipient`, writes it beside the record and then the record; the two v2-owned instances without a pair were minted, and `make v2-users` and the Reloader list gained them | [slice](#slice-record-minting-a-broker-identity-29-october-2026) |
 | Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
@@ -1091,8 +1091,11 @@ rotation needs.
      seed written before the record; a refused mint writing nothing; the fake recording the plaintext so the test
      can prove the writer never saw it; and the adapter contract run by both the real command and the fake.
   6. **Scope stated** — minting and rotation. The live use of this slice was two *new* keys; **the operator then
-     asked for a rotation**, and `demo-notifier` staging's pair was replaced with `--rotate` (the evidence is in
-     [current state](current-state.md)). A public key cannot be checked against its seed without decrypting, so
+     asked for a rotation**, and `demo-notifier` staging's pair was replaced with `--rotate`: one authorisation
+     violation while the server refreshed its config, then events again, 0 restarts, `verify-platform` green
+     ([evidence](current-state.md#demo-notifier-stagings-broker-identity-was-rotated-live-29-october-2026)).
+     The same check found a defect outside this slice: a v2-owned instance's policy denies the node collector,
+     so its telemetry does not export ([evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)). A public key cannot be checked against its seed without decrypting, so
      v2's own check is "not the plaintext, and encrypted"; whether the platform can read it is proved by the
      workload signing in. `mint` writes the record folder; it does not compile, so the operator recompiles.
   7. **Offline is not live** — the offline proof is the tests, the adapter contract (run against the real `sops`
@@ -1108,8 +1111,9 @@ rotation needs.
   `make check-repo`, `make check-apps`, `git diff --check` and `make -s v2-report` (API +25/−2: the pair, the Secret,
   the record update, the adapter and its fake; two new layer-1 packages; three pure imports added; no budget
   baseline added or weakened). Coverage: `kernel` 92.8%, `adapters/sops` 75.0%, `orchestration` 83.1%, CLI 86.0%.
-- **Next gate:** the operator's choice of the next slice: a v2 delivery path for image automation, or the next
-  domain v2 does not render (secret names, team grants, public routes).
+- **Next gate:** the operator's choice of the next slice, with a v2-owned instance's telemetry export — found
+  blocked by its own policy — recommended first; then a delivery path for image automation, or the next domain
+  v2 does not render (secret names, team grants, public routes).
 
 ## Resume
 

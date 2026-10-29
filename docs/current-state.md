@@ -2,6 +2,39 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## demo-notifier staging's broker identity was rotated live (29 October 2026)
+
+The operator asked for a live rotation, the first v2 has performed on a real identity. `066ba96a` replaced
+`demo-notifier` staging's key: `UCWLMGY4…` left the user list, `UCAE4LER…` joined it, and the instance's record,
+its seed (beside the record and copied beside the manifests) and the HelmRelease's `SWHURL_EVENTS_NKEY` changed
+with it. The user list still holds 19 users; NATS's own consumer `demo-orders-created` stayed Ready throughout.
+
+- `22:44:04Z` pushed and reconciled; the pod rolled to `demo-notifier-688bd7bd56-zwsdp` at `22:44:51Z` (0
+  restarts).
+- `22:45:13Z` one `Authorization Violation` on connection 184555, with a client `TimeoutException`: the server
+  had not yet refreshed its mounted user list, so it still knew only the old key. The app retried.
+- By `22:45:21Z` events were arriving again; **8 `event received: demo-orders.created`** lines followed, and no
+  other authorisation line appeared in the server's log. `make verify-platform` passed.
+
+**What this proves:** the rotation path works end to end on a live subscriber — a new pair, its ciphertext, the
+record, the compiled files, the user list and the pod's restart in one commit. **What it did not measure:** the
+exact reconnect gap, and whether the messages published in that ~1 minute were replayed to the durable consumer
+(the consumer's own state would answer that). The gap is what [services](services.md#nats) promises: one-step
+replacement, no overlap, no immediate revocation of an existing connection.
+
+## A v2-owned instance cannot reach the node collector (29 October 2026)
+
+Found while checking the rotation. `demo-notifier` staging's log carries repeated
+`Exporter failed … Failed to connect to /192.168.1.200:4318` (its OTel metric exporter), while a throwaway pod in
+`default` got **HTTP 200** from the same address. The node collector is healthy: the host-network DaemonSet runs
+with `hostPort: 4318`. The difference is the **policy**: a v2-rendered instance's NetworkPolicy states
+`policyTypes: [Ingress, Egress]` and admits only DNS, its broker and its callers (v1's apps state `Ingress` only,
+so they can egress). So the always-on telemetry surface renders an endpoint the same instance's policy denies —
+the "not exercised" item in the [always-on entry](#the-always-on-instance-surface-is-live-29-october-2026) is now
+an observed defect, and the same is true of the two newly keyed instances. Not fixed in this change: it is a
+profile/policy decision (a fact for the node collector's address and port, or a different route), and it needs
+the operator's word. Recorded in the [gap list](iteration-2-plan.md#6-deliberately-deferred).
+
 ## v2 minted a broker identity for both keyless instances (29 October 2026)
 
 `swhurl-try-10` and `swhurl-try-11` staging lost their NATS pair with their v1 units, so neither could read its

@@ -168,7 +168,11 @@ func TestPreviewRefusesAnUnsupportedRelease(t *testing.T) {
 	if err := json.Unmarshal(release, &document); err != nil {
 		t.Fatal(err)
 	}
+	// A worker release states neither an HTTP port nor a health path; the preview compares HTTP only, so it
+	// is refused for its kind rather than for facts a worker does not have.
 	document["kind"] = "worker"
+	delete(document, "port")
+	delete(document, "healthPath")
 	changed, err := json.Marshal(document)
 	if err != nil {
 		t.Fatal(err)

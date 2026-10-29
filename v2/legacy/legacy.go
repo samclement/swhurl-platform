@@ -126,12 +126,16 @@ func sortGaps(gaps []Gap) []Gap {
 	return gaps
 }
 
-// workload takes the facts the HTTP preview renders. Only a web release has them, and the preview is
-// HTTP-only, so any other kind is refused rather than remodelled.
+// workload takes the facts the preview renders. The preview compares one workload's HTTP surface, which only
+// a web release has, so any other kind is refused here rather than in the shared translation: a migration
+// carries a worker's facts without them.
 func (t *Translation) workload(release *record) error {
 	workload, leftovers, err := workloadOf(release)
 	if err != nil {
 		return err
+	}
+	if workload.Kind != "web" {
+		return refuse(Unsupported, "release.yaml: kind", "only_http_preview")
 	}
 	t.Workload = workload
 	for _, fact := range []string{"image", "kind", "digest", "port", "healthPath", "uid", "telemetry"} {
@@ -185,14 +189,18 @@ func workloadOf(release *record) (Workload, []string, error) {
 	return workload, image.unused(), nil
 }
 
-// validateWorkload refuses a layout the preview does not carry, after every field has been read so a
+// validateWorkload refuses a layout neither record kind can state, after every field has been read so a
 // malformed field is named before an unsupported one.
 func validateWorkload(workload Workload) error {
 	switch {
-	case workload.Kind != "web":
-		return refuse(Unsupported, "release.yaml: kind", "only_http_preview")
+	case workload.Kind != "web" && workload.Kind != "worker":
+		return refuse(Unsupported, "release.yaml: kind", "only_web_and_worker")
 	case workload.Digest == "":
 		return refuse(Missing, "release.yaml: image.digest", "a_digest_is_required")
+	case workload.Kind == "worker" && workload.Port != 0:
+		return refuse(Invalid, "release.yaml: port", "a_worker_has_no_port")
+	case workload.Kind == "worker" && workload.HealthPath != "":
+		return refuse(Invalid, "release.yaml: healthPath", "a_worker_has_no_health_path")
 	}
 	return nil
 }

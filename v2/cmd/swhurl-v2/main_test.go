@@ -240,7 +240,7 @@ func TestBinary(t *testing.T) {
 		want string
 	}{
 		{bytes.ReplaceAll(originals["r42.json"], []byte("demo-orders"), []byte("other")), "wrong_application:"},
-		{bytes.ReplaceAll(originals["r42.json"], []byte(`"web"`), []byte(`"worker"`)), "unsupported: runtime.kind:"},
+		{bytes.ReplaceAll(originals["r42.json"], []byte(`"web"`), []byte(`"job"`)), "unsupported: runtime.kind:"},
 		{bytes.ReplaceAll(originals["r42.json"], []byte(`"runtime":`), []byte(`"grants":{"exposure":"public"},"runtime":`)), "unsupported: release:"},
 	} {
 		if err := os.WriteFile(filepath.Join(dir, "bad.json"), bad.data, 0600); err != nil {

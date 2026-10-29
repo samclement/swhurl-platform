@@ -92,7 +92,7 @@ func rendered(t *testing.T) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resources, err := kernel.RenderHTTP(kernel.HTTPInstance{Application: "hello", Environment: "staging", Configuration: kernel.Configuration{Replicas: 1, MemoryMiB: 128}}, kernel.HTTPWorkload{Image: image["repository"].(string), Digest: image["digest"].(string), Port: 8080, HealthPath: "/", UID: 101}, p)
+	resources, err := kernel.RenderInstance(kernel.InstanceFacts{Application: "hello", Environment: "staging", Configuration: kernel.Configuration{Replicas: 1, MemoryMiB: 128}}, kernel.WorkloadFacts{Kind: "web", Image: image["repository"].(string), Digest: image["digest"].(string), Port: 8080, HealthPath: "/", UID: 101}, p)
 	if err != nil {
 		t.Fatal(err)
 	}

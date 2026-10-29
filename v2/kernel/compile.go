@@ -132,7 +132,7 @@ func CompileWith(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile 
 	if err != nil {
 		return Compilation{}, err
 	}
-	resources, err := RenderHTTP(instanceOf(spec, release, app, connections, egress), workloadOf(release), profile)
+	resources, err := RenderInstance(instanceOf(spec, release, app, connections, egress), workloadOf(release), profile)
 	if err != nil {
 		return Compilation{}, err
 	}
@@ -143,17 +143,18 @@ func CompileWith(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile 
 
 // instanceOf is the rendering input the records state: the compiler and the restore build it the same way,
 // so a restore pod runs as the app runs and mounts the volume the app mounts.
-func instanceOf(spec InstanceSpec, release ReleaseBundle, app AppSpec, connections Connections, egress *Egress) HTTPInstance {
-	return HTTPInstance{Application: spec.Application, Environment: spec.Environment,
+func instanceOf(spec InstanceSpec, release ReleaseBundle, app AppSpec, connections Connections, egress *Egress) InstanceFacts {
+	return InstanceFacts{Application: spec.Application, Environment: spec.Environment,
 		Configuration: spec.Configuration, Exposure: spec.Grants.Exposure,
 		Calls: connections.Calls, Callers: connections.Callers,
 		Database: release.Database, Storage: spec.Storage, Egress: egress, Team: app.Team}
 }
 
-// workloadOf is the runtime facts a release states: what the chart runs and as whom.
-func workloadOf(release ReleaseBundle) HTTPWorkload {
-	return HTTPWorkload{release.Artifact.Image, release.Artifact.Digest, release.Runtime.Port,
-		release.Runtime.HealthPath, release.Runtime.UID, release.Telemetry}
+// workloadOf is the runtime facts a release states: what the chart runs, as whom, and what it serves.
+func workloadOf(release ReleaseBundle) WorkloadFacts {
+	return WorkloadFacts{Kind: release.Runtime.Kind, Image: release.Artifact.Image, Digest: release.Artifact.Digest,
+		Port: release.Runtime.Port, HealthPath: release.Runtime.HealthPath, UID: release.Runtime.UID,
+		Telemetry: release.Telemetry}
 }
 
 func compileInputs(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile) (Inputs, error) {

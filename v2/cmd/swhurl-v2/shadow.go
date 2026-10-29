@@ -187,7 +187,7 @@ func analyse(instance snapshotInstance, profile kernel.PlatformProfile, owner st
 		result.Gaps = append(result.Gaps, gap.Fact)
 	}
 	subject := previewSubject(translation)
-	rendered, err := kernel.RenderHTTP(subject.instance, subject.workload, profile)
+	rendered, err := kernel.RenderInstance(subject.instance, subject.workload, profile)
 	if err != nil {
 		result.Reason = err.Error()
 		return result

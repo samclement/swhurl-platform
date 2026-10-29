@@ -175,9 +175,23 @@ func TestTranslateRefusals(t *testing.T) {
 		{"a release with no image", func(r *legacy.Records) {
 			r.Release = mutate(t, r.Release, func(document map[string]any) { document["image"] = map[string]any{} })
 		}, legacy.Missing, "release.yaml: image.digest", "a_digest_is_required"},
-		{"a worker release", func(r *legacy.Records) {
-			r.Release = mutate(t, r.Release, func(document map[string]any) { document["kind"] = "worker" })
+		{"a worker release, which the preview does not compare", func(r *legacy.Records) {
+			r.Release = mutate(t, r.Release, func(document map[string]any) {
+				document["kind"] = "worker"
+				delete(document, "port")
+				delete(document, "healthPath")
+			})
 		}, legacy.Unsupported, "release.yaml: kind", "only_http_preview"},
+		{"a worker stating a port", func(r *legacy.Records) {
+			r.Release = mutate(t, r.Release, func(document map[string]any) { document["kind"] = "worker" })
+		}, legacy.Invalid, "release.yaml: port", "a_worker_has_no_port"},
+		{"a kind this v2 does not model", func(r *legacy.Records) {
+			r.Release = mutate(t, r.Release, func(document map[string]any) {
+				document["kind"] = "job"
+				delete(document, "port")
+				delete(document, "healthPath")
+			})
+		}, legacy.Unsupported, "release.yaml: kind", "only_web_and_worker"},
 		{"an unreadable committed output", func(r *legacy.Records) { r.Committed = []byte(`{}`) },
 			legacy.Invalid, "helmrelease.yaml: metadata", "application_and_environment_required"},
 		{"a committed output with no main controller", func(r *legacy.Records) {

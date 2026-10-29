@@ -98,7 +98,7 @@ func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile PlatformPro
 
 // restoreJob is the Job: the backup image's restore command, the app's own claim, and the Secret's two keys.
 // backoffLimit is zero because a failed restore must not be retried on top of a database it may have moved.
-func restoreJob(instance HTTPInstance, uid int32, profile PlatformProfile, job RestoreJob) manifest {
+func restoreJob(instance InstanceFacts, uid int32, profile PlatformProfile, job RestoreJob) manifest {
 	name := restoreSecretName(instance)
 	labels := manifest{backupLabel: "true", RestoreLabel: job.Name}
 	container := jobContainer("restore", profile.Backup.Image+"@"+profile.Backup.Digest, []any{"restore-job-sqlite"},
@@ -114,7 +114,7 @@ func restoreJob(instance HTTPInstance, uid int32, profile PlatformProfile, job R
 
 // restoreEnv is what the restore command requires and refuses without, plus the pod's own way out. The read
 // URL comes from the Secret by reference, so it is not in this document.
-func restoreEnv(instance HTTPInstance, profile PlatformProfile, job RestoreJob) []any {
+func restoreEnv(instance InstanceFacts, profile PlatformProfile, job RestoreJob) []any {
 	return append(proxyEnv(instance, profile),
 		manifest{"name": "AGE_KEY_FILE", "value": restoreKeyMount + "/" + restoreKeyName},
 		manifest{"name": "ARCHIVE_URL", "valueFrom": manifest{"secretKeyRef": manifest{
@@ -128,7 +128,7 @@ func restoreEnv(instance HTTPInstance, profile PlatformProfile, job RestoreJob) 
 
 // restoreSecretName is the Secret one instance's restore reads: transient, and named after the instance so a
 // failure leaves it where the operator expects to find it.
-func restoreSecretName(spec HTTPInstance) string { return spec.Application + restoreSecretSuffix }
+func restoreSecretName(spec InstanceFacts) string { return spec.Application + restoreSecretSuffix }
 
 // validate checks the facts a restore's own documents state. Each refusal names its field and never echoes
 // the value: the two credentials are not repeated in a diagnostic.

@@ -32,7 +32,7 @@ func (c cli) preview(r request) int {
 		return status
 	}
 	subject := previewSubject(translation)
-	rendered, err := kernel.RenderHTTP(subject.instance, subject.workload, profile)
+	rendered, err := kernel.RenderInstance(subject.instance, subject.workload, profile)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -78,18 +78,18 @@ func (c cli) previewRecords(r request) (legacy.Records, int) {
 
 // subject is the translation as the renderer's inputs: the workload facts and the environment facts.
 type subject struct {
-	workload kernel.HTTPWorkload
-	instance kernel.HTTPInstance
+	workload kernel.WorkloadFacts
+	instance kernel.InstanceFacts
 }
 
 // previewSubject maps the translated facts onto the renderer's inputs. The renderer validates them, so a
 // legacy value the compiled output cannot carry is refused there rather than here.
 func previewSubject(translation legacy.Translation) subject {
 	return subject{
-		workload: kernel.HTTPWorkload{Image: translation.Workload.Image, Digest: translation.Workload.Digest,
+		workload: kernel.WorkloadFacts{Kind: translation.Workload.Kind, Image: translation.Workload.Image, Digest: translation.Workload.Digest,
 			Port: translation.Workload.Port, HealthPath: translation.Workload.HealthPath, UID: translation.Workload.UID,
 			Telemetry: translation.Workload.Telemetry},
-		instance: kernel.HTTPInstance{Application: translation.Application, Environment: translation.Environment,
+		instance: kernel.InstanceFacts{Application: translation.Application, Environment: translation.Environment,
 			Configuration: kernel.Configuration{Replicas: translation.Instance.Replicas, MemoryMiB: translation.Instance.MemoryMiB},
 			Exposure:      translation.Instance.Exposure},
 	}

@@ -122,7 +122,7 @@ kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
 kernel: func NamespaceOf(application, environment string) string
 kernel: func Ownership(claims []Claim) []Conflict
 kernel: func RenderAuth(namespaces []string, profile PlatformProfile) (ResourceSet, error)
-kernel: func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (ResourceSet, error)
+kernel: func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderProxy(allocations []EgressAllocation, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, egress *Egress, job RestoreJob) (RestoreObjects, error)
 kernel: func RestoreJobName(application string, started time.Time) string
@@ -157,9 +157,8 @@ kernel: type EgressProxy struct {Address string `json:"address"` Namespace strin
 kernel: type Error struct {Code Code Field string Reason string}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
 kernel: type Grants struct {Exposure string `json:"exposure"`}
-kernel: type HTTPInstance struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string}
-kernel: type HTTPWorkload struct {Image, Digest string Port int32 HealthPath string UID int32 Telemetry bool}
 kernel: type Inputs struct {App AppID `json:"app"` Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"` Calls ConnectionsID `json:"calls"`}
+kernel: type InstanceFacts struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string}
 kernel: type InstanceRevision string
 kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"` Storage Storage `json:"storage,omitempty"` Calls []string `json:"calls,omitempty"` Allows []string `json:"allows,omitempty"`}
 kernel: type Network struct {PodCIDR string `json:"podCIDR"`}
@@ -181,6 +180,7 @@ kernel: type Source struct {Repository string `json:"repository"` Commit string 
 kernel: type Storage struct {SizeMiB int32 `json:"sizeMiB,omitempty"` ClaimName string `json:"claimName,omitempty"`}
 kernel: type Telemetry struct {Endpoint string `json:"endpoint"` Protocol string `json:"protocol"`}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
+kernel: type WorkloadFacts struct {Kind string Image, Digest string Port int32 HealthPath string UID int32 Telemetry bool}
 legacy: const Invalid = "invalid"
 legacy: const Missing = "missing"
 legacy: const Unsupported = "unsupported"

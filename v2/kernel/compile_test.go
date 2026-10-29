@@ -470,3 +470,68 @@ func TestOwnership(t *testing.T) {
 		t.Fatalf("inventory has %d objects, want the five compiled cluster objects", got)
 	}
 }
+
+// workerRecords is one instance of a worker release: the same records a web instance has, minus the HTTP
+// surface its kind does not have. Built from the fixtures so the worker travels the whole compile path.
+func workerRecords(t *testing.T) (InstanceSpec, ReleaseBundle, AppSpec) {
+	t.Helper()
+	r := releaseFile(t, "r42.json")
+	r.Runtime.Kind, r.Runtime.Port, r.Runtime.HealthPath, r.ReleaseID = "worker", 0, "", ""
+	id, err := r.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.ReleaseID = id
+	s := instance(t, "staging.json")
+	s.Release, s.Grants.Exposure = id, "private"
+	return s, r, app(t)
+}
+
+// A worker compiles to the platform's files without the HTTP ones: no Service in the chart's values, no
+// probes, and the same namespace, quota, policy and unit a web instance gets.
+func TestWorkerCompiles(t *testing.T) {
+	p := profile(t)
+	spec, r, a := workerRecords(t)
+	c, err := CompileWith(spec, r, a, p, Connections{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := files(c)
+	values := jsonDocument(t, f["v2-apps/instances/demo-orders/staging/helmrelease.json"])["spec"].(map[string]any)["values"].(map[string]any)
+	if service, found := values["service"]; found {
+		t.Fatalf("a worker's values keep a Service: %v", service)
+	}
+	controller := values["controllers"].(map[string]any)["main"].(map[string]any)
+	container := controller["containers"].(map[string]any)["main"].(map[string]any)
+	if probes, found := container["probes"]; found {
+		t.Fatalf("a worker's container is probed: %v", probes)
+	}
+	if replicas := controller["replicas"].(float64); replicas != 2 {
+		t.Fatalf("the instance's replica count: %v", replicas)
+	}
+	for _, want := range []string{"namespace.json", "helmrelease.json", "resourcequota.json", "networkpolicy.json"} {
+		if _, found := f["v2-apps/instances/demo-orders/staging/"+want]; !found {
+			t.Errorf("a worker lacks %s", want)
+		}
+	}
+	for _, unwanted := range []string{"ingress.json", "callers.json", "backup-cronjob.json"} {
+		if _, found := f["v2-apps/instances/demo-orders/staging/"+unwanted]; found {
+			t.Errorf("a worker rendered %s", unwanted)
+		}
+	}
+	for _, claim := range c.Inventory {
+		if claim.Kind == "Ingress" || claim.Kind == "Service" {
+			t.Fatalf("a worker claims a %s", claim.Kind)
+		}
+	}
+}
+
+// jsonDocument decodes one compiled document.
+func jsonDocument(t *testing.T, document string) map[string]any {
+	t.Helper()
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(document), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	return decoded
+}

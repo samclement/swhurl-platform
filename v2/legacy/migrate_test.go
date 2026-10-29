@@ -235,11 +235,11 @@ func TestMigrateReportsTheDeclarations(t *testing.T) {
 // render is reported as such even when the source is unusable too.
 func TestMigrateChecksTheWorkloadBeforeTheSource(t *testing.T) {
 	documents := withRecords(t, func(release map[string]any) {
-		release["kind"] = "worker"
+		release["kind"] = "job"
 		release["secrets"] = []any{"api-key"}
 	}, nil)
 	_, err := legacy.Migrate(documents, legacy.Supplied{})
-	if err == nil || err.Error() != "unsupported: release.yaml: kind: only_http_preview" {
+	if err == nil || err.Error() != "unsupported: release.yaml: kind: only_web_and_worker" {
 		t.Fatalf("error = %v", err)
 	}
 }

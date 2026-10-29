@@ -31,8 +31,6 @@ class Platform:
     """Inputs that are the platform's, not an app's: read once from the checkout."""
     signing_keys: str = ''
     egress: bool = True  # the egress proxy exists (not in scratch roots)
-    controller_key: str = ''  # NATS: the stream controller's public key; '' where there is no NATS
-    console_key: str = ''
     base: Path = Path('apps')  # where instances are kept, from the root
     backups_suspended: bool = False  # platform/backup/mongodb.yaml's spec.suspend (backup.suspended)
 

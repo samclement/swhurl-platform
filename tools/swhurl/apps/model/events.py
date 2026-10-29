@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from swhurl import interface
 from swhurl.apps import events
-from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.model import relations
-from swhurl.apps.model.draft import EVENTS_SECRET, Draft, Entry, Platform, RenderError, World, environment
+from swhurl.apps.model.draft import EVENTS_SECRET, Draft, Entry, RenderError, World
 
 
 def keyed(entry: Entry) -> bool:
@@ -35,20 +34,3 @@ def apply(draft: Draft, entry: Entry, world: World) -> None:
     draft.list_file(events.SECRET_FILE)
     if publishes or subscribes:
         draft.add_file(events.EVENTS_FILE, events.manifests(app, env, list(publishes), subscribes))
-
-
-def users(world: World, platform: Platform) -> list[dict] | None:
-    """The NATS server's user list, or None where there is no NATS."""
-    if not platform.controller_key:
-        return None
-    found = [events.controller_user(platform.controller_key)]
-    if platform.console_key:
-        found.append(events.console_user(platform.console_key))
-    for env in ENVIRONMENTS:
-        for app, entry in sorted(environment(world, env).items()):
-            subscribes = [(r.target, r.event) for r in relations.evaluate(Instance(app, env), world)
-                          if r.role == 'subscribes' and not r.pending]
-            if keyed(entry):
-                found.append(events.user(entry.settings.allocations.events_key, env, app, list(entry.release.publishes),
-                                         subscribes))
-    return found

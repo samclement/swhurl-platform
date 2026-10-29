@@ -74,7 +74,7 @@ CHECKS = (
              "The signing keys and token issuer apps were given are the cluster's"),
     Check.of('secrets', 'host', apps.check_secrets,  # reads the instances in Git, never a value
              'Every secret name an app\'s image needs has a value in Git (a missing one warns)'),
-    Check.of('events', 'cluster host', apps.check_events,  # reads platform/nats/users.yaml
+    Check.of('events', 'cluster host', apps.check_events,  # reads NATS's streams and consumers live
              'NATS and its controller run, and every declared stream and consumer exists'),
     Check.of('egress', 'cluster host', apps.check_egress,  # reads platform/egress/proxy.yaml
              'The egress proxy runs both replicas, with a port of its own for every app instance'),

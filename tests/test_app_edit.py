@@ -465,20 +465,6 @@ class EditTests(unittest.TestCase):
                           consumer['spec']['filterSubject']),
                          ('Consumer', 'staging-orders', 'hello_created', 'staging.orders.created'))
 
-        users = yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data']['values.yaml'])
-        users = {u['nkey']: u['permissions'] for u in users['config']['merge']['authorization']['users']}
-        self.assertEqual(users['UCONTROLLER']['publish']['allow'], ['$JS.API.>'])
-        self.assertEqual(users[self.env('orders')['SWHURL_EVENTS_NKEY']], {
-            # Its own flag overrides, and its whole prefix: a new image may carry a new event.
-            'publish': {'allow': [*events.flag_permissions('staging', 'orders'), 'staging.orders.>']},
-            'subscribe': {'allow': ['_INBOX.staging.orders.>']}})
-        self.assertEqual(users[self.env('hello')['SWHURL_EVENTS_NKEY']], {
-            'publish': {'allow': [*events.flag_permissions('staging', 'hello'),
-                                  '$JS.API.CONSUMER.INFO.staging-orders.hello_created',
-                                  '$JS.API.CONSUMER.MSG.NEXT.staging-orders.hello_created',
-                                  '$JS.ACK.staging-orders.hello_created.>',
-                                  '$JS.API.STREAM.INFO.staging-orders']},  # the Java client asks before it binds
-            'subscribe': {'allow': ['_INBOX.staging.hello.>']}})
         self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders', 'prod'), 'production is its own decision')
         instances = [self.root / 'apps' / app / 'staging' for app in ('hello', 'orders')]
         self.assertEqual(generated.problems(self.root, only=frozenset(Instance(p.parent.name, p.name) for p in instances)), [])
@@ -501,13 +487,8 @@ class EditTests(unittest.TestCase):
         self.assertNotIn('events.yaml', listed)
         unit = yaml.safe_load((self.root / 'clusters/home/app-hello-staging.yaml').read_text())['spec']
         self.assertIn({'name': 'platform-nats'}, unit['dependsOn'])
-        users = yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data']['values.yaml'])
-        users = {u['nkey']: u['permissions'] for u in users['config']['merge']['authorization']['users']}
-        self.assertEqual(users[self.env('hello')['SWHURL_EVENTS_NKEY']]['publish']['allow'],
-                         events.flag_permissions('staging', 'hello'))
-        self.assertEqual(len(users), 5, 'the controller and every instance of orders and hello')
 
-    def test_app_sync_gives_every_instance_its_own_nats_key_and_the_console_a_writer(self):
+    def test_app_sync_gives_every_instance_its_own_nats_key(self):
         from swhurl.apps import events
         self.with_units(keyed=False)
         (self.root / events.CONSOLE_KEY_FILE).write_text('UCONSOLE\n')
@@ -518,16 +499,6 @@ class EditTests(unittest.TestCase):
         self.assertEqual(generated.problems(self.root), [])
         self.assertEqual(policy.check_events([], yaml.safe_load((self.root / 'apps/hello/prod/helmrelease.yaml').read_text()),
                                              {'platform.swhurl.com/environment': 'prod'}), [])
-        users = yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data']['values.yaml'])
-        users = {u['nkey']: u['permissions'] for u in users['config']['merge']['authorization']['users']}
-        self.assertEqual(users[self.env('hello', 'prod')['SWHURL_EVENTS_NKEY']]['publish']['allow'],
-                         events.flag_permissions('prod', 'hello'), 'its own keys in its own environment only')
-        console = users['UCONSOLE']
-        self.assertIn('$KV.flags-staging.>', console['publish']['allow'])
-        self.assertIn('$KV.flags-prod.>', console['publish']['allow'])
-        self.assertEqual(console['subscribe']['allow'], ['_INBOX.console.>'])
-        self.assertFalse([rule for rule in console['publish']['allow'] if 'staging.' in rule and 'flags' not in rule],
-                         'the console touches no event subjects')
 
     def test_events_are_added_and_removed_one_at_a_time_like_calls(self):
         self.with_units()
@@ -653,9 +624,6 @@ components:
         self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders'))
         self.assertFalse((instance / 'events.yaml').exists(), 'the protected Stream CR is removed, not the broker history')
         self.assertIn('SWHURL_EVENTS_NKEY', self.env('orders'), 'its flags identity remains')
-        users = yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data']['values.yaml'])
-        user = next(u for u in users['config']['merge']['authorization']['users'] if u['nkey'] == self.env('orders')['SWHURL_EVENTS_NKEY'])
-        self.assertNotIn('staging.orders.>', user['permissions']['publish']['allow'])
         self.assertFalse(self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)[0])
 
     def test_stopping_publications_keeps_subscriptions_and_checks_production_on_promotion(self):

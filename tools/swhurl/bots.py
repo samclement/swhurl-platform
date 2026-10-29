@@ -90,8 +90,9 @@ def apps_in(paths: list[str]) -> str:
 
 
 def render(runner: Runner, work: Path, _base: str) -> Commit | None:
-    """Render main from its records (make app-sync)."""
+    """Render main from its records: make app-sync, then the platform's NATS user list, which v2 renders."""
     swhurl(runner, work, 'app-sync')
+    runner.output(['make', '-s', 'v2-users'], cwd=work)
     paths = changed(runner, work)
     if not paths:
         return None

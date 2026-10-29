@@ -14,7 +14,7 @@ from unittest import mock
 from swhurl import ROOT, dashboards, sqlite_backup, yamlio
 from swhurl.apps import channels, checks, cli, edit, egress, events, hooks, teams
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import generated, render, store
+from swhurl.apps.model import generated, store
 from swhurl.apps.model.records import Image
 from swhurl.notifications import checks as notification_checks
 from swhurl.report import Report
@@ -39,8 +39,6 @@ class RecordReaderTests(unittest.TestCase):
         for path, text in store.documents(world).items():
             (self.root / path).write_text(text)
         world, _ = store.world(self.root)
-        shared = render.shared(world, store.platform(self.root))
-        (self.root / events.USERS_FILE).write_text(events.users_configmap(shared.nats_users))
 
     def break_rendered(self):
         (self.root / 'apps/hello/staging/helmrelease.yaml').write_text('invalid: [')
@@ -48,19 +46,13 @@ class RecordReaderTests(unittest.TestCase):
 
     def test_shared_checks_use_records_and_preserve_user_and_port_order(self):
         self.break_rendered()
-        self.assertEqual([p for p in generated.problems(self.root) if p.startswith(str(events.USERS_FILE))], [])
         self.assertEqual(egress.problems(self.root), [])
-        world, _ = store.world(self.root)
-        shared = render.shared(world, store.platform(self.root))
-        self.assertEqual([u['nkey'] for u in shared.nats_users], ['UCONTROLLER', 'UCONSOLE', 'USTAGING', 'UPROD'])
-        # A record changed without its shared output is stale, even though the app output is unreadable.
+        # The NATS user list is v2's output, so a changed key is not stale here: make check-v2 compares the
+        # committed file with what the records render.
         settings = self.root / 'apps/hello/staging/instance.yaml'
         doc = yamlio.load(settings.read_text())
         doc['allocations']['eventsKey'] = 'UCHANGED'
         settings.write_text(yamlio.dump(doc))
-        self.assertTrue(any(str(events.USERS_FILE) in p for p in generated.problems(self.root)))
-        # The egress proxy's configuration is v2's output, so a changed grant is not stale here: v2 renders
-        # it from the allocation, and its own check compares the committed objects with that render.
         doc['egress'] = ['api.example.com:443']
         settings.write_text(yamlio.dump(doc))
         self.assertEqual(egress.problems(self.root), [])

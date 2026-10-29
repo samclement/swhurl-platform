@@ -46,28 +46,9 @@ if ! diff -rq platform/auth "$work/out/auth"; then
   echo "platform/auth is not what the records render"
   failed=1
 fi
-# NATS's user list is what the server serves today: the same users, the same keys and the same permissions, in
-# the same order. The values inside the ConfigMap are JSON here and YAML there; both are YAML, so Helm reads
-# them alike, and the comparison is what they say rather than how they are spelled.
-if ! python3 -I - "platform/nats/users.yaml" "$work/out/nats/users.json" <<'EOF'
-import json, sys, yaml
-committed, rendered = yaml.safe_load(open(sys.argv[1])), json.load(open(sys.argv[2]))
-ours, theirs = json.loads(rendered['data']['values.yaml']), yaml.safe_load(committed['data']['values.yaml'])
-if ours != theirs or dict(rendered, data=None) != dict(committed, data=None):
-    print('the user list differs from platform/nats/users.yaml')
-    for index, (mine, yours) in enumerate(zip(ours['config']['merge']['authorization']['users'],
-                                              theirs['config']['merge']['authorization']['users'])):
-        if mine != yours:
-            print(f'  user {index}: rendered {json.dumps(mine)}')
-            print(f'  user {index}: committed {json.dumps(yours)}')
-            break
-    else:
-        print(f'  {len(ours["config"]["merge"]["authorization"]["users"])} rendered, '
-              f'{len(theirs["config"]["merge"]["authorization"]["users"])} committed')
-    sys.exit(1)
-sys.exit(0)
-EOF
-then
+# NATS's user list is v2's own file: the ConfigMap the server's HelmRelease reads, rendered from the records.
+if ! cmp -s platform/nats/users.json "$work/out/nats/users.json"; then
+  echo "platform/nats/users.json is not what the records render (make v2-users)"
   failed=1
 fi
 [ "$failed" = 0 ] && echo "[OK] platform/egress, platform/auth and platform/nats are what the records render"

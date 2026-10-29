@@ -60,6 +60,12 @@ check-v2:
 		&& unformatted=$$(gofmt -l .) && { [ -z "$$unformatted" ] || { echo "gofmt: run gofmt -w on: $$unformatted"; exit 1; }; } \
 		&& go vet ./... && go test -count=1 ./... && ./check-rendered.sh
 
+# Render NATS's user list, platform/nats/users.json, from the records: v2 owns the file (docs/services.md#nats).
+# It reads a snapshot of the working tree, so an uncommitted record change counts, and writes that one file.
+.PHONY: v2-users
+v2-users:
+	@set -Eeuo pipefail; 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 	revision=$$(git stash create); 	$(MAKE) -s v2-snapshot REVISION="$${revision:-HEAD}" OUT="$$work/snapshot.json" >/dev/null; 	(cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2); 	"$$work/swhurl-v2" users --snapshot "$$work/snapshot.json" --profile v2/testdata/profile.json --out platform
+
 .PHONY: v2-report
 v2-report:
 	@BASE='$(BASE)' AFTER='$(AFTER)' FORMAT='$(FORMAT)' v2/archtest/report.sh

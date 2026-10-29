@@ -181,8 +181,7 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
             keys = text(calling.SIGNING_KEYS_FILE)
             # Do not use store.platform here: its scratch-root signing-key fallback is not a Git fact.
             platform_inputs = Platform(json.dumps(json.loads(keys), sort_keys=True, separators=(',', ':')) if keys else '',
-                                       proxy, text(events.CONTROLLER_KEY_FILE), text(events.CONSOLE_KEY_FILE),
-                                       backups_suspended=backup.suspended(root))
+                                       proxy, backups_suspended=backup.suspended(root))
             def digest(*parts: bytes) -> str:
                 return hashlib.sha256(b'\0'.join(parts)).hexdigest()[:16]
             found = {}

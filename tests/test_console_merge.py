@@ -562,7 +562,7 @@ class NewAppGateTests(GateCase):
 
     def test_cross_app_rendered_or_other_secret_paths_are_held_before_merging(self):
         for path in ('apps/example/staging/instance.yaml', 'apps/fresh/staging/helmrelease.yaml',
-                     'apps/fresh/staging/secret.sops.yaml', 'platform/nats/users.yaml'):
+                     'apps/fresh/staging/secret.sops.yaml', 'platform/auth/kustomization.yaml'):
             def extra(tree, path=path):
                 target = tree / path
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -684,7 +684,6 @@ class NewAppGateTests(GateCase):
         with mock.patch.object(model_sync, 'Runner', return_value=FakeRunner()):
             self.check(runner)
         self.assertEqual((self.result / self.KEY).read_bytes(), (self.head / self.KEY).read_bytes())
-        self.assertIn(self.PUBLIC, (self.result / events.USERS_FILE).read_text())
 
     def test_platform_owned_image_is_checked_on_the_rendered_merge(self):
         self.open()

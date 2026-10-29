@@ -10,7 +10,6 @@ from pathlib import Path
 from swhurl import ROOT, interface
 from swhurl.apps import calling, contract, egress, events, hooks
 from swhurl.apps.instance import INSTANCE_ROOTS, Instance
-from swhurl.apps.model import events as model_events
 from swhurl.apps.model import generated, store
 from swhurl.apps.model.draft import RenderError
 from swhurl.kube import ready_condition
@@ -165,7 +164,7 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
     world, problems = store.world(root)
     if not problems:
         try:
-            problems = generated.nats_problems(root, world, model_events.users(world, store.platform(root)))
+            problems = generated.nats_problems(root, world, events.has_nats(root))
         except RenderError as error:
             problems = [str(error)]
     for problem in problems:

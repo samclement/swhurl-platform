@@ -930,7 +930,7 @@ seeds were pruned with their v1 units and no v2 tree holds them.
   reloaded with the same users; every app kept signing in (below). 8. **Recorded here**, in
   [services](services.md#nats), [commands](commands.md) and the registry.
 - **Evidence:** `REQUIRE_HELM=1 make check-v2`, `make check` (1022 tests), `make check-lint`, `make check-repo`
-  (the unit renders with `users.json`), `make -s check-docs`, `git diff --check`. Live: `__COMMIT__` pushed and
+  (the unit renders with `users.json`), `make -s check-docs`, `git diff --check`. Live: `e4ac053f` pushed and
   reconciled; the NATS ConfigMap is v2's file; `make verify-platform` passed; **no app logged an authorisation
   failure** in the window (checked in every instance namespace) and the number of users NATS serves is unchanged.
 - **Next gate:** migrate the first event-using worker (`demo-notifier` staging, which receives `demo-orders.created`
@@ -966,8 +966,10 @@ seeds were pruned with their v1 units and no v2 tree holds them.
   restart the pod. It is the next slice: v2 renders the list (another platform document, like the user list).
   Image automation is the same shape of loss: v2 renders no `ImageRepository`/`ImagePolicy`, so a migrated staging
   instance stops following its repository.
-- **Evidence:** `__COMMIT__` pushed and reconciled; `make verify-platform`; the pod's image unchanged; the consumer
-  Ready in NATS; an event received (below). Offline: `REQUIRE_HELM=1 make check-v2`, `make check` (1022 tests),
+- **Evidence:** `1d0b9a17` (and `51ce10ce` for the policy rule) pushed and reconciled; `make verify-platform`; the
+  pod on the same image (`sha256:578f4aa7…`); the consumer `demo-orders-created` Ready in NATS; **22
+  `event received: demo-orders.created … from demo-orders` lines in 30 minutes**, the publisher v1-owned; and
+  `swhurl-v2 observe` reporting `running` with all seven findings positive — the first time v2 observed a worker. Offline: `REQUIRE_HELM=1 make check-v2`, `make check` (1022 tests),
   `make check-lint`, `make check-repo`, `make -s check-docs`.
 
 ## Resume

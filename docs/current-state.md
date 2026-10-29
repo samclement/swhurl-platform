@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## v2 owns NATS's user list, and its first event subscriber is live (29 October 2026)
+
+**The cutover (`e4ac053f`).** `platform/nats/users.yaml` became `platform/nats/users.json`, rendered by
+`swhurl-v2 users`; v1's generator was deleted and the Render workflow regenerates the file. Before the switch the
+two documents were compared (same users, same keys, same order, same permissions); afterwards the ConfigMap the
+broker's HelmRelease reads is v2's file, JSON values included. NATS reloaded with the same 17 users, **no instance
+namespace logged an authorisation failure** in the following 20 minutes, and `make verify-platform` passed.
+
+**The migration (`1d0b9a17`, policy rule `51ce10ce`).** `demo-notifier` staging — a Kotlin worker that receives
+`demo-orders.created` — became v2-owned: its records, its compiled files (including its `events.sops.yaml`, copied
+byte for byte) and its unit replaced the v1 ones, which Flux pruned. The pod kept its image
+(`sha256:578f4aa7…`, 0 restarts), NATS accepted its key, the consumer `demo-orders-created` is Ready, and the app
+logged **22 `event received: demo-orders.created … from demo-orders`** in 30 minutes — an event crossing the two
+owners, since the publisher is still v1's. `swhurl-v2 observe --revision 51ce10ce… ` reported `running` with
+`unit`, `unit.revision`, `release`, `workload`, `image`, `ready` and `replicas` all positive: the first worker v2
+has observed.
+
+**Two defects the live run found, both fixed with tests.** A migrated instance's own `events` block was invisible to
+the resolver and to the user list (they read a predecessor's `subscriptions`/`allocations.eventsKey` only), so its
+subscription dropped out of the resolution; and v2's policy denies egress by default and admitted no broker, so the
+pod could not connect (`UnknownHostException`, then "Unable to connect to NATS servers") until the profile stated
+the broker's port and pods and the policy admitted exactly those. **One gap is now visible rather than silent:**
+the Reloader namespace list is v1's output from `apps/`, so a migrated instance leaves it — as the first two
+migrations did unnoticed — and image automation is lost the same way. Rendering the list from v2 is the next slice.
+
 ## The always-on instance surface is live (29 October 2026)
 
 `1bca7990` reached `main` and Flux applied it to both v2-owned staging instances. `make app-status` read **Healthy** at that revision for `swhurl-try-10` and `swhurl-try-11`; both Helm releases upgraded and their pods are `1/1` ready.

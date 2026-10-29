@@ -8,19 +8,20 @@ import (
 	"testing"
 )
 
-func previewFacts() (HTTPInstance, HTTPWorkload) {
-	return HTTPInstance{Application: "hello", Environment: "staging", Configuration: Configuration{1, 128}}, HTTPWorkload{"docker.io/nginxinc/nginx-unprivileged", "sha256:" + strings.Repeat("a", 64), 8080, "/", 101, false}
+func previewFacts() (InstanceFacts, WorkloadFacts) {
+	return InstanceFacts{Application: "hello", Environment: "staging", Configuration: Configuration{1, 128}}, WorkloadFacts{Kind: "web", Image: "docker.io/nginxinc/nginx-unprivileged",
+		Digest: "sha256:" + strings.Repeat("a", 64), Port: 8080, HealthPath: "/", UID: 101}
 }
 
 // No source, commit, media type, platform, selection or release identity is available here.
 func TestRenderWithoutReleaseSemantics(t *testing.T) {
 	s, w := previewFacts()
 	p := profile(t)
-	got, err := RenderHTTP(s, w, p)
+	got, err := RenderInstance(s, w, p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := RenderHTTP(s, w, p)
+	again, err := RenderInstance(s, w, p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,12 +38,12 @@ func TestRenderWithoutReleaseSemantics(t *testing.T) {
 	if string(original) != string(unchanged) {
 		t.Fatal("calls alias their resource output or profile")
 	}
-	fresh, err := RenderHTTP(s, w, profile(t))
+	fresh, err := RenderInstance(s, w, profile(t))
 	if err != nil || !reflect.DeepEqual(fresh, again) {
 		t.Fatal("retained mutation across calls")
 	}
 	s.Configuration.Replicas = 0
-	zero, err := RenderHTTP(s, w, profile(t))
+	zero, err := RenderInstance(s, w, profile(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,32 +55,32 @@ func TestRenderWithoutReleaseSemantics(t *testing.T) {
 func TestRenderValidationAndOrder(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
-		change func(*HTTPInstance, *HTTPWorkload, *PlatformProfile)
+		change func(*InstanceFacts, *WorkloadFacts, *PlatformProfile)
 		code   Code
 		field  string
 	}{
-		{"names before workload", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { s.Application = "BAD"; w.Image = "BAD" }, Invalid, "application"},
-		{"environment", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { s.Environment = "dev" }, Unsupported, "environment"},
-		{"image before digest", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { w.Image = "bad"; w.Digest = "bad" }, Invalid, "artifact.image"},
-		{"digest algorithm", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { w.Digest = "sha512:bad" }, Unsupported, "artifact.digest"},
-		{"digest syntax", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { w.Digest = "sha256:bad" }, Invalid, "artifact.digest"},
-		{"port before path", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { w.Port = 0; w.HealthPath = "bad" }, Invalid, "runtime.port"},
-		{"port upper bound", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { w.Port = 65536 }, Invalid, "runtime.port"},
-		{"path before uid", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { w.HealthPath = "//bad"; w.UID = 0 }, Invalid, "runtime.healthPath"},
-		{"uid before configuration", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { w.UID = 0; s.Configuration.Replicas = -1 }, Invalid, "runtime.uid"},
-		{"configuration order", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { s.Configuration = Configuration{-1, 0} }, Invalid, "configuration.replicas"},
-		{"configuration before profile", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) {
+		{"names before workload", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { s.Application = "BAD"; w.Image = "BAD" }, Invalid, "application"},
+		{"environment", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { s.Environment = "dev" }, Unsupported, "environment"},
+		{"image before digest", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { w.Image = "bad"; w.Digest = "bad" }, Invalid, "artifact.image"},
+		{"digest algorithm", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { w.Digest = "sha512:bad" }, Unsupported, "artifact.digest"},
+		{"digest syntax", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { w.Digest = "sha256:bad" }, Invalid, "artifact.digest"},
+		{"port before path", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { w.Port = 0; w.HealthPath = "bad" }, Invalid, "runtime.port"},
+		{"port upper bound", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { w.Port = 65536 }, Invalid, "runtime.port"},
+		{"path before uid", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { w.HealthPath = "//bad"; w.UID = 0 }, Invalid, "runtime.healthPath"},
+		{"uid before configuration", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { w.UID = 0; s.Configuration.Replicas = -1 }, Invalid, "runtime.uid"},
+		{"configuration order", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { s.Configuration = Configuration{-1, 0} }, Invalid, "configuration.replicas"},
+		{"configuration before profile", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) {
 			s.Configuration.MemoryMiB = 0
 			p.SchemaVersion = 2
 		}, Invalid, "configuration.memoryMiB"},
-		{"profile", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { p.Workload.CPURequestMilli = 0 }, Invalid, "workload.cpuRequestMilli"},
-		{"quota", func(s *HTTPInstance, w *HTTPWorkload, p *PlatformProfile) { s.Configuration.Replicas = 14 }, OverQuota, "quota.pods"},
+		{"profile", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { p.Workload.CPURequestMilli = 0 }, Invalid, "workload.cpuRequestMilli"},
+		{"quota", func(s *InstanceFacts, w *WorkloadFacts, p *PlatformProfile) { s.Configuration.Replicas = 14 }, OverQuota, "quota.pods"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s, w := previewFacts()
 			p := profile(t)
 			tt.change(&s, &w, &p)
-			got, err := RenderHTTP(s, w, p)
+			got, err := RenderInstance(s, w, p)
 			refusal(t, err, tt.code, tt.field)
 			if !reflect.DeepEqual(got, ResourceSet{}) {
 				t.Fatal("partial resources on refusal")
@@ -100,7 +101,7 @@ func TestRenderQuotaBoundaries(t *testing.T) {
 		s.Configuration = Configuration{tt.replicas, tt.memory}
 		p := profile(t)
 		p.Workload.CPURequestMilli = tt.cpu
-		_, err := RenderHTTP(s, w, p)
+		_, err := RenderInstance(s, w, p)
 		if tt.field == "" {
 			if err != nil {
 				t.Fatal(err)
@@ -112,7 +113,7 @@ func TestRenderQuotaBoundaries(t *testing.T) {
 	s, w := previewFacts()
 	p := profile(t)
 	p.Quota.LimitsMemoryMiB = 255
-	_, err := RenderHTTP(s, w, p)
+	_, err := RenderInstance(s, w, p)
 	refusal(t, err, OverQuota, "quota.limitsMemoryMiB")
 }
 
@@ -196,7 +197,7 @@ func TestExposedInstanceRendersTheRoute(t *testing.T) {
 	instance, workload := previewFacts()
 	instance.Exposure = "authenticated-web"
 	profile := profile(t)
-	got, err := RenderHTTP(instance, workload, profile)
+	got, err := RenderInstance(instance, workload, profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +267,7 @@ func TestExposedInstanceRendersTheRoute(t *testing.T) {
 // fails rather than inventing a host or a middleware.
 func TestRoutesNeedPlatformRouting(t *testing.T) {
 	instance, workload := previewFacts()
-	private, err := RenderHTTP(instance, workload, profile(t))
+	private, err := RenderInstance(instance, workload, profile(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,13 +277,13 @@ func TestRoutesNeedPlatformRouting(t *testing.T) {
 	instance.Exposure = "authenticated-web"
 	without := profile(t)
 	without.Routing = Routing{}
-	if _, err := RenderHTTP(instance, workload, without); err != nil {
+	if _, err := RenderInstance(instance, workload, without); err != nil {
 		refusal(t, err, Unsupported, "routing")
 	} else {
 		t.Fatal("an exposed instance rendered without platform routing")
 	}
 	instance.Exposure = "public"
-	if _, err := RenderHTTP(instance, workload, profile(t)); err != nil {
+	if _, err := RenderInstance(instance, workload, profile(t)); err != nil {
 		refusal(t, err, Unsupported, "grants.exposure")
 	} else {
 		t.Fatal("public exposure rendered")
@@ -309,9 +310,9 @@ func documentOf(t *testing.T, resources ResourceSet, name string) map[string]any
 // or the allow-list, so nothing in the pod template depends on them.
 func TestCalleeMountsTheAuthMaterialAsFiles(t *testing.T) {
 	_, workload := previewFacts()
-	callee := HTTPInstance{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
+	callee := InstanceFacts{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
 		Exposure: "authenticated-web", Callers: []string{"hello", "billing"}}
-	rendered, err := RenderHTTP(callee, workload, profile(t))
+	rendered, err := RenderInstance(callee, workload, profile(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,12 +372,12 @@ func TestCalleeMountsTheAuthMaterialAsFiles(t *testing.T) {
 // kubelet refreshes in place.
 func TestARotationOrANewCallerChangesNoPodTemplate(t *testing.T) {
 	_, workload := previewFacts()
-	callee := HTTPInstance{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
+	callee := InstanceFacts{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
 		Exposure: "authenticated-web", Callers: []string{"billing", "hello"}}
 	profile := profile(t)
-	render := func(instance HTTPInstance, p PlatformProfile) (string, string) {
+	render := func(instance InstanceFacts, p PlatformProfile) (string, string) {
 		t.Helper()
-		rendered, err := RenderHTTP(instance, workload, p)
+		rendered, err := RenderInstance(instance, workload, p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -435,11 +436,12 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 	caller.Exposure = "authenticated-web"
 	caller.Calls = []Call{{Callee: "orders", Port: 8081}}
 	caller.Callers = []string{"billing"}
-	callee := HTTPInstance{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
+	callee := InstanceFacts{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
 		Exposure: "authenticated-web", Callers: []string{"billing", "hello"}}
 	profile := profile(t)
 
-	rendered, err := RenderHTTP(caller, HTTPWorkload{"docker.io/x/y", "sha256:" + strings.Repeat("b", 64), 8080, "/", 101, false}, profile)
+	rendered, err := RenderInstance(caller, WorkloadFacts{Kind: "web", Image: "docker.io/x/y",
+		Digest: "sha256:" + strings.Repeat("b", 64), Port: 8080, HealthPath: "/", UID: 101}, profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,7 +485,7 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 	}
 
 	// The callee side: the keys arrive in its own namespace, and its policy admits each caller's pods.
-	rendered, err = RenderHTTP(callee, workload, profile)
+	rendered, err = RenderInstance(callee, workload, profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,14 +538,14 @@ func TestCallsNeedPlatformAuth(t *testing.T) {
 	instance.Callers = []string{"orders"}
 	without := profile(t)
 	without.Auth = Auth{}
-	if _, err := RenderHTTP(instance, workload, without); err != nil {
+	if _, err := RenderInstance(instance, workload, without); err != nil {
 		refusal(t, err, Unsupported, "auth")
 	} else {
 		t.Fatal("a callee rendered without the platform's keys")
 	}
 	bad := profile(t)
 	bad.Auth.Keys = "not a key set"
-	if _, err := RenderHTTP(instance, workload, bad); err != nil {
+	if _, err := RenderInstance(instance, workload, bad); err != nil {
 		refusal(t, err, Invalid, "auth.keys")
 	} else {
 		t.Fatal("a key set that is not a JWKS was accepted")
@@ -559,7 +561,7 @@ func TestSQLiteInstanceRendersItsVolume(t *testing.T) {
 	// A database instance is compiled with an allocation: its backup must leave through the proxy.
 	instance.Egress = &Egress{Port: 30101}
 	profile := profile(t)
-	rendered, err := RenderHTTP(instance, workload, profile)
+	rendered, err := RenderInstance(instance, workload, profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -587,7 +589,7 @@ func TestSQLiteInstanceRendersItsVolume(t *testing.T) {
 
 	// A stateless instance keeps no volume, no strategy override and no prune exception.
 	stateless, workload := previewFacts()
-	plain, err := RenderHTTP(stateless, workload, profile)
+	plain, err := RenderInstance(stateless, workload, profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -609,14 +611,14 @@ func TestStorageRefusals(t *testing.T) {
 	instance, workload := previewFacts()
 	profile := profile(t)
 	instance.Storage = Storage{SizeMiB: 1024}
-	if _, err := RenderHTTP(instance, workload, profile); err != nil {
+	if _, err := RenderInstance(instance, workload, profile); err != nil {
 		refusal(t, err, Invalid, "storage")
 	} else {
 		t.Fatal("a volume without a database rendered")
 	}
 	instance.Database = "sqlite"
 	instance.Storage = Storage{}
-	if _, err := RenderHTTP(instance, workload, profile); err != nil {
+	if _, err := RenderInstance(instance, workload, profile); err != nil {
 		refusal(t, err, Invalid, "storage.sizeMiB")
 	} else {
 		t.Fatal("a database without a size rendered")
@@ -624,20 +626,20 @@ func TestStorageRefusals(t *testing.T) {
 	instance.Storage = Storage{SizeMiB: 1024}
 	withoutClass := profile
 	withoutClass.Storage = PlatformStorage{}
-	if _, err := RenderHTTP(instance, workload, withoutClass); err != nil {
+	if _, err := RenderInstance(instance, workload, withoutClass); err != nil {
 		refusal(t, err, Unsupported, "storage.class")
 	} else {
 		t.Fatal("a database rendered without a storage class")
 	}
 	instance.Configuration.Replicas = 2
-	if _, err := RenderHTTP(instance, workload, profile); err != nil {
+	if _, err := RenderInstance(instance, workload, profile); err != nil {
 		refusal(t, err, Invalid, "configuration.replicas")
 	} else {
 		t.Fatal("a database rendered with two writers")
 	}
 	other := instance
 	other.Database = "postgres"
-	if _, err := RenderHTTP(other, workload, profile); err != nil {
+	if _, err := RenderInstance(other, workload, profile); err != nil {
 		refusal(t, err, Unsupported, "database")
 	} else {
 		t.Fatal("a database v2 does not support rendered")
@@ -650,7 +652,7 @@ func TestEgressRendersTheProxyAndDNS(t *testing.T) {
 	instance, workload := previewFacts()
 	instance.Egress = &Egress{Port: 30120, Grants: []string{"api.stripe.com:443", "*.example.com:8443"}}
 	profile := profile(t)
-	rendered, err := RenderHTTP(instance, workload, profile)
+	rendered, err := RenderInstance(instance, workload, profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -692,7 +694,7 @@ func TestEgressRendersTheProxyAndDNS(t *testing.T) {
 
 	// Without an allocation there is no proxy variable and no proxy rule.
 	stateless, _ := previewFacts()
-	plain, err := RenderHTTP(stateless, workload, profile)
+	plain, err := RenderInstance(stateless, workload, profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -711,7 +713,7 @@ func TestEgressRefusals(t *testing.T) {
 	instance, workload := previewFacts()
 	profile := profile(t)
 	instance.Egress = &Egress{Port: 80}
-	if _, err := RenderHTTP(instance, workload, profile); err != nil {
+	if _, err := RenderInstance(instance, workload, profile); err != nil {
 		refusal(t, err, Invalid, "egress.port")
 	} else {
 		t.Fatal("a privileged proxy port rendered")
@@ -719,9 +721,105 @@ func TestEgressRefusals(t *testing.T) {
 	instance.Egress = &Egress{Port: 30120}
 	without := profile
 	without.Egress = EgressProxy{}
-	if _, err := RenderHTTP(instance, workload, without); err != nil {
+	if _, err := RenderInstance(instance, workload, without); err != nil {
 		refusal(t, err, Unsupported, "egress")
 	} else {
 		t.Fatal("an allocation without a platform proxy rendered")
+	}
+}
+
+// workerFacts is one worker: it serves nothing, so it states neither a port nor a health path.
+func workerFacts() (InstanceFacts, WorkloadFacts) {
+	worker := WorkloadFacts{Kind: "worker", Image: "docker.io/samclement/shopper",
+		Digest: "sha256:" + strings.Repeat("c", 64), UID: 65532}
+	return InstanceFacts{Application: "shopper", Environment: "staging", Configuration: Configuration{1, 64}}, worker
+}
+
+// A worker gets the platform's whole instance surface except the HTTP one: no Service, no probes and no
+// route, and the same policy, quota, namespace and unit a web instance gets.
+func TestWorkerRendersNoHTTPSurface(t *testing.T) {
+	instance, workload := workerFacts()
+	rendered, err := RenderInstance(instance, workload, profile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rendered.Files) != 6 || len(rendered.Inventory) != 5 || len(rendered.Registrations) != 1 {
+		t.Fatalf("a worker's files: %d, claims %d", len(rendered.Files), len(rendered.Inventory))
+	}
+	values := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
+	if service, found := values["service"]; found {
+		t.Fatalf("a worker rendered a Service: %v", service)
+	}
+	container := values["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)
+	if probes, found := container["probes"]; found {
+		t.Fatalf("a worker was probed: %v", probes)
+	}
+	if image := container["image"].(map[string]any); image["digest"] != workload.Digest {
+		t.Fatalf("the worker's image: %v", image)
+	}
+	policy := documentOf(t, rendered, "networkpolicy.json")["spec"].(map[string]any)
+	if ingress, egress := policy["ingress"].([]any), policy["egress"].([]any); len(ingress) != 0 || len(egress) != 0 {
+		t.Fatalf("a private worker admits and reaches nothing: %v %v", ingress, egress)
+	}
+	for _, name := range []string{"ingress.json", "callers.json"} {
+		for _, file := range rendered.Files {
+			if strings.HasSuffix(file.Path, "/"+name) {
+				t.Fatalf("a worker rendered %s", name)
+			}
+		}
+	}
+}
+
+// A worker may call and may leave through its allocation: neither needs a Service of its own.
+func TestWorkerCallsAndReachesTheProxy(t *testing.T) {
+	instance, workload := workerFacts()
+	instance.Calls = []Call{{Callee: "shop", Port: 8080}}
+	instance.Egress = &Egress{Port: 30101}
+	rendered, err := RenderInstance(instance, workload, profile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
+	env := values["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)["env"].(map[string]any)
+	if env["SWHURL_SERVICE_SHOP_URL"] != "http://shop.shop-staging.svc.cluster.local:8080" {
+		t.Fatalf("the callee's address: %v", env["SWHURL_SERVICE_SHOP_URL"])
+	}
+	if env["HTTP_PROXY"] != "http://egress.egress.svc.cluster.local:30101" {
+		t.Fatalf("the proxy: %v", env["HTTP_PROXY"])
+	}
+	rules := documentOf(t, rendered, "networkpolicy.json")["spec"].(map[string]any)["egress"].([]any)
+	if len(rules) != 3 {
+		t.Fatalf("a worker that calls and reaches the proxy: %v", rules)
+	}
+	if service, found := values["service"]; found {
+		t.Fatalf("a calling worker rendered a Service: %v", service)
+	}
+}
+
+// What a worker cannot have, and what a kind this v2 does not render states.
+func TestWorkerAndKindRefusals(t *testing.T) {
+	profile := profile(t)
+	for _, tt := range []struct {
+		name   string
+		change func(*InstanceFacts, *WorkloadFacts)
+		code   Code
+		field  string
+	}{
+		{"a route", func(s *InstanceFacts, w *WorkloadFacts) { s.Exposure = "authenticated-web" }, Unsupported, "grants.exposure"},
+		{"a caller", func(s *InstanceFacts, w *WorkloadFacts) { s.Callers = []string{"shop"} }, Unsupported, "callers"},
+		{"a port", func(s *InstanceFacts, w *WorkloadFacts) { w.Port = 8080 }, Invalid, "runtime.port"},
+		{"a health path", func(s *InstanceFacts, w *WorkloadFacts) { w.HealthPath = "/" }, Invalid, "runtime.healthPath"},
+		{"an unknown kind", func(s *InstanceFacts, w *WorkloadFacts) { w.Kind = "job" }, Unsupported, "runtime.kind"},
+		{"a uid", func(s *InstanceFacts, w *WorkloadFacts) { w.UID = 0 }, Invalid, "runtime.uid"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			instance, workload := workerFacts()
+			tt.change(&instance, &workload)
+			rendered, err := RenderInstance(instance, workload, profile)
+			refusal(t, err, tt.code, tt.field)
+			if !reflect.DeepEqual(rendered, ResourceSet{}) {
+				t.Fatal("partial resources on refusal")
+			}
+		})
 	}
 }

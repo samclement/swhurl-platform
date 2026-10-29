@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -480,5 +481,104 @@ func TestClaimConvention(t *testing.T) {
 	rendered := output(t, helm, "template", name, chart, "-n", namespace, "-f", valuesPath)
 	if got := claimName(rendered); got != name {
 		t.Errorf("the chart generates the claim %q; the migration adopts the release's name %q", got, name)
+	}
+}
+
+// workerCompilation is one worker instance compiled from the fixtures: the chart's values are what the
+// renderer wrote for a release that serves nothing.
+func workerCompilation(t *testing.T) (kernel.Compilation, kernel.PlatformProfile) {
+	t.Helper()
+	profile, err := kernel.DecodeProfile(fixture(t, "profile.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := kernel.DecodeRelease(fixture(t, "r42.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	release.Runtime.Kind, release.Runtime.Port, release.Runtime.HealthPath, release.ReleaseID = "worker", 0, "", ""
+	id, err := release.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	release.ReleaseID = id
+	spec, err := kernel.DecodeInstance(fixture(t, "staging.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.Release, spec.Grants.Exposure = id, "private"
+	app, err := kernel.DecodeApp(fixture(t, "app.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := kernel.CompileWith(spec, release, app, profile, kernel.Connections{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return compiled, profile
+}
+
+// TestCompiledWorkerManifests renders a worker's compiled values with the pinned chart: the chart is what
+// turns an absent `service` and absent `probes` into no Service and no probe, so this is what proves a
+// worker listens on nothing. A chart upgrade that served a port by default would pass every kernel test and
+// fail here.
+func TestCompiledWorkerManifests(t *testing.T) {
+	helm := tool(t, "helm")
+	compiled, _ := workerCompilation(t)
+	var release struct {
+		Metadata struct{ Name, Namespace string }
+		Spec     struct {
+			Chart struct {
+				Spec struct{ Chart, Version string }
+			}
+			Values json.RawMessage
+		}
+	}
+	for _, file := range compiled.Files {
+		if !strings.HasSuffix(file.Path, "/helmrelease.json") {
+			continue
+		}
+		if err := json.Unmarshal(file.Document, &release); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if release.Metadata.Name == "" {
+		t.Fatal("the compilation rendered no HelmRelease")
+	}
+	cache, _ := os.UserCacheDir()
+	chart := filepath.Join(cache, "swhurl-platform", "charts", release.Spec.Chart.Spec.Chart+"-"+release.Spec.Chart.Spec.Version)
+	if _, err := os.Stat(filepath.Join(chart, "Chart.yaml")); err != nil {
+		need(t, "the pinned chart in "+chart+" (make check-apps fetches it)")
+	}
+	values := filepath.Join(t.TempDir(), "values.json")
+	if err := os.WriteFile(values, release.Spec.Values, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rendered := output(t, helm, "template", release.Metadata.Name, chart, "-n", release.Metadata.Namespace, "-f", values)
+	renderedPath := filepath.Join(t.TempDir(), "rendered.yaml")
+	if err := os.WriteFile(renderedPath, []byte(rendered), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	kinds := []string{}
+	var pod map[string]any
+	for _, document := range yamlDocuments(t, renderedPath) {
+		kind, _ := document["kind"].(string)
+		kinds = append(kinds, kind)
+		if kind == "Deployment" {
+			pod = document["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
+		}
+	}
+	if !slices.Contains(kinds, "Deployment") {
+		t.Fatalf("the chart rendered %v, not a Deployment", kinds)
+	}
+	// A Service and a probe are the chart's own rendering of the two values the compiler withheld.
+	if slices.Contains(kinds, "Service") {
+		t.Fatalf("the chart served a port for a workload that serves nothing: %v", kinds)
+	}
+	container := pod["containers"].([]any)[0].(map[string]any)
+	for _, probe := range []string{"readinessProbe", "livenessProbe", "startupProbe"} {
+		if _, found := container[probe]; found {
+			t.Errorf("the chart probed a workload that serves nothing: %v", probe)
+		}
 	}
 }

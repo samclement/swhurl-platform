@@ -8,7 +8,7 @@ import (
 )
 
 // databaseInstance is a SQLite instance with its volume and its allocation: what a backup needs.
-func databaseInstance() (HTTPInstance, HTTPWorkload) {
+func databaseInstance() (InstanceFacts, WorkloadFacts) {
 	instance, workload := previewFacts()
 	instance.Application, instance.Environment = "demo-orders", "staging"
 	instance.Database = "sqlite"
@@ -37,7 +37,7 @@ func fileOf(t *testing.T, rendered ResourceSet, name string) map[string]any {
 // for the pod that reaches S3. The key itself never appears.
 func TestBackupRendersForADatabaseInstance(t *testing.T) {
 	instance, workload := databaseInstance()
-	rendered, err := RenderHTTP(instance, workload, profile(t))
+	rendered, err := RenderInstance(instance, workload, profile(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,30 +210,30 @@ func TestBackupScheduleKeepsV1Slots(t *testing.T) {
 func TestBackupRefusals(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
-		change func(*HTTPInstance, *PlatformProfile)
+		change func(*InstanceFacts, *PlatformProfile)
 		code   Code
 		field  string
 	}{
-		{"no backup facts", func(s *HTTPInstance, p *PlatformProfile) { p.Backup = Backup{} }, Unsupported, "backup"},
-		{"no allocation", func(s *HTTPInstance, p *PlatformProfile) { s.Egress = nil }, Unsupported, "backup.egress"},
-		{"suspended only", func(s *HTTPInstance, p *PlatformProfile) {
+		{"no backup facts", func(s *InstanceFacts, p *PlatformProfile) { p.Backup = Backup{} }, Unsupported, "backup"},
+		{"no allocation", func(s *InstanceFacts, p *PlatformProfile) { s.Egress = nil }, Unsupported, "backup.egress"},
+		{"suspended only", func(s *InstanceFacts, p *PlatformProfile) {
 			p.Backup = Backup{Suspended: true}
 		}, Invalid, "backup.image"},
-		{"image", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.Image = "Backup" }, Invalid, "backup.image"},
-		{"digest", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.Digest = "sha256:short" }, Invalid, "backup.digest"},
-		{"s3 uri", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.S3URI = "s3://bucket/prefix" }, Invalid, "backup.s3Uri"},
-		{"s3 uri without prefix", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.S3URI = "s3://bucket" }, Invalid, "backup.s3Uri"},
-		{"no region", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.Region = "" }, Invalid, "backup.region"},
-		{"region", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.Region = "s3.eu-west-2" }, Invalid, "backup.region"},
-		{"recipient", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.Recipient = "age1notakey" }, Invalid, "backup.recipient"},
-		{"writer namespace", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.WriterNamespace = "Flux" }, Invalid, "backup.writerNamespace"},
-		{"writer name", func(s *HTTPInstance, p *PlatformProfile) { p.Backup.WriterName = "" }, Invalid, "backup.writerName"},
+		{"image", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.Image = "Backup" }, Invalid, "backup.image"},
+		{"digest", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.Digest = "sha256:short" }, Invalid, "backup.digest"},
+		{"s3 uri", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.S3URI = "s3://bucket/prefix" }, Invalid, "backup.s3Uri"},
+		{"s3 uri without prefix", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.S3URI = "s3://bucket" }, Invalid, "backup.s3Uri"},
+		{"no region", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.Region = "" }, Invalid, "backup.region"},
+		{"region", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.Region = "s3.eu-west-2" }, Invalid, "backup.region"},
+		{"recipient", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.Recipient = "age1notakey" }, Invalid, "backup.recipient"},
+		{"writer namespace", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.WriterNamespace = "Flux" }, Invalid, "backup.writerNamespace"},
+		{"writer name", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.WriterName = "" }, Invalid, "backup.writerName"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			instance, workload := databaseInstance()
 			p := profile(t)
 			tt.change(&instance, &p)
-			rendered, err := RenderHTTP(instance, workload, p)
+			rendered, err := RenderInstance(instance, workload, p)
 			refusal(t, err, tt.code, tt.field)
 			if !reflect.DeepEqual(rendered, ResourceSet{}) {
 				t.Fatal("a refusal rendered something")
@@ -272,14 +272,14 @@ func TestQuotaCountsTheBackupPod(t *testing.T) {
 	instance.Configuration = Configuration{Replicas: 1, MemoryMiB: 128}
 	p := profile(t)
 	p.Quota.Pods = 2 // the app and one more for a rolling update, and no room for the backup
-	if _, err := RenderHTTP(instance, workload, p); err == nil {
+	if _, err := RenderInstance(instance, workload, p); err == nil {
 		t.Fatal("a database without room for its backup was accepted")
 	} else {
 		refusal(t, err, OverQuota, "quota.pods")
 	}
 	instance.Database, instance.Storage = "", Storage{}
 	// Without a database the same instance fits: the pod that did not fit was the backup's.
-	if _, err := RenderHTTP(instance, workload, p); err != nil {
+	if _, err := RenderInstance(instance, workload, p); err != nil {
 		t.Fatal(err)
 	}
 	// A stopped database still runs its job, so it still needs one pod.
@@ -288,7 +288,7 @@ func TestQuotaCountsTheBackupPod(t *testing.T) {
 	instance.Database, instance.Storage = "sqlite", Storage{SizeMiB: 1024}
 	starved := profile(t)
 	starved.Quota.RequestsCPUMilli = backupCPURequestMilli - 1
-	if _, err := RenderHTTP(instance, workload, starved); err == nil {
+	if _, err := RenderInstance(instance, workload, starved); err == nil {
 		t.Fatal("a stopped database with no room for its backup pod was accepted")
 	} else {
 		refusal(t, err, OverQuota, "quota.requestsCpuMilli")
@@ -300,7 +300,7 @@ func TestQuotaCountsTheBackupPod(t *testing.T) {
 func TestStorageAdoptsAnExistingClaim(t *testing.T) {
 	instance, workload := databaseInstance()
 	instance.Storage = Storage{ClaimName: "demo-orders"}
-	rendered, err := RenderHTTP(instance, workload, profile(t))
+	rendered, err := RenderInstance(instance, workload, profile(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestStorageAdoptsAnExistingClaim(t *testing.T) {
 		t.Fatalf("the backup job mounts %v", claim)
 	}
 	// The identity moved deliberately when the record gained the fact, and both shapes stay valid.
-	if _, err := RenderHTTP(func() HTTPInstance {
+	if _, err := RenderInstance(func() InstanceFacts {
 		other, _ := databaseInstance()
 		other.Storage = Storage{SizeMiB: 1024}
 		return other
@@ -344,7 +344,7 @@ func TestStorageClaimRefusals(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			instance, workload := databaseInstance()
 			instance.Storage = tt.storage
-			rendered, err := RenderHTTP(instance, workload, profile(t))
+			rendered, err := RenderInstance(instance, workload, profile(t))
 			refusal(t, err, Invalid, tt.field)
 			if !reflect.DeepEqual(rendered, ResourceSet{}) {
 				t.Fatal("a refusal rendered something")

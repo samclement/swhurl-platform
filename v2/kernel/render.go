@@ -9,8 +9,10 @@ import (
 	"strings"
 )
 
-// HTTPWorkload is supplied rendering evidence, not a complete or verified release.
-type HTTPWorkload struct {
+// WorkloadFacts is supplied rendering evidence, not a complete or verified release. Kind decides what the
+// workload serves: a web release has a port and a health path, a worker neither.
+type WorkloadFacts struct {
+	Kind          string
 	Image, Digest string
 	Port          int32
 	HealthPath    string
@@ -18,10 +20,14 @@ type HTTPWorkload struct {
 	Telemetry     bool
 }
 
-// HTTPInstance contains the environment-owned facts for an HTTP preview. An empty Exposure means
-// private; any other value must be one the renderer supports. Calls and Callers are the connected pairs
-// the relationship resolver established, so rendering never decides consent.
-type HTTPInstance struct {
+// servesHTTP is whether the workload has an HTTP surface: a Service, probes and, if the instance is exposed,
+// a route.
+func (w WorkloadFacts) servesHTTP() bool { return w.Kind == "web" }
+
+// InstanceFacts contains the environment-owned facts for one instance. An empty Exposure means private; any
+// other value must be one the renderer supports. Calls and Callers are the connected pairs the relationship
+// resolver established, so rendering never decides consent.
+type InstanceFacts struct {
 	Application, Environment string
 	Configuration            Configuration
 	Exposure                 string
@@ -53,9 +59,10 @@ type ResourceSet struct {
 	Registrations []string
 }
 
-// RenderHTTP builds resources from known facts without inventing release provenance.
-// Validation order is names/environment, workload, configuration, profile, quota fit.
-func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (ResourceSet, error) {
+// RenderInstance builds one instance's resources from known facts without inventing release provenance. The
+// workload's kind decides the shape: a worker gets no Service, no probes and no route.
+// Validation order is names/environment, workload, kind, configuration, profile, quota fit.
+func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) (ResourceSet, error) {
 	exposure, err := spec.validate(http, profile)
 	if err != nil {
 		return ResourceSet{}, err
@@ -88,9 +95,9 @@ func RenderHTTP(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) (
 // fan-out and the instance's own documents cannot disagree about where an instance lives.
 func NamespaceOf(application, environment string) string { return application + "-" + environment }
 
-func namespaceName(spec HTTPInstance) string { return NamespaceOf(spec.Application, spec.Environment) }
-func unitName(spec HTTPInstance) string      { return "app-" + namespaceName(spec) }
-func owner(spec HTTPInstance) string         { return spec.Application + "/" + spec.Environment }
+func namespaceName(spec InstanceFacts) string { return NamespaceOf(spec.Application, spec.Environment) }
+func unitName(spec InstanceFacts) string      { return "app-" + namespaceName(spec) }
+func owner(spec InstanceFacts) string         { return spec.Application + "/" + spec.Environment }
 
 func metadata(name, namespace string) manifest {
 	meta := manifest{"name": name}
@@ -100,7 +107,7 @@ func metadata(name, namespace string) manifest {
 	return meta
 }
 
-func namespaceManifest(spec HTTPInstance) manifest {
+func namespaceManifest(spec InstanceFacts) manifest {
 	meta := metadata(namespaceName(spec), "")
 	meta["labels"] = manifest{labelDomain + "managed": "true", labelDomain + "app": spec.Application,
 		labelDomain + "environment": spec.Environment, labelDomain + "exposure": exposureLabel(spec)}
@@ -118,14 +125,14 @@ func namespaceManifest(spec HTTPInstance) manifest {
 }
 
 // exposureLabel is the instance's exposure as a label, private when it states none.
-func exposureLabel(spec HTTPInstance) string {
+func exposureLabel(spec InstanceFacts) string {
 	if spec.Exposure == "" {
 		return "private"
 	}
 	return spec.Exposure
 }
 
-func helmRelease(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) manifest {
+func helmRelease(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) manifest {
 	chart := manifest{"chart": profile.Chart.Name, "version": profile.Chart.Version, "interval": helmInterval,
 		"sourceRef": manifest{"kind": "HelmRepository", "name": profile.Chart.Repository, "namespace": profile.Chart.RepositoryNamespace}}
 	remediation := manifest{"remediation": manifest{"retries": retries}}
@@ -142,8 +149,9 @@ func helmRelease(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) 
 				profile.Notify.Address, profile.Telemetry)}}
 }
 
-// values are the chart's values: one controller, one container, its Service and /tmp.
-func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClass, egressAddress, notifyAddress string,
+// values are the chart's values: one controller, one container, its /tmp and — for a web workload — its
+// Service. Omitting the Service is what makes a worker a worker: nothing in the namespace listens.
+func values(spec InstanceFacts, http WorkloadFacts, workload Workload, storageClass, egressAddress, notifyAddress string,
 	telemetry Telemetry) manifest {
 	uid := http.UID
 	pod := manifest{"automountServiceAccountToken": false, "securityContext": manifest{
@@ -168,13 +176,16 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClas
 		persistence["auth"] = configMapVolume(authObjectName, authMount)
 		persistence["callers"] = configMapVolume(callersName(spec), callersMount)
 	}
-	return manifest{"defaultPodOptions": pod, "controllers": manifest{"main": controller},
-		"persistence": persistence,
-		"service": manifest{"main": manifest{"controller": "main",
-			"ports": manifest{"http": manifest{"port": http.Port}}}}}
+	values := manifest{"defaultPodOptions": pod, "controllers": manifest{"main": controller},
+		"persistence": persistence}
+	if http.servesHTTP() {
+		values["service"] = manifest{"main": manifest{"controller": "main",
+			"ports": manifest{"http": manifest{"port": http.Port}}}}
+	}
+	return values
 }
 
-func container(spec HTTPInstance, http HTTPWorkload, workload Workload, egressAddress, notifyAddress string,
+func container(spec InstanceFacts, http WorkloadFacts, workload Workload, egressAddress, notifyAddress string,
 	telemetry Telemetry) manifest {
 	memory := fmt.Sprintf("%dMi", spec.Configuration.MemoryMiB)
 	env := manifest{"SWHURL_APP": spec.Application, "SWHURL_ENV": spec.Environment,
@@ -211,8 +222,11 @@ func container(spec HTTPInstance, http HTTPWorkload, workload Workload, egressAd
 			"limits": manifest{"memory": memory}},
 		"securityContext": manifest{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true,
 			"capabilities": manifest{"drop": []any{"ALL"}}},
-		"env":    env,
-		"probes": probes(http, workload),
+		"env": env,
+	}
+	if http.servesHTTP() {
+		// Only a web workload answers on a port, so only it can be probed.
+		container["probes"] = probes(http, workload)
 	}
 	if len(spec.Callers) > 0 {
 		// The verification facts are named, never copied: the keys are the platform's object in this
@@ -252,7 +266,7 @@ func tokensPersistence(calls []Call) manifest {
 }
 
 // probes: liveness waits until the app first answers, for up to the profile's startup allowance.
-func probes(runtime HTTPWorkload, workload Workload) manifest {
+func probes(runtime WorkloadFacts, workload Workload) manifest {
 	probe := func(extra manifest) manifest {
 		spec := manifest{"httpGet": manifest{"path": runtime.HealthPath, "port": runtime.Port}}
 		for key, value := range extra {
@@ -265,7 +279,7 @@ func probes(runtime HTTPWorkload, workload Workload) manifest {
 		"failureThreshold": workload.StartupSeconds / workload.StartupPeriodSeconds})}
 }
 
-func resourceQuota(spec HTTPInstance, quota Quota) manifest {
+func resourceQuota(spec InstanceFacts, quota Quota) manifest {
 	return manifest{"apiVersion": "v1", "kind": "ResourceQuota", "metadata": metadata(spec.Application, namespaceName(spec)),
 		"spec": manifest{"hard": manifest{
 			"pods": fmt.Sprint(quota.Pods), "requests.cpu": cpuQuantity(quota.RequestsCPUMilli),
@@ -289,7 +303,7 @@ func memoryQuantity(mib int32) string {
 // networkPolicy is the isolation boundary: a private instance accepts no ingress, and an exposed one
 // accepts only its ingress controller's own pods on its port. By the operator's decision of
 // 25 October 2026 no instance sends egress, and an empty egress rule list denies all of it.
-func networkPolicy(spec HTTPInstance, exposure string, http HTTPWorkload, profile PlatformProfile) manifest {
+func networkPolicy(spec InstanceFacts, exposure string, http WorkloadFacts, profile PlatformProfile) manifest {
 	ingressRules := []any{}
 	if exposure == "authenticated-web" {
 		labels := manifest{}
@@ -364,7 +378,7 @@ func podNetwork(profile PlatformProfile) manifest {
 
 // ingress is the route: a host derived from the platform's base domain, TLS from the platform's issuer and
 // the shared sign-in middleware. The chart keeps its own ingress off; this object is the route.
-func ingress(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) manifest {
+func ingress(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) manifest {
 	host := routeHost(spec, profile.Routing)
 	route := profile.Routing
 	return manifest{"apiVersion": "networking.k8s.io/v1", "kind": "Ingress",
@@ -379,14 +393,14 @@ func ingress(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) mani
 
 // routeHost derives the host name the way the platform states it: the environment, the app and the base
 // domain. No instance stores a host, so two instances cannot disagree about one name's shape.
-func routeHost(spec HTTPInstance, routing Routing) string {
+func routeHost(spec InstanceFacts, routing Routing) string {
 	return spec.Environment + "-" + spec.Application + "." + routing.BaseDomain
 }
 
 // configured is whether the profile states routing at all.
 func (r Routing) configured() bool { return r.BaseDomain != "" }
 
-func unit(spec HTTPInstance, profile PlatformProfile, folder string) manifest {
+func unit(spec InstanceFacts, profile PlatformProfile, folder string) manifest {
 	dependsOn := []any{}
 	for _, name := range profile.Delivery.DependsOn {
 		dependsOn = append(dependsOn, manifest{"name": name})
@@ -408,14 +422,14 @@ func unit(spec HTTPInstance, profile PlatformProfile, folder string) manifest {
 
 // validate runs every check the renderer makes, in a fixed order, and returns the exposure the files are
 // rendered for.
-func (spec HTTPInstance) validate(http HTTPWorkload, profile PlatformProfile) (string, error) {
+func (spec InstanceFacts) validate(http WorkloadFacts, profile PlatformProfile) (string, error) {
 	if err := validateNames(spec.Application, spec.Environment); err != nil {
 		return "", err
 	}
 	if err := validateImage(http.Image, http.Digest); err != nil {
 		return "", err
 	}
-	if err := validateHTTP(http.Port, http.HealthPath, http.UID); err != nil {
+	if err := validateWorkload(http.Kind, http.Port, http.HealthPath, http.UID); err != nil {
 		return "", err
 	}
 	exposure, err := exposureOf(spec.Exposure, profile)
@@ -431,13 +445,28 @@ func (spec HTTPInstance) validate(http HTTPWorkload, profile PlatformProfile) (s
 	if err := fits(spec.Configuration, profile, spec.Database == "sqlite"); err != nil {
 		return "", err
 	}
-	if err := spec.validateResources(profile); err != nil {
+	if err := spec.validateResources(http, profile); err != nil {
 		return "", err
 	}
 	if err := spec.validateEgress(profile); err != nil {
 		return "", err
 	}
 	return exposure, spec.validatePlatformFacts(http, profile)
+}
+
+// validateKind checks what a kind cannot have. A route and a caller both need a Service, which only a web
+// workload has; absence is the ordinary case, so an empty exposure and no callers are always allowed.
+func (spec InstanceFacts) validateKind(http WorkloadFacts) error {
+	if http.servesHTTP() {
+		return nil
+	}
+	if spec.Exposure != "" && spec.Exposure != "private" {
+		return refuse(Unsupported, "grants.exposure", "only a web release serves a route")
+	}
+	if len(spec.Callers) > 0 {
+		return refuse(Unsupported, "callers", "only a web release can be called")
+	}
+	return nil
 }
 
 // exposureOf is the exposure the files are rendered for: absent means private, and a route needs the
@@ -457,7 +486,7 @@ func exposureOf(stated string, profile PlatformProfile) (string, error) {
 
 // resourcesOf is the instance's files in their fixed order: the route, when there is one, after the policy
 // and before the kustomization that lists them.
-func resourcesOf(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile, exposure string) []struct {
+func resourcesOf(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile, exposure string) []struct {
 	name string
 	doc  manifest
 } {
@@ -524,7 +553,7 @@ const (
 
 // backupSecret is the job's Secret: the upload-only key, as references the instance's unit substitutes
 // from the platform's own Secret. The key itself never reaches v2, Git or this document.
-func backupSecret(spec HTTPInstance) manifest {
+func backupSecret(spec InstanceFacts) manifest {
 	return manifest{"apiVersion": "v1", "kind": "Secret",
 		"metadata":   metadata(backupName(spec), namespaceName(spec)),
 		"type":       "Opaque",
@@ -534,7 +563,7 @@ func backupSecret(spec HTTPInstance) manifest {
 // backupCronJob is the nightly job: SQLite's online backup, age's public-key encryption, and an upload
 // through the instance's own proxy port. It runs as the app's user on the app's claim, so the data it
 // reads is the data the app wrote.
-func backupCronJob(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) manifest {
+func backupCronJob(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) manifest {
 	name := backupName(spec)
 	container := jobContainer("backup", profile.Backup.Image+"@"+profile.Backup.Digest, []any{"backup-job-sqlite"},
 		backupEnv(spec, profile), []any{manifest{"secretRef": manifest{"name": name}}}, jobMounts())
@@ -591,7 +620,7 @@ func jobContainer(name, image string, args, env, from, mounts []any) manifest {
 // proxyEnv is how a job pod reaches the instance's own proxy port: the kubelet's own HOST_IP expansion and
 // the proxy variables, when the instance has an allocation. $(HOST_IP) is the kubelet's expansion of the
 // field reference above it, not Flux's.
-func proxyEnv(spec HTTPInstance, profile PlatformProfile) []any {
+func proxyEnv(spec InstanceFacts, profile PlatformProfile) []any {
 	env := []any{manifest{"name": "HOST_IP", "valueFrom": manifest{"fieldRef": manifest{"fieldPath": "status.hostIP"}}}}
 	if spec.Egress == nil {
 		return env
@@ -605,7 +634,7 @@ func proxyEnv(spec HTTPInstance, profile PlatformProfile) []any {
 
 // backupEnv is what the job reads: how to reach the proxy, where to publish, and which database file to
 // copy.
-func backupEnv(spec HTTPInstance, profile PlatformProfile) []any {
+func backupEnv(spec InstanceFacts, profile PlatformProfile) []any {
 	return append(proxyEnv(spec, profile),
 		manifest{"name": "AGE_RECIPIENT", "value": profile.Backup.Recipient},
 		manifest{"name": "BACKUP_S3_URI", "value": profile.Backup.S3URI + namespaceName(spec) + "/"},
@@ -616,7 +645,7 @@ func backupEnv(spec HTTPInstance, profile PlatformProfile) []any {
 // backupPolicy admits nothing to the job's pod and lets it reach only the name service and the instance's
 // own proxy port. The app's policy selects the app's pods, so without this the pod that must leave the
 // cluster would be the one pod with unrestricted egress.
-func backupPolicy(spec HTTPInstance, profile PlatformProfile) manifest {
+func backupPolicy(spec InstanceFacts, profile PlatformProfile) manifest {
 	egress := []any{manifest{
 		"to": []any{manifest{
 			"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": profile.DNS.Namespace}},
@@ -636,7 +665,7 @@ func backupPolicy(spec HTTPInstance, profile PlatformProfile) manifest {
 }
 
 // backupName is the job, its Secret and its policy: one name per instance's database.
-func backupName(spec HTTPInstance) string { return spec.Application + "-backup" }
+func backupName(spec InstanceFacts) string { return spec.Application + "-backup" }
 
 // backupSchedule is the minute a namespace's backup runs at, derived from its name so it is stable and
 // spread: the same rule v1 uses, so a migrated instance keeps the slot its logs name.
@@ -655,7 +684,7 @@ func backupSchedule(namespace string) string {
 // validatePlatformFacts refuses an image that reports telemetry when the platform states no collector (an
 // instance cannot be rendered with an endpoint it would have to invent), and a platform that states no
 // notify service (every instance is told its address and carries a token for it).
-func (spec HTTPInstance) validatePlatformFacts(http HTTPWorkload, profile PlatformProfile) error {
+func (spec InstanceFacts) validatePlatformFacts(http WorkloadFacts, profile PlatformProfile) error {
 	if http.Telemetry && (profile.Telemetry.Endpoint == "" || profile.Telemetry.Protocol == "") {
 		return refuse(Unsupported, "telemetry", "the image reports telemetry and the profile states no collector")
 	}
@@ -665,7 +694,7 @@ func (spec HTTPInstance) validatePlatformFacts(http HTTPWorkload, profile Platfo
 	return nil
 }
 
-func (spec HTTPInstance) validateEgress(profile PlatformProfile) error {
+func (spec InstanceFacts) validateEgress(profile PlatformProfile) error {
 	if spec.Egress == nil {
 		return nil
 	}
@@ -678,9 +707,12 @@ func (spec HTTPInstance) validateEgress(profile PlatformProfile) error {
 	return nil
 }
 
-// validateResources checks what an instance adds to its workload: the pairs it takes part in and the volume
-// it asks for.
-func (spec HTTPInstance) validateResources(profile PlatformProfile) error {
+// validateResources checks what an instance adds to its workload: what its kind cannot have, the pairs it
+// takes part in and the volume it asks for.
+func (spec InstanceFacts) validateResources(http WorkloadFacts, profile PlatformProfile) error {
+	if err := spec.validateKind(http); err != nil {
+		return err
+	}
 	if err := validateCalls(spec, profile); err != nil {
 		return err
 	}
@@ -690,7 +722,7 @@ func (spec HTTPInstance) validateResources(profile PlatformProfile) error {
 // validateStorage checks the volume an instance asks for against what its image needs and what the
 // platform provides. A database admits one writer, so more than one replica is refused rather than
 // silently reduced, and a size with nothing to put in it is refused too.
-func (spec HTTPInstance) validateStorage(profile PlatformProfile) error {
+func (spec InstanceFacts) validateStorage(profile PlatformProfile) error {
 	switch {
 	case spec.Database == "" && (spec.Storage.SizeMiB > 0 || spec.Storage.ClaimName != ""):
 		return refuse(Invalid, "storage", "the release keeps no database, so a volume would hold nothing")
@@ -718,7 +750,7 @@ func (spec HTTPInstance) validateStorage(profile PlatformProfile) error {
 
 // validateVolume checks the volume a database asks for: a size to create or the claim of the volume it keeps,
 // never both, and a class only where something is created.
-func (spec HTTPInstance) validateVolume(profile PlatformProfile) error {
+func (spec InstanceFacts) validateVolume(profile PlatformProfile) error {
 	if spec.Storage.SizeMiB > 0 && spec.Storage.ClaimName != "" {
 		return refuse(Invalid, "storage", "a volume is either created from a size or adopted from its claim, not both")
 	}
@@ -744,7 +776,7 @@ func dataVolume(storage Storage, storageClass string) manifest {
 
 // claimName is the volume an instance's data lives on: the one it creates, named after itself, or the one
 // it adopted.
-func claimName(spec HTTPInstance) string {
+func claimName(spec InstanceFacts) string {
 	if spec.Storage.ClaimName != "" {
 		return spec.Storage.ClaimName
 	}
@@ -753,7 +785,7 @@ func claimName(spec HTTPInstance) string {
 
 // validateCalls checks the resolved pairs' shape. Consent is not decided here: the caller supplies only
 // connected pairs, and a callee needs the platform's keys to accept any of them.
-func validateCalls(spec HTTPInstance, profile PlatformProfile) error {
+func validateCalls(spec InstanceFacts, profile PlatformProfile) error {
 	if err := validateCallShape(spec.Calls, spec.Callers); err != nil {
 		return err
 	}
@@ -803,10 +835,10 @@ func configMapVolume(name, mountPath string) manifest {
 
 // callersName is the ConfigMap holding one instance's allow-list: its content is instance-specific, so it is
 // rendered per instance and only the keys are platform-wide.
-func callersName(spec HTTPInstance) string { return spec.Application + "-callers" }
+func callersName(spec InstanceFacts) string { return spec.Application + "-callers" }
 
 // callersConfigMap is the allow-list as a file an app re-reads: the record's allows, sorted, comma-separated.
-func callersConfigMap(spec HTTPInstance) manifest {
+func callersConfigMap(spec InstanceFacts) manifest {
 	return manifest{"apiVersion": "v1", "kind": "ConfigMap",
 		"metadata": metadata(callersName(spec), namespaceName(spec)),
 		"data":     manifest{"SWHURL_ALLOWED_CALLERS": strings.Join(sortedNames(spec.Callers), ",")}}
@@ -835,7 +867,7 @@ func substitutionProblem(files []File) error {
 }
 
 // inventory is every cluster object the files create, in file order.
-func inventory(spec HTTPInstance) []Claim {
+func inventory(spec InstanceFacts) []Claim {
 	namespace, by := namespaceName(spec), owner(spec)
 	claims := []Claim{
 		{Object{"", "Namespace", "", namespace}, by},

@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -118,5 +119,85 @@ func TestMigrateRefusesAMalformedResolution(t *testing.T) {
 	}
 	if len(writer.Contents) != 0 {
 		t.Fatalf("a refusal wrote %d files", len(writer.Contents))
+	}
+}
+
+// edited decodes one legacy document, changes it and encodes it again: what the snapshot would carry.
+func edited(t *testing.T, document []byte, change func(map[string]any)) []byte {
+	t.Helper()
+	var decoded map[string]any
+	if err := json.Unmarshal(document, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	change(decoded)
+	encoded, err := json.Marshal(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+// workerInputs is the fixture as a worker: a kind that serves nothing, so the release states neither an HTTP
+// port nor a health path, and the instance cannot be exposed.
+func workerInputs(t *testing.T) MigrationInputs {
+	t.Helper()
+	inputs := migrationInputs(t)
+	inputs.Records.Release = edited(t, inputs.Records.Release, func(document map[string]any) {
+		document["kind"] = "worker"
+		delete(document, "port")
+		delete(document, "healthPath")
+	})
+	inputs.Records.Instance = edited(t, inputs.Records.Instance, func(document map[string]any) {
+		document["exposure"] = "private"
+	})
+	return inputs
+}
+
+// A worker migrates to the same record pair a web instance gets, without the HTTP facts, and its files serve
+// nothing: the migration carries a kind rather than assuming one.
+func TestMigrateAWorker(t *testing.T) {
+	inputs := workerInputs(t)
+	writer := &filestest.Fake{Contents: map[string][]byte{}}
+	migrated, err := Migrate(inputs, "/checkout", writer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := kernel.DecodeRelease(writer.Contents["v2-records/hello/staging/release.json"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Runtime.Kind != "worker" || release.Runtime.Port != 0 || release.Runtime.HealthPath != "" {
+		t.Fatalf("the release's runtime: %+v", release.Runtime)
+	}
+	instance, err := kernel.DecodeInstance(writer.Contents["v2-records/hello/staging/instance.json"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if instance.Grants.Exposure != "private" {
+		t.Fatalf("a worker's exposure: %q", instance.Grants.Exposure)
+	}
+	if migrated.Facts.Workload.Kind != "worker" {
+		t.Fatalf("the translated workload: %+v", migrated.Facts.Workload)
+	}
+	for _, file := range migrated.Compilation.Files {
+		if !strings.HasSuffix(file.Path, "/helmrelease.json") {
+			continue
+		}
+		var document struct {
+			Spec struct {
+				Values map[string]any
+			}
+		}
+		if err := json.Unmarshal(file.Document, &document); err != nil {
+			t.Fatal(err)
+		}
+		if service, found := document.Spec.Values["service"]; found {
+			t.Fatalf("a migrated worker serves a port: %v", service)
+		}
+	}
+	for _, claim := range migrated.Compilation.Inventory {
+		if claim.Kind == "Ingress" {
+			t.Fatal("a migrated worker claims a route")
+		}
 	}
 }

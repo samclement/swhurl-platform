@@ -142,7 +142,7 @@ func TestSelectionRefusalsLeaveInputsUnchanged(t *testing.T) {
 		}, StaleInstance},
 		{"bad expected revision", func(_ *InstanceSpec, _ *ReleaseBundle, rev *InstanceRevision) { *rev = "" }, Invalid},
 		{"unsupported runtime", func(_ *InstanceSpec, r *ReleaseBundle, _ *InstanceRevision) {
-			r.Runtime.Kind = "worker"
+			r.Runtime.Kind = "job"
 			r.ReleaseID = ""
 		}, Unsupported},
 		{"unsupported platform", func(_ *InstanceSpec, r *ReleaseBundle, _ *InstanceRevision) {
@@ -359,7 +359,7 @@ func TestRefusalPrecedence(t *testing.T) {
 		{"nulls in key order", strings.Replace(strings.Replace(r, `"uid": 65532`, `"uid": null`, 1), `"port": 8080`, `"port": null`, 1), Invalid, "runtime.port"},
 		{"null before type", strings.Replace(strings.Replace(r, `"port": 8080`, `"port": "8080"`, 1), `"uid": 65532`, `"uid": null`, 1), Invalid, "runtime.uid"},
 		{"field table order", strings.Replace(strings.Replace(r, `"linux/amd64"`, `"linux/arm64"`, 1), "ghcr.io", "GHCR.io", 1), Invalid, "artifact.image"},
-		{"kind before port", strings.Replace(strings.Replace(r, `"web"`, `"worker"`, 1), `"port": 8080`, `"port": 0`, 1), Unsupported, "runtime.kind"},
+		{"kind before port", strings.Replace(strings.Replace(r, `"web"`, `"job"`, 1), `"port": 8080`, `"port": 0`, 1), Unsupported, "runtime.kind"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			for range 50 { // map order varies from run to run; the refusal must not
@@ -377,8 +377,8 @@ func TestSelectionCheckOrder(t *testing.T) {
 	stale := InstanceRevision("inst-sha256:" + strings.Repeat("0", 64))
 	other := base
 	other.Application, other.ReleaseID = "other", ""
-	worker := base
-	worker.Runtime.Kind, worker.ReleaseID = "worker", ""
+	job := base
+	job.Runtime.Kind, job.ReleaseID = "job", ""
 	forged := base
 	forged.Application = "other" // keeps the old identity assertion
 	broken := current
@@ -392,7 +392,7 @@ func TestSelectionCheckOrder(t *testing.T) {
 	}{
 		{"wrong application before stale", current, other, stale, WrongApplication},
 		{"expected syntax before wrong application", current, other, "", Invalid},
-		{"unsupported candidate before stale", current, worker, stale, Unsupported},
+		{"unsupported candidate before stale", current, job, stale, Unsupported},
 		{"identity before wrong application", current, forged, revision, IdentityMismatch},
 		{"invalid current before wrong application", broken, other, revision, Invalid},
 	} {
@@ -411,6 +411,12 @@ func TestDomainValidation(t *testing.T) {
 		{func(r *ReleaseBundle) { r.SchemaVersion = 2 }, Unsupported},
 		{func(r *ReleaseBundle) { r.Runtime.Port = 0 }, Invalid},
 		{func(r *ReleaseBundle) { r.Runtime.Port = 65536 }, Invalid},
+		{func(r *ReleaseBundle) { r.Runtime.Kind = "job" }, Unsupported},
+		{func(r *ReleaseBundle) { r.Runtime.Kind, r.Runtime.Port, r.Runtime.HealthPath = "worker", 8080, "" }, Invalid},
+		{func(r *ReleaseBundle) { r.Runtime.Kind, r.Runtime.Port, r.Runtime.HealthPath = "worker", 0, "/" }, Invalid},
+		{func(r *ReleaseBundle) {
+			r.Runtime.Kind, r.Runtime.Port, r.Runtime.HealthPath, r.Runtime.UID = "worker", 0, "", 0
+		}, Invalid},
 		{func(r *ReleaseBundle) { r.Runtime.UID = 0 }, Invalid},
 		{func(r *ReleaseBundle) { r.Runtime.HealthPath = "https://example.com/" }, Invalid},
 		{func(r *ReleaseBundle) { r.Runtime.HealthPath = "//example.com/" }, Invalid},
@@ -442,6 +448,22 @@ func TestDomainValidation(t *testing.T) {
 		if _, err := s.Revision(); err == nil {
 			t.Fatal("invalid instance accepted")
 		}
+	}
+	// A worker is the same record without an HTTP surface, and its identity says so: the kind and the two
+	// facts a worker does not have are part of it.
+	worker := release(t)
+	worker.ReleaseID = ""
+	worker.Runtime.Kind, worker.Runtime.Port, worker.Runtime.HealthPath = "worker", 0, ""
+	workerID, err := worker.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if webID, _ := release(t).ID(); workerID == webID {
+		t.Fatal("a worker and a web release of the same image share an identity")
+	}
+	if encoded, err := EncodeRelease(worker); err != nil || !bytes.Contains(encoded, []byte(`"kind": "worker"`)) ||
+		!bytes.Contains(encoded, []byte(`"healthPath": ""`)) {
+		t.Fatalf("a worker's record: %v %s", err, encoded)
 	}
 	// Restoring identical content restores the revision; this is not an edit-history counter.
 	s := instance(t, "prod.json")

@@ -165,11 +165,26 @@ func (a Artifact) validate() error {
 	return nil
 }
 
-func (r Runtime) validate() error {
-	if r.Kind != "web" {
-		return refuse(Unsupported, "runtime.kind", "only stateless HTTP web releases are supported")
+func (r Runtime) validate() error { return validateWorkload(r.Kind, r.Port, r.HealthPath, r.UID) }
+
+// validateWorkload checks a kind and the runtime facts it has. It is the one definition of what a kind
+// serves, so a record and a renderer cannot disagree about one: a web release serves HTTP on its port and
+// path, a worker serves nothing and therefore states neither. A uid is both kinds'.
+func validateWorkload(kind string, port int32, healthPath string, uid int32) error {
+	switch kind {
+	case "web":
+		return validateHTTP(port, healthPath, uid)
+	case "worker":
+		// A port or a path would describe a Service and probes the instance does not have.
+		if port != 0 {
+			return refuse(Invalid, "runtime.port", "a worker serves no HTTP port")
+		}
+		if healthPath != "" {
+			return refuse(Invalid, "runtime.healthPath", "a worker serves no health path")
+		}
+		return validateUID(uid)
 	}
-	return validateHTTP(r.Port, r.HealthPath, r.UID)
+	return refuse(Unsupported, "runtime.kind", "only web and worker releases are supported")
 }
 
 func (s InstanceSpec) validate() error {
@@ -239,6 +254,10 @@ func validateHTTP(port int32, healthPath string, uid int32) error {
 	if !healthPattern.MatchString(healthPath) || strings.HasPrefix(healthPath, "//") {
 		return refuse(Invalid, "runtime.healthPath", "expected an absolute ASCII path, without authority, query or fragment")
 	}
+	return validateUID(uid)
+}
+
+func validateUID(uid int32) error {
 	if uid < 1 {
 		return refuse(Invalid, "runtime.uid", "expected a positive non-root signed-32-bit UID")
 	}

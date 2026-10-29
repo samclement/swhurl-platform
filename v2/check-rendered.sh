@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The platform files v2 renders from the records must be what Git holds: the egress allocation, the proxy's
-# configuration and policy, and the auth folder. Renders them into a temporary directory and compares, so it
-# writes nothing in the checkout. The snapshot is of the working tree's tracked files (git stash create makes
+# configuration and policy, the auth folder, and NATS's user list. Renders them into a temporary directory and
+# compares, so it writes nothing in the checkout. The snapshot is of the working tree's tracked files (git stash create makes
 # a commit object and touches neither the index nor the tree), so an uncommitted record change counts.
 # make check-v2 runs it, which is how CI runs it. How to re-render: docs/services.md#egress-proxy.
 set -Eeuo pipefail
@@ -19,6 +19,9 @@ profile=v2/testdata/profile.json
   --previous platform/egress/allocation.json 2>/dev/null >"$work/allocation.json"
 "$work/swhurl-v2" proxy --allocation "$work/allocation.json" --profile "$profile" --out "$work/out" >/dev/null
 "$work/swhurl-v2" auth --snapshot "$work/snapshot.json" --profile "$profile" --out "$work/out" >/dev/null
+"$work/swhurl-v2" users --snapshot "$work/snapshot.json" \
+  --controller-key platform/nats/controller-nkey.pub --console-key platform/nats/console-nkey.pub \
+  --out "$work/out" >/dev/null
 
 failed=0
 # The allocation records the commit it was taken at; every other fact must match the records.
@@ -45,5 +48,29 @@ if ! diff -rq platform/auth "$work/out/auth"; then
   echo "platform/auth is not what the records render"
   failed=1
 fi
-[ "$failed" = 0 ] && echo "[OK] platform/egress and platform/auth are what the records render"
+# NATS's user list is what the server serves today: the same users, the same keys and the same permissions, in
+# the same order. The values inside the ConfigMap are JSON here and YAML there; both are YAML, so Helm reads
+# them alike, and the comparison is what they say rather than how they are spelled.
+if ! python3 -I - "platform/nats/users.yaml" "$work/out/nats/users.json" <<'EOF'
+import json, sys, yaml
+committed, rendered = yaml.safe_load(open(sys.argv[1])), json.load(open(sys.argv[2]))
+ours, theirs = json.loads(rendered['data']['values.yaml']), yaml.safe_load(committed['data']['values.yaml'])
+if ours != theirs or dict(rendered, data=None) != dict(committed, data=None):
+    print('the user list differs from platform/nats/users.yaml')
+    for index, (mine, yours) in enumerate(zip(ours['config']['merge']['authorization']['users'],
+                                              theirs['config']['merge']['authorization']['users'])):
+        if mine != yours:
+            print(f'  user {index}: rendered {json.dumps(mine)}')
+            print(f'  user {index}: committed {json.dumps(yours)}')
+            break
+    else:
+        print(f'  {len(ours["config"]["merge"]["authorization"]["users"])} rendered, '
+              f'{len(theirs["config"]["merge"]["authorization"]["users"])} committed')
+    sys.exit(1)
+sys.exit(0)
+EOF
+then
+  failed=1
+fi
+[ "$failed" = 0 ] && echo "[OK] platform/egress, platform/auth and platform/nats are what the records render"
 exit "$failed"

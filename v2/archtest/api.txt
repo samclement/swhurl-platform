@@ -80,6 +80,21 @@ calls: type Pair struct {Caller, Callee, Environment string CalleePort int32}
 calls: type Refusal struct {Application, Environment, Callee, Reason string}
 calls: type Resolution struct {Pairs []Pair Waiting []Wait Refused []Refusal}
 calls: type Wait struct {Caller, Callee, Environment, Reason string}
+events: const ConsumerCollision = "consumer_collision"
+events: const InvalidSubscription = "invalid_subscription"
+events: const NotPublished = "not_published"
+events: const Repeated = "repeated"
+events: const SelfSubscription = "self_subscription"
+events: func (*Error) Error() string
+events: func Consumer(subscriber, event string) string
+events: func Object(publisher, event string) string
+events: func Resolve(declarations []Declaration) ([]Resolved, error)
+events: func Stream(environment, publisher string) string
+events: func Subject(environment, publisher, event string) string
+events: type Declaration struct {Application, Environment string Publishes []string Subscriptions []string PublicationsKnown bool}
+events: type Error struct {Application, Environment, Field, Reason string}
+events: type Resolved struct {Connected []Subscription Pending []string}
+events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
 kernel: const AppTree = "apps"
 kernel: const DataMount = "/data"
 kernel: const DatabasePath = DataMount + "/app.db"
@@ -125,6 +140,7 @@ kernel: func RenderAuth(namespaces []string, profile PlatformProfile) (ResourceS
 kernel: func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderProxy(allocations []EgressAllocation, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, egress *Egress, job RestoreJob) (RestoreObjects, error)
+kernel: func RenderUsers(users NATSUsers) (ResourceSet, error)
 kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: type AppID string
@@ -161,6 +177,9 @@ kernel: type Inputs struct {App AppID `json:"app"` Release ReleaseID `json:"rele
 kernel: type InstanceFacts struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string}
 kernel: type InstanceRevision string
 kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"` Storage Storage `json:"storage,omitempty"` Calls []string `json:"calls,omitempty"` Allows []string `json:"allows,omitempty"`}
+kernel: type NATSSubscription struct {Stream, Consumer, Subject string}
+kernel: type NATSUser struct {Application, Environment, NKey string Publishes bool Subscriptions []NATSSubscription}
+kernel: type NATSUsers struct {ControllerKey, ConsoleKey string Instances []NATSUser}
 kernel: type Network struct {PodCIDR string `json:"podCIDR"`}
 kernel: type Notify struct {Address string `json:"address"`}
 kernel: type Object struct {Group string `json:"group"` Kind string `json:"kind"` Namespace string `json:"namespace"` Name string `json:"name"`}

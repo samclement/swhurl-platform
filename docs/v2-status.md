@@ -1090,8 +1090,9 @@ rotation needs.
      command that exits non-zero; two encryptions of one document differing (SOPS draws a fresh data key); the
      seed written before the record; a refused mint writing nothing; the fake recording the plaintext so the test
      can prove the writer never saw it; and the adapter contract run by both the real command and the fake.
-  6. **Scope stated** — minting only. A **rotation of a live pair was not run**: the capability is tested offline,
-     and the live use is two *new* keys. A public key cannot be checked against its seed without decrypting, so
+  6. **Scope stated** — minting and rotation. The live use of this slice was two *new* keys; **the operator then
+     asked for a rotation**, and `demo-notifier` staging's pair was replaced with `--rotate` (the evidence is in
+     [current state](current-state.md)). A public key cannot be checked against its seed without decrypting, so
      v2's own check is "not the plaintext, and encrypted"; whether the platform can read it is proved by the
      workload signing in. `mint` writes the record folder; it does not compile, so the operator recompiles.
   7. **Offline is not live** — the offline proof is the tests, the adapter contract (run against the real `sops`

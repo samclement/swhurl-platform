@@ -13,7 +13,7 @@
   "bindings": {},
   "storage": {},
   "events": {
-    "key": "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
+    "key": "UCAE4LERKBYNU5EJTOPDT665R4GNAUUVUIYYLGI7IGMBD6M7DRZKQBQC",
     "subscriptions": [
       "demo-orders.created"
     ]

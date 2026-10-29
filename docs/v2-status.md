@@ -1149,9 +1149,12 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
   6. **Scope stated** — the collector's block on one port, nothing more. The block is `/32` here (one node); a
      cluster with more nodes states a block covering them. OTLP is not routed through the egress proxy, and the
      proxy's own configuration is unchanged.
-  7. **Offline is not live** — the offline proof is the rendered policy and the goldens; the live half is the policy
-     applied to the three v2-owned instances and their exporters reaching the collector, in
-     [current state](current-state.md).
+  7. **Offline is not live** — the offline proof is the rendered policy and the goldens. **Live, `09571ebb`:** the
+     three NetworkPolicies were updated at `23:19:18Z` with no pod restart; `demo-notifier`'s exporter stopped
+     failing at `23:19:15Z`, its traces (absent since its v2-owned pod started) resumed at `23:19Z`, and
+     `swhurl-try-10`/`-11` went from no gauge points to about 154 and 153 a minute; a debug container in the app's
+     own network namespace got HTTP 200 from the collector; `make verify-platform` passed
+     ([evidence](current-state.md#the-three-v2-owned-instances-export-telemetry-29-october-2026)).
   8. **Recorded in the same change** — this page, the plan's gap list and profile field sentence, [apps](apps.md#telemetry),
      [services](services.md#clickstack-and-otel) and the workstream registry.
 - **Evidence:** `REQUIRE_HELM=1 REQUIRE_SOPS=1 make check-v2` (18 packages; the chart render and all four rendered

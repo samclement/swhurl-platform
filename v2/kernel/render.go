@@ -92,7 +92,7 @@ func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProf
 	if spec.Broker.Key != "" {
 		// The seed is the instance's declared input: an encrypted Secret this renderer lists and never writes,
 		// because it holds nothing v2 may read or produce. A folder without it cannot be applied.
-		listed = append(listed, eventsSecretFile)
+		listed = append(listed, EventsSecretFile)
 	}
 	files = append(files,
 		File{folder + "/kustomization.yaml", encodeManifest(manifest{
@@ -695,7 +695,7 @@ func proxyEnv(spec InstanceFacts, profile PlatformProfile) []any {
 // copy.
 func backupEnv(spec InstanceFacts, profile PlatformProfile) []any {
 	return append(proxyEnv(spec, profile),
-		manifest{"name": "AGE_RECIPIENT", "value": profile.Backup.Recipient},
+		manifest{"name": "AGE_RECIPIENT", "value": profile.SOPS.Recipient},
 		manifest{"name": "BACKUP_S3_URI", "value": profile.Backup.S3URI + namespaceName(spec) + "/"},
 		manifest{"name": "BACKUP_SOURCE", "value": namespaceName(spec) + "/" + spec.Application},
 		manifest{"name": "DATABASE_PATH", "value": DatabasePath})

@@ -37,8 +37,8 @@ var Rules = []Rule{
 	{"pure", "pure packages import only allowlisted standard packages, print nothing and keep no mutable package state",
 		"pass the value in as a parameter (time, identifiers, snapshots) or move the effect into an adapter",
 		"the-pure-model"},
-	{"no-subprocess", "v2 code starts no processes and names no kubectl or flux command",
-		"read or change Kubernetes through the API server, in an adapter",
+	{"no-subprocess", "v2 code starts no process except the encryption adapter adapters/sops, and names no kubectl or flux command",
+		"read or change Kubernetes through the API server, in an adapter; encrypt through the one approved command",
 		"kubernetes-the-api-server-not-kubectl"},
 	{"public-api", "the exported API of every library package matches archtest/api.txt",
 		"if the change is intended, run `go test ./archtest -run TestPublicAPI -update` and say why in the change",
@@ -75,6 +75,8 @@ var Layers = map[string]int{
 	"adapters/kube/kubetest":   1,
 	"adapters/s3":              1,
 	"adapters/s3/s3test":       1,
+	"adapters/sops":            1,
+	"adapters/sops/sopstest":   1,
 	"orchestration":            2,
 	"cmd/swhurl-v2":            3,
 }
@@ -92,12 +94,15 @@ var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt
 var Pure = []string{"calls", "events", "kernel", "legacy", "observe", "shadow"}
 
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
-// environment, files, network or processes. `time` is here for the timestamps a caller supplies — parsing,
+// environment, files, network or processes. `crypto/ed25519` derives a key pair from a seed the caller supplies
+// (its own key generation, which draws randomness, is never called), and `encoding/base32` and
+// `encoding/binary` state the nkeys text form. `time` is here for the timestamps a caller supplies — parsing,
 // formatting and comparing them — not for the clock, which pureBannedCalls still refuses. Adding one is a
 // reviewed change to this list.
 var PureImports = []string{
-	"bytes", "crypto/sha256", "encoding/hex", "encoding/json", "errors", "fmt", "maps", "math", "regexp",
-	"slices", "sort", "strconv", "strings", "time", "unicode", "unicode/utf8",
+	"bytes", "crypto/ed25519", "crypto/sha256", "encoding/base32", "encoding/binary", "encoding/hex",
+	"encoding/json", "errors", "fmt", "maps", "math", "regexp", "slices", "sort", "strconv", "strings", "time",
+	"unicode", "unicode/utf8",
 }
 
 // Printing is an effect even with an allowed package, and so is asking for the current time: a pure package
@@ -111,6 +116,11 @@ const adapterRoot, orchestrationRoot, commandRoot = "adapters/", "orchestration/
 var subprocessImports = []string{"os/exec", "syscall"}
 var subprocessCalls = []string{"os.StartProcess"}
 var commandNames = []string{"kubectl", "flux"}
+
+// subprocessAllowed is the one package that may start a process: encryption is a command the platform already
+// relies on, and a second implementation of age and the SOPS envelope here would be a hand-built cipher. The
+// exception is the package, not the rule: it may name no kubectl or flux command and reads no cluster.
+var subprocessAllowed = []string{"adapters/sops/"}
 
 // ---- Loading ----
 
@@ -444,15 +454,18 @@ func checkNoSubprocess(m *Module) []Violation {
 	var found []Violation
 	for _, dir := range m.Dirs() {
 		for _, file := range m.Packages[dir].Source() {
+			allowed := slices.ContainsFunc(subprocessAllowed, func(prefix string) bool {
+				return strings.HasPrefix(file.Path, prefix)
+			})
 			for _, spec := range file.AST.Imports {
-				if path := importPath(spec); slices.Contains(subprocessImports, path) {
+				if path := importPath(spec); !allowed && slices.Contains(subprocessImports, path) {
 					found = append(found, Violation{"no-subprocess", m.at(file, spec.Pos()), "imports " + path})
 				}
 			}
 			ast.Inspect(file.AST, func(node ast.Node) bool {
 				switch node := node.(type) {
 				case *ast.CallExpr:
-					if call := selector(node); slices.Contains(subprocessCalls, call) {
+					if call := selector(node); !allowed && slices.Contains(subprocessCalls, call) {
 						found = append(found, Violation{"no-subprocess", m.at(file, node.Pos()), "calls " + call})
 					}
 				case *ast.BasicLit:

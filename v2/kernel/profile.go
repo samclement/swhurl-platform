@@ -88,10 +88,16 @@ type Network struct {
 	PodCIDR string `json:"podCIDR"`
 }
 
-// Telemetry is the platform's collector: the endpoint an SDK exports to and the OTLP transport it speaks.
+// Telemetry is the platform's collector: the endpoint an SDK exports to, the OTLP transport it speaks, and the
+// network that endpoint's host is on. The endpoint names the collector by $(HOST_IP), the node's own address, and
+// NetworkPolicy cannot select a host-network pod by label, so an instance's policy admits NodeCIDR on the
+// endpoint's port: without it the environment says where to send and the policy refuses to let it out.
 type Telemetry struct {
 	Endpoint string `json:"endpoint"`
 	Protocol string `json:"protocol"`
+	// NodeCIDR is the address block the nodes that serve the collector answer on: a single-node cluster states
+	// the node's own address, a cluster with several states a block covering them.
+	NodeCIDR string `json:"nodeCIDR"`
 }
 
 // Notify is the platform's notification service address. The audience and token path are v1's fixed token
@@ -229,7 +235,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"delivery", []string{"source", "outputRoot", "unitsRoot", "dependsOn"}},
 		{"workload", []string{"cpuRequestMilli", "startupSeconds", "startupPeriodSeconds"}},
 		{"quota", []string{"pods", "requestsCpuMilli", "requestsMemoryMiB", "limitsMemoryMiB"}},
-		{"telemetry", []string{"endpoint", "protocol"}},
+		{"telemetry", []string{"endpoint", "protocol", "nodeCIDR"}},
 		{"notify", []string{"address"}},
 		// routing and auth are optional blocks: a profile that renders only private, call-less instances
 		// needs neither, and an absent block is valid.
@@ -584,6 +590,8 @@ func profileCanonical(p PlatformProfile) []byte {
 		// Telemetry and notifications are platform facts: another collector or notify service is another
 		// identity, and an absent block encodes as empty values.
 		p.Telemetry.Endpoint, p.Telemetry.Protocol, p.Notify.Address,
+		// The block the node collector answers on is a platform fact: another network is another platform.
+		p.Telemetry.NodeCIDR,
 		// The platform's own watched namespaces are a platform fact: another list is another identity. A new
 		// block appends its facts, so no earlier position moves.
 		reloaderNamespaces,
@@ -603,7 +611,35 @@ func (t Telemetry) validate() error {
 	if t.Protocol != "http/protobuf" && t.Protocol != "grpc" {
 		return refuse(Unsupported, "telemetry.protocol", "only http/protobuf and grpc are supported")
 	}
+	if t.NodeCIDR != "" {
+		if !cidrPattern.MatchString(t.NodeCIDR) {
+			return refuse(Invalid, "telemetry.nodeCIDR", "expected an IPv4 address block, as 192.168.1.200/32")
+		}
+		if _, stated := t.CollectorPort(); !stated {
+			return refuse(Invalid, "telemetry.nodeCIDR", "the endpoint states no port for the collector")
+		}
+	}
 	return nil
+}
+
+// CollectorPort is the port the endpoint names, which is the one an instance's policy admits to NodeCIDR.
+func (t Telemetry) CollectorPort() (int32, bool) {
+	host := t.Endpoint
+	if _, rest, found := strings.Cut(host, "://"); found {
+		host = rest
+	}
+	if index := strings.Index(host, "/"); index >= 0 {
+		host = host[:index]
+	}
+	index := strings.LastIndex(host, ":")
+	if index < 0 {
+		return 0, false
+	}
+	port, err := strconv.ParseInt(host[index+1:], 10, 32)
+	if err != nil || port < 1 || port > 65535 {
+		return 0, false
+	}
+	return int32(port), true
 }
 
 // validate checks a configured notify block: the service's HTTP(S) address.

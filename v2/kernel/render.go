@@ -369,12 +369,13 @@ func networkPolicy(spec InstanceFacts, exposure string, http WorkloadFacts, prof
 		"metadata": metadata(spec.Application, namespaceName(spec)),
 		"spec": manifest{"podSelector": manifest{"matchLabels": manifest{instanceLabel: spec.Application}},
 			"policyTypes": []any{"Ingress", "Egress"}, "ingress": ingressRules,
-			"egress": egressRules(spec, profile)}}
+			"egress": egressRules(spec, http, profile)}}
 }
 
 // egressRules is every way out an instance's policy admits: the callees it calls, the name service, its own proxy
-// port when it has one, and the broker when it signs in. Nothing else leaves the pod's namespace.
-func egressRules(spec InstanceFacts, profile PlatformProfile) []any {
+// port when it has one, the collector when its image reports, and the broker when it signs in. Nothing else leaves
+// the pod's namespace.
+func egressRules(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) []any {
 	rules := []any{}
 	for _, call := range spec.Calls {
 		rules = append(rules, manifest{
@@ -399,6 +400,15 @@ func egressRules(spec InstanceFacts, profile PlatformProfile) []any {
 				"podSelector":       manifest{"matchLabels": labelManifest(profile.Egress.Labels)},
 			}},
 			"ports": []any{manifest{"port": spec.Egress.Port, "protocol": "TCP"}},
+		})
+	}
+	if http.Telemetry && profile.Telemetry.NodeCIDR != "" {
+		// The collector is a host-network DaemonSet on the node's own address, which NetworkPolicy cannot select
+		// by label: the platform states the block and the endpoint states the port.
+		port, _ := profile.Telemetry.CollectorPort()
+		rules = append(rules, manifest{
+			"to":    []any{manifest{"ipBlock": manifest{"cidr": profile.Telemetry.NodeCIDR}}},
+			"ports": []any{manifest{"port": port, "protocol": "TCP"}},
 		})
 	}
 	if spec.Broker.Key != "" {

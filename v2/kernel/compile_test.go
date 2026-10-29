@@ -109,6 +109,7 @@ func TestProfileIdentity(t *testing.T) {
 		func(p *PlatformProfile) { p.Backup.Region = "eu-west-1" },
 		func(p *PlatformProfile) { p.Telemetry.Endpoint = "http://127.0.0.1:4318" },
 		func(p *PlatformProfile) { p.Telemetry.Protocol = "grpc" },
+		func(p *PlatformProfile) { p.Telemetry.NodeCIDR = "192.168.1.200/31" },
 		func(p *PlatformProfile) { p.Notify.Address = "http://notify.example" },
 	} {
 		changed := profile(t)
@@ -147,6 +148,9 @@ func TestProfileDecoding(t *testing.T) {
 		{"missing backup region", strings.Replace(text, `"region": "eu-west-2",`, ``, 1), Invalid, "backup.region"},
 		{"missing telemetry endpoint", strings.Replace(text, `"endpoint": "http://$(HOST_IP):4318", `, ``, 1), Invalid, "telemetry.endpoint"},
 		{"bad telemetry protocol", strings.Replace(text, `"protocol": "http/protobuf"`, `"protocol": "udp"`, 1), Unsupported, "telemetry.protocol"},
+		{"missing node block", strings.Replace(text, `, "nodeCIDR": "192.168.1.200/32"`, ``, 1), Invalid, "telemetry.nodeCIDR"},
+		{"bad node block", strings.Replace(text, `"nodeCIDR": "192.168.1.200/32"`, `"nodeCIDR": "192.168.1.200"`, 1), Invalid, "telemetry.nodeCIDR"},
+		{"collector without a port", strings.Replace(strings.Replace(text, `"endpoint": "http://$(HOST_IP):4318"`, `"endpoint": "http://$(HOST_IP)"`, 1), `"nodeCIDR": "192.168.1.200/32"`, `"nodeCIDR": "192.168.1.200/32"`, 1), Invalid, "telemetry.nodeCIDR"},
 		{"missing notify address", strings.Replace(text, `"notify": {"address": "http://notify.notify.svc.cluster.local:8080"}`, `"notify": {}`, 1), Invalid, "notify.address"},
 		{"bad notify address", strings.Replace(text, `"address": "http://notify.notify.svc.cluster.local:8080"`, `"address": "notify"`, 1), Invalid, "notify.address"},
 		{"escaping units root", strings.Replace(text, `"unitsRoot": "clusters/home"`, `"unitsRoot": "../home"`, 1), Invalid, "delivery.unitsRoot"},
@@ -206,7 +210,9 @@ func TestCompiledResources(t *testing.T) {
 			`"sourceRef":{"kind":"HelmRepository","name":"bjw-s","namespace":"flux-system"}`, `"version":"5.2.1"`},
 		"v2-apps/instances/demo-orders/prod/resourcequota.json": {`"hard":{"limits.memory":"4Gi","pods":"14","requests.cpu":"2","requests.memory":"2Gi"}`},
 		"v2-apps/instances/demo-orders/prod/networkpolicy.json": {
-			`"egress":[]`, `"ingress":[]`, `"podSelector":{"matchLabels":{"app.kubernetes.io/instance":"demo-orders"}}`,
+			// The only way out is the collector the release says it reports to: no proxy (no allocation), no calls.
+			`"egress":[{"ports":[{"port":4318,"protocol":"TCP"}],"to":[{"ipBlock":{"cidr":"192.168.1.200/32"}}]}]`,
+			`"ingress":[]`, `"podSelector":{"matchLabels":{"app.kubernetes.io/instance":"demo-orders"}}`,
 			`"policyTypes":["Ingress","Egress"]`},
 		"v2-apps/instances/demo-orders/prod/kustomization.yaml": {`"resources":["namespace.json","helmrelease.json","resourcequota.json","networkpolicy.json"]`},
 		"clusters/home/app-demo-orders-prod.json": {`"path":"./v2-apps/instances/demo-orders/prod"`, `"dependsOn":[{"name":"infra-base"}]`,

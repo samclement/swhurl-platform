@@ -1,12 +1,12 @@
 {
   "kind": "v2-compilation",
   "version": 1,
-  "id": "comp-sha256:b60d68f1732e947544b95e4f5ce9acb73f657ae4e832f57a926d17ea36d1fd9e",
+  "id": "comp-sha256:9880014e779e2a0837428bb6acf01944d5766707d748dc8177ab5fab205bfa07",
   "inputs": {
     "app": "app-sha256:50aa37430360ade5a48ce7d5c968b521b57e91bf8a1c4501fb14fc10d2672e0f",
     "release": "rel-sha256:b357d4173dc8d515f46c6b3f019b744b59ee97d5d30f03ce1e3a9532f9bf904c",
     "instance": "inst-sha256:321613e780631d2d0a2a62773f24c1d9a26b37fffcd6cb370b0414eda0fb1663",
-    "profile": "prof-sha256:46e99dd696a9958480dba6bbfa6549518ab6ff73b49ae38ea1a7d833c9ed9ee3",
+    "profile": "prof-sha256:20ea752df2122d3938202e9ab7569daad7690786e145f19f4e2714f3cdf18356",
     "calls": ""
   },
   "files": [
@@ -225,7 +225,23 @@
           "namespace": "demo-orders-prod"
         },
         "spec": {
-          "egress": [],
+          "egress": [
+            {
+              "ports": [
+                {
+                  "port": 4318,
+                  "protocol": "TCP"
+                }
+              ],
+              "to": [
+                {
+                  "ipBlock": {
+                    "cidr": "192.168.1.200/32"
+                  }
+                }
+              ]
+            }
+          ],
           "ingress": [],
           "podSelector": {
             "matchLabels": {

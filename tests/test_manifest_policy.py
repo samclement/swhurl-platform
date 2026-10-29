@@ -106,7 +106,8 @@ class ManifestPolicyTests(unittest.TestCase):
         values = release['spec']['values']['reloader']
         self.assertIs(values['watchGlobally'], False, 'Reloader must not get cluster-wide Secret access')
         self.assertFalse(values.get('autoReloadAll', False), 'Reloader must stay opt-in')
-        watched = set(values['namespaces'])
+        configmap = json.loads((ROOT / 'platform/reloader/values.json').read_text())
+        watched = set(json.loads(configmap['data']['values.yaml'])['reloader']['namespaces'])
         opt_ins = {
             'platform/oauth2-proxy/helmrelease.yaml': 'deploymentAnnotations',
             'platform/otel/helmrelease-cluster.yaml': 'annotations',

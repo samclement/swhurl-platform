@@ -119,6 +119,7 @@ kernel: func (EgressFacts) NeedsEgress() bool
 kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
 kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
+kernel: func (Reloader) Namespaces() ([]string, error)
 kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation, backupHost string) ([]EgressAllocation, error)
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
 kernel: func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error)
@@ -139,6 +140,7 @@ kernel: func Ownership(claims []Claim) []Conflict
 kernel: func RenderAuth(namespaces []string, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderProxy(allocations []EgressAllocation, profile PlatformProfile) (ResourceSet, error)
+kernel: func RenderReloader(namespaces []string) (ResourceSet, error)
 kernel: func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, egress *Egress, job RestoreJob) (RestoreObjects, error)
 kernel: func RenderUsers(users NATSUsers) (ResourceSet, error)
 kernel: func RestoreJobName(application string, started time.Time) string
@@ -187,12 +189,15 @@ kernel: type NATSUsers struct {ControllerKey, ConsoleKey string Instances []NATS
 kernel: type Network struct {PodCIDR string `json:"podCIDR"`}
 kernel: type Notify struct {Address string `json:"address"`}
 kernel: type Object struct {Group string `json:"group"` Kind string `json:"kind"` Namespace string `json:"namespace"` Name string `json:"name"`}
-kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Telemetry Telemetry `json:"telemetry"` Notify Notify `json:"notify"` Routing Routing `json:"routing"` Auth Auth `json:"auth"` Storage PlatformStorage `json:"storage"` Egress EgressProxy `json:"egress"` DNS DNS `json:"dns"` Backup Backup `json:"backup"` Network Network `json:"network"` NATS NATS `json:"nats"`}
+kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Telemetry Telemetry `json:"telemetry"` Notify Notify `json:"notify"` Routing Routing `json:"routing"` Auth Auth `json:"auth"` Storage PlatformStorage `json:"storage"` Egress EgressProxy `json:"egress"` DNS DNS `json:"dns"` Backup Backup `json:"backup"` Network Network `json:"network"` NATS NATS `json:"nats"` Reloader ReloaderWatch `json:"reloader"`}
 kernel: type PlatformStorage struct {Class string `json:"class"`}
 kernel: type ProfileID string
 kernel: type Quota struct {Pods int32 `json:"pods"` RequestsCPUMilli int32 `json:"requestsCpuMilli"` RequestsMemoryMiB int32 `json:"requestsMemoryMiB"` LimitsMemoryMiB int32 `json:"limitsMemoryMiB"`}
 kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` Database string `json:"database,omitempty"` Telemetry bool `json:"telemetry,omitempty"` Publishes []string `json:"publishes,omitempty"` ReleaseID ReleaseID `json:"releaseId"`}
 kernel: type ReleaseID string
+kernel: type Reloader struct {Platform []string Instances []ReloaderInstance}
+kernel: type ReloaderInstance struct {Application, Environment string BrokerKey string Secrets []string}
+kernel: type ReloaderWatch struct {Namespaces []string `json:"namespaces"`}
 kernel: type ResourceSet struct {Files []File Inventory []Claim Registrations []string}
 kernel: type RestoreJob struct {Name string Archive string ArchiveSHA256, PlainSHA256 string Tables int32 AgeIdentity, ReadURL string}
 kernel: type RestoreObject struct {Name string Document []byte}

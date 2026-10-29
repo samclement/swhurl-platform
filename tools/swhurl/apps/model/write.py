@@ -21,8 +21,8 @@ from swhurl.apps.instance import ENVIRONMENTS, UNITS, Instance
 from swhurl.apps.model import generated, relations, render, store
 from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry, Platform, RenderError, World
 from swhurl.apps.model.records import APP_FILE, RECORD_FILES, App, RecordError, Release, Settings, Storage
-from swhurl.apps.model.render import MANAGED_FILES, REGISTRY_FILE, RELOADER_FILE
-from swhurl.apps.yaml_file import YamlFile, mapping
+from swhurl.apps.model.render import MANAGED_FILES, REGISTRY_FILE
+from swhurl.apps.yaml_file import YamlFile
 from swhurl.run import CommandError, Runner
 
 
@@ -153,27 +153,19 @@ def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance
             keep(path, text)
     except RenderError as error:
         raise EditError(str(error)) from None
-    for path, wanted, key, managed in (
-            (REGISTRY_FILE, shared.units, 'resources', lambda name: Instance.of_unit(str(name).removesuffix('.yaml'))),
-            (RELOADER_FILE, shared.reloaded, 'namespaces', Instance.of_namespace)):
-        if not (root / path).is_file():
-            continue
-        document = YamlFile(root / path)
-        parent = document.data
-        if path == RELOADER_FILE:
-            for field in ('spec', 'values', 'reloader'):
-                parent = mapping(parent, field)
-        current = parent.get(key)
+    if (root / REGISTRY_FILE).is_file():
+        document = YamlFile(root / REGISTRY_FILE)
+        current = document.data.get('resources')
         if (not isinstance(current, list) or getattr(current.yaml_anchor(), 'value', None)
                 or any(not isinstance(name, str) for name in current)):
-            raise EditError(f'{path}: expected an ordinary {key} list')
+            raise EditError(f'{REGISTRY_FILE}: expected an ordinary resources list')
         before = list(current)
         for index in reversed(range(len(current))):
-            if managed(current[index]) and current[index] not in wanted:
+            if Instance.of_unit(str(current[index]).removesuffix('.yaml')) and current[index] not in shared.units:
                 del current[index]
-        current.extend(sorted(wanted - set(current)))
+        current.extend(sorted(shared.units - set(current)))
         if list(current) != before:
-            keep(path, document.render())
+            keep(REGISTRY_FILE, document.render())
     try:
         if (root / channels.NOTIFY_DIR).is_dir():
             keep(channels.ROUTES_FILE, channels.routes_configmap(channels.routes(root) if routes is None else routes))

@@ -18,7 +18,7 @@ from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import render, store
 from swhurl.apps.model.draft import EVENTS_SECRET, Platform, RenderError, World
 from swhurl.apps.model.records import RECORD_FILES, TEAM_GRANT
-from swhurl.apps.model.render import REGISTRY_FILE, RELOADER_FILE
+from swhurl.apps.model.render import REGISTRY_FILE
 
 FIXTURES = Path('tests/fixtures/apps')
 """The generated fixtures (tests/fixtures/apps.sh) are a root of their own."""
@@ -137,18 +137,6 @@ def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance]
     except RenderError as error:
         return [*found, f'shared files: cannot render: {error}']
     found += nats_problems(root, world, events.has_nats(root))
-    if (root / RELOADER_FILE).is_file():
-        try:
-            watched = yamlio.load((root / RELOADER_FILE).read_text())['spec']['values']['reloader']['namespaces']
-            if not isinstance(watched, list) or any(not isinstance(name, str) for name in watched):
-                raise ValueError('expected a list of strings')
-        except (OSError, UnicodeError, yaml.YAMLError, KeyError, TypeError, ValueError):
-            found.append(f'{RELOADER_FILE}: cannot read committed YAML; expected '
-                         'spec.values.reloader.namespaces to be a list of strings')
-        else:
-            apps_watched = {name for name in watched if Instance.of_namespace(name)}
-            found += [f'{RELOADER_FILE}: {name} is watched, not rendered' for name in sorted(apps_watched - shared.reloaded)]
-            found += [f'{RELOADER_FILE}: {name} is rendered, not watched' for name in sorted(shared.reloaded - apps_watched)]
     if (root / REGISTRY_FILE).is_file():
         registered = {str(name) for name in yamlio.load((root / REGISTRY_FILE).read_text()).get('resources') or []
                       if Instance.of_unit(str(name).removesuffix('.yaml'))}

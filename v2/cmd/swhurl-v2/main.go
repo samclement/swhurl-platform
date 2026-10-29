@@ -26,6 +26,7 @@ const usage = `usage:
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
   swhurl-v2 auth --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
   swhurl-v2 users --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
+  swhurl-v2 reloader --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
   swhurl-v2 resolve --snapshot SNAPSHOT.json
   swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
@@ -85,6 +86,10 @@ instance with the permissions each needs — its own feature-flag overrides, its
 publishes, and the consumer calls for the subscriptions that connected. The profile states the broker, the
 decryption Secret and the two public keys; no seed is read or written. The list is the
 ConfigMap the NATS HelmRelease reads, so a cutover replaces that file and nothing else.
+
+reloader renders the namespaces Reloader watches: the platform's own as the profile states them, then one per
+instance that declares a Secret a change must restart it for — its broker key or a Secret its release names.
+The list is the ConfigMap the Reloader HelmRelease merges as values, so the HelmRelease keeps no list of its own.
 
 resolve reads one snapshot's declarations and writes the resolved connections as a v2-calls document:
 which pairs are connected, which wait for the other side and why, and which are refused. compile takes
@@ -196,6 +201,7 @@ var commands = map[string]func(cli, request) int{
 	"proxy":             cli.proxy,
 	"auth":              cli.auth,
 	"users":             cli.users,
+	"reloader":          cli.reloader,
 	"migrate":           cli.migrate,
 	"restore":           cli.restore,
 }
@@ -330,7 +336,7 @@ func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		r.registerOut(flags)
-	case "users":
+	case "users", "reloader":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		r.registerOut(flags)
@@ -425,7 +431,7 @@ func (r *request) platformNamed() ([]string, bool) {
 		return []string{r.allocation, r.profile}, true
 	case "egress", "auth", "shadow":
 		return []string{r.snapshot, r.profile}, true
-	case "users":
+	case "users", "reloader":
 		return []string{r.snapshot, r.profile}, true
 	}
 	return nil, false

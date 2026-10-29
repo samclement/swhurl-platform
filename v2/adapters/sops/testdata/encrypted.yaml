@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: example-events
+    namespace: example-staging
+stringData:
+    SWHURL_EVENTS_SEED: ENC[AES256_GCM,data:RgNJ2ntGYK5FnTZhaMG9AEo=,iv:gk6dgsDCohzI1FMEqpn3bjmuhYVU6S9UsJIfw0I+p7w=,tag:wsfaYe8AGfq0vBDhibnXtA==,type:str]
+type: Opaque
+sops:
+    age:
+        - recipient: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBKRWRKWDh3R0F5dGxPTno3
+            dWliZ3BocjU3Wld4WkVPakwrWHQxaGNOdXpzCldnaE1pUkNyM0oremtsVlZjc2tP
+            UEpqTG0vS3ZyMEd5RmNwNkJPQVJQcnMKLS0tIFdnc2hxOEdHckZoTkZCdTFCTlBq
+            MXNiTkVpdE96NnNyUFNUTGNFRURKUmsKWpXaOfm7w0Uc50vr3oF3Ucs/M7WzOW0V
+            epunfYY5Hss/bgHvJpQ47JVkHtdlYQUTpqLfNHRwV9/4TXqZ1mEljA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-29T22:14:29Z"
+    mac: ENC[AES256_GCM,data:r0hu8Hxp6MOQ11BEtBbzemW5K17NNBndyorK5YLnZIjAoAlwhzQ2VkUosZj/0pb5sG9BCrPBcSm0zdiZLFkh3pEi1u6dBl7uNoJ0Bz6elAeJU3srUtskZJcBB+nIsPcmkthLDtnoOYBiEhlVcXelgSmlxvwzyjUx2wU4bSghhUQ=,iv:aEgFVQr1p4H8qATXQ19fLlP1akpYV06hzrVCJNPXB5E=,tag:kbdn3yPytZEzVNjm2i90uA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

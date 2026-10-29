@@ -53,6 +53,16 @@ type PlatformProfile struct {
 	// Reloader is the platform's own namespaces that must restart a workload when a Secret changes. The
 	// instances themselves contribute theirs; this block is the platform's part of one watch list.
 	Reloader ReloaderWatch `json:"reloader"`
+	// SOPS is the age recipient every Secret in Git is encrypted to: the backup job's archives and every
+	// SOPS file Flux decrypts, including an instance's broker seed. It is a public key; the private half is
+	// the operator's and is never in v2 or Git.
+	SOPS SOPS `json:"sops"`
+}
+
+// SOPS is the platform's encryption recipient, which two owners share: the backup job encrypts an archive with
+// it, and v2 mints a broker seed encrypted to it.
+type SOPS struct {
+	Recipient string `json:"recipient"`
 }
 
 // ReloaderWatch is the namespaces the platform watches besides the instances that declare a Secret: its own
@@ -90,17 +100,16 @@ type Notify struct {
 	Address string `json:"address"`
 }
 
-// Backup is the platform's backup contract for an instance's SQLite database. The recipient is a public
-// key, so the job encrypts before it uploads and never holds the private key; the writer is a Secret in
-// the platform's own namespace that Flux substitutes the upload-only key from, so v2 renders a reference
-// and never a credential value. The region is the bucket's: the job uploads to the regional endpoint, so the
-// proxy must grant that host to every instance whose backup it carries.
+// Backup is the platform's backup contract for an instance's SQLite database. The job encrypts to the
+// platform's SOPS recipient (see SOPS), so it never holds a private key; the writer is a Secret in the
+// platform's own namespace that Flux substitutes the upload-only key from, so v2 renders a reference and never
+// a credential value. The region is the bucket's: the job uploads to the regional endpoint, so the proxy must
+// grant that host to every instance whose backup it carries.
 type Backup struct {
 	Image           string `json:"image"`
 	Digest          string `json:"digest"`
 	S3URI           string `json:"s3Uri"`
 	Region          string `json:"region"`
-	Recipient       string `json:"recipient"`
 	WriterNamespace string `json:"writerNamespace"`
 	WriterName      string `json:"writerName"`
 	Suspended       bool   `json:"suspended"`
@@ -208,7 +217,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 	if err := document(data); err != nil {
 		return PlatformProfile{}, err
 	}
-	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "telemetry", "notify", "routing", "auth", "storage", "egress", "dns", "backup", "network", "nats", "reloader")
+	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "telemetry", "notify", "routing", "auth", "storage", "egress", "dns", "backup", "network", "nats", "reloader", "sops")
 	if err != nil {
 		return PlatformProfile{}, err
 	}
@@ -229,10 +238,11 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"storage", []string{"class"}},
 		{"egress", []string{"address", "namespace", "labels"}},
 		{"dns", []string{"namespace", "labels"}},
-		{"backup", []string{"image", "digest", "s3Uri", "region", "recipient", "writerNamespace", "writerName", "suspended"}},
+		{"backup", []string{"image", "digest", "s3Uri", "region", "writerNamespace", "writerName", "suspended"}},
 		{"network", []string{"podCIDR"}},
 		{"nats", []string{"url", "namespace", "port", "labels", "decryptionSecret", "controllerKey", "consoleKey"}},
 		{"reloader", []string{"namespaces"}},
+		{"sops", []string{"recipient"}},
 	} {
 		if _, present := root[part.key]; !present {
 			continue
@@ -277,7 +287,7 @@ func (p PlatformProfile) validate() error {
 // validateBlocks checks the platform's optional blocks, in the order of the field table: routing, egress,
 // DNS, storage, auth and backup.
 func (p PlatformProfile) validateBlocks() error {
-	for _, block := range []interface{ validate() error }{p.Telemetry, p.Notify, p.Routing, p.Egress, p.DNS, p.Auth, p.Backup, p.Network, p.NATS, p.Reloader} {
+	for _, block := range []interface{ validate() error }{p.Telemetry, p.Notify, p.Routing, p.Egress, p.DNS, p.Auth, p.Backup, p.Network, p.NATS, p.Reloader, p.SOPS} {
 		if err := block.validate(); err != nil {
 			return err
 		}
@@ -298,6 +308,17 @@ func (r ReloaderWatch) validate() error {
 	}
 	if len(slices.Compact(slices.Sorted(slices.Values(r.Namespaces)))) != len(r.Namespaces) {
 		return refuse(Invalid, "reloader.namespaces", "a namespace is listed twice")
+	}
+	return nil
+}
+
+// validate checks the platform's encryption recipient when it states one: an age public key.
+func (s SOPS) validate() error {
+	if s.Recipient == "" {
+		return nil
+	}
+	if !ageRecipientPattern.MatchString(s.Recipient) {
+		return refuse(Invalid, "sops.recipient", "expected an age public key")
 	}
 	return nil
 }
@@ -361,9 +382,6 @@ func (b Backup) validate() error {
 	if !regionPattern.MatchString(b.Region) {
 		return refuse(Invalid, "backup.region", "expected an AWS region such as eu-west-2")
 	}
-	if !ageRecipientPattern.MatchString(b.Recipient) {
-		return refuse(Invalid, "backup.recipient", "expected an age public key")
-	}
 	for _, field := range []struct{ name, value string }{
 		{"backup.writerNamespace", b.WriterNamespace}, {"backup.writerName", b.WriterName},
 	} {
@@ -377,7 +395,7 @@ func (b Backup) validate() error {
 // absent is whether the profile states no backup at all, which is valid: only a database instance needs
 // one, and a profile that compiles none needs no facts.
 func (b Backup) absent() bool {
-	return b.Image == "" && b.Digest == "" && b.S3URI == "" && b.Region == "" && b.Recipient == "" &&
+	return b.Image == "" && b.Digest == "" && b.S3URI == "" && b.Region == "" &&
 		b.WriterNamespace == "" && b.WriterName == "" && !b.Suspended
 }
 
@@ -555,7 +573,7 @@ func profileCanonical(p PlatformProfile) []byte {
 		p.Egress.Address, p.Egress.Namespace, labelPairs(p.Egress.Labels),
 		p.DNS.Namespace, labelPairs(p.DNS.Labels),
 		// The backup facts are platform facts too: another bucket, image or key set is another identity.
-		p.Backup.Image, p.Backup.Digest, p.Backup.S3URI, p.Backup.Region, p.Backup.Recipient,
+		p.Backup.Image, p.Backup.Digest, p.Backup.S3URI, p.Backup.Region,
 		p.Backup.WriterNamespace, p.Backup.WriterName, strconv.FormatBool(p.Backup.Suspended),
 		// The event service is a platform fact too: another broker, namespace, decryption Secret or service
 		// identity is another platform's identity.
@@ -568,7 +586,10 @@ func profileCanonical(p PlatformProfile) []byte {
 		p.Telemetry.Endpoint, p.Telemetry.Protocol, p.Notify.Address,
 		// The platform's own watched namespaces are a platform fact: another list is another identity. A new
 		// block appends its facts, so no earlier position moves.
-		reloaderNamespaces})
+		reloaderNamespaces,
+		// The SOPS recipient is the platform's: another key is another platform. It moved out of the backup
+		// block because the backup job is no longer its only owner.
+		p.SOPS.Recipient})
 }
 
 // validate checks a configured telemetry block: an HTTP(S) endpoint and an OTLP transport.

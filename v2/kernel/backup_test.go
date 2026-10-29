@@ -113,7 +113,7 @@ func TestBackupRendersForADatabaseInstance(t *testing.T) {
 		"HTTP_PROXY":    "http://egress.egress.svc.cluster.local:30102",
 		"HTTPS_PROXY":   "http://egress.egress.svc.cluster.local:30102",
 		"NO_PROXY":      "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)",
-		"AGE_RECIPIENT": profile(t).Backup.Recipient,
+		"AGE_RECIPIENT": profile(t).SOPS.Recipient,
 		"BACKUP_S3_URI": "s3://swhurl-platform-backups-110927251694/app-sqlite/demo-orders-staging/",
 		"BACKUP_SOURCE": "demo-orders-staging/demo-orders",
 		"DATABASE_PATH": DatabasePath,
@@ -225,7 +225,7 @@ func TestBackupRefusals(t *testing.T) {
 		{"s3 uri without prefix", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.S3URI = "s3://bucket" }, Invalid, "backup.s3Uri"},
 		{"no region", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.Region = "" }, Invalid, "backup.region"},
 		{"region", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.Region = "s3.eu-west-2" }, Invalid, "backup.region"},
-		{"recipient", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.Recipient = "age1notakey" }, Invalid, "backup.recipient"},
+		{"recipient", func(s *InstanceFacts, p *PlatformProfile) { p.SOPS.Recipient = "age1notakey" }, Invalid, "sops.recipient"},
 		{"writer namespace", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.WriterNamespace = "Flux" }, Invalid, "backup.writerNamespace"},
 		{"writer name", func(s *InstanceFacts, p *PlatformProfile) { p.Backup.WriterName = "" }, Invalid, "backup.writerName"},
 	} {

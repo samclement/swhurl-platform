@@ -68,6 +68,19 @@ adapters/s3: type Client struct {}
 adapters/s3: type Credentials struct {AccessKey, SecretKey, SessionToken string}
 adapters/s3: type Error struct {Code, Subject, Reason string}
 adapters/s3: type Reader interface {List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error) Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error) // PresignURL is a time-limited read of one object, for a caller that must hand the read to someone // else — a restore pod — without giving it the bucket credential. PresignURL(ctx context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)}
+adapters/sops/sopstest: func (*Fake) Encrypt(document []byte, recipient string) ([]byte, error)
+adapters/sops/sopstest: func Contract(t *testing.T, open func(*testing.T) sops.Encrypter, document []byte, recipient string)
+adapters/sops/sopstest: func New() *Fake
+adapters/sops/sopstest: type Call struct {Document []byte Recipient string}
+adapters/sops/sopstest: type Fake struct {Output []byte Err error Calls []Call}
+adapters/sops: const MaxDocument = 1 << 20
+adapters/sops: const RefusedEncryption = "refused_encryption"
+adapters/sops: func (*Command) Encrypt(document []byte, recipient string) ([]byte, error)
+adapters/sops: func (*Error) Error() string
+adapters/sops: func New() *Command
+adapters/sops: type Command struct {Binary string}
+adapters/sops: type Encrypter interface {Encrypt(document []byte, recipient string) ([]byte, error)}
+adapters/sops: type Error struct {Reason string}
 calls: const CalleeAbsent = "callee_absent"
 calls: const CalleeNotWeb = "callee_not_web"
 calls: const NoConsent = "no_consent"
@@ -98,6 +111,7 @@ events: type Subscription struct {Publisher, Event string Stream, Consumer strin
 kernel: const AppTree = "apps"
 kernel: const DataMount = "/data"
 kernel: const DatabasePath = DataMount + "/app.db"
+kernel: const EventsSecretFile = "events.sops.yaml"
 kernel: const FirstPort int32 = 30101
 kernel: const IdentityMismatch Code = "identity_mismatch"
 kernel: const Invalid Code = "invalid"
@@ -121,6 +135,7 @@ kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
 kernel: func (Reloader) Namespaces() ([]string, error)
 kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation, backupHost string) ([]EgressAllocation, error)
+kernel: func CheckEncryptedSeed(document []byte, seed string) error
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
 kernel: func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error)
 kernel: func CompileWith(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile, connections Connections, egress *Egress) (Compilation, error)
@@ -135,7 +150,9 @@ kernel: func EncodeCompilation(c Compilation) []byte
 kernel: func EncodeEgressDocument(document EgressDocument) ([]byte, error)
 kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
 kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
+kernel: func EventsSecret(spec InstanceSpec, pair UserKey) ([]byte, error)
 kernel: func NamespaceOf(application, environment string) string
+kernel: func NewUserKey(seed [32]byte) UserKey
 kernel: func Ownership(claims []Claim) []Conflict
 kernel: func RenderAuth(namespaces []string, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) (ResourceSet, error)
@@ -145,11 +162,12 @@ kernel: func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile Pla
 kernel: func RenderUsers(users NATSUsers) (ResourceSet, error)
 kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
+kernel: func WithBrokerKey(spec InstanceSpec, pair UserKey, rotate bool) (InstanceSpec, error)
 kernel: type AppID string
 kernel: type AppSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Team string `json:"team"` AppID AppID `json:"appId,omitempty"`}
 kernel: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"` MediaType string `json:"mediaType"` Platform string `json:"platform"`}
 kernel: type Auth struct {Issuer string `json:"issuer"` Keys string `json:"keys"`}
-kernel: type Backup struct {Image string `json:"image"` Digest string `json:"digest"` S3URI string `json:"s3Uri"` Region string `json:"region"` Recipient string `json:"recipient"` WriterNamespace string `json:"writerNamespace"` WriterName string `json:"writerName"` Suspended bool `json:"suspended"`}
+kernel: type Backup struct {Image string `json:"image"` Digest string `json:"digest"` S3URI string `json:"s3Uri"` Region string `json:"region"` WriterNamespace string `json:"writerNamespace"` WriterName string `json:"writerName"` Suspended bool `json:"suspended"`}
 kernel: type Bindings struct {}
 kernel: type BrokerIdentity struct {Key string Connected []EventSubscription}
 kernel: type Call struct {Callee string Port int32}
@@ -189,7 +207,7 @@ kernel: type NATSUsers struct {ControllerKey, ConsoleKey string Instances []NATS
 kernel: type Network struct {PodCIDR string `json:"podCIDR"`}
 kernel: type Notify struct {Address string `json:"address"`}
 kernel: type Object struct {Group string `json:"group"` Kind string `json:"kind"` Namespace string `json:"namespace"` Name string `json:"name"`}
-kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Telemetry Telemetry `json:"telemetry"` Notify Notify `json:"notify"` Routing Routing `json:"routing"` Auth Auth `json:"auth"` Storage PlatformStorage `json:"storage"` Egress EgressProxy `json:"egress"` DNS DNS `json:"dns"` Backup Backup `json:"backup"` Network Network `json:"network"` NATS NATS `json:"nats"` Reloader ReloaderWatch `json:"reloader"`}
+kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Telemetry Telemetry `json:"telemetry"` Notify Notify `json:"notify"` Routing Routing `json:"routing"` Auth Auth `json:"auth"` Storage PlatformStorage `json:"storage"` Egress EgressProxy `json:"egress"` DNS DNS `json:"dns"` Backup Backup `json:"backup"` Network Network `json:"network"` NATS NATS `json:"nats"` Reloader ReloaderWatch `json:"reloader"` SOPS SOPS `json:"sops"`}
 kernel: type PlatformStorage struct {Class string `json:"class"`}
 kernel: type ProfileID string
 kernel: type Quota struct {Pods int32 `json:"pods"` RequestsCPUMilli int32 `json:"requestsCpuMilli"` RequestsMemoryMiB int32 `json:"requestsMemoryMiB"` LimitsMemoryMiB int32 `json:"limitsMemoryMiB"`}
@@ -204,9 +222,11 @@ kernel: type RestoreObject struct {Name string Document []byte}
 kernel: type RestoreObjects struct {Secret, Job RestoreObject}
 kernel: type Routing struct {BaseDomain string `json:"baseDomain"` Class string `json:"class"` Middleware string `json:"middleware"` Issuer string `json:"issuer"` IngressNamespace string `json:"ingressNamespace"` IngressLabels map[string]string `json:"ingressLabels"`}
 kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` HealthPath string `json:"healthPath"` UID int32 `json:"uid"`}
+kernel: type SOPS struct {Recipient string `json:"recipient"`}
 kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}
 kernel: type Storage struct {SizeMiB int32 `json:"sizeMiB,omitempty"` ClaimName string `json:"claimName,omitempty"`}
 kernel: type Telemetry struct {Endpoint string `json:"endpoint"` Protocol string `json:"protocol"`}
+kernel: type UserKey struct {Seed string Public string}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
 kernel: type WorkloadFacts struct {Kind string Image, Digest string Port int32 HealthPath string UID int32 Telemetry bool Publishes []string}
 legacy: const Invalid = "invalid"
@@ -357,12 +377,15 @@ orchestration: func (*Refusal) Error() string
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
 orchestration: func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error)
+orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte}
 orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}
 orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte EventsSecret []byte}
+orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
+orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
 orchestration: type Refusal struct {Subject, Reason string}
 orchestration: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}
 orchestration: type RestoreInputs struct {Instance, Release, Profile, Egress []byte Plan observe.RestorePlan Target observe.Target AgeIdentity, ReadURL string Cluster Cluster Sleep func(time.Duration) Now func() time.Time}

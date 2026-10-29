@@ -126,6 +126,7 @@ jobs:
       - name: Check v2 and its design rules
         env:
           REQUIRE_HELM: '1'
+          REQUIRE_SOPS: '1'
         run: make check-v2
 
       # The backup image's Go tool is its own module (images/backup/tool): dependencies, no make target the

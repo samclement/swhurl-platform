@@ -244,9 +244,10 @@ func TestOwnedInstancesRecompileFromGit(t *testing.T) {
 			t.Fatalf("%s: %v", instancePath, err)
 		}
 		if settings.Events.Key != "" {
-			// An instance with a broker identity travels with its seed: the file Git holds beside its manifests.
+			// An instance with a broker identity travels with its seed: the encrypted file Git holds beside its
+			// record, which compile copies beside the manifests.
 			args = append(args, "--events-secret",
-				filepath.Join("../../../v2-apps/instances", application, segments[len(segments)-1], "events.sops.yaml"))
+				filepath.Join(folder, "events.sops.yaml"))
 		}
 		var out, diagnostic bytes.Buffer
 		if status := run(args, &out, &diagnostic, os.ReadFile, files.New()); status != 0 {

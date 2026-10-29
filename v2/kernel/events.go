@@ -1,6 +1,9 @@
 package kernel
 
-import "strings"
+import (
+	"bytes"
+	"strings"
+)
 
 // One instance's side of the event service: the variables it reads, the Secret that holds its seed, the unit's
 // dependency on the broker, and the stream and consumers it declares. What it publishes is the release's; what it
@@ -13,9 +16,9 @@ const (
 	// eventsSecretSuffix names the Secret holding one instance's seed; the file that carries it is the
 	// instance's declared input.
 	eventsSecretSuffix = "-events"
-	// eventsSecretFile is where that file sits in an instance's folder: beside the manifests, because a unit
+	// EventsSecretFile is where that file sits in an instance's folder: beside the manifests, because a unit
 	// can only list resources inside its own directory.
-	eventsSecretFile = "events.sops.yaml"
+	EventsSecretFile = "events.sops.yaml"
 	// natsUnit is the platform unit that serves the broker; an instance with a key waits for it.
 	natsUnit = "platform-nats"
 	// events.apiVersion is the stream controller's API (NACK), which turns these objects into streams and
@@ -43,6 +46,59 @@ type EventSubscription struct {
 
 // eventsSecretName is the Secret one instance reads its seed from.
 func eventsSecretName(application string) string { return application + eventsSecretSuffix }
+
+// seedVariable is the name the image reads its seed under. The unit mounts the Secret with envFrom, so the
+// variable's name is part of the Secret's contract, not the image's choice.
+const seedVariable = "SWHURL_EVENTS_SEED"
+
+// EventsSecret renders one instance's broker seed as the Secret its unit decrypts: the object the record folder
+// holds and `compile` copies beside the manifests. The result is plaintext — a private key — so the caller
+// encrypts it before it is written anywhere, and v2 never writes this document itself.
+func EventsSecret(spec InstanceSpec, pair UserKey) ([]byte, error) {
+	if !namePattern.MatchString(spec.Application) ||
+		(spec.Environment != "staging" && spec.Environment != "prod") {
+		return nil, refuse(Invalid, "events.secret", "expected an app name and an environment")
+	}
+	if pair.Seed == "" || pair.Public == "" {
+		return nil, refuse(Invalid, "events.secret", "expected a key pair")
+	}
+	document := manifest{"apiVersion": "v1", "kind": "Secret",
+		"metadata": manifest{"name": eventsSecretName(spec.Application),
+			"namespace": NamespaceOf(spec.Application, spec.Environment)},
+		"type": "Opaque", "stringData": manifest{seedVariable: pair.Seed}}
+	return encodeManifest(document), nil
+}
+
+// CheckEncryptedSeed is what v2 can say about a ciphertext it cannot decrypt: it must hold at least one encrypted
+// value, and it must not hold the plaintext seed. v2 never decrypts, so this is the whole of the check — whether
+// the platform's identity can read it is proved when the workload starts.
+func CheckEncryptedSeed(document []byte, seed string) error {
+	if bytes.Contains(document, []byte(seed)) {
+		return refuse(Invalid, "events.secret", "the ciphertext holds the plaintext seed")
+	}
+	if !bytes.Contains(document, []byte("ENC[")) {
+		return refuse(Invalid, "events.secret", "the ciphertext holds no encrypted value")
+	}
+	return nil
+}
+
+// WithBrokerKey is the instance record with a pair's public key stated. Replacing a key that exists is a
+// rotation — a live identity change that interrupts connections — so it must be asked for; and a rotation of
+// nothing is a mistake, not a new identity.
+func WithBrokerKey(spec InstanceSpec, pair UserKey, rotate bool) (InstanceSpec, error) {
+	if !nkeyPattern().MatchString(pair.Public) {
+		return InstanceSpec{}, refuse(Invalid, "events.key", "expected a user public nkey")
+	}
+	switch {
+	case spec.Events.Key != "" && !rotate:
+		return InstanceSpec{}, refuse(Unsupported, "events.key",
+			"the instance already has a broker identity; replacing it is a rotation")
+	case spec.Events.Key == "" && rotate:
+		return InstanceSpec{}, refuse(Unsupported, "events.key", "the instance has no broker identity to rotate")
+	}
+	spec.Events.Key = pair.Public
+	return spec, nil
+}
 
 // eventsEnv is what an instance reads to sign in and to know what it publishes and receives.
 func eventsEnv(spec InstanceFacts, http WorkloadFacts, nats NATS) manifest {

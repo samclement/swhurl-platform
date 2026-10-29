@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the minting slice: a broker identity for the two v2-owned instances without one, and rotation
+Gate: the operator's choice of the next slice: a v2 delivery path for image automation, or the next domain v2 does not render (secret names, team grants, public routes)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -19,6 +19,8 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 **Approved 29 October 2026: slice 3's first live migration — `demo-notifier` staging** — the first instance with an event subscription to move, receiving `demo-orders.created` from a v1 publisher: its records, its stream-side manifest and its encrypted seed are v2's, and an event flows through the pair across the two owners. See [the record](#slice-record-the-first-migrated-event-using-worker-demo-notifier-staging-29-october-2026).
 
 **Approved 29 October 2026: slice 3's cutover — v2 owns NATS's user list** — `platform/nats/users.json` is v2's output now, v1's generator is deleted, and the Render workflow regenerates it, so the list the broker serves can no longer be a second writer's opinion. Implemented and checked offline, then applied; see [the record](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026).
+
+**Approved 29 October 2026: minting a broker identity** — the operator said go ahead on the gate. `swhurl-v2 mint` draws a seed, derives the nkey pair in the pure model (pinned against RFC 8032 and v1's independent encoding), encrypts the Secret that holds it to the profile's SOPS recipient, and writes it beside the instance's record before the record that states the public key. It is the first process v2 starts, so the `no-subprocess` rule now names **one** adapter — `adapters/sops`, which runs `sops` with the plaintext on stdin and reads no private key — and still refuses `kubectl`/`flux` and every other adapter. The two v2-owned instances without a pair (`swhurl-try-10`, `swhurl-try-11` staging) were minted and recompiled; a rotation of a live pair is the same command with `--rotate` and was exercised offline only. See [the record](#slice-record-minting-a-broker-identity-29-october-2026).
 
 **Approved 29 October 2026: the Reloader watch list** — the operator said go ahead on the gate. The list v1 wrote into the Reloader HelmRelease is now v2's own platform document: `platform/reloader/values.json`, a ConfigMap the HelmRelease merges as values, rendered by `swhurl-v2 reloader` from the profile's own namespaces and every instance that declares a Secret. v1's writer is deleted and the Render workflow regenerates the file. **The same question for image automation is answered by not doing it in this slice**: it needs a v2 selection path first, because the `ImagePolicy` that starts a deploy is read by v1's Deploy workflow, which writes v1's records — rendering the policy for a v2-owned instance would start a workflow that cannot write its release. It stays in the [gap list](iteration-2-plan.md#6-deliberately-deferred). See [the record](#slice-record-reloaders-watch-list-29-october-2026).
 
@@ -62,11 +64,12 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Reloader watch list | A platform document v2 renders: the platform's own watched namespaces and one per instance that declares a Secret | **Done and live 29 October 2026**: `platform/reloader/values.json` replaces the list in the HelmRelease, which merges it as values |
 | App kinds | A worker release compiles to an instance that serves nothing, with every other fact intact | **Done, offline 29 October 2026** (the worker kind); `job` still refused |
 | Events | The server's user list, and per instance its key, stream, consumers and seed | **Parts one and two, offline 29 October 2026**: the user list renders identically to the platform's, and a keyed instance renders its variables, stream, consumers and unit; the seed is the encrypted file v2 copies without reading |
+| Minting a broker identity | v2 can create a pair, not only adopt one: the seed is encrypted to the platform's recipient and the record states the public key | **Done, live 29 October 2026**: `swhurl-v2 mint`, used for the two v2-owned instances that had no pair; rotation is the same command with `--rotate` |
 | Image automation | A migrated staging instance following its published images | **Not modelled, deliberately**: the `ImagePolicy` starts v1's Deploy workflow, which writes v1 records, so v2 must render it with a selection path of its own |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** delivery is manual (compile, commit, push); v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 cannot **mint** a broker identity (it adopts the pair a predecessor already has), renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+**Not yet true, and what would make it true:** delivery is manual (compile, commit, push); v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); the egress cutover, which changes live outbound traffic and needs the grants recorded before it can refuse the rest; and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -86,6 +89,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Backup | **Done and proved live 27 October 2026**: rendered, both facts observed live, a restore planned live, and **v2 performed one**: the age-key and read-URL Secret, the Job from the backup image, the sequence with its undo, the `v2-restore` version-2 report, and `swhurl-try-10` staging restored over its newest archive in 30 seconds | [render](iteration-2-plan.md#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026), [job](iteration-2-plan.md#the-backup-observation-implemented-offline-26-october-2026), [archive](iteration-2-plan.md#the-object-store-read-implemented-26-october-2026), [restore](iteration-2-plan.md#the-restore-v2-performs-option-2a-offline-half--27-october-2026) |
 | Always-on instance surface | done and live 29 October 2026: telemetry, notifications and the team label, with the app record owning the team; both v2-owned instances rolled at `1bca7990` | [slice](#slice-record-the-always-on-instance-surface-29-october-2026) |
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
+| Broker identity minting | done and live 29 October 2026: `swhurl-v2 mint` derives the pair in the pure model, encrypts the seed through `adapters/sops` (the one command v2 starts) to `sops.recipient`, writes it beside the record and then the record; the two v2-owned instances without a pair were minted, and `make v2-users` and the Reloader list gained them | [slice](#slice-record-minting-a-broker-identity-29-october-2026) |
 | Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | 7. Selective replacement | three live: `swhurl-try-11` staging, `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
@@ -1038,6 +1042,71 @@ the first three migrations did. The list is now v2's own platform document.
 - **Next gate:** the minting slice — a broker identity for `swhurl-try-10` and `swhurl-try-11` staging, and
   rotation.
 
+## Slice record: minting a broker identity (29 October 2026)
+
+**Approved by the operator's "go ahead" on the gate.** Parts one and two rendered the broker's side of events and
+every keyed instance's side; v2 could only *adopt* a pair a predecessor already had. This slice lets it create
+one, which the two v2-owned instances without a pair needed — their seeds were pruned with their v1 units — and
+rotation needs.
+
+- **Outcome and the refusal it must produce:** `swhurl-v2 mint --instance FILE --profile FILE --out DIR
+  [--rotate]` draws a 32-byte seed, derives the user key pair, renders the Secret that holds the seed
+  (`<app>-events`, the instance's namespace, `stringData.SWHURL_EVENTS_SEED`), encrypts it with `sops` to the
+  profile's SOPS recipient, writes it at `DIR/v2-records/<app>/<env>/events.sops.yaml`, and only then writes
+  `instance.json` stating the public key. The report names the key, the key it replaced and the files written,
+  and never the seed. It refuses a profile that states no recipient, an instance that already has a key unless
+  `--rotate` is given, `--rotate` without a key, a ciphertext that holds the plaintext or no encrypted value, and
+  a missing or failing `sops`. `compile` and `migrate` are unchanged: the encrypted file is still a declared
+  input they copy and never read.
+- **Owners and boundaries:** the **kernel** owns the pair's encoding (`NewUserKey`, Ed25519 and nkeys), the Secret
+  document (`EventsSecret`), the record update (`WithBrokerKey`) and what can be said about a ciphertext it cannot
+  decrypt (`CheckEncryptedSeed`); the **command** owns randomness and the flags; **`adapters/sops`** owns the one
+  process and the format; **`orchestration`** sequences and writes through `adapters/files`; the **profile** owns
+  the recipient; the **record** owns the public key. The plaintext seed exists only between the kernel and the
+  encrypter: it never reaches the writer, the report or a diagnostic.
+- **What crosses each seam:** the record and profile bytes in, a seed as an argument, ciphertext out to the
+  writer; the process's stdin and stdout hold the document and its ciphertext, and its stderr is discarded
+  rather than echoed.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 changes deliberately, and only where it had to** — nothing under `apps/` was touched, and v1 still makes
+     a v1-owned instance's key. The one v1-visible change is the **rule**: `no-subprocess` now reads "v2 code
+     starts no process except the encryption adapter `adapters/sops`, and names no kubectl or flux command". Its
+     test proves a second adapter importing `os/exec` is still refused and that the allowed one still cannot name
+     `kubectl`; the guardrails table says the same. `make check` passes (1019 tests).
+  2. **Pure takes no effects** — the kernel derives a pair from a seed it is given; `crypto/ed25519`,
+     `encoding/base32` and `encoding/binary` join `PureImports` (derivation, not key generation; no clock,
+     randomness, file or process). Randomness is the command's, the process is the adapter's.
+  3. **Identities moved once, deliberately** — the platform's age recipient moved out of `backup` to the new
+     `sops.recipient`, because it now has two owners (the backup job and every SOPS file v2 encrypts); the profile
+     ID moved (`prof-sha256:46e99dd6…`, recomputed in Python) and both goldens changed in their profile line only.
+     The two minted instance records gained `events.key`, so their revisions moved and their compiled files
+     changed as designed: the env pair, the `envFrom`, the reload annotation, the broker egress rule, the
+     `events.sops.yaml` entry, the unit's `platform-nats` dependency and `decryption`.
+  4. **Refusals stated, precedence unmoved** — `invalid: events.secret`, `unsupported: events.key` (the kernel),
+     `refused: sops: the_profile_states_no_recipient` (the use case) and `refused_encryption` with
+     `no_recipient`, `sops_not_available`, `sops_exit_N`, `empty_output` and the size refusals (the adapter). No
+     existing code or order moved.
+  5. **Failure paths tested** — every refusal; a ciphertext handed back as plaintext; a missing binary and a
+     command that exits non-zero; two encryptions of one document differing (SOPS draws a fresh data key); the
+     seed written before the record; a refused mint writing nothing; the fake recording the plaintext so the test
+     can prove the writer never saw it; and the adapter contract run by both the real command and the fake.
+  6. **Scope stated** — minting only. A **rotation of a live pair was not run**: the capability is tested offline,
+     and the live use is two *new* keys. A public key cannot be checked against its seed without decrypting, so
+     v2's own check is "not the plaintext, and encrypted"; whether the platform can read it is proved by the
+     workload signing in. `mint` writes the record folder; it does not compile, so the operator recompiles.
+  7. **Offline is not live** — the offline proof is the tests, the adapter contract (run against the real `sops`
+     when it is installed, and required in CI by `REQUIRE_SOPS=1`), and the recompile test. The live half — the two
+     instances minted, recompiled, applied and signing in — is recorded in [current state](current-state.md).
+  8. **Recorded in the same change** — this page, the plan's gap list, backup field table and refusal list, the NATS
+     section of [services](services.md#nats), the [workstream registry](workstreams.md) and CI's `REQUIRE_SOPS`.
+- **Evidence:** `REQUIRE_HELM=1 REQUIRE_SOPS=1 make check-v2` (18 packages; the real encryption contract, the chart
+  render and all four rendered platform folders ran), `make check` (1019 tests), `make check-lint`,
+  `make check-repo`, `make check-apps`, `git diff --check` and `make -s v2-report` (API +25/−2: the pair, the Secret,
+  the record update, the adapter and its fake; two new layer-1 packages; three pure imports added; no budget
+  baseline added or weakened). Coverage: `kernel` 92.8%, `adapters/sops` 75.0%, `orchestration` 83.1%, CLI 86.0%.
+- **Next gate:** the operator's choice of the next slice: a v2 delivery path for image automation, or the next
+  domain v2 does not render (secret names, team grants, public routes).
+
 ## Resume
 
 **Read first**, in this order — the rest is the links below, not a substitute for inspection:
@@ -1081,8 +1150,9 @@ The report shows what the tree adds to `origin/main`: a new package, a changed e
 > tree can pass here and fail on a clone; CI is the reader that matters.
 >
 > Where v2 stands (29 October 2026). Release selection, the compiler, Git delivery, observation, routes, calls,
-> storage, egress and backup are done and proved live. Two apps are v2-owned — `swhurl-try-11` staging and
-> `swhurl-try-10` staging (on its own adopted volume) — and each recompiles from Git alone. A v2-rendered callee
+> storage, egress, backup and events are done and proved live. Three apps are v2-owned — `swhurl-try-11`
+> staging, `swhurl-try-10` staging (on its own adopted volume) and `demo-notifier` staging — and each recompiles
+> from Git alone. A v2-rendered callee
 > gets its keys and callers only as files, and a new caller and a key rotation were shown to take effect in the
 > running pod with no restart. `make check-v2` also renders `platform/egress`, `platform/auth`, `platform/nats` and `platform/reloader`
 > from the records and fails on any difference.

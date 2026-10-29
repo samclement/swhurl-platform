@@ -116,11 +116,16 @@ func f(count int) int {
 
 func TestCheckNoSubprocess(t *testing.T) {
 	m := fixture(t, map[string]string{
-		"kernel/a.go":      "package kernel\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"kubectl get pods\")\nvar d = \"fluxion\"\n",
-		"kernel/b.go":      "package kernel\n\nimport \"os\"\n\nfunc f() { os.StartProcess(\"flux\", nil, nil) }\n",
-		"kernel/b_test.go": "package kernel\n\nimport \"os/exec\"\n\nvar e = exec.Command(\"go\")\n",
+		"kernel/a.go":         "package kernel\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"kubectl get pods\")\nvar d = \"fluxion\"\n",
+		"kernel/b.go":         "package kernel\n\nimport \"os\"\n\nfunc f() { os.StartProcess(\"flux\", nil, nil) }\n",
+		"kernel/b_test.go":    "package kernel\n\nimport \"os/exec\"\n\nvar e = exec.Command(\"go\")\n",
+		"adapters/git/git.go": "package git\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"git\", \"status\")\n",
+		// The one allowed adapter may start a process, and may still not name a Kubernetes command.
+		"adapters/sops/sops.go": "package sops\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"sops\")\nvar d = \"kubectl get pods\"\n",
 	})
 	expect(t, checkNoSubprocess(m),
+		"no-subprocess adapters/git/git.go:3: imports os/exec",
+		"no-subprocess adapters/sops/sops.go:6: names the kubectl command",
 		"no-subprocess kernel/a.go:3: imports os/exec",
 		"no-subprocess kernel/a.go:5: names the kubectl command",
 		"no-subprocess kernel/b.go:5: calls os.StartProcess",

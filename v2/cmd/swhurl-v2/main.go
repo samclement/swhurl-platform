@@ -16,6 +16,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
+	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
@@ -27,6 +28,7 @@ const usage = `usage:
   swhurl-v2 auth --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
   swhurl-v2 users --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
   swhurl-v2 reloader --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
+  swhurl-v2 mint --instance INSTANCE.json --profile PROFILE.json --out DIR [--rotate]
   swhurl-v2 resolve --snapshot SNAPSHOT.json
   swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
@@ -86,6 +88,13 @@ instance with the permissions each needs — its own feature-flag overrides, its
 publishes, and the consumer calls for the subscriptions that connected. The profile states the broker, the
 decryption Secret and the two public keys; no seed is read or written. The list is the
 ConfigMap the NATS HelmRelease reads, so a cutover replaces that file and nothing else.
+
+mint gives one v2-owned instance a broker identity: it draws a seed, derives the nkey pair, encrypts the
+Secret that holds the seed to the profile's SOPS recipient with sops, writes that file beside the instance's
+record, and then writes the record that states the public key. The seed is never printed. It refuses an
+instance that already has a key unless --rotate is given, and --rotate without a key. The encrypted file goes
+first, so a failure leaves a record that states no key rather than a key with no seed; compile still refuses
+that folder until the file and the record agree. sops must be on PATH and no private key is read.
 
 reloader renders the namespaces Reloader watches: the platform's own as the profile states them, then one per
 instance that declares a Secret a change must restart it for — its broker key or a Secret its release names.
@@ -155,7 +164,8 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		fmt.Fprint(diagnostic, usage)
 		return 2
 	}
-	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archiveReader}
+	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archiveReader,
+		seed: randomSeed, encrypter: sops.New()}
 	return commands[r.command](c, r)
 }
 
@@ -171,7 +181,25 @@ func runWithArchives(args []string, out, diagnostic io.Writer, readFile func(str
 		fmt.Fprint(diagnostic, usage)
 		return 2
 	}
-	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archives}
+	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archives,
+		seed: randomSeed, encrypter: sops.New()}
+	return commands[r.command](c, r)
+}
+
+// runWithEncrypter runs one command with a supplied encrypter and seed, so a mint's test needs neither sops nor
+// randomness. Everything else is what the binary does.
+func runWithEncrypter(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error),
+	writer files.Writer, encrypter sops.Encrypter, seed func() ([32]byte, error)) int {
+	r, outcome := parse(args)
+	switch outcome {
+	case help:
+		return emit(out, diagnostic, []byte(usage))
+	case misuse:
+		fmt.Fprint(diagnostic, usage)
+		return 2
+	}
+	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archiveReader,
+		seed: seed, encrypter: encrypter}
 	return commands[r.command](c, r)
 }
 
@@ -202,6 +230,7 @@ var commands = map[string]func(cli, request) int{
 	"auth":              cli.auth,
 	"users":             cli.users,
 	"reloader":          cli.reloader,
+	"mint":              cli.mint,
 	"migrate":           cli.migrate,
 	"restore":           cli.restore,
 }
@@ -218,6 +247,7 @@ type request struct {
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
 	eventsSecret                                       string
+	rotate                                             bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
@@ -265,7 +295,7 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 // registerInputs adds the file flags the v1-style commands share.
 func (r *request) registerInputs(flags *flag.FlagSet) {
 	switch r.command {
-	case "select-release", "compile", "observe", "restore":
+	case "select-release", "compile", "observe", "restore", "mint":
 		flags.Var(&once{value: &r.instance}, "instance", "instance file")
 		flags.Var(&once{value: &r.release}, "release", "release file")
 	case "preview":
@@ -304,6 +334,10 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 		flags.Var(&once{value: &r.ageKey}, "age-key-file", "the age identity that decrypts the archive (default ./age.agekey)")
 		flags.Var(&onceDuration{value: &r.urlTTL, set: &r.urlTTLSet}, "url-ttl",
 			"how long the pod's read URL stays valid (default 1h)")
+	case "mint":
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&onceBool{value: &r.rotate}, "rotate", "replace an existing broker identity")
+		r.registerOut(flags)
 	case "preview":
 		flags.Var(&once{value: &r.app}, "app", "legacy app record")
 		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")
@@ -414,6 +448,8 @@ func (r *request) named() []string {
 		return []string{r.app, r.settings, r.release, r.committed, r.profile}
 	case "select-release":
 		return []string{r.instance, r.release, r.expected}
+	case "mint":
+		return []string{r.instance, r.profile, r.out}
 	case "observe", "restore":
 		// A live read needs the instance, its release, the profile, the revision to expect and a credential.
 		return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig}
@@ -503,6 +539,10 @@ type cli struct {
 	writer          files.Writer
 	// archives builds the object-store reader; a test supplies one that answers without a network.
 	archives func(bucket, region string) (s3.Reader, error)
+	// seed and encrypter are the two effects a mint needs; a test supplies both, so it needs neither randomness
+	// nor sops. Commands that never mint are given the real ones too.
+	seed      func() ([32]byte, error)
+	encrypter sops.Encrypter
 }
 
 func (c cli) releaseID(path string) int {

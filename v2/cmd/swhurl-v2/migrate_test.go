@@ -47,9 +47,9 @@ func readFile(t *testing.T, path string) []byte {
 // TestMigrateReproducesCommittedInstances runs the migration over the frozen predecessor records of every
 // v2-owned instance (testdata/legacy, the v1 documents the handover removed) and asserts it writes, byte for
 // byte, the record pair that migration committed (frozen beside them in migrated/) and exactly the files
-// compile writes for that pair. An instance that still names its migrated release must also match every file
-// Git holds; one that has since selected another release has moved on, and TestOwnedInstancesRecompileFromGit
-// covers what it holds now. The two real migrations are then the translation's own acceptance test, the
+// compile writes for that pair. An instance whose committed pair is still the migrated one must also match every
+// file Git holds; one that has since selected another release or gained a broker identity v2 minted has moved on,
+// and TestOwnedInstancesRecompileFromGit covers what it holds now. The two real migrations are then the translation's own acceptance test, the
 // stateful one included.
 func TestMigrateReproducesCommittedInstances(t *testing.T) {
 	instances, err := filepath.Glob("../../../v2-records/*/*/instance.json")
@@ -63,7 +63,10 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 		frozen := filepath.Join("..", "..", "testdata", "legacy", application, environment, "migrated")
 		committedRecord, committedInstance := readFile(t, filepath.Join(frozen, "instance.json")),
 			readFile(t, filepath.Join(frozen, "release.json"))
-		current := bytes.Equal(committedInstance, readFile(t, filepath.Join(folder, "release.json")))
+		// The pair has moved on when either record Git holds is not the migrated one: a new release selected, or
+		// a broker identity minted into the instance after the handover.
+		current := bytes.Equal(committedInstance, readFile(t, filepath.Join(folder, "release.json"))) &&
+			bytes.Equal(committedRecord, readFile(t, filepath.Join(folder, "instance.json")))
 		release, err := kernel.DecodeRelease(committedInstance)
 		if err != nil {
 			t.Fatalf("%s: %v", folder, err)

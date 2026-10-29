@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The three v2-owned instances export telemetry (29 October 2026)
+
+The slice (`09571ebb`) added the missing rule: a reporting image's policy admits `telemetry.nodeCIDR` on the
+endpoint's port, and the profile states `192.168.1.200/32`. `make flux-reconcile` updated the three
+NetworkPolicies at `23:19:18Z`; nothing else changed and no pod restarted (a policy change affects running pods).
+
+**Before and after, from the platform's own data:**
+
+- `demo-notifier` staging's exporter logged `Failed to connect to /192.168.1.200:4318` every period from its
+  v2-owned pod's start (`20:35:28Z`) — the last failure at `23:19:15Z`, none since. Its **traces stop at
+  `20:35:18Z`** (the last one the old v1-owned pod sent) and **resume at `23:19Z`**: 5 in that minute, then 8 a
+  minute, while before the fix there were none in the preceding 25 minutes.
+- `swhurl-try-10` and `swhurl-try-11` staging had **no gauge points at all** in the 25 minutes before `23:19Z`
+  and about **154 and 153 a minute** after it.
+- From a debug container sharing `demo-notifier`'s pod network namespace — so its policy applies exactly as to
+  the app — `http://192.168.1.200:4318/v1/metrics` answered **200**, where the app's own exporter had been
+  refused; a request *through* the egress proxy from the same namespace still fails, because this instance has
+  no allocation and the policy admits no proxy.
+- `make verify-platform` passed.
+
+**What this proves:** the endpoint an instance is given and the way out of its pod come from the platform's
+facts, and all three v2-owned instances now deliver metrics (and `demo-notifier` traces) to ClickStack.
+**Not measured:** a cluster with several nodes (the profile states a single node's address here), and whether
+`swhurl-try-10`/`-11` traces resume on their next request (neither has had one since; their metrics flow).
+
 ## demo-notifier staging's broker identity was rotated live (29 October 2026)
 
 The operator asked for a live rotation, the first v2 has performed on a real identity. `066ba96a` replaced
@@ -31,9 +56,8 @@ with `hostPort: 4318`. The difference is the **policy**: a v2-rendered instance'
 `policyTypes: [Ingress, Egress]` and admits only DNS, its broker and its callers (v1's apps state `Ingress` only,
 so they can egress). So the always-on telemetry surface renders an endpoint the same instance's policy denies —
 the "not exercised" item in the [always-on entry](#the-always-on-instance-surface-is-live-29-october-2026) is now
-an observed defect, and the same is true of the two newly keyed instances. Not fixed in this change: it is a
-profile/policy decision (a fact for the node collector's address and port, or a different route), and it needs
-the operator's word. Recorded in the [gap list](iteration-2-plan.md#6-deliberately-deferred).
+an observed defect, and the same is true of the two newly keyed instances. Fixed the same day by [the telemetry slice](v2-status.md#slice-record-the-telemetry-export-29-october-2026): the
+profile states the block and a reporting instance's policy admits it. [The evidence](#the-three-v2-owned-instances-export-telemetry-29-october-2026).
 
 ## v2 minted a broker identity for both keyless instances (29 October 2026)
 

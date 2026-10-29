@@ -14,6 +14,42 @@ func previewFacts() (InstanceFacts, WorkloadFacts) {
 }
 
 // No source, commit, media type, platform, selection or release identity is available here.
+// A reporting image's policy admits the collector it is told to use, and one that reports nowhere admits nothing
+// on that port: the endpoint names a host-network DaemonSet by the node's address, which NetworkPolicy cannot
+// select by label, so the profile states the block.
+func TestTelemetryEgress(t *testing.T) {
+	instance, workload := previewFacts()
+	workload.Telemetry = true
+	rendered, err := RenderInstance(instance, workload, profile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := documentOf(t, rendered, "networkpolicy.json")["spec"].(map[string]any)["egress"].([]any)
+	var found map[string]any
+	for _, rule := range rules {
+		to := rule.(map[string]any)["to"].([]any)
+		if block, ok := to[0].(map[string]any)["ipBlock"].(map[string]any); ok && block["cidr"] == "192.168.1.200/32" {
+			found = rule.(map[string]any)
+		}
+	}
+	if found == nil {
+		t.Fatalf("a reporting instance's policy admits no collector: %v", rules)
+	}
+	if port := found["ports"].([]any)[0].(map[string]any); port["port"] != float64(4318) || port["protocol"] != "TCP" {
+		t.Fatalf("the collector's port: %v", port)
+	}
+	workload.Telemetry = false
+	quiet, err := RenderInstance(instance, workload, profile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range documentOf(t, quiet, "networkpolicy.json")["spec"].(map[string]any)["egress"].([]any) {
+		if to := rule.(map[string]any)["to"].([]any); to[0].(map[string]any)["ipBlock"] != nil {
+			t.Fatalf("an instance that reports nowhere admits a collector: %v", rule)
+		}
+	}
+}
+
 func TestRenderWithoutReleaseSemantics(t *testing.T) {
 	s, w := previewFacts()
 	p := profile(t)

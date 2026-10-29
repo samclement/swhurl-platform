@@ -134,6 +134,7 @@ kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
 kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
 kernel: func (Reloader) Namespaces() ([]string, error)
+kernel: func (Telemetry) CollectorPort() (int32, bool)
 kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation, backupHost string) ([]EgressAllocation, error)
 kernel: func CheckEncryptedSeed(document []byte, seed string) error
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
@@ -225,7 +226,7 @@ kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` 
 kernel: type SOPS struct {Recipient string `json:"recipient"`}
 kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}
 kernel: type Storage struct {SizeMiB int32 `json:"sizeMiB,omitempty"` ClaimName string `json:"claimName,omitempty"`}
-kernel: type Telemetry struct {Endpoint string `json:"endpoint"` Protocol string `json:"protocol"`}
+kernel: type Telemetry struct {Endpoint string `json:"endpoint"` Protocol string `json:"protocol"` NodeCIDR string `json:"nodeCIDR"`}
 kernel: type UserKey struct {Seed string Public string}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
 kernel: type WorkloadFacts struct {Kind string Image, Digest string Port int32 HealthPath string UID int32 Telemetry bool Publishes []string}

@@ -1,12 +1,12 @@
 {
   "kind": "v2-compilation",
   "version": 1,
-  "id": "comp-sha256:7b871b59027e33b28886c22c1125709856ec1acce6a5859ae8a4f1902fec3793",
+  "id": "comp-sha256:2775f50c1c6d01d0f538bfb97d2c9852f1b419e2b57d8eed72d420d133e6c144",
   "inputs": {
     "app": "app-sha256:50aa37430360ade5a48ce7d5c968b521b57e91bf8a1c4501fb14fc10d2672e0f",
     "release": "rel-sha256:4e2bf5499fc5b3582e0ba2cd3ae59544b8f0df7a4ea101b658fea48baf316c49",
     "instance": "inst-sha256:1ab36cbcd951989f7cdc3f33b1f18511449f203f8b1e1d92a73d1f3760d8dfcc",
-    "profile": "prof-sha256:46e99dd696a9958480dba6bbfa6549518ab6ff73b49ae38ea1a7d833c9ed9ee3",
+    "profile": "prof-sha256:20ea752df2122d3938202e9ab7569daad7690786e145f19f4e2714f3cdf18356",
     "calls": ""
   },
   "files": [
@@ -225,7 +225,23 @@
           "namespace": "demo-orders-staging"
         },
         "spec": {
-          "egress": [],
+          "egress": [
+            {
+              "ports": [
+                {
+                  "port": 4318,
+                  "protocol": "TCP"
+                }
+              ],
+              "to": [
+                {
+                  "ipBlock": {
+                    "cidr": "192.168.1.200/32"
+                  }
+                }
+              ]
+            }
+          ],
           "ingress": [],
           "podSelector": {
             "matchLabels": {

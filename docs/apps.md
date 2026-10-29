@@ -712,7 +712,7 @@ What reaches ClickStack depends on whether the app has an OpenTelemetry SDK:
               OTEL_SERVICE_NAME: weather-api                # the app name
 ```
 
-The collector DaemonSet runs on every node with host networking, so it listens on the node IP: 4318 for OTLP over HTTP, 4317 for gRPC. It adds the ingestion key and the pod, namespace and deployment, and forwards to ClickStack ([services](services.md#clickstack-and-otel)). **A v2-owned instance cannot reach it yet**: v2 renders the instance's egress as deny-by-default and admits only DNS, its callee and the broker, so the node address on 4318 is refused (v1's policy states `Ingress` only). Its exporter logs `Connection refused`; nothing is exported until the policy learns the collector's address ([gap list](iteration-2-plan.md#6-deliberately-deferred), [evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)).
+The collector DaemonSet runs on every node with host networking, so it listens on the node IP: 4318 for OTLP over HTTP, 4317 for gRPC. It adds the ingestion key and the pod, namespace and deployment, and forwards to ClickStack ([services](services.md#clickstack-and-otel)). A v2-owned instance's policy is deny-by-default and admits the collector explicitly: the profile states the address block the endpoint's host is in (`telemetry.nodeCIDR`), and the policy admits that block on the endpoint's port. Without it the exporter's `Connection refused` is what a reporting app logs, so a profile that states a collector must state the block.
 
 **What must be true of the app** for `--otlp` to work:
 

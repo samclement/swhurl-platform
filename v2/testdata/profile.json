@@ -24,7 +24,7 @@
     "requestsMemoryMiB": 2048,
     "limitsMemoryMiB": 4096
   },
-  "telemetry": {"endpoint": "http://$(HOST_IP):4318", "protocol": "http/protobuf"},
+  "telemetry": {"endpoint": "http://$(HOST_IP):4318", "protocol": "http/protobuf", "nodeCIDR": "192.168.1.200/32"},
   "notify": {"address": "http://notify.notify.svc.cluster.local:8080"},
   "routing": {
     "baseDomain": "homelab.swhurl.com",

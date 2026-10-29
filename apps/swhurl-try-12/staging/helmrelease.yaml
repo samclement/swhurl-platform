@@ -5,8 +5,8 @@ metadata:
   namespace: swhurl-try-12-staging
   annotations:
     platform.swhurl.com/api-description: /openapi.yaml
-    platform.swhurl.com/offers: 1c9b971
-    platform.swhurl.com/render: 66de795cab1cf5ea40c6a22fda95d1b07ce8a9bab81b9d6a1f33ffe8f9d0359a
+    platform.swhurl.com/offers: 5df7ff0
+    platform.swhurl.com/render: c2c968f9ad3cbb76b17ae5adf4d8e86e7e6b374e5fb2db135a696d3af6cccf2a
 spec:
   interval: 30m
   timeout: 3m
@@ -41,8 +41,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-12
-              tag: 68-1c9b971
-              digest: sha256:139665d5e44e9b6318ff0e5be49beb401de5ab28c393fd4663a4d4032fcf4d20
+              tag: 70-5df7ff0
+              digest: sha256:518d39633bad3b5e312ddb4fa31c0c2cb5f9608875f7437c6479c4b5b2152862
             resources:
               requests:
                 cpu: 100m

@@ -4,9 +4,9 @@ metadata:
   name: demo-shop
   namespace: demo-shop-staging
   annotations:
-    platform.swhurl.com/offers: 5d95f05
+    platform.swhurl.com/offers: 1bb3b37
     platform.swhurl.com/egress: swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443
-    platform.swhurl.com/render: 4ffab62754157e73d2e3512c82aac2e44c9baf20eb5e675a76b7e909c1723e28
+    platform.swhurl.com/render: b0203e54a8e5eaad9254295a5a61130fc35ad572c2bee1af5c2bb9efea75d748
 spec:
   interval: 30m
   timeout: 3m
@@ -41,8 +41,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-shop
-              tag: 68-5d95f05
-              digest: sha256:5c135d5fb5ad3eccd23964845cca00fbdff6aa09a57cf24dc0a3f818daedafd9
+              tag: 73-1bb3b37
+              digest: sha256:b2fe221d013296344c50eb6c4c2eec8f794644a0a32e90e743b87e10ecb9fc4c
             resources:
               requests:
                 cpu: 10m

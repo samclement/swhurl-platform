@@ -791,6 +791,10 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Evidence:** `make check-v2` (15 packages), `REQUIRE_HELM=1 make check-v2` (the pinned chart rendered a worker with no Service and no probes, and Kustomize listed its files), `make check`, `make check-lint`, `make -s check-docs`, `git diff --check`, `make -s v2-report`; coverage `kernel` 93.6%, `legacy` 84.5%, `orchestration` 83.6%, `calls` 95.6%, `shadow` 96.7%, CLI 86.2% (`go test -cover`). The report records the API change as the rename plus one field on `WorkloadFacts`, with no budget baseline added or weakened.
 - **Why no instance migrated:** the seven workers cannot move yet, and this slice does not claim they can. Six use events (`swhurl-try-30` prod and staging, `swhurl-try-31` staging, `swhurl-try-32` staging and `demo-notifier` staging subscribe or publish), which is slice 3; `demo-shopper` staging calls `demo-shop`, which v1 still owns, so moving it alone would leave its call unconnected (`demo-shopper` is otherwise renderable now).
 - **Gaps touched:** the app-kinds row becomes done for `worker` and stays open for `job` and a command override; "v2 renders no worker kind" leaves the not-yet-true list.
+- **Committed:** `fb8fa17b`, on `main`, and pushed. The push changed no live manifest: every Flux
+  Kustomization reconciled `fb8fa17b` Ready, `make verify-platform` passed, and neither v2-owned instance
+  nor any other unit's rendered output moved. No [current state](current-state.md) entry is owed, because
+  no live object changed.
 - **Next gate:** the operator's approval of slice 3 (events), after the credential decision it needs.
 
 ## Resume

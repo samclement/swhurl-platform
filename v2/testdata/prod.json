@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "application": "demo-orders",
   "environment": "prod",
-  "release": "rel-sha256:55c64a826f4d6054d6783aeedcbb8cdeefbf882b10c0a05576e93e8f0525a8e6",
+  "release": "rel-sha256:b357d4173dc8d515f46c6b3f019b744b59ee97d5d30f03ce1e3a9532f9bf904c",
   "configuration": {
     "replicas": 1,
     "memoryMiB": 256
@@ -10,5 +10,6 @@
   "grants": {
     "exposure": "private"
   },
-  "bindings": {}
+  "bindings": {},
+  "events": {}
 }

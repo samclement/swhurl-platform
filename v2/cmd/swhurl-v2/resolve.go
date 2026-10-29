@@ -4,19 +4,40 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/calls"
+	"github.com/samclement/swhurl-platform/v2/events"
 )
 
-// resolutionDocument is the versioned document `resolve` writes and `compile --calls` reads: every
-// connected pair, every declaration that waits, and every refusal, from one pinned snapshot.
+// resolutionDocument is the versioned document `resolve` writes and `compile --calls` reads: every connected
+// pair, every declaration that waits, every refusal, and every event subscription that connected, from one
+// pinned snapshot. Relationships are one decision, so they are one document.
 type resolutionDocument struct {
-	Kind     string            `json:"kind"`
-	Version  int               `json:"version"`
-	Revision string            `json:"revision"`
-	Pairs    []pairDocument    `json:"pairs"`
-	Waiting  []waitingDocument `json:"waiting"`
-	Refused  []refusedDocument `json:"refused"`
+	Kind          string                 `json:"kind"`
+	Version       int                    `json:"version"`
+	Revision      string                 `json:"revision"`
+	Pairs         []pairDocument         `json:"pairs"`
+	Waiting       []waitingDocument      `json:"waiting"`
+	Refused       []refusedDocument      `json:"refused"`
+	Subscriptions []subscriptionDocument `json:"subscriptions"`
+	// Waiting and Refused are the calls' and the events' own answers; a subscription that waits or is refused is
+	// named here so a report says which of an instance's declarations are not connected.
+	EventWaiting []waitingDocument `json:"eventWaiting"`
+	EventRefused []refusedDocument `json:"eventRefused"`
+}
+
+// subscriptionDocument is one connected subscription with every name a stream, a consumer and a user's
+// permission need.
+type subscriptionDocument struct {
+	Subscriber  string `json:"subscriber"`
+	Publisher   string `json:"publisher"`
+	Event       string `json:"event"`
+	Environment string `json:"environment"`
+	Stream      string `json:"stream"`
+	Consumer    string `json:"consumer"`
+	Subject     string `json:"subject"`
+	Object      string `json:"object"`
 }
 
 // pairDocument is one connected pair: who calls whom, in which environment, and on which port the
@@ -59,13 +80,19 @@ func (c cli) resolve(r request) int {
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
+	eventResolution, err := events.Resolve(eventDeclarationsOf(pinned))
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
 	document := resolutionFrom(pinned.Revision, resolution)
+	document.Subscriptions, document.EventWaiting = subscriptionsFrom(pinned, eventResolution)
 	encoded, err := encodeResolution(document)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	fmt.Fprintf(c.diagnostic, "resolve: %d connected pair(s), %d waiting, %d refused\n",
-		len(document.Pairs), len(document.Waiting), len(document.Refused))
+	fmt.Fprintf(c.diagnostic, "resolve: %d connected pair(s), %d waiting, %d refused; %d event subscription(s), %d waiting\n",
+		len(document.Pairs), len(document.Waiting), len(document.Refused), len(document.Subscriptions),
+		len(document.EventWaiting))
 	return emit(c.out, c.diagnostic, encoded)
 }
 
@@ -144,4 +171,38 @@ func encodeResolution(document resolutionDocument) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimSuffix(out.Bytes(), []byte{'\n'}), nil
+}
+
+// eventDeclarationsOf is every instance's side of the event relationships: the events its release publishes and
+// the subscriptions its own record grants. An instance whose records are v2's cannot state publications yet, so
+// its declaration says so and a subscription to it waits.
+func eventDeclarationsOf(pinned snapshot) []events.Declaration {
+	declarations := make([]events.Declaration, 0, len(pinned.Instances))
+	for _, instance := range pinned.Instances {
+		declarations = append(declarations, events.Declaration{Application: instance.Application,
+			Environment: instance.Environment, Publishes: declaredPublishes(instance),
+			Subscriptions: declaredSubscriptions(instance), PublicationsKnown: instance.Format != "v2"})
+	}
+	return declarations
+}
+
+// subscriptionsFrom is the connected subscriptions as the document states them, and the ones that wait, in the
+// order the instances and their records give.
+func subscriptionsFrom(pinned snapshot, answers []events.Resolved) ([]subscriptionDocument, []waitingDocument) {
+	connected := []subscriptionDocument{}
+	waiting := []waitingDocument{}
+	for index, instance := range pinned.Instances {
+		for _, subscription := range answers[index].Connected {
+			connected = append(connected, subscriptionDocument{Subscriber: instance.Application,
+				Publisher: subscription.Publisher, Event: subscription.Event, Environment: instance.Environment,
+				Stream: subscription.Stream, Consumer: subscription.Consumer, Subject: subscription.Subject,
+				Object: subscription.Object})
+		}
+		for _, name := range answers[index].Pending {
+			publisher, _, _ := strings.Cut(name, ".")
+			waiting = append(waiting, waitingDocument{Caller: instance.Application, Callee: publisher,
+				Environment: instance.Environment, Reason: "publisher_not_ready"})
+		}
+	}
+	return connected, waiting
 }

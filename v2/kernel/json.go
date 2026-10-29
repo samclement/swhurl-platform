@@ -82,7 +82,7 @@ func DecodeRelease(data []byte) (ReleaseBundle, error) {
 	if err := document(data); err != nil {
 		return ReleaseBundle{}, err
 	}
-	root, err := fields(data, "release", []string{"schemaVersion", "application", "source", "artifact", "runtime"}, "releaseId", "database", "telemetry")
+	root, err := fields(data, "release", []string{"schemaVersion", "application", "source", "artifact", "runtime"}, "releaseId", "database", "telemetry", "publishes")
 	if err != nil {
 		return ReleaseBundle{}, err
 	}
@@ -116,19 +116,26 @@ func DecodeInstance(data []byte) (InstanceSpec, error) {
 	if err := document(data); err != nil {
 		return InstanceSpec{}, err
 	}
-	root, err := fields(data, "instance", []string{"schemaVersion", "application", "environment", "release", "configuration", "grants", "bindings"}, "storage", "calls", "allows")
+	root, err := fields(data, "instance", []string{"schemaVersion", "application", "environment", "release", "configuration", "grants", "bindings"}, "storage", "calls", "allows", "events")
 	if err != nil {
 		return InstanceSpec{}, err
 	}
 	for _, part := range []struct {
 		key      string
 		required []string
+		optional []string
 	}{
-		{"configuration", []string{"replicas", "memoryMiB"}},
-		{"grants", []string{"exposure"}},
-		{"bindings", nil},
+		{"configuration", []string{"replicas", "memoryMiB"}, nil},
+		{"grants", []string{"exposure"}, nil},
+		{"bindings", nil, nil},
+		// An instance's broker identity is one block: the key it signs in with and the subscriptions it grants
+		// itself, both optional inside it.
+		{"events", nil, []string{"key", "subscriptions"}},
 	} {
-		if _, err := fields(root[part.key], part.key, part.required); err != nil {
+		if _, present := root[part.key]; !present {
+			continue
+		}
+		if _, err := fields(root[part.key], part.key, part.required, part.optional...); err != nil {
 			return InstanceSpec{}, err
 		}
 	}

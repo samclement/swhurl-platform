@@ -27,8 +27,12 @@ type Migration struct {
 	Claim                    string
 	Corroborated             []string
 	Calls, Allows            []string
-	Sources                  map[string]string
-	Gaps                     []Gap
+	// Events is the broker identity the instance's records state: the public key it signs in with, and the
+	// events it receives. The pair's private half is a Secret v2 never reads, so it is not a fact here.
+	EventsKey     string
+	Subscriptions []string
+	Sources       map[string]string
+	Gaps          []Gap
 }
 
 // Migrate reads the records and the predecessor's committed output as v2's record pair needs them. It
@@ -66,10 +70,7 @@ func Migrate(records Records, supplied Supplied) (Migration, error) {
 	}
 	migration.Sources["source.repository"] = "supplied"
 	migration.Sources["source.commit"] = "supplied"
-	if err := migration.storage(release, committed); err != nil {
-		return Migration{}, err
-	}
-	if err := migration.declarations(instance); err != nil {
+	if err := migration.declared(instance, release, committed); err != nil {
 		return Migration{}, err
 	}
 	migration.Gaps = migration.gaps(app, instance, release, leftovers)
@@ -126,6 +127,55 @@ func (m *Migration) storage(release *record, committed effective) error {
 		return err
 	}
 	m.Claim, m.Sources["storage.claimName"] = claim, source
+	return nil
+}
+
+// declared reads what the instance and its release declare beyond the workload: what it keeps, the relationships
+// it states, and the broker identity it signs in with.
+func (m *Migration) declared(instance, release *record, committed effective) error {
+	for _, step := range []func() error{
+		func() error { return m.brokerRelease(release) },
+		func() error { return m.storage(release, committed) },
+		func() error { return m.declarations(instance) },
+		func() error { return m.brokerInstance(instance) },
+	} {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// brokerRelease reads the events the predecessor's release publishes.
+func (m *Migration) brokerRelease(release *record) error {
+	publishes, err := release.texts("publishes")
+	if err != nil {
+		return err
+	}
+	if len(publishes) > 0 {
+		m.Workload.Publishes, m.Sources["workload.publishes"] = publishes, "release.yaml"
+	}
+	return nil
+}
+
+// brokerInstance reads the identity an instance signs in with and the events it receives. The key is public; the
+// seed is the instance's encrypted Secret, which the migration carries as a file rather than reading.
+func (m *Migration) brokerInstance(instance *record) error {
+	allocations, err := instance.object("allocations")
+	if err != nil {
+		return err
+	}
+	if key, err := allocations.text("eventsKey"); err != nil {
+		return err
+	} else if key != "" {
+		m.EventsKey, m.Sources["events.key"] = key, "instance.yaml"
+	}
+	if m.Subscriptions, err = instance.texts("subscriptions"); err != nil {
+		return err
+	}
+	if len(m.Subscriptions) > 0 {
+		m.Sources["events.subscriptions"] = "instance.yaml"
+	}
 	return nil
 }
 

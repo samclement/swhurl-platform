@@ -84,6 +84,23 @@ type ConnectionsDocument struct {
 	Pairs    []ConnectionsPair    `json:"pairs"`
 	Waiting  []ConnectionsWaiting `json:"waiting"`
 	Refused  []ConnectionsRefusal `json:"refused"`
+	// Subscriptions are the event subscriptions that connected. They sit in the same document as the pairs
+	// because they are the same decision — which relationships an instance takes part in — and a compilation
+	// takes one document rather than two.
+	Subscriptions []ConnectionsSubscription `json:"subscriptions"`
+}
+
+// ConnectionsSubscription is one connected subscription with every name a stream, a consumer and a user's
+// permission need, so no reader derives one the resolver did not agree with.
+type ConnectionsSubscription struct {
+	Subscriber  string `json:"subscriber"`
+	Publisher   string `json:"publisher"`
+	Event       string `json:"event"`
+	Environment string `json:"environment"`
+	Stream      string `json:"stream"`
+	Consumer    string `json:"consumer"`
+	Subject     string `json:"subject"`
+	Object      string `json:"object"`
 }
 
 // ConnectionsPair is one connected pair: the callee's port is the caller's fact, so a caller renders its
@@ -111,6 +128,9 @@ type ConnectionsRefusal struct {
 
 // ConnectionsOf reads a resolution and reduces it to one instance's own edges in its own environment. A pair
 // in another environment is ignored, never cross-applied.
+// ConnectionsOf reads the resolution document the resolver wrote and keeps what one instance takes part in: the
+// pairs it calls or is called in, and the subscriptions that connected. The document carries every name a
+// rendered consumer needs, so a compilation cannot derive one the resolver did not agree with.
 func ConnectionsOf(data []byte, application, environment string) (Connections, error) {
 	var document ConnectionsDocument
 	if err := json.Unmarshal(data, &document); err != nil {
@@ -141,5 +161,20 @@ func ConnectionsOf(data []byte, application, environment string) (Connections, e
 		return int(a.Port - b.Port)
 	})
 	slices.Sort(connections.Callers)
+	connections.Subscriptions = subscriptionsOf(document.Subscriptions, application, environment)
 	return connections, nil
+}
+
+// subscriptionsOf is one instance's connected subscriptions, in the document's order, which is the resolver's.
+func subscriptionsOf(document []ConnectionsSubscription, application, environment string) []EventSubscription {
+	found := []EventSubscription{}
+	for _, subscription := range document {
+		if subscription.Subscriber != application || subscription.Environment != environment {
+			continue
+		}
+		found = append(found, EventSubscription{Publisher: subscription.Publisher, Event: subscription.Event,
+			Stream: subscription.Stream, Consumer: subscription.Consumer, Subject: subscription.Subject,
+			Object: subscription.Object})
+	}
+	return found
 }

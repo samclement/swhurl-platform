@@ -32,11 +32,13 @@ type Inputs struct {
 	Calls ConnectionsID `json:"calls"`
 }
 
-// Connections are the connected pairs one instance takes part in: what it calls and who may call it. They
-// come from the relationship resolver, not from the instance record, so rendering never decides consent.
+// Connections are the relationships one instance takes part in: what it calls, who may call it, and the event
+// subscriptions that connected. They come from the resolver, not from the instance record, so rendering never
+// decides consent or readership.
 type Connections struct {
-	Calls   []Call
-	Callers []string
+	Calls         []Call
+	Callers       []string
+	Subscriptions []EventSubscription
 }
 
 // ConnectionsID is a resolution's content identity.
@@ -45,7 +47,7 @@ type ConnectionsID string
 // ID is the identity of the pairs a compilation rendered: the same edges in any order give the same ID,
 // and no edges give an empty one.
 func (c Connections) ID() ConnectionsID {
-	if len(c.Calls) == 0 && len(c.Callers) == 0 {
+	if len(c.Calls) == 0 && len(c.Callers) == 0 && len(c.Subscriptions) == 0 {
 		return ""
 	}
 	calls, callers := slices.Clone(c.Calls), slices.Clone(c.Callers)
@@ -62,6 +64,10 @@ func (c Connections) ID() ConnectionsID {
 	}
 	for _, caller := range callers {
 		edges = append(edges, []any{"called_by", caller})
+	}
+	for _, subscription := range c.Subscriptions {
+		edges = append(edges, []any{"subscribes", subscription.Publisher, subscription.Event,
+			subscription.Stream, subscription.Consumer, subscription.Subject, subscription.Object})
 	}
 	return ConnectionsID(hash("conn-sha256:", canonical([]any{"swhurl.connections.v1", edges})))
 }
@@ -105,6 +111,9 @@ const (
 	// backupUnit is the platform unit that holds the upload key and the MongoDB job; a database
 	// instance's unit waits for it.
 	backupUnit = "platform-backup"
+	// reloadAnnotation is Reloader's: a Secret named here restarts the workload that reads it when the
+	// Secret's content changes. An app reads its seed once, so a new key pair arrives with a restart.
+	reloadAnnotation = "secret.reloader.stakater.com/reload"
 	// DataMount is where a database instance's volume is mounted, and DatabasePath the file inside it. A
 	// restore writes to the same two places, so they are stated once, here.
 	DataMount    = "/data"
@@ -147,6 +156,7 @@ func instanceOf(spec InstanceSpec, release ReleaseBundle, app AppSpec, connectio
 	return InstanceFacts{Application: spec.Application, Environment: spec.Environment,
 		Configuration: spec.Configuration, Exposure: spec.Grants.Exposure,
 		Calls: connections.Calls, Callers: connections.Callers,
+		Broker:   BrokerIdentity{Key: spec.Events.Key, Connected: connections.Subscriptions},
 		Database: release.Database, Storage: spec.Storage, Egress: egress, Team: app.Team}
 }
 
@@ -154,7 +164,7 @@ func instanceOf(spec InstanceSpec, release ReleaseBundle, app AppSpec, connectio
 func workloadOf(release ReleaseBundle) WorkloadFacts {
 	return WorkloadFacts{Kind: release.Runtime.Kind, Image: release.Artifact.Image, Digest: release.Artifact.Digest,
 		Port: release.Runtime.Port, HealthPath: release.Runtime.HealthPath, UID: release.Runtime.UID,
-		Telemetry: release.Telemetry}
+		Telemetry: release.Telemetry, Publishes: release.Publishes}
 }
 
 func compileInputs(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile) (Inputs, error) {

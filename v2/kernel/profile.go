@@ -46,6 +46,20 @@ type PlatformProfile struct {
 	// pods, because the platform's policy controller honours address blocks and ignores pod and namespace
 	// selectors (docs/current-state.md): the caller's identity is its token, not its address.
 	Network Network `json:"network"`
+	// NATS is the platform's event service: where an instance signs in, where the user list lives, the
+	// Secret Flux decrypts an instance's seed with, and the two service identities the platform runs
+	// besides the instances. Every key here is public; no seed is.
+	NATS NATS `json:"nats"`
+}
+
+// NATS is the platform's broker and the identities that are not instances: the stream controller, which
+// creates what the instances declare, and the console, which writes feature-flag overrides.
+type NATS struct {
+	URL              string `json:"url"`
+	Namespace        string `json:"namespace"`
+	DecryptionSecret string `json:"decryptionSecret"`
+	ControllerKey    string `json:"controllerKey"`
+	ConsoleKey       string `json:"consoleKey"`
 }
 
 // Network is the cluster's pod address block, as a call's rules need it.
@@ -166,6 +180,7 @@ var (
 	cidrPattern         = regexp.MustCompile(`^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$`)
 	telemetryEndpoint   = regexp.MustCompile(`^https?://[A-Za-z0-9$()._-]+(:[0-9]{1,5})?$`)
 	notifyAddress       = regexp.MustCompile(`^https?://[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?$`)
+	natsURLPattern      = regexp.MustCompile(`^nats://[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?$`)
 )
 
 // sortedKeys is a map's keys in order, so validation and identity encoding are deterministic.
@@ -182,7 +197,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 	if err := document(data); err != nil {
 		return PlatformProfile{}, err
 	}
-	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "telemetry", "notify", "routing", "auth", "storage", "egress", "dns", "backup", "network")
+	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "telemetry", "notify", "routing", "auth", "storage", "egress", "dns", "backup", "network", "nats")
 	if err != nil {
 		return PlatformProfile{}, err
 	}
@@ -205,6 +220,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"dns", []string{"namespace", "labels"}},
 		{"backup", []string{"image", "digest", "s3Uri", "region", "recipient", "writerNamespace", "writerName", "suspended"}},
 		{"network", []string{"podCIDR"}},
+		{"nats", []string{"url", "namespace", "decryptionSecret", "controllerKey", "consoleKey"}},
 	} {
 		if _, present := root[part.key]; !present {
 			continue
@@ -249,7 +265,7 @@ func (p PlatformProfile) validate() error {
 // validateBlocks checks the platform's optional blocks, in the order of the field table: routing, egress,
 // DNS, storage, auth and backup.
 func (p PlatformProfile) validateBlocks() error {
-	for _, block := range []interface{ validate() error }{p.Telemetry, p.Notify, p.Routing, p.Egress, p.DNS, p.Auth, p.Backup, p.Network} {
+	for _, block := range []interface{ validate() error }{p.Telemetry, p.Notify, p.Routing, p.Egress, p.DNS, p.Auth, p.Backup, p.Network, p.NATS} {
 		if err := block.validate(); err != nil {
 			return err
 		}
@@ -511,6 +527,9 @@ func profileCanonical(p PlatformProfile) []byte {
 		// The backup facts are platform facts too: another bucket, image or key set is another identity.
 		p.Backup.Image, p.Backup.Digest, p.Backup.S3URI, p.Backup.Region, p.Backup.Recipient,
 		p.Backup.WriterNamespace, p.Backup.WriterName, strconv.FormatBool(p.Backup.Suspended),
+		// The event service is a platform fact too: another broker, namespace, decryption Secret or service
+		// identity is another platform's identity.
+		p.NATS.URL, p.NATS.Namespace, p.NATS.DecryptionSecret, p.NATS.ControllerKey, p.NATS.ConsoleKey,
 		// The pod network is a platform fact too: another block is another cluster's identity.
 		p.Network.PodCIDR,
 		// Telemetry and notifications are platform facts: another collector or notify service is another
@@ -548,4 +567,48 @@ func (p PlatformProfile) ID() (ProfileID, error) {
 		return "", err
 	}
 	return ProfileID(hash("prof-sha256:", profileCanonical(p))), nil
+}
+
+// validate checks the event service when the profile states one. The two service identities are public keys;
+// a profile that states none of the block renders no events identity for an instance.
+func (n NATS) validate() error {
+	if !n.stated() {
+		// An absent block is a profile that renders no events identity; a stated one must be complete.
+		return nil
+	}
+	if !natsURLPattern.MatchString(n.URL) {
+		return refuse(Invalid, "nats.url", "expected a nats:// address")
+	}
+	if err := n.validateNames(); err != nil {
+		return err
+	}
+	return n.validateKeys()
+}
+
+// stated is whether the profile states the block at all; a profile without it renders no events identity.
+func (n NATS) stated() bool {
+	return n.URL != "" || n.Namespace != "" || n.DecryptionSecret != "" || n.ControllerKey != "" || n.ConsoleKey != ""
+}
+
+// validateNames checks the broker's address, where its user list lives, and the Secret an instance's seed is
+// decrypted with.
+func (n NATS) validateNames() error {
+	for _, field := range []struct{ name, value string }{{"nats.namespace", n.Namespace},
+		{"nats.decryptionSecret", n.DecryptionSecret}} {
+		if !labelPattern.MatchString(field.value) {
+			return refuse(Invalid, field.name, "expected a DNS label")
+		}
+	}
+	return nil
+}
+
+// validateKeys checks the platform's two public identities: the stream controller and the console.
+func (n NATS) validateKeys() error {
+	for _, key := range []struct{ name, value string }{{"nats.controllerKey", n.ControllerKey},
+		{"nats.consoleKey", n.ConsoleKey}} {
+		if !nkeyPattern().MatchString(key.value) {
+			return refuse(Invalid, key.name, "expected a user public nkey")
+		}
+	}
+	return nil
 }

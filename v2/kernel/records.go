@@ -65,7 +65,11 @@ type ReleaseBundle struct {
 	Database string `json:"database,omitempty"`
 	// Telemetry is whether the image has an SDK that should report to the platform's collector. It is a
 	// release fact for the same reason: the image, not the environment, decides whether it has one.
-	Telemetry bool      `json:"telemetry,omitempty"`
+	Telemetry bool `json:"telemetry,omitempty"`
+	// Publishes is the events the image publishes, each an `<event>` name under the app's own subject. Its
+	// AsyncAPI document says so; the platform reads it at the image's commit and states the list here, so a
+	// new image cannot publish something the platform has not read.
+	Publishes []string  `json:"publishes,omitempty"`
 	ReleaseID ReleaseID `json:"releaseId"`
 }
 
@@ -97,7 +101,23 @@ type InstanceSpec struct {
 	// compiler renders only the connected pairs a resolution gives it, so these never reach a resource.
 	Calls  []string `json:"calls,omitempty"`
 	Allows []string `json:"allows,omitempty"`
+	// Events is the identity an instance signs in to the event service with: the public key, and the
+	// subscriptions it grants itself. The pair's private half is never in a record — it is an encrypted
+	// Secret in the instance's own folder — so a record can state the key and can never leak the seed. Every
+	// instance that has one is a user of the broker, whether or not it declares events, because the same
+	// identity reads its feature-flag overrides.
+	Events Events `json:"events,omitempty"`
 }
+
+// Events is one instance's identity at the broker and what it grants itself: the public nkey it signs in
+// with, and the events it receives, each `<publisher>.<event>`.
+type Events struct {
+	Key           string   `json:"key,omitempty"`
+	Subscriptions []string `json:"subscriptions,omitempty"`
+}
+
+// configured is whether an instance has a broker identity at all.
+func (e Events) configured() bool { return e.Key != "" || len(e.Subscriptions) > 0 }
 
 // Storage is one instance's data volume: a size to create, or the claim of a volume that already exists —
 // the shape a migrated instance takes, so its data is the same bytes before and after the handover. A size
@@ -139,7 +159,7 @@ func (r ReleaseBundle) validate() error {
 	if r.Database != "" && r.Database != "sqlite" {
 		return refuse(Unsupported, "database", "only sqlite is supported")
 	}
-	return nil
+	return validateEventNames("publishes", r.Publishes)
 }
 
 func (s Source) validate() error {
@@ -208,6 +228,15 @@ func (s InstanceSpec) validate() error {
 	}
 	if s.Grants.Exposure != "private" && s.Grants.Exposure != "authenticated-web" {
 		return refuse(Unsupported, "grants.exposure", "only private and authenticated-web exposure are supported")
+	}
+	return s.validateEventsAndDeclarations()
+}
+
+// validateEventsAndDeclarations checks an instance's own lists: its broker identity, then the apps it calls and
+// the apps whose calls it accepts, each app name at most once.
+func (s InstanceSpec) validateEventsAndDeclarations() error {
+	if err := s.Events.validate(); err != nil {
+		return err
 	}
 	return s.validateDeclarations()
 }
@@ -280,6 +309,39 @@ func (c Configuration) validate() error {
 	}
 	if c.MemoryMiB < 1 {
 		return refuse(Invalid, "configuration.memoryMiB", "expected a positive signed-32-bit integer")
+	}
+	return nil
+}
+
+// validate checks an instance's broker identity: a public user nkey, and subscriptions that are an app name and
+// an event name. An instance that receives events without a key is refused, because it could not sign in.
+func (e Events) validate() error {
+	if e.Key != "" && !nkeyPattern().MatchString(e.Key) {
+		return refuse(Invalid, "events.key", "expected a user public nkey")
+	}
+	if e.Key == "" && len(e.Subscriptions) > 0 {
+		return refuse(Invalid, "events.key", "an instance that receives events needs a key")
+	}
+	for _, subscription := range e.Subscriptions {
+		publisher, event, split := strings.Cut(subscription, ".")
+		if !split || !namePattern.MatchString(publisher) || !namePattern.MatchString(event) {
+			return refuse(Invalid, "events.subscriptions", "expected an app name and an event name")
+		}
+	}
+	return nil
+}
+
+// validateEventNames checks a list of event names: each one an app-name-style segment, each at most once.
+func validateEventNames(field string, names []string) error {
+	seen := map[string]bool{}
+	for _, name := range names {
+		if !namePattern.MatchString(name) {
+			return refuse(Invalid, field, "expected an event name")
+		}
+		if seen[name] {
+			return refuse(Invalid, field, "repeated")
+		}
+		seen[name] = true
 	}
 	return nil
 }

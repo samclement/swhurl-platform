@@ -76,6 +76,7 @@ func (c cli) migrateInputs(r request) (snapshot, orchestration.MigrationInputs, 
 		{r.profile, &inputs.Profile, "profile", false},
 		{r.callFile, &inputs.Calls, "", true},
 		{r.egressFile, &inputs.Egress, "", true},
+		{r.eventsSecret, &inputs.EventsSecret, "events secret", true},
 	} {
 		if read.optional && read.path == "" {
 			continue

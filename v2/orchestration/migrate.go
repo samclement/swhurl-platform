@@ -19,11 +19,15 @@ const recordsRoot = "v2-records"
 const artifactPlatform = "linux/amd64"
 
 // MigrationInputs is what a migration takes: the predecessor's records, the source no record in this
-// repository states, the platform profile, and the two optional documents.
+// repository states, the platform profile, the two optional documents, and — for an instance that signs in to
+// the broker — the encrypted Secret that holds its seed, byte for byte.
 type MigrationInputs struct {
 	Records                legacy.Records
 	Supplied               legacy.Supplied
 	Profile, Calls, Egress []byte
+	// EventsSecret is the instance's own events.sops.yaml as Git holds it. v2 neither reads nor decrypts it: it
+	// moves the file beside the manifests and lists it, because only Flux and the app ever need its plaintext.
+	EventsSecret []byte
 }
 
 // Migration is what a migration produced: the translated facts with their sources and gaps, the record pair
@@ -80,11 +84,15 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 	if err != nil {
 		return Migration{}, err
 	}
+	files, err := WithEventsSecret(compiled, inputs.EventsSecret)
+	if err != nil {
+		return Migration{}, err
+	}
 	result := Migration{Facts: facts, Release: release, Instance: spec, App: app, Compilation: compiled,
 		Rendered: rendered, Egress: egress, UnmetCalls: unmet(facts.Calls, callees(rendered)),
 		UnmetCallers: unmet(facts.Allows, rendered.Callers)}
 	written := append(recordFiles(facts.Application, facts.Environment, appDocument, releaseDocument, instanceDocument),
-		compiled.Files...)
+		files...)
 	result.Written, err = writer.Write(destination, written)
 	return result, err
 }
@@ -107,6 +115,7 @@ func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpe
 	release := kernel.ReleaseBundle{
 		SchemaVersion: 1,
 		Application:   facts.Application,
+		Publishes:     facts.Workload.Publishes,
 		Source:        kernel.Source{Repository: facts.Source.Repository, Commit: facts.Source.Commit},
 		Artifact: kernel.Artifact{Image: facts.Workload.Image, Digest: facts.Workload.Digest,
 			MediaType: kernel.ManifestMediaType, Platform: artifactPlatform},
@@ -130,6 +139,7 @@ func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpe
 		Storage:       kernel.Storage{ClaimName: facts.Claim},
 		Calls:         facts.Calls,
 		Allows:        facts.Allows,
+		Events:        kernel.Events{Key: facts.EventsKey, Subscriptions: facts.Subscriptions},
 	}
 	app := kernel.AppSpec{SchemaVersion: 1, Application: facts.Application, Team: facts.Instance.Team}
 	return release, spec, app, nil

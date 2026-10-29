@@ -8,6 +8,10 @@
 package orchestration
 
 import (
+	"bytes"
+	"slices"
+	"strings"
+
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
@@ -19,6 +23,9 @@ import (
 type Inputs struct {
 	Instance, Release, App, Profile []byte
 	Calls, Egress                   []byte
+	// EventsSecret is an instance's own events.sops.yaml, byte for byte, for a use case that writes its files.
+	// v2 neither reads nor decrypts it: it is delivered beside the manifests, which list it.
+	EventsSecret []byte
 }
 
 // Result is what a use case produced: the compilation, and the files it wrote, when it wrote any. Written is
@@ -65,8 +72,41 @@ func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result
 	if err != nil {
 		return Result{}, err
 	}
-	outcomes, err := writer.Write(destination, compiled.Files)
+	documents, err := WithEventsSecret(compiled, inputs.EventsSecret)
+	if err != nil {
+		return Result{Compilation: compiled}, err
+	}
+	outcomes, err := writer.Write(destination, documents)
 	return Result{Compilation: compiled, Written: outcomes}, err
+}
+
+// WithEventsSecret adds an instance's seed to the files a use case writes beside its manifests. The compiler
+// lists the file; this is what puts it there, so a folder is either complete or refused: an instance that signs
+// in to the broker cannot be delivered without the private half of its key pair, and one that has no key cannot
+// receive a secret.
+func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error) {
+	files := compiled.Files
+	folder := ""
+	for _, file := range files {
+		if index := strings.LastIndex(file.Path, "/"); index > 0 {
+			folder = file.Path[:index]
+			break
+		}
+	}
+	// The unit and the kustomization list the secret exactly when the instance has a broker identity.
+	listed := folder != "" && slices.ContainsFunc(files, func(file kernel.File) bool {
+		return strings.HasSuffix(file.Path, "/kustomization.yaml") &&
+			bytes.Contains(file.Document, []byte(`"events.sops.yaml"`))
+	})
+	switch {
+	case listed && len(secret) == 0:
+		return nil, refuseSecret("an_instance_with_a_key_needs_its_seed")
+	case !listed && len(secret) > 0:
+		return nil, refuseSecret("an_instance_with_no_key_has_no_secret")
+	case !listed:
+		return files, nil
+	}
+	return append(slices.Clone(files), kernel.File{Path: folder + "/events.sops.yaml", Document: secret}), nil
 }
 
 // documents reduces the optional documents to the instance's own facts. A document that was given is read
@@ -100,3 +140,7 @@ func egressOf(document []byte, application, environment string) (*kernel.Egress,
 	}
 	return allocation.EgressOf(application, environment)
 }
+
+// refuseSecret is a use case's refusal about the instance's seed: a fact the caller supplies or does not, never a
+// value v2 reads.
+func refuseSecret(reason string) error { return &Refusal{Subject: "events-secret", Reason: reason} }

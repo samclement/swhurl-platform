@@ -14,14 +14,14 @@ func releaseCanonical(r ReleaseBundle) []byte {
 	return canonical([]any{"swhurl.release.v1", r.SchemaVersion, r.Application,
 		r.Source.Repository, r.Source.Commit, r.Artifact.Image, r.Artifact.Digest,
 		r.Artifact.MediaType, r.Artifact.Platform, r.Runtime.Kind, r.Runtime.Port,
-		r.Runtime.HealthPath, r.Runtime.UID, r.Database, r.Telemetry})
+		r.Runtime.HealthPath, r.Runtime.UID, r.Database, r.Telemetry, sortedNames(r.Publishes)})
 }
 
 func instanceCanonical(s InstanceSpec) []byte {
 	return canonical([]any{"swhurl.instance.v1", s.SchemaVersion, s.Application,
 		s.Environment, s.Release, s.Configuration.Replicas, s.Configuration.MemoryMiB,
 		s.Grants.Exposure, s.Bindings, s.Storage.SizeMiB, s.Storage.ClaimName,
-		sortedNames(s.Calls), sortedNames(s.Allows)})
+		sortedNames(s.Calls), sortedNames(s.Allows), s.Events.Key, sortedNames(s.Events.Subscriptions)})
 }
 
 // labelPairs is a label set as sorted "key=value" strings: a map's iteration order is not an identity.

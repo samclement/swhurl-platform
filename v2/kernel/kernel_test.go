@@ -61,7 +61,7 @@ func TestRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	round, err := DecodeRelease(b)
-	if err != nil || round != r {
+	if err != nil || !reflect.DeepEqual(round, r) {
 		t.Fatalf("release round-trip: %v", err)
 	}
 	if !bytes.Contains(b, []byte(`"releaseId"`)) {
@@ -96,7 +96,8 @@ func TestSelectionChangesOnlyRelease(t *testing.T) {
 	if !reflect.DeepEqual(after, want) {
 		t.Fatalf("selection changed more than the reference: %#v", after)
 	}
-	if !reflect.DeepEqual(prod, beforeProd) || r != beforeRelease || !reflect.DeepEqual(staging, beforeStaging) {
+	if !reflect.DeepEqual(prod, beforeProd) || !reflect.DeepEqual(r, beforeRelease) ||
+		!reflect.DeepEqual(staging, beforeStaging) {
 		t.Fatal("input mutated")
 	}
 	if prod.Configuration == staging.Configuration {
@@ -164,7 +165,7 @@ func TestSelectionRefusalsLeaveInputsUnchanged(t *testing.T) {
 			}
 			// A record with declaration lists is no longer comparable with ==, so "unchanged" is a deep
 			// comparison of both records.
-			if !reflect.DeepEqual(s, beforeS) || r != beforeR {
+			if !reflect.DeepEqual(s, beforeS) || !reflect.DeepEqual(r, beforeR) {
 				t.Fatal("refusal mutated inputs")
 			}
 		})
@@ -197,7 +198,7 @@ func TestGoldenIdentities(t *testing.T) {
 	b, _ := json.Marshal(doc) // sorted keys differ from the fixture
 	b = bytes.ReplaceAll(b, []byte("demo-orders"), []byte(`demo-\u006frders`))
 	round, err := DecodeRelease(append([]byte(" \n"), b...))
-	if err != nil || round != r {
+	if err != nil || !reflect.DeepEqual(round, r) {
 		t.Fatalf("normalization: %v", err)
 	}
 	var instanceDoc map[string]any
@@ -214,7 +215,7 @@ func TestIdentityAssertionsAndEscaping(t *testing.T) {
 	r.Runtime.HealthPath = "/ready&ok"
 	r.ReleaseID = ""
 	id, err := r.ID()
-	if err != nil || id != "rel-sha256:2342ca5e5a568a6756cda4d5b9fd48dc91852810d308b2eb0de19218e5d24a98" {
+	if err != nil || id != "rel-sha256:cae2a6edccd96553a289a700e249f8338787a63c429ea0b1e205d66c75a3e58c" {
 		t.Fatalf("independent ASCII escaping vector: %s %v", id, err)
 	}
 	if !bytes.Contains(releaseCanonical(r), []byte(`"/ready&ok"`)) {
@@ -227,7 +228,7 @@ func TestIdentityAssertionsAndEscaping(t *testing.T) {
 	b = bytes.ReplaceAll(b, []byte("/ready"), []byte("/other"))
 	decoded, err := DecodeRelease(b)
 	code(t, err, IdentityMismatch)
-	if decoded != (ReleaseBundle{}) {
+	if !reflect.DeepEqual(decoded, ReleaseBundle{}) {
 		t.Fatal("identity mismatch returned a record")
 	}
 	r.ReleaseID = "not-an-id"
@@ -478,10 +479,11 @@ func TestDomainValidation(t *testing.T) {
 
 func TestRecordsAreValues(t *testing.T) {
 	// A record is made of values — strings, int32s and nested structs of them — so copying one cannot alias
-	// another. The one exception is a declaration list: `calls` and `allows` are slices because the resolver
-	// reads them as such. A record carrying one is therefore not comparable, and every seam that returns a
+	// another. The exceptions are lists: `calls`, `allows`, the events a release publishes and the subscriptions
+	// an instance receives are slices because the resolver and the renderer read them as such, and each is
+	// canonicalised by sorting. A record carrying one is therefore not comparable, and every seam that returns a
 	// record clones those lists (TestSelectionDoesNotAliasDeclarations).
-	declarations := map[string]bool{"Calls": true, "Allows": true}
+	declarations := map[string]bool{"Calls": true, "Allows": true, "Publishes": true, "Subscriptions": true}
 	var check func(typ reflect.Type, owner string)
 	check = func(typ reflect.Type, owner string) {
 		switch typ.Kind() {

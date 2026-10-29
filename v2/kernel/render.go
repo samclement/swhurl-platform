@@ -10,7 +10,8 @@ import (
 )
 
 // WorkloadFacts is supplied rendering evidence, not a complete or verified release. Kind decides what the
-// workload serves: a web release has a port and a health path, a worker neither.
+// workload serves: a web release has a port and a health path, a worker neither. Publishes is what its image
+// publishes, which is the release's fact because the image's own description says so.
 type WorkloadFacts struct {
 	Kind          string
 	Image, Digest string
@@ -18,6 +19,7 @@ type WorkloadFacts struct {
 	HealthPath    string
 	UID           int32
 	Telemetry     bool
+	Publishes     []string
 }
 
 // servesHTTP is whether the workload has an HTTP surface: a Service, probes and, if the instance is exposed,
@@ -37,6 +39,16 @@ type InstanceFacts struct {
 	Storage                  Storage
 	Egress                   *Egress
 	Team                     string
+	// Broker is the instance's side of the event service. The seed is not here: the folder lists the encrypted
+	// file that holds it.
+	Broker BrokerIdentity
+}
+
+// BrokerIdentity is what rendering needs of an instance's broker identity: the public key it signs in with, and
+// the subscriptions the resolver connected — never the raw grant, because rendering decides no consent.
+type BrokerIdentity struct {
+	Key       string
+	Connected []EventSubscription
 }
 
 // Egress is an instance's way out: its own port on the platform's proxy, and the hosts it may reach. The
@@ -77,6 +89,11 @@ func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProf
 		files = append(files, File{folder + "/" + resource.name, encodeManifest(resource.doc)})
 		listed = append(listed, resource.name)
 	}
+	if spec.Broker.Key != "" {
+		// The seed is the instance's declared input: an encrypted Secret this renderer lists and never writes,
+		// because it holds nothing v2 may read or produce. A folder without it cannot be applied.
+		listed = append(listed, eventsSecretFile)
+	}
 	files = append(files,
 		File{folder + "/kustomization.yaml", encodeManifest(manifest{
 			"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization", "resources": listed})},
@@ -88,7 +105,7 @@ func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProf
 			return ResourceSet{}, err
 		}
 	}
-	return ResourceSet{files, inventory(spec), []string{unitPath}}, nil
+	return ResourceSet{files, inventory(spec, http), []string{unitPath}}, nil
 }
 
 // NamespaceOf is the namespace an instance runs in: the one convention both renderers share, so the auth
@@ -146,18 +163,24 @@ func helmRelease(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile
 		"spec": manifest{"interval": helmInterval, "timeout": failAfter, "chart": manifest{"spec": chart},
 			"install": remediation, "upgrade": manifest{"remediation": manifest{"retries": retries}},
 			"values": values(spec, http, profile.Workload, profile.Storage.Class, profile.Egress.Address,
-				profile.Notify.Address, profile.Telemetry)}}
+				profile.Notify.Address, profile.Telemetry, profile.NATS)}}
 }
 
 // values are the chart's values: one controller, one container, its /tmp and — for a web workload — its
 // Service. Omitting the Service is what makes a worker a worker: nothing in the namespace listens.
 func values(spec InstanceFacts, http WorkloadFacts, workload Workload, storageClass, egressAddress, notifyAddress string,
-	telemetry Telemetry) manifest {
+	telemetry Telemetry, nats NATS) manifest {
 	uid := http.UID
 	pod := manifest{"automountServiceAccountToken": false, "securityContext": manifest{
 		"runAsNonRoot": true, "runAsUser": uid, "runAsGroup": uid, "fsGroup": uid,
 		"seccompProfile": manifest{"type": "RuntimeDefault"}}}
-	controller := manifest{"replicas": spec.Configuration.Replicas, "containers": manifest{"main": container(spec, http, workload, egressAddress, notifyAddress, telemetry)}}
+	controller := manifest{"replicas": spec.Configuration.Replicas,
+		"containers": manifest{"main": container(spec, http, workload, egressAddress, notifyAddress, telemetry, nats)}}
+	if spec.Broker.Key != "" {
+		// A changed seed must restart the app: the image reads the Secret once, at start, and a new key pair
+		// arrives in the same commit. The mounted Secret is refreshed in place, which the kubelet does not roll.
+		controller["annotations"] = manifest{reloadAnnotation: eventsSecretName(spec.Application)}
+	}
 	if spec.Database == "sqlite" {
 		// One pod at a time: a rolling update would open one database file twice.
 		controller["strategy"] = "Recreate"
@@ -186,7 +209,7 @@ func values(spec InstanceFacts, http WorkloadFacts, workload Workload, storageCl
 }
 
 func container(spec InstanceFacts, http WorkloadFacts, workload Workload, egressAddress, notifyAddress string,
-	telemetry Telemetry) manifest {
+	telemetry Telemetry, nats NATS) manifest {
 	memory := fmt.Sprintf("%dMi", spec.Configuration.MemoryMiB)
 	env := manifest{"SWHURL_APP": spec.Application, "SWHURL_ENV": spec.Environment,
 		"SWHURL_NOTIFY_URL": notifyAddress}
@@ -235,7 +258,21 @@ func container(spec InstanceFacts, http WorkloadFacts, workload Workload, egress
 		env["SWHURL_AUTH_KEYS_FILE"] = authKeysFile
 		env["SWHURL_AUTH_ISSUER_FILE"] = authIssuerFile
 	}
+	spec.addBroker(container, http, nats)
 	return container
+}
+
+// addBroker adds what an instance's event identity needs to its container: the variables it signs in and reads
+// with, and the Secret holding its seed — never the seed itself, which this renderer does not hold.
+func (spec InstanceFacts) addBroker(container manifest, http WorkloadFacts, nats NATS) {
+	if spec.Broker.Key == "" {
+		return
+	}
+	env := container["env"].(manifest)
+	for name, value := range eventsEnv(spec, http, nats) {
+		env[name] = value
+	}
+	container["envFrom"] = []any{manifest{"secretRef": manifest{"name": eventsSecretName(spec.Application)}}}
 }
 
 // callVariable is the variable an app reads one callee's address from: the callee's name in the
@@ -405,9 +442,18 @@ func unit(spec InstanceFacts, profile PlatformProfile, folder string) manifest {
 	for _, name := range profile.Delivery.DependsOn {
 		dependsOn = append(dependsOn, manifest{"name": name})
 	}
+	if spec.Broker.Key != "" {
+		// The broker must exist first: the app signs in as it starts, and would be refused until it did.
+		dependsOn = append(dependsOn, manifest{"name": natsUnit})
+	}
 	specification := manifest{"dependsOn": dependsOn, "interval": unitInterval,
 		"sourceRef": manifest{"kind": "GitRepository", "name": profile.Delivery.Source},
 		"path":      "./" + folder, "prune": true, "wait": true, "timeout": failAfter}
+	if spec.Broker.Key != "" {
+		// The folder holds one encrypted Secret, so Flux decrypts it as it applies the instance.
+		specification["decryption"] = manifest{"provider": "sops",
+			"secretRef": manifest{"name": profile.NATS.DecryptionSecret}}
+	}
 	if spec.Database == "sqlite" {
 		// The backup job reads a key from the platform's own unit, so that unit must exist first, and the
 		// file's references are substituted from its Secret. Substitution is one switch for every document
@@ -512,6 +558,9 @@ func resourcesOf(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile
 			name string
 			doc  manifest
 		}{"callers.json", callersConfigMap(spec)})
+	}
+	for _, object := range eventsObjects(spec, http) {
+		resources = append(resources, object)
 	}
 	if spec.Database == "sqlite" {
 		// A database is the platform's to protect: the job, the reference to the upload key it reads,
@@ -713,6 +762,9 @@ func (spec InstanceFacts) validateResources(http WorkloadFacts, profile Platform
 	if err := spec.validateKind(http); err != nil {
 		return err
 	}
+	if err := spec.validateEvents(http, profile); err != nil {
+		return err
+	}
 	if err := validateCalls(spec, profile); err != nil {
 		return err
 	}
@@ -867,7 +919,7 @@ func substitutionProblem(files []File) error {
 }
 
 // inventory is every cluster object the files create, in file order.
-func inventory(spec InstanceFacts) []Claim {
+func inventory(spec InstanceFacts, http WorkloadFacts) []Claim {
 	namespace, by := namespaceName(spec), owner(spec)
 	claims := []Claim{
 		{Object{"", "Namespace", "", namespace}, by},
@@ -881,6 +933,17 @@ func inventory(spec InstanceFacts) []Claim {
 	if len(spec.Callers) > 0 {
 		// The keys' object belongs to the platform; the allow-list's to this instance.
 		claims = append(claims, Claim{Object{"", "ConfigMap", namespace, callersName(spec)}, by})
+	}
+	if len(http.Publishes) > 0 {
+		claims = append(claims, Claim{Object{"jetstream.nats.io", "Stream", namespace,
+			spec.Environment + "-" + spec.Application}, by})
+	}
+	for _, subscription := range spec.Broker.Connected {
+		claims = append(claims, Claim{Object{"jetstream.nats.io", "Consumer", namespace, subscription.Object}, by})
+	}
+	if spec.Broker.Key != "" {
+		// The Secret the instance reads is its own declared input, not this renderer's output.
+		claims = append(claims, Claim{Object{"", "Secret", namespace, eventsSecretName(spec.Application)}, by})
 	}
 	if spec.Database == "sqlite" {
 		name := backupName(spec)

@@ -63,7 +63,7 @@ func allowOf(t *testing.T, rendered ResourceSet, index int) (publish, subscribe 
 func TestUserPermissions(t *testing.T) {
 	rendered, err := RenderUsers(users(t, NATSUser{Application: "demo-notifier", Environment: "staging",
 		NKey: "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
-		Subscriptions: []NATSSubscription{{Stream: "staging-demo-orders", Consumer: "demo-notifier_created",
+		Subscriptions: []EventSubscription{{Stream: "staging-demo-orders", Consumer: "demo-notifier_created",
 			Subject: "staging.demo-orders.created"}}}))
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestUserPermissions(t *testing.T) {
 	// Two subscriptions to one stream read its description once.
 	twice, err := RenderUsers(users(t, NATSUser{Application: "notifier", Environment: "staging",
 		NKey: "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
-		Subscriptions: []NATSSubscription{
+		Subscriptions: []EventSubscription{
 			{Stream: "staging-orders", Consumer: "notifier_created", Subject: "staging.orders.created"},
 			{Stream: "staging-orders", Consumer: "notifier_cancelled", Subject: "staging.orders.cancelled"}}}))
 	if err != nil {
@@ -228,7 +228,7 @@ func TestUsersRefusals(t *testing.T) {
 			Instances: []NATSUser{{Application: "orders", Environment: "preview", NKey: valid.NKey}}}, "users.instance"},
 		{"a subscription without its names", NATSUsers{ControllerKey: testControllerKey, ConsoleKey: testConsoleKey,
 			Instances: []NATSUser{{Application: "orders", Environment: "staging", NKey: valid.NKey,
-				Subscriptions: []NATSSubscription{{Stream: "staging-orders"}}}}}, "users.subscription"},
+				Subscriptions: []EventSubscription{{Stream: "staging-orders"}}}}}, "users.subscription"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			rendered, err := RenderUsers(tt.users)

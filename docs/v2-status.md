@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the operator's decision on where a v2-owned instance's NATS seed comes from, then slice 3's instance side
+Gate: the operator's approval of slice 3's live half: the `users.yaml` cutover and one event-using worker migrated
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -15,6 +15,8 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 **Approved 25 October 2026: phase 5 observation, offline half only** — the pure evidence projection and the first real adapter, with no cluster read, no credential, no command and nothing published. The [slice record](#slice-record-phase-5-observation-offline-half) below states what it does and does not do. Everything else about that phase, including reference derivation, a credential source, the report envelope and any live read, is still not approved.
 
 **Approved 26 October 2026: restore, option 1 then option 2** — v2 first *plans and verifies* a restore while v1 performs it (implemented, below), then v2 performs it (**2a**: v2 orchestrates, a pod decrypts; the operator chose this over a vendored age dependency). 2a's write primitives are in, and its restore Job and sequence are now implemented offline (below).
+
+**Approved 29 October 2026: slice 3, events — part two implemented offline** — on the operator's principle that v2 favours a clean contract over anything that preserves v1's: the release states what it publishes, the instance states its broker identity and the events it receives, the profile states the broker, and an instance that signs in renders its variables, its stream and its consumers. The seed travels as the encrypted file it already is — v2 lists it, copies it and never reads it. Nothing was applied; the cutover and the first migrated worker are the next gate. See [the record](#slice-record-events-part-two-the-instance-side-29-october-2026).
 
 **Approved 29 October 2026: slice 3, events — part one implemented offline** — the operator said go, and the slice was split where the credential sits: v2 now renders the server's user list from a pinned snapshot and CI compares it with the file the platform runs (`swhurl-v2 users`), which needs no key material; the per-instance side (streams, consumers, the env and the seed) and the generated-key decision follow. See [the record](#slice-record-events-part-one-the-servers-user-list-29-october-2026).
 
@@ -52,11 +54,11 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
 | Always-on instance surface | Telemetry, the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: both v2-owned instances rolled, with the new env, tokens and team labels |
 | App kinds | A worker release compiles to an instance that serves nothing, with every other fact intact | **Done, offline 29 October 2026** (the worker kind); `job` still refused |
-| Events | The server's user list, and per instance its key, streams, consumers and seed | **Part one, offline 29 October 2026**: v2 renders `users.yaml` identically to the platform's; the instance side and the seed decision are next |
+| Events | The server's user list, and per instance its key, stream, consumers and seed | **Parts one and two, offline 29 October 2026**: the user list renders identically to the platform's, and a keyed instance renders its variables, stream, consumers and unit; the seed is the encrypted file v2 copies without reading |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** delivery is manual (compile, commit, push); v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no per-instance events identity, stream or consumer (its user list does render), no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+**Not yet true, and what would make it true:** delivery is manual (compile, commit, push); v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 cannot **mint** a broker identity (it adopts the pair a predecessor already has), still writes `users.yaml` through v1, renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); the egress cutover, which changes live outbound traffic and needs the grants recorded before it can refuse the rest; and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -76,7 +78,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Backup | **Done and proved live 27 October 2026**: rendered, both facts observed live, a restore planned live, and **v2 performed one**: the age-key and read-URL Secret, the Job from the backup image, the sequence with its undo, the `v2-restore` version-2 report, and `swhurl-try-10` staging restored over its newest archive in 30 seconds | [render](iteration-2-plan.md#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026), [job](iteration-2-plan.md#the-backup-observation-implemented-offline-26-october-2026), [archive](iteration-2-plan.md#the-object-store-read-implemented-26-october-2026), [restore](iteration-2-plan.md#the-restore-v2-performs-option-2a-offline-half--27-october-2026) |
 | Always-on instance surface | done and live 29 October 2026: telemetry, notifications and the team label, with the app record owning the team; both v2-owned instances rolled at `1bca7990` | [slice](#slice-record-the-always-on-instance-surface-29-october-2026) |
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
-| Events | part one, offline 29 October 2026: `swhurl-v2 users` renders the NATS user list from a snapshot and `make check-v2` proves it is what the platform runs; the instance side and the seed are next | [slice](#slice-record-events-part-one-the-servers-user-list-29-october-2026) |
+| Events | parts one and two, offline 29 October 2026: the user list, and the instance side — variables, stream, consumers, the unit's broker dependency and `decryption`, and the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026) |
 | 7. Selective replacement | two live: `swhurl-try-11` staging and, with its own volume, `swhurl-try-10` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
@@ -827,6 +829,74 @@ against what the platform runs; the instance side and the seed follow.
 - **Committed:** `5bdbedb4`, on `main`. Nothing live changed: no record, rendered file or manifest under `platform/`
   moved, so no [current state](current-state.md) entry is owed.
 - **Next gate:** the operator's decision on the seed, then part two — the instance side, the migration that adopts a pair, the cutover of the file's writer, and one event-using worker migrated live.
+
+## Slice record: events, part two: the instance side (29 October 2026)
+
+**Approved by the operator as "go ahead with your recommendation", with a standing principle: favour a clean v2
+implementation over anything that preserves v1 compatibility — a one-way journey is fine.** The seed decision was
+theirs to make and they chose adoption: v2 carries the encrypted file it is given and never reads, decrypts or
+mints a key. The two instances v2 already owns keep no broker identity until a slice can mint one, because their
+seeds were pruned with their v1 units and no v2 tree holds them.
+
+- **Outcome and the refusals it must produce:** a release states the events its image publishes; an instance states
+  its broker identity (the public key it signs in with) and the subscriptions it grants itself; the profile states
+  the broker (URL, namespace, the Secret Flux decrypts a seed with, and the platform's two service identities). An
+  instance that has a key renders `SWHURL_EVENTS_NKEY`/`SWHURL_EVENTS_URL` and, when they apply,
+  `SWHURL_EVENTS_PUBLISH`/`SWHURL_EVENTS_SUBSCRIBE`; `envFrom` of `<app>-events` and the Reloader annotation; its
+  `Stream` when it publishes and one `Consumer` per connected subscription; a unit that depends on `platform-nats`
+  and decrypts its folder; and a kustomization listing `events.sops.yaml`, the instance's seed — the one file v2
+  lists, copies and never writes or reads. It refuses a key that is not a user public nkey, a key with no broker in
+  the profile, events (published or received) without a key, a subscription that is not `<publisher>.<event>`, and
+  a connected subscription without the names its consumer needs. `compile --out` and `migrate` refuse a keyed
+  instance without `--events-secret`, and refuse a seed for an instance that has no key.
+- **Owners and boundaries:** the **release** owns what its image publishes; the **instance** owns its key and its
+  subscriptions; the **profile** owns the broker, the decryption Secret and the two service identities; the pure
+  [`events`](../v2/events/events.go) package owns which subscriptions connect and every name one needs; the
+  **resolver** writes them into the same `v2-calls` document as the pairs, because relationships are one decision;
+  `kernel` renders the instance's side and lists the seed; `orchestration.WithEventsSecret` puts the operator's file
+  beside the manifests, so a folder is complete or refused. The seed is never an input to a pure package.
+- **What crosses each seam:** `release.json`'s `publishes`, `instance.json`'s `events` block and the resolution
+  document's `subscriptions` into the renderer (`WorkloadFacts.Publishes`, `InstanceFacts.Broker`); the encrypted
+  file in as bytes on the use case's input, and out as one written file beside the manifests.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 unchanged** — nothing under `apps/`, `clusters/`, `platform/` or `tools/` was touched. v1 still generates
+     `platform/nats/users.yaml`; the cutover is the next gate.
+  2. **Pure takes no effects** — `events` and `kernel` stay pure and stdlib-only; the seed reaches only the use
+     case and the files adapter, as bytes.
+  3. **Identities moved once, deliberately** — the release gained `publishes`, the instance gained its `events`
+     block and the profile gained `nats`, so every release ID, every instance revision and the profile ID moved:
+     `r41` `b357d417…`, `r42` `4e2bf549…`, `r43` `6b5a72e3…`, profile `83933cd5…`, both owned releases `9653a3aa…`
+     and `4eaac1d1…`. The fixtures, `identities.json`, `profile-identity.json`, both goldens, the owned records and
+     the frozen migrated pairs were regenerated once; the canonical arrays and every ID were recomputed
+     independently in Python, not copied from Go.
+  4. **Refusals stated, precedence unmoved** — new `invalid: events.key`, `events.publishes`, `events.subscriptions`,
+     `nats.url`, `nats.namespace`, `nats.decryptionSecret`, `nats.controllerKey`, `nats.consoleKey`, and
+     `unsupported: nats`; the use case's own `events-secret` refusals. Each runs where the check it belongs to
+     runs; no existing code or order moved.
+  5. **Failure paths tested** — every refusal; a subscriber's and a publisher's whole rendering (variables, Secret,
+     annotation, stream fields, consumer fields, unit dependency and decryption, kustomization, inventory);
+     `resolve` recording a connected subscription and a waiting one; `compile --out` delivering the seed byte for
+     byte, refusing without it, and writing nothing when it refuses; and the profile's two keys tied to the files
+     `platform/nats` publishes.
+  6. **Scope stated** — v2 **adopts** a pair; it cannot mint one, so the two instances it already owns stay without
+     a broker identity (their seeds were pruned with their v1 unit) and `migrate` of their frozen records is
+     asserted to differ from the committed pair by exactly those facts. The `users.yaml` cutover, the first live
+     migration of an event-using worker, and rotation remain.
+  7. **Offline only** — nothing was applied. The user list is still compared with the file the platform runs, and
+     the instance side is proved by the chart and by tests; no readiness is claimed.
+  8. **Recorded in the same change** — this page, the plan's field tables, refusal table, resolution and gap list,
+     the workstream registry, and the NATS section of [`services.md`](services.md#nats).
+- **Evidence:** `REQUIRE_HELM=1 make check-v2` (16 packages; the pinned chart rendered the golden and a worker),
+  `make check`, `make check-lint`, `make -s check-docs`, `git diff --check`, `make -s v2-report` (API +18/−13: the
+  events facts, the profile block, the seed's use case, and the two renderer types; no budget baseline added or
+  weakened); coverage `events` 98.6%, `kernel` 93.8%, `legacy` 84.5%, `orchestration` 83.6%, CLI 86.7%.
+- **What the operator's principle changed here:** the profile states the broker, the decryption Secret and the
+  platform's two public keys, so `users` takes a profile rather than two key files; the resolution document carries
+  subscriptions, so a rendered consumer and a user's permission come from one decision; and the seed is a declared
+  input of the compiled folder rather than a v1-shaped special case.
+- **Next gate:** the live half — cut `platform/nats/users.yaml` over to v2's renderer (v1's writer retired, and CI
+  regenerating it), then migrate one event-using worker and prove an event flows, then the minting slice for the
+  two instances that have no pair and for rotation.
 
 ## Resume
 

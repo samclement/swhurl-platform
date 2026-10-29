@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: `swhurl-try-10` rebuilt from TypeScript `v0.2.19` and its new image selected by a v2 release record, then the live proof (a key rotation and a new caller with no new pod), then retiring the env forms and the `auth-revision` annotation
+Gate: `swhurl-try-10` staging running its `v0.2.19` image (selected 29 October 2026), then the live proof (a key rotation and a new caller with no new pod), then retiring the env forms and the `auth-revision` annotation
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -423,6 +423,41 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Committed:** `9dd0e035`, on `main`, and verified live as above.
 - **Next gate:** the template releases that read the files (in the two template repositories, then a
   `STACK_REVISIONS` re-pin), which retire the env forms and the `auth-revision` annotation.
+
+## Slice record: a new release for a v2-owned instance (`swhurl-try-10` staging, `v0.2.19`)
+
+- **Outcome:** `swhurl-try-10` took the TypeScript template's `v0.2.19` update (Renovate's #18, the Copier
+  update, and #19, the workflow pin, both squash-merged after their checks), and its Container workflow built
+  `60-<sha>` from the merge ([commits and runs](current-state.md)). v2 then **selected** it: a new release record
+  (source: that merge commit; artifact: the image's `linux/amd64` manifest), its ID from `release-id`, `select-release --expect` against the instance's current
+  revision, and `compile` into `v2-apps/` with the committed resolution and allocation.
+- **Owners and boundaries:** the app's repository owns the source and the build; the release record owns the
+  artifact claim; selection owns which release the instance names; the compiler owns the HelmRelease. Writing the
+  record is still the operator's hand step: v2 has no command that turns a built image into a release.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 unchanged** — nothing under `apps/`; `swhurl-try-10` prod (v1) keeps its own image.
+  2. **Pure** — no code changed; the kernel's selection and compiler did the work.
+  3. **Identity moved as selection says:** a new release `rel-sha256:2672110c…`, and the instance's `release`
+     field only, so its revision moved; no profile, golden or fixture moved.
+  4. **Refusals** — selection ran against the current revision, so a concurrent change would have refused
+     (`stale_instance`).
+  5. **Checked** — the compiled HelmRelease differs from Git in one field, the image digest; the
+     `auth-revision` annotation did not move, so the push rolls the pod for the image alone;
+     `TestOwnedInstancesRecompileFromGit` reproduces the instance from the new records. **One test's contract
+     moved, deliberately:** `TestMigrateReproducesCommittedInstances` compared the migration's output with the
+     records Git holds *now*, so it refused the first release a migrated instance selected. The pair the migration
+     committed is now frozen beside the predecessor records (`testdata/legacy/<app>/<env>/migrated/`); the test
+     asserts `migrate` writes that pair byte for byte and exactly the files `compile` writes for it, and, while
+     an instance still names its migrated release (`swhurl-try-11`), that every file equals what Git holds.
+     Mutation-checked: a changed frozen record and a changed committed file each fail it.
+  6. **Scope, and a correction** — the migrated release's artifact claim was wrong: it said manifest, and its
+     digest is an index. This release names the manifest (`sha256:9ae24d58…`, content type and bytes checked
+     against GHCR, `linux/amd64`, UID 65532, port 8080); [the gap row](iteration-2-plan.md#6-deliberately-deferred)
+     says what would make the check automatic.
+  7. **Live on push:** one rollout of `swhurl-try-10` staging.
+  8. **Recorded in the same change** — this page, the registry and the plan's gap row.
+- **Next gate:** observe it running, then the live proof — a new caller and a key rotation, each taking effect
+  with no new pod.
 
 ## Slice record: the backup host is the platform's grant
 

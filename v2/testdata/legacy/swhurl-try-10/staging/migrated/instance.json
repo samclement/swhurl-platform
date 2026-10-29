@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "application": "swhurl-try-10",
+  "environment": "staging",
+  "release": "rel-sha256:7991eeecc170ea0ac4d02c6d37ff6d1502cb4f146ab670be629881501b2c7406",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "authenticated-web"
+  },
+  "bindings": {},
+  "storage": {
+    "claimName": "swhurl-try-10"
+  },
+  "allows": [
+    "swhurl-try-11",
+    "swhurl-try-12"
+  ]
+}

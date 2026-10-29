@@ -44,9 +44,12 @@ func readFile(t *testing.T, path string) []byte {
 }
 
 // TestMigrateReproducesCommittedInstances runs the migration over the frozen predecessor records of every
-// v2-owned instance (testdata/legacy, the v1 documents the handover removed) and asserts it writes the record
-// identities Git holds and byte-for-byte the files Git holds. The two real migrations are then the
-// translation's own acceptance test, the stateful one included.
+// v2-owned instance (testdata/legacy, the v1 documents the handover removed) and asserts it writes, byte for
+// byte, the record pair that migration committed (frozen beside them in migrated/) and exactly the files
+// compile writes for that pair. An instance that still names its migrated release must also match every file
+// Git holds; one that has since selected another release has moved on, and TestOwnedInstancesRecompileFromGit
+// covers what it holds now. The two real migrations are then the translation's own acceptance test, the
+// stateful one included.
 func TestMigrateReproducesCommittedInstances(t *testing.T) {
 	instances, err := filepath.Glob("../../../v2-records/*/*/instance.json")
 	if err != nil || len(instances) == 0 {
@@ -56,8 +59,10 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 		folder := filepath.Dir(instancePath)
 		segments := strings.Split(filepath.ToSlash(folder), "/")
 		application, environment := segments[len(segments)-2], segments[len(segments)-1]
-		committedRecord, committedInstance := readFile(t, instancePath),
-			readFile(t, filepath.Join(folder, "release.json"))
+		frozen := filepath.Join("..", "..", "testdata", "legacy", application, environment, "migrated")
+		committedRecord, committedInstance := readFile(t, filepath.Join(frozen, "instance.json")),
+			readFile(t, filepath.Join(frozen, "release.json"))
+		current := bytes.Equal(committedInstance, readFile(t, filepath.Join(folder, "release.json")))
 		release, err := kernel.DecodeRelease(committedInstance)
 		if err != nil {
 			t.Fatalf("%s: %v", folder, err)
@@ -97,19 +102,34 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 		}
 		migrated := filepath.Join(destination, "v2-records", application, environment)
 		for _, name := range []string{"release.json", "instance.json"} {
-			if !bytes.Equal(readFile(t, filepath.Join(migrated, name)), readFile(t, filepath.Join(folder, name))) {
-				t.Errorf("%s: the %s record is not what Git holds", folder, name)
+			if !bytes.Equal(readFile(t, filepath.Join(migrated, name)), readFile(t, filepath.Join(frozen, name))) {
+				t.Errorf("%s: the %s record is not what the migration committed", folder, name)
 			}
 		}
-		// Every other file is what Git holds, byte for byte: the translation reproduces a real migration.
+		// Every other file is what compile writes for the migrated pair, and, while the instance still names
+		// that release, what Git holds: the translation reproduces a real migration.
+		compiled := t.TempDir()
+		compileArgs := []string{"compile", "--instance", filepath.Join(frozen, "instance.json"),
+			"--release", filepath.Join(frozen, "release.json"), "--profile", filepath.Join("..", "..", "testdata", "profile.json"),
+			"--calls", "../../../v2-records/calls.json", "--out", compiled}
+		if release.Database != "" {
+			compileArgs = append(compileArgs, "--egress", "../../../platform/egress/allocation.json")
+		}
+		var out, compileDiagnostic bytes.Buffer
+		if status := run(compileArgs, &out, &compileDiagnostic, os.ReadFile, files.New()); status != 0 {
+			t.Fatalf("%s: compile exit %d: %s", folder, status, compileDiagnostic.String())
+		}
 		compared := 0
 		for _, written := range report["files"].([]any) {
 			path := written.(map[string]any)["path"].(string)
 			if strings.HasPrefix(path, "v2-records/") {
 				continue
 			}
-			if string(readFile(t, filepath.Join(destination, filepath.FromSlash(path)))) !=
-				string(readFile(t, filepath.Join("../../../", filepath.FromSlash(path)))) {
+			got := string(readFile(t, filepath.Join(destination, filepath.FromSlash(path))))
+			if got != string(readFile(t, filepath.Join(compiled, filepath.FromSlash(path)))) {
+				t.Errorf("%s: %s is not what compile writes for the migrated pair", folder, path)
+			}
+			if current && got != string(readFile(t, filepath.Join("../../../", filepath.FromSlash(path)))) {
 				t.Errorf("%s: %s is not what Git holds", folder, path)
 			}
 			compared++

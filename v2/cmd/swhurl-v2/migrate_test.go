@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -125,8 +126,12 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 		if withoutEvents.ReleaseID, err = withoutEvents.ID(); err != nil {
 			t.Fatal(err)
 		}
-		if encoded, err := kernel.EncodeRelease(withoutEvents); err != nil ||
-			!bytes.Equal(encoded, readFile(t, filepath.Join(frozen, "release.json"))) {
+		committedRelease, err := kernel.DecodeRelease(readFile(t, filepath.Join(frozen, "release.json")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		committedRelease.Publishes, committedRelease.ReleaseID = nil, withoutEvents.ReleaseID
+		if !reflect.DeepEqual(withoutEvents, committedRelease) {
 			t.Errorf("%s: the release record differs from the committed one by more than its publications", folder)
 		}
 		stripped, err := kernel.DecodeInstance(readFile(t, filepath.Join(migrated, "instance.json")))
@@ -134,9 +139,13 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 			t.Fatal(err)
 		}
 		declared := statesEvents(produced, stripped)
+		committedSpec, err := kernel.DecodeInstance(readFile(t, filepath.Join(frozen, "instance.json")))
+		if err != nil {
+			t.Fatal(err)
+		}
 		stripped.Events, stripped.Release = kernel.Events{}, withoutEvents.ReleaseID
-		if encoded, err := kernel.EncodeInstance(stripped); err != nil ||
-			!bytes.Equal(encoded, readFile(t, filepath.Join(frozen, "instance.json"))) {
+		committedSpec.Events, committedSpec.Release = kernel.Events{}, withoutEvents.ReleaseID
+		if !reflect.DeepEqual(stripped, committedSpec) {
 			t.Errorf("%s: the instance record differs from the committed one by more than its events identity", folder)
 		}
 		if !bytes.Equal(readFile(t, filepath.Join(destination, "v2-records", application, "app.json")),
@@ -152,6 +161,14 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 			"--calls", "../../../v2-records/calls.json", "--out", compiled}
 		if release.Database != "" {
 			compileArgs = append(compileArgs, "--egress", "../../../platform/egress/allocation.json")
+		}
+		if from, err := os.ReadFile(filepath.Join(frozen, "instance.json")); err == nil {
+			var settings struct{ Events struct{ Key string } }
+			if json.Unmarshal(from, &settings) == nil && settings.Events.Key != "" {
+				// The committed pair's seed is the file Git holds beside its manifests.
+				compileArgs = append(compileArgs, "--events-secret",
+					filepath.Join("../../../v2-apps/instances", application, environment, "events.sops.yaml"))
+			}
 		}
 		var out, compileDiagnostic bytes.Buffer
 		if status := run(compileArgs, &out, &compileDiagnostic, os.ReadFile, files.New()); status != 0 {

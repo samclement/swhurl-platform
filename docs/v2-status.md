@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the first event-using worker's live migration, then the minting slice for the two instances without a pair
+Gate: the Reloader namespace list moving to v2 (a migrated instance is not watched today), then the minting slice
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -15,6 +15,8 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 **Approved 25 October 2026: phase 5 observation, offline half only** — the pure evidence projection and the first real adapter, with no cluster read, no credential, no command and nothing published. The [slice record](#slice-record-phase-5-observation-offline-half) below states what it does and does not do. Everything else about that phase, including reference derivation, a credential source, the report envelope and any live read, is still not approved.
 
 **Approved 26 October 2026: restore, option 1 then option 2** — v2 first *plans and verifies* a restore while v1 performs it (implemented, below), then v2 performs it (**2a**: v2 orchestrates, a pod decrypts; the operator chose this over a vendored age dependency). 2a's write primitives are in, and its restore Job and sequence are now implemented offline (below).
+
+**Approved 29 October 2026: slice 3's first live migration — `demo-notifier` staging** — the first instance with an event subscription to move, receiving `demo-orders.created` from a v1 publisher: its records, its stream-side manifest and its encrypted seed are v2's, and an event flows through the pair across the two owners. See [the record](#slice-record-the-first-migrated-event-using-worker-demo-notifier-staging-29-october-2026).
 
 **Approved 29 October 2026: slice 3's cutover — v2 owns NATS's user list** — `platform/nats/users.json` is v2's output now, v1's generator is deleted, and the Render workflow regenerates it, so the list the broker serves can no longer be a second writer's opinion. Implemented and checked offline, then applied; see [the record](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026).
 
@@ -81,7 +83,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Always-on instance surface | done and live 29 October 2026: telemetry, notifications and the team label, with the app record owning the team; both v2-owned instances rolled at `1bca7990` | [slice](#slice-record-the-always-on-instance-surface-29-october-2026) |
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
 | Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
-| 7. Selective replacement | two live: `swhurl-try-11` staging and, with its own volume, `swhurl-try-10` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
+| 7. Selective replacement | three live: `swhurl-try-11` staging, `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
 
@@ -933,6 +935,35 @@ seeds were pruned with their v1 units and no v2 tree holds them.
   failure** in the window (checked in every instance namespace) and the number of users NATS serves is unchanged.
 - **Next gate:** migrate the first event-using worker (`demo-notifier` staging, which receives `demo-orders.created`
   from a v1 publisher) and prove an event flows; then the minting slice.
+
+## Slice record: the first migrated event-using worker, demo-notifier staging (29 October 2026)
+
+**Approved by the operator's "go ahead".** `demo-notifier` staging is a Kotlin worker that receives
+`demo-orders.created` — a pair whose publisher stays v1-owned, so the migration proves an event crossing the two.
+
+- **What moved:** its three records (`v2-records/demo-notifier/{app.json,staging/{release,instance}.json}`), its
+  compiled files under `v2-apps/instances/demo-notifier/staging/` — namespace, HelmRelease, quota, policy,
+  `consumer-demo-orders-created.json`, the kustomization and **its `events.sops.yaml`, copied byte for byte** — and
+  its unit `clusters/home/app-demo-notifier-staging.json`. Its v1 records, manifests, image automation and `.yaml`
+  unit are deleted, so Flux prunes them. The image, the team, the key and the subscription are the same facts, so
+  the user list v2 serves did not change.
+- **Two defects the live migration found, both fixed with tests:** the resolver and the user list read a
+  predecessor's `subscriptions`/`allocations.eventsKey` but not a v2 record's own `events` block, so a migrated
+  instance's subscription silently dropped out of the resolution and out of the broker's users. Both readers now
+  take either shape, and `TestOwnRecordsStateTheBrokerIdentity` pins it.
+- **What it proves:** `v2-records/calls.json` (regenerated) connects the pair with its consumer names; the compiled
+  folder lists its seed; the pod runs the same image; NATS accepts its key; the consumer
+  `demo-notifier_created` exists on `staging-demo-orders` and the app receives events.
+- **The gap this exposed, recorded rather than hidden:** [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml)'s
+  namespace list is v1's generated output, built from the instances under `apps/`. A migrated instance is therefore
+  no longer in it — `demo-notifier-staging` left the list in this change, exactly as `swhurl-try-10-staging` and
+  `swhurl-try-11-staging` did before it — so Reloader does not watch that namespace and a changed Secret does not
+  restart the pod. It is the next slice: v2 renders the list (another platform document, like the user list).
+  Image automation is the same shape of loss: v2 renders no `ImageRepository`/`ImagePolicy`, so a migrated staging
+  instance stops following its repository.
+- **Evidence:** `__COMMIT__` pushed and reconciled; `make verify-platform`; the pod's image unchanged; the consumer
+  Ready in NATS; an event received (below). Offline: `REQUIRE_HELM=1 make check-v2`, `make check` (1022 tests),
+  `make check-lint`, `make check-repo`, `make -s check-docs`.
 
 ## Resume
 

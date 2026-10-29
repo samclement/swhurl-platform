@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "application": "demo-notifier",
+  "environment": "staging",
+  "release": "rel-sha256:00f92223cd5f4b8ec12f3c98bfa84782612c239db5dbf534a02f152e8d3cc990",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 384
+  },
+  "grants": {
+    "exposure": "private"
+  },
+  "bindings": {},
+  "storage": {},
+  "events": {
+    "key": "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
+    "subscriptions": [
+      "demo-orders.created"
+    ]
+  }
+}

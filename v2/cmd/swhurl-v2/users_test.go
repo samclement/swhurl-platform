@@ -128,7 +128,7 @@ func TestUsersRefusals(t *testing.T) {
 			[]string{"users", "--snapshot", withRecords(1, func(records map[string]any) {
 				records["instance"] = map[string]any{"subscriptions": []any{"orders.created"}}
 			}), "--profile", profilePath(t)}, 2,
-			"unsupported: users.key: an_instance_that_declares_events_needs_a_key"},
+			"unsupported: users.key: notifier/staging declares events and has no key"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var out, diagnostic bytes.Buffer

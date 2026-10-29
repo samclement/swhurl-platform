@@ -235,6 +235,19 @@ func TestOwnedInstancesRecompileFromGit(t *testing.T) {
 			// A database instance needs its allocation, the same document its files were compiled with.
 			args = append(args, "--egress", "../../../platform/egress/allocation.json")
 		}
+		instance, err := os.ReadFile(instancePath)
+		if err != nil {
+			t.Fatalf("%s: %v", instancePath, err)
+		}
+		var settings struct{ Events struct{ Key string } }
+		if err := json.Unmarshal(instance, &settings); err != nil {
+			t.Fatalf("%s: %v", instancePath, err)
+		}
+		if settings.Events.Key != "" {
+			// An instance with a broker identity travels with its seed: the file Git holds beside its manifests.
+			args = append(args, "--events-secret",
+				filepath.Join("../../../v2-apps/instances", application, segments[len(segments)-1], "events.sops.yaml"))
+		}
 		var out, diagnostic bytes.Buffer
 		if status := run(args, &out, &diagnostic, os.ReadFile, files.New()); status != 0 {
 			t.Fatalf("%s: exit %d: %s", folder, status, diagnostic.String())

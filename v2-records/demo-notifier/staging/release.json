@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "application": "demo-notifier",
+  "source": {
+    "repository": "samclement/demo-notifier",
+    "commit": "eab35a3b0a162b5ff839afb8dcbe6bed74807193"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/demo-notifier",
+    "digest": "sha256:578f4aa722861ac50fcc67805e9e82bb0cfb67c2503216c276b84e9dd09a09be",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "worker",
+    "port": 0,
+    "healthPath": "",
+    "uid": 65532
+  },
+  "telemetry": true,
+  "releaseId": "rel-sha256:00f92223cd5f4b8ec12f3c98bfa84782612c239db5dbf534a02f152e8d3cc990"
+}

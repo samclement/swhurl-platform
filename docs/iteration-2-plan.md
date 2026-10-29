@@ -159,6 +159,46 @@ The artifact digest names an **OCI image manifest**, not an index/list or a conf
 
 The record is required for delivery: `compile --app` renders the namespace's `platform.swhurl.com/team` label from it, and the compilation names its app ID. A preview or live read that does not deliver an instance may omit it and renders no team label. The record is the future home of app-level settings (custom alerts), not a second instance record.
 
+### Image automation: what an image states
+
+A staging instance whose artifact image is published from its own `source.repository` renders Flux's
+`ImageRepository` (`<app>`, in `flux-system`, with the platform's `managed` and `app` labels) and its
+`ImagePolicy` (`<app>-staging`, the tag contract `^(?P<run>[0-9]+)-[0-9a-f]{7,40}$`, extract `$run`, numerical
+ascending, `digestReflectionPolicy: Always`, hourly) into its own compiled folder, and its unit waits for
+`platform-image-automation`. Production renders neither: it follows a promotion. A pinned third-party image renders
+neither: it is not the app's own publication. The names are the workflow's contract — `<app>-staging` is how the
+dispatch names the app — so they are kernel constants, tied by a test to v1's committed objects and to
+`contract.py`.
+
+The trigger is Flux's; the facts are the image's. An image states its declaration in its config labels under
+`platform.swhurl.com/declaration`: one JSON document the build writes from `swhurl.yaml`, read by
+`adapters/registry` with the manifest.
+
+| Field | Accepted value |
+| --- | --- |
+| `schemaVersion` | Integer `1` |
+| `runtime` | The release's own runtime rule: `kind` `web` or `worker` and a non-root `uid`; a web image states `port` and `healthPath`, a worker states neither |
+| `telemetry` | Optional boolean: the image has an SDK that reports to the platform collector |
+| `database` | Optional `sqlite`; empty for an image that keeps no state |
+| `publishes` | Optional event names, each an app-name-style segment, each at most once |
+| `secrets` | Optional secret names. Read, never applied: a non-empty list is refused |
+| `memoryMiB` | Optional integer: the image's minimum memory. Read, never applied: above the instance's memory it is refused |
+
+The document is strict: unknown fields, nulls, wrong types and a version other than 1 are refused, and the
+runtime is validated by the release's own rule. It is the delivery contract, not the whole app declaration:
+`description`, `stack`, `provides`, `flags` and the offer documents are not facts this path applies, and the
+catalogue's offers remain [deliberately deferred](#6-deliberately-deferred). `secrets` and `memoryMiB` are present
+only so an image that adds one is held rather than run without it.
+
+`adapters/registry` is the one new integration: one public repository's tags, then one tag's index resolved to its
+`linux/amd64` manifest, then that manifest's config labels. It reads anonymously, takes no credential, and names no
+policy: the tag ranking is the kernel's. `swhurl-v2 deploy` composes them — decode the records, read the tags, take
+the newest by the platform's policy, describe it, read the declaration, refuse what the instance cannot take,
+select the release against `--expect`, compile, and write the record pair and the compiled files in one effect. A
+tag that matches no policy is a refusal; an image already selected is a no-op that writes nothing; a registry it
+cannot read is exit 1; and a refused image leaves the running one selected. The workflow that calls it is the next
+slice: nothing calls `deploy` yet.
+
 ### Strict document boundary
 
 Input is exactly one UTF-8 **JSON** document. YAML is not supported in this slice, avoiding a decoder dependency and YAML normalisation rules. Reject duplicate keys (including escaped spellings), case variants, unknown fields at every level, missing required fields, nulls, incorrect scalar types, unsupported versions and trailing documents. Integers use JSON integer syntax: no fractions or exponent notation. There are no implicit defaults. Invalid documents return no usable record; diagnostics identify the field/category without dumping rejected values.
@@ -305,7 +345,7 @@ An adapter owns one external dependency and speaks domain terms ("read workload 
 | --- | --- | --- | --- |
 | Git and files | Read snapshots, write, commit, push, resolve revisions | Frozen snapshots; temporary local repositories | Concurrent pushes, stale bases, publication recovery |
 | GitHub | Pull requests, approvals, checks, repository creation, archives | Recorded reads; behavioural fake for changes | Authentication, permissions, ambiguous failures |
-| Builds and registry | Build evidence, image metadata, digests | Sample descriptors, build results, image metadata | Real publication, provenance, runnable images |
+| Builds and registry | `adapters/registry` reads one public repository's tags and resolves a tag to its `linux/amd64` manifest and config labels, anonymously; build evidence and provenance are not read | Recorded registry answers, a scripted registry | Real GHCR answers, a private package's refusal, the image's own declaration |
 | Kubernetes and Flux | Observe resources; request reconcile, suspend, other changes | Recorded API documents; scripted observation sequences | Controller behaviour, RBAC, eventual convergence |
 | Credentials and encryption | Generate keys, read secrets, encrypt and decrypt | Synthetic keys, deterministic outputs | Real SOPS round trips and key compatibility |
 | NATS and live flags | Read and write live values, connect, authenticate | In-memory store with revisions and injected failures | Access controls, concurrent updates |
@@ -1625,13 +1665,14 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | Alerts | Not generated | Phase 7, per app |
 | Resources from the image's minimums; a per-instance CPU choice | CPU from the profile; one memory value for request and limit | When an app needs more |
 | Quota headroom for an instance's other pods | The backup pod is counted (`replicas + 1` for a rolling update, plus one for the backup, with the job's own requests); no other second workload exists | The next feature that adds pods to an instance's namespace |
-| Image automation, automatic release discovery, auto-merge | Not generated, and **not restorable by rendering alone**: a migrated staging instance stops following its repository, because its `ImagePolicy` is what v1's Deploy workflow listens for and that workflow writes `apps/<app>/<env>/release.yaml`, which a v2-owned instance does not have. v2's own selection is a hand step (`release-id`, `select-release`, `compile`) | A delivery path a workflow can write: a v2 select-and-record command and a workflow over `v2-records/`, or the Deploy workflow taught to write v2 records; then v2 renders the `ImageRepository`/`ImagePolicy` pair and the unit's dependency |
+| Image automation, automatic release discovery, auto-merge | **The offline half is implemented** ([contract](#image-automation-what-an-image-states), [slice](v2-status.md#slice-record-image-automations-offline-half-29-october-2026)): a staging unit renders the `ImageRepository`/`ImagePolicy` pair and `swhurl-v2 deploy` resolves the newest tag through `adapters/registry`, reads the image's declaration label, refuses what the instance cannot take, selects and compiles, and writes records and files. **No workflow calls it yet**, so a migrated staging instance still does not follow a new image; auto-merge is not modelled | The Deploy workflow (or a v2 one) calling `deploy` for v2-owned staging instances, then a live image; auto-merge later |
+| An image's declaration | The build writes one JSON document into the image's config labels (`platform.swhurl.com/declaration`); v2 reads it with the manifest, and `secrets`/`memoryMiB` only to refuse them. The declaration is not the whole app: offers remain deferred | When an offer must travel with an image, or a fact the declaration omits must be applied |
 | The render fingerprint in the resources | The compilation ID is in the compilation document only. Observation did not need it in the cluster: the unit's applied revision is read instead, and compared only when the caller supplies the intended commit | Phase 5, if a later observation needs an artifact identity in the cluster |
 | Reloader's watch list | **Done and live 29 October 2026**: `platform/reloader/values.json` is the ConfigMap its HelmRelease merges as values, rendered from the profile's own namespaces and every instance that declares a Secret; v1's writer is deleted and the Render workflow regenerates it ([slice](v2-status.md#slice-record-reloaders-watch-list-29-october-2026)). One semantic difference is stated: a v1 Secret file whose names its release has not declared yet is not watched, because v2 reads declarations and the snapshot never reads an encrypted file | Done |
 | The unit's registration in `clusters/home/kustomization.yaml` | The unit file is written at `delivery.unitsRoot` by `compile --out`; its one-line registration stays a reviewed edit by the operator ([decided with the delivery slice](#first-delivery-slice-implemented-offline-25-october-2026-operator-run)) | Decided; revisit only if per-instance registrations become noise |
 | Live ownership of what a preview would create | The [fourth bridge slice](#phase-3-slice-4-live-ownership-implemented-25-october-2026) reads the preview's five claims from a live API server and reports present/absent/unavailable; the other declared objects (Secrets, CronJobs, Streams, image policies) are not read, so this is claim coverage, not a full live inventory | With the first migration, if a migration needs the wider inventory |
 | v1's objects as `foreign` ownership | Empty; the [phase-3 brief](#phase-3-shadow-not-synchronise) proposes declared app-object identities from a pinned snapshot, independent of preview coverage, including unmodelled/residual apps | Phase 3 |
-| Complete release/source/build relationships and artifact verification | The current descriptor requires source/type/platform claims but does not verify them. `migrate` states where every fact came from and checks the supplied commit against the record fields that abbreviate it, but the pair cannot distinguish a checked claim from an unchecked one. **An unchecked claim was wrong in practice:** `swhurl-try-10` staging's migrated release claimed an image manifest, but its digest (copied from v1, whose image automation pins the tag's digest) is an image index; the release selected on 29 October 2026 names the index's `linux/amd64` manifest, checked by hand against the registry. A read-only registry adapter (public images need no credential) would make that check part of writing a release. Phase 3 would preview known workload facts without inventing complete releases or requiring a manual claims catalogue | Release/build domain modelling as it develops; before claiming complete or independently verified release semantics |
+| Complete release/source/build relationships and artifact verification | The current descriptor requires source/type/platform claims but does not verify them. `migrate` states where every fact came from and checks the supplied commit against the record fields that abbreviate it, but the pair cannot distinguish a checked claim from an unchecked one. **An unchecked claim was wrong in practice:** `swhurl-try-10` staging's migrated release claimed an image manifest, but its digest (copied from v1, whose image automation pins the tag's digest) is an image index; the release selected on 29 October 2026 names the index's `linux/amd64` manifest, checked by hand against the registry. A read-only registry adapter (public images need no credential) would make that check part of writing a release; **for automated releases it now does** — `adapters/registry` reads the platform manifest and its labels — while a hand-written release's claims are still unchecked. Phase 3 would preview known workload facts without inventing complete releases or requiring a manual claims catalogue | Release/build domain modelling as it develops; before claiming complete or independently verified release semantics |
 | Scoped workload preview/comparison independent of complete releases | The [first phase-3 slice](#first-slice-proposal-pure-http-preview-and-comparison) implements shared `RenderInstance` and pure `shadow.CompareHTTP`; the [second](#phase-3-slice-2-legacy-translation-and-a-preview-report-implemented-offline-25-october-2026) translates a predecessor's records into scoped facts with a source per fact and a gap per unmodelled fact, and `swhurl-v2 preview` composes translation, rendering and comparison into a `v2-preview` document. Snapshot acquisition, ownership inventory and foreign-object integration remain unimplemented | The next bridge slice for acquisition and ownership; before claiming the bridge complete |
 | Reading a predecessor's records from its repository | `make v2-snapshot REVISION= OUT=` exports one pinned revision as JSON (records and object identities; SOPS files skipped), and v2 reads only JSON. The exporter is operator tooling, so it is also a console-image input | Unchanged unless an in-cluster or automated bridge needs the records without a host step |
 | Observation of what is running (the first adapter) | The [first observation slice](#first-observation-slice-what-is-running-implemented-offline-25-october-2026) implements the pure projection and one read-only adapter for four kinds — CronJob and Job since [the backup slice](#the-backup-observation-implemented-offline-26-october-2026), which also answers a database instance's protection; the [second](#second-observation-slice-the-target-from-compiled-output-implemented-25-october-2026) derives the target's objects, selector, container, digest and replicas from the compiled HelmRelease and the unit's identity from the compiled unit. The intended source revision and the credential material stay the caller's, and there is no command. Pod-level facts (restarts, events, scheduling), ownership and every kind but those four are not read | The next observation slice (a credential source and the report envelope), then live verification with phase 6 |

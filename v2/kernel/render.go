@@ -15,11 +15,14 @@ import (
 type WorkloadFacts struct {
 	Kind          string
 	Image, Digest string
-	Port          int32
-	HealthPath    string
-	UID           int32
-	Telemetry     bool
-	Publishes     []string
+	// Source is the app repository the image was built from, when the release states one. A staging instance
+	// gets the image policy only for an image published from that same repository.
+	Source     string
+	Port       int32
+	HealthPath string
+	UID        int32
+	Telemetry  bool
+	Publishes  []string
 }
 
 // servesHTTP is whether the workload has an HTTP surface: a Service, probes and, if the instance is exposed,
@@ -82,7 +85,8 @@ func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProf
 	// Instances under the instance root; units under the profile's unit root, which kustomize can list.
 	folder := profile.Delivery.OutputRoot + "/instances/" + spec.Application + "/" + spec.Environment
 	unitPath := profile.Delivery.UnitsRoot + "/" + unitName(spec) + ".json"
-	resources := resourcesOf(spec, http, profile, exposure)
+	automation := imageAutomation(spec, http)
+	resources := resourcesOf(spec, http, profile, exposure, automation)
 	var files []File
 	var listed []any
 	for _, resource := range resources {
@@ -97,7 +101,7 @@ func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProf
 	files = append(files,
 		File{folder + "/kustomization.yaml", encodeManifest(manifest{
 			"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization", "resources": listed})},
-		File{unitPath, encodeManifest(unit(spec, profile, folder))})
+		File{unitPath, encodeManifest(unit(spec, profile, folder, automation))})
 	if spec.Database == "sqlite" {
 		// Flux substitutes every reference in the folder, so a reference v2 did not mean to write would be
 		// replaced or could not be resolved; nothing else may look like one.
@@ -448,6 +452,44 @@ func ingress(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) ma
 			"tls": []any{manifest{"hosts": []any{host}, "secretName": spec.Application + "-tls"}}}}
 }
 
+// imageAutomation is whether the instance renders the repository and policy Flux watches: staging only, and
+// only for an image published from the app's own repository. A pinned third-party image is not the app's to
+// follow, and production changes through a promotion.
+func imageAutomation(spec InstanceFacts, http WorkloadFacts) bool {
+	return spec.Environment == "staging" && http.Source != "" && ImageRepository(http.Image) == http.Source
+}
+
+// imageAutomationObjects is the pair v1 renders in a staging app's unit: the app's repository, and the policy
+// whose report starts the Deploy workflow. Their names are the workflow's contract.
+func imageAutomationObjects(spec InstanceFacts, http WorkloadFacts) []resource {
+	return []resource{
+		{"image-repository.json", imageRepository(spec, http)},
+		{"image-policy.json", imagePolicy(spec)},
+	}
+}
+
+func imageRepository(spec InstanceFacts, http WorkloadFacts) manifest {
+	return manifest{"apiVersion": "image.toolkit.fluxcd.io/v1", "kind": "ImageRepository",
+		"metadata": imageMetadata(ImageRepositoryName(spec.Application), spec.Application),
+		"spec":     manifest{"image": http.Image, "interval": ImageInterval}}
+}
+
+func imagePolicy(spec InstanceFacts) manifest {
+	return manifest{"apiVersion": "image.toolkit.fluxcd.io/v1", "kind": "ImagePolicy",
+		"metadata": imageMetadata(ImagePolicyName(spec.Application), spec.Application),
+		"spec": manifest{"imageRepositoryRef": manifest{"name": ImageRepositoryName(spec.Application)},
+			"filterTags":             manifest{"pattern": ImagePolicyPattern, "extract": ImagePolicyExtract},
+			"policy":                 manifest{"numerical": manifest{"order": "asc"}},
+			"digestReflectionPolicy": "Always", "interval": ImageInterval}}
+}
+
+// imageMetadata is the pair's identity: flux-system, and the labels the platform's Alert and the console read.
+func imageMetadata(name, application string) manifest {
+	meta := metadata(name, "flux-system")
+	meta["labels"] = manifest{labelDomain + "managed": "true", labelDomain + "app": application}
+	return meta
+}
+
 // routeHost derives the host name the way the platform states it: the environment, the app and the base
 // domain. No instance stores a host, so two instances cannot disagree about one name's shape.
 func routeHost(spec InstanceFacts, routing Routing) string {
@@ -457,10 +499,15 @@ func routeHost(spec InstanceFacts, routing Routing) string {
 // configured is whether the profile states routing at all.
 func (r Routing) configured() bool { return r.BaseDomain != "" }
 
-func unit(spec InstanceFacts, profile PlatformProfile, folder string) manifest {
+func unit(spec InstanceFacts, profile PlatformProfile, folder string, automation bool) manifest {
 	dependsOn := []any{}
 	for _, name := range profile.Delivery.DependsOn {
 		dependsOn = append(dependsOn, manifest{"name": name})
+	}
+	if automation {
+		// The Alert that starts a delivery lives in the platform's unit, so it must exist before this
+		// instance's policy can report anything.
+		dependsOn = append(dependsOn, manifest{"name": ImageAutomationUnit})
 	}
 	if spec.Broker.Key != "" {
 		// The broker must exist first: the app signs in as it starts, and would be refused until it did.
@@ -552,32 +599,31 @@ func exposureOf(stated string, profile PlatformProfile) (string, error) {
 
 // resourcesOf is the instance's files in their fixed order: the route, when there is one, after the policy
 // and before the kustomization that lists them.
-func resourcesOf(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile, exposure string) []struct {
+// resource is one document of the instance's folder: its file name and its object.
+type resource struct {
 	name string
 	doc  manifest
-} {
-	resources := []struct {
-		name string
-		doc  manifest
-	}{
+}
+
+// resourcesOf is every object the instance's folder holds, in file order. A staging instance that publishes
+// its own image also gets the repository and policy Flux watches; production follows a promotion instead.
+func resourcesOf(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile, exposure string, automation bool) []resource {
+	resources := []resource{
 		{"namespace.json", namespaceManifest(spec)},
 		{"helmrelease.json", helmRelease(spec, http, profile)},
 		{"resourcequota.json", resourceQuota(spec, profile.Quota)},
 		{"networkpolicy.json", networkPolicy(spec, exposure, http, profile)},
 	}
+	if automation {
+		resources = append(resources, imageAutomationObjects(spec, http)...)
+	}
 	if exposure != "private" {
-		resources = append(resources, struct {
-			name string
-			doc  manifest
-		}{"ingress.json", ingress(spec, http, profile)})
+		resources = append(resources, resource{"ingress.json", ingress(spec, http, profile)})
 	}
 	if len(spec.Callers) > 0 {
 		// The keys are the platform's object in this namespace (RenderAuth); only the allow-list, whose content
 		// is this instance's, is rendered here.
-		resources = append(resources, struct {
-			name string
-			doc  manifest
-		}{"callers.json", callersConfigMap(spec)})
+		resources = append(resources, resource{"callers.json", callersConfigMap(spec)})
 	}
 	for _, object := range eventsObjects(spec, http) {
 		resources = append(resources, object)
@@ -586,18 +632,9 @@ func resourcesOf(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile
 		// A database is the platform's to protect: the job, the reference to the upload key it reads,
 		// and a policy for the pod that reaches S3.
 		resources = append(resources,
-			struct {
-				name string
-				doc  manifest
-			}{"backup-secret.json", backupSecret(spec)},
-			struct {
-				name string
-				doc  manifest
-			}{"backup-cronjob.json", backupCronJob(spec, http, profile)},
-			struct {
-				name string
-				doc  manifest
-			}{"backup-networkpolicy.json", backupPolicy(spec, profile)})
+			resource{"backup-secret.json", backupSecret(spec)},
+			resource{"backup-cronjob.json", backupCronJob(spec, http, profile)},
+			resource{"backup-networkpolicy.json", backupPolicy(spec, profile)})
 	}
 	return resources
 }
@@ -949,6 +986,11 @@ func inventory(spec InstanceFacts, http WorkloadFacts) []Claim {
 	}
 	if spec.Exposure == "authenticated-web" {
 		claims = append(claims, Claim{Object{"networking.k8s.io", "Ingress", namespace, spec.Application}, by})
+	}
+	if imageAutomation(spec, http) {
+		claims = append(claims,
+			Claim{Object{"image.toolkit.fluxcd.io", "ImageRepository", "flux-system", ImageRepositoryName(spec.Application)}, by},
+			Claim{Object{"image.toolkit.fluxcd.io", "ImagePolicy", "flux-system", ImagePolicyName(spec.Application)}, by})
 	}
 	if len(spec.Callers) > 0 {
 		// The keys' object belongs to the platform; the allow-list's to this instance.

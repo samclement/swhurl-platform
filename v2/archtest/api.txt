@@ -48,6 +48,23 @@ adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
 adapters/kube: type Error struct {Code, Subject, Reason string}
 adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)}
 adapters/kube: type Writer interface {// Patch applies a JSON merge patch to one object: the shape the platform uses to suspend a release or // set a replica count. Patch(ctx context.Context, ref observe.Ref, patch []byte) error // Create creates one object from its document. Create(ctx context.Context, ref observe.Ref, document []byte) error // Delete removes one object. An object that is already gone is not an error. Delete(ctx context.Context, ref observe.Ref) error // Logs reads the last lines of one pod's log: the evidence a restore job leaves about what it did. Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)}
+adapters/registry/registrytest: func (*Fake) Describe(_ context.Context, tag string) (registry.Image, error)
+adapters/registry/registrytest: func (*Fake) Tags(context.Context) ([]string, error)
+adapters/registry/registrytest: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) registry.Reader)
+adapters/registry/registrytest: func New(scenario Scenario) *Fake
+adapters/registry/registrytest: type Fake struct {Scenario TagCalls int Described []string Fail error}
+adapters/registry/registrytest: type Scenario struct {Tags []string Images map[string]registry.Image Missing string}
+adapters/registry: const NoPlatformManifest = "no_platform_manifest"
+adapters/registry: const RefusedRequest = "refused_request"
+adapters/registry: const Unavailable = "unavailable"
+adapters/registry: func (*Error) Error() string
+adapters/registry: func (*Remote) Describe(ctx context.Context, tag string) (Image, error)
+adapters/registry: func (*Remote) Tags(ctx context.Context) ([]string, error)
+adapters/registry: func New(image string, client *http.Client) (Reader, error)
+adapters/registry: type Error struct {Code, Subject, Reason string}
+adapters/registry: type Image struct {Digest string MediaType string Labels map[string]string}
+adapters/registry: type Reader interface {Tags(ctx context.Context) ([]string, error) Describe(ctx context.Context, tag string) (Image, error)}
+adapters/registry: type Remote struct {}
 adapters/s3/s3test: func (*Fake) Get(_ context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
 adapters/s3/s3test: func (*Fake) List(_ context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
 adapters/s3/s3test: func (*Fake) PresignURL(_ context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)
@@ -111,9 +128,14 @@ events: type Subscription struct {Publisher, Event string Stream, Consumer strin
 kernel: const AppTree = "apps"
 kernel: const DataMount = "/data"
 kernel: const DatabasePath = DataMount + "/app.db"
+kernel: const DeclarationLabel = "platform.swhurl.com/declaration"
 kernel: const EventsSecretFile = "events.sops.yaml"
 kernel: const FirstPort int32 = 30101
 kernel: const IdentityMismatch Code = "identity_mismatch"
+kernel: const ImageAutomationUnit = "platform-image-automation"
+kernel: const ImageInterval = "1h"
+kernel: const ImagePolicyExtract = `$run`
+kernel: const ImagePolicyPattern = `^(?P<run>[0-9]+)-[0-9a-f]{7,40}$`
 kernel: const Invalid Code = "invalid"
 kernel: const ManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
 kernel: const OverQuota Code = "over_quota"
@@ -128,6 +150,7 @@ kernel: func (*Error) Error() string
 kernel: func (AppSpec) ID() (AppID, error)
 kernel: func (Backup) Host() string
 kernel: func (Connections) ID() ConnectionsID
+kernel: func (Declaration) Release(application, repository, commit, image, digest, mediaType string) (ReleaseBundle, error)
 kernel: func (EgressDocument) EgressOf(application, environment string) (*Egress, error)
 kernel: func (EgressFacts) NeedsEgress() bool
 kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
@@ -135,6 +158,7 @@ kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
 kernel: func (Reloader) Namespaces() ([]string, error)
 kernel: func (Telemetry) CollectorPort() (int32, bool)
+kernel: func AcceptDeclaration(declaration Declaration, spec InstanceSpec, current ReleaseBundle) error
 kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation, backupHost string) ([]EgressAllocation, error)
 kernel: func CheckEncryptedSeed(document []byte, seed string) error
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
@@ -142,6 +166,7 @@ kernel: func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformP
 kernel: func CompileWith(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile, connections Connections, egress *Egress) (Compilation, error)
 kernel: func ConnectionsOf(data []byte, application, environment string) (Connections, error)
 kernel: func DecodeApp(data []byte) (AppSpec, error)
+kernel: func DecodeDeclaration(data []byte) (Declaration, error)
 kernel: func DecodeEgressDocument(data []byte) (EgressDocument, error)
 kernel: func DecodeInstance(data []byte) (InstanceSpec, error)
 kernel: func DecodeProfile(data []byte) (PlatformProfile, error)
@@ -152,8 +177,13 @@ kernel: func EncodeEgressDocument(document EgressDocument) ([]byte, error)
 kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
 kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
 kernel: func EventsSecret(spec InstanceSpec, pair UserKey) ([]byte, error)
+kernel: func ImageParts(image string) (host, repository string, err error)
+kernel: func ImagePolicyName(application string) string
+kernel: func ImageRepository(image string) string
+kernel: func ImageRepositoryName(application string) string
 kernel: func NamespaceOf(application, environment string) string
 kernel: func NewUserKey(seed [32]byte) UserKey
+kernel: func NewestTag(tags []string) (ImageTag, bool)
 kernel: func Ownership(claims []Claim) []Conflict
 kernel: func RenderAuth(namespaces []string, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) (ResourceSet, error)
@@ -187,6 +217,7 @@ kernel: type ConnectionsRefusal struct {Application string `json:"application"` 
 kernel: type ConnectionsSubscription struct {Subscriber string `json:"subscriber"` Publisher string `json:"publisher"` Event string `json:"event"` Environment string `json:"environment"` Stream string `json:"stream"` Consumer string `json:"consumer"` Subject string `json:"subject"` Object string `json:"object"`}
 kernel: type ConnectionsWaiting struct {Caller string `json:"caller"` Callee string `json:"callee"` Environment string `json:"environment"` Reason string `json:"reason"`}
 kernel: type DNS struct {Namespace string `json:"namespace"` Labels map[string]string `json:"labels"`}
+kernel: type Declaration struct {SchemaVersion int32 `json:"schemaVersion"` Runtime Runtime `json:"runtime"` Telemetry bool `json:"telemetry,omitempty"` Database string `json:"database,omitempty"` Publishes []string `json:"publishes,omitempty"` Secrets []string `json:"secrets,omitempty"` MemoryMiB int32 `json:"memoryMiB,omitempty"`}
 kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `json:"outputRoot"` UnitsRoot string `json:"unitsRoot"` DependsOn []string `json:"dependsOn"`}
 kernel: type Egress struct {Port int32 Grants []string}
 kernel: type EgressAllocation struct {Application string `json:"application"` Environment string `json:"environment"` Port int32 `json:"port"` Grants []string `json:"grants"`}
@@ -198,6 +229,7 @@ kernel: type EventSubscription struct {Publisher, Event string Stream, Consumer 
 kernel: type Events struct {Key string `json:"key,omitempty"` Subscriptions []string `json:"subscriptions,omitempty"`}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
 kernel: type Grants struct {Exposure string `json:"exposure"`}
+kernel: type ImageTag struct {Name string Run int64 Commit string}
 kernel: type Inputs struct {App AppID `json:"app"` Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"` Calls ConnectionsID `json:"calls"`}
 kernel: type InstanceFacts struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string Broker BrokerIdentity}
 kernel: type InstanceRevision string
@@ -229,7 +261,7 @@ kernel: type Storage struct {SizeMiB int32 `json:"sizeMiB,omitempty"` ClaimName 
 kernel: type Telemetry struct {Endpoint string `json:"endpoint"` Protocol string `json:"protocol"` NodeCIDR string `json:"nodeCIDR"`}
 kernel: type UserKey struct {Seed string Public string}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
-kernel: type WorkloadFacts struct {Kind string Image, Digest string Port int32 HealthPath string UID int32 Telemetry bool Publishes []string}
+kernel: type WorkloadFacts struct {Kind string Image, Digest string Source string Port int32 HealthPath string UID int32 Telemetry bool Publishes []string}
 legacy: const Invalid = "invalid"
 legacy: const Missing = "missing"
 legacy: const Unsupported = "unsupported"
@@ -377,11 +409,14 @@ orchestration: const StepNotRead = "not_read"
 orchestration: func (*Refusal) Error() string
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
+orchestration: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 orchestration: func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
+orchestration: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
+orchestration: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
 orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte}
 orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}
 orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte EventsSecret []byte}

@@ -1,7 +1,7 @@
 {
   "kind": "v2-compilation",
   "version": 1,
-  "id": "comp-sha256:2775f50c1c6d01d0f538bfb97d2c9852f1b419e2b57d8eed72d420d133e6c144",
+  "id": "comp-sha256:9a475d25a5f2eb68eb8144ba5499daa37b3a68bd24e1e9f3933fc19783ba4e5c",
   "inputs": {
     "app": "app-sha256:50aa37430360ade5a48ce7d5c968b521b57e91bf8a1c4501fb14fc10d2672e0f",
     "release": "rel-sha256:4e2bf5499fc5b3582e0ba2cd3ae59544b8f0df7a4ea101b658fea48baf316c49",
@@ -256,6 +256,56 @@
       }
     },
     {
+      "path": "v2-apps/instances/demo-orders/staging/image-repository.json",
+      "document": {
+        "apiVersion": "image.toolkit.fluxcd.io/v1",
+        "kind": "ImageRepository",
+        "metadata": {
+          "labels": {
+            "platform.swhurl.com/app": "demo-orders",
+            "platform.swhurl.com/managed": "true"
+          },
+          "name": "demo-orders",
+          "namespace": "flux-system"
+        },
+        "spec": {
+          "image": "ghcr.io/samclement/demo-orders",
+          "interval": "1h"
+        }
+      }
+    },
+    {
+      "path": "v2-apps/instances/demo-orders/staging/image-policy.json",
+      "document": {
+        "apiVersion": "image.toolkit.fluxcd.io/v1",
+        "kind": "ImagePolicy",
+        "metadata": {
+          "labels": {
+            "platform.swhurl.com/app": "demo-orders",
+            "platform.swhurl.com/managed": "true"
+          },
+          "name": "demo-orders-staging",
+          "namespace": "flux-system"
+        },
+        "spec": {
+          "digestReflectionPolicy": "Always",
+          "filterTags": {
+            "extract": "$run",
+            "pattern": "^(?P<run>[0-9]+)-[0-9a-f]{7,40}$"
+          },
+          "imageRepositoryRef": {
+            "name": "demo-orders"
+          },
+          "interval": "1h",
+          "policy": {
+            "numerical": {
+              "order": "asc"
+            }
+          }
+        }
+      }
+    },
+    {
       "path": "v2-apps/instances/demo-orders/staging/kustomization.yaml",
       "document": {
         "apiVersion": "kustomize.config.k8s.io/v1beta1",
@@ -264,7 +314,9 @@
           "namespace.json",
           "helmrelease.json",
           "resourcequota.json",
-          "networkpolicy.json"
+          "networkpolicy.json",
+          "image-repository.json",
+          "image-policy.json"
         ]
       }
     },
@@ -281,6 +333,9 @@
           "dependsOn": [
             {
               "name": "infra-base"
+            },
+            {
+              "name": "platform-image-automation"
             }
           ],
           "interval": "10m",
@@ -323,6 +378,20 @@
       "kind": "NetworkPolicy",
       "namespace": "demo-orders-staging",
       "name": "demo-orders",
+      "owner": "demo-orders/staging"
+    },
+    {
+      "group": "image.toolkit.fluxcd.io",
+      "kind": "ImageRepository",
+      "namespace": "flux-system",
+      "name": "demo-orders",
+      "owner": "demo-orders/staging"
+    },
+    {
+      "group": "image.toolkit.fluxcd.io",
+      "kind": "ImagePolicy",
+      "namespace": "flux-system",
+      "name": "demo-orders-staging",
       "owner": "demo-orders/staging"
     },
     {

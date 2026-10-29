@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/kernel"
@@ -32,6 +33,8 @@ const usage = `usage:
   swhurl-v2 resolve --snapshot SNAPSHOT.json
   swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
+  swhurl-v2 deploy --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json \
+      --expect REVISION --out DIR [--calls CALLS.json] [--egress EGRESS.json]
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
@@ -165,7 +168,7 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		return 2
 	}
 	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archiveReader,
-		seed: randomSeed, encrypter: sops.New()}
+		registries: registryReader, seed: randomSeed, encrypter: sops.New()}
 	return commands[r.command](c, r)
 }
 
@@ -182,7 +185,7 @@ func runWithArchives(args []string, out, diagnostic io.Writer, readFile func(str
 		return 2
 	}
 	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archives,
-		seed: randomSeed, encrypter: sops.New()}
+		registries: registryReader, seed: randomSeed, encrypter: sops.New()}
 	return commands[r.command](c, r)
 }
 
@@ -199,8 +202,31 @@ func runWithEncrypter(args []string, out, diagnostic io.Writer, readFile func(st
 		return 2
 	}
 	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archiveReader,
-		seed: seed, encrypter: encrypter}
+		registries: registryReader, seed: seed, encrypter: encrypter}
 	return commands[r.command](c, r)
+}
+
+// runWithRegistry runs one command with a supplied image-registry reader, so a test can answer a tag and a
+// declaration without a network.
+func runWithRegistry(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error),
+	writer files.Writer, registries func(image string) (registry.Reader, error)) int {
+	r, outcome := parse(args)
+	switch outcome {
+	case help:
+		return emit(out, diagnostic, []byte(usage))
+	case misuse:
+		fmt.Fprint(diagnostic, usage)
+		return 2
+	}
+	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archiveReader,
+		registries: registries, seed: randomSeed, encrypter: sops.New()}
+	return commands[r.command](c, r)
+}
+
+// registryReader is the image-registry reader the command builds: public packages, anonymous, over the
+// registry the artifact image names.
+func registryReader(image string) (registry.Reader, error) {
+	return registry.New(image, &http.Client{Timeout: 30 * time.Second})
 }
 
 // archiveReader is the object-store reader the command builds from the operator's own credentials. They are
@@ -220,6 +246,7 @@ var commands = map[string]func(cli, request) int{
 	"release-id":        func(c cli, r request) int { return c.releaseID(r.release) },
 	"instance-revision": func(c cli, r request) int { return c.instanceRevision(r.instance) },
 	"select-release":    cli.selectRelease,
+	"deploy":            cli.deploy,
 	"compile":           cli.compile,
 	"observe":           cli.observe,
 	"preview":           cli.preview,
@@ -295,7 +322,7 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 // registerInputs adds the file flags the v1-style commands share.
 func (r *request) registerInputs(flags *flag.FlagSet) {
 	switch r.command {
-	case "select-release", "compile", "observe", "restore", "mint":
+	case "select-release", "deploy", "compile", "observe", "restore", "mint":
 		flags.Var(&once{value: &r.instance}, "instance", "instance file")
 		flags.Var(&once{value: &r.release}, "release", "release file")
 	case "preview":
@@ -317,6 +344,13 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 	switch command {
 	case "select-release":
 		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
+	case "deploy":
+		r.registerRecords(flags)
+		flags.Var(&once{value: &r.app}, "app", "app record (its team)")
+		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
+		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
+		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		r.registerOut(flags)
 	case "compile":
 		r.registerRecords(flags)
 		flags.Var(&once{value: &r.app}, "app", "app record (its team)")
@@ -442,6 +476,8 @@ func (r *request) named() []string {
 		return nil
 	case "migrate":
 		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}
+	case "deploy":
+		return []string{r.instance, r.release, r.app, r.profile, r.expected, r.out}
 	case "compile":
 		return []string{r.instance, r.release, r.app, r.profile}
 	case "preview":
@@ -539,6 +575,9 @@ type cli struct {
 	writer          files.Writer
 	// archives builds the object-store reader; a test supplies one that answers without a network.
 	archives func(bucket, region string) (s3.Reader, error)
+	// registries builds the image-registry reader for one artifact image; a test supplies one that answers
+	// from a script.
+	registries func(image string) (registry.Reader, error)
 	// seed and encrypter are the two effects a mint needs; a test supplies both, so it needs neither randomness
 	// nor sops. Commands that never mint are given the real ones too.
 	seed      func() ([32]byte, error)
@@ -661,6 +700,10 @@ func (c cli) failure(err error) int {
 	fmt.Fprintln(c.diagnostic, err)
 	var failure *files.Error
 	if errors.As(err, &failure) && failure.Code == files.IO {
+		return 1
+	}
+	var unavailable *registry.Error
+	if errors.As(err, &unavailable) && unavailable.Code == registry.Unavailable {
 		return 1
 	}
 	return 2

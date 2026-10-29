@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the operator's choice of the next slice: a delivery path for image automation, or the next domain v2 does not render (secret names, team grants, public routes)
+Gate: the Deploy workflow calls `swhurl-v2 deploy` for v2-owned staging instances, then a live image
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -19,6 +19,8 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 **Approved 29 October 2026: slice 3's first live migration — `demo-notifier` staging** — the first instance with an event subscription to move, receiving `demo-orders.created` from a v1 publisher: its records, its stream-side manifest and its encrypted seed are v2's, and an event flows through the pair across the two owners. See [the record](#slice-record-the-first-migrated-event-using-worker-demo-notifier-staging-29-october-2026).
 
 **Approved 29 October 2026: slice 3's cutover — v2 owns NATS's user list** — `platform/nats/users.json` is v2's output now, v1's generator is deleted, and the Render workflow regenerates it, so the list the broker serves can no longer be a second writer's opinion. Implemented and checked offline, then applied; see [the record](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026).
+
+**Approved 29 October 2026: image automation's offline half** — the operator said go ahead on the gate. v2 renders the `ImageRepository`/`ImagePolicy` pair into a staging instance's unit, and gains `swhurl-v2 deploy`: the platform's tag policy picks the newest tag, a read-only registry adapter resolves its `linux/amd64` manifest and reads the declaration the build wrote into the image's config labels, the instance refuses a fact it cannot take, and the use case selects, compiles and writes the pair and the files in one effect. **No workflow calls it and no live image has travelled it**; that is the next gate. See [the record](#slice-record-image-automations-offline-half-29-october-2026).
 
 **Approved 29 October 2026: the telemetry export** — the operator said go ahead on the slice found while testing the rotation. A v2-owned instance's policy states `Egress` and admitted only DNS, its broker and its callers, so the collector its env names (`http://$(HOST_IP):4318`, a host-network DaemonSet) was refused. The profile now states the block that address is in (`telemetry.nodeCIDR`, with a telemetry block required to state it), and a reporting image's policy admits that block on the endpoint's own port. Nothing else about the policy changed: an instance that reports nowhere gets no such rule, and everything else is still denied. See [the record](#slice-record-the-telemetry-export-29-october-2026).
 
@@ -67,11 +69,11 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | App kinds | A worker release compiles to an instance that serves nothing, with every other fact intact | **Done, offline 29 October 2026** (the worker kind); `job` still refused |
 | Events | The server's user list, and per instance its key, stream, consumers and seed | **Parts one and two, offline 29 October 2026**: the user list renders identically to the platform's, and a keyed instance renders its variables, stream, consumers and unit; the seed is the encrypted file v2 copies without reading |
 | Minting a broker identity | v2 can create a pair, not only adopt one: the seed is encrypted to the platform's recipient and the record states the public key | **Done, live 29 October 2026**: `swhurl-v2 mint`, used for the two v2-owned instances that had no pair; rotation is the same command with `--rotate` |
-| Image automation | A migrated staging instance following its published images | **Not modelled, deliberately**: the `ImagePolicy` starts v1's Deploy workflow, which writes v1 records, so v2 must render it with a selection path of its own |
+| Image automation | A migrated staging instance following its published images | **Offline 29 October 2026**: a staging unit renders the pair, and `swhurl-v2 deploy` resolves the newest tag with the platform's policy, reads the image's declaration label, refuses what the instance cannot take, and writes the records and files. The workflow that calls it, and a live image, are the next gate |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** delivery is manual (compile, commit, push); v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+**Not yet true, and what would make it true:** delivery is manual (compile, commit, push), except a v2-owned staging instance's image selection, which is offline until the Deploy workflow calls it; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); the egress cutover, which changes live outbound traffic and needs the grants recorded before it can refuse the rest; and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -93,6 +95,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
 | Broker identity minting | done and live 29 October 2026: `swhurl-v2 mint` derives the pair in the pure model, encrypts the seed through `adapters/sops` (the one command v2 starts) to `sops.recipient`, writes it beside the record and then the record; the two v2-owned instances without a pair were minted, and `make v2-users` and the Reloader list gained them | [slice](#slice-record-minting-a-broker-identity-29-october-2026) |
 | Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
+| Image automation | offline 29 October 2026: the staging pair and `swhurl-v2 deploy` (tag policy, registry adapter, declaration, refusals, one write); the workflow and a live image remain | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | 7. Selective replacement | three live: `swhurl-try-11` staging, `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 
@@ -1163,6 +1166,69 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
   `kernel` 92.8%, CLI 86.0%.
 - **Next gate:** the operator's choice of the next slice: a delivery path for image automation, or the next domain v2
   does not render (secret names, team grants, public routes).
+
+
+## Slice record: image automation's offline half (29 October 2026)
+
+**Approved by the operator's "go ahead with the offline first slice", after choosing image automation over the next unrendered domain.**
+
+- **Outcome and the refusals it must produce:** a staging instance whose image is published from its own source
+  repository renders `ImageRepository/<app>` and `ImagePolicy/<app>-staging` — v1's object, field for field, with
+  the platform's tag contract — and its unit waits for `platform-image-automation`. `swhurl-v2 deploy` reads the
+  newest tag that policy would pick, resolves its `linux/amd64` manifest, reads the declaration the build wrote
+  into the image's config labels, and writes the release record, the selected instance and the compiled files in
+  one effect. It refuses a declaration v2 cannot carry (`secrets`, a `memoryMiB` above the instance's, another
+  `kind`, a different `database`, another `uid` on a volume), an image with no declaration, a tag whose commit is
+  abbreviated, a stale `--expect`, a candidate for another app, and everything compile refuses; a tag matching
+  no platform tag is a refusal, and a registry it cannot read is exit 1 and writes nothing. The image already
+  selected is a no-op that writes nothing.
+- **Owners and boundaries:** the **image** owns its declaration (the build writes it from `swhurl.yaml`); the
+  **release** owns the facts that declaration states, with the digest and media type the registry answered; the
+  **instance** owns selection and configuration and changes only its release; the **platform** owns the tag
+  contract, the object names and the pair's placement (kernel constants, tied to v1's committed objects); the
+  **registry adapter** owns the protocol (token, tags, index → platform manifest, config labels) and speaks no
+  policy; **`kernel`** decides the newest tag, decodes the declaration, refuses what the instance cannot take and
+  renders the pair; **`orchestration`** sequences the read and the one write; the **command** is flags, exit codes
+  and the `v2-deploy` document. The workflow that calls it is not in this slice.
+- **What crosses each seam:** one repository's tags and one tag's digest, media type and labels, read anonymously
+  from the registry; the declaration label into the kernel; the selected pair into the compiler; the record and
+  compiled files into the files adapter. No cluster, credential, clock or subprocess.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1's files and instances are unchanged** — nothing under `apps/`, `tools/` or `platform/` was touched. The
+     three v2-owned staging units gained the pair and one dependency, so Flux now reports their repositories: the
+     v1 Alert dispatches its workflow for those reports and the workflow's existing path finds no `apps/` record
+     and deploys nothing. That extra, idempotent run is the one v1 behaviour this change has, and the next slice
+     replaces it for v2-owned instances.
+  2. **Pure** — the tag policy, the declaration decode, the acceptance rules and the pair's rendering are pure;
+     the only new effect is the read-only registry adapter (standard-library HTTP, no credential, no subprocess).
+  3. **Identities changed only where stated** — no release, instance, app or profile identity moved. The staging
+     golden's compilation ID moved with two new documents and the unit's dependency; the three owned instances
+     were recompiled (their records unchanged) and their committed output is what the compiler now renders. The
+     goldens were regenerated once, for that change.
+  4. **Refusals stated, precedence unmoved** — the new refusals are the kernel's existing codes with the
+     declaration's fields (`declaration.secrets`, `declaration.memoryMiB`, `declaration.database`, `runtime.kind`,
+     `runtime.uid`), the use case's `image/no_tag_matches` and `declaration/absent`, and the adapter's
+     `unavailable` (exit 1) and `no_platform_manifest`. Deploy's order is decode, tags, newest, describe, no-op,
+     declaration, acceptance, selection, compile, write.
+  5. **Failure paths tested** — the registry's recorded answers, an index with no `linux/amd64`, a forbidden,
+     missing, malformed or oversized answer, a bad image, each declaration refusal, every acceptance refusal, a
+     stale revision, an abbreviated commit, a no-op, a registry failure and a write failure.
+  6. **Scope stated** — the offline half. No workflow calls `deploy`, so a migrated instance still does not follow
+     a new image; a third-party image renders no pair and is not automated; production renders none; the
+     declaration carries no offers (`provides`, `flags`), because what an app offers is still unmodelled; and an
+     image that drops an event another instance subscribes to is not yet refused across instances.
+  7. **Offline is not live** — no live image travelled the path and no cluster read was made. The pair reaches
+     Git with this commit, which is what makes the repositories visible again; the next gate is the workflow.
+  8. **Recorded in the same change** — this page, the plan's declaration contract and gap list, [apps](apps.md#deploy-a-new-image),
+     the workstream registry and the adapter list.
+- **Evidence:** `REQUIRE_HELM=1 make check-v2` (20 packages; the chart render and the four rendered platform
+  folders ran), `make check` (1021 tests), `make check-lint`, `git diff --check`, `make -s v2-report` (two new
+  layer-1 packages; API +36/−1; new budget entries, none raised) and `make -s check-docs`. Coverage: `kernel`
+  93.2%, `adapters/registry` 82.2%, `orchestration` 82.9%, CLI 85.8%. The registry adapter's contract runs against
+  recorded answers and its fake; the pair is compared with v1's committed `image-automation.yaml` field for field.
+- **Next gate:** the Deploy workflow calls `swhurl-v2 deploy` for v2-owned staging instances (leaving v1's path
+  for v1's apps), then a real image from a throwaway repository travels dispatch → record → compile → Flux, with
+  `make app-status` and `make verify-platform` as evidence.
 
 ## Resume
 

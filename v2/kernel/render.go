@@ -365,17 +365,26 @@ func networkPolicy(spec InstanceFacts, exposure string, http WorkloadFacts, prof
 			"ports": []any{manifest{"port": http.Port, "protocol": "TCP"}},
 		})
 	}
-	egressRules := []any{}
+	return manifest{"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+		"metadata": metadata(spec.Application, namespaceName(spec)),
+		"spec": manifest{"podSelector": manifest{"matchLabels": manifest{instanceLabel: spec.Application}},
+			"policyTypes": []any{"Ingress", "Egress"}, "ingress": ingressRules,
+			"egress": egressRules(spec, profile)}}
+}
+
+// egressRules is every way out an instance's policy admits: the callees it calls, the name service, its own proxy
+// port when it has one, and the broker when it signs in. Nothing else leaves the pod's namespace.
+func egressRules(spec InstanceFacts, profile PlatformProfile) []any {
+	rules := []any{}
 	for _, call := range spec.Calls {
-		egressRules = append(egressRules, manifest{
+		rules = append(rules, manifest{
 			"to":    []any{podNetwork(profile)},
 			"ports": []any{manifest{"port": call.Port, "protocol": "TCP"}},
 		})
 	}
-	// Anything that leaves the pod's own namespace needs a name resolved first, and a proxy port is the
-	// only way out: both are admitted narrowly, and nothing else is.
-	if len(spec.Calls) > 0 || spec.Egress != nil {
-		egressRules = append(egressRules, manifest{
+	if len(spec.Calls) > 0 || spec.Egress != nil || spec.Broker.Key != "" {
+		// Anything that leaves the pod's own namespace needs a name resolved first.
+		rules = append(rules, manifest{
 			"to": []any{manifest{
 				"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": profile.DNS.Namespace}},
 				"podSelector":       manifest{"matchLabels": labelManifest(profile.DNS.Labels)},
@@ -384,7 +393,7 @@ func networkPolicy(spec InstanceFacts, exposure string, http WorkloadFacts, prof
 		})
 	}
 	if spec.Egress != nil {
-		egressRules = append(egressRules, manifest{
+		rules = append(rules, manifest{
 			"to": []any{manifest{
 				"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": profile.Egress.Namespace}},
 				"podSelector":       manifest{"matchLabels": labelManifest(profile.Egress.Labels)},
@@ -392,10 +401,11 @@ func networkPolicy(spec InstanceFacts, exposure string, http WorkloadFacts, prof
 			"ports": []any{manifest{"port": spec.Egress.Port, "protocol": "TCP"}},
 		})
 	}
-	return manifest{"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
-		"metadata": metadata(spec.Application, namespaceName(spec)),
-		"spec": manifest{"podSelector": manifest{"matchLabels": manifest{instanceLabel: spec.Application}},
-			"policyTypes": []any{"Ingress", "Egress"}, "ingress": ingressRules, "egress": egressRules}}
+	if spec.Broker.Key != "" {
+		// The identity signs in to the broker: with DNS and its proxy port, the only other way out.
+		rules = append(rules, brokerRule(profile.NATS))
+	}
+	return rules
 }
 
 // labelManifest is a label set as the map a selector needs.

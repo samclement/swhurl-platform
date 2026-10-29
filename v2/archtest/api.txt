@@ -181,7 +181,7 @@ kernel: type Inputs struct {App AppID `json:"app"` Release ReleaseID `json:"rele
 kernel: type InstanceFacts struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string Broker BrokerIdentity}
 kernel: type InstanceRevision string
 kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"` Storage Storage `json:"storage,omitempty"` Calls []string `json:"calls,omitempty"` Allows []string `json:"allows,omitempty"` Events Events `json:"events,omitempty"`}
-kernel: type NATS struct {URL string `json:"url"` Namespace string `json:"namespace"` DecryptionSecret string `json:"decryptionSecret"` ControllerKey string `json:"controllerKey"` ConsoleKey string `json:"consoleKey"`}
+kernel: type NATS struct {URL string `json:"url"` Namespace string `json:"namespace"` Port int32 `json:"port"` Labels map[string]string `json:"labels"` DecryptionSecret string `json:"decryptionSecret"` ControllerKey string `json:"controllerKey"` ConsoleKey string `json:"consoleKey"`}
 kernel: type NATSUser struct {Application, Environment, NKey string Publishes bool Subscriptions []EventSubscription}
 kernel: type NATSUsers struct {ControllerKey, ConsoleKey string Instances []NATSUser}
 kernel: type Network struct {PodCIDR string `json:"podCIDR"`}

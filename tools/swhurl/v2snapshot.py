@@ -146,8 +146,12 @@ def read_records(runner: Runner, revision: str, documents: set[str], application
 
     An app record may be v2's or v1's wherever the app still has a v1 instance, so it is looked for in both
     places; the instance's own records are read only from the root its instance record was found in. A v2-owned
-    instance keeps its pair as JSON, and the manifest that declares its objects is its compiled HelmRelease."""
+    instance keeps its app record as JSON at the root (one per app) and its pair as JSON under its environment,
+    and the manifest that declares its objects is its compiled HelmRelease."""
     sought = {f'{record_root}/{application}/app.yaml': 'app', f'apps/{application}/app.yaml': 'app'}
+    if record_root == OWNED_ROOT:
+        # The v2 app record is one per app, not per environment: it is the team owner for every environment.
+        sought = {f'{OWNED_ROOT}/{application}/app.json': 'app', **sought}
     names = OWNED_RECORDS if record_root == OWNED_ROOT else RECORDS
     for name in names:
         sought[f'{record_root}/{application}/{environment}/{name}'] = name.rsplit('.', 1)[0]

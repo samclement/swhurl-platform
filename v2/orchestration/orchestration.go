@@ -17,8 +17,8 @@ import (
 // names its port. A nil document means the caller was given none; whether the instance needed one is the
 // kernel's to refuse, not this package's.
 type Inputs struct {
-	Instance, Release, Profile []byte
-	Calls, Egress              []byte
+	Instance, Release, App, Profile []byte
+	Calls, Egress                   []byte
 }
 
 // Result is what a use case produced: the compilation, and the files it wrote, when it wrote any. Written is
@@ -44,11 +44,17 @@ func Compile(inputs Inputs) (kernel.Compilation, error) {
 	if err != nil {
 		return kernel.Compilation{}, err
 	}
+	app := kernel.AppSpec{}
+	if inputs.App != nil {
+		if app, err = kernel.DecodeApp(inputs.App); err != nil {
+			return kernel.Compilation{}, err
+		}
+	}
 	connections, egress, err := documents(inputs, spec.Application, spec.Environment)
 	if err != nil {
 		return kernel.Compilation{}, err
 	}
-	return kernel.CompileWith(spec, release, profile, connections, egress)
+	return kernel.CompileWith(spec, release, app, profile, connections, egress)
 }
 
 // CompileInto compiles the instance and writes its files under destination, reporting each file as written or

@@ -17,5 +17,6 @@
     "healthPath": "/healthz",
     "uid": 65532
   },
-  "database": "sqlite"
+  "database": "sqlite",
+  "telemetry": true
 }

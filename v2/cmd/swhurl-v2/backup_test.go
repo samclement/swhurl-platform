@@ -23,7 +23,7 @@ func compiledDatabase(t *testing.T) map[string]map[string]any {
 	}
 	var out, diagnostic strings.Builder
 	status := run([]string{"compile", "--instance", "../../testdata/sqlite.json", "--release", "../../testdata/r43.json",
-		"--profile", "../../testdata/profile.json", "--egress", allocation}, &out, &diagnostic, os.ReadFile, nil)
+		"--app", "../../testdata/app.json", "--profile", "../../testdata/profile.json", "--egress", allocation}, &out, &diagnostic, os.ReadFile, nil)
 	if status != 0 {
 		t.Fatalf("compile exit %d: %s", status, diagnostic.String())
 	}

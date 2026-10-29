@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "application": "demo-orders",
   "environment": "staging",
-  "release": "rel-sha256:e0ee291864ec4d10b48dbf4d8a06b0fb57e059db5dac0fb27754b6f46b11c8e0",
+  "release": "rel-sha256:84a4efe8f8e34f6bc8755aab131258a9686a64ee5fe176402526d8d0a82050fe",
   "configuration": {
     "replicas": 2,
     "memoryMiB": 128

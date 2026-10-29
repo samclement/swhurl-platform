@@ -16,5 +16,6 @@
     "port": 8080,
     "healthPath": "/healthz",
     "uid": 65532
-  }
+  },
+  "telemetry": true
 }

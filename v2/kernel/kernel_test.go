@@ -214,7 +214,7 @@ func TestIdentityAssertionsAndEscaping(t *testing.T) {
 	r.Runtime.HealthPath = "/ready&ok"
 	r.ReleaseID = ""
 	id, err := r.ID()
-	if err != nil || id != "rel-sha256:cbd7233891cea7a6f7c59d2bef282a5627cdd5fe6723f5d2877ea5fdd13d9ee3" {
+	if err != nil || id != "rel-sha256:2342ca5e5a568a6756cda4d5b9fd48dc91852810d308b2eb0de19218e5d24a98" {
 		t.Fatalf("independent ASCII escaping vector: %s %v", id, err)
 	}
 	if !bytes.Contains(releaseCanonical(r), []byte(`"/ready&ok"`)) {
@@ -467,7 +467,7 @@ func TestRecordsAreValues(t *testing.T) {
 			for i := 0; i < typ.NumField(); i++ {
 				check(typ.Field(i).Type, typ.Field(i).Name)
 			}
-		case reflect.String, reflect.Int32:
+		case reflect.String, reflect.Int32, reflect.Bool:
 		case reflect.Slice:
 			if typ.Elem().Kind() != reflect.String || !declarations[owner] {
 				t.Fatalf("reference-bearing or unexpected domain field: %s (in %s)", typ, owner)

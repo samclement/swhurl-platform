@@ -78,9 +78,8 @@ func TestTranslateOneInstance(t *testing.T) {
 	if translation.Sources["instance.replicas"] != "instance.yaml" || translation.Sources["instance.memory"] != "committed HelmRelease" {
 		t.Fatalf("sources %v", translation.Sources)
 	}
-	// A signed-in route is a fact the preview carries now, so it is not a gap; the team and the
-	// provenance still are.
-	for _, fact := range []string{"app.team", "image.provenance"} {
+	// A signed-in route and the team are facts the preview carries now; the image provenance still is.
+	for _, fact := range []string{"image.provenance"} {
 		if !hasGap(translation.Gaps, fact) {
 			t.Errorf("no gap for %s: %+v", fact, translation.Gaps)
 		}

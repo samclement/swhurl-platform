@@ -9,7 +9,7 @@ import (
 )
 
 func previewFacts() (HTTPInstance, HTTPWorkload) {
-	return HTTPInstance{Application: "hello", Environment: "staging", Configuration: Configuration{1, 128}}, HTTPWorkload{"docker.io/nginxinc/nginx-unprivileged", "sha256:" + strings.Repeat("a", 64), 8080, "/", 101}
+	return HTTPInstance{Application: "hello", Environment: "staging", Configuration: Configuration{1, 128}}, HTTPWorkload{"docker.io/nginxinc/nginx-unprivileged", "sha256:" + strings.Repeat("a", 64), 8080, "/", 101, false}
 }
 
 // No source, commit, media type, platform, selection or release identity is available here.
@@ -439,7 +439,7 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 		Exposure: "authenticated-web", Callers: []string{"billing", "hello"}}
 	profile := profile(t)
 
-	rendered, err := RenderHTTP(caller, HTTPWorkload{"docker.io/x/y", "sha256:" + strings.Repeat("b", 64), 8080, "/", 101}, profile)
+	rendered, err := RenderHTTP(caller, HTTPWorkload{"docker.io/x/y", "sha256:" + strings.Repeat("b", 64), 8080, "/", 101, false}, profile)
 	if err != nil {
 		t.Fatal(err)
 	}

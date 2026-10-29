@@ -27,7 +27,7 @@ func migrationOf(t *testing.T, stdout string) map[string]any {
 	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
 		t.Fatalf("the report is not JSON: %v\n%s", err, stdout)
 	}
-	if document["kind"] != "v2-migration" || document["version"] != float64(1) {
+	if document["kind"] != "v2-migration" || document["version"] != float64(2) {
 		t.Fatalf("kind %v version %v", document["kind"], document["version"])
 	}
 	return document
@@ -106,11 +106,16 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 				t.Errorf("%s: the %s record is not what the migration committed", folder, name)
 			}
 		}
+		if !bytes.Equal(readFile(t, filepath.Join(destination, "v2-records", application, "app.json")),
+			readFile(t, filepath.Join(frozen, "app.json"))) {
+			t.Errorf("%s: the app record is not what the migration committed", folder)
+		}
 		// Every other file is what compile writes for the migrated pair, and, while the instance still names
 		// that release, what Git holds: the translation reproduces a real migration.
 		compiled := t.TempDir()
 		compileArgs := []string{"compile", "--instance", filepath.Join(frozen, "instance.json"),
-			"--release", filepath.Join(frozen, "release.json"), "--profile", filepath.Join("..", "..", "testdata", "profile.json"),
+			"--release", filepath.Join(frozen, "release.json"), "--app", filepath.Join(frozen, "app.json"),
+			"--profile", filepath.Join("..", "..", "testdata", "profile.json"),
 			"--calls", "../../../v2-records/calls.json", "--out", compiled}
 		if release.Database != "" {
 			compileArgs = append(compileArgs, "--egress", "../../../platform/egress/allocation.json")
@@ -219,6 +224,7 @@ func TestMigrateWritesAPairCompileCanRecompile(t *testing.T) {
 	// recompile reads the pair back through the compile command, into a second destination.
 	status = run([]string{"compile",
 		"--instance", filepath.Join(pair, "instance.json"), "--release", filepath.Join(pair, "release.json"),
+		"--app", filepath.Join(destination, "v2-records", "hello", "app.json"),
 		"--profile", profile, "--out", recompiled}, &bytes.Buffer{}, &bytes.Buffer{}, os.ReadFile, files.New())
 	if status != 0 {
 		t.Fatalf("the record pair does not compile: exit %d", status)

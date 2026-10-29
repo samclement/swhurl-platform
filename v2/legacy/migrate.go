@@ -84,7 +84,7 @@ func (m *Migration) facts(app, instance, release *record, committed effective) (
 		return nil, err
 	}
 	m.Workload = workload
-	for _, fact := range []string{"image", "kind", "digest", "port", "healthPath", "uid"} {
+	for _, fact := range []string{"image", "kind", "digest", "port", "healthPath", "uid", "telemetry"} {
 		m.Sources["workload."+fact] = "release.yaml"
 	}
 	configuration, settings, err := settings(instance, committed)

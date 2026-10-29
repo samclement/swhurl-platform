@@ -62,7 +62,10 @@ type ReleaseBundle struct {
 	Runtime       Runtime  `json:"runtime"`
 	// Database is what the image needs to keep state: "sqlite", or empty for none. It is a release fact
 	// because the image is what depends on it, and an instance without a volume for it cannot run.
-	Database  string    `json:"database,omitempty"`
+	Database string `json:"database,omitempty"`
+	// Telemetry is whether the image has an SDK that should report to the platform's collector. It is a
+	// release fact for the same reason: the image, not the environment, decides whether it has one.
+	Telemetry bool      `json:"telemetry,omitempty"`
 	ReleaseID ReleaseID `json:"releaseId"`
 }
 

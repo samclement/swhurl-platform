@@ -107,9 +107,8 @@ func TestPreviewComparesTheCommittedInstance(t *testing.T) {
 	if len(comparison["unassessed"].([]any)) == 0 {
 		t.Fatal("nothing is reported as unassessed")
 	}
-	// A signed-in route is a fact the preview now carries, so the exposure is no longer a gap; the team
-	// and the image's provenance still are.
-	if hasGapOf(report, "instance.exposure") || !hasGapOf(report, "image.provenance") || !hasGapOf(report, "app.team") {
+	// A signed-in route and the team are facts the preview now carries; the image provenance still is.
+	if hasGapOf(report, "instance.exposure") || !hasGapOf(report, "image.provenance") || hasGapOf(report, "app.team") {
 		t.Fatalf("gaps: %v", report["gaps"])
 	}
 	if !strings.Contains(stderr, "every assessed field agrees") {

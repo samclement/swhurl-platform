@@ -78,7 +78,7 @@ func TestMigrateRecordsWhatTheRecordsState(t *testing.T) {
 		t.Fatalf("sources %v", migration.Sources)
 	}
 	facts := gapFacts(migration)
-	for _, want := range []string{"app.team", "release.yaml.image.tag", "image.provenance"} {
+	for _, want := range []string{"release.yaml.image.tag", "image.provenance"} {
 		if !slices.Contains(facts, want) {
 			t.Errorf("the gap list does not name %q: %v", want, facts)
 		}

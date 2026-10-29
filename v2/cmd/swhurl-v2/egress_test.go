@@ -215,6 +215,8 @@ func TestOwnedInstancesRecompileFromGit(t *testing.T) {
 	}
 	for _, instancePath := range instances {
 		folder := filepath.Dir(instancePath)
+		segments := strings.Split(filepath.ToSlash(folder), "/")
+		application := segments[len(segments)-2]
 		releasePath := filepath.Join(folder, "release.json")
 		release, err := os.ReadFile(releasePath)
 		if err != nil {
@@ -226,6 +228,7 @@ func TestOwnedInstancesRecompileFromGit(t *testing.T) {
 		}
 		destination := t.TempDir()
 		args := []string{"compile", "--instance", instancePath, "--release", releasePath,
+			"--app", filepath.Join("../../../v2-records", application, "app.json"),
 			"--profile", "../../testdata/profile.json", "--calls", "../../../v2-records/calls.json",
 			"--out", destination}
 		if record.Database != "" {

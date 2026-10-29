@@ -173,6 +173,44 @@ class OwnedInstanceTests(unittest.TestCase):
         self.assertEqual(document['residual'], [])
 
 
+class OwnedAppRecordTests(unittest.TestCase):
+    """A v2-owned app keeps one app record at the root, and the export reads it without a v1 app.yaml."""
+
+    PATHS = [
+        'v2-records/owned/app.json',
+        'v2-records/owned/staging/instance.json',
+        'v2-records/owned/staging/release.json',
+    ]
+    FILES = {
+        'v2-records/owned/app.json': json.dumps({'schemaVersion': 1, 'application': 'owned', 'team': 'insights'}),
+        'v2-records/owned/staging/instance.json': json.dumps({
+            'schemaVersion': 1, 'application': 'owned', 'environment': 'staging',
+            'release': 'rel-sha256:' + 'c' * 64, 'configuration': {'replicas': 1, 'memoryMiB': 128},
+            'grants': {'exposure': 'private'}, 'bindings': {}}),
+        'v2-records/owned/staging/release.json': json.dumps({
+            'schemaVersion': 1, 'application': 'owned', 'source': {'repository': 'x/y', 'commit': 'd' * 40},
+            'artifact': {'image': 'docker.io/x/y', 'digest': 'sha256:' + 'a' * 64,
+                         'mediaType': 'application/vnd.oci.image.manifest.v1+json', 'platform': 'linux/amd64'},
+            'runtime': {'kind': 'web', 'port': 8080, 'healthPath': '/healthz', 'uid': 65532},
+            'releaseId': 'rel-sha256:' + 'c' * 64}),
+    }
+
+    def runner(self) -> FakeRunner:
+        runner = FakeRunner().on('git', 'rev-parse', stdout=REVISION + '\n').on('git', 'ls-tree', stdout='\n'.join(self.PATHS) + '\n')
+        for path, text in self.FILES.items():
+            runner.on('git', 'show', f'{REVISION}:{path}', stdout=text)
+        return runner
+
+    def test_the_v2_app_record_is_read_from_the_app_root(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            document = export(directory, self.runner())
+        instance = document['instances'][0]
+        self.assertEqual(instance['format'], 'v2')
+        self.assertEqual(instance['records']['app']['team'], 'insights')
+        self.assertFalse(any(path.endswith('app.yaml') for path in self.FILES))
+
+
 # A v2-owned instance keeps its JSON pair and nothing else: neither a leftover v1 record nor a second shape.
 class V2OwnedRecordTests(unittest.TestCase):
     """A v2-owned instance keeps its JSON pair and nothing else: no leftover v1 record, and no second shape."""

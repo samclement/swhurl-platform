@@ -28,7 +28,7 @@ const usage = `usage:
   swhurl-v2 resolve --snapshot SNAPSHOT.json
   swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
-  swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
+  swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
       [--max-age DURATION] [--archive [--region REGION]]
@@ -42,7 +42,9 @@ const usage = `usage:
       [--max-age DURATION] [--from KEY] [--region REGION] \
       [--confirm APPLICATION/ENVIRONMENT [--age-key-file FILE] [--url-ttl DURATION]]
 
-Input files are never overwritten. Without --out the compilation document goes to stdout and nothing
+compile reads the instance, its release, the app record (one per app: its team) and the platform profile;
+the app record is required for delivery, because the namespace team label is the app's fact. Input files are
+never overwritten. Without --out the compilation document goes to stdout and nothing
 is written. With --out every compiled file is written under DIR, one "written PATH" or
 "unchanged PATH" line each; DIR must not be inside apps/, and nothing outside it is touched.
 
@@ -270,6 +272,7 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
 	case "compile":
 		r.registerRecords(flags)
+		flags.Var(&once{value: &r.app}, "app", "app record (its team)")
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
 		r.registerOut(flags)
@@ -385,6 +388,8 @@ func (r *request) named() []string {
 		return []string{r.snapshot, r.profile}
 	case "migrate":
 		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}
+	case "compile":
+		return []string{r.instance, r.release, r.app, r.profile}
 	case "preview":
 		return []string{r.app, r.settings, r.release, r.committed, r.profile}
 	case "select-release":
@@ -534,6 +539,7 @@ func (c cli) inputs(r request) (orchestration.Inputs, int) {
 	}{
 		{r.instance, "instance", &inputs.Instance},
 		{r.release, "release", &inputs.Release},
+		{r.app, "app", &inputs.App},
 		{r.profile, "profile", &inputs.Profile},
 		{r.callFile, "", &inputs.Calls},
 		{r.egressFile, "", &inputs.Egress},

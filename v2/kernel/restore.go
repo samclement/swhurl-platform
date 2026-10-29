@@ -77,7 +77,7 @@ func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile PlatformPro
 	if err := job.validate(); err != nil {
 		return RestoreObjects{}, err
 	}
-	instance := instanceOf(spec, release, Connections{}, egress)
+	instance := instanceOf(spec, release, AppSpec{}, Connections{}, egress)
 	switch {
 	case release.Database != "sqlite":
 		return RestoreObjects{}, refuse(Unsupported, "database", "expected_sqlite")

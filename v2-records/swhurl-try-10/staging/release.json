@@ -18,5 +18,6 @@
     "uid": 65532
   },
   "database": "sqlite",
-  "releaseId": "rel-sha256:2672110c8b162358787c0e6503b023e31c29d825d5422296e679f78484219663"
+  "telemetry": true,
+  "releaseId": "rel-sha256:d180461eb657e8482436c91645570f08b658665875002d78f310407326a11425"
 }

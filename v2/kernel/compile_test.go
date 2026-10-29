@@ -21,6 +21,15 @@ func profile(t *testing.T) PlatformProfile {
 	return p
 }
 
+func app(t *testing.T) AppSpec {
+	t.Helper()
+	a, err := DecodeApp(fixture(t, "app.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
 func releaseFile(t *testing.T, name string) ReleaseBundle {
 	t.Helper()
 	r, err := DecodeRelease(fixture(t, name))
@@ -32,7 +41,7 @@ func releaseFile(t *testing.T, name string) ReleaseBundle {
 
 func compile(t *testing.T, spec InstanceSpec, release ReleaseBundle, p PlatformProfile) Compilation {
 	t.Helper()
-	c, err := Compile(spec, release, p)
+	c, err := CompileWith(spec, release, app(t), p, Connections{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,6 +107,9 @@ func TestProfileIdentity(t *testing.T) {
 		func(p *PlatformProfile) { p.Quota.RequestsMemoryMiB++ },
 		func(p *PlatformProfile) { p.Quota.LimitsMemoryMiB++ },
 		func(p *PlatformProfile) { p.Backup.Region = "eu-west-1" },
+		func(p *PlatformProfile) { p.Telemetry.Endpoint = "http://127.0.0.1:4318" },
+		func(p *PlatformProfile) { p.Telemetry.Protocol = "grpc" },
+		func(p *PlatformProfile) { p.Notify.Address = "http://notify.example" },
 	} {
 		changed := profile(t)
 		change(&changed)
@@ -133,6 +145,10 @@ func TestProfileDecoding(t *testing.T) {
 		{"units root in the app tree", strings.Replace(text, `"unitsRoot": "clusters/home"`, `"unitsRoot": "apps/x"`, 1), Unsupported, "delivery.unitsRoot"},
 		{"output root in the app tree", strings.Replace(text, `"outputRoot": "v2-apps"`, `"outputRoot": "apps"`, 1), Unsupported, "delivery.outputRoot"},
 		{"missing backup region", strings.Replace(text, `"region": "eu-west-2",`, ``, 1), Invalid, "backup.region"},
+		{"missing telemetry endpoint", strings.Replace(text, `"endpoint": "http://$(HOST_IP):4318", `, ``, 1), Invalid, "telemetry.endpoint"},
+		{"bad telemetry protocol", strings.Replace(text, `"protocol": "http/protobuf"`, `"protocol": "udp"`, 1), Unsupported, "telemetry.protocol"},
+		{"missing notify address", strings.Replace(text, `"notify": {"address": "http://notify.notify.svc.cluster.local:8080"}`, `"notify": {}`, 1), Invalid, "notify.address"},
+		{"bad notify address", strings.Replace(text, `"address": "http://notify.notify.svc.cluster.local:8080"`, `"address": "notify"`, 1), Invalid, "notify.address"},
 		{"escaping units root", strings.Replace(text, `"unitsRoot": "clusters/home"`, `"unitsRoot": "../home"`, 1), Invalid, "delivery.unitsRoot"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -181,10 +197,10 @@ func TestCompiledResources(t *testing.T) {
 	c := compile(t, instance(t, "prod.json"), releaseFile(t, "r41.json"), profile(t))
 	f := files(c)
 	for path, want := range map[string][]string{
-		"v2-apps/instances/demo-orders/prod/namespace.json": {`"name":"demo-orders-prod"`, `"platform.swhurl.com/exposure":"private"`},
+		"v2-apps/instances/demo-orders/prod/namespace.json": {`"name":"demo-orders-prod"`, `"platform.swhurl.com/exposure":"private"`, `"platform.swhurl.com/team":"demo"`},
 		"v2-apps/instances/demo-orders/prod/helmrelease.json": {
 			`"image":{"digest":"sha256:aaaa`, `"repository":"ghcr.io/samclement/demo-orders"}`,
-			`"env":{"SWHURL_APP":"demo-orders","SWHURL_ENV":"prod"}`, `"replicas":1`,
+			`"SWHURL_APP":"demo-orders"`, `"SWHURL_ENV":"prod"`, `"SWHURL_NOTIFY_URL":"http://notify.notify.svc.cluster.local:8080"`, `"OTEL_SERVICE_NAME":"demo-orders"`, `"OTEL_EXPORTER_OTLP_ENDPOINT":"http://$(HOST_IP):4318"`, `"audience":"notify"`, `"path":"notify/token"`, `"replicas":1`,
 			`"limits":{"memory":"256Mi"},"requests":{"cpu":"10m","memory":"256Mi"}`,
 			`"runAsUser":65532`, `"automountServiceAccountToken":false`, `"failureThreshold":24`,
 			`"sourceRef":{"kind":"HelmRepository","name":"bjw-s","namespace":"flux-system"}`, `"version":"5.2.1"`},
@@ -202,7 +218,7 @@ func TestCompiledResources(t *testing.T) {
 			}
 		}
 	}
-	for _, removed := range []string{`"tag"`, `"SWHURL_NOTIFY_URL"`, `"SWHURL_AUTH_`, `"tokens"`, `"platform.swhurl.com/team"`,
+	for _, removed := range []string{`"tag"`, `"SWHURL_AUTH_`,
 		`"ingress":{`, `"platform.swhurl.com/render"`, `"annotations"`, `"HTTP_PROXY"`, `"HTTPS_PROXY"`} {
 		for path, doc := range f {
 			if strings.Contains(doc, removed) {
@@ -410,7 +426,10 @@ func TestInstancesAndUnitsStayUnderTheirRoots(t *testing.T) {
 			s := instance(t, "prod.json")
 			s.Application, s.Release = name, id
 			p := profile(t)
-			c := compile(t, s, r, p)
+			c, err := Compile(s, r, p)
+			if err != nil {
+				t.Fatal(err)
+			}
 			folder := p.Delivery.OutputRoot + "/instances/" + name + "/prod/"
 			unit := p.Delivery.UnitsRoot + "/app-" + name + "-prod.json"
 			for _, file := range c.Files {

@@ -41,6 +41,7 @@ type Workload struct {
 	Port               int32
 	HealthPath         string
 	UID                int32
+	Telemetry          bool
 }
 
 // Instance is the environment-owned configuration the preview renders from.
@@ -133,7 +134,7 @@ func (t *Translation) workload(release *record) error {
 		return err
 	}
 	t.Workload = workload
-	for _, fact := range []string{"image", "kind", "digest", "port", "healthPath", "uid"} {
+	for _, fact := range []string{"image", "kind", "digest", "port", "healthPath", "uid", "telemetry"} {
 		t.Sources["workload."+fact] = "release.yaml"
 	}
 	for _, field := range leftovers {
@@ -175,13 +176,25 @@ func workloadOf(release *record) (Workload, []string, error) {
 			return Workload{}, nil, err
 		}
 	}
-	switch {
-	case workload.Kind != "web":
-		return Workload{}, nil, refuse(Unsupported, "release.yaml: kind", "only_http_preview")
-	case workload.Digest == "":
-		return Workload{}, nil, refuse(Missing, "release.yaml: image.digest", "a_digest_is_required")
+	if workload.Telemetry, err = release.boolean("telemetry"); err != nil {
+		return Workload{}, nil, err
+	}
+	if err := validateWorkload(workload); err != nil {
+		return Workload{}, nil, err
 	}
 	return workload, image.unused(), nil
+}
+
+// validateWorkload refuses a layout the preview does not carry, after every field has been read so a
+// malformed field is named before an unsupported one.
+func validateWorkload(workload Workload) error {
+	switch {
+	case workload.Kind != "web":
+		return refuse(Unsupported, "release.yaml: kind", "only_http_preview")
+	case workload.Digest == "":
+		return refuse(Missing, "release.yaml: image.digest", "a_digest_is_required")
+	}
+	return nil
 }
 
 // settings reads the environment's configuration. A replica count or a memory limit that the record
@@ -236,9 +249,6 @@ func gaps(app, instance, release *record, carried Instance) []Gap {
 		for _, field := range record.unused() {
 			found = append(found, Gap{Where: document + ": " + field, Fact: document + "." + field, Owner: owner(field)})
 		}
-	}
-	if carried.Team != "" {
-		found = append(found, Gap{Where: "app.yaml: team", Fact: "app.team", Owner: "platform (teams)"})
 	}
 	if carried.Exposure != "private" && carried.Exposure != "authenticated-web" {
 		found = append(found, Gap{Where: "instance.yaml: exposure", Fact: "instance.exposure", Owner: "platform (exposure)"})

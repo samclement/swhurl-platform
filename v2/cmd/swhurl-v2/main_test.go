@@ -59,16 +59,16 @@ func TestCLI(t *testing.T) {
 		{[]string{"release-id", "release", "extra"}, 2, "", "usage"},
 		{[]string{"promote"}, 2, "", "usage"},
 		{nil, 2, "", "usage"},
-		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "profile"}, 0, `"kind": "v2-compilation"`, ""},
-		{[]string{"compile", "--instance", "prod", "--release", "release", "--profile", "profile"}, 2, "", "wrong_release: release:"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--app", "app", "--profile", "profile"}, 0, `"kind": "v2-compilation"`, ""},
+		{[]string{"compile", "--instance", "prod", "--release", "release", "--app", "app", "--profile", "profile"}, 2, "", "wrong_release: release:"},
 		// A refusal is a refusal with --out too: the destination is only an effect, not a different answer.
-		{[]string{"compile", "--instance", "prod", "--release", "release", "--profile", "profile", "--out", "destination"}, 2, "", "wrong_release: release:"},
-		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "bad"}, 2, "", "invalid: document:"},
-		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "huge"}, 2, "", "invalid: profile: input file is larger than 1 MiB"},
-		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "unreadable"}, 1, "", "io: profile: cannot read input file"},
-		{[]string{"compile", "--instance", "prod", "--release", "r41"}, 2, "", "usage"},
-		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "profile", "--profile", "profile"}, 2, "", "usage"},
-		{[]string{"compile", "--instance", "prod", "--release", "r41", "--profile", "profile", "--expect", "x"}, 2, "", "usage"},
+		{[]string{"compile", "--instance", "prod", "--release", "release", "--app", "app", "--profile", "profile", "--out", "destination"}, 2, "", "wrong_release: release:"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--app", "app", "--profile", "bad"}, 2, "", "invalid: document:"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--app", "app", "--profile", "huge"}, 2, "", "invalid: profile: input file is larger than 1 MiB"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--app", "app", "--profile", "unreadable"}, 1, "", "io: profile: cannot read input file"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--app", "app"}, 2, "", "usage"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--app", "app", "--profile", "profile", "--profile", "profile"}, 2, "", "usage"},
+		{[]string{"compile", "--instance", "prod", "--release", "r41", "--app", "app", "--profile", "profile", "--expect", "x"}, 2, "", "usage"},
 		{[]string{"--help"}, 0, "usage", ""},
 		{[]string{"select-release", "--help"}, 0, "usage", ""},
 	} {
@@ -82,6 +82,8 @@ func TestCLI(t *testing.T) {
 					return r42, nil
 				case "r41":
 					return r41, nil
+				case "app":
+					return fixture(t, "app.json"), nil
 				case "profile":
 					return profile, nil
 				case "bad":
@@ -170,7 +172,7 @@ func TestBinary(t *testing.T) {
 	}
 	dir := t.TempDir()
 	originals := map[string][]byte{}
-	for _, file := range []string{"r41.json", "r42.json", "staging.json", "prod.json", "profile.json"} {
+	for _, file := range []string{"r41.json", "r42.json", "staging.json", "prod.json", "app.json", "profile.json"} {
 		b := fixture(t, file)
 		originals[file] = b
 		if err := os.WriteFile(filepath.Join(dir, file), b, 0600); err != nil {
@@ -250,11 +252,11 @@ func TestBinary(t *testing.T) {
 			t.Fatal("refusal changed candidate file")
 		}
 	}
-	compiled := invoke(0, "", "compile", "--instance", "prod.json", "--release", "r41.json", "--profile", "profile.json")
+	compiled := invoke(0, "", "compile", "--instance", "prod.json", "--release", "r41.json", "--app", "app.json", "--profile", "profile.json")
 	if !bytes.Equal(compiled, fixture(t, "compiled/prod.json")) {
 		t.Fatal("the binary's compilation differs from the golden document")
 	}
-	invoke(2, "wrong_release:", "compile", "--instance", "staging.json", "--release", "r41.json", "--profile", "profile.json")
+	invoke(2, "wrong_release:", "compile", "--instance", "staging.json", "--release", "r41.json", "--app", "app.json", "--profile", "profile.json")
 	invoke(1, "io: release:", "release-id", "missing.json")
 	if err := os.WriteFile(filepath.Join(dir, "huge.json"), bytes.Repeat([]byte(" "), maxInput+1), 0600); err != nil {
 		t.Fatal(err)
@@ -276,12 +278,12 @@ func TestBinary(t *testing.T) {
 func inputs(t *testing.T) func(string) ([]byte, error) {
 	t.Helper()
 	docs := map[string][]byte{"prod.json": fixture(t, "prod.json"), "r41.json": fixture(t, "r41.json"),
-		"profile.json": fixture(t, "profile.json")}
+		"app.json": fixture(t, "app.json"), "profile.json": fixture(t, "profile.json")}
 	return func(name string) ([]byte, error) { return docs[name], nil }
 }
 
 func compileArgs(dir string) []string {
-	return []string{"compile", "--instance", "prod.json", "--release", "r41.json", "--profile", "profile.json", "--out", dir}
+	return []string{"compile", "--instance", "prod.json", "--release", "r41.json", "--app", "app.json", "--profile", "profile.json", "--out", dir}
 }
 
 // --out writes the compiled files and prints one line per path, not the document.
@@ -369,7 +371,7 @@ func TestCompileOutRefusesTheAppTree(t *testing.T) {
 // An explicitly empty destination is a usage error, not a request to print the document.
 func TestCompileOutRejectsAnEmptyDestination(t *testing.T) {
 	var out, diagnostic bytes.Buffer
-	args := []string{"compile", "--instance", "prod.json", "--release", "r41.json", "--profile", "profile.json", "--out", ""}
+	args := []string{"compile", "--instance", "prod.json", "--release", "r41.json", "--app", "app.json", "--profile", "profile.json", "--out", ""}
 	if status := run(args, &out, &diagnostic, inputs(t), files.New()); status != 2 {
 		t.Fatalf("status %d, want 2", status)
 	}

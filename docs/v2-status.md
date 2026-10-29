@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the live proof on `swhurl-try-10` staging: a new caller and a key rotation, each taking effect with no new pod (the env forms and the `auth-revision` annotation are retired)
+Gate: the operator's choice of the next slice: a v1 caller of a v2-owned callee, or a domain v2 must render before more apps migrate (events, secrets, teams, alerts, telemetry)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -39,7 +39,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 3. Bridge | A predecessor's committed output compared with a v2 preview, scoped facts, gaps, an ownership inventory, and a read-only live check of the claims | **Slices 1–4 done** |
 | Routes | A signed-in route from platform facts, verified live through the shared sign-in | **Done, live** |
 | 6. First live instance | A v2-owned instance published, observed **by v2 itself** and removed | **Done 25 Oct** (two throwaways, both removed) |
-| Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), a rotation rolling the callees, the auth material mounted as files, the keys rendered once for every managed namespace, and both templates reading the files first | **Done offline**, proved live for the pair; the no-restart proof waits for a file-reading image |
+| Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), the keys rendered once for every managed namespace, and the auth material reaching a callee only as files its image re-reads | **Done, proved live**: the pair (26 Oct), and on 29 Oct a new caller and a key rotation each taking effect in the running pod with **no restart** |
 | Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Two live** (`swhurl-try-11`, `swhurl-try-10` staging, the second stateful on its own volume), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
@@ -424,6 +424,37 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Next gate:** the template releases that read the files (in the two template repositories, then a
   `STACK_REVISIONS` re-pin), which retire the env forms and the `auth-revision` annotation.
 
+## Slice record: the no-restart proof, live (29 October 2026)
+
+- **Outcome:** on `swhurl-try-10` staging, pod `swhurl-try-10-97f7d4db5-st2nv` (UID `e47835d1…`, created
+  `07:24:19Z`), which never restarted, answered four changes in turn. Each probe ran from a `curl` debug container
+  in `swhurl-try-11`'s pod, so try-11's egress policy applied, with a token passed on stdin:
+
+  | Change (pushed, then `make flux-reconcile`) | Before | After, same pod |
+  | --- | --- | --- |
+  | `swhurl-try-13` allowed and calling (record pair, then the resolution re-read) | `07:25:35` 401 not allowed | `07:29:35` 200, `caller.id=swhurl-try-13` |
+  | the same, removed | 200 | `07:32:00` 401 not allowed |
+  | a test key added to the platform's keys | `07:32:31` 401 unknown key | `07:34:43` 200, `caller.id=swhurl-try-11` |
+  | the test key removed | 200 | `07:36:58` 401 unknown key |
+
+  Each change reached the running process 30 to 70 seconds after Flux applied it; the HelmRelease did not change
+  for any of them, and no pod in the cluster was created during the key window.
+- **How the tokens were made:** try-13's by `kubectl create token` (ten minutes, audience `swhurl-try-10`) with the
+  operator's credentials; the forged one by a 2048-bit RSA key generated for the proof, whose public half was in
+  the platform's keys for about two minutes (`07:34`–`07:36`, trusted only by the one v2-rendered callee, since v1
+  callees read v1's own keys) and whose private half was deleted after the removal was proved. The cluster's real
+  signing key was not touched.
+- **The eight invariants:** v1 unchanged (try-13's `instance.yaml` went out and back; `make app-calls` reported
+  the v2-owned callee as absent, see below); nothing pure changed; the profile identity moved to
+  `prof-sha256:69649e8c…` and back, and the revert left `platform/auth` and `v2/testdata` byte-identical; no
+  refusal moved; the failure paths are the 401s above; scope is one callee; live as recorded; and this page, the
+  registry, the plan and `current-state.md` record it.
+- **Found on the way:** v1 renders no caller side for a v2-owned callee (`make app-calls` says it "waits for
+  swhurl-try-10/staging to exist"), so a v1 caller cannot reach one even when v2's resolution connects the pair —
+  `swhurl-try-12` staging has such a pair and no address. [The gap list](iteration-2-plan.md#6-deliberately-deferred)
+  now says so.
+- **Next gate:** the operator's choice of the next slice.
+
 ## Slice record: files only — the env forms and the annotation retire
 
 - **Outcome:** a v2-rendered callee gets its verification facts only as mounted files: the
@@ -756,24 +787,26 @@ The report shows what the tree adds to `origin/main`: a new package, a changed e
 > `REQUIRE_HELM=1 make check-v2`, `make -s v2-report`, `make -s check-docs`. Report what they say before proposing
 > anything. A check that reads the working tree can pass here and fail on a clone; CI is the reader that matters.
 >
-> Where v2 stands (28 October 2026). The phases are done and reviewed: release selection, the compiler, Git
+> Where v2 stands (29 October 2026). The phases are done and reviewed: release selection, the compiler, Git
 > delivery, observation, routes, calls, storage, egress and backup. Two existing apps are v2-owned —
 > `swhurl-try-11` staging, and `swhurl-try-10` staging on its own adopted volume — and each **recompiles from Git
 > alone** (`TestOwnedInstancesRecompileFromGit`). The egress proxy is v2's and **enforced** (an ungranted host gets
 > 403 and logs `granted=-`). v2 **performs the restore itself**, proved live twice: newest-over-itself, then a
 > content-changing one in which the live file's hash was the older archive's plaintext and the replaced file was a
 > third hash. The backup image's first nightly on the Go tool succeeded for every job. The signing keys are one
-> rendered source (`platform/auth`, one `swhurl-auth` per managed namespace, the `platform-auth` unit), the auth
-> material is mounted as **files** as well as env, and a v2-owned instance's own record states its `calls` and
-> `allows` — the v1-shaped YAML copies are gone.
+> rendered source (`platform/auth`, one `swhurl-auth` per managed namespace, the `platform-auth` unit), a
+> v2-rendered callee gets them and its callers **only as files**, and a v2-owned instance's own record states its
+> `calls` and `allows`. **Proved live on 29 October:** a new caller and a key rotation each took effect in
+> `swhurl-try-10` staging's running pod with no restart (it runs a `v0.2.19` image that v2 selected by a release
+> record). The backup host is the platform's grant, and `make check-v2` renders `platform/egress` and
+> `platform/auth` from the records and fails on any difference.
 >
-> **The gate is the live no-restart proof.** Both templates read the auth files (TypeScript `v0.2.19`, Kotlin
-> `v0.2.18`, pinned); `swhurl-try-10` staging runs a `v0.2.19` image selected by a v2 release record; and a
-> v2-rendered callee now gets its keys and callers only as files (the env forms and the `auth-revision` annotation
-> are retired). Prove it on `swhurl-try-10` staging: a caller's token refused, the caller added to `allows`, the
-> same pod accepting it; and a temporary test key added to the platform's keys, accepted by the same pod, then
-> removed and refused again. Kotlin builds here in podman (`eclipse-temurin:25-jdk`), though a cold Gradle cache
-> takes about 18 minutes.
+> **The gate is the operator's choice of the next slice.** Candidates: a v1 caller of a v2-owned callee (v1
+> renders the caller no address or token, so `swhurl-try-12` staging cannot call `swhurl-try-10` staging though the
+> pair resolves), or a domain v2 must render before more apps migrate (events, secrets, teams, alerts,
+> telemetry). Writing a release for a new image is still a hand step (record, `release-id`, `select-release`,
+> `compile`), and artifact claims are checked by hand against the registry. Kotlin builds here in podman
+> (`eclipse-temurin:25-jdk`), though a cold Gradle cache takes about 18 minutes.
 >
 > The layers are checked: 0 pure (`kernel`, `calls`, `legacy`, `observe`, `shadow`), 1 adapters (`files`, `kube`,
 > `s3`), 2 use cases (`orchestration`: compile, migrate, restore), 3 the command. **Backup is done**: the job, the

@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## A rotation and a new caller with no restart (29 October 2026)
+
+`e3d59ab9` retired the env forms and the `auth-revision` annotation for v2-rendered callees; `swhurl-try-10`
+staging rolled once to pod `swhurl-try-10-97f7d4db5-st2nv` (`07:24:19Z`), whose Deployment then had no
+`SWHURL_ALLOWED_CALLERS`, no `envFrom` and no pod annotations. The same pod, never restarted, then answered:
+
+- `07:25:35` try-11's minted token 200, try-13's 401 "not allowed";
+- `571a263e`/`78e913dc` (try-13 calls, try-10 allows, the resolution re-read; only `callers.json` moved): `07:29:35`
+  try-13 200;
+- `abeb7780`/`c9ab9109` (reverted): `07:32:00` try-13 401;
+- `555c0b87` (a proof key added to `platform/auth`): `07:32:31` 401 "unknown key" before, `07:34:43` 200 after;
+- `8e2ef093` (removed): `07:36:58` 401 "unknown key"; the private key was deleted.
+
+Afterwards `make verify-platform` passed with no warning, and `swhurl-try-10`, `-11` and `-13` staging read
+`running: matches desired`. The probe's debug container in `swhurl-try-11`'s pod ends by itself at `11:25Z`.
+
+**Still unexercised:** a rotation of the cluster's own signing key, and a Kotlin callee on v2.
+
 ## `swhurl-try-10` staging runs its `v0.2.19` image, selected by v2 (29 October 2026)
 
 `swhurl-try-10` merged Renovate's template update (#18, `9710b8f`, the Copier update to `v0.2.19`) and its workflow

@@ -1,1 +1,1 @@
-{"apiVersion":"v1","data":{"SWHURL_ALLOWED_CALLERS":"swhurl-try-11,swhurl-try-12,swhurl-try-13"},"kind":"ConfigMap","metadata":{"name":"swhurl-try-10-callers","namespace":"swhurl-try-10-staging"}}
+{"apiVersion":"v1","data":{"SWHURL_ALLOWED_CALLERS":"swhurl-try-11,swhurl-try-12"},"kind":"ConfigMap","metadata":{"name":"swhurl-try-10-callers","namespace":"swhurl-try-10-staging"}}

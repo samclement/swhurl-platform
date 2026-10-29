@@ -1,7 +1,7 @@
 {
   "kind": "v2-calls",
   "version": 1,
-  "revision": "f8031d0c08e8fc74fda22eb53f141f064ccf294b",
+  "revision": "abeb7780cff9f221eb223af3cc5bf34c053e7db6",
   "pairs": [
     {
       "caller": "demo-shop",
@@ -53,12 +53,6 @@
     },
     {
       "caller": "swhurl-try-12",
-      "callee": "swhurl-try-10",
-      "environment": "staging",
-      "port": 8080
-    },
-    {
-      "caller": "swhurl-try-13",
       "callee": "swhurl-try-10",
       "environment": "staging",
       "port": 8080

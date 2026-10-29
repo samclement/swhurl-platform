@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the operator's choice of the next slice: a v1 caller of a v2-owned callee, or a domain v2 must render before more apps migrate (events, secrets, teams, alerts, telemetry)
+Gate: a decision brief ranking the domains v2 must render before more apps migrate (telemetry, notifications, the worker and job kinds, teams, events, secrets, alerts, offers) by what each unblocks, and the operator's approval of the first slice
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -453,7 +453,8 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
   swhurl-try-10/staging to exist"), so a v1 caller cannot reach one even when v2's resolution connects the pair —
   `swhurl-try-12` staging has such a pair and no address. [The gap list](iteration-2-plan.md#6-deliberately-deferred)
   now says so.
-- **Next gate:** the operator's choice of the next slice.
+- **Next gate:** the operator chose the domains v2 must render before more apps migrate, not the v1-caller gap
+  (which stays in the gap list): a decision brief ranking them comes first.
 
 ## Slice record: files only — the env forms and the annotation retire
 
@@ -780,51 +781,47 @@ The report shows what the tree adds to `origin/main`: a new package, a changed e
 ## Suggested opening prompt for a fresh session
 
 > Work on v2 only. Read `docs/v2-status.md` first (status, the gate, authority, the resume steps), then
-> `docs/iteration-2-plan.md` for the contracts, the layers and the gap list, and `AGENTS.md` for the repository
-> rules. Do not re-derive the state from this prompt: check it.
+> `docs/iteration-2-plan.md` for the contracts, the layers and [the gap list](iteration-2-plan.md#6-deliberately-deferred),
+> and `AGENTS.md` for the repository rules. Do not re-derive the state from this prompt: check it.
 >
 > Then run, from the repository root: `git log --oneline -5`, `git status --short`, `make check-v2`,
-> `REQUIRE_HELM=1 make check-v2`, `make -s v2-report`, `make -s check-docs`. Report what they say before proposing
-> anything. A check that reads the working tree can pass here and fail on a clone; CI is the reader that matters.
+> `REQUIRE_HELM=1 make check-v2`, `make -s v2-report`, `make -s check-docs`, and look at CI's latest Validate run
+> (`gh run list -w Validate -L 3`). Report what they say before proposing anything. A check that reads the working
+> tree can pass here and fail on a clone; CI is the reader that matters.
 >
-> Where v2 stands (29 October 2026). The phases are done and reviewed: release selection, the compiler, Git
-> delivery, observation, routes, calls, storage, egress and backup. Two existing apps are v2-owned —
-> `swhurl-try-11` staging, and `swhurl-try-10` staging on its own adopted volume — and each **recompiles from Git
-> alone** (`TestOwnedInstancesRecompileFromGit`). The egress proxy is v2's and **enforced** (an ungranted host gets
-> 403 and logs `granted=-`). v2 **performs the restore itself**, proved live twice: newest-over-itself, then a
-> content-changing one in which the live file's hash was the older archive's plaintext and the replaced file was a
-> third hash. The backup image's first nightly on the Go tool succeeded for every job. The signing keys are one
-> rendered source (`platform/auth`, one `swhurl-auth` per managed namespace, the `platform-auth` unit), a
-> v2-rendered callee gets them and its callers **only as files**, and a v2-owned instance's own record states its
-> `calls` and `allows`. **Proved live on 29 October:** a new caller and a key rotation each took effect in
-> `swhurl-try-10` staging's running pod with no restart (it runs a `v0.2.19` image that v2 selected by a release
-> record). The backup host is the platform's grant, and `make check-v2` renders `platform/egress` and
-> `platform/auth` from the records and fails on any difference.
+> Where v2 stands (29 October 2026). Release selection, the compiler, Git delivery, observation, routes, calls,
+> storage, egress and backup are done and proved live. Two apps are v2-owned — `swhurl-try-11` staging and
+> `swhurl-try-10` staging (on its own adopted volume) — and each recompiles from Git alone. A v2-rendered callee
+> gets its keys and callers only as files, and a new caller and a key rotation were shown to take effect in the
+> running pod with no restart. `make check-v2` also renders `platform/egress` and `platform/auth` from the records
+> and fails on any difference.
 >
-> **The gate is the operator's choice of the next slice.** Candidates: a v1 caller of a v2-owned callee (v1
-> renders the caller no address or token, so `swhurl-try-12` staging cannot call `swhurl-try-10` staging though the
-> pair resolves), or a domain v2 must render before more apps migrate (events, secrets, teams, alerts,
-> telemetry). Writing a release for a new image is still a hand step (record, `release-id`, `select-release`,
-> `compile`), and artifact claims are checked by hand against the registry. Kotlin builds here in podman
-> (`eclipse-temurin:25-jdk`), though a cold Gradle cache takes about 18 minutes.
+> **The gate is a decision brief, not code.** v2 renders only what those two instances needed, so the other
+> apps cannot migrate. Rank the domains v2 does not render by what each unblocks: telemetry (the OTLP endpoint and
+> its variables), notifications (`SWHURL_NOTIFY_URL` and the projected `notify` token), the worker and job kinds,
+> teams (the namespace label, isolation, `team:` grants), events (NATS users, streams, consumers), secrets
+> (`envFrom`, Reloader), alerts and dashboards, and what an app offers. A census taken on 29 October, to be
+> checked rather than trusted: every v1 instance gets telemetry and notify variables (so the two v2-owned ones run
+> without them today), 7 of 15 are workers or jobs, every app has a team, 4 instances grant calls by team, and 2
+> subscribe to events. For each domain say who owns the fact today (v1's records, the console, a platform unit),
+> what v2 would own, which apps it unblocks, its identity cost, and whether a v2-owned instance is missing it
+> live. Recommend a first slice and its order, using the `decision-brief` skill, and stop for approval.
+>
+> **Out of scope:** the v1-caller gap (v1 renders no caller side for a v2-owned callee), which the operator
+> chose not to address; it stays in the gap list.
 >
 > The layers are checked: 0 pure (`kernel`, `calls`, `legacy`, `observe`, `shadow`), 1 adapters (`files`, `kube`,
-> `s3`), 2 use cases (`orchestration`: compile, migrate, restore), 3 the command. **Backup is done**: the job, the
-> newest archive and the restore are all observed and performed by v2, the schedule is suspended for the restore
-> window, and the nightly is green. Still open, honestly: another instance's archive (blocked on a second v2-owned
-> database instance), a MongoDB restore, and the live re-run that exercises the backup-schedule suspension. v2
-> renders no events, secrets, teams, alerts or telemetry, so those apps cannot migrate yet.
->
-> Follow the operator's design principles: maintainable v2 contracts rather than v1 compatibility; a pure core with
-> orchestration above it and integrations at the edges; explicit domain and data ownership; iterative transition
-> with honestly incomplete semantics. Bring a decision brief before any costly or undecided design. Answer the
-> [eight slice invariants](workstreams.md#what-a-status-page-is) on the status page in the same change as the code,
-> keep the gap list current, and run `make check-v2`, `REQUIRE_HELM=1 make check-v2`, `make check`,
-> `make check-lint` and `make -s check-docs` before asking to commit. Identity changes are deliberate: a fact added
-> to a release, instance or profile changes its ID, so regenerate the goldens once, recompute the fixtures'
-> identities independently in Python, and say why.
+> `s3`), 2 use cases (`orchestration`: compile, migrate, restore), 3 the command. Follow the operator's design
+> principles: maintainable v2 contracts rather than v1 compatibility; a pure core with orchestration above it and
+> integrations at the edges; explicit domain and data ownership; iterative transition with honestly incomplete
+> semantics. Answer the [eight slice invariants](workstreams.md#what-a-status-page-is) on the status page in the
+> same change as the code, keep the gap list current, and run `make check-v2`, `REQUIRE_HELM=1 make check-v2`,
+> `make check`, `make check-lint` and `make -s check-docs` before asking to commit. Identity changes are
+> deliberate: a fact added to a release, instance or profile changes its ID, so regenerate the goldens once,
+> recompute the fixtures' identities independently in Python, and say why. A selected release for a new image is
+> still a hand step (record, `release-id`, `select-release --expect`, `compile`); check its artifact claim against
+> the registry, since a tag's digest is usually an index.
 >
 > The code graph is a separate workstream: do not build it here. Preserve unrelated work; do not commit, push,
-> publish, access credentials or touch the live cluster without the operator's instruction, and treat any namespace
-> or data deletion as needing explicit confirmation. The egress proxy's logs are already structured
-> (`log.parser=squid-access`/`squid-log`); do not redo that sidequest.
+> publish, access credentials or touch the live cluster without the operator's instruction, and treat any
+> namespace or data deletion as needing explicit confirmation.

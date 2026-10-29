@@ -824,6 +824,8 @@ against what the platform runs; the instance side and the seed follow.
   1. **Adopt the predecessor's ciphertext (recommended for part two).** The migration copies `apps/<app>/<env>/events.sops.yaml` byte for byte into the instance's folder and the unit gains `decryption`; v2 never decrypts, never generates and has nothing to rotate. Every existing events instance can migrate, which is all seven workers. A *new* v2 instance still cannot declare events, and `users` keeps refusing one that has no key.
   2. **v2 generates the pair and encrypts it to the platform's age recipient.** The key pair is stdlib (`crypto/ed25519` plus the nkeys encoding, tested against v1's vectors) and encrypting needs only the **public** recipient, so no private key is ever read; the cost is one `sops` subprocess adapter that sees a fresh seed, a `.sops.yaml` creation rule for the new path, and the recipient as a profile fact. It completes the domain: a new v2 instance could have events.
   Rejected: a seed written unencrypted (a private key in Git), and a command that creates the Secret in-cluster (Flux would not own it, and a rebuilt instance would lose it).
+- **Committed:** `5bdbedb4`, on `main`. Nothing live changed: no record, rendered file or manifest under `platform/`
+  moved, so no [current state](current-state.md) entry is owed.
 - **Next gate:** the operator's decision on the seed, then part two — the instance side, the migration that adopts a pair, the cutover of the file's writer, and one event-using worker migrated live.
 
 ## Resume

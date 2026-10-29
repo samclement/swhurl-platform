@@ -889,7 +889,7 @@ seeds were pruned with their v1 units and no v2 tree holds them.
 - **Evidence:** `REQUIRE_HELM=1 make check-v2` (16 packages; the pinned chart rendered the golden and a worker),
   `make check`, `make check-lint`, `make -s check-docs`, `git diff --check`, `make -s v2-report` (API +18/−13: the
   events facts, the profile block, the seed's use case, and the two renderer types; no budget baseline added or
-  weakened); coverage `events` 98.6%, `kernel` 93.8%, `legacy` 84.5%, `orchestration` 83.6%, CLI 86.7%.
+  weakened); coverage `events` 98.6%, `kernel` 93.0%, `legacy` 84.1%, `orchestration` 82.9%, CLI 86.6%.
 - **What the operator's principle changed here:** the profile states the broker, the decryption Secret and the
   platform's two public keys, so `users` takes a profile rather than two key files; the resolution document carries
   subscriptions, so a rendered consumer and a user's permission come from one decision; and the seed is a declared

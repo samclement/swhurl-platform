@@ -19,9 +19,7 @@ profile=v2/testdata/profile.json
   --previous platform/egress/allocation.json 2>/dev/null >"$work/allocation.json"
 "$work/swhurl-v2" proxy --allocation "$work/allocation.json" --profile "$profile" --out "$work/out" >/dev/null
 "$work/swhurl-v2" auth --snapshot "$work/snapshot.json" --profile "$profile" --out "$work/out" >/dev/null
-"$work/swhurl-v2" users --snapshot "$work/snapshot.json" \
-  --controller-key platform/nats/controller-nkey.pub --console-key platform/nats/console-nkey.pub \
-  --out "$work/out" >/dev/null
+"$work/swhurl-v2" users --snapshot "$work/snapshot.json" --profile "$profile" --out "$work/out" >/dev/null
 
 failed=0
 # The allocation records the commit it was taken at; every other fact must match the records.

@@ -149,6 +149,7 @@ kernel: type Artifact struct {Image string `json:"image"` Digest string `json:"d
 kernel: type Auth struct {Issuer string `json:"issuer"` Keys string `json:"keys"`}
 kernel: type Backup struct {Image string `json:"image"` Digest string `json:"digest"` S3URI string `json:"s3Uri"` Region string `json:"region"` Recipient string `json:"recipient"` WriterNamespace string `json:"writerNamespace"` WriterName string `json:"writerName"` Suspended bool `json:"suspended"`}
 kernel: type Bindings struct {}
+kernel: type BrokerIdentity struct {Key string Connected []EventSubscription}
 kernel: type Call struct {Callee string Port int32}
 kernel: type Chart struct {Name string `json:"name"` Version string `json:"version"` Repository string `json:"repository"` RepositoryNamespace string `json:"repositoryNamespace"`}
 kernel: type Claim struct {Object Owner string `json:"owner"`}
@@ -157,11 +158,12 @@ kernel: type Compilation struct {ID CompilationID `json:"id"` Inputs Inputs `jso
 kernel: type CompilationID string
 kernel: type Configuration struct {Replicas int32 `json:"replicas"` MemoryMiB int32 `json:"memoryMiB"`}
 kernel: type Conflict struct {Object Object Owners []string}
-kernel: type Connections struct {Calls []Call Callers []string}
-kernel: type ConnectionsDocument struct {Kind string `json:"kind"` Version int `json:"version"` Revision string `json:"revision"` Pairs []ConnectionsPair `json:"pairs"` Waiting []ConnectionsWaiting `json:"waiting"` Refused []ConnectionsRefusal `json:"refused"`}
+kernel: type Connections struct {Calls []Call Callers []string Subscriptions []EventSubscription}
+kernel: type ConnectionsDocument struct {Kind string `json:"kind"` Version int `json:"version"` Revision string `json:"revision"` Pairs []ConnectionsPair `json:"pairs"` Waiting []ConnectionsWaiting `json:"waiting"` Refused []ConnectionsRefusal `json:"refused"` Subscriptions []ConnectionsSubscription `json:"subscriptions"`}
 kernel: type ConnectionsID string
 kernel: type ConnectionsPair struct {Caller string `json:"caller"` Callee string `json:"callee"` Environment string `json:"environment"` Port int32 `json:"port"`}
 kernel: type ConnectionsRefusal struct {Application string `json:"application"` Callee string `json:"callee"` Environment string `json:"environment"` Reason string `json:"reason"`}
+kernel: type ConnectionsSubscription struct {Subscriber string `json:"subscriber"` Publisher string `json:"publisher"` Event string `json:"event"` Environment string `json:"environment"` Stream string `json:"stream"` Consumer string `json:"consumer"` Subject string `json:"subject"` Object string `json:"object"`}
 kernel: type ConnectionsWaiting struct {Caller string `json:"caller"` Callee string `json:"callee"` Environment string `json:"environment"` Reason string `json:"reason"`}
 kernel: type DNS struct {Namespace string `json:"namespace"` Labels map[string]string `json:"labels"`}
 kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `json:"outputRoot"` UnitsRoot string `json:"unitsRoot"` DependsOn []string `json:"dependsOn"`}
@@ -171,23 +173,25 @@ kernel: type EgressDocument struct {Kind string `json:"kind"` Version int `json:
 kernel: type EgressFacts struct {Application string Environment string Port int32 Grants []string Database bool}
 kernel: type EgressProxy struct {Address string `json:"address"` Namespace string `json:"namespace"` Labels map[string]string `json:"labels"`}
 kernel: type Error struct {Code Code Field string Reason string}
+kernel: type EventSubscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
+kernel: type Events struct {Key string `json:"key,omitempty"` Subscriptions []string `json:"subscriptions,omitempty"`}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
 kernel: type Grants struct {Exposure string `json:"exposure"`}
 kernel: type Inputs struct {App AppID `json:"app"` Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"` Calls ConnectionsID `json:"calls"`}
-kernel: type InstanceFacts struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string}
+kernel: type InstanceFacts struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string Broker BrokerIdentity}
 kernel: type InstanceRevision string
-kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"` Storage Storage `json:"storage,omitempty"` Calls []string `json:"calls,omitempty"` Allows []string `json:"allows,omitempty"`}
-kernel: type NATSSubscription struct {Stream, Consumer, Subject string}
-kernel: type NATSUser struct {Application, Environment, NKey string Publishes bool Subscriptions []NATSSubscription}
+kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"` Storage Storage `json:"storage,omitempty"` Calls []string `json:"calls,omitempty"` Allows []string `json:"allows,omitempty"` Events Events `json:"events,omitempty"`}
+kernel: type NATS struct {URL string `json:"url"` Namespace string `json:"namespace"` DecryptionSecret string `json:"decryptionSecret"` ControllerKey string `json:"controllerKey"` ConsoleKey string `json:"consoleKey"`}
+kernel: type NATSUser struct {Application, Environment, NKey string Publishes bool Subscriptions []EventSubscription}
 kernel: type NATSUsers struct {ControllerKey, ConsoleKey string Instances []NATSUser}
 kernel: type Network struct {PodCIDR string `json:"podCIDR"`}
 kernel: type Notify struct {Address string `json:"address"`}
 kernel: type Object struct {Group string `json:"group"` Kind string `json:"kind"` Namespace string `json:"namespace"` Name string `json:"name"`}
-kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Telemetry Telemetry `json:"telemetry"` Notify Notify `json:"notify"` Routing Routing `json:"routing"` Auth Auth `json:"auth"` Storage PlatformStorage `json:"storage"` Egress EgressProxy `json:"egress"` DNS DNS `json:"dns"` Backup Backup `json:"backup"` Network Network `json:"network"`}
+kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Telemetry Telemetry `json:"telemetry"` Notify Notify `json:"notify"` Routing Routing `json:"routing"` Auth Auth `json:"auth"` Storage PlatformStorage `json:"storage"` Egress EgressProxy `json:"egress"` DNS DNS `json:"dns"` Backup Backup `json:"backup"` Network Network `json:"network"` NATS NATS `json:"nats"`}
 kernel: type PlatformStorage struct {Class string `json:"class"`}
 kernel: type ProfileID string
 kernel: type Quota struct {Pods int32 `json:"pods"` RequestsCPUMilli int32 `json:"requestsCpuMilli"` RequestsMemoryMiB int32 `json:"requestsMemoryMiB"` LimitsMemoryMiB int32 `json:"limitsMemoryMiB"`}
-kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` Database string `json:"database,omitempty"` Telemetry bool `json:"telemetry,omitempty"` ReleaseID ReleaseID `json:"releaseId"`}
+kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` Database string `json:"database,omitempty"` Telemetry bool `json:"telemetry,omitempty"` Publishes []string `json:"publishes,omitempty"` ReleaseID ReleaseID `json:"releaseId"`}
 kernel: type ReleaseID string
 kernel: type ResourceSet struct {Files []File Inventory []Claim Registrations []string}
 kernel: type RestoreJob struct {Name string Archive string ArchiveSHA256, PlainSHA256 string Tables int32 AgeIdentity, ReadURL string}
@@ -199,7 +203,7 @@ kernel: type Source struct {Repository string `json:"repository"` Commit string 
 kernel: type Storage struct {SizeMiB int32 `json:"sizeMiB,omitempty"` ClaimName string `json:"claimName,omitempty"`}
 kernel: type Telemetry struct {Endpoint string `json:"endpoint"` Protocol string `json:"protocol"`}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
-kernel: type WorkloadFacts struct {Kind string Image, Digest string Port int32 HealthPath string UID int32 Telemetry bool}
+kernel: type WorkloadFacts struct {Kind string Image, Digest string Port int32 HealthPath string UID int32 Telemetry bool Publishes []string}
 legacy: const Invalid = "invalid"
 legacy: const Missing = "missing"
 legacy: const Unsupported = "unsupported"
@@ -209,12 +213,12 @@ legacy: func Translate(records Records) (Translation, error)
 legacy: type Error struct {Code, Field, Reason string}
 legacy: type Gap struct {Where, Fact, Owner string}
 legacy: type Instance struct {Exposure string Replicas int32 MemoryMiB int32 Team string}
-legacy: type Migration struct {Application, Environment string Source Source Workload Workload Instance Instance Database string Claim string Corroborated []string Calls, Allows []string Sources map[string]string Gaps []Gap}
+legacy: type Migration struct {Application, Environment string Source Source Workload Workload Instance Instance Database string Claim string Corroborated []string Calls, Allows []string EventsKey string Subscriptions []string Sources map[string]string Gaps []Gap}
 legacy: type Records struct {App, Instance, Release, Committed []byte}
 legacy: type Source struct {Repository, Commit string}
 legacy: type Supplied struct {Repository, Commit string}
 legacy: type Translation struct {Application, Environment string Workload Workload Instance Instance Sources map[string]string Gaps []Gap}
-legacy: type Workload struct {Image, Tag, Digest string Kind string Port int32 HealthPath string UID int32 Telemetry bool}
+legacy: type Workload struct {Image, Tag, Digest string Kind string Port int32 HealthPath string UID int32 Telemetry bool Publishes []string}
 observe: const Absent = "absent"
 observe: const Applied = "applied"
 observe: const AsIntended = "as_intended"
@@ -349,10 +353,11 @@ orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
 orchestration: func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
+orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
-orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte}
+orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte}
 orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}
-orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte}
+orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte EventsSecret []byte}
 orchestration: type Refusal struct {Subject, Reason string}
 orchestration: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}
 orchestration: type RestoreInputs struct {Instance, Release, Profile, Egress []byte Plan observe.RestorePlan Target observe.Target AgeIdentity, ReadURL string Cluster Cluster Sleep func(time.Duration) Now func() time.Time}

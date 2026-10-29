@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -64,7 +65,7 @@ func TestTranslateOneInstance(t *testing.T) {
 		Digest: "sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0",
 		Kind:   "web", Port: 8080, HealthPath: "/", UID: 101,
 	}
-	if translation.Workload != want {
+	if !reflect.DeepEqual(translation.Workload, want) {
 		t.Fatalf("workload %+v", translation.Workload)
 	}
 	// The record states one replica and the committed output states the effective memory limit; the

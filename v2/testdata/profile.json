@@ -38,6 +38,10 @@
   "egress": {"address": "egress.egress.svc.cluster.local", "namespace": "egress",
              "labels": {"app.kubernetes.io/name": "egress"}},
   "dns": {"namespace": "kube-system", "labels": {"k8s-app": "kube-dns"}},
+  "nats": {"url": "nats://nats.messaging.svc.cluster.local:4222", "namespace": "messaging",
+           "decryptionSecret": "sops-age",
+           "controllerKey": "UCEW5BT5FDDXPO475VJV6NYYS2GJ66C67KQJY6UAXIAFQOAJRHQTWMAP",
+           "consoleKey": "UAGJUVYLYUYPDTZV7E5ODWOWL3YPXIMMRXXE7MAX4HV3HTWKBYGHZPGD"},
   "network": {"podCIDR": "10.42.0.0/16"},
   "backup": {
     "image": "ghcr.io/samclement/swhurl-backup",

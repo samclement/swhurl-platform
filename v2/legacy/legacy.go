@@ -42,6 +42,9 @@ type Workload struct {
 	HealthPath         string
 	UID                int32
 	Telemetry          bool
+	// Publishes is the events the image publishes; a migration carries it, and the HTTP preview reports no
+	// subscription or publication because it compares one workload's HTTP surface only.
+	Publishes []string
 }
 
 // Instance is the environment-owned configuration the preview renders from.

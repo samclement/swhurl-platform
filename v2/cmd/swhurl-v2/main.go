@@ -25,7 +25,7 @@ const usage = `usage:
   swhurl-v2 instance-revision INSTANCE.json
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
   swhurl-v2 auth --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
-  swhurl-v2 users --snapshot SNAPSHOT.json --controller-key FILE --console-key FILE [--out DIR]
+  swhurl-v2 users --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
   swhurl-v2 resolve --snapshot SNAPSHOT.json
   swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
@@ -47,7 +47,9 @@ compile reads the instance, its release, the app record (one per app: its team) 
 the app record is required for delivery, because the namespace team label is the app's fact. Input files are
 never overwritten. Without --out the compilation document goes to stdout and nothing
 is written. With --out every compiled file is written under DIR, one "written PATH" or
-"unchanged PATH" line each; DIR must not be inside apps/, and nothing outside it is touched.
+"unchanged PATH" line each; DIR must not be inside apps/, and nothing outside it is touched. An instance that
+signs in to the event service needs its seed with --events-secret: v2 copies that encrypted file beside the
+manifests, which list it, and never reads or decrypts it.
 
 observe compiles the instance, reads its unit, HelmRelease, Deployment and pods from the API server the
 kubeconfig names (the JSON form that "kubectl config view --raw -o json" prints), and writes the
@@ -78,10 +80,10 @@ instance's namespace only. Grants are enforced, so an instance reaches what it d
 else. The proxy's deployment stays the platform's hand-written HelmRelease, which reads what proxy
 writes; --out writes the rendered files under DIR and nothing else.
 
-users renders the NATS server's user list: the platform's two service identities and one entry per keyed
-instance, with the permissions each needs — its own feature-flag overrides, its own subject when its
-release publishes, and the consumer calls for the subscriptions that connected. The controller's and the
-console's public keys are the files the platform publishes; no seed is read or written. The list is the
+users renders the NATS server's user list: the platform's two service identities, and one entry per keyed
+instance with the permissions each needs — its own feature-flag overrides, its own subject when its release
+publishes, and the consumer calls for the subscriptions that connected. The profile states the broker, the
+decryption Secret and the two public keys; no seed is read or written. The list is the
 ConfigMap the NATS HelmRelease reads, so a cutover replaces that file and nothing else.
 
 resolve reads one snapshot's declarations and writes the resolved connections as a v2-calls document:
@@ -209,7 +211,7 @@ type request struct {
 	app, settings, committed, snapshot, callFile       string
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
-	controllerKey, consoleKey                          string
+	eventsSecret                                       string
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
@@ -284,6 +286,7 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 		flags.Var(&once{value: &r.app}, "app", "app record (its team)")
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		flags.Var(&once{value: &r.eventsSecret}, "events-secret", "the instance's encrypted events Secret (optional)")
 		r.registerOut(flags)
 	case "observe":
 		r.registerLive(flags)
@@ -329,8 +332,7 @@ func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 		r.registerOut(flags)
 	case "users":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
-		flags.Var(&once{value: &r.controllerKey}, "controller-key", "the stream controller's public nkey file")
-		flags.Var(&once{value: &r.consoleKey}, "console-key", "the console's public nkey file")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		r.registerOut(flags)
 	case "migrate":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
@@ -341,6 +343,7 @@ func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.sourceCommit}, "source-commit", "the full commit its image was built from")
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		flags.Var(&once{value: &r.eventsSecret}, "events-secret", "the instance's encrypted events Secret, as Git holds it")
 		r.registerOut(flags)
 	}
 }
@@ -423,7 +426,7 @@ func (r *request) platformNamed() ([]string, bool) {
 	case "egress", "auth", "shadow":
 		return []string{r.snapshot, r.profile}, true
 	case "users":
-		return []string{r.snapshot, r.controllerKey, r.consoleKey}, true
+		return []string{r.snapshot, r.profile}, true
 	}
 	return nil, false
 }
@@ -540,6 +543,13 @@ func (c cli) compile(r request) int {
 	inputs, status := c.inputs(r)
 	if status != 0 {
 		return status
+	}
+	if r.eventsSecret != "" {
+		data, status := c.read(r.eventsSecret, "events secret")
+		if status != 0 {
+			return status
+		}
+		inputs.EventsSecret = data
 	}
 	if r.out != "" {
 		if c.appTreeRefused(r.out) {

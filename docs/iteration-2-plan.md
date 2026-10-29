@@ -116,6 +116,7 @@ Three value records and one pure operation live in [`v2/kernel`](../v2/kernel/re
 | `runtime.uid` | Integer `1–2147483647`; non-root |
 | `database` | Optional `sqlite`; empty for an image that keeps no state |
 | `telemetry` | Optional boolean; true when the image has an SDK that reports to the platform collector |
+| `publishes` | Optional list of event names, each an app-name-style segment, each at most once: what the image's AsyncAPI document says it publishes |
 | `releaseId` | Optional identity assertion; if supplied, must match the computed release ID |
 
 Values are compared exactly, never normalised: `Owner/Repo` and `owner/repo` are different sources and give different release IDs, though GitHub treats them as one repository.
@@ -140,6 +141,8 @@ The artifact digest names an **OCI image manifest**, not an index/list or a conf
 | `bindings` | Explicit empty object `{}` | No |
 | `calls` | Optional list of app names: what this instance calls | No |
 | `allows` | Optional list of app names: whose calls it accepts | No |
+| `events.key` | Optional user public nkey (`U` plus 55 base32 characters): the identity it signs in to the event service with. Required for anything its release publishes or it receives | No |
+| `events.subscriptions` | Optional list of `<publisher>.<event>` grants, each at most once: the events it receives | No |
 
 `calls` and `allows` are the instance's own declarations, read by `resolve` to decide consent; the compiler never renders them, only the connected pairs a resolution gives it. They are app names — a team grant is v1's spelling and is refused by a migration, because teams are not modelled — sorted and deduplicated when a record is written, and they participate in the instance's identity like every other fact. Non-empty bindings are refused, not ignored. This phase proves preservation of **empty** bindings, not supported resource attachments. There is no create-instance operation or copying of staging defaults. Secrets and live observations do not belong in either record.
 
@@ -209,7 +212,7 @@ The code is the machine contract; the field says where; the reason is prose for 
 | Code | When |
 | --- | --- |
 | `invalid` | Not one valid UTF-8 JSON document, a duplicate key, not an object, a missing required field, a `null`, a wrong type or out-of-range integer, or a value outside its field's format or range; also a malformed `releaseId` assertion or expected revision |
-| `unsupported` | A field the schema does not have (including a case variant next to the real key, a grant in a release or a non-empty `bindings`), `schemaVersion` other than 1, and a well-formed value outside this phase's profile: a `sha512:` digest, another media type or platform, a `runtime.kind` that is neither `web` nor `worker`, an environment other than `staging` or `prod`, an exposure other than `private` |
+| `unsupported` | A field the schema does not have (including a case variant next to the real key, a grant in a release or a non-empty `bindings`), `schemaVersion` other than 1, and a well-formed value outside this phase's profile: a `sha512:` digest, another media type or platform, a `runtime.kind` that is neither `web` nor `worker`, an environment other than `staging` or `prod`, an exposure other than `private`, an instance with a broker identity and a profile that states no broker |
 | `identity_mismatch` | A `releaseId` assertion that differs from the computed release ID |
 | `wrong_application` | A candidate release for another application |
 | `stale_instance` | An expected revision that is not the current instance's |
@@ -1585,6 +1588,15 @@ and the file's cutover are part two, and the seed decision is the operator's: ad
 existing encrypted seed, or have v2 generate a pair and encrypt it to the platform's public age recipient.
 [The slice record](v2-status.md#slice-record-events-part-one-the-servers-user-list-29-october-2026).
 
+**Slice 3, part two, approved and implemented offline 29 October 2026**, with a standing principle from the
+operator: favour a clean v2 contract over anything that preserves v1 compatibility, a one-way journey. The release
+states `publishes`, the instance states its `events` block, the profile states the broker (`nats`), and the
+resolution document carries subscriptions beside the pairs. A keyed instance renders its variables, its stream, its
+consumers and a unit that waits for `platform-nats` and decrypts its folder; its seed is the encrypted file the
+operator supplies, listed and copied and never read. The decision the operator took: **adopt** the predecessor's
+pair rather than mint one, so the two instances v2 already owns wait for a minting slice. Every release, instance
+and profile identity moved once. [The slice record](v2-status.md#slice-record-events-part-two-the-instance-side-29-october-2026).
+
 ## 6. Deliberately deferred
 
 Do not make feature parity the first goal. This is the one list of unimplemented features and incomplete transition semantics: how v2 treats each today, and which domain or next boundary must resolve it. v1 supplies examples, not the required replacement contract. Update the list in the change that defers, implements or removes something; a phase's own classification table links here. The list does not approve removing anything from v1.
@@ -1605,7 +1617,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | One platform ConfigMap for token verification, replicated into each managed namespace | **Built:** `swhurl-v2 auth` renders one identical `swhurl-auth` per managed namespace into `platform/auth/`, the `platform-auth` unit applies it, and CI regenerates and diffs it. Instances mount the fixed name and claim none of it; a rotation rewrites one folder. The allow-list stays per instance, and no app unit can depend on the platform unit (namespace creation would deadlock), so a new app's pods wait one reconcile | Done; the env forms and the `auth-revision` annotation are retired for v2-rendered callees (29 October 2026): files only |
 | A v1 caller of a v2-owned callee | v2's resolution connects the pair and the callee accepts the caller's token, but v1 treats a v2-owned instance as absent and renders the caller no address and no token (`make app-calls` reports it waiting): `swhurl-try-12` staging holds such a pair and cannot call `swhurl-try-10` staging | v1's caller rendering reading v2's records, or the caller's own migration |
 | Notifications: `SWHURL_NOTIFY_URL`, the projected `notify` token | **Done:** the profile states the address and every instance renders the URL and the projected `notify` token beside its callee tokens ([slice](v2-status.md#slice-record-the-always-on-instance-surface-29-october-2026)) | Done; the address is a platform fact, not a per-app one |
-| Events: NATS users, streams and consumers | The server's **user list** is rendered: `swhurl-v2 users` builds it from a pinned snapshot and `make check-v2` proves it is what the platform runs ([part one](v2-status.md#slice-record-events-part-one-the-servers-user-list-29-october-2026)). An instance's own side is not: no `SWHURL_EVENTS_*` variables, no `events.yaml` stream or consumer, no `dependsOn: platform-nats`, no `decryption`, no `<app>-events` Secret. v1 still writes `platform/nats/users.yaml` | Slice 3's part two: the instance side, the seed decision, the file's cutover, and one event-using worker migrated |
+| Events: NATS users, streams and consumers | **Rendered, offline.** The server's **user list** comes from a pinned snapshot and `make check-v2` proves it is what the platform runs ([part one](v2-status.md#slice-record-events-part-one-the-servers-user-list-29-october-2026)); a keyed instance renders its `SWHURL_EVENTS_*` variables, its `Stream` and `Consumer`s, the unit's `platform-nats` dependency and `decryption`, and the folder lists its seed ([part two](v2-status.md#slice-record-events-part-two-the-instance-side-29-october-2026)). v2 **adopts** a key pair: the seed is the encrypted file the operator supplies, copied and never read, and `compile`/`migrate` refuse a keyed instance without it | The live half: the `users.yaml` cutover (v1's writer retired, CI regenerating it) and one event-using worker migrated; then a slice that **mints** a pair — for the two instances that lost theirs and for rotation |
 | Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |
 | Telemetry: the OTLP endpoint and its variables | **Done:** the release states whether its image reports, and the profile states the node collector’s endpoint and protocol; `HOST_IP` is defined before the endpoint that expands it ([slice](v2-status.md#slice-record-the-always-on-instance-surface-29-october-2026)) | Done; per-app endpoint overrides remain a future release fact if an image must report elsewhere |
 | SQLite storage: the volume, its path and the single writer | The [storage slice](#sqlite-storage-the-volume-implemented-and-proved-live-25-october-2026) renders a retained 1 GiB-class volume, `DATABASE_PATH`, `Recreate`, and a namespace Flux will not prune, and now a claim that already exists can be [adopted](#a-stateful-handover-an-allocation-outlives-the-records-and-a-volume-can-be-adopted-implemented-26-october-2026) instead; proved live including restart and removal survival | Done for the volume; growth is refused |

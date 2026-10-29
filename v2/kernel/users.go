@@ -34,12 +34,8 @@ type NATSUsers struct {
 type NATSUser struct {
 	Application, Environment, NKey string
 	Publishes                      bool
-	Subscriptions                  []NATSSubscription
+	Subscriptions                  []EventSubscription
 }
-
-// NATSSubscription is one connected subscription as the permission names it: the publisher's stream, this
-// subscriber's durable consumer on it, and the subject it filters.
-type NATSSubscription struct{ Stream, Consumer, Subject string }
 
 // RenderUsers renders the user list from the platform's keys and every keyed instance. It refuses a key that is
 // not a user public nkey, and an instance whose names could not be spelled in a permission.

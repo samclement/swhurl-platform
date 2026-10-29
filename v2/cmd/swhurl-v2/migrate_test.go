@@ -67,8 +67,7 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", folder, err)
 		}
-		spec, err := kernel.DecodeInstance(committedRecord)
-		if err != nil {
+		if _, err := kernel.DecodeInstance(committedRecord); err != nil {
 			t.Fatalf("%s: %v", folder, err)
 		}
 		snapshot := writeSnapshot(t, predecessor(t, application, environment))
@@ -77,6 +76,15 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 			"--profile", filepath.Join("..", "..", "testdata", "profile.json"),
 			"--source-repository", release.Source.Repository, "--source-commit", release.Source.Commit,
 			"--calls", "../../../v2-records/calls.json", "--out", destination}
+		if statedEventsKey(t, predecessor(t, application, environment)) {
+			// An instance that signs in to the broker travels with its seed: v2 copies the encrypted file and
+			// never reads it, so a placeholder is all a test needs.
+			secret := filepath.Join(destination, "events.sops.yaml")
+			if err := os.WriteFile(secret, []byte("a ciphertext v2 never reads\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			args = append(args, "--events-secret", secret)
+		}
 		if release.Database != "" {
 			args = append(args, "--egress", "../../../platform/egress/allocation.json")
 		}
@@ -93,18 +101,43 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 				t.Errorf("%s: egress %v, the allocation names port %v", folder, report["egress"], allocated)
 			}
 		}
-		identities := report["identities"].(map[string]any)
-		if identities["release"] != string(release.ReleaseID) || identities["instance"] != string(mustRevision(t, spec)) {
-			t.Errorf("%s: identities %v", folder, identities)
-		}
 		if got, want := report["source"].(map[string]any)["corroborated"], float64(len(release.Source.Commit)); got == nil {
 			t.Errorf("%s: corroboration %v (commit length %v)", folder, got, want)
 		}
+		// The committed pair predates the events facts: the platform could not render them then, so the two
+		// instances v2 already owns keep no broker identity until the slice that can mint a key pair. The
+		// migration now states them, so the committed record is what today's output says once they are removed.
 		migrated := filepath.Join(destination, "v2-records", application, environment)
-		for _, name := range []string{"release.json", "instance.json"} {
-			if !bytes.Equal(readFile(t, filepath.Join(migrated, name)), readFile(t, filepath.Join(frozen, name))) {
-				t.Errorf("%s: the %s record is not what the migration committed", folder, name)
-			}
+		withoutEvents, err := kernel.DecodeRelease(readFile(t, filepath.Join(migrated, "release.json")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		produced := withoutEvents
+		written, err := kernel.DecodeInstance(readFile(t, filepath.Join(migrated, "instance.json")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		identities := report["identities"].(map[string]any)
+		if identities["release"] != string(produced.ReleaseID) || identities["instance"] != string(mustRevision(t, written)) {
+			t.Errorf("%s: the report names %v, not what it wrote", folder, identities)
+		}
+		withoutEvents.Publishes, withoutEvents.ReleaseID = nil, ""
+		if withoutEvents.ReleaseID, err = withoutEvents.ID(); err != nil {
+			t.Fatal(err)
+		}
+		if encoded, err := kernel.EncodeRelease(withoutEvents); err != nil ||
+			!bytes.Equal(encoded, readFile(t, filepath.Join(frozen, "release.json"))) {
+			t.Errorf("%s: the release record differs from the committed one by more than its publications", folder)
+		}
+		stripped, err := kernel.DecodeInstance(readFile(t, filepath.Join(migrated, "instance.json")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		declared := statesEvents(produced, stripped)
+		stripped.Events, stripped.Release = kernel.Events{}, withoutEvents.ReleaseID
+		if encoded, err := kernel.EncodeInstance(stripped); err != nil ||
+			!bytes.Equal(encoded, readFile(t, filepath.Join(frozen, "instance.json"))) {
+			t.Errorf("%s: the instance record differs from the committed one by more than its events identity", folder)
 		}
 		if !bytes.Equal(readFile(t, filepath.Join(destination, "v2-records", application, "app.json")),
 			readFile(t, filepath.Join(frozen, "app.json"))) {
@@ -131,6 +164,12 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 				continue
 			}
 			got := string(readFile(t, filepath.Join(destination, filepath.FromSlash(path))))
+			if declared && dependsOnEvents(path) {
+				// The committed pair predates the events facts, so its files cannot show what the migration now
+				// renders for the same records: the stream, the seed, the variables and the unit's dependency.
+				// Everything else must still be what compile writes for that pair.
+				continue
+			}
 			if got != string(readFile(t, filepath.Join(compiled, filepath.FromSlash(path)))) {
 				t.Errorf("%s: %s is not what compile writes for the migrated pair", folder, path)
 			}
@@ -356,4 +395,35 @@ func TestMigrateRefusals(t *testing.T) {
 			t.Fatalf("%v: exit %d: %q", args, status, diagnostic)
 		}
 	}
+}
+
+// statesEvents is whether the predecessor's records give an instance a broker identity its committed pair could
+// not state.
+func statesEvents(release kernel.ReleaseBundle, spec kernel.InstanceSpec) bool {
+	return len(release.Publishes) > 0 || len(spec.Events.Subscriptions) > 0
+}
+
+// dependsOnEvents is whether a compiled file's content depends on an instance's broker identity.
+func dependsOnEvents(path string) bool {
+	return strings.HasSuffix(path, "/helmrelease.json") || strings.HasSuffix(path, "/kustomization.yaml") ||
+		strings.HasSuffix(path, "/stream.json") || strings.Contains(path, "/consumer-") ||
+		strings.HasSuffix(path, "/events.sops.yaml") || strings.HasPrefix(path, "clusters/home/")
+}
+
+// statedEventsKey is whether a predecessor's records give the instance a broker identity.
+func statedEventsKey(t *testing.T, snapshot map[string]any) bool {
+	t.Helper()
+	instances := snapshot["instances"].([]any)
+	var settings struct {
+		Allocations struct{ EventsKey string } `json:"allocations"`
+	}
+	records := instances[0].(map[string]any)["records"].(map[string]any)
+	data, err := json.Marshal(records["instance"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	return settings.Allocations.EventsKey != ""
 }

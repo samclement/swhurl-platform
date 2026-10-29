@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "application": "swhurl-try-10",
   "environment": "staging",
-  "release": "rel-sha256:82bb28fe151d41c33138c94188346b822b2ed77a3ea7710838b98ec45364c966",
+  "release": "rel-sha256:3b2568b5eb30df001f2650733fb80c7fa4f4ad72112a089552002ccaae78d189",
   "configuration": {
     "replicas": 1,
     "memoryMiB": 128
@@ -17,5 +17,6 @@
   "allows": [
     "swhurl-try-11",
     "swhurl-try-12"
-  ]
+  ],
+  "events": {}
 }

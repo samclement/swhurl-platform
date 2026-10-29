@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/events"
 	"github.com/samclement/swhurl-platform/v2/kernel"
@@ -25,6 +24,10 @@ type usersDocument struct {
 // platform's own published public keys, given as the files they are; the instances' facts come from the snapshot,
 // so the list says what that revision of Git says.
 func (c cli) users(r request) int {
+	profile, status := c.profile(r.profile)
+	if status != 0 {
+		return status
+	}
 	data, status := c.read(r.snapshot, "snapshot")
 	if status != 0 {
 		return status
@@ -33,20 +36,14 @@ func (c cli) users(r request) int {
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	controller, status := c.publicKey(r.controllerKey, "controller key")
-	if status != 0 {
-		return status
-	}
-	console, status := c.publicKey(r.consoleKey, "console key")
-	if status != 0 {
-		return status
-	}
 	instances, err := usersFactOf(pinned)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	rendered, err := kernel.RenderUsers(kernel.NATSUsers{ControllerKey: controller, ConsoleKey: console,
-		Instances: instances})
+	// The two service identities are the platform's own, so they come from the profile with the broker's
+	// address and the Secret that decrypts an instance's seed.
+	rendered, err := kernel.RenderUsers(kernel.NATSUsers{ControllerKey: profile.NATS.ControllerKey,
+		ConsoleKey: profile.NATS.ConsoleKey, Instances: instances})
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -88,20 +85,6 @@ func usersFactOf(pinned snapshot) ([]kernel.NATSUser, error) {
 			NKey: key, Publishes: len(facts[index].Publishes) > 0, Subscriptions: subscriptions(answers[index])})
 	}
 	return users, nil
-}
-
-// publicKey reads one published nkey file: the platform's controller or console identity, which is public
-// material with the seed elsewhere.
-func (c cli) publicKey(path, what string) (string, int) {
-	data, status := c.read(path, what)
-	if status != 0 {
-		return "", status
-	}
-	key := strings.TrimSpace(string(data))
-	if key == "" {
-		return "", fail(c.diagnostic, fmt.Errorf("invalid: %s: empty", what))
-	}
-	return key, 0
 }
 
 // eventsFacts is what each instance's records state about events: the events its release publishes and the
@@ -156,13 +139,14 @@ func declaredSubscriptions(instance snapshotInstance) []string {
 	return settings.Subscriptions
 }
 
-// subscriptions is one instance's answer as the renderer's own type: a connected subscription carries the names
-// the permission is spelled with, so the user list and a rendered consumer cannot disagree.
-func subscriptions(answer events.Resolved) []kernel.NATSSubscription {
-	found := make([]kernel.NATSSubscription, 0, len(answer.Connected))
+// subscriptions is one instance's answer as the renderer's own type: a connected subscription carries every name
+// it needs, so the user list, a rendered consumer and a rendered stream cannot disagree about one subscription.
+func subscriptions(answer events.Resolved) []kernel.EventSubscription {
+	found := make([]kernel.EventSubscription, 0, len(answer.Connected))
 	for _, subscription := range answer.Connected {
-		found = append(found, kernel.NATSSubscription{Stream: subscription.Stream, Consumer: subscription.Consumer,
-			Subject: subscription.Subject})
+		found = append(found, kernel.EventSubscription{Publisher: subscription.Publisher, Event: subscription.Event,
+			Stream: subscription.Stream, Consumer: subscription.Consumer, Subject: subscription.Subject,
+			Object: subscription.Object})
 	}
 	return found
 }

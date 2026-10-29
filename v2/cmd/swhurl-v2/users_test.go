@@ -37,11 +37,10 @@ func eventInstances(t *testing.T) map[string]any {
 
 // The command renders the file the platform's NATS server reads, and reports what it rendered.
 func TestUsersRendersTheServerList(t *testing.T) {
-	snapshot := writeSnapshot(t, eventInstances(t))
-	controller, console := writeKey(t, "C"), writeKey(t, "D")
+	snapshot, profile := writeSnapshot(t, eventInstances(t)), profilePath(t)
 	var out, diagnostic bytes.Buffer
-	status := run([]string{"users", "--snapshot", snapshot, "--controller-key", controller,
-		"--console-key", console}, &out, &diagnostic, os.ReadFile, files.New())
+	status := run([]string{"users", "--snapshot", snapshot, "--profile", profile}, &out, &diagnostic,
+		os.ReadFile, files.New())
 	if status != 0 {
 		t.Fatalf("exit %d: %s", status, diagnostic.String())
 	}
@@ -76,7 +75,8 @@ func TestUsersRendersTheServerList(t *testing.T) {
 		t.Fatalf("the object: %+v", configMap.Metadata)
 	}
 	values := configMap.Data["values.yaml"]
-	for _, want := range []string{`"users"`, strings.Repeat("C", 55), strings.Repeat("D", 55),
+	for _, want := range []string{`"users"`, "UCEW5BT5FDDXPO475VJV6NYYS2GJ66C67KQJY6UAXIAFQOAJRHQTWMAP",
+		"UAGJUVYLYUYPDTZV7E5ODWOWL3YPXIMMRXXE7MAX4HV3HTWKBYGHZPGD",
 		`staging.orders.>`, `$JS.API.CONSUMER.MSG.NEXT.staging-orders.notifier_created`} {
 		if !strings.Contains(values, want) {
 			t.Errorf("the user list lacks %s:\n%s", want, values)
@@ -93,11 +93,11 @@ func TestUsersRendersTheServerList(t *testing.T) {
 	}
 }
 
-// writeKey writes one published public key file, as platform/nats carries it.
-func writeKey(t *testing.T, letter string) string {
+// profilePath is the fixture profile, which states the broker and the platform's two public keys.
+func profilePath(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "key.pub")
-	if err := os.WriteFile(path, []byte("U"+strings.Repeat(letter, 55)+"\n"), 0o600); err != nil {
+	path := filepath.Join(t.TempDir(), "profile.json")
+	if err := os.WriteFile(path, fixture(t, "profile.json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -119,19 +119,15 @@ func TestUsersRefusals(t *testing.T) {
 		status int
 		want   string
 	}{
-		{"no key file", []string{"users", "--snapshot", snapshot, "--controller-key", writeKey(t, "C")}, 2, "usage"},
-		{"an empty key file", []string{"users", "--snapshot", snapshot, "--controller-key", emptyKey(t),
-			"--console-key", writeKey(t, "D")}, 2, "invalid: controller key: empty"},
-		{"a key that is not one", []string{"users", "--snapshot", snapshot, "--controller-key", writeKey(t, "c"),
-			"--console-key", writeKey(t, "D")}, 2, "invalid: users.controllerKey"},
+		{"no profile", []string{"users", "--snapshot", snapshot}, 2, "usage"},
 		{"a subscription to a publisher that states its events and has none",
 			[]string{"users", "--snapshot", withRecords(0, func(records map[string]any) {
 				records["release"] = map[string]any{"publishes": []any{}}
-			}), "--controller-key", writeKey(t, "C"), "--console-key", writeKey(t, "D")}, 2, "not_published"},
+			}), "--profile", profilePath(t)}, 2, "not_published"},
 		{"an instance that declares events and has no key",
 			[]string{"users", "--snapshot", withRecords(1, func(records map[string]any) {
 				records["instance"] = map[string]any{"subscriptions": []any{"orders.created"}}
-			}), "--controller-key", writeKey(t, "C"), "--console-key", writeKey(t, "D")}, 2,
+			}), "--profile", profilePath(t)}, 2,
 			"unsupported: users.key: an_instance_that_declares_events_needs_a_key"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -144,24 +140,14 @@ func TestUsersRefusals(t *testing.T) {
 	}
 }
 
-func emptyKey(t *testing.T) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "empty.pub")
-	if err := os.WriteFile(path, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 // --out writes the rendered file and nothing else, and a second run leaves it unchanged.
 func TestUsersWritesItsFile(t *testing.T) {
-	snapshot := writeSnapshot(t, eventInstances(t))
-	controller, console := writeKey(t, "C"), writeKey(t, "D")
+	snapshot, profile := writeSnapshot(t, eventInstances(t)), profilePath(t)
 	destination := t.TempDir()
 	for range 2 {
 		var out, diagnostic bytes.Buffer
-		status := run([]string{"users", "--snapshot", snapshot, "--controller-key", controller,
-			"--console-key", console, "--out", destination}, &out, &diagnostic, os.ReadFile, files.New())
+		status := run([]string{"users", "--snapshot", snapshot, "--profile", profile, "--out", destination},
+			&out, &diagnostic, os.ReadFile, files.New())
 		if status != 0 {
 			t.Fatalf("exit %d: %s", status, diagnostic.String())
 		}

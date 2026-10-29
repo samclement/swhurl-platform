@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import base64
 import binascii
+import dataclasses
 import hashlib
 import os
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
+
+import yaml
 
 from swhurl import ROOT, platform, yamlio
 from swhurl.apps import hooks
@@ -92,69 +95,97 @@ def ingestion_key_problem(copies: dict[str, str]) -> str | None:
     return None
 
 
+@dataclasses.dataclass
+class Findings:
+    """What one check-secrets run has found so far, across every file and document."""
+    ingestion: dict[str, str] = dataclasses.field(default_factory=dict)
+    destinations: dict[str, str] = dataclasses.field(default_factory=dict)
+    shared: dict[str, dict[str, str]] = dataclasses.field(default_factory=lambda: {what: {} for what in SHARED})
+    errors: int = 0
+    warnings: int = 0
+
+
+def check_documents(rel: Path, documents: list, *, fixture: bool, findings: Findings) -> None:
+    """Check every document of one decrypted file. A SOPS file may hold more than one: the backup writer's
+    holds the same credentials as two Secrets, one per namespace, so a check that reads one document would miss
+    the other (or refuse the file)."""
+    for doc in documents:
+        if not isinstance(doc, dict) or not isinstance(doc.get('metadata'), dict):
+            print(f'[ERROR] {rel}: a document is not a Secret')
+            findings.errors += 1
+            continue
+        fields = {f: doc.get(f) or {} for f in ('data', 'stringData')}
+        summary = ', '.join(f'{len(v)} {f}' for f, v in fields.items() if v)
+        print(f'[OK] {rel}: {doc["metadata"].get("namespace")}/{doc["metadata"].get("name")} ({summary})')
+        for field, values in fields.items():
+            for key, value in values.items():
+                raw = base64.b64decode(value) if field == 'data' else str(value).encode()
+                if key == INGESTION_KEY and not fixture:
+                    findings.ingestion[str(rel)] = hashlib.sha256(raw).hexdigest()
+                for what, copies in SHARED.items():
+                    if (str(rel), key) in copies:
+                        findings.shared[what][str(rel)] = hashlib.sha256(raw).hexdigest()
+                for channel, (provider_file, provider_key, checker_key) in NTFY_DESTINATIONS.items():
+                    source = str(rel) == provider_file and key == provider_key
+                    checker = str(rel) == NOTIFICATION_SECRET and key == checker_key
+                    if source or checker:
+                        findings.destinations[f'{"source" if source else "checker"}-{channel}'] = destination_hash(raw)
+                where = f'{rel}: {field}.{key}'
+                if not raw:
+                    print(f'  [ERROR] {where}: empty')
+                    findings.errors += 1
+                elif raw == b'REPLACE_ME' and not fixture:
+                    print(f'  [ERROR] {where}: still the REPLACE_ME placeholder; set it with sops')
+                    findings.errors += 1
+                elif field == 'data' and looks_double_encoded(raw):
+                    print(f'  [WARN] {where}: decodes to base64 text; probably encoded twice')
+                    findings.warnings += 1
+
+
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     key_file = os.environ.get('SOPS_AGE_KEY_FILE') or str(ROOT / platform.AGE_KEY)
     if not Path(key_file).is_file():
         print(f'[ERROR] age key not found at {key_file}; set SOPS_AGE_KEY_FILE', file=sys.stderr)
         return 2
     runner = runner or Runner(cwd=ROOT, env={'SOPS_AGE_KEY_FILE': key_file})
-    errors = warnings = 0
-    ingestion: dict[str, str] = {}
-    destinations: dict[str, str] = {}
-    shared: dict[str, dict[str, str]] = {what: {} for what in SHARED}
+    findings = Findings()
     for path in secret_files(runner):
         rel = path.relative_to(ROOT)
         fixture = rel.parts[:2] == ('tests', 'fixtures')
         try:
-            doc = yamlio.load(runner.output(['sops', 'decrypt', str(path)], secret_output=True))
+            decrypted = runner.output(['sops', 'decrypt', str(path)], secret_output=True)
+            documents = [doc for doc in yamlio.load_all(decrypted) if doc is not None]
         except CommandError:
             print(f'[ERROR] {rel}: cannot decrypt')
-            errors += 1
+            findings.errors += 1
             continue
-        fields = {f: doc.get(f) or {} for f in ('data', 'stringData')}
-        summary = ', '.join(f'{len(v)} {f}' for f, v in fields.items() if v)
-        print(f'[OK] {rel}: {doc["metadata"]["namespace"]}/{doc["metadata"]["name"]} ({summary})')
-        for field, values in fields.items():
-            for key, value in values.items():
-                raw = base64.b64decode(value) if field == 'data' else str(value).encode()
-                if key == INGESTION_KEY and not fixture:
-                    ingestion[str(rel)] = hashlib.sha256(raw).hexdigest()
-                for what, copies in SHARED.items():
-                    if (str(rel), key) in copies:
-                        shared[what][str(rel)] = hashlib.sha256(raw).hexdigest()
-                for channel, (provider_file, provider_key, checker_key) in NTFY_DESTINATIONS.items():
-                    source = str(rel) == provider_file and key == provider_key
-                    checker = str(rel) == NOTIFICATION_SECRET and key == checker_key
-                    if source or checker:
-                        destinations[f'{"source" if source else "checker"}-{channel}'] = destination_hash(raw)
-                where = f'{rel}: {field}.{key}'
-                if not raw:
-                    print(f'  [ERROR] {where}: empty')
-                    errors += 1
-                elif raw == b'REPLACE_ME' and not fixture:
-                    print(f'  [ERROR] {where}: still the REPLACE_ME placeholder; set it with sops')
-                    errors += 1
-                elif field == 'data' and looks_double_encoded(raw):
-                    print(f'  [WARN] {where}: decodes to base64 text; probably encoded twice')
-                    warnings += 1
-    problem = ingestion_key_problem(ingestion)
+        except yaml.YAMLError:
+            print(f'[ERROR] {rel}: cannot read the decrypted document')
+            findings.errors += 1
+            continue
+        if not documents:
+            print(f'[ERROR] {rel}: no document')
+            findings.errors += 1
+            continue
+        check_documents(rel, documents, fixture=fixture, findings=findings)
+    problem = ingestion_key_problem(findings.ingestion)
     if problem:
         print(f'[ERROR] {problem}')
-        errors += 1
+        findings.errors += 1
     else:
         print(f'[OK] {INGESTION_KEY} is identical in {" and ".join(INGESTION_FILES)}')
-    problem = notification_destination_problem(destinations)
+    problem = notification_destination_problem(findings.destinations)
     if problem:
         print(f'[ERROR] {problem}')
-        errors += 1
+        findings.errors += 1
     else:
         print('[OK] ntfy destinations match the notification checker copies (compared by hashes)')
-    for what, copies in shared.items():
+    for what, copies in findings.shared.items():
         problem = shared_problem(what, copies)
         if problem:
             print(f'[ERROR] {problem}')
-            errors += 1
+            findings.errors += 1
         else:
             print(f'[OK] {what} is identical in ' + ' and '.join(f for f, _ in SHARED[what]))
-    print(f'\n{errors} error(s), {warnings} warning(s).')
-    return 1 if errors else 0
+    print(f'\n{findings.errors} error(s), {findings.warnings} warning(s).')
+    return 1 if findings.errors else 0

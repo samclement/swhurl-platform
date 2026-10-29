@@ -1095,8 +1095,11 @@ rotation needs.
      v2's own check is "not the plaintext, and encrypted"; whether the platform can read it is proved by the
      workload signing in. `mint` writes the record folder; it does not compile, so the operator recompiles.
   7. **Offline is not live** — the offline proof is the tests, the adapter contract (run against the real `sops`
-     when it is installed, and required in CI by `REQUIRE_SOPS=1`), and the recompile test. The live half — the two
-     instances minted, recompiled, applied and signing in — is recorded in [current state](current-state.md).
+     when it is installed, and required in CI by `REQUIRE_SOPS=1`, where the tooling job installs the pinned
+     release and checks its published checksum), and the recompile test. The live half — the two
+     instances minted, recompiled and applied, their ciphertext decrypting and the broker serving their keys, while
+     neither client logged a sign-in (not recorded as one) — is in
+     [current state](current-state.md#v2-minted-a-broker-identity-for-both-keyless-instances-29-october-2026).
   8. **Recorded in the same change** — this page, the plan's gap list, backup field table and refusal list, the NATS
      section of [services](services.md#nats), the [workstream registry](workstreams.md) and CI's `REQUIRE_SOPS`.
 - **Evidence:** `REQUIRE_HELM=1 REQUIRE_SOPS=1 make check-v2` (18 packages; the real encryption contract, the chart

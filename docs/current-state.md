@@ -2,6 +2,40 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## v2 minted a broker identity for both keyless instances (29 October 2026)
+
+`swhurl-try-10` and `swhurl-try-11` staging lost their NATS pair with their v1 units, so neither could read its
+feature-flag overrides. `swhurl-v2 mint` (`b59f1420`) created one each: the seed encrypted to the profile's
+`sops.recipient`, the record stating the public key (`UDCH7SX2…` and `UAE2GWUCE…`), the seed beside the record
+and a copy beside the manifests. `make v2-users` then had **19 users** and the Reloader list **20 namespaces**,
+and each instance's compiled files gained its events env pair, `envFrom`, reload annotation, the broker's egress
+rule, `events.sops.yaml`, and the unit's `platform-nats` dependency and `decryption`.
+
+After `make flux-reconcile` (22:25Z) both instances upgraded and rolled once, each on its previous image.
+`swhurl-try-11` was `1/1` at once; `swhurl-try-10` read `0/1` on the first `app-status` and `1/1` twenty seconds
+later, its readiness inside the 120 s startup window, with no error or restart in its log.
+
+- **The ciphertext decrypts:** Flux created `swhurl-try-10-events` and `swhurl-try-11-events`, each with one key
+  (80 base64 characters — the seed's own length), so the recipient v2 encrypted to is the one Flux holds. A
+  wrong recipient would have failed the unit instead.
+- **The server accepts the keys:** `users.json` carries both public keys, the NATS pod reloaded with no
+  `Authorization Violation` or `error` line in the ten minutes after, and both apps started with
+  `SWHURL_EVENTS_NKEY`/`SWHURL_EVENTS_URL` and `envFrom` of their Secret.
+- **Reloader now watches both:** a Role and RoleBinding appeared in each namespace (99 s), and the controller
+  logged both in `Watching scoped namespaces` at `22:25:53Z`.
+- `make verify-platform` passed after the reconcile.
+
+**What this proves:** v2 minted a pair, encrypted it to the platform's key, stated it in the record, and the
+platform serves it. **Not exercised:** a *sign-in* by these two clients — neither image logs a NATS connection
+until it reads a flag or publishes, so their acceptance rests on the decrypted Secret and the user list, not on a
+positive sign-in line (the [`demo-notifier` migration](current-state.md#v2-owns-natss-user-list-and-its-first-event-subscriber-is-live-29-october-2026)
+is the positive case). **A rotation of a live pair was not run:** `--rotate` is tested offline, and the operator's
+confirmation is the stop line for replacing a real identity.
+
+**CI found one thing:** Validate failed on `b59f1420` because the runner has no `sops` and the adapter contract
+requires the real command (`REQUIRE_SOPS=1`). The tooling job now installs the pinned `sops` 3.12.1 release and
+checks its published SHA-256 before the check runs; the run on the fix is the evidence.
+
 ## v2 renders Reloader's watch list, and a migrated instance is watched again (29 October 2026)
 
 **The cutover (`57d1c8e9`).** `platform/reloader/values.json` is the ConfigMap the Reloader HelmRelease now

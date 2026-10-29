@@ -305,8 +305,8 @@ func documentOf(t *testing.T, resources ResourceSet, name string) map[string]any
 	return nil
 }
 
-// A callee's auth material is mounted as files an app can re-read, and the env forms stay beside them for an
-// image that predates the files: both carry the same string, from the same object, so the two cannot drift.
+// A callee's auth material is mounted as files an app re-reads, and only as files: no env form copies the keys
+// or the allow-list, so nothing in the pod template depends on them.
 func TestCalleeMountsTheAuthMaterialAsFiles(t *testing.T) {
 	_, workload := previewFacts()
 	callee := HTTPInstance{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
@@ -341,11 +341,18 @@ func TestCalleeMountsTheAuthMaterialAsFiles(t *testing.T) {
 			t.Fatalf("the %s mount is %v", item, mount)
 		}
 	}
-	// One object carries the allow-list; its file content and its env form are the same sorted string.
+	for _, name := range []string{"SWHURL_ALLOWED_CALLERS", "SWHURL_AUTH_KEYS", "SWHURL_AUTH_ISSUER"} {
+		if value, set := env[name]; set {
+			t.Fatalf("the env form %s is still rendered: %v", name, value)
+		}
+	}
+	if from, set := container["envFrom"]; set {
+		t.Fatalf("the container still reads the keys into its environment: %v", from)
+	}
+	// One object carries the allow-list, sorted.
 	callers := documentOf(t, rendered, "callers.json")
-	content := callers["data"].(map[string]any)["SWHURL_ALLOWED_CALLERS"]
-	if content != "billing,hello" || env["SWHURL_ALLOWED_CALLERS"] != content {
-		t.Fatalf("the allow-list is %v in the file and %v in the env", content, env["SWHURL_ALLOWED_CALLERS"])
+	if content := callers["data"].(map[string]any)["SWHURL_ALLOWED_CALLERS"]; content != "billing,hello" {
+		t.Fatalf("the allow-list file is %v", content)
 	}
 	claimed := false
 	for _, claim := range rendered.Inventory {
@@ -358,61 +365,65 @@ func TestCalleeMountsTheAuthMaterialAsFiles(t *testing.T) {
 	}
 }
 
-// A callee's pod carries the digest of the auth material it verifies with: the platform's issuer and keys and
-// its own callers. Environment variables are fixed at container start, so this annotation is the only thing
-// that rolls the Deployment when a key rotates or a caller is added.
-func TestCalleePodCarriesTheAuthRevision(t *testing.T) {
+// The auth material reaches a callee only as files, so a rotated key, a new issuer or a new caller changes no
+// pod template: the HelmRelease is the same bytes and nothing restarts. What changes is the object the pod
+// mounts — the platform's swhurl-auth for the keys, the instance's own callers for the allow-list — which the
+// kubelet refreshes in place.
+func TestARotationOrANewCallerChangesNoPodTemplate(t *testing.T) {
 	_, workload := previewFacts()
 	callee := HTTPInstance{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
 		Exposure: "authenticated-web", Callers: []string{"billing", "hello"}}
 	profile := profile(t)
-	revision := func(instance HTTPInstance, p PlatformProfile) any {
+	render := func(instance HTTPInstance, p PlatformProfile) (string, string) {
 		t.Helper()
 		rendered, err := RenderHTTP(instance, workload, p)
 		if err != nil {
 			t.Fatal(err)
 		}
-		main := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)["controllers"].(map[string]any)["main"].(map[string]any)
-		pod, given := main["pod"].(map[string]any)
-		if !given {
-			return nil
+		var release, callers string
+		for _, file := range rendered.Files {
+			switch {
+			case strings.HasSuffix(file.Path, "/helmrelease.json"):
+				release = string(file.Document)
+			case strings.HasSuffix(file.Path, "/callers.json"):
+				callers = string(file.Document)
+			}
 		}
-		return pod["annotations"].(map[string]any)[authRevision]
+		return release, callers
 	}
-
-	first := revision(callee, profile)
-	if first == nil || !strings.HasPrefix(first.(string), "auth-sha256:") {
-		t.Fatalf("the callee's auth revision is %v", first)
-	}
-	if again := revision(callee, profile); again != first {
-		t.Fatalf("the same facts give %v then %v", first, again)
+	release, callers := render(callee, profile)
+	if strings.Contains(release, "auth-revision") || strings.Contains(release, `"annotations"`) {
+		t.Fatalf("the pod template still carries the auth material's digest: %s", release)
 	}
 
 	rotated := profile
 	rotated.Auth.Keys = strings.Replace(profile.Auth.Keys, "AQAB", "AQAC", 1)
 	newIssuer := profile
 	newIssuer.Auth.Issuer = profile.Auth.Issuer + "-next"
-	moreCallers := callee
-	moreCallers.Callers = append(slices.Clone(callee.Callers), "reports")
-	for name, changed := range map[string]struct {
-		instance HTTPInstance
-		profile  PlatformProfile
-	}{
-		"a rotated key": {callee, rotated},
-		"a new issuer":  {callee, newIssuer},
-		"a new caller":  {moreCallers, profile},
-	} {
-		if revision(changed.instance, changed.profile) == first {
-			t.Fatalf("%s left the auth revision unchanged: the pods that verify with it would not roll", name)
+	for name, changed := range map[string]PlatformProfile{"a rotated key": rotated, "a new issuer": newIssuer} {
+		if got, _ := render(callee, changed); got != release {
+			t.Fatalf("%s changed the HelmRelease: the pod would restart", name)
+		}
+		before, err := RenderAuth([]string{"orders-staging"}, profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after, err := RenderAuth([]string{"orders-staging"}, changed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(before.Files[0].Document) == string(after.Files[0].Document) {
+			t.Fatalf("%s left the platform's swhurl-auth unchanged: nothing would reach the pod", name)
 		}
 	}
-
-	// A caller-only instance holds no verification facts, so it carries no annotation and never rolls for them.
-	caller := callee
-	caller.Callers = nil
-	caller.Calls = []Call{{Callee: "orders", Port: 8081}}
-	if got := revision(caller, profile); got != nil {
-		t.Fatalf("a caller carries an auth revision: %v", got)
+	moreCallers := callee
+	moreCallers.Callers = append(slices.Clone(callee.Callers), "reports")
+	gotRelease, gotCallers := render(moreCallers, profile)
+	if gotRelease != release {
+		t.Fatal("a new caller changed the HelmRelease: the pod would restart")
+	}
+	if gotCallers == callers || !strings.Contains(gotCallers, "billing,hello,reports") {
+		t.Fatalf("a new caller did not reach the callers object: %s", gotCallers)
 	}
 }
 
@@ -438,13 +449,13 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 	if env["SWHURL_SERVICE_ORDERS_URL"] != "http://orders.orders-staging.svc.cluster.local:8081" {
 		t.Fatalf("the callee's address: %v", env["SWHURL_SERVICE_ORDERS_URL"])
 	}
-	if env["SWHURL_ALLOWED_CALLERS"] != "billing" {
-		t.Fatalf("the caller's own callers: %v", env["SWHURL_ALLOWED_CALLERS"])
+	// A caller that is also a callee reads its own callers from its file, and the keys from the platform's
+	// object in this namespace, mounted rather than copied.
+	if env["SWHURL_ALLOWED_CALLERS_FILE"] != "/var/run/swhurl/callers/SWHURL_ALLOWED_CALLERS" {
+		t.Fatalf("the caller's own callers: %v", env)
 	}
-	// The keys are the platform's object in this namespace, not a copy of it this instance rendered.
-	envFrom := container["envFrom"].([]any)[0].(map[string]any)["configMapRef"].(map[string]any)
-	if envFrom["name"] != "swhurl-auth" {
-		t.Fatalf("the auth ConfigMap reference: %v", envFrom)
+	if auth := values["persistence"].(map[string]any)["auth"].(map[string]any); auth["name"] != "swhurl-auth" {
+		t.Fatalf("the auth ConfigMap mount: %v", auth)
 	}
 	tokens := values["persistence"].(map[string]any)["tokens"].(map[string]any)
 	source := tokens["sources"].([]any)[0].(map[string]any)["serviceAccountToken"].(map[string]any)
@@ -485,8 +496,11 @@ func TestConnectedPairRendersBothHalves(t *testing.T) {
 	}
 	calleeValues := documentOf(t, rendered, "helmrelease.json")["spec"].(map[string]any)["values"].(map[string]any)
 	calleeContainer := calleeValues["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)
-	if calleeContainer["env"].(map[string]any)["SWHURL_ALLOWED_CALLERS"] != "billing,hello" {
+	if calleeContainer["env"].(map[string]any)["SWHURL_ALLOWED_CALLERS_FILE"] == nil {
 		t.Fatalf("the callee's callers: %v", calleeContainer["env"])
+	}
+	if content := documentOf(t, rendered, "callers.json")["data"].(map[string]any)["SWHURL_ALLOWED_CALLERS"]; content != "billing,hello" {
+		t.Fatalf("the callee's callers file: %v", content)
 	}
 	calleePolicy := documentOf(t, rendered, "networkpolicy.json")["spec"].(map[string]any)
 	ingress := calleePolicy["ingress"].([]any)

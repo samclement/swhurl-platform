@@ -128,12 +128,10 @@ make check-apps
 git add apps && git commit -m "apps: refresh signing keys" && git push
 ```
 
-The keys live in `platform/auth`, one `swhurl-auth` ConfigMap per managed namespace, rendered by `swhurl-v2 auth` from the profile and applied by the `platform-auth` unit — so a rotation rewrites that one folder, and every managed namespace gets it together. Each web app restarts with the new keys when Flux applies the commit: a v1-rendered callee verifies with them
-from its environment, which only a new pod reads, and a v2-rendered one carries a `platform.swhurl.com/auth-revision`
-annotation so the rotation rolls it too. A v2-rendered app also mounts the keys and the allow-list as files
-(`SWHURL_AUTH_KEYS_FILE`, `SWHURL_ALLOWED_CALLERS_FILE`): an image built from a template that reads them
-(TypeScript `v0.2.19`, Kotlin `v0.2.18` on) picks a rotation up in about a minute **without a restart**, and once
-every app runs such an image the annotation retires.
+The keys live in `platform/auth`, one `swhurl-auth` ConfigMap per managed namespace, rendered by `swhurl-v2 auth` from the profile and applied by the `platform-auth` unit — so a rotation rewrites that one folder, and every managed namespace gets it together. A v1-rendered callee verifies with them from its environment, which only a new pod reads, so it restarts when Flux
+applies the commit. A v2-rendered callee mounts the keys and its allow-list only as files (`SWHURL_AUTH_KEYS_FILE`,
+`SWHURL_ALLOWED_CALLERS_FILE`) and picks a rotation up in about a minute **without a restart**; its image must be
+built from a template that reads them (TypeScript `v0.2.19`, Kotlin `v0.2.18` on), or it refuses every token.
 
 ## Certificate mode
 

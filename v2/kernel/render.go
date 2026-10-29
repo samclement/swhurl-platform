@@ -131,23 +131,16 @@ func helmRelease(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) 
 		"metadata": meta,
 		"spec": manifest{"interval": helmInterval, "timeout": failAfter, "chart": manifest{"spec": chart},
 			"install": remediation, "upgrade": manifest{"remediation": manifest{"retries": retries}},
-			"values": values(spec, http, profile.Workload, profile.Storage.Class, profile.Egress.Address, profile.Auth)}}
+			"values": values(spec, http, profile.Workload, profile.Storage.Class, profile.Egress.Address)}}
 }
 
 // values are the chart's values: one controller, one container, its Service and /tmp.
-func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClass, egressAddress string,
-	auth Auth) manifest {
+func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClass, egressAddress string) manifest {
 	uid := http.UID
 	pod := manifest{"automountServiceAccountToken": false, "securityContext": manifest{
 		"runAsNonRoot": true, "runAsUser": uid, "runAsGroup": uid, "fsGroup": uid,
 		"seccompProfile": manifest{"type": "RuntimeDefault"}}}
 	controller := manifest{"replicas": spec.Configuration.Replicas, "containers": manifest{"main": container(spec, http, workload, egressAddress)}}
-	if len(spec.Callers) > 0 {
-		// The verification facts reach the pod as environment variables, which a running pod never re-reads:
-		// this annotation is what rolls the Deployment when the platform's keys rotate or this instance's
-		// callers change.
-		controller["pod"] = manifest{"annotations": manifest{authRevision: authDigest(spec, auth)}}
-	}
 	if spec.Database == "sqlite" {
 		// One pod at a time: a rolling update would open one database file twice.
 		controller["strategy"] = "Recreate"
@@ -160,9 +153,9 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClas
 		persistence["tokens"] = tokensPersistence(spec.Calls)
 	}
 	if len(spec.Callers) > 0 {
-		// Both files are mounted read-only so an image that reads them picks up a rotation, or a new caller,
-		// without a restart: the kubelet refreshes a mounted ConfigMap in place. The env forms stay beside them
-		// for an image that predates the files.
+		// Both files are mounted read-only, and they are the only form: the image re-reads them, and the kubelet
+		// refreshes a mounted ConfigMap in place, so a rotation or a new caller changes no pod template and
+		// restarts nothing. An image that predates the files cannot verify at all and refuses every token.
 		persistence["auth"] = configMapVolume(authObjectName, authMount)
 		persistence["callers"] = configMapVolume(callersName(spec), callersMount)
 	}
@@ -202,15 +195,11 @@ func container(spec HTTPInstance, http HTTPWorkload, workload Workload, egressAd
 		"probes": probes(http, workload),
 	}
 	if len(spec.Callers) > 0 {
-		// The env forms stay for an image that predates the files; the file forms are what a running pod can
-		// re-read, and both carry the same string from the same object.
-		env["SWHURL_ALLOWED_CALLERS"] = strings.Join(sortedNames(spec.Callers), ",")
+		// The verification facts are named, never copied: the keys are the platform's object in this
+		// namespace (RenderAuth) and the allow-list is the instance's own, each mounted as a file.
 		env["SWHURL_ALLOWED_CALLERS_FILE"] = callersFile
 		env["SWHURL_AUTH_KEYS_FILE"] = authKeysFile
 		env["SWHURL_AUTH_ISSUER_FILE"] = authIssuerFile
-		// The keys come from the platform's own object in this namespace, rendered once for every managed
-		// namespace by RenderAuth rather than per instance, not from the values.
-		container["envFrom"] = []any{manifest{"configMapRef": manifest{"name": authObjectName}}}
 	}
 	return container
 }
@@ -777,26 +766,11 @@ func configMapVolume(name, mountPath string) manifest {
 // rendered per instance and only the keys are platform-wide.
 func callersName(spec HTTPInstance) string { return spec.Application + "-callers" }
 
-// callersConfigMap is the allow-list as a file an app can re-read: the same string as the env form.
+// callersConfigMap is the allow-list as a file an app re-reads: the record's allows, sorted, comma-separated.
 func callersConfigMap(spec HTTPInstance) manifest {
 	return manifest{"apiVersion": "v1", "kind": "ConfigMap",
 		"metadata": metadata(callersName(spec), namespaceName(spec)),
 		"data":     manifest{"SWHURL_ALLOWED_CALLERS": strings.Join(sortedNames(spec.Callers), ",")}}
-}
-
-// authRevision is the pod template's annotation naming the auth material the pod was rendered with: keys and
-// callers. It is the only thing that changes when a key rotates, because envFrom is read once at container
-// start.
-const authRevision = labelDomain + "auth-revision"
-
-// authDigest is the canonical digest of the facts one callee's pod verifies with: the platform's issuer and
-// keys, and this instance's callers. The keys reach the pod through a ConfigMap copied into each callee's
-// namespace today; when one platform-wide object replaces those copies, this digest and the reference in
-// container() are the two places that change, so a rotation still rolls the pods that must verify with it.
-func authDigest(spec HTTPInstance, auth Auth) string {
-	callers := slices.Clone(spec.Callers)
-	slices.Sort(callers)
-	return hash("auth-sha256:", canonical([]any{auth.Issuer, auth.Keys, callers}))
 }
 
 // substitutionProblem refuses a rendered file holding a Flux reference other than the backup's own two.

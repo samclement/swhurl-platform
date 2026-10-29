@@ -100,6 +100,7 @@ func f(count int) int {
 `,
 		"kernel/b.go":        "package kernel\n\nfunc g() { count = 2 }\n",
 		"calls/calls.go":     "package calls\n",
+		"events/events.go":   "package events\n",
 		"legacy/legacy.go":   "package legacy\n",
 		"observe/explain.go": "package observe\n",
 		"shadow/http.go":     "package shadow\n",

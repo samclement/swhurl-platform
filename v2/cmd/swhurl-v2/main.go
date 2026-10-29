@@ -25,6 +25,7 @@ const usage = `usage:
   swhurl-v2 instance-revision INSTANCE.json
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
   swhurl-v2 auth --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
+  swhurl-v2 users --snapshot SNAPSHOT.json --controller-key FILE --console-key FILE [--out DIR]
   swhurl-v2 resolve --snapshot SNAPSHOT.json
   swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
@@ -76,6 +77,12 @@ instance and the hosts each instance's grants allow, and a policy admitting each
 instance's namespace only. Grants are enforced, so an instance reaches what it declares and nothing
 else. The proxy's deployment stays the platform's hand-written HelmRelease, which reads what proxy
 writes; --out writes the rendered files under DIR and nothing else.
+
+users renders the NATS server's user list: the platform's two service identities and one entry per keyed
+instance, with the permissions each needs — its own feature-flag overrides, its own subject when its
+release publishes, and the consumer calls for the subscriptions that connected. The controller's and the
+console's public keys are the files the platform publishes; no seed is read or written. The list is the
+ConfigMap the NATS HelmRelease reads, so a cutover replaces that file and nothing else.
 
 resolve reads one snapshot's declarations and writes the resolved connections as a v2-calls document:
 which pairs are connected, which wait for the other side and why, and which are refused. compile takes
@@ -186,6 +193,7 @@ var commands = map[string]func(cli, request) int{
 	"egress":            cli.egress,
 	"proxy":             cli.proxy,
 	"auth":              cli.auth,
+	"users":             cli.users,
 	"migrate":           cli.migrate,
 	"restore":           cli.restore,
 }
@@ -201,6 +209,7 @@ type request struct {
 	app, settings, committed, snapshot, callFile       string
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
+	controllerKey, consoleKey                          string
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
@@ -318,6 +327,11 @@ func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		r.registerOut(flags)
+	case "users":
+		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+		flags.Var(&once{value: &r.controllerKey}, "controller-key", "the stream controller's public nkey file")
+		flags.Var(&once{value: &r.consoleKey}, "console-key", "the console's public nkey file")
+		r.registerOut(flags)
 	case "migrate":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 		flags.Var(&once{value: &r.app}, "app", "application to migrate")
@@ -377,15 +391,12 @@ func (r *request) take(flags *flag.FlagSet) bool {
 
 // named is the flag values a command requires, or nil for a command that takes one file argument.
 func (r *request) named() []string {
+	if named, found := r.platformNamed(); found {
+		return named
+	}
 	switch r.command {
 	case "release-id", "instance-revision":
 		return nil
-	case "resolve":
-		return []string{r.snapshot}
-	case "proxy":
-		return []string{r.allocation, r.profile}
-	case "egress", "auth", "shadow":
-		return []string{r.snapshot, r.profile}
 	case "migrate":
 		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}
 	case "compile":
@@ -399,6 +410,22 @@ func (r *request) named() []string {
 		return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig}
 	}
 	return []string{r.instance, r.release, r.profile}
+}
+
+// platformNamed is the flags a command that renders or reads the platform's own documents requires: one snapshot,
+// and whatever the platform's fact is for that document.
+func (r *request) platformNamed() ([]string, bool) {
+	switch r.command {
+	case "resolve":
+		return []string{r.snapshot}, true
+	case "proxy":
+		return []string{r.allocation, r.profile}, true
+	case "egress", "auth", "shadow":
+		return []string{r.snapshot, r.profile}, true
+	case "users":
+		return []string{r.snapshot, r.controllerKey, r.consoleKey}, true
+	}
+	return nil, false
 }
 
 // onceBool is a boolean flag that may be given at most once, like every other flag.

@@ -64,6 +64,7 @@ var Rules = []Rule{
 // (one per external dependency, speaking domain terms), 2 commands that wire adapters to the model.
 var Layers = map[string]int{
 	"calls":                    0,
+	"events":                   0,
 	"kernel":                   0,
 	"legacy":                   0,
 	"observe":                  0,
@@ -88,7 +89,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"calls", "kernel", "legacy", "observe", "shadow"}
+var Pure = []string{"calls", "events", "kernel", "legacy", "observe", "shadow"}
 
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
 // environment, files, network or processes. `time` is here for the timestamps a caller supplies — parsing,

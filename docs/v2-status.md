@@ -894,6 +894,10 @@ seeds were pruned with their v1 units and no v2 tree holds them.
   platform's two public keys, so `users` takes a profile rather than two key files; the resolution document carries
   subscriptions, so a rendered consumer and a user's permission come from one decision; and the seed is a declared
   input of the compiled folder rather than a v1-shaped special case.
+- **Committed:** `283d0689`, on `main`, and pushed. Nothing live changed: the two v2-owned instances' compiled
+  files are untouched (they have no broker identity yet), all 38 Flux units reconciled `283d0689` Ready, both
+  run their previous images, and `make verify-platform` passed. No [current state](current-state.md) entry is
+  owed.
 - **Next gate:** the live half — cut `platform/nats/users.yaml` over to v2's renderer (v1's writer retired, and CI
   regenerating it), then migrate one event-using worker and prove an event flows, then the minting slice for the
   two instances that have no pair and for rotation.

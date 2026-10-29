@@ -102,6 +102,17 @@ func eventsObjects(spec InstanceFacts, http WorkloadFacts) []struct {
 	return objects
 }
 
+// brokerRule is the egress one instance needs to sign in: the broker's pods on its own port, by selector. Every
+// other way out is the platform's (DNS, the proxy); without this rule an instance's identity could not reach the
+// service it signs in to, because an instance's policy denies egress by default.
+func brokerRule(nats NATS) manifest {
+	return manifest{
+		"to": []any{manifest{
+			"namespaceSelector": manifest{"matchLabels": manifest{"kubernetes.io/metadata.name": nats.Namespace}},
+			"podSelector":       manifest{"matchLabels": labelManifest(nats.Labels)}}},
+		"ports": []any{manifest{"port": nats.Port, "protocol": "TCP"}}}
+}
+
 // validateEvents checks what an instance's side of the event service needs: a broker for a key, a key for
 // anything it publishes or receives, and names a consumer could be built from.
 func (spec InstanceFacts) validateEvents(http WorkloadFacts, profile PlatformProfile) error {

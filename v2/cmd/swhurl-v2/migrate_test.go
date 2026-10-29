@@ -423,8 +423,9 @@ func statesEvents(release kernel.ReleaseBundle, spec kernel.InstanceSpec) bool {
 // dependsOnEvents is whether a compiled file's content depends on an instance's broker identity.
 func dependsOnEvents(path string) bool {
 	return strings.HasSuffix(path, "/helmrelease.json") || strings.HasSuffix(path, "/kustomization.yaml") ||
-		strings.HasSuffix(path, "/stream.json") || strings.Contains(path, "/consumer-") ||
-		strings.HasSuffix(path, "/events.sops.yaml") || strings.HasPrefix(path, "clusters/home/")
+		strings.HasSuffix(path, "/networkpolicy.json") || strings.HasSuffix(path, "/stream.json") ||
+		strings.Contains(path, "/consumer-") || strings.HasSuffix(path, "/events.sops.yaml") ||
+		strings.HasPrefix(path, "clusters/home/")
 }
 
 // statedEventsKey is whether a predecessor's records give the instance a broker identity.

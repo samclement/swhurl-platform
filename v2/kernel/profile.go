@@ -55,11 +55,13 @@ type PlatformProfile struct {
 // NATS is the platform's broker and the identities that are not instances: the stream controller, which
 // creates what the instances declare, and the console, which writes feature-flag overrides.
 type NATS struct {
-	URL              string `json:"url"`
-	Namespace        string `json:"namespace"`
-	DecryptionSecret string `json:"decryptionSecret"`
-	ControllerKey    string `json:"controllerKey"`
-	ConsoleKey       string `json:"consoleKey"`
+	URL              string            `json:"url"`
+	Namespace        string            `json:"namespace"`
+	Port             int32             `json:"port"`
+	Labels           map[string]string `json:"labels"`
+	DecryptionSecret string            `json:"decryptionSecret"`
+	ControllerKey    string            `json:"controllerKey"`
+	ConsoleKey       string            `json:"consoleKey"`
 }
 
 // Network is the cluster's pod address block, as a call's rules need it.
@@ -220,7 +222,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"dns", []string{"namespace", "labels"}},
 		{"backup", []string{"image", "digest", "s3Uri", "region", "recipient", "writerNamespace", "writerName", "suspended"}},
 		{"network", []string{"podCIDR"}},
-		{"nats", []string{"url", "namespace", "decryptionSecret", "controllerKey", "consoleKey"}},
+		{"nats", []string{"url", "namespace", "port", "labels", "decryptionSecret", "controllerKey", "consoleKey"}},
 	} {
 		if _, present := root[part.key]; !present {
 			continue
@@ -529,7 +531,8 @@ func profileCanonical(p PlatformProfile) []byte {
 		p.Backup.WriterNamespace, p.Backup.WriterName, strconv.FormatBool(p.Backup.Suspended),
 		// The event service is a platform fact too: another broker, namespace, decryption Secret or service
 		// identity is another platform's identity.
-		p.NATS.URL, p.NATS.Namespace, p.NATS.DecryptionSecret, p.NATS.ControllerKey, p.NATS.ConsoleKey,
+		p.NATS.URL, p.NATS.Namespace, p.NATS.Port, labelPairs(p.NATS.Labels),
+		p.NATS.DecryptionSecret, p.NATS.ControllerKey, p.NATS.ConsoleKey,
 		// The pod network is a platform fact too: another block is another cluster's identity.
 		p.Network.PodCIDR,
 		// Telemetry and notifications are platform facts: another collector or notify service is another
@@ -582,7 +585,10 @@ func (n NATS) validate() error {
 	if err := n.validateNames(); err != nil {
 		return err
 	}
-	return n.validateKeys()
+	if err := n.validateKeys(); err != nil {
+		return err
+	}
+	return validateLabels("nats.labels", n.Labels)
 }
 
 // stated is whether the profile states the block at all; a profile without it renders no events identity.
@@ -598,6 +604,12 @@ func (n NATS) validateNames() error {
 		if !labelPattern.MatchString(field.value) {
 			return refuse(Invalid, field.name, "expected a DNS label")
 		}
+	}
+	if n.Port < 1 || n.Port > 65535 {
+		return refuse(Invalid, "nats.port", "expected an integer from 1 to 65535")
+	}
+	if len(n.Labels) == 0 {
+		return refuse(Invalid, "nats.labels", "expected the broker's pod labels")
 	}
 	return nil
 }

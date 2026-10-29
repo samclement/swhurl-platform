@@ -954,6 +954,11 @@ seeds were pruned with their v1 units and no v2 tree holds them.
 - **What it proves:** `v2-records/calls.json` (regenerated) connects the pair with its consumer names; the compiled
   folder lists its seed; the pod runs the same image; NATS accepts its key; the consumer
   `demo-notifier_created` exists on `staging-demo-orders` and the app receives events.
+- **A second defect the live run found, fixed before the record:** v2's policy denies egress by default, and it
+  admitted only DNS, a callee's port and the proxy — so the migrated pod could not reach the broker
+  (`UnknownHostException`, then "Unable to connect to NATS servers"). The profile now states the broker's port and
+  the pods that serve it, and `kernel` renders a rule for exactly those pods on that port when an instance signs
+  in. The regenerated policy was the only file that changed, and the instance then connected.
 - **The gap this exposed, recorded rather than hidden:** [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml)'s
   namespace list is v1's generated output, built from the instances under `apps/`. A migrated instance is therefore
   no longer in it — `demo-notifier-staging` left the list in this change, exactly as `swhurl-try-10-staging` and

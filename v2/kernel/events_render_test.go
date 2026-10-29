@@ -210,7 +210,7 @@ func TestEventPolicyMatchesTheCommittedManifest(t *testing.T) {
 		"../../apps/demo-orders/staging/events.yaml": {"maxAge: " + streamRetention,
 			"maxBytes: " + strconv.Itoa(streamMaxBytes), "preventDelete: true", "retention: limits", "discard: old",
 			"storage: file", "replicas: 1"},
-		"../../apps/demo-notifier/staging/events.yaml": {"ackWait: " + consumerAckWait,
+		"../../apps/swhurl-try-13/staging/events.yaml": {"ackWait: " + consumerAckWait,
 			"maxDeliver: " + strconv.Itoa(consumerMaxRetry), "ackPolicy: explicit", "deliverPolicy: all"},
 	} {
 		committed, err := os.ReadFile(path)

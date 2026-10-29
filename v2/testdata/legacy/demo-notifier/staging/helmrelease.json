@@ -1,0 +1,145 @@
+{
+  "apiVersion": "helm.toolkit.fluxcd.io/v2",
+  "kind": "HelmRelease",
+  "metadata": {
+    "name": "demo-notifier",
+    "namespace": "demo-notifier-staging",
+    "annotations": {
+      "platform.swhurl.com/offers": "eab35a3",
+      "platform.swhurl.com/render": "0602f8ca679b196303e0ec0cef2dcb30f8a5cc972e3a8f8cf068c27f9749346b"
+    }
+  },
+  "spec": {
+    "interval": "30m",
+    "timeout": "3m",
+    "chart": {
+      "spec": {
+        "chart": "app-template",
+        "version": "5.2.1",
+        "sourceRef": {
+          "kind": "HelmRepository",
+          "name": "bjw-s",
+          "namespace": "flux-system"
+        },
+        "interval": "30m"
+      }
+    },
+    "install": {
+      "remediation": {
+        "retries": 1
+      }
+    },
+    "upgrade": {
+      "remediation": {
+        "retries": 1
+      }
+    },
+    "values": {
+      "defaultPodOptions": {
+        "automountServiceAccountToken": false,
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 65532,
+          "runAsGroup": 65532,
+          "fsGroup": 65532,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        }
+      },
+      "controllers": {
+        "main": {
+          "containers": {
+            "main": {
+              "image": {
+                "repository": "ghcr.io/samclement/demo-notifier",
+                "tag": "21-eab35a3",
+                "digest": "sha256:578f4aa722861ac50fcc67805e9e82bb0cfb67c2503216c276b84e9dd09a09be"
+              },
+              "resources": {
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "192Mi"
+                },
+                "limits": {
+                  "memory": "384Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "readOnlyRootFilesystem": true,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "env": {
+                "SWHURL_APP": "demo-notifier",
+                "SWHURL_ENV": "staging",
+                "SWHURL_NOTIFY_URL": "http://notify.notify.svc.cluster.local:8080",
+                "SWHURL_DESCRIPTION": "Demo: receives demo-orders.created and tells the team about big orders",
+                "HOST_IP": {
+                  "valueFrom": {
+                    "fieldRef": {
+                      "fieldPath": "status.hostIP"
+                    }
+                  }
+                },
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://$(HOST_IP):4318",
+                "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+                "OTEL_SERVICE_NAME": "demo-notifier",
+                "SWHURL_EVENTS_SUBSCRIBE": "demo-orders.created",
+                "SWHURL_EVENTS_NKEY": "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
+                "SWHURL_EVENTS_URL": "nats://nats.messaging.svc.cluster.local:4222",
+                "HTTP_PROXY": "http://egress.egress.svc.cluster.local:30101",
+                "HTTPS_PROXY": "http://egress.egress.svc.cluster.local:30101",
+                "JAVA_TOOL_OPTIONS": "-Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30101 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30101 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)",
+                "NODE_USE_ENV_PROXY": "1",
+                "NO_PROXY": "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)"
+              },
+              "envFrom": [
+                {
+                  "secretRef": {
+                    "name": "demo-notifier-events"
+                  }
+                }
+              ]
+            }
+          },
+          "annotations": {
+            "secret.reloader.stakater.com/reload": "demo-notifier-events"
+          }
+        }
+      },
+      "persistence": {
+        "tmp": {
+          "type": "emptyDir",
+          "globalMounts": [
+            {
+              "path": "/tmp"
+            }
+          ]
+        },
+        "tokens": {
+          "type": "projected",
+          "sources": [
+            {
+              "serviceAccountToken": {
+                "audience": "notify",
+                "expirationSeconds": 600,
+                "path": "notify/token"
+              }
+            }
+          ],
+          "globalMounts": [
+            {
+              "path": "/var/run/swhurl/tokens",
+              "readOnly": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}

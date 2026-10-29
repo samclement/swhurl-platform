@@ -1,0 +1,1 @@
+{"apiVersion":"v1","kind":"Namespace","metadata":{"labels":{"platform.swhurl.com/app":"demo-notifier","platform.swhurl.com/environment":"staging","platform.swhurl.com/exposure":"private","platform.swhurl.com/managed":"true","platform.swhurl.com/team":"demo"},"name":"demo-notifier-staging"}}

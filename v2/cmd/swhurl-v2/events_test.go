@@ -195,3 +195,39 @@ func TestProfileStatesThePlatformsBroker(t *testing.T) {
 		t.Fatalf("the broker's facts: %+v", profile.NATS)
 	}
 }
+
+// A v2-owned instance states its broker identity in its own record, and the readers see it: the resolver connects
+// a subscription it grants itself and the user list gives it the consumer's permission. Both shapes must read the
+// same facts, or a migrated instance silently loses its events.
+func TestOwnRecordsStateTheBrokerIdentity(t *testing.T) {
+	key := "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI"
+	snapshot := map[string]any{"version": 1, "revision": strings.Repeat("a", 40), "residual": []any{},
+		"instances": []any{
+			map[string]any{"application": "orders", "environment": "staging", "format": "v1", "missing": []any{},
+				"objects": []any{}, "records": map[string]any{"instance": map[string]any{
+					"allocations": map[string]any{"eventsKey": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"}},
+					"release": map[string]any{"publishes": []any{"created"}}}},
+			map[string]any{"application": "notifier", "environment": "staging", "format": "v2", "missing": []any{},
+				"objects": []any{}, "records": map[string]any{"instance": map[string]any{
+					"events": map[string]any{"key": key, "subscriptions": []any{"orders.created"}}},
+					"release": map[string]any{}}},
+		}}
+	path := writeSnapshot(t, snapshot)
+	var out, diagnostic bytes.Buffer
+	if status := run([]string{"resolve", "--snapshot", path}, &out, &diagnostic, os.ReadFile, files.New()); status != 0 {
+		t.Fatalf("resolve exit %d: %s", status, diagnostic.String())
+	}
+	if !strings.Contains(out.String(), `"durableName"`) && !strings.Contains(out.String(), `"notifier_created"`) {
+		t.Fatalf("the v2 instance's subscription did not connect:\n%s", out.String())
+	}
+	out.Reset()
+	diagnostic.Reset()
+	if status := run([]string{"users", "--snapshot", path, "--profile", profilePath(t)}, &out, &diagnostic,
+		os.ReadFile, files.New()); status != 0 {
+		t.Fatalf("users exit %d: %s", status, diagnostic.String())
+	}
+	if !strings.Contains(out.String(), key) ||
+		!strings.Contains(out.String(), "$JS.API.CONSUMER.MSG.NEXT.staging-orders.notifier_created") {
+		t.Fatalf("the v2 instance is not a user with its consumer's permission:\n%s", out.String())
+	}
+}

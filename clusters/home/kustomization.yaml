@@ -11,7 +11,7 @@ resources:
   - app-demo-orders-staging.yaml
   - app-demo-shop-staging.yaml
   - app-demo-shopper-staging.yaml
-  - app-demo-notifier-staging.yaml
+  - app-demo-notifier-staging.json
   - app-demo-orders-prod.yaml
   - app-swhurl-try-12-prod.yaml
   - app-swhurl-try-11-prod.yaml

@@ -77,7 +77,8 @@ func usersFactOf(pinned snapshot) ([]kernel.NATSUser, error) {
 		key := eventsKey(instance)
 		if key == "" {
 			if len(facts[index].Publishes) > 0 || len(facts[index].Subscriptions) > 0 {
-				return nil, fmt.Errorf("unsupported: users.key: an_instance_that_declares_events_needs_a_key")
+				return nil, fmt.Errorf("unsupported: users.key: %s/%s declares events and has no key",
+					instance.Application, instance.Environment)
 			}
 			continue
 		}
@@ -102,16 +103,21 @@ func eventsFacts(pinned snapshot) []events.Declaration {
 	return facts
 }
 
-// eventsKey is the public key an instance signs in with, or empty when it has none. Every instance v1 renders has
-// one, whether or not it declares events: the same identity reads its feature-flag overrides.
+// eventsKey is the public key an instance signs in with, or empty when it has none. Every instance the platform
+// renders has one, whether or not it declares events: the same identity reads its feature-flag overrides. A
+// predecessor states it with its other allocations; a v2 instance states it in its own `events` block.
 func eventsKey(instance snapshotInstance) string {
 	var settings struct {
 		Allocations struct {
 			EventsKey string `json:"eventsKey"`
 		} `json:"allocations"`
+		Events struct{ Key string }
 	}
 	if err := json.Unmarshal(instance.Records["instance"], &settings); err != nil {
 		return ""
+	}
+	if settings.Events.Key != "" {
+		return settings.Events.Key
 	}
 	return settings.Allocations.EventsKey
 }
@@ -129,12 +135,17 @@ func declaredPublishes(instance snapshotInstance) []string {
 }
 
 // declaredSubscriptions is the events an instance's own record grants it, each spelled `<publisher>.<event>`.
+// A predecessor states them at the top level; a v2 instance states them in its own `events` block.
 func declaredSubscriptions(instance snapshotInstance) []string {
 	var settings struct {
 		Subscriptions []string
+		Events        struct{ Subscriptions []string }
 	}
-	if err := json.Unmarshal(instance.Records["instance"], &settings); err != nil || settings.Subscriptions == nil {
+	if err := json.Unmarshal(instance.Records["instance"], &settings); err != nil {
 		return []string{}
+	}
+	if settings.Subscriptions == nil {
+		return settings.Events.Subscriptions
 	}
 	return settings.Subscriptions
 }

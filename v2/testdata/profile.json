@@ -44,6 +44,7 @@
            "controllerKey": "UCEW5BT5FDDXPO475VJV6NYYS2GJ66C67KQJY6UAXIAFQOAJRHQTWMAP",
            "consoleKey": "UAGJUVYLYUYPDTZV7E5ODWOWL3YPXIMMRXXE7MAX4HV3HTWKBYGHZPGD"},
   "network": {"podCIDR": "10.42.0.0/16"},
+  "reloader": {"namespaces": ["ingress", "logging", "console"]},
   "backup": {
     "image": "ghcr.io/samclement/swhurl-backup",
     "digest": "sha256:b730422b4789b6377ca1b39705cedef61d0c64a0a8161ccb64652dbc7b1db74a",

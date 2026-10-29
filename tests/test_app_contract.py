@@ -156,7 +156,6 @@ class GeneratorTests(unittest.TestCase):
                          'a worker receives no calls')
 
     def test_calls_at_creation_connect_wait_or_refuse_invalid_targets_without_writes(self):
-        (self.tmp / 'platform/reloader').mkdir(parents=True)
         self.assertEqual(self.gen('orders', '--image', 'r/orders:1', '--health-path', '/h', '--port', '9000'), 0)
         with redirect_stdout(io.StringIO()):
             edit.set_allows(self.tmp, 'orders', 'staging', add=['team:demo'])
@@ -209,10 +208,7 @@ class GeneratorTests(unittest.TestCase):
             declaration.of(base | {'alerts': 'none'})
         self.assertNotIn('alerts', declaration.of(base).seed)
 
-    def test_secret_names_without_values_and_namespace_watched(self):
-        reloader = self.tmp / 'platform/reloader/helmrelease.yaml'
-        reloader.parent.mkdir(parents=True)
-        reloader.write_text('spec:\n  values:\n    reloader:\n      namespaces: [ingress, logging]\n')
+    def test_secret_names_without_values(self):
         self.assertEqual(self.gen('s', *WEB, '--secret-keys', 'A,B'), 0)
         self.assertFalse((self.tmp / 'apps/s/staging/secret.sops.yaml').exists(), 'values are set later, with make app-secret')
         release = yaml.safe_load((self.tmp / 'apps/s/staging/helmrelease.yaml').read_text())
@@ -222,7 +218,6 @@ class GeneratorTests(unittest.TestCase):
                          [{'secretRef': {'name': 's-secret', 'optional': True}}], 'the app starts before its first value')
         unit = yaml.safe_load((self.tmp / 'clusters/home/app-s-staging.yaml').read_text())
         self.assertNotIn('decryption', unit['spec'], 'nothing to decrypt yet')
-        self.assertIn('namespaces: [ingress, logging, s-staging]', reloader.read_text())
 
     def test_otlp_points_the_sdk_at_the_node_collector(self):
         self.assertEqual(self.gen('o', *WEB, '--otlp'), 0)

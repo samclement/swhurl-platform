@@ -1,7 +1,6 @@
 """Promotion decisions use Git state and fail closed on incomplete or stale observations."""
 import dataclasses
 import json
-import re
 import shutil
 import tempfile
 import unittest
@@ -152,12 +151,10 @@ class FirstProductionTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        for rel in ('clusters/home/kustomization.yaml', 'platform/reloader/helmrelease.yaml', '.sops.yaml'):
+        for rel in ('clusters/home/kustomization.yaml', '.sops.yaml'):
             dst = self.root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / rel, dst)
-        reloader = self.root / 'platform/reloader/helmrelease.yaml'
-        reloader.write_text(re.sub(r'namespaces: \[[^\]]*\]', 'namespaces: [ingress, logging, console]', reloader.read_text()))
         registry = self.root / 'clusters/home/kustomization.yaml'
         doc = yamlio.load(registry.read_text())
         doc['resources'] = [name for name in doc['resources'] if not name.startswith('app-')]
@@ -298,7 +295,6 @@ class FirstProductionTests(unittest.TestCase):
         secret = (dst / 'secret.sops.yaml').read_text()
         self.assertNotIn('staging-value', secret)
         self.assertIn('namespace: example-prod', secret)
-        self.assertIn('example-prod', (self.root / 'platform/reloader/helmrelease.yaml').read_text())
 
     def test_public_host_refusals(self):
         from swhurl.apps.model import write as model_sync

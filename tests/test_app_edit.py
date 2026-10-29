@@ -3,7 +3,6 @@ import dataclasses
 import difflib
 import io
 import json
-import re
 import shutil
 import tempfile
 import unittest
@@ -35,12 +34,10 @@ class EditTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        for base, rel in ((SAMPLE, 'apps'), (SAMPLE, 'clusters'), (ROOT, 'platform/reloader/helmrelease.yaml')):
+        for base, rel in ((SAMPLE, 'apps'), (SAMPLE, 'clusters')):
             src, dst = base / rel, self.root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             (shutil.copytree if src.is_dir() else shutil.copy)(src, dst)
-        reloader = self.root / 'platform/reloader/helmrelease.yaml'
-        reloader.write_text(re.sub(r'namespaces: \[[^\]]*\]', 'namespaces: [ingress, logging, console]', reloader.read_text()))
         self.staging = self.root / 'apps/hello/staging/helmrelease.yaml'
         self.prod = self.root / 'apps/hello/prod/helmrelease.yaml'
 
@@ -451,7 +448,6 @@ class EditTests(unittest.TestCase):
             self.assertEqual(unit['decryption']['provider'], 'sops')
             listed = yaml.safe_load((self.root / 'apps' / app / 'staging/kustomization.yaml').read_text())['resources']
             self.assertLessEqual({'events.yaml', 'events.sops.yaml'}, set(listed))
-        self.assertIn('orders-staging', (self.root / 'platform/reloader/helmrelease.yaml').read_text())
         self.assertEqual(len(self.seeds), 4, 'once NATS exists every instance gets its key, once')
         self.publish_events('orders', ['created', 'cancelled', 'paid'], runner)
         self.assertEqual(len(self.seeds), 4, 'a later change reuses the key')
@@ -1140,7 +1136,6 @@ components:
         self.assertIn('orders-secret', main['annotations']['secret.reloader.stakater.com/reload'])
         namespace = yaml.safe_load((instance / 'namespace.yaml').read_text())
         self.assertEqual(namespace['metadata']['annotations']['kustomize.toolkit.fluxcd.io/prune'], 'disabled')
-        self.assertIn('orders-staging', (self.root / 'platform/reloader/helmrelease.yaml').read_text())
         self.assertFalse((instance / 'secret.sops.yaml').exists(), 'no value is invented')
 
         # A push never deletes data or resizes a volume: those images are held.
@@ -1401,17 +1396,12 @@ components:
         self.assertEqual(self.snapshot(), before)
 
     def test_remove_leaves_no_trace(self):
-        reloader = self.root / 'platform/reloader/helmrelease.yaml'
-        # Whatever the real list holds today (apps with secrets or events), start from a known one.
-        reloader.write_text(re.sub(r'namespaces: \[[^\]]*\]', 'namespaces: [ingress, logging, console, hello-prod]',
-                                   reloader.read_text()))
         _, out = self.quiet(edit.remove, self.root, 'hello', 'prod')
         self.assertFalse((self.root / 'apps/hello/prod').exists())
         self.assertTrue((self.root / 'apps/hello/staging').exists())
         self.assertFalse((self.root / 'clusters/home/app-hello-prod.yaml').exists())
         self.assertNotIn('app-hello-prod.yaml', (self.root / 'clusters/home/kustomization.yaml').read_text())
         self.assertIn('app-hello-staging.yaml', (self.root / 'clusters/home/kustomization.yaml').read_text())
-        self.assertIn('namespaces: [ingress, logging, console]\n', reloader.read_text())
         self.assertNotIn('[WARN]', out)
         self.quiet(edit.remove, self.root, 'hello', 'staging')
         self.assertFalse((self.root / 'apps/hello').exists())

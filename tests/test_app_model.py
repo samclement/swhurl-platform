@@ -1,7 +1,6 @@
 """The app model (docs/plan.md section 24): records, rendering, and the shadow that compares them with the manifests."""
 import dataclasses
 import io
-import re
 import shutil
 import tempfile
 import unittest
@@ -189,13 +188,10 @@ class RenderTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        for base, rel in ((SAMPLE, 'apps'), (SAMPLE, 'clusters'), (ROOT, 'platform/reloader/helmrelease.yaml'),
-                          (ROOT, 'apps/teams.yaml')):
+        for base, rel in ((SAMPLE, 'apps'), (SAMPLE, 'clusters'), (ROOT, 'apps/teams.yaml')):
             src, dst = base / rel, self.root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             (shutil.copytree if src.is_dir() else shutil.copy)(src, dst)
-        reloader = self.root / 'platform/reloader/helmrelease.yaml'  # the platform's own namespaces only, as for the sample
-        reloader.write_text(re.sub(r'namespaces: \[[^\]]*\]', 'namespaces: [ingress, logging, console]', reloader.read_text()))
 
     def problems(self):
         return generated.problems(self.root)
@@ -203,45 +199,6 @@ class RenderTests(unittest.TestCase):
     def test_the_sample_and_the_repository_render_as_committed(self):
         self.assertEqual(self.problems(), [])
         self.assertEqual(generated.check(ROOT), [], 'make check-apps reports the differences')
-
-    def test_invalid_reloader_is_a_validation_problem_without_writes(self):
-        path = self.root / render.RELOADER_FILE
-        for text in ('spec: [', '', '[]', '{}', 'spec: null',
-                     'spec: {values: []}', 'spec: {values: {reloader: {}}}',
-                     'spec: {values: {reloader: {namespaces: null}}}',
-                     'spec: {values: {reloader: {namespaces: hello-staging}}}',
-                     'spec: {values: {reloader: {namespaces: {hello-staging: true}}}}',
-                     'spec: {values: {reloader: {namespaces: [ingress, 1]}}}',
-                     'spec: {values: {reloader: {namespaces: [{}]}}}'):
-            with self.subTest(text=text):
-                path.write_text(text)
-                before = self.snapshot()
-                problems = generated.check(self.root)
-                self.assertEqual(len(problems), 1)
-                self.assertIn(f'{render.RELOADER_FILE}: cannot read committed YAML', problems[0])
-                self.assertEqual(self.snapshot(), before)
-
-    def test_policy_cli_fails_cleanly_on_invalid_reloader(self):
-        (self.root / render.RELOADER_FILE).write_text('spec: [')
-        output = io.StringIO()
-        with mock.patch.object(policy, 'ROOT', self.root), mock.patch.object(policy, 'instances', return_value=[]), \
-                redirect_stdout(output):
-            self.assertEqual(policy.main([]), 1)
-        self.assertIn('[BAD] app model', output.getvalue())
-        self.assertIn(f'{render.RELOADER_FILE}: cannot read committed YAML', output.getvalue())
-
-    def test_unreadable_reloader_is_a_validation_problem(self):
-        read_text = Path.read_text
-        path = self.root / render.RELOADER_FILE
-        for error in (OSError('unreadable'), UnicodeError('invalid encoding')):
-            def read(file, *args, failure=error, **kwargs):
-                if file == path:
-                    raise failure
-                return read_text(file, *args, **kwargs)
-            with self.subTest(error=type(error).__name__), mock.patch.object(Path, 'read_text', read):
-                self.assertEqual(generated.check(self.root),
-                                 [f'{render.RELOADER_FILE}: cannot read committed YAML; expected '
-                                  'spec.values.reloader.namespaces to be a list of strings'])
 
     def test_settings_written_by_the_commands_render_as_written(self):
         (self.root / 'platform/egress').mkdir(parents=True)
@@ -302,7 +259,6 @@ class RenderTests(unittest.TestCase):
             record.write_text(yamlio.dump(doc))
             (record.parent / 'events.sops.yaml').write_text('sops: {}')
         model_sync.sync(self.root)
-        self.assertIn('hello-prod', (self.root / render.RELOADER_FILE).read_text())
         prod = self.root / 'apps/hello/prod'
         unrelated = {'notes.yaml': 'kind: Note', 'other.sops.yaml': 'sops: {}', 'data/db': 'keep me',
                      'offers/notes.txt': 'not an offer'}
@@ -321,8 +277,6 @@ class RenderTests(unittest.TestCase):
         for name in render.MANAGED_FILES | {'events.sops.yaml', 'secret.sops.yaml', 'offers/source.yaml', 'offers/openapi.json'}:
             self.assertFalse((prod / name).exists(), name)
         self.assertTrue((prod.parent / 'app.yaml').is_file(), 'another environment still owns the App record')
-        self.assertNotIn('hello-prod', (self.root / render.RELOADER_FILE).read_text())
-        self.assertIn('namespaces: [ingress, logging, console, hello-staging]', (self.root / render.RELOADER_FILE).read_text())
         registry = (self.root / render.REGISTRY_FILE).read_text()
         self.assertNotIn('app-hello-prod.yaml', registry)
         self.assertIn('app-hello-staging.yaml', registry)
@@ -392,8 +346,7 @@ class RenderTests(unittest.TestCase):
     def test_invalid_shared_files_abort_a_removal_before_any_write(self):
         for path, text in ((render.REGISTRY_FILE, 'resources: wrong\n'),
                            (render.REGISTRY_FILE, 'resources: &units []\n'),
-                           (render.RELOADER_FILE, 'spec: {values: {reloader: {namespaces: wrong}}}\n'),
-                           (render.RELOADER_FILE, 'spec: {values: {reloader: {namespaces: [{}]}}}\n')):
+                           (render.REGISTRY_FILE, 'resources: [{}]\n')):
             with self.subTest(path=path, text=text):
                 file = self.root / path
                 original = file.read_bytes()

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The platform files v2 renders from the records must be what Git holds: the egress allocation, the proxy's
-# configuration and policy, the auth folder, and NATS's user list. Renders them into a temporary directory and
+# configuration and policy, the auth folder, NATS's user list and Reloader's watch list. Renders them into a temporary directory and
 # compares, so it writes nothing in the checkout. The snapshot is of the working tree's tracked files (git stash create makes
 # a commit object and touches neither the index nor the tree), so an uncommitted record change counts.
 # make check-v2 runs it, which is how CI runs it. How to re-render: docs/services.md#egress-proxy.
@@ -20,6 +20,7 @@ profile=v2/testdata/profile.json
 "$work/swhurl-v2" proxy --allocation "$work/allocation.json" --profile "$profile" --out "$work/out" >/dev/null
 "$work/swhurl-v2" auth --snapshot "$work/snapshot.json" --profile "$profile" --out "$work/out" >/dev/null
 "$work/swhurl-v2" users --snapshot "$work/snapshot.json" --profile "$profile" --out "$work/out" >/dev/null
+"$work/swhurl-v2" reloader --snapshot "$work/snapshot.json" --profile "$profile" --out "$work/out" >/dev/null
 
 failed=0
 # The allocation records the commit it was taken at; every other fact must match the records.
@@ -51,5 +52,10 @@ if ! cmp -s platform/nats/users.json "$work/out/nats/users.json"; then
   echo "platform/nats/users.json is not what the records render (make v2-users)"
   failed=1
 fi
-[ "$failed" = 0 ] && echo "[OK] platform/egress, platform/auth and platform/nats are what the records render"
+# Reloader's watch list is v2's own file: the values its HelmRelease merges, rendered from the records.
+if ! cmp -s platform/reloader/values.json "$work/out/reloader/values.json"; then
+  echo "platform/reloader/values.json is not what the records render (make v2-reloader)"
+  failed=1
+fi
+[ "$failed" = 0 ] && echo "[OK] platform/egress, platform/auth, platform/nats and platform/reloader are what the records render"
 exit "$failed"

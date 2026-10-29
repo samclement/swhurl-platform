@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the Reloader namespace list moving to v2 (a migrated instance is not watched today), then the minting slice
+Gate: the minting slice: a broker identity for the two v2-owned instances without one, and rotation
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -19,6 +19,8 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 **Approved 29 October 2026: slice 3's first live migration — `demo-notifier` staging** — the first instance with an event subscription to move, receiving `demo-orders.created` from a v1 publisher: its records, its stream-side manifest and its encrypted seed are v2's, and an event flows through the pair across the two owners. See [the record](#slice-record-the-first-migrated-event-using-worker-demo-notifier-staging-29-october-2026).
 
 **Approved 29 October 2026: slice 3's cutover — v2 owns NATS's user list** — `platform/nats/users.json` is v2's output now, v1's generator is deleted, and the Render workflow regenerates it, so the list the broker serves can no longer be a second writer's opinion. Implemented and checked offline, then applied; see [the record](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026).
+
+**Approved 29 October 2026: the Reloader watch list** — the operator said go ahead on the gate. The list v1 wrote into the Reloader HelmRelease is now v2's own platform document: `platform/reloader/values.json`, a ConfigMap the HelmRelease merges as values, rendered by `swhurl-v2 reloader` from the profile's own namespaces and every instance that declares a Secret. v1's writer is deleted and the Render workflow regenerates the file. **The same question for image automation is answered by not doing it in this slice**: it needs a v2 selection path first, because the `ImagePolicy` that starts a deploy is read by v1's Deploy workflow, which writes v1's records — rendering the policy for a v2-owned instance would start a workflow that cannot write its release. It stays in the [gap list](iteration-2-plan.md#6-deliberately-deferred). See [the record](#slice-record-reloaders-watch-list-29-october-2026).
 
 **Approved 29 October 2026: slice 3, events — part two implemented offline** — on the operator's principle that v2 favours a clean contract over anything that preserves v1's: the release states what it publishes, the instance states its broker identity and the events it receives, the profile states the broker, and an instance that signs in renders its variables, its stream and its consumers. The seed travels as the encrypted file it already is — v2 lists it, copies it and never reads it. Nothing was applied; the cutover and the first migrated worker are the next gate. See [the record](#slice-record-events-part-two-the-instance-side-29-october-2026).
 
@@ -57,8 +59,10 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Two live** (`swhurl-try-11`, `swhurl-try-10` staging, the second stateful on its own volume), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
 | Always-on instance surface | Telemetry, the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: both v2-owned instances rolled, with the new env, tokens and team labels |
+| Reloader watch list | A platform document v2 renders: the platform's own watched namespaces and one per instance that declares a Secret | **Done and live 29 October 2026**: `platform/reloader/values.json` replaces the list in the HelmRelease, which merges it as values |
 | App kinds | A worker release compiles to an instance that serves nothing, with every other fact intact | **Done, offline 29 October 2026** (the worker kind); `job` still refused |
 | Events | The server's user list, and per instance its key, stream, consumers and seed | **Parts one and two, offline 29 October 2026**: the user list renders identically to the platform's, and a keyed instance renders its variables, stream, consumers and unit; the seed is the encrypted file v2 copies without reading |
+| Image automation | A migrated staging instance following its published images | **Not modelled, deliberately**: the `ImagePolicy` starts v1's Deploy workflow, which writes v1 records, so v2 must render it with a selection path of its own |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
@@ -83,6 +87,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Always-on instance surface | done and live 29 October 2026: telemetry, notifications and the team label, with the app record owning the team; both v2-owned instances rolled at `1bca7990` | [slice](#slice-record-the-always-on-instance-surface-29-october-2026) |
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
 | Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
+| Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | 7. Selective replacement | three live: `swhurl-try-11` staging, `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
@@ -972,6 +977,62 @@ seeds were pruned with their v1 units and no v2 tree holds them.
   `swhurl-v2 observe` reporting `running` with all seven findings positive — the first time v2 observed a worker. Offline: `REQUIRE_HELM=1 make check-v2`, `make check` (1022 tests),
   `make check-lint`, `make check-repo`, `make -s check-docs`.
 
+## Slice record: Reloader's watch list (29 October 2026)
+
+**Approved by the operator's "go ahead" on the gate.** v1 wrote the namespaces Reloader watches into the
+Reloader HelmRelease from the instances under `apps/`, so every migrated instance left the list — silently, as
+the first three migrations did. The list is now v2's own platform document.
+
+- **Outcome and the refusal it must produce:** `swhurl-v2 reloader --snapshot FILE --profile FILE [--out DIR]`
+  renders the namespaces Reloader watches as one ConfigMap, `reloader-values` in `platform-system`, whose
+  `values.yaml` key holds `reloader.namespaces`; the Reloader HelmRelease merges it as values and keeps no list
+  of its own. The list is the platform's own namespaces from the profile, then staging's instances and
+  production's, each by app name, for the instances that declare a Secret a change must restart them for — their
+  broker key, or a Secret name their release states. It refuses a platform namespace that is not a namespace
+  name or is listed twice, an instance name or environment that could not spell a namespace, and a platform
+  namespace that is also an instance's. v1 no longer writes or checks the list.
+- **Owners and boundaries:** the **profile** owns the platform's own watched namespaces; the **instance** owns
+  its declaration (its broker key and the Secret names its release states); **`kernel`** owns the rule and the
+  document; the **command** reads one snapshot and writes one file; `platform/reloader/helmrelease.yaml` stays a
+  hand-written platform file that merges what v2 renders, as the egress proxy's HelmRelease reads its own
+  generated objects.
+- **What crosses each seam:** one snapshot and the profile in; one file and one claim
+  (`platform-system/reloader-values`, owner `platform`) out. No cluster, clock, credential or network.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 changes deliberately** — its writer is deleted with what only it used: `render.Shared.reloaded`, the
+     Reloader branch of the write plan, and the committed-file check in `generated.problems`, with the tests
+     that exercised them. Nothing else changed; `make check-apps`, `make check-repo` and `make test` pass.
+  2. **Pure takes no effects** — `kernel` renders from supplied facts and imports no new package; the command
+     reads the two files it names and, with `--out`, writes under that directory only.
+  3. **Identities moved once, deliberately** — the profile gained `reloader.namespaces`, so its canonical array
+     and ID moved (`prof-sha256:1537cad297a915cb4a78868631732498d10e35cbe7b4919896ecb037e1ef9291`, recomputed in
+     Python) and the two goldens' recorded profile ID moved with it. No release or instance identity moved, and
+     no compiled document changed.
+  4. **Refusals stated, precedence unmoved** — `invalid: reloader.namespaces` and `invalid: reloader.instance`
+     are new; no existing code or order moved.
+  5. **Failure paths tested** — every refusal; an empty watch list rendering `[]` rather than null; both record
+     shapes (v1's `allocations.eventsKey`, v2's `events.key`); a release-declared Secret; the order (platform,
+     then staging and production by app); the write path twice (`written`, then `unchanged`); and
+     `check-rendered.sh` comparing the committed file with the render.
+  6. **Scope stated** — the list only. **Image automation is deliberately not restored:** the `ImagePolicy` that
+     starts a deploy is read by v1's Deploy workflow, which writes `apps/<app>/<env>/release.yaml`; a v2-owned
+     instance's records are not there, so rendering the policy would start a workflow that cannot write its
+     release. It needs v2's own selection path first and stays in the [gap list](iteration-2-plan.md#6-deliberately-deferred).
+     One semantic difference is stated rather than hidden: a v1 Secret file whose names its release has not
+     declared yet is not watched, because v2 reads declarations and the snapshot never reads an encrypted file.
+  7. **Offline is not live** — the proof is a comparison: `check-rendered.sh` renders from a snapshot of the
+     working tree and compares with the committed `platform/reloader/values.json` (18 namespaces: the platform's
+     three and 15 instances). The cutover is the commit that follows; its live evidence is recorded in
+     [current state](current-state.md).
+  8. **Recorded in the same change** — this page, the plan's gap list, [services](services.md#reloader),
+     [commands](commands.md), [apps](apps.md) and the workstream registry.
+- **Evidence:** `REQUIRE_HELM=1 make check-v2` (16 packages; the chart render and all four rendered platform
+  folders ran), `make check` (1019 tests), `make check-lint`, `make check-repo` (39 entrypoints), `make check-apps`
+  (17 instances), `git diff --check` and `make -s v2-report` (API +6/−1: the watch model, its two exports and the
+  profile block; no budget baseline added or weakened). Coverage: `kernel` 92.8%, CLI 86.5%.
+- **Next gate:** the minting slice — a broker identity for `swhurl-try-10` and `swhurl-try-11` staging, and
+  rotation.
+
 ## Resume
 
 **Read first**, in this order — the rest is the links below, not a substitute for inspection:
@@ -1018,8 +1079,8 @@ The report shows what the tree adds to `origin/main`: a new package, a changed e
 > storage, egress and backup are done and proved live. Two apps are v2-owned — `swhurl-try-11` staging and
 > `swhurl-try-10` staging (on its own adopted volume) — and each recompiles from Git alone. A v2-rendered callee
 > gets its keys and callers only as files, and a new caller and a key rotation were shown to take effect in the
-> running pod with no restart. `make check-v2` also renders `platform/egress` and `platform/auth` from the records
-> and fails on any difference.
+> running pod with no restart. `make check-v2` also renders `platform/egress`, `platform/auth`, `platform/nats` and `platform/reloader`
+> from the records and fails on any difference.
 >
 > **The gate is a decision brief, not code.** v2 renders only what those two instances needed, so the other
 > apps cannot migrate. Rank the domains v2 does not render by what each unblocks: telemetry (the OTLP endpoint and

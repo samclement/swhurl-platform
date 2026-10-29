@@ -50,7 +50,8 @@ jobs:
       - name: Install validation dependencies
         run: python3 -m pip install --group check
 
-      # The NATS user list is v2's output (make v2-users): the render step regenerates it from the records.
+      # The NATS user list and Reloader's watch list are v2's output (make v2-users, make v2-reloader): the
+      # render step regenerates them from the records.
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
@@ -63,6 +64,7 @@ jobs:
           set -Eeuo pipefail
           PYTHONPATH=tools python3 -m swhurl app-sync
           make -s v2-users
+          make -s v2-reloader
           if [ -z "$(git status --porcelain -- apps platform clusters)" ]; then
             echo "main is rendered; nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
             echo render=false >> "$GITHUB_OUTPUT"

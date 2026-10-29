@@ -50,6 +50,15 @@ type PlatformProfile struct {
 	// Secret Flux decrypts an instance's seed with, and the two service identities the platform runs
 	// besides the instances. Every key here is public; no seed is.
 	NATS NATS `json:"nats"`
+	// Reloader is the platform's own namespaces that must restart a workload when a Secret changes. The
+	// instances themselves contribute theirs; this block is the platform's part of one watch list.
+	Reloader ReloaderWatch `json:"reloader"`
+}
+
+// ReloaderWatch is the namespaces the platform watches besides the instances that declare a Secret: its own
+// workloads, such as the sign-in proxy, the collectors and the console.
+type ReloaderWatch struct {
+	Namespaces []string `json:"namespaces"`
 }
 
 // NATS is the platform's broker and the identities that are not instances: the stream controller, which
@@ -199,7 +208,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 	if err := document(data); err != nil {
 		return PlatformProfile{}, err
 	}
-	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "telemetry", "notify", "routing", "auth", "storage", "egress", "dns", "backup", "network", "nats")
+	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "telemetry", "notify", "routing", "auth", "storage", "egress", "dns", "backup", "network", "nats", "reloader")
 	if err != nil {
 		return PlatformProfile{}, err
 	}
@@ -223,6 +232,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"backup", []string{"image", "digest", "s3Uri", "region", "recipient", "writerNamespace", "writerName", "suspended"}},
 		{"network", []string{"podCIDR"}},
 		{"nats", []string{"url", "namespace", "port", "labels", "decryptionSecret", "controllerKey", "consoleKey"}},
+		{"reloader", []string{"namespaces"}},
 	} {
 		if _, present := root[part.key]; !present {
 			continue
@@ -267,13 +277,27 @@ func (p PlatformProfile) validate() error {
 // validateBlocks checks the platform's optional blocks, in the order of the field table: routing, egress,
 // DNS, storage, auth and backup.
 func (p PlatformProfile) validateBlocks() error {
-	for _, block := range []interface{ validate() error }{p.Telemetry, p.Notify, p.Routing, p.Egress, p.DNS, p.Auth, p.Backup, p.Network, p.NATS} {
+	for _, block := range []interface{ validate() error }{p.Telemetry, p.Notify, p.Routing, p.Egress, p.DNS, p.Auth, p.Backup, p.Network, p.NATS, p.Reloader} {
 		if err := block.validate(); err != nil {
 			return err
 		}
 	}
 	if p.Storage.Class != "" && !labelPattern.MatchString(p.Storage.Class) {
 		return refuse(Invalid, "storage.class", "expected a DNS label")
+	}
+	return nil
+}
+
+// validate checks the platform's own watch list: namespace names, each stated once. An absent block is valid:
+// a platform with no workloads of its own watches only the instances that declare a Secret.
+func (r ReloaderWatch) validate() error {
+	for _, name := range r.Namespaces {
+		if !labelPattern.MatchString(name) {
+			return refuse(Invalid, "reloader.namespaces", "expected a namespace name")
+		}
+	}
+	if len(slices.Compact(slices.Sorted(slices.Values(r.Namespaces)))) != len(r.Namespaces) {
+		return refuse(Invalid, "reloader.namespaces", "a namespace is listed twice")
 	}
 	return nil
 }
@@ -514,6 +538,10 @@ func profileCanonical(p PlatformProfile) []byte {
 	if dependsOn == nil {
 		dependsOn = []string{}
 	}
+	reloaderNamespaces := slices.Clone(p.Reloader.Namespaces)
+	if reloaderNamespaces == nil {
+		reloaderNamespaces = []string{}
+	}
 	return canonical([]any{"swhurl.profile.v1", p.SchemaVersion, p.Name,
 		p.Chart.Name, p.Chart.Version, p.Chart.Repository, p.Chart.RepositoryNamespace,
 		p.Delivery.Source, p.Delivery.OutputRoot, p.Delivery.UnitsRoot, dependsOn,
@@ -537,7 +565,10 @@ func profileCanonical(p PlatformProfile) []byte {
 		p.Network.PodCIDR,
 		// Telemetry and notifications are platform facts: another collector or notify service is another
 		// identity, and an absent block encodes as empty values.
-		p.Telemetry.Endpoint, p.Telemetry.Protocol, p.Notify.Address})
+		p.Telemetry.Endpoint, p.Telemetry.Protocol, p.Notify.Address,
+		// The platform's own watched namespaces are a platform fact: another list is another identity. A new
+		// block appends its facts, so no earlier position moves.
+		reloaderNamespaces})
 }
 
 // validate checks a configured telemetry block: an HTTP(S) endpoint and an OTLP transport.

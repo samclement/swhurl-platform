@@ -25,10 +25,9 @@ from swhurl.apps.model import (
     telemetry,
     workload,
 )
-from swhurl.apps.model.draft import APP_SECRET, Platform, World
+from swhurl.apps.model.draft import Platform, World
 
 REGISTRY_FILE = UNITS / 'kustomization.yaml'
-RELOADER_FILE = Path('platform/reloader/helmrelease.yaml')
 MANAGED_FILES = frozenset({'namespace.yaml', 'helmrelease.yaml', 'kustomization.yaml', QUOTA_FILE,
                            NETWORK_POLICY_FILE, IMAGE_AUTOMATION_FILE, BACKUP_FILE, 'events.yaml'})
 
@@ -70,15 +69,13 @@ def instance(each: Instance, world: World, platform: Platform) -> dict[Path, lis
 
 @dataclass(frozen=True)
 class Shared:
-    """What every instance contributes to: the namespaces Reloader watches, and the app units registered.
+    """What every instance contributes to: the app units registered in clusters/home/kustomization.yaml.
 
-    The NATS user list is not here: v2 renders it from the snapshot (platform/nats/users.json, v2/check-rendered.sh).
+    The NATS user list and Reloader's watch list are not here: v2 renders both from the snapshot
+    (platform/nats/users.json and platform/reloader/values.json, v2/check-rendered.sh).
     """
-    reloaded: frozenset[str]  # the namespaces Reloader watches for the apps
     units: frozenset[str]  # the app unit files registered in clusters/home/kustomization.yaml
 
 
 def shared(world: World, platform: Platform) -> Shared:
-    reloaded = frozenset(each.namespace for each, entry in world.items()
-                         if events.keyed(entry) or entry.release.secrets or (APP_SECRET in entry.encrypted or APP_SECRET in entry.pending))
-    return Shared(reloaded, frozenset(f'{each.unit}.yaml' for each in world))
+    return Shared(frozenset(f'{each.unit}.yaml' for each in world))

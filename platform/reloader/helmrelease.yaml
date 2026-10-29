@@ -1,6 +1,9 @@
 # Restarts opted-in workloads when a named Secret changes. Scoped mode: it
-# watches only the namespaces listed below and gets namespaced Roles there,
-# not cluster-wide Secret access. Workloads opt in per Secret with
+# watches only the namespaces in the values ConfigMap beside this file and gets
+# namespaced Roles there, not cluster-wide Secret access. That list is v2's
+# output (platform/reloader/values.json, make v2-reloader): the platform's own
+# namespaces from the profile and one per instance that declares a Secret.
+# Workloads opt in per Secret with
 #   secret.reloader.stakater.com/reload: "<secret-name>"
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
@@ -25,12 +28,17 @@ spec:
   upgrade:
     remediation:
       retries: 3
+  # The watched namespaces are one document v2 renders, not a list here: the platform's own namespaces are the
+  # profile's, and an instance's is watched when it declares a Secret a change must restart it for. Helm merges
+  # the ConfigMap as values, so a record change reaches this release without an edit to this file.
+  valuesFrom:
+    - kind: ConfigMap
+      name: reloader-values
+      valuesKey: values.yaml
   values:
     reloader:
       logFormat: json
       watchGlobally: false
-      # Add a namespace here before annotating a workload in it.
-      namespaces: [ingress, logging, console, swhurl-try-13-staging, swhurl-try-12-staging, demo-orders-staging, demo-orders-prod, swhurl-try-12-prod, swhurl-try-10-prod, demo-shop-staging, demo-shopper-staging, demo-shop-prod, swhurl-try-11-prod, swhurl-try-30-staging, swhurl-try-30-prod, swhurl-try-32-staging, swhurl-try-31-staging]
       ignoreConfigMaps: true
       # Patch a pod-template annotation rather than injecting env vars.
       reloadStrategy: annotations

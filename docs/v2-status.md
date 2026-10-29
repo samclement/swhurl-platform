@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: `swhurl-try-10` staging running its `v0.2.19` image (selected 29 October 2026), then the live proof (a key rotation and a new caller with no new pod), then retiring the env forms and the `auth-revision` annotation
+Gate: the live proof on `swhurl-try-10` staging: a new caller and a key rotation, each taking effect with no new pod (the env forms and the `auth-revision` annotation are retired)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -424,6 +424,32 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 - **Next gate:** the template releases that read the files (in the two template repositories, then a
   `STACK_REVISIONS` re-pin), which retire the env forms and the `auth-revision` annotation.
 
+## Slice record: files only — the env forms and the annotation retire
+
+- **Outcome:** a v2-rendered callee gets its verification facts only as mounted files: the
+  `SWHURL_ALLOWED_CALLERS` env value, the `envFrom` of `swhurl-auth` and the `platform.swhurl.com/auth-revision`
+  pod annotation are gone, and `values()` no longer takes the profile's auth facts. A rotated key, a new issuer or a
+  new caller therefore leaves the HelmRelease byte-identical and changes only the object the pod mounts.
+- **Owners and boundaries:** unchanged — `RenderAuth` owns `swhurl-auth`, the instance owns `<app>-callers`, the
+  image owns reading the files; the pod template no longer depends on either object's content.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 unchanged** — v1 still renders the env forms for its callees; only `interface.py`'s descriptions moved
+     (the env forms are now "v1-rendered"), with `apps.md`'s table in step.
+  2. **Pure** — rendering lost an input; no effect was added.
+  3. **No identity changed** — no record field; the goldens have no callers; `swhurl-try-10` staging's
+     HelmRelease lost exactly the three forms, and `swhurl-try-11` (caller only) is byte-identical.
+  4. **No refusal moved.**
+  5. **Failure paths tested** — `TestARotationOrANewCallerChangesNoPodTemplate`: a rotated key and a new issuer
+     leave the HelmRelease identical while `swhurl-auth` changes, and a new caller leaves it identical while
+     `<app>-callers` changes; the file test asserts no env form and no `envFrom`. Mutation-checked: a pod
+     annotation derived from the callers fails it. The chart tie for the annotation went with it.
+  6. **Scope, and the cost chosen** — an image older than the file-reading templates refuses every token on a
+     v2-rendered callee; the only one today runs `v0.2.19`.
+  7. **Live on push:** one rollout of `swhurl-try-10` staging (its pod template loses the env forms).
+  8. **Recorded in the same change** — this page, the registry, the plan's calls section and gap row, `apps.md`,
+     `operations.md#signing-keys` and `interface.py`.
+- **Next gate:** the live proof.
+
 ## Slice record: a new release for a v2-owned instance (`swhurl-try-10` staging, `v0.2.19`)
 
 - **Outcome:** `swhurl-try-10` took the TypeScript template's `v0.2.19` update (Renovate's #18, the Copier
@@ -741,12 +767,13 @@ The report shows what the tree adds to `origin/main`: a new package, a changed e
 > material is mounted as **files** as well as env, and a v2-owned instance's own record states its `calls` and
 > `allows` — the v1-shaped YAML copies are gone.
 >
-> **The gate is a file-reading image under v2.** Both templates read the auth files first — TypeScript `v0.2.19`,
-> Kotlin `v0.2.18`, both pinned in `STACK_REVISIONS` — but no running app is built from them. `swhurl-try-10`
-> (TypeScript, the v2-owned callee) needs the `v0.2.19` Copier update and a new image, and a v2 release record
-> selecting that digest. Then prove it live: rotate the keys, add a caller to a v2-owned app, and show both take
-> effect **without a new pod**; only then do the `auth-revision` annotation and the env forms retire. Kotlin
-> builds here in podman (`eclipse-temurin:25-jdk`), though a cold Gradle cache takes about 18 minutes.
+> **The gate is the live no-restart proof.** Both templates read the auth files (TypeScript `v0.2.19`, Kotlin
+> `v0.2.18`, pinned); `swhurl-try-10` staging runs a `v0.2.19` image selected by a v2 release record; and a
+> v2-rendered callee now gets its keys and callers only as files (the env forms and the `auth-revision` annotation
+> are retired). Prove it on `swhurl-try-10` staging: a caller's token refused, the caller added to `allows`, the
+> same pod accepting it; and a temporary test key added to the platform's keys, accepted by the same pod, then
+> removed and refused again. Kotlin builds here in podman (`eclipse-temurin:25-jdk`), though a cold Gradle cache
+> takes about 18 minutes.
 >
 > The layers are checked: 0 pure (`kernel`, `calls`, `legacy`, `observe`, `shadow`), 1 adapters (`files`, `kube`,
 > `s3`), 2 use cases (`orchestration`: compile, migrate, restore), 3 the command. **Backup is done**: the job, the

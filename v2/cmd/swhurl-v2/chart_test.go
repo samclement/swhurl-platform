@@ -166,47 +166,6 @@ func TestCompiledManifests(t *testing.T) {
 			t.Errorf("the pods lack %s: %s, which the NetworkPolicy selects:\n%s", key, value, labels)
 		}
 	}
-	// The auth revision must be a pod-template annotation, because that is what changes a pod template and
-	// rolls the Deployment: on the Deployment's own metadata it would change nothing a running pod notices, and a
-	// key rotation would go unseen. Render values carrying it and read where the chart puts it.
-	annotated := map[string]any{}
-	if err := json.Unmarshal(release.Spec.Values, &annotated); err != nil {
-		t.Fatal(err)
-	}
-	main := annotated["controllers"].(map[string]any)["main"].(map[string]any)
-	main["pod"] = map[string]any{"annotations": map[string]any{"platform.swhurl.com/auth-revision": "auth-sha256:test"}}
-	annotatedValues, err := json.Marshal(annotated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	annotatedPath := filepath.Join(dir, "values-annotated.json")
-	if err := os.WriteFile(annotatedPath, annotatedValues, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	renderedPath := filepath.Join(dir, "rendered-annotated.yaml")
-	renderedAnnotated := output(t, helm, "template", release.Metadata.Name, chart, "-n", release.Metadata.Namespace, "-f", annotatedPath)
-	if err := os.WriteFile(renderedPath, []byte(renderedAnnotated), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, document := range yamlDocuments(t, renderedPath) {
-		if document["kind"] != "Deployment" {
-			continue
-		}
-		pods := document["spec"].(map[string]any)["template"].(map[string]any)["metadata"].(map[string]any)
-		annotations, _ := pods["annotations"].(map[string]any)
-		if annotations["platform.swhurl.com/auth-revision"] != "auth-sha256:test" {
-			t.Fatalf("the chart does not put the auth revision on the pod template: %v", pods)
-		}
-		if own, _ := document["metadata"].(map[string]any)["annotations"].(map[string]any); own["platform.swhurl.com/auth-revision"] != nil {
-			t.Fatal("the chart put the auth revision on the Deployment, where it would roll nothing")
-		}
-		found = true
-	}
-	if !found {
-		t.Fatal("the chart rendered no Deployment")
-	}
-
 	// A ConfigMap the renderer mounts must reach the pods as a read-only file volume: that is what lets an app
 	// re-read a rotated key or a new caller without a restart.
 	mounted := map[string]any{}

@@ -87,8 +87,21 @@ func TestResolveThenCompileACalledInstance(t *testing.T) {
 	calleeCompiled := compileWithCalls(t, callsPath, "orders", calleeRelease(t))
 	calleeRelease := renderedHelmReleaseOf(t, calleeCompiled)
 	calleeContainer := calleeRelease["spec"].(map[string]any)["values"].(map[string]any)["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)
-	if env := calleeContainer["env"].(map[string]any); env["SWHURL_ALLOWED_CALLERS"] != "shop" {
-		t.Fatalf("the callee's callers: %v", env["SWHURL_ALLOWED_CALLERS"])
+	if env := calleeContainer["env"].(map[string]any); env["SWHURL_ALLOWED_CALLERS_FILE"] == nil {
+		t.Fatalf("the callee does not name its callers file: %v", env)
+	}
+	allowed := ""
+	for _, file := range calleeCompiled.Files {
+		if strings.HasSuffix(file.Path, "/callers.json") {
+			document := map[string]any{}
+			if err := json.Unmarshal(file.Document, &document); err != nil {
+				t.Fatal(err)
+			}
+			allowed, _ = document["data"].(map[string]any)["SWHURL_ALLOWED_CALLERS"].(string)
+		}
+	}
+	if allowed != "shop" {
+		t.Fatalf("the callee's callers: %q", allowed)
 	}
 	if calleeCompiled.Inputs.Calls == compiled.Inputs.Calls {
 		t.Fatal("two different sides of one pair share a connections identity")

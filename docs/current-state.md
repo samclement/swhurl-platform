@@ -2,6 +2,21 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## `swhurl-try-10` staging runs its `v0.2.19` image, selected by v2 (29 October 2026)
+
+`swhurl-try-10` merged Renovate's template update (#18, `9710b8f`, the Copier update to `v0.2.19`) and its workflow
+pin (#19, `0c4462b`), both squash-merged after their checks; Container run `40791226852` built and smoke-tested
+`ghcr.io/samclement/swhurl-try-10:60-0c4462b`. The tag's digest (`sha256:2b0ce8ab…`) is an OCI index holding one
+`linux/amd64` manifest, `sha256:9ae24d58…`, and an attestation; the release names the manifest, whose content type
+and bytes were checked against GHCR anonymously.
+
+`b2383f18` selected the release (`rel-sha256:2672110c…`) and recompiled the HelmRelease, whose only change was the
+digest. After `make flux-reconcile` the Deployment rolled once: pod `swhurl-try-10-6dc95c664c-bls5r`, created
+`00:09:52Z`, 0 restarts, `imageID …@sha256:9ae24d58…`. `observe` at `b2383f18`: `running`, backup `current`.
+
+**Still unexercised:** the image reads the auth files, but the `auth-revision` annotation still rolls the pod on
+any change to the keys or callers, so the no-restart path has not been shown live.
+
 ## Validate green again; the backup host is the platform's grant (28 October 2026)
 
 Validate had failed on every push since `4bfc82ac` (the egress freshness check), so no console deploy ran.

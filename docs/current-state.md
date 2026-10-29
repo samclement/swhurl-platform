@@ -2,6 +2,16 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The always-on instance surface is live (29 October 2026)
+
+`1bca7990` reached `main` and Flux applied it to both v2-owned staging instances. `make app-status` read **Healthy** at that revision for `swhurl-try-10` and `swhurl-try-11`; both Helm releases upgraded and their pods are `1/1` ready.
+
+- **`swhurl-try-10` staging (callee, team `payments`)**: the live Deployment now has `HOST_IP` from `status.hostIP`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://$(HOST_IP):4318`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`, `OTEL_SERVICE_NAME=swhurl-try-10` and `SWHURL_NOTIFY_URL=http://notify.notify.svc.cluster.local:8080`. It keeps its egress proxy variables, `DATABASE_PATH`, the auth and caller **file** variables, and a projected token for the `notify` audience only. Its namespace carries `platform.swhurl.com/team=payments`; its caller allow-list file reads `swhurl-try-11,swhurl-try-12`.
+- **`swhurl-try-11` staging (caller, team `insights`)**: the same telemetry and notify variables, its two `SWHURL_SERVICE_…_URL` addresses, and a projected token volume with the audiences `swhurl-try-10`, `swhurl-try-12` and `notify`. Its namespace carries `platform.swhurl.com/team=insights`.
+- **Platform**: `make verify-platform` passed after the console image deploy (`07608438`, a bot commit from Validate) was pulled and reconciled. The console warning cleared; no Secret value was read.
+
+**What this proves live:** the two v2-owned instances run the new env, token and team-label surface, and the app-status team column reads the label. **Not exercised:** a query showing the new traces/metrics arriving in ClickStack with `serviceName` and `swhurl.team`, an app-originated notify message, and the same surface on a v1-owned instance.
+
 ## A rotation and a new caller with no restart (29 October 2026)
 
 `e3d59ab9` retired the env forms and the `auth-revision` annotation for v2-rendered callees; `swhurl-try-10`

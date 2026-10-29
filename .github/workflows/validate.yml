@@ -122,7 +122,23 @@ jobs:
             rmdir "$tmp"
           fi
 
-      # check-v2 also renders platform/egress and platform/auth from the records and diffs them (v2/check-rendered.sh).
+      # v2's mint encrypts through sops and its adapter contract runs the real command, which the runner image
+      # does not carry. The release is pinned and checked against its published checksum before it is used.
+      - name: Install sops for v2's encryption contract
+        env:
+          SOPS_VERSION: '3.12.1'
+          SOPS_SHA256: cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100
+        run: |
+          set -Eeuo pipefail
+          dir="$RUNNER_TEMP/sops"
+          mkdir -p "$dir"
+          curl -sSL -o "$dir/sops" "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64"
+          (cd "$dir" && echo "${SOPS_SHA256}  sops" | sha256sum --check --strict)
+          chmod +x "$dir/sops"
+          echo "$dir" >> "$GITHUB_PATH"
+
+      # check-v2 also renders platform/egress, platform/auth, platform/nats and platform/reloader from the records
+      # and diffs them (v2/check-rendered.sh).
       - name: Check v2 and its design rules
         env:
           REQUIRE_HELM: '1'

@@ -2,6 +2,30 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## v2 renders Reloader's watch list, and a migrated instance is watched again (29 October 2026)
+
+**The cutover (`57d1c8e9`).** `platform/reloader/values.json` is the ConfigMap the Reloader HelmRelease now
+merges as values (`spec.valuesFrom`); the `namespaces` list is gone from the HelmRelease. v1's writer is deleted
+and the Render workflow regenerates the file (`make v2-reloader`), so the list is derived from the records. It
+holds **18 namespaces** — `ingress`, `logging`, `console` from the profile, and 15 instances: the same 14 v1
+namespaces v1's own predicate produced before the switch, plus **`demo-notifier-staging`** (its broker key is the
+Secret) — and not `swhurl-try-10-staging` or `swhurl-try-11-staging`, which declare no Secret.
+
+After `make flux-reconcile`, the Reloader HelmRelease is Ready (chart 2.2.18, generation 53/53) and its
+Deployment (revision 53, `1/1`) runs with
+`--namespaces=console,demo-notifier-staging,…,swhurl-try-32-staging` — exactly the rendered list, plus
+`platform-system`, which the chart always adds for itself. A Role and RoleBinding appeared in
+`demo-notifier-staging` as the release upgraded (28 s), and none exists in `swhurl-try-10-staging` or
+`swhurl-try-11-staging`. The controller logged
+`Watching scoped namespaces: …` at `22:04:37Z` and a `Starting Controller … in namespace: <ns>` line for each.
+**Zero** lines matching `error` or `forbidden` in the following ten minutes, and `make verify-platform` passed.
+
+**What this proves live:** the watch list the platform serves is v2's document, a migrated instance with a
+Secret is watched again, and an instance with none is not. **Not exercised:** a changed Secret in
+`demo-notifier-staging` restarting its pod (that needs a live Secret edited; the mechanism is covered by
+`make live-test-reloader` in its own namespaces), and a v1 Secret file whose names its release has not declared
+yet — v2 reads declarations, so that namespace is not watched until the release declares the name.
+
 ## v2 owns NATS's user list, and its first event subscriber is live (29 October 2026)
 
 **The cutover (`e4ac053f`).** `platform/nats/users.yaml` became `platform/nats/users.json`, rendered by

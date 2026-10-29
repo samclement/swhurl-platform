@@ -1020,10 +1020,15 @@ the first three migrations did. The list is now v2's own platform document.
      release. It needs v2's own selection path first and stays in the [gap list](iteration-2-plan.md#6-deliberately-deferred).
      One semantic difference is stated rather than hidden: a v1 Secret file whose names its release has not
      declared yet is not watched, because v2 reads declarations and the snapshot never reads an encrypted file.
-  7. **Offline is not live** — the proof is a comparison: `check-rendered.sh` renders from a snapshot of the
-     working tree and compares with the committed `platform/reloader/values.json` (18 namespaces: the platform's
-     three and 15 instances). The cutover is the commit that follows; its live evidence is recorded in
-     [current state](current-state.md).
+  7. **Offline is not live** — the offline proof is a comparison: `check-rendered.sh` renders from a snapshot of
+     the working tree and compares with the committed `platform/reloader/values.json` (18 namespaces: the
+     platform's three and 15 instances). **Live, `57d1c8e9`:** the Reloader HelmRelease is Ready and its
+     Deployment runs with `--namespaces` equal to the rendered list plus the chart's own `platform-system`; a
+     Role and RoleBinding appeared in `demo-notifier-staging` and none in the two v2-owned staging namespaces
+     that declare no Secret; the controller logged `Watching scoped namespaces: …`, it logged no error or
+     forbidden line in the following ten minutes, and `make verify-platform` passed. A changed Secret restarting
+     one of those workloads was not exercised (it needs a live Secret edited); the mechanism is
+     `make live-test-reloader`'s. [Current state](current-state.md#v2-renders-reloaders-watch-list-and-a-migrated-instance-is-watched-again-29-october-2026).
   8. **Recorded in the same change** — this page, the plan's gap list, [services](services.md#reloader),
      [commands](commands.md), [apps](apps.md) and the workstream registry.
 - **Evidence:** `REQUIRE_HELM=1 make check-v2` (16 packages; the chart render and all four rendered platform

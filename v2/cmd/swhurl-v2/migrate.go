@@ -128,6 +128,7 @@ type migrationSource struct {
 }
 
 type migrationIdentities struct {
+	App         string `json:"app"`
 	Release     string `json:"release"`
 	Instance    string `json:"instance"`
 	Compilation string `json:"compilation"`
@@ -161,13 +162,17 @@ func encodeMigration(revision string, result orchestration.Migration) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
+	appIdentity, err := result.App.ID()
+	if err != nil {
+		return nil, err
+	}
 	document := migrationDocument{
-		Kind: "v2-migration", Version: 1,
+		Kind: "v2-migration", Version: 2,
 		Application: result.Facts.Application, Environment: result.Facts.Environment, Snapshot: revision,
 		Source: migrationSource{Repository: result.Facts.Source.Repository, Commit: result.Facts.Source.Commit,
 			Corroborated: nonNil(result.Facts.Corroborated)},
-		Identities: migrationIdentities{Release: string(result.Release.ReleaseID), Instance: string(instanceRevision),
-			Compilation: string(result.Compilation.ID)},
+		Identities: migrationIdentities{App: string(appIdentity), Release: string(result.Release.ReleaseID),
+			Instance: string(instanceRevision), Compilation: string(result.Compilation.ID)},
 		Egress:        migrationPlace(result.Egress),
 		Relationships: migrationEdges(result),
 		Files:         result.Written,

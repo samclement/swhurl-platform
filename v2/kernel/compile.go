@@ -22,6 +22,7 @@ type Compilation struct {
 }
 
 type Inputs struct {
+	App      AppID            `json:"app"`
 	Release  ReleaseID        `json:"release"`
 	Instance InstanceRevision `json:"instance"`
 	Profile  ProfileID        `json:"profile"`
@@ -116,12 +117,14 @@ type manifest = map[string]any
 // Compile builds one stateless HTTP instance's files, private or signed-in. It validates every input,
 // then refuses a release of another application before one the instance does not select.
 func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error) {
-	return CompileWith(spec, release, profile, Connections{}, nil)
+	return CompileWith(spec, release, AppSpec{}, profile, Connections{}, nil)
 }
 
-// CompileWith compiles an instance together with the connected pairs it takes part in.
-func CompileWith(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, connections Connections, egress *Egress) (Compilation, error) {
-	inputs, err := compileInputs(spec, release, profile)
+// CompileWith compiles an instance together with its app record and the connected pairs it takes part in.
+// An empty app record is for a use case that does not deliver an instance (a preview or a live read); it
+// renders no team label. A delivered instance always has one.
+func CompileWith(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile, connections Connections, egress *Egress) (Compilation, error) {
+	inputs, err := compileInputs(spec, release, app, profile)
 	if err != nil {
 		return Compilation{}, err
 	}
@@ -129,7 +132,7 @@ func CompileWith(spec InstanceSpec, release ReleaseBundle, profile PlatformProfi
 	if err != nil {
 		return Compilation{}, err
 	}
-	resources, err := RenderHTTP(instanceOf(spec, release, connections, egress), workloadOf(release), profile)
+	resources, err := RenderHTTP(instanceOf(spec, release, app, connections, egress), workloadOf(release), profile)
 	if err != nil {
 		return Compilation{}, err
 	}
@@ -140,20 +143,20 @@ func CompileWith(spec InstanceSpec, release ReleaseBundle, profile PlatformProfi
 
 // instanceOf is the rendering input the records state: the compiler and the restore build it the same way,
 // so a restore pod runs as the app runs and mounts the volume the app mounts.
-func instanceOf(spec InstanceSpec, release ReleaseBundle, connections Connections, egress *Egress) HTTPInstance {
+func instanceOf(spec InstanceSpec, release ReleaseBundle, app AppSpec, connections Connections, egress *Egress) HTTPInstance {
 	return HTTPInstance{Application: spec.Application, Environment: spec.Environment,
 		Configuration: spec.Configuration, Exposure: spec.Grants.Exposure,
 		Calls: connections.Calls, Callers: connections.Callers,
-		Database: release.Database, Storage: spec.Storage, Egress: egress}
+		Database: release.Database, Storage: spec.Storage, Egress: egress, Team: app.Team}
 }
 
 // workloadOf is the runtime facts a release states: what the chart runs and as whom.
 func workloadOf(release ReleaseBundle) HTTPWorkload {
 	return HTTPWorkload{release.Artifact.Image, release.Artifact.Digest, release.Runtime.Port,
-		release.Runtime.HealthPath, release.Runtime.UID}
+		release.Runtime.HealthPath, release.Runtime.UID, release.Telemetry}
 }
 
-func compileInputs(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Inputs, error) {
+func compileInputs(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile) (Inputs, error) {
 	revision, err := spec.Revision()
 	if err != nil {
 		return Inputs{}, err
@@ -172,10 +175,30 @@ func compileInputs(spec InstanceSpec, release ReleaseBundle, profile PlatformPro
 	if id != spec.Release {
 		return Inputs{}, refuse(WrongRelease, "release", "the instance selects a different release")
 	}
+	appID, err := appIDOf(app, spec)
+	if err != nil {
+		return Inputs{}, err
+	}
 	if err := fits(spec.Configuration, profile, release.Database == "sqlite"); err != nil {
 		return Inputs{}, err
 	}
-	return Inputs{Release: id, Instance: revision, Profile: profileID}, nil
+	return Inputs{App: appID, Release: id, Instance: revision, Profile: profileID}, nil
+}
+
+// appIDOf is the app record's identity when the caller supplied one, and refuses a record for another app.
+// An empty record is the use cases that do not deliver an instance.
+func appIDOf(app AppSpec, spec InstanceSpec) (AppID, error) {
+	if app.Application == "" && app.Team == "" {
+		return "", nil
+	}
+	id, err := app.ID()
+	if err != nil {
+		return "", err
+	}
+	if app.Application != spec.Application {
+		return "", refuse(WrongApplication, "application", "app record belongs to a different application")
+	}
+	return id, nil
 }
 
 // fits checks what an instance needs at once against the profile's quota: its replicas and one more for a

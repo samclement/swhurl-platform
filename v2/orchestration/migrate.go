@@ -34,6 +34,7 @@ type Migration struct {
 	Facts        legacy.Migration
 	Release      kernel.ReleaseBundle
 	Instance     kernel.InstanceSpec
+	App          kernel.AppSpec
 	Compilation  kernel.Compilation
 	Rendered     kernel.Connections
 	UnmetCalls   []string
@@ -50,7 +51,7 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 	if err != nil {
 		return Migration{}, err
 	}
-	release, spec, err := recordsOf(facts)
+	release, spec, app, err := recordsOf(facts)
 	if err != nil {
 		return Migration{}, err
 	}
@@ -62,23 +63,27 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 	if err != nil {
 		return Migration{}, err
 	}
-	compiled, err := Compile(Inputs{Instance: instanceDocument, Release: releaseDocument,
+	appDocument, err := kernel.EncodeApp(app)
+	if err != nil {
+		return Migration{}, err
+	}
+	compiled, err := Compile(Inputs{Instance: instanceDocument, Release: releaseDocument, App: appDocument,
 		Profile: inputs.Profile, Calls: inputs.Calls, Egress: inputs.Egress})
 	if err != nil {
 		return Migration{}, err
 	}
 	// The same helper the compilation used, so the report names the edges and the port the files were
 	// rendered from rather than a second reading of them.
-	compilation := Inputs{Instance: instanceDocument, Release: releaseDocument, Profile: inputs.Profile,
-		Calls: inputs.Calls, Egress: inputs.Egress}
+	compilation := Inputs{Instance: instanceDocument, Release: releaseDocument, App: appDocument,
+		Profile: inputs.Profile, Calls: inputs.Calls, Egress: inputs.Egress}
 	rendered, egress, err := documents(compilation, facts.Application, facts.Environment)
 	if err != nil {
 		return Migration{}, err
 	}
-	result := Migration{Facts: facts, Release: release, Instance: spec, Compilation: compiled,
+	result := Migration{Facts: facts, Release: release, Instance: spec, App: app, Compilation: compiled,
 		Rendered: rendered, Egress: egress, UnmetCalls: unmet(facts.Calls, callees(rendered)),
 		UnmetCallers: unmet(facts.Allows, rendered.Callers)}
-	written := append(recordFiles(facts.Application, facts.Environment, releaseDocument, instanceDocument),
+	written := append(recordFiles(facts.Application, facts.Environment, appDocument, releaseDocument, instanceDocument),
 		compiled.Files...)
 	result.Written, err = writer.Write(destination, written)
 	return result, err
@@ -86,14 +91,18 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 
 // recordsOf turns one predecessor's translated facts into v2's record pair. It maps fields and lets the
 // kernel decide what a record may say: identity, validation and encoding stay there.
-func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpec, error) {
+func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpec, kernel.AppSpec, error) {
 	// Consent by team is a v1 fact v2 does not model: a record states app names only, so carrying a team grant
 	// would quietly widen or narrow what the instance accepts. Refuse instead, and name the reason.
 	for _, granted := range facts.Allows {
 		if strings.HasPrefix(granted, "team:") {
-			return kernel.ReleaseBundle{}, kernel.InstanceSpec{},
+			return kernel.ReleaseBundle{}, kernel.InstanceSpec{}, kernel.AppSpec{},
 				&Refusal{Subject: "allows", Reason: "teams_are_not_modelled"}
 		}
+	}
+	if facts.Instance.Team == "" {
+		return kernel.ReleaseBundle{}, kernel.InstanceSpec{}, kernel.AppSpec{},
+			&Refusal{Subject: "app.team", Reason: "a_team_is_required"}
 	}
 	release := kernel.ReleaseBundle{
 		SchemaVersion: 1,
@@ -103,11 +112,12 @@ func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpe
 			MediaType: kernel.ManifestMediaType, Platform: artifactPlatform},
 		Runtime: kernel.Runtime{Kind: facts.Workload.Kind, Port: facts.Workload.Port,
 			HealthPath: facts.Workload.HealthPath, UID: facts.Workload.UID},
-		Database: facts.Database,
+		Database:  facts.Database,
+		Telemetry: facts.Workload.Telemetry,
 	}
 	identity, err := release.ID()
 	if err != nil {
-		return kernel.ReleaseBundle{}, kernel.InstanceSpec{}, err
+		return kernel.ReleaseBundle{}, kernel.InstanceSpec{}, kernel.AppSpec{}, err
 	}
 	release.ReleaseID = identity
 	spec := kernel.InstanceSpec{
@@ -121,13 +131,16 @@ func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpe
 		Calls:         facts.Calls,
 		Allows:        facts.Allows,
 	}
-	return release, spec, nil
+	app := kernel.AppSpec{SchemaVersion: 1, Application: facts.Application, Team: facts.Instance.Team}
+	return release, spec, app, nil
 }
 
-// recordFiles is the pair of records a migration writes, under the root the snapshot exporter reads.
-func recordFiles(application, environment string, release, instance []byte) []kernel.File {
+// recordFiles is the records a migration writes: one app record and the environment's pair, under the root
+// the snapshot exporter reads.
+func recordFiles(application, environment string, app, release, instance []byte) []kernel.File {
 	folder := recordsRoot + "/" + application + "/" + environment
 	return []kernel.File{
+		{Path: recordsRoot + "/" + application + "/app.json", Document: app},
 		{Path: folder + "/release.json", Document: release},
 		{Path: folder + "/instance.json", Document: instance},
 	}

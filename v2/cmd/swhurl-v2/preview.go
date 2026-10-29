@@ -87,7 +87,8 @@ type subject struct {
 func previewSubject(translation legacy.Translation) subject {
 	return subject{
 		workload: kernel.HTTPWorkload{Image: translation.Workload.Image, Digest: translation.Workload.Digest,
-			Port: translation.Workload.Port, HealthPath: translation.Workload.HealthPath, UID: translation.Workload.UID},
+			Port: translation.Workload.Port, HealthPath: translation.Workload.HealthPath, UID: translation.Workload.UID,
+			Telemetry: translation.Workload.Telemetry},
 		instance: kernel.HTTPInstance{Application: translation.Application, Environment: translation.Environment,
 			Configuration: kernel.Configuration{Replicas: translation.Instance.Replicas, MemoryMiB: translation.Instance.MemoryMiB},
 			Exposure:      translation.Instance.Exposure},
@@ -130,6 +131,7 @@ type workloadDocument struct {
 	Port       int32  `json:"port"`
 	HealthPath string `json:"healthPath"`
 	UID        int32  `json:"uid"`
+	Telemetry  bool   `json:"telemetry"`
 }
 
 type instanceDocument struct {
@@ -165,7 +167,8 @@ func encodePreview(translation legacy.Translation, comparison shadow.HTTPCompari
 		Application: translation.Application, Environment: translation.Environment,
 		Preview: previewFacts{
 			Workload: workloadDocument{translation.Workload.Image, translation.Workload.Tag, translation.Workload.Digest,
-				translation.Workload.Kind, translation.Workload.Port, translation.Workload.HealthPath, translation.Workload.UID},
+				translation.Workload.Kind, translation.Workload.Port, translation.Workload.HealthPath, translation.Workload.UID,
+				translation.Workload.Telemetry},
 			Instance: instanceDocument{translation.Instance.Exposure, translation.Instance.Replicas,
 				translation.Instance.MemoryMiB, translation.Instance.Team},
 			Sources: translation.Sources,

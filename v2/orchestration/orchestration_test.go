@@ -21,8 +21,8 @@ func input(t *testing.T, calls, egress []byte) Inputs {
 		}
 		return data
 	}
-	return Inputs{Instance: read("prod.json"), Release: read("r41.json"), Profile: read("profile.json"),
-		Calls: calls, Egress: egress}
+	return Inputs{Instance: read("prod.json"), Release: read("r41.json"), App: read("app.json"),
+		Profile: read("profile.json"), Calls: calls, Egress: egress}
 }
 
 // The use case compiles what the kernel compiles from the same values: the layer adds assembly, not rules.
@@ -44,7 +44,11 @@ func TestCompileIsTheKernelsCompilation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := kernel.Compile(spec, release, profile)
+	app, err := kernel.DecodeApp(inputs.App)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := kernel.CompileWith(spec, release, app, profile, kernel.Connections{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

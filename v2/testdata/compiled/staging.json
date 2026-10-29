@@ -1,11 +1,12 @@
 {
   "kind": "v2-compilation",
   "version": 1,
-  "id": "comp-sha256:2d085a4b39b0c13efeb88583bf05ce8107ed91e865de505e8ed75bfb116eecb8",
+  "id": "comp-sha256:7b871b59027e33b28886c22c1125709856ec1acce6a5859ae8a4f1902fec3793",
   "inputs": {
-    "release": "rel-sha256:e0ee291864ec4d10b48dbf4d8a06b0fb57e059db5dac0fb27754b6f46b11c8e0",
-    "instance": "inst-sha256:3d052459b2a6690031b650b7a0f4de316a42c1501b14ed375d33ad10331a0667",
-    "profile": "prof-sha256:ca5c1e1af0d0a0b48ec9ab15b6cc2ec934ce3af9dfb0836fcd515f61f8c73e63",
+    "app": "app-sha256:50aa37430360ade5a48ce7d5c968b521b57e91bf8a1c4501fb14fc10d2672e0f",
+    "release": "rel-sha256:84a4efe8f8e34f6bc8755aab131258a9686a64ee5fe176402526d8d0a82050fe",
+    "instance": "inst-sha256:2f23e02e143b6b4c8e3f1e0f80f6077e1837c97dc5c6687385d55995251996d0",
+    "profile": "prof-sha256:567cdc63614fd7eaf944e11fb6a6feec05025fae52f356d3e8c485fa33199bf0",
     "calls": ""
   },
   "files": [
@@ -19,7 +20,8 @@
             "platform.swhurl.com/app": "demo-orders",
             "platform.swhurl.com/environment": "staging",
             "platform.swhurl.com/exposure": "private",
-            "platform.swhurl.com/managed": "true"
+            "platform.swhurl.com/managed": "true",
+            "platform.swhurl.com/team": "demo"
           },
           "name": "demo-orders-staging"
         }
@@ -65,8 +67,19 @@
                 "containers": {
                   "main": {
                     "env": {
+                      "HOST_IP": {
+                        "valueFrom": {
+                          "fieldRef": {
+                            "fieldPath": "status.hostIP"
+                          }
+                        }
+                      },
+                      "OTEL_EXPORTER_OTLP_ENDPOINT": "http://$(HOST_IP):4318",
+                      "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+                      "OTEL_SERVICE_NAME": "demo-orders",
                       "SWHURL_APP": "demo-orders",
-                      "SWHURL_ENV": "staging"
+                      "SWHURL_ENV": "staging",
+                      "SWHURL_NOTIFY_URL": "http://notify.notify.svc.cluster.local:8080"
                     },
                     "image": {
                       "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -149,6 +162,24 @@
                   }
                 ],
                 "type": "emptyDir"
+              },
+              "tokens": {
+                "globalMounts": [
+                  {
+                    "path": "/var/run/swhurl/tokens",
+                    "readOnly": true
+                  }
+                ],
+                "sources": [
+                  {
+                    "serviceAccountToken": {
+                      "audience": "notify",
+                      "expirationSeconds": 600,
+                      "path": "notify/token"
+                    }
+                  }
+                ],
+                "type": "projected"
               }
             },
             "service": {

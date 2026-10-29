@@ -46,6 +46,10 @@ func TestMigrateWritesThePairAndTheCompilation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	app, ok := writer.Contents["v2-records/hello/app.json"]
+	if !ok {
+		t.Fatalf("no app record was written: %v", writer.Contents)
+	}
 	release, ok := writer.Contents["v2-records/hello/staging/release.json"]
 	if !ok {
 		t.Fatalf("no release record was written: %v", writer.Contents)
@@ -55,16 +59,19 @@ func TestMigrateWritesThePairAndTheCompilation(t *testing.T) {
 		t.Fatalf("no instance record was written: %v", writer.Contents)
 	}
 	// The pair is what the compile use case renders from, so the two agree file for file.
-	compiled, err := Compile(Inputs{Instance: instance, Release: release, Profile: inputs.Profile})
+	compiled, err := Compile(Inputs{Instance: instance, Release: release, App: app, Profile: inputs.Profile})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrated.Written) != len(compiled.Files)+2 {
-		t.Fatalf("%d written, want the pair and %d compiled files", len(migrated.Written), len(compiled.Files))
+	if len(migrated.Written) != len(compiled.Files)+3 {
+		t.Fatalf("%d written, want the app record, the pair and %d compiled files", len(migrated.Written), len(compiled.Files))
 	}
-	for _, outcome := range migrated.Written[:2] {
+	if migrated.Written[0].State != files.Written || migrated.Written[0].Path != "v2-records/hello/app.json" {
+		t.Fatalf("the app record is not written first: %+v", migrated.Written[:1])
+	}
+	for _, outcome := range migrated.Written[1:3] {
 		if outcome.State != files.Written || !strings.HasPrefix(outcome.Path, "v2-records/hello/staging/") {
-			t.Fatalf("the pair is written first: %+v", migrated.Written[:2])
+			t.Fatalf("the environment pair follows the app record: %+v", migrated.Written[:3])
 		}
 	}
 	// The record pair's own identities are the ones the facts give, and the report repeats them.

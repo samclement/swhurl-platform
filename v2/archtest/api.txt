@@ -96,6 +96,7 @@ kernel: const Unsupported Code = "unsupported"
 kernel: const WrongApplication Code = "wrong_application"
 kernel: const WrongRelease Code = "wrong_release"
 kernel: func (*Error) Error() string
+kernel: func (AppSpec) ID() (AppID, error)
 kernel: func (Backup) Host() string
 kernel: func (Connections) ID() ConnectionsID
 kernel: func (EgressDocument) EgressOf(application, environment string) (*Egress, error)
@@ -106,12 +107,14 @@ kernel: func (ReleaseBundle) ID() (ReleaseID, error)
 kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation, backupHost string) ([]EgressAllocation, error)
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
 kernel: func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error)
-kernel: func CompileWith(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, connections Connections, egress *Egress) (Compilation, error)
+kernel: func CompileWith(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile, connections Connections, egress *Egress) (Compilation, error)
 kernel: func ConnectionsOf(data []byte, application, environment string) (Connections, error)
+kernel: func DecodeApp(data []byte) (AppSpec, error)
 kernel: func DecodeEgressDocument(data []byte) (EgressDocument, error)
 kernel: func DecodeInstance(data []byte) (InstanceSpec, error)
 kernel: func DecodeProfile(data []byte) (PlatformProfile, error)
 kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
+kernel: func EncodeApp(app AppSpec) ([]byte, error)
 kernel: func EncodeCompilation(c Compilation) []byte
 kernel: func EncodeEgressDocument(document EgressDocument) ([]byte, error)
 kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
@@ -124,6 +127,8 @@ kernel: func RenderProxy(allocations []EgressAllocation, profile PlatformProfile
 kernel: func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, egress *Egress, job RestoreJob) (RestoreObjects, error)
 kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
+kernel: type AppID string
+kernel: type AppSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Team string `json:"team"` AppID AppID `json:"appId,omitempty"`}
 kernel: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"` MediaType string `json:"mediaType"` Platform string `json:"platform"`}
 kernel: type Auth struct {Issuer string `json:"issuer"` Keys string `json:"keys"`}
 kernel: type Backup struct {Image string `json:"image"` Digest string `json:"digest"` S3URI string `json:"s3Uri"` Region string `json:"region"` Recipient string `json:"recipient"` WriterNamespace string `json:"writerNamespace"` WriterName string `json:"writerName"` Suspended bool `json:"suspended"`}
@@ -152,18 +157,19 @@ kernel: type EgressProxy struct {Address string `json:"address"` Namespace strin
 kernel: type Error struct {Code Code Field string Reason string}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
 kernel: type Grants struct {Exposure string `json:"exposure"`}
-kernel: type HTTPInstance struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress}
-kernel: type HTTPWorkload struct {Image, Digest string Port int32 HealthPath string UID int32}
-kernel: type Inputs struct {Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"` Calls ConnectionsID `json:"calls"`}
+kernel: type HTTPInstance struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string}
+kernel: type HTTPWorkload struct {Image, Digest string Port int32 HealthPath string UID int32 Telemetry bool}
+kernel: type Inputs struct {App AppID `json:"app"` Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"` Calls ConnectionsID `json:"calls"`}
 kernel: type InstanceRevision string
 kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"` Storage Storage `json:"storage,omitempty"` Calls []string `json:"calls,omitempty"` Allows []string `json:"allows,omitempty"`}
 kernel: type Network struct {PodCIDR string `json:"podCIDR"`}
+kernel: type Notify struct {Address string `json:"address"`}
 kernel: type Object struct {Group string `json:"group"` Kind string `json:"kind"` Namespace string `json:"namespace"` Name string `json:"name"`}
-kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Routing Routing `json:"routing"` Auth Auth `json:"auth"` Storage PlatformStorage `json:"storage"` Egress EgressProxy `json:"egress"` DNS DNS `json:"dns"` Backup Backup `json:"backup"` Network Network `json:"network"`}
+kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Telemetry Telemetry `json:"telemetry"` Notify Notify `json:"notify"` Routing Routing `json:"routing"` Auth Auth `json:"auth"` Storage PlatformStorage `json:"storage"` Egress EgressProxy `json:"egress"` DNS DNS `json:"dns"` Backup Backup `json:"backup"` Network Network `json:"network"`}
 kernel: type PlatformStorage struct {Class string `json:"class"`}
 kernel: type ProfileID string
 kernel: type Quota struct {Pods int32 `json:"pods"` RequestsCPUMilli int32 `json:"requestsCpuMilli"` RequestsMemoryMiB int32 `json:"requestsMemoryMiB"` LimitsMemoryMiB int32 `json:"limitsMemoryMiB"`}
-kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` Database string `json:"database,omitempty"` ReleaseID ReleaseID `json:"releaseId"`}
+kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` Database string `json:"database,omitempty"` Telemetry bool `json:"telemetry,omitempty"` ReleaseID ReleaseID `json:"releaseId"`}
 kernel: type ReleaseID string
 kernel: type ResourceSet struct {Files []File Inventory []Claim Registrations []string}
 kernel: type RestoreJob struct {Name string Archive string ArchiveSHA256, PlainSHA256 string Tables int32 AgeIdentity, ReadURL string}
@@ -173,6 +179,7 @@ kernel: type Routing struct {BaseDomain string `json:"baseDomain"` Class string 
 kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` HealthPath string `json:"healthPath"` UID int32 `json:"uid"`}
 kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}
 kernel: type Storage struct {SizeMiB int32 `json:"sizeMiB,omitempty"` ClaimName string `json:"claimName,omitempty"`}
+kernel: type Telemetry struct {Endpoint string `json:"endpoint"` Protocol string `json:"protocol"`}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
 legacy: const Invalid = "invalid"
 legacy: const Missing = "missing"
@@ -188,7 +195,7 @@ legacy: type Records struct {App, Instance, Release, Committed []byte}
 legacy: type Source struct {Repository, Commit string}
 legacy: type Supplied struct {Repository, Commit string}
 legacy: type Translation struct {Application, Environment string Workload Workload Instance Instance Sources map[string]string Gaps []Gap}
-legacy: type Workload struct {Image, Tag, Digest string Kind string Port int32 HealthPath string UID int32}
+legacy: type Workload struct {Image, Tag, Digest string Kind string Port int32 HealthPath string UID int32 Telemetry bool}
 observe: const Absent = "absent"
 observe: const Applied = "applied"
 observe: const AsIntended = "as_intended"
@@ -324,8 +331,8 @@ orchestration: func CompileInto(inputs Inputs, destination string, writer files.
 orchestration: func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
-orchestration: type Inputs struct {Instance, Release, Profile []byte Calls, Egress []byte}
-orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}
+orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte}
+orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}
 orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte}
 orchestration: type Refusal struct {Subject, Reason string}
 orchestration: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}

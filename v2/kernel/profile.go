@@ -20,6 +20,12 @@ type PlatformProfile struct {
 	Delivery      Delivery `json:"delivery"`
 	Workload      Workload `json:"workload"`
 	Quota         Quota    `json:"quota"`
+	// Telemetry is where an image with an OpenTelemetry SDK sends: the node collector's endpoint and
+	// transport. It is a platform fact, so an app states only whether it has an SDK.
+	Telemetry Telemetry `json:"telemetry"`
+	// Notify is the platform's notification service, which every instance is told about and carries a token
+	// for. The token is derived from the pod, so this block is one address, not a credential.
+	Notify Notify `json:"notify"`
 	// Routing is how a signed-in or public route reaches an instance. A profile without it cannot compile
 	// an exposed instance; a private instance never uses it.
 	Routing Routing `json:"routing"`
@@ -45,6 +51,18 @@ type PlatformProfile struct {
 // Network is the cluster's pod address block, as a call's rules need it.
 type Network struct {
 	PodCIDR string `json:"podCIDR"`
+}
+
+// Telemetry is the platform's collector: the endpoint an SDK exports to and the OTLP transport it speaks.
+type Telemetry struct {
+	Endpoint string `json:"endpoint"`
+	Protocol string `json:"protocol"`
+}
+
+// Notify is the platform's notification service address. The audience and token path are v1's fixed token
+// contract, not a per-platform choice.
+type Notify struct {
+	Address string `json:"address"`
 }
 
 // Backup is the platform's backup contract for an instance's SQLite database. The recipient is a public
@@ -146,6 +164,8 @@ var (
 	ageRecipientPattern = regexp.MustCompile(`^age1[0-9a-z]{58}$`)
 	regionPattern       = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-[0-9]$`)
 	cidrPattern         = regexp.MustCompile(`^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$`)
+	telemetryEndpoint   = regexp.MustCompile(`^https?://[A-Za-z0-9$()._-]+(:[0-9]{1,5})?$`)
+	notifyAddress       = regexp.MustCompile(`^https?://[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?$`)
 )
 
 // sortedKeys is a map's keys in order, so validation and identity encoding are deterministic.
@@ -162,7 +182,7 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 	if err := document(data); err != nil {
 		return PlatformProfile{}, err
 	}
-	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "routing", "auth", "storage", "egress", "dns", "backup", "network")
+	root, err := fields(data, "profile", []string{"schemaVersion", "name", "chart", "delivery", "workload", "quota"}, "telemetry", "notify", "routing", "auth", "storage", "egress", "dns", "backup", "network")
 	if err != nil {
 		return PlatformProfile{}, err
 	}
@@ -174,6 +194,8 @@ func DecodeProfile(data []byte) (PlatformProfile, error) {
 		{"delivery", []string{"source", "outputRoot", "unitsRoot", "dependsOn"}},
 		{"workload", []string{"cpuRequestMilli", "startupSeconds", "startupPeriodSeconds"}},
 		{"quota", []string{"pods", "requestsCpuMilli", "requestsMemoryMiB", "limitsMemoryMiB"}},
+		{"telemetry", []string{"endpoint", "protocol"}},
+		{"notify", []string{"address"}},
 		// routing and auth are optional blocks: a profile that renders only private, call-less instances
 		// needs neither, and an absent block is valid.
 		{"routing", []string{"baseDomain", "class", "middleware", "issuer", "ingressNamespace", "ingressLabels"}},
@@ -227,7 +249,7 @@ func (p PlatformProfile) validate() error {
 // validateBlocks checks the platform's optional blocks, in the order of the field table: routing, egress,
 // DNS, storage, auth and backup.
 func (p PlatformProfile) validateBlocks() error {
-	for _, block := range []interface{ validate() error }{p.Routing, p.Egress, p.DNS, p.Auth, p.Backup, p.Network} {
+	for _, block := range []interface{ validate() error }{p.Telemetry, p.Notify, p.Routing, p.Egress, p.DNS, p.Auth, p.Backup, p.Network} {
 		if err := block.validate(); err != nil {
 			return err
 		}
@@ -490,7 +512,35 @@ func profileCanonical(p PlatformProfile) []byte {
 		p.Backup.Image, p.Backup.Digest, p.Backup.S3URI, p.Backup.Region, p.Backup.Recipient,
 		p.Backup.WriterNamespace, p.Backup.WriterName, strconv.FormatBool(p.Backup.Suspended),
 		// The pod network is a platform fact too: another block is another cluster's identity.
-		p.Network.PodCIDR})
+		p.Network.PodCIDR,
+		// Telemetry and notifications are platform facts: another collector or notify service is another
+		// identity, and an absent block encodes as empty values.
+		p.Telemetry.Endpoint, p.Telemetry.Protocol, p.Notify.Address})
+}
+
+// validate checks a configured telemetry block: an HTTP(S) endpoint and an OTLP transport.
+func (t Telemetry) validate() error {
+	if t.Endpoint == "" && t.Protocol == "" {
+		return nil
+	}
+	if !telemetryEndpoint.MatchString(t.Endpoint) {
+		return refuse(Invalid, "telemetry.endpoint", "expected an http(s) endpoint")
+	}
+	if t.Protocol != "http/protobuf" && t.Protocol != "grpc" {
+		return refuse(Unsupported, "telemetry.protocol", "only http/protobuf and grpc are supported")
+	}
+	return nil
+}
+
+// validate checks a configured notify block: the service's HTTP(S) address.
+func (n Notify) validate() error {
+	if n.Address == "" {
+		return nil
+	}
+	if !notifyAddress.MatchString(n.Address) {
+		return refuse(Invalid, "notify.address", "expected an http(s) address")
+	}
+	return nil
 }
 
 func (p PlatformProfile) ID() (ProfileID, error) {

@@ -15,6 +15,7 @@ type HTTPWorkload struct {
 	Port          int32
 	HealthPath    string
 	UID           int32
+	Telemetry     bool
 }
 
 // HTTPInstance contains the environment-owned facts for an HTTP preview. An empty Exposure means
@@ -29,6 +30,7 @@ type HTTPInstance struct {
 	Database                 string // "sqlite", or empty for an image that keeps no state
 	Storage                  Storage
 	Egress                   *Egress
+	Team                     string
 }
 
 // Egress is an instance's way out: its own port on the platform's proxy, and the hosts it may reach. The
@@ -102,6 +104,11 @@ func namespaceManifest(spec HTTPInstance) manifest {
 	meta := metadata(namespaceName(spec), "")
 	meta["labels"] = manifest{labelDomain + "managed": "true", labelDomain + "app": spec.Application,
 		labelDomain + "environment": spec.Environment, labelDomain + "exposure": exposureLabel(spec)}
+	if spec.Team != "" {
+		// The team is the app's fact, not the environment's: the label is how ClickStack and the console see
+		// who owns the app. It grants nothing; a call grant is a separate instance fact.
+		meta["labels"].(manifest)[labelDomain+"team"] = spec.Team
+	}
 	if spec.Database != "" {
 		// Deleting the instance's files must not delete its data: Flux keeps the namespace, and the
 		// retained volume class keeps the claim's data. Deleting either is a separate, deliberate action.
@@ -131,16 +138,18 @@ func helmRelease(spec HTTPInstance, http HTTPWorkload, profile PlatformProfile) 
 		"metadata": meta,
 		"spec": manifest{"interval": helmInterval, "timeout": failAfter, "chart": manifest{"spec": chart},
 			"install": remediation, "upgrade": manifest{"remediation": manifest{"retries": retries}},
-			"values": values(spec, http, profile.Workload, profile.Storage.Class, profile.Egress.Address)}}
+			"values": values(spec, http, profile.Workload, profile.Storage.Class, profile.Egress.Address,
+				profile.Notify.Address, profile.Telemetry)}}
 }
 
 // values are the chart's values: one controller, one container, its Service and /tmp.
-func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClass, egressAddress string) manifest {
+func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClass, egressAddress, notifyAddress string,
+	telemetry Telemetry) manifest {
 	uid := http.UID
 	pod := manifest{"automountServiceAccountToken": false, "securityContext": manifest{
 		"runAsNonRoot": true, "runAsUser": uid, "runAsGroup": uid, "fsGroup": uid,
 		"seccompProfile": manifest{"type": "RuntimeDefault"}}}
-	controller := manifest{"replicas": spec.Configuration.Replicas, "containers": manifest{"main": container(spec, http, workload, egressAddress)}}
+	controller := manifest{"replicas": spec.Configuration.Replicas, "containers": manifest{"main": container(spec, http, workload, egressAddress, notifyAddress, telemetry)}}
 	if spec.Database == "sqlite" {
 		// One pod at a time: a rolling update would open one database file twice.
 		controller["strategy"] = "Recreate"
@@ -149,9 +158,9 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClas
 	if spec.Database == "sqlite" {
 		persistence["data"] = dataVolume(spec.Storage, storageClass)
 	}
-	if len(spec.Calls) > 0 {
-		persistence["tokens"] = tokensPersistence(spec.Calls)
-	}
+	// Every instance can notify its team, whether or not it calls anything: the notify token is one more
+	// audience beside the callees.
+	persistence["tokens"] = tokensPersistence(spec.Calls)
 	if len(spec.Callers) > 0 {
 		// Both files are mounted read-only, and they are the only form: the image re-reads them, and the kubelet
 		// refreshes a mounted ConfigMap in place, so a rotation or a new caller changes no pod template and
@@ -165,22 +174,33 @@ func values(spec HTTPInstance, http HTTPWorkload, workload Workload, storageClas
 			"ports": manifest{"http": manifest{"port": http.Port}}}}}
 }
 
-func container(spec HTTPInstance, http HTTPWorkload, workload Workload, egressAddress string) manifest {
+func container(spec HTTPInstance, http HTTPWorkload, workload Workload, egressAddress, notifyAddress string,
+	telemetry Telemetry) manifest {
 	memory := fmt.Sprintf("%dMi", spec.Configuration.MemoryMiB)
-	env := manifest{"SWHURL_APP": spec.Application, "SWHURL_ENV": spec.Environment}
+	env := manifest{"SWHURL_APP": spec.Application, "SWHURL_ENV": spec.Environment,
+		"SWHURL_NOTIFY_URL": notifyAddress}
 	if spec.Database == "sqlite" {
 		env["DATABASE_PATH"] = DatabasePath
+	}
+	if spec.Egress != nil || http.Telemetry {
+		// Both the proxy and the node-local collector are reached by the node's own address. The variable is
+		// defined once, before anything that expands it.
+		env["HOST_IP"] = manifest{"valueFrom": manifest{"fieldRef": manifest{"fieldPath": "status.hostIP"}}}
 	}
 	if spec.Egress != nil {
 		// Every client library must use the proxy, and the JVM keeps its own list.
 		address := fmt.Sprintf("http://%s:%d", egressAddress, spec.Egress.Port)
-		env["HOST_IP"] = manifest{"valueFrom": manifest{"fieldRef": manifest{"fieldPath": "status.hostIP"}}}
 		env["HTTP_PROXY"] = address
 		env["HTTPS_PROXY"] = address
 		env["NODE_USE_ENV_PROXY"] = "1"
 		env["NO_PROXY"] = "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)"
 		env["JAVA_TOOL_OPTIONS"] = fmt.Sprintf("-Dhttp.proxyHost=%s -Dhttp.proxyPort=%d -Dhttps.proxyHost=%s -Dhttps.proxyPort=%d -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)",
 			egressAddress, spec.Egress.Port, egressAddress, spec.Egress.Port)
+	}
+	if http.Telemetry {
+		env["OTEL_EXPORTER_OTLP_ENDPOINT"] = telemetry.Endpoint
+		env["OTEL_EXPORTER_OTLP_PROTOCOL"] = telemetry.Protocol
+		env["OTEL_SERVICE_NAME"] = spec.Application
 	}
 	for _, call := range spec.Calls {
 		env[callVariable(call.Callee)] = calleeAddress(call, spec.Environment)
@@ -216,14 +236,17 @@ func calleeAddress(call Call, environment string) string {
 	return fmt.Sprintf("http://%s.%s-%s.svc.cluster.local:%d", call.Callee, call.Callee, environment, call.Port)
 }
 
-// tokensPersistence is one projected volume carrying a service-account token per callee, each issued for
-// that callee's audience only and renewed by the kubelet before it expires.
+// tokensPersistence is one projected volume carrying a service-account token per audience, each issued for
+// that audience only and renewed by the kubelet before it expires. Every instance has the notify audience;
+// a caller adds one per callee. The order is v1's: callees first, then notify.
 func tokensPersistence(calls []Call) manifest {
-	sources := make([]any, 0, len(calls))
+	sources := make([]any, 0, len(calls)+1)
 	for _, call := range calls {
 		sources = append(sources, manifest{"serviceAccountToken": manifest{
 			"audience": call.Callee, "expirationSeconds": 600, "path": call.Callee + "/token"}})
 	}
+	sources = append(sources, manifest{"serviceAccountToken": manifest{
+		"audience": "notify", "expirationSeconds": 600, "path": "notify/token"}})
 	return manifest{"type": "projected", "sources": sources,
 		"globalMounts": []any{manifest{"path": "/var/run/swhurl/tokens", "readOnly": true}}}
 }
@@ -411,7 +434,10 @@ func (spec HTTPInstance) validate(http HTTPWorkload, profile PlatformProfile) (s
 	if err := spec.validateResources(profile); err != nil {
 		return "", err
 	}
-	return exposure, spec.validateEgress(profile)
+	if err := spec.validateEgress(profile); err != nil {
+		return "", err
+	}
+	return exposure, spec.validatePlatformFacts(http, profile)
 }
 
 // exposureOf is the exposure the files are rendered for: absent means private, and a route needs the
@@ -626,6 +652,19 @@ func backupSchedule(namespace string) string {
 
 // validateEgress checks an allocated way out: a port in the range the platform proxies on, and a proxy
 // the profile states.
+// validatePlatformFacts refuses an image that reports telemetry when the platform states no collector (an
+// instance cannot be rendered with an endpoint it would have to invent), and a platform that states no
+// notify service (every instance is told its address and carries a token for it).
+func (spec HTTPInstance) validatePlatformFacts(http HTTPWorkload, profile PlatformProfile) error {
+	if http.Telemetry && (profile.Telemetry.Endpoint == "" || profile.Telemetry.Protocol == "") {
+		return refuse(Unsupported, "telemetry", "the image reports telemetry and the profile states no collector")
+	}
+	if profile.Notify.Address == "" {
+		return refuse(Unsupported, "notify", "the profile states no notify service")
+	}
+	return nil
+}
+
 func (spec HTTPInstance) validateEgress(profile PlatformProfile) error {
 	if spec.Egress == nil {
 		return nil

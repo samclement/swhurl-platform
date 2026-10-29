@@ -160,7 +160,7 @@ func compileWithCalls(t *testing.T, callsPath, application string, release kerne
 	if err != nil {
 		t.Fatal(err)
 	}
-	compiled, err := kernel.CompileWith(instanceFor(t, application, release), release, profile, connections, nil)
+	compiled, err := kernel.CompileWith(instanceFor(t, application, release), release, kernel.AppSpec{}, profile, connections, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

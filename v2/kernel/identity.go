@@ -14,7 +14,7 @@ func releaseCanonical(r ReleaseBundle) []byte {
 	return canonical([]any{"swhurl.release.v1", r.SchemaVersion, r.Application,
 		r.Source.Repository, r.Source.Commit, r.Artifact.Image, r.Artifact.Digest,
 		r.Artifact.MediaType, r.Artifact.Platform, r.Runtime.Kind, r.Runtime.Port,
-		r.Runtime.HealthPath, r.Runtime.UID, r.Database})
+		r.Runtime.HealthPath, r.Runtime.UID, r.Database, r.Telemetry})
 }
 
 func instanceCanonical(s InstanceSpec) []byte {

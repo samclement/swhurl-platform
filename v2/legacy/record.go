@@ -79,6 +79,19 @@ func (r *record) peek(field string) (string, error) {
 	return value, nil
 }
 
+// boolean is one boolean field, false when the document does not state it.
+func (r *record) boolean(field string) (bool, error) {
+	raw, found := r.take(field)
+	if !found {
+		return false, nil
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false, refuse(Invalid, r.name+": "+field, "expected_a_boolean")
+	}
+	return value, nil
+}
+
 // integer is one integer field the preview requires, zero when the document does not state it.
 func (r *record) integer(field string) (int32, error) {
 	value, _, err := r.optionalInteger(field)

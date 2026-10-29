@@ -27,7 +27,7 @@ def entry(*, team='demo', kind='web', publishes=(), key='UAPP', **grants):
 
 
 class RelationTests(unittest.TestCase):
-    platform = Platform(signing_keys='{}', egress=False, controller_key='UCONTROLLER', console_key='UCONSOLE')
+    platform = Platform(signing_keys='{}', egress=False)
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -88,8 +88,6 @@ class RelationTests(unittest.TestCase):
                 world = {caller: entry(calls=('orders',), key=''), target: entry(kind=invalid, key='')}
                 with self.subTest(env=env, kind=invalid), self.assertRaisesRegex(RenderError, 'no address to call'):
                     relations.evaluate(caller, world)
-                with self.assertRaisesRegex(RenderError, 'no address to call'):
-                    render.shared(world, self.platform)
             for grants in (dict(calls=('reader',)), dict(subscriptions=('reader.created',)),
                            dict(calls=('Bad',)), dict(subscriptions=('orders',)), dict(calls=('orders\n',))):
                 with self.subTest(env=env, grants=grants), self.assertRaisesRegex(RenderError, 'itself|malformed'):
@@ -106,9 +104,6 @@ class RelationTests(unittest.TestCase):
             self.assertEqual(variables[interface.PUBLISH_VARIABLE], 'seen')
             docs = files[Path(f'apps/reader/{env}/events.yaml')]
             self.assertEqual([doc['kind'] for doc in docs], ['Stream'])
-            user = render.shared(world, self.platform).nats_users[-1]
-            self.assertEqual(user, events.user('UAPP', env, 'reader', ['seen'], []))
-            self.assertFalse(any('missing' in permission for permission in user['permissions']['publish']['allow']))
 
     def test_connected_order_and_names_are_unchanged(self):
         each = Instance('reader', 'staging')
@@ -123,9 +118,6 @@ class RelationTests(unittest.TestCase):
         self.assertEqual([(d['metadata']['name'], d['spec']['streamName'], d['spec']['durableName']) for d in docs],
                          [('orders-paid', 'staging-orders', 'reader_paid'),
                           ('orders-created', 'staging-orders', 'reader_created')])
-        users = render.shared(world, self.platform).nats_users
-        self.assertEqual([u['nkey'] for u in users], ['UCONTROLLER', 'UCONSOLE', 'UORDERS', 'UAPP', 'UZULU'])
-        self.assertEqual(users[3], events.user('UAPP', 'staging', 'reader', [], [('orders', 'paid'), ('orders', 'created')]))
 
     def test_consumer_collisions_include_pending_and_are_scoped_to_subscriber_namespace(self):
         base = self.root
@@ -143,7 +135,7 @@ class RelationTests(unittest.TestCase):
                     write.prepare(self.root, {}, runner=FakeRunner())
                 self.assertEqual(self.snapshot(), before)
                 with self.assertRaisesRegex(RenderError, 'collides'):
-                    render.shared(world, self.platform)
+                    relations.evaluate(each, world)
         # The same name in different subscriber namespaces (including environments) is unambiguous.
         world = {Instance('first', 'staging'): entry(subscriptions=('a-b.c',)),
                  Instance('second', 'staging'): entry(subscriptions=('a.b-c',)),
@@ -219,13 +211,6 @@ class RelationTests(unittest.TestCase):
         consumer.write_text(consumer.read_text().replace('reader_created', 'reader_other'))
         self.assertTrue(any('durableName' in p for p in generated.problems(self.root)))
         write.apply(self.root, write.plan(self.root, world, self.platform))
-        users = self.root / events.USERS_FILE
-        users.write_text(users.read_text().replace('reader_created', 'reader_other'))
-        self.assertTrue(any(str(events.USERS_FILE) in p for p in generated.problems(self.root)))
-        users.write_text('invalid: [')
-        self.assertTrue(any(p.startswith(f'{events.USERS_FILE}: cannot read committed YAML') for p in generated.problems(self.root)))
-        users.unlink()
-        self.assertIn(f'{events.USERS_FILE}: rendered, not committed', generated.problems(self.root))
         world[each] = entry()
         self.save(world)
         (each.folder(self.root) / events.SECRET_FILE).unlink()

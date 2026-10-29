@@ -102,13 +102,15 @@ def instance_problems(root: Path, each: Instance, world: World, platform: Platfo
     return found
 
 
-def nats_problems(root: Path, world: World, users: list[dict] | None) -> list[str]:
-    """The NATS shared output and required identities; also used by the live verifier."""
+def nats_problems(root: Path, world: World, keyed: bool) -> list[str]:
+    """The identities every instance needs, where the platform has a broker.
+
+    The user list itself is v2's file (platform/nats/users.json), rendered from the snapshot and compared by
+    make check-v2; this checks only what v1 still owns: that every instance it renders has its key pair."""
     found = []
-    if users is not None:
+    if keyed:
         found += [f'{each}: has no NATS key; make app-sync creates it' for each, entry in world.items()
                   if not entry.settings.allocations.events_key or EVENTS_SECRET not in entry.encrypted]
-        found += file_problems(events.USERS_FILE, root / events.USERS_FILE, events.users_configmap(users))
     return found
 
 
@@ -134,7 +136,7 @@ def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance]
         shared = render.shared(world, platform)
     except RenderError as error:
         return [*found, f'shared files: cannot render: {error}']
-    found += nats_problems(root, world, shared.nats_users)
+    found += nats_problems(root, world, events.has_nats(root))
     if (root / RELOADER_FILE).is_file():
         try:
             watched = yamlio.load((root / RELOADER_FILE).read_text())['spec']['values']['reloader']['namespaces']

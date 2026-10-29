@@ -35,7 +35,7 @@ class PushMainTests(unittest.TestCase):
          .on('git', 'worktree', 'add', handler=add)
          .on('git', 'worktree', 'remove')
          .on('git', 'add')
-         .on('git', 'diff', '--cached', '--name-only', stdout='apps/a/staging/helmrelease.yaml\nplatform/nats/users.yaml')
+         .on('git', 'diff', '--cached', '--name-only', stdout='apps/a/staging/helmrelease.yaml\nplatform/auth/kustomization.yaml')
          .on('git', 'write-tree', stdout='tree0')
          .on('git', 'commit-tree', stdout='c' * 40)
          .on('git', 'push', handler=push)

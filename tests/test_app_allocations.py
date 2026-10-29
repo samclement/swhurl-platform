@@ -102,7 +102,6 @@ class AllocationTests(unittest.TestCase):
         for name in render.MANAGED_FILES:
             (self.each.folder(self.root) / name).unlink(missing_ok=True)
         self.each.unit_file(self.root).unlink()
-        (self.root / events.USERS_FILE).unlink()
         self.sync(runner=FakeRunner())  # unexpected calls (including SOPS) fail the test
         self.assertEqual(self.snapshot(), before)
 
@@ -192,10 +191,7 @@ class AllocationTests(unittest.TestCase):
         self.assertEqual(self.entry(shop), other)
         self.assertEqual(set(str(p.relative_to(self.root)) for p in changed), {
             'apps/orders/staging/instance.yaml', 'apps/orders/staging/events.sops.yaml',
-            'apps/orders/staging/helmrelease.yaml', str(events.USERS_FILE)})
-        users = (self.root / events.USERS_FILE).read_text()
-        self.assertNotIn(old.settings.allocations.events_key, users)
-        self.assertIn(after.settings.allocations.events_key, users)
+            'apps/orders/staging/helmrelease.yaml'})
         self.assertEqual((self.root / 'apps/orders/staging/events.yaml').read_bytes(), before['apps/orders/staging/events.yaml'])
         self.assertEqual(bucket.read_text(), 'false\n')
 

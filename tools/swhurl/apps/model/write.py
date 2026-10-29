@@ -153,8 +153,6 @@ def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance
             keep(path, text)
     except RenderError as error:
         raise EditError(str(error)) from None
-    if shared.nats_users is not None:
-        keep(events.USERS_FILE, events.users_configmap(shared.nats_users))
     for path, wanted, key, managed in (
             (REGISTRY_FILE, shared.units, 'resources', lambda name: Instance.of_unit(str(name).removesuffix('.yaml'))),
             (RELOADER_FILE, shared.reloaded, 'namespaces', Instance.of_namespace)):

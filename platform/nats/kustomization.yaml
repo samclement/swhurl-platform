@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - secret-controller.sops.yaml
-  - users.yaml
+  - users.json
   - helmrelease-nats.yaml
   - helmrelease-controller.yaml
   - networkpolicy.yaml

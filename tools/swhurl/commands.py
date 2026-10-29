@@ -227,6 +227,7 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command('check-docs', 'Compare the workstream registry and its status pages with Git: state, next gate, uncommitted work, cited commits, page-per-change', LOCAL,
                 'swhurl.docs:main'),
         Command('check-v2', 'Format, vet and test the Go v2 module, its design guardrails included (needs Go 1.26.0)', LOCAL),
+        Command('v2-users', "Render NATS's user list (platform/nats/users.json) from the records; v2 owns that file (needs Go 1.26.0)", LOCAL),
         Command('v2-report', 'What a change does to v2 against the merge base with BASE: API, budgets, packages, imports, files, exceptions',
                 LOCAL, takes=(Var('BASE', 'origin/main', required=False, default='origin/main'), Var('AFTER', '<rev>', required=False),
                               Var('FORMAT', 'json', required=False))),

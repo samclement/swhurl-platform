@@ -16,7 +16,7 @@ from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated, render, store
 from swhurl.apps.model import write as model_sync
-from swhurl.apps.model.draft import EVENTS_SECRET, Entry, Platform, RenderError
+from swhurl.apps.model.draft import Entry, Platform, RenderError
 from swhurl.apps.model.records import (
     Allocations,
     App,
@@ -185,21 +185,6 @@ class RenderTests(unittest.TestCase):
         files = self.render({each: entry}, each)
         self.assertIn('API_TOKEN', str(files[Path('apps/orders/staging/helmrelease.yaml')]))
 
-    def test_a_publisher_and_its_subscriber_share_one_user_list(self):
-        orders, shop = Instance('orders', 'staging'), Instance('shop', 'staging')
-        key = frozenset({EVENTS_SECRET})
-        world = {orders: Entry(App('p'), web(publishes=('created',)), Settings(allocations=Allocations(events_key='UORDERS')), key),
-                 shop: Entry(App('p'), web(), Settings(grants=Grants(subscriptions=('orders.created',)), allocations=Allocations(events_key='USHOP')), key)}
-        users = render.shared(world, dataclasses.replace(self.platform, controller_key='UCONTROL')).nats_users
-        self.assertEqual([user['nkey'] for user in users], ['UCONTROL', 'UORDERS', 'USHOP'])
-        self.assertIn('$JS.ACK.staging-orders.shop_created.>', users[2]['permissions']['publish']['allow'])
-        files = self.render(world, shop)
-        self.assertEqual([doc['kind'] for doc in files[Path('apps/shop/staging/events.yaml')]], ['Consumer'])
-
-
-class ShadowTests(unittest.TestCase):
-    """What today's commands write, the model reads back and renders again unchanged."""
-
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -318,7 +303,6 @@ class ShadowTests(unittest.TestCase):
             (record.parent / 'events.sops.yaml').write_text('sops: {}')
         model_sync.sync(self.root)
         self.assertIn('hello-prod', (self.root / render.RELOADER_FILE).read_text())
-        self.assertIn('UPROD', (self.root / 'platform/nats/users.yaml').read_text())
         prod = self.root / 'apps/hello/prod'
         unrelated = {'notes.yaml': 'kind: Note', 'other.sops.yaml': 'sops: {}', 'data/db': 'keep me',
                      'offers/notes.txt': 'not an offer'}
@@ -339,7 +323,6 @@ class ShadowTests(unittest.TestCase):
         self.assertTrue((prod.parent / 'app.yaml').is_file(), 'another environment still owns the App record')
         self.assertNotIn('hello-prod', (self.root / render.RELOADER_FILE).read_text())
         self.assertIn('namespaces: [ingress, logging, console, hello-staging]', (self.root / render.RELOADER_FILE).read_text())
-        self.assertNotIn('UPROD', (self.root / 'platform/nats/users.yaml').read_text())
         registry = (self.root / render.REGISTRY_FILE).read_text()
         self.assertNotIn('app-hello-prod.yaml', registry)
         self.assertIn('app-hello-staging.yaml', registry)

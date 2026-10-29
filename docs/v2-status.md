@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the operator's approval of slice 3's live half: the `users.yaml` cutover and one event-using worker migrated
+Gate: the first event-using worker's live migration, then the minting slice for the two instances without a pair
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -15,6 +15,8 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 **Approved 25 October 2026: phase 5 observation, offline half only** — the pure evidence projection and the first real adapter, with no cluster read, no credential, no command and nothing published. The [slice record](#slice-record-phase-5-observation-offline-half) below states what it does and does not do. Everything else about that phase, including reference derivation, a credential source, the report envelope and any live read, is still not approved.
 
 **Approved 26 October 2026: restore, option 1 then option 2** — v2 first *plans and verifies* a restore while v1 performs it (implemented, below), then v2 performs it (**2a**: v2 orchestrates, a pod decrypts; the operator chose this over a vendored age dependency). 2a's write primitives are in, and its restore Job and sequence are now implemented offline (below).
+
+**Approved 29 October 2026: slice 3's cutover — v2 owns NATS's user list** — `platform/nats/users.json` is v2's output now, v1's generator is deleted, and the Render workflow regenerates it, so the list the broker serves can no longer be a second writer's opinion. Implemented and checked offline, then applied; see [the record](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026).
 
 **Approved 29 October 2026: slice 3, events — part two implemented offline** — on the operator's principle that v2 favours a clean contract over anything that preserves v1's: the release states what it publishes, the instance states its broker identity and the events it receives, the profile states the broker, and an instance that signs in renders its variables, its stream and its consumers. The seed travels as the encrypted file it already is — v2 lists it, copies it and never reads it. Nothing was applied; the cutover and the first migrated worker are the next gate. See [the record](#slice-record-events-part-two-the-instance-side-29-october-2026).
 
@@ -58,7 +60,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** delivery is manual (compile, commit, push); v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 cannot **mint** a broker identity (it adopts the pair a predecessor already has), still writes `users.yaml` through v1, renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+**Not yet true, and what would make it true:** delivery is manual (compile, commit, push); v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 cannot **mint** a broker identity (it adopts the pair a predecessor already has), renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); the egress cutover, which changes live outbound traffic and needs the grants recorded before it can refuse the rest; and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -78,7 +80,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Backup | **Done and proved live 27 October 2026**: rendered, both facts observed live, a restore planned live, and **v2 performed one**: the age-key and read-URL Secret, the Job from the backup image, the sequence with its undo, the `v2-restore` version-2 report, and `swhurl-try-10` staging restored over its newest archive in 30 seconds | [render](iteration-2-plan.md#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026), [job](iteration-2-plan.md#the-backup-observation-implemented-offline-26-october-2026), [archive](iteration-2-plan.md#the-object-store-read-implemented-26-october-2026), [restore](iteration-2-plan.md#the-restore-v2-performs-option-2a-offline-half--27-october-2026) |
 | Always-on instance surface | done and live 29 October 2026: telemetry, notifications and the team label, with the app record owning the team; both v2-owned instances rolled at `1bca7990` | [slice](#slice-record-the-always-on-instance-surface-29-october-2026) |
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
-| Events | parts one and two, offline 29 October 2026: the user list, and the instance side — variables, stream, consumers, the unit's broker dependency and `decryption`, and the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026) |
+| Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
 | 7. Selective replacement | two live: `swhurl-try-11` staging and, with its own volume, `swhurl-try-10` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
@@ -901,6 +903,36 @@ seeds were pruned with their v1 units and no v2 tree holds them.
 - **Next gate:** the live half — cut `platform/nats/users.yaml` over to v2's renderer (v1's writer retired, and CI
   regenerating it), then migrate one event-using worker and prove an event flows, then the minting slice for the
   two instances that have no pair and for rotation.
+
+## Slice record: the cutover, v2 owns the user list (29 October 2026)
+
+**Approved by the operator's "go ahead".** Part one rendered the list; this makes it the list the platform serves.
+
+- **Outcome:** `platform/nats/users.yaml` is replaced by `platform/nats/users.json`, v2's first platform-wide
+  *generated* object, listed by `platform/nats/kustomization.yaml` and read by the broker's HelmRelease as before.
+  The content is the same list: 17 users, the same keys, order and permissions (the part-one comparison proved it;
+  after the cutover `make check-v2` compares the committed file with the render byte for byte).
+- **The writer:** v1's `models/events.py:users`, `events.user`/`controller_user`/`console_user`/`users_configmap`
+  and the `Platform` fields that fed them are deleted, so `make app-sync` no longer writes the file, and
+  `make check-apps` no longer compares it. `make v2-users` renders it: it snapshots the working tree, builds the Go
+  tool and writes that one file. The Render workflow runs both (`app-sync`, then `make v2-users`) and gains
+  `actions/setup-go`, so a change to any instance's key, publications or subscriptions reaches the file in the
+  same rendered commit.
+- **The eight invariants:** 1. **v1 changes deliberately** — its generator is gone; nothing else changed, and every
+  other v1 check, render and live test is untouched; `make check` passes (1022 tests). 2. **Pure unchanged** —
+  no v2 package's effects changed. 3. **No identity moved.** 4. **Refusals unchanged** — `make check-v2` reports a
+  stale file rather than a refusal. 5. **Failure paths** — the file's content was compared with v1's before the
+  switch (same document, same users), and `check-rendered.sh` now compares bytes with what the records render.
+  6. **Scope** — the file only; the broker's HelmRelease, its Deployment and the instances' own manifests are
+  untouched. 7. **Live: applied and checked** — the ConfigMap was replaced, the HelmRelease upgraded and NATS
+  reloaded with the same users; every app kept signing in (below). 8. **Recorded here**, in
+  [services](services.md#nats), [commands](commands.md) and the registry.
+- **Evidence:** `REQUIRE_HELM=1 make check-v2`, `make check` (1022 tests), `make check-lint`, `make check-repo`
+  (the unit renders with `users.json`), `make -s check-docs`, `git diff --check`. Live: `__COMMIT__` pushed and
+  reconciled; the NATS ConfigMap is v2's file; `make verify-platform` passed; **no app logged an authorisation
+  failure** in the window (checked in every instance namespace) and the number of users NATS serves is unchanged.
+- **Next gate:** migrate the first event-using worker (`demo-notifier` staging, which receives `demo-orders.created`
+  from a v1 publisher) and prove an event flows; then the minting slice.
 
 ## Resume
 

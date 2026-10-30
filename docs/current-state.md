@@ -2,6 +2,42 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The first image delivered by v2 (30 October 2026)
+
+The templates' release (TypeScript `v0.2.21`, Kotlin `v0.2.20`), the catalogue pin (`ef27e4a6`) and a rebuild of
+each app's image gave the three v2-owned staging instances an image that states what it needs **and** the commit it
+was built from: `swhurl-try-11` `60-8811403` (revision `8811403f…`), `swhurl-try-10` `66-034b52d`
+(`034b52da…`, `database: sqlite`, publishes `visited`) and `demo-notifier` `36-bf1c7df` (`bf1c7df4…`, worker,
+`memoryMiB: 192`). Both labels were read back from GHCR anonymously before the delivery.
+
+- **Two dispatches failed first, each for a real reason, and neither wrote** (nothing was pushed from a failed
+  run): the first with `invalid: source.commit` for all three — the tag carries seven characters of the commit
+  and a release states forty, so the images now also state `org.opencontainers.image.revision` (`ef27e4a6`); the
+  second with the run's own check: `platform/nats/users.json` was not what the new records render, because
+  `swhurl-try-10`'s migrated release stated no `publishes` and its new one states `visited`, which the broker's
+  user list carries (`04274fa0` renders both platform files the records decide, in the same commit).
+- **The delivery** ([run](https://github.com/samclement/swhurl-platform/actions/runs/41050264601), started by hand
+  because the dispatch for those images had already failed twice): `3 changed, 0 unchanged, 0 refused, 0 failed`,
+  and the commit `160f4eb6` — three record pairs, four compiled files and `platform/nats/users.json`. The
+  `swhurl-try-10` folder gained `stream.json`: the release's publications are a fact of the image, and the stream
+  and the broker's permission for `<env>-swhurl-try-10.visited` followed from it in the same commit.
+- **Flux applied it**: `make flux-reconcile` reached `160f4eb6` on every unit that holds these instances, and then
+  `c06bd971` (Validate's console pin); each Deployment is `1/1 ready` and `make app-status` reports
+  `running: matches desired` for the delivered digest (`…a23497c7…`, `…827f8705…`, `…6f1c2f21…`).
+- **v2 observed its own instance**: `swhurl-v2 observe` for `swhurl-try-11` at the unit's applied revision
+  `c06bd971` returns **`running`** — unit reconciled and at the intended revision, release settled, workload
+  present, image running, ready, replicas as intended. A first run passed `160f4eb6` and correctly reported
+  `not_running: unit.revision different`, because the unit had already moved to the console's pin.
+- **A repeated run is a no-op**: a manual run after the delivery reported `0 changed, 3 unchanged, 0 refused,
+  0 failed` and pushed nothing.
+
+**What this proves:** a v2-owned staging instance follows the images its own repository publishes, end to end and
+without a person: the image's own declaration and revision, the platform's tag policy and digest, v2's records and
+files, the broker's permission, one commit, Flux, the pod. **Not exercised:** a refused image on this path live
+(the unit tests hold the refusals), a promotion of a v2-owned instance to production (v1 owns promotion and cannot
+read v2 records), and a lost push during a delivery. `make verify-platform` still builds its Image Automation list
+from `apps/`, so it warns that these three have no v1 release record; v2's own `observe` is what reads them.
+
 ## The three v2-owned staging instances report their images (30 October 2026)
 
 `6a3715cd` recompiled their units with the `ImageRepository`/`ImagePolicy` pair and the

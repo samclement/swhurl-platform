@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: rebuilt images carry the declaration and revision labels, the image Alert's dispatch delivers them, and a live image travels dispatch → record → compile → Flux
+Gate: the next slice's approval — the first thing a real app needs is a promotion path (a v2 promotion, or v1's promotion and the console reading v2 records), then secrets
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -69,11 +69,11 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | App kinds | A worker release compiles to an instance that serves nothing, with every other fact intact | **Done, offline 29 October 2026** (the worker kind); `job` still refused |
 | Events | The server's user list, and per instance its key, stream, consumers and seed | **Parts one and two, offline 29 October 2026**: the user list renders identically to the platform's, and a keyed instance renders its variables, stream, consumers and unit; the seed is the encrypted file v2 copies without reading |
 | Minting a broker identity | v2 can create a pair, not only adopt one: the seed is encrypted to the platform's recipient and the record states the public key | **Done, live 29 October 2026**: `swhurl-v2 mint`, used for the two v2-owned instances that had no pair; rotation is the same command with `--rotate` |
-| Image automation | A migrated staging instance following its published images | **The pair is live 30 October 2026** and reports each repository; the delivery path is offline: `swhurl-v2 deploy` resolves the newest tag, reads the image's declaration label, refuses what the instance cannot take, and writes the records and files. The deployed images predate the label, whose producer is released in both templates (TypeScript `v0.2.20`, Kotlin `v0.2.19`, 30 October 2026: the build's `image-declaration` command, from `swhurl.yaml` and its events document); the [v2 Deploy workflow](v2-status.md#slice-record-image-automations-workflow-30-october-2026) delivers every v2-owned staging instance from those records by hand, and its hourly run and the image Alert are added with the first labelled image |
+| Image automation | A migrated staging instance following its published images | **Done, live 30 October 2026**: all three v2-owned staging instances followed their images end to end — the image states what it needs and the commit it was built from, the platform's tag policy and digest are read anonymously, v2 selects and compiles, the [v2 Deploy workflow](v2-status.md#slice-record-image-automations-workflow-30-october-2026) commits the records, the files and the broker's new permission, Flux applies them and the pods run the delivered digest; a repeated run is a no-op. The images come from the templates' shared build (TypeScript `v0.2.21`, Kotlin `v0.2.20`); auto-merge is not modelled |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** delivery is manual (compile, commit, push), except a v2-owned staging instance's image selection, which is offline until the Deploy workflow calls it; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+**Not yet true, and what would make it true:** delivery is manual (compile, commit, push) for everything except a v2-owned staging instance's images, which the v2 Deploy workflow delivers; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); the egress cutover, which changes live outbound traffic and needs the grants recorded before it can refuse the rest; and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -95,7 +95,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
 | Broker identity minting | done and live 29 October 2026: `swhurl-v2 mint` derives the pair in the pure model, encrypts the seed through `adapters/sops` (the one command v2 starts) to `sops.recipient`, writes it beside the record and then the record; the two v2-owned instances without a pair were minted, and `make v2-users` and the Reloader list gained them | [slice](#slice-record-minting-a-broker-identity-29-october-2026) |
 | Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
-| Image automation | the pair is **live 30 October 2026** (three policies Ready and reporting, no pod restarted); the label's producer (`swhurl image-declaration`) and the revision label are released and asserted per app type in both templates (TypeScript `v0.2.21`, Kotlin `v0.2.20`), and the v2 Deploy workflow delivers `v2-records/<app>/staging` — `make v2-deploy` in a bot worktree, checked with `make check-v2`; v1's Deploy now ends early for those apps. **First live delivery: the tag carries only 7 characters of the commit and a release states 40, so the image now states its revision too (below); nothing has been delivered yet** | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
+| Image automation | **done and live 30 October 2026**: `swhurl-v2 deploy` (one instance or every `v2-records/<app>/staging`), the v2 Deploy workflow started by the image Alert and hourly, the declaration and revision labels from both templates (`v0.2.21` / `v0.2.20`), the broker's user list rendered in the same commit, and the three staging instances running their delivered digests (`make app-status` matches, `swhurl-v2 observe` says `running`) | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | 7. Selective replacement | three live: `swhurl-try-11` staging, `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 
@@ -1279,16 +1279,13 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
      the records' freshness, not by the Kubernetes schemas; both the hourly run and the dispatch trigger are
      deliberately absent until a labelled image exists, because a delivery now refuses `declaration: absent` and
      would redden every run for a known refusal; `v2-records/<app>/prod` is not delivered.
-  7. **Offline is not live** — nothing was applied. The first dispatch found a contract defect: the tag carries
-     seven characters of the commit, a release states forty, and the deploy supplied the tag's suffix, so every
-     delivery was refused `invalid: source.commit` ([the fix](#slice-record-the-image-states-the-commit-it-was-built-from-30-october-2026)).
-     The command was exercised against the real registry and the
-     committed tree, read-only: `swhurl-try-10` staging unchanged, `demo-notifier` and `swhurl-try-11` staging
-     refused `declaration: absent`, nothing written; `make v2-deploy` did the same through the target and left the
-     checkout clean. The workflow itself was then run by hand ([the run](https://github.com/samclement/swhurl-platform/actions/runs/41023347779)): it set up Go, the chart and sops,
-     delivered the same three outcomes, found nothing to push, printed `Nothing changed.` and failed the run — the
-     refusal this gate expects until an image carries the label. Its check (`make check-v2` inside the bot's
-     worktree) does not run for a delivery that changes nothing, so it is exercised by a real delivery.
+  7. **Offline is not live** — it is now live: two failed dispatches and one delivery followed
+     ([evidence](current-state.md#the-first-image-delivered-by-v2-30-october-2026)). The first refused every
+     instance with `invalid: source.commit` (a seven-character tag against a forty-character release field) and the
+     second was refused by this slice's own check (the broker's user list the new records decide); neither wrote.
+     The third delivered all three instances and pushed `160f4eb6`; Flux applied it, `make app-status` reports the
+     delivered digests, `observe` says `running`, and a repeated run reports `0 changed, 3 unchanged` and pushes
+     nothing.
   8. **Recorded in the same change** — this page, [apps](apps.md#deploy-a-new-image), [commands](commands.md),
      [architecture](architecture.md#how-changes-reach-the-cluster), the plan's row and gap list, and the workstream
      registry.
@@ -1338,7 +1335,8 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
 - **Evidence:** `make check-v2` (kernel, orchestration, cmd and archtest, including the new rule and the
   seven-character tag), both templates' Template workflows green with the revision assertion, `make check-templates`
   against the new pins.
-- **Next gate:** the apps rebuilt onto the new template versions, then the live delivery.
+- **Next gate:** done — the apps were rebuilt onto the new template versions and the delivery followed
+  ([evidence](current-state.md#the-first-image-delivered-by-v2-30-october-2026)).
 
 
 ## Resume

@@ -200,7 +200,7 @@ cannot read is exit 1; and a refused image leaves the running one selected. With
 for every `v2-records/<app>/staging`: one instance's refusal or failure does not stop the others, the exit status is
 the worst outcome, and an instance takes the allocation document only when it records a grant for it ([the
 workflow](v2-status.md#slice-record-image-automations-workflow-30-october-2026)). Nothing dispatches it yet: the
-image Alert starts it once a rebuilt image carries the label.
+image Alert starts it, and the hourly run begins, once a rebuilt image carries the label.
 
 ### Strict document boundary
 

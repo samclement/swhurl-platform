@@ -755,8 +755,8 @@ names and minimum memory, with every absent fact left out. It states that contra
 holds an image that adds one rather than running it without. `swhurl-v2 deploy` reads the label with the
 manifest, refuses a need the instance cannot take, and writes v2's records and files.
 
-The [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) runs it for every `v2-records/<app>/staging`:
-hourly and by hand now, and from the image webhook once a rebuilt image carries the label. Each instance is one
+The [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) runs it for every `v2-records/<app>/staging`: by
+hand now, and hourly and from the image webhook once a rebuilt image carries the label. Each instance is one
 delivery — a refused or failed one keeps its image while the others still deploy, and the run fails after they
 are pushed — and the commit (`make v2-deploy`) is checked with `make check-v2` before it is pushed, because the
 bot's push starts no workflows. An instance takes its allocation only when the allocation records a grant for

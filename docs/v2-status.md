@@ -1279,10 +1279,13 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
      the records' freshness, not by the Kubernetes schemas; the scheduling trigger is deliberately absent until a
      labelled image exists, because a dispatch now refuses `declaration: absent` and would redden every policy
      reconcile; `v2-records/<app>/prod` is not delivered.
-  7. **Offline is not live** — nothing was applied and the workflow has not run. The command was exercised against
-     the real registry and the committed tree, read-only: `swhurl-try-10` staging unchanged, `demo-notifier` and
-     `swhurl-try-11` staging refused `declaration: absent`, nothing written; `make v2-deploy` did the same through
-     the target and left the checkout clean.
+  7. **Offline is not live** — nothing was applied. The command was exercised against the real registry and the
+     committed tree, read-only: `swhurl-try-10` staging unchanged, `demo-notifier` and `swhurl-try-11` staging
+     refused `declaration: absent`, nothing written; `make v2-deploy` did the same through the target and left the
+     checkout clean. The workflow itself was then run by hand (`41023347779`): it set up Go, the chart and sops,
+     delivered the same three outcomes, found nothing to push, printed `Nothing changed.` and failed the run — the
+     refusal this gate expects until an image carries the label. Its check (`make check-v2` inside the bot's
+     worktree) does not run for a delivery that changes nothing, so it is exercised by a real delivery.
   8. **Recorded in the same change** — this page, [apps](apps.md#deploy-a-new-image), [commands](commands.md),
      [architecture](architecture.md#how-changes-reach-the-cluster), the plan's row and gap list, and the workstream
      registry.

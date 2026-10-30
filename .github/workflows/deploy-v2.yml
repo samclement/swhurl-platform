@@ -45,6 +45,13 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      # make check-v2's freshness check renders a snapshot of the tree, which reads YAML through PyYAML.
+      - name: Install the checks' dependencies
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --upgrade 'pip>=25.1'
+          python3 -m pip install --group check
+
       - name: Setup Go
         uses: actions/setup-go@v7
         with:

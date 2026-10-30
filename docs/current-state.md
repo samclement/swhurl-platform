@@ -2,6 +2,37 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The first live promotion: swhurl-try-11 production moves to v2 (30 October 2026)
+
+`swhurl-try-11` production left v1 and then followed its staging release: the first app whose **production** v2
+owns, and the first promotion between two v2-owned instances.
+
+- **The orphan (`178ebb24`).** v1's unit was made `deletionPolicy: Orphan` through a kustomize patch, because the
+  Render workflow rewrites generated unit files and dropped the same field when it was edited into the file. After
+  `make flux-reconcile` the live object read `Orphan` and `Ready=True` at `main@178ebb24…`.
+- **The migration (`ea0d6f32`).** v1's production records and unit were removed and the v2 unit at
+  `./v2-apps/instances/swhurl-try-11/prod` took the same namespace and HelmRelease; the orphaned unit was removed
+  without pruning. The pod kept the v1 digest `sha256:99696c15…`, `make app-status` reported Healthy, and
+  `swhurl-v2 observe` said `running`. TLS was `False` for one issuance and then `True`; signed out, HTTPS
+  answered `302` to the shared sign-in and HTTP `301`.
+- **The promotion (`3515ae99`).** `swhurl-v2 promote` moved production from `rel-sha256:bc8e…` /
+  `sha256:99696c15…` to staging's `rel-sha256:8263…` / `sha256:a23497c7…`, with production's configuration,
+  grants, calls, storage and broker identity unchanged. Flux applied `Helm upgrade … v7`; `make app-status`
+  reported Healthy, `1/1` ready on the new digest and TLS `True`, and `swhurl-v2 observe` said `running`. A second
+  `promote` with the new revision printed `changed: false` and wrote no file. Signed out, HTTPS answered `302`
+  and HTTP `301` as before.
+- **The seed fix.** The migration now writes an instance's encrypted `events.sops.yaml` beside its record as well
+  as beside its manifests, before the record that names the public key. `v2-records/swhurl-try-11/prod` and
+  `v2-apps/instances/swhurl-try-11/prod` hold the same ciphertext, and the record folder recompiles from Git.
+- **The cost at the v1 callees.** Moving production out of v1 removed it from v1's graph: the Render workflow
+  deleted `apps/swhurl-try-11/app.yaml` and removed `swhurl-try-11` from `SWHURL_ALLOWED_CALLERS` in
+  `apps/swhurl-try-10/prod` and `apps/swhurl-try-12/prod` (`ea0d6f32`). The v2 caller still renders its addresses
+  and tokens, but those v1 callees no longer accept its identity, so its calls to them are expected to fail until
+  the callees migrate or v1 reads v2's records. The separate v1-caller/v2-callee gap is unchanged.
+- **Not exercised:** a call from production to either v1 callee (expected refused), a rollback, a first promotion
+  that creates production, and the cutover's failure paths (interrupted between orphan and adoption, or a failed
+  promotion).
+
 ## The first image delivered by v2 (30 October 2026)
 
 The templates' release (TypeScript `v0.2.21`, Kotlin `v0.2.20`), the catalogue pin (`ef27e4a6`) and a rebuild of

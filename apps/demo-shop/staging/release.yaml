@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/demo-shop
-  tag: 73-1bb3b37
-  digest: sha256:b2fe221d013296344c50eb6c4c2eec8f794644a0a32e90e743b87e10ecb9fc4c
+  tag: 79-ba72583
+  digest: sha256:de3480e55f7a241d0c5c2d286a3490b101e5cad8211b0967a681f36d6479ffa2
 kind: web
 uid: 65532
 stack: typescript
@@ -14,4 +14,4 @@ database: sqlite
 description: 'Demo: the shop people open; a page that places orders in demo-orders and keeps its own purchase log'
 publishes:
 - visited
-offers: 1bb3b37
+offers: ba72583

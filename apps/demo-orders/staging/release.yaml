@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/demo-orders
-  tag: 56-a2acae1
-  digest: sha256:9157adb50e443e15c23fe56bc9ca35f02f5f460e02d81bbd1e59133c9af7a64f
+  tag: 62-ea1c8b3
+  digest: sha256:9a51b2339b4d1b4726116e86011268a172bb6b4030052db35e21e74329eac4f9
 kind: web
 uid: 65532
 stack: typescript
@@ -15,4 +15,4 @@ description: 'Demo: takes orders, keeps them in SQLite, describes its API and pu
 apiPath: /openapi.json
 publishes:
 - created
-offers: a2acae1
+offers: ea1c8b3

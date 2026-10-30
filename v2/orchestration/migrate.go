@@ -91,8 +91,8 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 	result := Migration{Facts: facts, Release: release, Instance: spec, App: app, Compilation: compiled,
 		Rendered: rendered, Egress: egress, UnmetCalls: unmet(facts.Calls, callees(rendered)),
 		UnmetCallers: unmet(facts.Allows, rendered.Callers)}
-	written := append(recordFiles(facts.Application, facts.Environment, appDocument, releaseDocument, instanceDocument),
-		files...)
+	written := append(recordFiles(facts.Application, facts.Environment, appDocument, releaseDocument, instanceDocument,
+		inputs.EventsSecret), files...)
 	result.Written, err = writer.Write(destination, written)
 	return result, err
 }
@@ -146,14 +146,18 @@ func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpe
 }
 
 // recordFiles is the records a migration writes: one app record and the environment's pair, under the root
-// the snapshot exporter reads.
-func recordFiles(application, environment string, app, release, instance []byte) []kernel.File {
+// the snapshot exporter reads. An instance with a broker identity also keeps its encrypted seed beside the
+// record, before the instance that names its public key, so the record folder is what a later compile reads.
+func recordFiles(application, environment string, app, release, instance, eventsSecret []byte) []kernel.File {
 	folder := recordsRoot + "/" + application + "/" + environment
-	return []kernel.File{
+	records := []kernel.File{
 		{Path: recordsRoot + "/" + application + "/app.json", Document: app},
 		{Path: folder + "/release.json", Document: release},
-		{Path: folder + "/instance.json", Document: instance},
 	}
+	if len(eventsSecret) > 0 {
+		records = append(records, kernel.File{Path: folder + "/" + kernel.EventsSecretFile, Document: eventsSecret})
+	}
+	return append(records, kernel.File{Path: folder + "/instance.json", Document: instance})
 }
 
 // callees is the names a resolution's calls point at: what a predecessor's own declarations are compared

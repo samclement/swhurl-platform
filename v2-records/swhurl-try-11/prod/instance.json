@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "application": "swhurl-try-11",
+  "environment": "prod",
+  "release": "rel-sha256:bc8e950be6de80da5b616db500bc32346720a98ad8cc07a0319b17b18e1a6379",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "authenticated-web"
+  },
+  "bindings": {},
+  "storage": {},
+  "calls": [
+    "swhurl-try-10",
+    "swhurl-try-12"
+  ],
+  "events": {
+    "key": "UCOOLQPW6NCFC3Q4QEOREKMGR3UCBZWRJJCC5TVP67ZTFZIBY6EM7VN2"
+  }
+}

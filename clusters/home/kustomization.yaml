@@ -21,3 +21,17 @@ resources:
   - app-swhurl-try-32-staging.yaml
   - app-swhurl-try-31-staging.yaml
   - app-swhurl-try-11-staging.json
+
+# The v1 unit of swhurl-try-11 production is made Orphan before v2 takes it over, so removing it cannot prune
+# the resources v2 adopts. A patch, not an edit to the generated unit: the Render workflow rewrites the unit
+# file from the v1 records and would drop the field.
+patches:
+  - target:
+      group: kustomize.toolkit.fluxcd.io
+      version: v1
+      kind: Kustomization
+      name: app-swhurl-try-11-prod
+    patch: |-
+      - op: add
+        path: /spec/deletionPolicy
+        value: Orphan

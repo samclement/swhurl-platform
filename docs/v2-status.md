@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the Deploy workflow calls `swhurl-v2 deploy` for v2-owned staging instances, then a live image
+Gate: a template release writes the declaration label, then the Deploy workflow calls `swhurl-v2 deploy` for v2-owned staging instances, then a live image
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -20,7 +20,7 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 
 **Approved 29 October 2026: slice 3's cutover — v2 owns NATS's user list** — `platform/nats/users.json` is v2's output now, v1's generator is deleted, and the Render workflow regenerates it, so the list the broker serves can no longer be a second writer's opinion. Implemented and checked offline, then applied; see [the record](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026).
 
-**Approved 29 October 2026: image automation's offline half** — the operator said go ahead on the gate. v2 renders the `ImageRepository`/`ImagePolicy` pair into a staging instance's unit, and gains `swhurl-v2 deploy`: the platform's tag policy picks the newest tag, a read-only registry adapter resolves its `linux/amd64` manifest and reads the declaration the build wrote into the image's config labels, the instance refuses a fact it cannot take, and the use case selects, compiles and writes the pair and the files in one effect. **No workflow calls it and no live image has travelled it**; that is the next gate. See [the record](#slice-record-image-automations-offline-half-29-october-2026).
+**Approved 29 October 2026: image automation's offline half** — the operator said go ahead on the gate. v2 renders the `ImageRepository`/`ImagePolicy` pair into a staging instance's unit, and gains `swhurl-v2 deploy`: the platform's tag policy picks the newest tag, a read-only registry adapter resolves its `linux/amd64` manifest and reads the declaration the build wrote into the image's config labels, the instance refuses a fact it cannot take, and the use case selects, compiles and writes the pair and the files in one effect. **The pair is live (30 October 2026) and reporting; no workflow calls `deploy` and no image has travelled it**, and the deployed images predate the declaration label. That is the next gate. See [the record](#slice-record-image-automations-offline-half-29-october-2026).
 
 **Approved 29 October 2026: the telemetry export** — the operator said go ahead on the slice found while testing the rotation. A v2-owned instance's policy states `Egress` and admitted only DNS, its broker and its callers, so the collector its env names (`http://$(HOST_IP):4318`, a host-network DaemonSet) was refused. The profile now states the block that address is in (`telemetry.nodeCIDR`, with a telemetry block required to state it), and a reporting image's policy admits that block on the endpoint's own port. Nothing else about the policy changed: an instance that reports nowhere gets no such rule, and everything else is still denied. See [the record](#slice-record-the-telemetry-export-29-october-2026).
 
@@ -69,7 +69,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | App kinds | A worker release compiles to an instance that serves nothing, with every other fact intact | **Done, offline 29 October 2026** (the worker kind); `job` still refused |
 | Events | The server's user list, and per instance its key, stream, consumers and seed | **Parts one and two, offline 29 October 2026**: the user list renders identically to the platform's, and a keyed instance renders its variables, stream, consumers and unit; the seed is the encrypted file v2 copies without reading |
 | Minting a broker identity | v2 can create a pair, not only adopt one: the seed is encrypted to the platform's recipient and the record states the public key | **Done, live 29 October 2026**: `swhurl-v2 mint`, used for the two v2-owned instances that had no pair; rotation is the same command with `--rotate` |
-| Image automation | A migrated staging instance following its published images | **Offline 29 October 2026**: a staging unit renders the pair, and `swhurl-v2 deploy` resolves the newest tag with the platform's policy, reads the image's declaration label, refuses what the instance cannot take, and writes the records and files. The workflow that calls it, and a live image, are the next gate |
+| Image automation | A migrated staging instance following its published images | **The pair is live 30 October 2026** and reports each repository; the delivery path is offline: `swhurl-v2 deploy` resolves the newest tag, reads the image's declaration label, refuses what the instance cannot take, and writes the records and files. The deployed images predate the label, so a template release and a rebuilt image, then the workflow, are the next gate |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
@@ -95,7 +95,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
 | Broker identity minting | done and live 29 October 2026: `swhurl-v2 mint` derives the pair in the pure model, encrypts the seed through `adapters/sops` (the one command v2 starts) to `sops.recipient`, writes it beside the record and then the record; the two v2-owned instances without a pair were minted, and `make v2-users` and the Reloader list gained them | [slice](#slice-record-minting-a-broker-identity-29-october-2026) |
 | Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
-| Image automation | offline 29 October 2026: the staging pair and `swhurl-v2 deploy` (tag policy, registry adapter, declaration, refusals, one write); the workflow and a live image remain | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
+| Image automation | the pair is **live 30 October 2026** (three policies Ready and reporting, no pod restarted); `swhurl-v2 deploy` is offline, and the deployed images predate the declaration label | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | 7. Selective replacement | three live: `swhurl-try-11` staging, `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 
@@ -1217,8 +1217,12 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
      a new image; a third-party image renders no pair and is not automated; production renders none; the
      declaration carries no offers (`provides`, `flags`), because what an app offers is still unmodelled; and an
      image that drops an event another instance subscribes to is not yet refused across instances.
-  7. **Offline is not live** — no live image travelled the path and no cluster read was made. The pair reaches
-     Git with this commit, which is what makes the repositories visible again; the next gate is the workflow.
+  7. **Offline is not live** — the pair itself is **live, 30 October 2026**: the three policies are Ready and
+     report their newest tags (the repositories scan; no pod restarted), the v1 Deploy workflow ran for the three
+     reports and wrote nothing, and `verify-platform` passed. The delivery path was exercised read-only against
+     the real registry: `swhurl-try-10` resolved to its record's platform manifest (no change); the other two
+     refused `declaration: absent` because their images predate the label. No image travelled the path and no
+     record was written ([evidence](current-state.md#the-three-v2-owned-staging-instances-report-their-images-30-october-2026)).
   8. **Recorded in the same change** — this page, the plan's declaration contract and gap list, [apps](apps.md#deploy-a-new-image),
      the workstream registry and the adapter list.
 - **Evidence:** `REQUIRE_HELM=1 make check-v2` (20 packages; the chart render and the four rendered platform
@@ -1226,9 +1230,10 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
   layer-1 packages; API +36/−1; new budget entries, none raised) and `make -s check-docs`. Coverage: `kernel`
   93.2%, `adapters/registry` 82.2%, `orchestration` 82.9%, CLI 85.8%. The registry adapter's contract runs against
   recorded answers and its fake; the pair is compared with v1's committed `image-automation.yaml` field for field.
-- **Next gate:** the Deploy workflow calls `swhurl-v2 deploy` for v2-owned staging instances (leaving v1's path
-  for v1's apps), then a real image from a throwaway repository travels dispatch → record → compile → Flux, with
-  `make app-status` and `make verify-platform` as evidence.
+- **Next gate:** a template release writes the declaration label (both stacks), an image is rebuilt with it, then
+  the Deploy workflow calls `swhurl-v2 deploy` for v2-owned staging instances (leaving v1's path for v1's apps)
+  and a real image travels dispatch → record → compile → Flux, with `make app-status` and `make verify-platform`
+  as evidence.
 
 ## Resume
 

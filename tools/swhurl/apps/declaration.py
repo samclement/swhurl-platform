@@ -32,7 +32,7 @@ from dataclasses import dataclass
 import yaml
 
 from swhurl import yamlio
-from swhurl.apps.contract import DEFAULT_DATABASE_SIZE, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
+from swhurl.apps.defaults import DEFAULT_DATABASE_SIZE, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
 from swhurl.apps.instance import ENVIRONMENTS
 from swhurl.apps.model import records
 

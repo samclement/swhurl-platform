@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl.apps import contract, ops, state
+from swhurl.apps.defaults import secret_key_problem
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import records as app_records
@@ -201,7 +202,7 @@ def first_production(root: Path, world: World, app: str, *, host: str | None = N
         # Every name the image needs and every value staging has: never the values themselves.
         stored = contract.stored_secrets((instance / contract.SECRET_FILE).read_text()) if APP_SECRET in staging.encrypted else []
         keys = list(dict.fromkeys([*staging.release.secrets, *stored]))
-        if not keys or contract.secret_key_problem(keys):
+        if not keys or secret_key_problem(keys):
             raise EditError('staging app Secret needs supported environment variable keys')
     database = staging.settings.allocations.database
     settings = Settings(

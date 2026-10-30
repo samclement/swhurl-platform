@@ -13,7 +13,8 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT, interface, validate, yamlio
-from swhurl.apps import calling, contract, teams
+from swhurl.apps import calling, teams
+from swhurl.apps.defaults import secret_key_problem
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import draft, records, render, write
 from swhurl.console import merge
@@ -205,12 +206,12 @@ class InterfaceTests(unittest.TestCase):
         for name, (surface, _, _) in interface.ENTRIES.items():
             if surface in ('env', 'Secret env', 'env family', 'env override'):
                 concrete = interface.callee_variable('orders-api') if surface == 'env family' else name
-                self.assertIn('reserved for the platform:', contract.secret_key_problem([concrete]))
-        self.assertEqual(contract.secret_key_problem(['ORDERS_TOKEN']), '')
-        self.assertIn('variable names', contract.secret_key_problem(['bad', 'HOST_IP']))
-        self.assertIn('reserved for the platform', contract.secret_key_problem(['HOST_IP', 'HOST_IP']))
-        self.assertIn('secret keys repeated', contract.secret_key_problem(['TOKEN', 'TOKEN']))
-        self.assertEqual(contract.secret_key_problem(['HOST_IP']),
+                self.assertIn('reserved for the platform:', secret_key_problem([concrete]))
+        self.assertEqual(secret_key_problem(['ORDERS_TOKEN']), '')
+        self.assertIn('variable names', secret_key_problem(['bad', 'HOST_IP']))
+        self.assertIn('reserved for the platform', secret_key_problem(['HOST_IP', 'HOST_IP']))
+        self.assertIn('secret keys repeated', secret_key_problem(['TOKEN', 'TOKEN']))
+        self.assertEqual(secret_key_problem(['HOST_IP']),
                          'reserved for the platform: HOST_IP (the platform sets HOST_IP, DATABASE_PATH, HTTP_PROXY, HTTPS_PROXY, '
                          'NO_PROXY, NODE_USE_ENV_PROXY, JAVA_TOOL_OPTIONS and names starting OTEL_, SWHURL_, KUBERNETES_); choose another name')
 

@@ -5,6 +5,9 @@ type, the fields it must leave out, and every way the files can fail to produce 
 """
 import io
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -268,3 +271,18 @@ class RefusalTests(unittest.TestCase):
     def test_a_send_operation_without_a_channel_is_refused(self):
         self.assertRefused(WEB, EVENTS.replace("    channel:\n      $ref: '#/channels/visited'", ''),
                            says='channel must reference')
+
+
+class ImportTests(unittest.TestCase):
+    def test_the_command_reads_no_platform_settings(self):
+        """An app's build has only `tools/` from the platform, so nothing this command imports may read the
+        cluster's manifests: `swhurl.apps.contract` reads the settings file when it is imported."""
+        code = ('import sys, swhurl.apps.image_declaration\n'
+                'print("\\n".join(sorted(name for name in sys.modules if name.startswith("swhurl"))))')
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([sys.executable, '-c', code], cwd=directory, capture_output=True, text=True,
+                                    env={**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[1] / 'tools')})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        imported = set(result.stdout.split())
+        self.assertNotIn('swhurl.apps.contract', imported)
+        self.assertNotIn('swhurl.platform', imported)

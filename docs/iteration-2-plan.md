@@ -254,6 +254,32 @@ Configuration, grants, bindings and both input values remain unchanged. A stale 
 
 This is selection, not promotion: there are no staging-readiness, actor-authorisation or approval checks, and no publication. Successful model checks do not authorise production delivery.
 
+### Promotion: selection for production (implemented offline 30 October 2026)
+
+`kernel.SelectPromotion` is promotion's rule on top of selection, and `swhurl-v2 promote --records DIR --app APP
+--env prod --profile PROFILE.json --expect REVISION --out DIR` performs it from the tree both instances keep their
+records in. Order is contractual:
+
+1. the candidate is the release staging selects — a release whose ID staging's record does not state is refused
+   (`wrong_release`), so a promotion cannot carry a hand-picked or stale release;
+2. the source is staging and the target is production (`invalid: environment`);
+3. one application throughout (`wrong_application`);
+4. the user cannot change on an instance that keeps a volume (`unsupported: runtime.uid`);
+5. then selection's own checks — a stale `--expect`, then the release already selected as a no-op.
+
+Selection replaces only the release reference: production's configuration, grants, `calls`, `allows`, storage and
+broker identity are its own and stay, and production's files are compiled from them. What a promotion cannot carry
+is refused by the compiler rather than by a promotion rule — a release that keeps a database on an instance with no
+volume, or the reverse, fails `storage`; a quota the profile cannot hold fails `over_quota` — so the refusal names
+the fact rather than the operation.
+
+**What v2 does not decide.** A promotion's *direction*: a release states no build order (the tag carries the run
+number and a release does not keep the tag), so the document states both releases and a person reads a rollback
+from them; v2 does not guess one. Production's *readiness* is the caller's check (`observe`, `make app-status`),
+not a promotion rule. A *first* promotion — creating production — is not modelled, because v2 has no
+create-instance operation: `promote` refuses a production with no record. There is no auto-merge: the command is
+the person.
+
 ### Refusal codes
 
 The code is the machine contract; the field says where; the reason is prose for people.
@@ -1667,6 +1693,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | A v1 caller of a v2-owned callee | v2's resolution connects the pair and the callee accepts the caller's token, but v1 treats a v2-owned instance as absent and renders the caller no address and no token (`make app-calls` reports it waiting): `swhurl-try-12` staging holds such a pair and cannot call `swhurl-try-10` staging | v1's caller rendering reading v2's records, or the caller's own migration |
 | Notifications: `SWHURL_NOTIFY_URL`, the projected `notify` token | **Done:** the profile states the address and every instance renders the URL and the projected `notify` token beside its callee tokens ([slice](v2-status.md#slice-record-the-always-on-instance-surface-29-october-2026)) | Done; the address is a platform fact, not a per-app one |
 | Events: NATS users, streams and consumers | **Done, live.** The server's **user list** comes from a pinned snapshot and `make check-v2` proves it is what the platform runs ([part one](v2-status.md#slice-record-events-part-one-the-servers-user-list-29-october-2026)); a keyed instance renders its `SWHURL_EVENTS_*` variables, its `Stream` and `Consumer`s, the unit's `platform-nats` dependency and `decryption`, and the folder lists its seed ([part two](v2-status.md#slice-record-events-part-two-the-instance-side-29-october-2026)); and v2 **mints** a pair with `swhurl-v2 mint`: the seed is drawn from the command, encrypted to the profile's `sops.recipient` by the one adapter that runs a command, and written beside the record, which states the public key ([slice](v2-status.md#slice-record-minting-a-broker-identity-29-october-2026)). `compile`/`migrate` still take the encrypted file as a declared input and never read it | Done; a public key cannot be checked against its seed without decrypting, so drift is proved by the workload signing in |
+| Promotion of a v2-owned instance | **Implemented offline 30 October 2026**: `kernel.SelectPromotion` and `swhurl-v2 promote` take the release staging selects into production's record pair and compiled files, with production's own facts unchanged; the refusals are above. **A first promotion (creating production) is not modelled**, a rollback's direction is stated rather than decided, and readiness is the caller's check | The first v2-owned production (one app's prod migrated), then a live promotion; a create-instance operation for a first promotion |
 | Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |
 | Telemetry: the OTLP endpoint and its variables | **Done and live 29 October 2026**: the release states whether its image reports, the profile states the collector's endpoint, protocol and the block its address is in (`telemetry.nodeCIDR`), `HOST_IP` is defined before the endpoint that expands it, and a reporting instance's policy admits the collector's block on the endpoint's port ([slice](v2-status.md#slice-record-the-telemetry-export-29-october-2026)). It was found blocked the same day (the policy admitted no collector) and fixed in its own slice | Done; per-app endpoint overrides remain a future release fact, and a multi-node cluster states a block covering every node |
 | SQLite storage: the volume, its path and the single writer | The [storage slice](#sqlite-storage-the-volume-implemented-and-proved-live-25-october-2026) renders a retained 1 GiB-class volume, `DATABASE_PATH`, `Recreate`, and a namespace Flux will not prune, and now a claim that already exists can be [adopted](#a-stateful-handover-an-allocation-outlives-the-records-and-a-volume-can-be-adopted-implemented-26-october-2026) instead; proved live including restart and removal survival | Done for the volume; growth is refused |

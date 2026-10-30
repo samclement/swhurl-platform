@@ -871,6 +871,14 @@ To guard the exact image reviewed, use:
 make app-promote APP=<app> ARGS="--expect-image=ghcr.io/<owner>/<app>:<tag>@sha256:<digest>"
 ```
 
+**A v2-owned production.** `swhurl-v2 promote --records v2-records --app <app> --env prod --profile
+v2/testdata/profile.json --expect <production's revision> --out .` takes the release staging selects into
+production's record pair and files, and nothing else: production's replicas, exposure, calls, subscriptions,
+grants and volume stay its own. It refuses a release staging does not select, a user change on an instance with a
+volume, a stale expectation, and anything the compiler refuses (a database on an instance without a volume). Check
+staging first (`make app-status`, `swhurl-v2 observe`) — v2 has no promotion gate. A first promotion is not
+modelled: production must already be v2's.
+
 In the CLI, a mismatch or unhealthy staging refuses before production edits. In the console, **Review promotion** on Deployments or staging shows the exact image, destination and first-production changes and, for a later promotion, what `main` renders differently, then **Promote to production** creates the PR. The PR carries only production's records; eligible promotions merge automatically unless **Hold for manual review** is selected. Existing promotion PRs are recovered from GitHub after a restart and reused (the PR's first line names its image); a replacement image requires explicitly closing the old PR. See [promotions](console.md#promotions).
 
 ### A commit elsewhere does not hold a promotion

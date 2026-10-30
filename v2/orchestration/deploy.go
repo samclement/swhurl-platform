@@ -98,7 +98,7 @@ func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reade
 	if err != nil {
 		return Deploy{}, err
 	}
-	documents, err := deployDocuments(selected, candidate, compiled)
+	documents, err := instanceDocuments(selected, candidate, compiled)
 	if err != nil {
 		return Deploy{}, err
 	}
@@ -169,9 +169,9 @@ func declarationOf(published registry.Image) (kernel.Declaration, error) {
 	return kernel.DecodeDeclaration([]byte(value))
 }
 
-// deployDocuments is what a delivery writes: the release first, then the instance that selects it, then the
-// compiled files. A failure leaves at worst a release nothing selects.
-func deployDocuments(spec kernel.InstanceSpec, release kernel.ReleaseBundle,
+// instanceDocuments is what a delivery or a promotion writes: the release first, then the instance that selects it,
+// then the compiled files. A failure leaves at worst a release nothing selects.
+func instanceDocuments(spec kernel.InstanceSpec, release kernel.ReleaseBundle,
 	compiled kernel.Compilation) ([]kernel.File, error) {
 	releaseDocument, err := kernel.EncodeRelease(release)
 	if err != nil {

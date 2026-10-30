@@ -194,6 +194,7 @@ kernel: func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile Pla
 kernel: func RenderUsers(users NATSUsers) (ResourceSet, error)
 kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func RevisionOf(tag ImageTag, revision string) (string, error)
+kernel: func SelectPromotion(staging, target InstanceSpec, current, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: func WithBrokerKey(spec InstanceSpec, pair UserKey, rotate bool) (InstanceSpec, error)
 kernel: type AppID string
@@ -414,6 +415,7 @@ orchestration: func CompileInto(inputs Inputs, destination string, writer files.
 orchestration: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 orchestration: func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
+orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
@@ -424,6 +426,8 @@ orchestration: type Migration struct {Facts legacy.Migration Release kernel.Rele
 orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte EventsSecret []byte}
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
+orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
+orchestration: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
 orchestration: type Refusal struct {Subject, Reason string}
 orchestration: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}
 orchestration: type RestoreInputs struct {Instance, Release, Profile, Egress []byte Plan observe.RestorePlan Target observe.Target AgeIdentity, ReadURL string Cluster Cluster Sleep func(time.Duration) Now func() time.Time}

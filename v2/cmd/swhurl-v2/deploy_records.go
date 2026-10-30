@@ -207,7 +207,7 @@ func (c cli) recordsInputs(r request) ([]recordInstance, []byte, []byte, int) {
 	apps := map[string][]byte{}
 	instances := make([]recordInstance, 0, len(names))
 	for _, name := range names {
-		one, status := c.readInstance(r.records, name, apps)
+		one, status := c.readInstance(r.records, name, stagingDir, apps)
 		if status != 0 {
 			return nil, nil, nil, status
 		}
@@ -223,15 +223,17 @@ func (c cli) recordsCalls(r request) ([]byte, int) {
 	return c.read(r.callFile, "calls")
 }
 
-// readInstance reads one app's staging records, and keeps the app record it shares with the app's other instances.
-func (c cli) readInstance(root, name string, apps map[string][]byte) (recordInstance, int) {
-	one := recordInstance{application: name, environment: stagingDir}
-	folder := filepath.Join(root, name, stagingDir)
+// readInstance reads one app's records in one environment, and keeps the app record it shares with the app's other
+// instances.
+func (c cli) readInstance(root, name, environment string, apps map[string][]byte) (recordInstance, int) {
+	one := recordInstance{application: name, environment: environment}
+	folder := filepath.Join(root, name, environment)
+	what := name + "/" + environment
 	var status int
-	if one.instance, status = c.read(filepath.Join(folder, instanceFile), "instance"); status != 0 {
+	if one.instance, status = c.read(filepath.Join(folder, instanceFile), what+" instance"); status != 0 {
 		return recordInstance{}, status
 	}
-	if one.release, status = c.read(filepath.Join(folder, releaseFile), "release"); status != 0 {
+	if one.release, status = c.read(filepath.Join(folder, releaseFile), what+" release"); status != 0 {
 		return recordInstance{}, status
 	}
 	app, seen := apps[name]

@@ -36,6 +36,8 @@ const usage = `usage:
   swhurl-v2 deploy --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json \
       --expect REVISION --out DIR [--calls CALLS.json] [--egress EGRESS.json]
   swhurl-v2 deploy --records DIR --profile PROFILE.json --out DIR [--calls CALLS.json] [--egress EGRESS.json]
+  swhurl-v2 promote --records DIR --app APPLICATION --env prod --profile PROFILE.json --expect REVISION \
+      --out DIR [--calls CALLS.json] [--egress EGRESS.json]
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
@@ -57,6 +59,13 @@ promotion and is not read, an instance that refuses or fails does not stop the o
 any failed, else 2 if any refused, else 0. The --egress document is given whole to every delivery and an instance
 takes it only when the allocation records a grant for it, so a port kept for an instance with nothing to reach
 puts nothing behind the proxy.
+
+promote moves one app's production to the release its staging selects, from the tree both keep their records in:
+DIR/<app>/staging is the source and DIR/<app>/<env> the target, whose own configuration, grants, calls, storage and
+broker identity stay unchanged. It refuses a candidate that is not the release staging selects, a target that is not
+production, another application, a user that changes on an instance with a volume, a stale --expect, and everything
+compile refuses. A release already selected is a no-op that writes nothing. A promotion's direction is not decided
+from the records — a release states no build order — so a person reads a rollback from the two releases it states.
 
 compile reads the instance, its release, the app record (one per app: its team) and the platform profile;
 the app record is required for delivery, because the namespace team label is the app's fact. Input files are
@@ -256,6 +265,7 @@ var commands = map[string]func(cli, request) int{
 	"instance-revision": func(c cli, r request) int { return c.instanceRevision(r.instance) },
 	"select-release":    cli.selectRelease,
 	"deploy":            cli.deploy,
+	"promote":           cli.promote,
 	"compile":           cli.compile,
 	"observe":           cli.observe,
 	"preview":           cli.preview,
@@ -359,6 +369,15 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 		r.registerRecords(flags)
 		flags.Var(&once{value: &r.app}, "app", "app record (its team)")
 		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
+		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
+		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		r.registerOut(flags)
+	case "promote":
+		flags.Var(&once{value: &r.records}, "records", "the tree both instances keep their records in")
+		flags.Var(&once{value: &r.app}, "app", "application")
+		flags.Var(&once{value: &r.env}, "env", "the environment promoted into (production)")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.expected}, "expect", "the production instance revision the caller reviewed")
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
 		r.registerOut(flags)
@@ -485,8 +504,8 @@ func (r *request) named() []string {
 	switch r.command {
 	case "release-id", "instance-revision":
 		return nil
-	case "migrate":
-		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}
+	case "migrate", "promote":
+		return r.appNamed()
 	case "deploy":
 		return r.deployNamed()
 	case "compile":
@@ -502,6 +521,15 @@ func (r *request) named() []string {
 		return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig}
 	}
 	return []string{r.instance, r.release, r.profile}
+}
+
+// appNamed is what a command that works on one app needs: migrate reads a snapshot, promote the records tree; both
+// name the application and its environment, the profile and where to write, and migrate adds its source.
+func (r *request) appNamed() []string {
+	if r.command == "migrate" {
+		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}
+	}
+	return []string{r.records, r.app, r.env, r.profile, r.expected, r.out}
 }
 
 // deployNamed is the two forms the deploy command has: one instance's records named on the line, or the tree every

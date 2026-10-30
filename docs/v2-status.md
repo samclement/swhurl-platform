@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the next slice's approval — the first thing a real app needs is a promotion path (a v2 promotion, or v1's promotion and the console reading v2 records), then secrets
+Gate: a live promotion — one app's production migrated to v2, then its staging release promoted into it
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -62,6 +62,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), the keys rendered once for every managed namespace, and the auth material reaching a callee only as files its image re-reads | **Done, proved live**: the pair (26 Oct), and on 29 Oct a new caller and a key rotation each taking effect in the running pod with **no restart** |
 | Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
+| Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Offline 30 October 2026**: `kernel.SelectPromotion` and `swhurl-v2 promote` refuse a release staging does not select, another environment or application, a user change on a volume, a stale expectation, and whatever the compiler refuses; a first promotion (creating production) is not modelled and a rollback's direction is stated, not decided |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Two live** (`swhurl-try-11`, `swhurl-try-10` staging, the second stateful on its own volume), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
 | Always-on instance surface | Telemetry (the endpoint and the way out to it), the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: the env, tokens and team labels rolled to both v2-owned instances, and a reporting image's policy admits the collector the env names (the export was found blocked the same day; [evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)) |
@@ -1337,6 +1338,53 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
   against the new pins.
 - **Next gate:** done — the apps were rebuilt onto the new template versions and the delivery followed
   ([evidence](current-state.md#the-first-image-delivered-by-v2-30-october-2026)).
+
+
+## Slice record: promotion of a v2-owned instance (30 October 2026)
+
+**Approved by the operator's "go ahead with v2 promotion slice", chosen over teaching v1's console and promotion to read v2's records.**
+
+- **Outcome and the refusals it must produce:** `swhurl-v2 promote --records DIR --app APP --env prod` takes the
+  release staging's own record selects into production's record pair and compiled files. It refuses a candidate
+  staging does not select (`wrong_release`), a source that is not staging or a target that is not production
+  (`invalid: environment`), another application (`wrong_application`), a user that changes on an instance with a
+  volume (`unsupported: runtime.uid`), a stale `--expect` (`stale_instance`), and everything the compiler refuses
+  for the pair it would write — a database on an instance with no volume, or the reverse, fails `storage`. A release
+  already selected is a no-op that writes nothing and compiles the pair it keeps.
+- **Owners and boundaries:** **`kernel.SelectPromotion`** owns promotion's rule and applies `SelectRelease` last;
+  **`orchestration.Promote`** decodes the documents, reduces the resolution and allocation to production's own
+  facts, and performs the one write; **`instanceDocuments`** is now shared by a promotion and an image delivery, so
+  both write a record pair and the files it renders in one effect; the **command** reads the tree
+  (`v2-records/<app>/staging` is the source, `v2-records/<app>/<env>` the target) and prints the `v2-promote`
+  document. Nothing decides a build order.
+- **What crosses each seam:** the two instances' records, the app record, the profile and the two optional
+  documents, into the use case; a record pair and compiled files, out. No registry, cluster, credential or clock.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 untouched** — no v1 file, command or workflow changed; v1's `app-promote` and the console's promotions
+     are as they were, and a v2-owned staging instance remains invisible to them (the record gap already
+     recorded).
+  2. **Pure** — the rule is a kernel function; the use case reads documents and performs one write; no new adapter.
+  3. **Nothing regenerated** — no record, file, identity or golden moved; the public-API baseline gained the
+     intended promotion surface and nothing else.
+  4. **Refusals stated, precedence fixed and tested** — the order is the candidate's identity, the two
+     environments, the application, the user on a volume, then selection's staleness and no-op; each refusal has
+     its own test.
+  5. **Failure paths tested** — a stale expectation, a candidate staging does not select, a foreign application, a
+     user change on a volume, a database the volume cannot carry, a missing production record, a command line
+     without `--env`, and the no-op; every refusal writes nothing.
+  6. **Scope stated** — a **first** promotion (creating production) is not modelled and refuses; a rollback's
+     direction is stated rather than decided, because a release keeps no tag and so no run order; readiness and
+     approval are the operator's (`make app-status`, `swhurl-v2 observe`), and there is no auto-merge; `secrets`
+     do not exist in v2's release, so "a promotion that adds a secret" cannot arise.
+  7. **Offline is not live** — nothing was applied. Run against the real tree, `promote` for `swhurl-try-11`
+     stops at `io: swhurl-try-11/prod instance: cannot read input file`, which is the boundary: its production is
+     still v1's. No production instance is v2's yet.
+  8. **Recorded in the same change** — this page, the plan's promotion contract and gap row, [apps](apps.md#promote-to-production),
+     and the workstream registry.
+- **Evidence:** `make check-v2` (all packages, chart render and platform freshness), the kernel, orchestration and
+  command tests (the fixture pair promotes, repeats as a no-op, and refuses each case), and the run above.
+- **Next gate:** a live promotion — migrate one app's production to v2, then promote its staging release into it
+  (`swhurl-try-11` prod is stateless and is the simpler first).
 
 
 ## Resume

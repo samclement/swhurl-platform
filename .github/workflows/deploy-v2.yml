@@ -75,7 +75,7 @@ jobs:
             tmp=$(mktemp -d "$charts/pull.XXXXXX")
             helm pull "$name" --repo https://bjw-s-labs.github.io/helm-charts --version "$version" --untar --untardir "$tmp"
             mv "$tmp/$name" "$charts/$name-$version"
-            rmdir "$tmp"
+            rm -rf "$tmp"
           fi
 
       # v2's sops adapter contract runs the real command, which the runner image does not carry.

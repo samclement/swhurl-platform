@@ -123,6 +123,8 @@ class PushMainTests(unittest.TestCase):
         self.assertNotIn('refused', message)
         self.assertIn(('make', 'check-v2'), runner.calls)
         self.assertFalse([c for c in runner.calls if c[:2] == ('make', '-j2')], "v1's checks are not v2's")
+        self.assertIn(('make', '-s', 'v2-users'), runner.calls, 'a release that publishes needs the broker user list')
+        self.assertIn(('make', '-s', 'v2-reloader'), runner.calls)
 
     def test_deploy_v2_pushes_nothing_when_no_instance_moved(self):
         report = ('{"kind":"v2-deploy-records","version":1,"records":"v2-records","instances":['
@@ -132,7 +134,8 @@ class PushMainTests(unittest.TestCase):
             self.assertEqual(bots.main_deploy_v2(['--root', '/repo'], runner=runner), 0)
         self.assertEqual((self.pushes, self.commits(runner)), (0, []))
         self.assertIn('Nothing changed.', out.getvalue())
-        self.assertFalse([c for c in runner.calls if c[0] == 'make' and c[1] != 'v2-deploy'], 'nothing to check')
+        self.assertFalse([c for c in runner.calls if c[0] == 'make' and c[1] not in ('v2-deploy', '-s')],
+                         'nothing changed: nothing to render or check')
 
     def test_render_names_the_apps_it_rendered(self):
         runner = self.runner(sync=lambda args, _: Result(args))

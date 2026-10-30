@@ -123,11 +123,14 @@ def deploy(runner: Runner, work: Path, refresh: bool, failed: list[bool]) -> Com
 
 
 def deploy_v2(runner: Runner, work: Path, failed: list[bool]) -> Commit | None:
-    """Bring every v2-owned staging instance to its newest image (make v2-deploy). An instance that refused or failed
-    is held and reported through ``failed``; the others are still committed."""
+    """Bring every v2-owned staging instance to its newest image (make v2-deploy), then render the platform files the
+    records decide — the broker's user list carries what each release publishes — so one commit holds both. An
+    instance that refused or failed is held and reported through ``failed``; the others are still committed."""
     result = runner.run(['make', 'v2-deploy'], cwd=work, check=False)
     print(runner.redact(result.stdout + result.stderr), end='', flush=True)
     failed[:] = [bool(result.returncode)]
+    for target in ('v2-users', 'v2-reloader'):
+        runner.output(['make', '-s', target], cwd=work)
     paths = changed(runner, work)
     if not paths:
         return None

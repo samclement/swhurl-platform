@@ -21,6 +21,9 @@ from swhurl import ROOT
 from swhurl.run import CommandError, Runner
 
 CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
+CHECKS_V2 = ['check-v2']
+"""What a v2 deploy must pass before it is pushed: v2's Go rules and the platform files the records render. v2's
+own compiled output is what the deploy itself wrote, so there is no v1 record to compare it with."""
 ATTEMPTS = 5  # Render and Deploy; the merge gate makes its own number of attempts
 
 
@@ -40,17 +43,19 @@ def swhurl(runner: Runner, work: Path, *args: str, check: bool = True):
                       env={'PYTHONPATH': str(work / 'tools'), 'PYTHONDONTWRITEBYTECODE': '1'})
 
 
-def checked(runner: Runner, work: Path) -> None:
-    """check-repo renders the registered units, check-apps compares every instance with its records. A
-    failure shows the whole output: CI has no other copy of it."""
-    result = runner.run(['make', *CHECKS], cwd=work, check=False)
+def checked(runner: Runner, work: Path, checks: Sequence[str] = CHECKS) -> None:
+    """The checks the tree must pass: check-repo renders the registered units, check-apps compares every instance
+    with its records, and check-v2 holds v2's rules and the platform files its records render. A failure shows the
+    whole output: CI has no other copy of it."""
+    result = runner.run(['make', *checks], cwd=work, check=False)
     if result.returncode:
         print(runner.redact(result.stdout + result.stderr), file=sys.stderr, flush=True)
-        raise CommandError(result.args, f'make {" ".join(CHECKS)} exited {result.returncode}', result.returncode)
+        raise CommandError(result.args, f'make {" ".join(checks)} exited {result.returncode}', result.returncode)
 
 
 def push_main(runner: Runner, root: Path, change: Change, *, attempts: int = ATTEMPTS,
-              ready: Callable[[], None] = lambda: None, git: Sequence[str] = ('git',)) -> str | None:
+              ready: Callable[[], None] = lambda: None, git: Sequence[str] = ('git',),
+              checks: Sequence[str] = CHECKS) -> str | None:
     """The pushed commit, or None when ``change`` found nothing to push. ``ready`` runs after the checks,
     just before the commit; ``git`` may carry an identity for the commit."""
     for attempt in range(1, attempts + 1):
@@ -63,7 +68,7 @@ def push_main(runner: Runner, root: Path, change: Change, *, attempts: int = ATT
                 commit = change(work, base)
                 if commit is None:
                     return None
-                checked(runner, work)
+                checked(runner, work, checks)
                 ready()
                 runner.run(['git', 'add', '-A'], cwd=work)
                 tree = runner.output(['git', 'write-tree'], cwd=work).strip()
@@ -117,9 +122,22 @@ def deploy(runner: Runner, work: Path, refresh: bool, failed: list[bool]) -> Com
     return Commit(f'deploy: {moved or "what the staging apps need and offer"} (deploy workflow)\n\n{lines}'.rstrip() + '\n')
 
 
-def _publish(runner: Runner, root: Path, change: Change, nothing: str) -> int:
+def deploy_v2(runner: Runner, work: Path, failed: list[bool]) -> Commit | None:
+    """Bring every v2-owned staging instance to its newest image (make v2-deploy). An instance that refused or failed
+    is held and reported through ``failed``; the others are still committed."""
+    result = runner.run(['make', 'v2-deploy'], cwd=work, check=False)
+    print(runner.redact(result.stdout + result.stderr), end='', flush=True)
+    failed[:] = [bool(result.returncode)]
+    paths = changed(runner, work)
+    if not paths:
+        return None
+    moved = ', '.join(sorted({path.split('/')[1] for path in paths if path.startswith('v2-records/')}))
+    return Commit(f'deploy: {moved or "the v2 staging images"} (v2 deploy workflow)\n\n' + '\n'.join(paths).rstrip() + '\n')
+
+
+def _publish(runner: Runner, root: Path, change: Change, nothing: str, checks: Sequence[str] = CHECKS) -> int:
     try:
-        made = push_main(runner, root, change)
+        made = push_main(runner, root, change, checks=checks)
     except (CommandError, RuntimeError) as error:
         print(runner.redact(str(error)), file=sys.stderr)
         return 1
@@ -134,6 +152,18 @@ def main_render(argv: list[str] | None = None, runner: Runner | None = None) -> 
     runner = runner or Runner()
     return _publish(runner, args.root, lambda work, base: render(runner, work, base),
                     'main is rendered (another writer rendered it); nothing to do.')
+
+
+def main_deploy_v2(argv: list[str] | None = None, runner: Runner | None = None) -> int:
+    p = argparse.ArgumentParser(prog='swhurl bot-deploy-v2',
+                                description='Bring every v2-owned staging instance to its newest image and push it')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    runner = runner or Runner()
+    failed = [False]
+    code = _publish(runner, args.root, lambda work, _base: deploy_v2(runner, work, failed), 'Nothing changed.',
+                    checks=CHECKS_V2)
+    return code or int(failed[0])
 
 
 def main_deploy(argv: list[str] | None = None, runner: Runner | None = None) -> int:

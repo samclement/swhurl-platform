@@ -18,6 +18,9 @@ const deployNote = "the image's own declaration; v2's records and files only, an
 // deploy brings one staging instance to the newest image its repository publishes, by the platform's own tag
 // policy, and writes the record pair and the compiled files under --out.
 func (c cli) deploy(r request) int {
+	if r.records != "" {
+		return c.deployRecords(r)
+	}
 	inputs, status := c.deployInputs(r)
 	if status != 0 {
 		return status

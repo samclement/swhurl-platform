@@ -18,6 +18,9 @@ name: Deploy
 #
 # Runs may overlap (no concurrency group: a waiting run must never be replaced by one that ends
 # early). Each reads main afresh, and one whose push loses to another's reads and deploys again.
+#
+# A v2-owned staging instance ends this run at its first step: its records are v2's own (v2-records/<app>/),
+# and the v2 Deploy workflow brings it to its newest image (deploy-v2.yml).
 
 on:
   repository_dispatch:

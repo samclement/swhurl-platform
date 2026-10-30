@@ -87,6 +87,11 @@ func (c cli) migrateInputs(r request) (snapshot, orchestration.MigrationInputs, 
 		}
 		*read.into = data
 	}
+	documents, status := c.offersAt(r.offers)
+	if status != 0 {
+		return snapshot{}, orchestration.MigrationInputs{}, status
+	}
+	inputs.Offers = documents
 	return pinned, inputs, 0
 }
 

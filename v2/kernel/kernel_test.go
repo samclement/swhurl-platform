@@ -216,7 +216,7 @@ func TestIdentityAssertionsAndEscaping(t *testing.T) {
 	r.Runtime.HealthPath = "/ready&ok"
 	r.ReleaseID = ""
 	id, err := r.ID()
-	if err != nil || id != "rel-sha256:cae2a6edccd96553a289a700e249f8338787a63c429ea0b1e205d66c75a3e58c" {
+	if err != nil || id != "rel-sha256:0ed7b0cdf79b60597145218dbcc8f2d7048bb285e5402b126f6b3d279fc4fb97" {
 		t.Fatalf("independent ASCII escaping vector: %s %v", id, err)
 	}
 	if !bytes.Contains(releaseCanonical(r), []byte(`"/ready&ok"`)) {
@@ -432,6 +432,13 @@ func TestDomainValidation(t *testing.T) {
 		{func(r *ReleaseBundle) { r.Artifact.MediaType = "application/vnd.oci.image.config.v1+json" }, Unsupported},
 		{func(r *ReleaseBundle) { r.Artifact.Platform = "linux/arm64" }, Unsupported},
 		{func(r *ReleaseBundle) { r.Source.Commit = "abcdef0" }, Invalid},
+		{func(r *ReleaseBundle) { r.Description = strings.Repeat("x", 201) }, Invalid},
+		{func(r *ReleaseBundle) { r.Description = "two\nlines" }, Invalid},
+		{func(r *ReleaseBundle) { r.APIPath = "openapi.json" }, Invalid},
+		{func(r *ReleaseBundle) {
+			r.Runtime.Kind, r.Runtime.Port, r.Runtime.HealthPath, r.APIPath = "worker", 0, "", "/openapi.json"
+		}, Invalid},
+		{func(r *ReleaseBundle) { r.Offers = "d771828" }, Invalid},
 	} {
 		r := release(t)
 		r.ReleaseID = ""
@@ -456,6 +463,7 @@ func TestDomainValidation(t *testing.T) {
 	worker := release(t)
 	worker.ReleaseID = ""
 	worker.Runtime.Kind, worker.Runtime.Port, worker.Runtime.HealthPath = "worker", 0, ""
+	worker.APIPath = ""
 	workerID, err := worker.ID()
 	if err != nil {
 		t.Fatal(err)
@@ -576,5 +584,50 @@ func TestSelectionDoesNotAliasDeclarations(t *testing.T) {
 	alpha, beta := bytes.Index(encoded, []byte(`"alpha"`)), bytes.Index(encoded, []byte(`"beta"`))
 	if alpha < 0 || beta < 0 || alpha > beta {
 		t.Fatalf("the record's calls are not sorted when written:\n%s", encoded)
+	}
+}
+
+// The three facts a release states about its own documents are identity and round-trip: a fact another app reads
+// is worth exactly as much as the record that states it.
+func TestOfferedFactsRoundTripAndMoveTheIdentity(t *testing.T) {
+	base := release(t)
+	base.Description, base.APIPath, base.Offers, base.ReleaseID = "", "", "", ""
+	plain, err := base.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name   string
+		change func(*ReleaseBundle)
+	}{
+		{"description", func(r *ReleaseBundle) { r.Description = "Demo orders service" }},
+		{"API path", func(r *ReleaseBundle) { r.APIPath = "/openapi.json" }},
+		{"offers commit", func(r *ReleaseBundle) { r.Offers = strings.Repeat("a", 40) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := base
+			tt.change(&r)
+			changed, err := r.ID()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changed == plain {
+				t.Fatal("the fact does not take part in the identity")
+			}
+			r.ReleaseID = changed
+			encoded, err := EncodeRelease(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := DecodeRelease(encoded)
+			if err != nil || !reflect.DeepEqual(decoded, r) {
+				t.Fatalf("the fact does not survive encoding: %v", err)
+			}
+		})
+	}
+	// Absent is absent: a record that states none encodes none of them.
+	if encoded, err := EncodeRelease(base); err != nil || bytes.Contains(encoded, []byte("description")) ||
+		bytes.Contains(encoded, []byte("apiPath")) || bytes.Contains(encoded, []byte("offers")) {
+		t.Fatalf("an empty fact is rendered: %v %s", err, encoded)
 	}
 }

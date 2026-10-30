@@ -17,5 +17,8 @@
     "healthPath": "/healthz",
     "uid": 65532
   },
-  "telemetry": true
+  "telemetry": true,
+  "description": "Demo orders service",
+  "apiPath": "/openapi.json",
+  "offers": "cccccccccccccccccccccccccccccccccccccccc"
 }

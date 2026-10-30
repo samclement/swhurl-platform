@@ -1,0 +1,4 @@
+# Read from the app's repository by make app-offers: do not edit.
+repository: samclement/demo-notifier
+commit: eab35a3
+events: asyncapi.yaml

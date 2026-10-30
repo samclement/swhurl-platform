@@ -264,6 +264,7 @@ func TestImageAutomationRendersOnlyAStagingAppsOwnImage(t *testing.T) {
 	// A worker publishes an image too: only its HTTP surface is absent.
 	worker := releaseFile(t, "r42.json")
 	worker.Runtime, worker.ReleaseID = Runtime{Kind: "worker", UID: 65532}, ""
+	worker.APIPath = ""
 	id, err = worker.ID()
 	if err != nil {
 		t.Fatal(err)

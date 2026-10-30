@@ -249,6 +249,10 @@ func TestOwnedInstancesRecompileFromGit(t *testing.T) {
 			args = append(args, "--events-secret",
 				filepath.Join(folder, "events.sops.yaml"))
 		}
+		if documents := filepath.Join(folder, "offers"); folderExists(documents) {
+			// The documents an instance publishes are a declared input: the record folder's own copies.
+			args = append(args, "--offers", documents)
+		}
 		var out, diagnostic bytes.Buffer
 		if status := run(args, &out, &diagnostic, os.ReadFile, files.New()); status != 0 {
 			t.Fatalf("%s: exit %d: %s", folder, status, diagnostic.String())
@@ -283,4 +287,10 @@ func TestOwnedInstancesRecompileFromGit(t *testing.T) {
 			t.Fatalf("%s: nothing was compared", folder)
 		}
 	}
+}
+
+// folderExists is whether a folder a test reads is there: a record folder without one declares no documents.
+func folderExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }

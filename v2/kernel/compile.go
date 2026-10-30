@@ -157,7 +157,17 @@ func instanceOf(spec InstanceSpec, release ReleaseBundle, app AppSpec, connectio
 		Configuration: spec.Configuration, Exposure: spec.Grants.Exposure,
 		Calls: connections.Calls, Callers: connections.Callers,
 		Broker:   BrokerIdentity{Key: spec.Events.Key, Connected: connections.Subscriptions},
-		Database: release.Database, Storage: spec.Storage, Egress: egress, Team: app.Team}
+		Database: release.Database, Storage: spec.Storage, Egress: egress, Team: app.Team,
+		Description: release.Description, Offers: offersOf(release)}
+}
+
+// offersOf is what a release states about its published documents, or nil when it states nothing: an absent fact
+// renders no annotation and no variable, rather than one saying nothing.
+func offersOf(r ReleaseBundle) *Offers {
+	if r.APIPath == "" && r.Offers == "" {
+		return nil
+	}
+	return &Offers{APIPath: r.APIPath, Commit: r.Offers}
 }
 
 // workloadOf is the runtime facts a release states: what the chart runs, as whom, and what it serves.

@@ -26,6 +26,10 @@ type Inputs struct {
 	// EventsSecret is an instance's own events.sops.yaml, byte for byte, for a use case that writes its files.
 	// v2 neither reads nor decrypts it: it is delivered beside the manifests, which list it.
 	EventsSecret []byte
+	// Offers are the documents an instance publishes for others to read — the app's OpenAPI and AsyncAPI
+	// documents and its flags file — each named by its name in the instance's offers folder. They are a declared
+	// input, never output: v2 copies them and parses none of them. The release's offers commit is their provenance.
+	Offers []kernel.File
 }
 
 // Result is what a use case produced: the compilation, and the files it wrote, when it wrote any. Written is
@@ -76,7 +80,11 @@ func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result
 	if err != nil {
 		return Result{Compilation: compiled}, err
 	}
-	outcomes, err := writer.Write(destination, documents)
+	with, err := WithOffers(documents, inputs.Offers)
+	if err != nil {
+		return Result{Compilation: compiled}, err
+	}
+	outcomes, err := writer.Write(destination, with)
 	return Result{Compilation: compiled, Written: outcomes}, err
 }
 
@@ -86,13 +94,7 @@ func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result
 // receive a secret.
 func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error) {
 	files := compiled.Files
-	folder := ""
-	for _, file := range files {
-		if index := strings.LastIndex(file.Path, "/"); index > 0 {
-			folder = file.Path[:index]
-			break
-		}
-	}
+	folder := instanceFolder(files)
 	// The unit and the kustomization list the secret exactly when the instance has a broker identity.
 	listed := folder != "" && slices.ContainsFunc(files, func(file kernel.File) bool {
 		return strings.HasSuffix(file.Path, "/kustomization.yaml") &&
@@ -144,3 +146,43 @@ func egressOf(document []byte, application, environment string) (*kernel.Egress,
 // refuseSecret is a use case's refusal about the instance's seed: a fact the caller supplies or does not, never a
 // value v2 reads.
 func refuseSecret(reason string) error { return &Refusal{Subject: "events-secret", Reason: reason} }
+
+// WithOffers adds an instance's published documents to the files a use case writes beside its manifests. The
+// compiler does not list them: they are not resources, and nothing in the cluster applies them. A document's path
+// is its name inside the offers folder, so it cannot be written anywhere else, and the caller's order is kept.
+func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error) {
+	if len(documents) == 0 {
+		return manifests, nil
+	}
+	folder := instanceFolder(manifests)
+	if folder == "" {
+		return nil, refuseOffers("documents_have_no_instance_folder")
+	}
+	written := slices.Clone(manifests)
+	for _, document := range documents {
+		if !plainName(document.Path) {
+			return nil, refuseOffers("document_names_are_file_names")
+		}
+		written = append(written, kernel.File{Path: folder + "/offers/" + document.Path, Document: document.Document})
+	}
+	return written, nil
+}
+
+// plainName is whether a name is one path segment: no separator, no relative step, nothing absolute.
+func plainName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, `/\\`)
+}
+
+// instanceFolder is the folder a compilation wrote into, as its files name it.
+func instanceFolder(files []kernel.File) string {
+	for _, file := range files {
+		if index := strings.LastIndex(file.Path, "/"); index > 0 {
+			return file.Path[:index]
+		}
+	}
+	return ""
+}
+
+// refuseOffers is a use case's refusal about the documents an instance publishes: what the caller supplied, and
+// what the release states it was read at.
+func refuseOffers(reason string) error { return &Refusal{Subject: "offers", Reason: reason} }

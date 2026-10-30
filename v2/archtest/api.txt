@@ -234,7 +234,7 @@ kernel: type File struct {Path string `json:"path"` Document json.RawMessage `js
 kernel: type Grants struct {Exposure string `json:"exposure"`}
 kernel: type ImageTag struct {Name string Run int64 Commit string}
 kernel: type Inputs struct {App AppID `json:"app"` Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"` Calls ConnectionsID `json:"calls"`}
-kernel: type InstanceFacts struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string Broker BrokerIdentity}
+kernel: type InstanceFacts struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string Broker BrokerIdentity Description string Offers *Offers}
 kernel: type InstanceRevision string
 kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"` Storage Storage `json:"storage,omitempty"` Calls []string `json:"calls,omitempty"` Allows []string `json:"allows,omitempty"` Events Events `json:"events,omitempty"`}
 kernel: type NATS struct {URL string `json:"url"` Namespace string `json:"namespace"` Port int32 `json:"port"` Labels map[string]string `json:"labels"` DecryptionSecret string `json:"decryptionSecret"` ControllerKey string `json:"controllerKey"` ConsoleKey string `json:"consoleKey"`}
@@ -243,11 +243,12 @@ kernel: type NATSUsers struct {ControllerKey, ConsoleKey string Instances []NATS
 kernel: type Network struct {PodCIDR string `json:"podCIDR"`}
 kernel: type Notify struct {Address string `json:"address"`}
 kernel: type Object struct {Group string `json:"group"` Kind string `json:"kind"` Namespace string `json:"namespace"` Name string `json:"name"`}
+kernel: type Offers struct {APIPath string Commit string}
 kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` Name string `json:"name"` Chart Chart `json:"chart"` Delivery Delivery `json:"delivery"` Workload Workload `json:"workload"` Quota Quota `json:"quota"` Telemetry Telemetry `json:"telemetry"` Notify Notify `json:"notify"` Routing Routing `json:"routing"` Auth Auth `json:"auth"` Storage PlatformStorage `json:"storage"` Egress EgressProxy `json:"egress"` DNS DNS `json:"dns"` Backup Backup `json:"backup"` Network Network `json:"network"` NATS NATS `json:"nats"` Reloader ReloaderWatch `json:"reloader"` SOPS SOPS `json:"sops"`}
 kernel: type PlatformStorage struct {Class string `json:"class"`}
 kernel: type ProfileID string
 kernel: type Quota struct {Pods int32 `json:"pods"` RequestsCPUMilli int32 `json:"requestsCpuMilli"` RequestsMemoryMiB int32 `json:"requestsMemoryMiB"` LimitsMemoryMiB int32 `json:"limitsMemoryMiB"`}
-kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` Database string `json:"database,omitempty"` Telemetry bool `json:"telemetry,omitempty"` Publishes []string `json:"publishes,omitempty"` ReleaseID ReleaseID `json:"releaseId"`}
+kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` Database string `json:"database,omitempty"` Telemetry bool `json:"telemetry,omitempty"` Publishes []string `json:"publishes,omitempty"` Description string `json:"description,omitempty"` APIPath string `json:"apiPath,omitempty"` Offers string `json:"offers,omitempty"` ReleaseID ReleaseID `json:"releaseId"`}
 kernel: type ReleaseID string
 kernel: type Reloader struct {Platform []string Instances []ReloaderInstance}
 kernel: type ReloaderInstance struct {Application, Environment string BrokerKey string Secrets []string}
@@ -274,7 +275,8 @@ legacy: func Translate(records Records) (Translation, error)
 legacy: type Error struct {Code, Field, Reason string}
 legacy: type Gap struct {Where, Fact, Owner string}
 legacy: type Instance struct {Exposure string Replicas int32 MemoryMiB int32 Team string}
-legacy: type Migration struct {Application, Environment string Source Source Workload Workload Instance Instance Database string Claim string Corroborated []string Calls, Allows []string EventsKey string Subscriptions []string Sources map[string]string Gaps []Gap}
+legacy: type Migration struct {Application, Environment string Source Source Workload Workload Instance Instance Database string Claim string Corroborated []string Calls, Allows []string EventsKey string Subscriptions []string Offered Offered Sources map[string]string Gaps []Gap}
+legacy: type Offered struct {Description, APIPath, Commit string}
 legacy: type Records struct {App, Instance, Release, Committed []byte}
 legacy: type Source struct {Repository, Commit string}
 legacy: type Supplied struct {Repository, Commit string}
@@ -418,12 +420,13 @@ orchestration: func Mint(inputs MintInputs, destination string, writer files.Wri
 orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
+orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
 orchestration: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
-orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte}
+orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}
-orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte EventsSecret []byte}
+orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
 orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}

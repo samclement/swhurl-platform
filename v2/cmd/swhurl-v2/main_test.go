@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -400,5 +401,31 @@ func TestCompileOutAdapterOutcomes(t *testing.T) {
 		if status := run(compileArgs("/destination"), &out, &diagnostic, inputs(t), fake); status != tt.status {
 			t.Errorf("status %d, want %d: %s", status, tt.status, &diagnostic)
 		}
+	}
+}
+
+// A folder named on the line is read or the command fails: an absent one is an I/O error, never an instance that
+// silently publishes nothing. The documents themselves reach the compiled folder through the same flag.
+func TestCompileReadsTheOffersFolderItIsGiven(t *testing.T) {
+	args := []string{"compile", "--instance", "../../testdata/staging.json", "--release", "../../testdata/r42.json",
+		"--app", "../../testdata/app.json", "--profile", "../../testdata/profile.json", "--out", t.TempDir()}
+	var out, diagnostic bytes.Buffer
+	absent := append(slices.Clone(args), "--offers", filepath.Join(t.TempDir(), "absent"))
+	if status := run(absent, &out, &diagnostic, os.ReadFile, files.New()); status != 1 ||
+		!strings.Contains(diagnostic.String(), "io: offers") {
+		t.Fatalf("status %d: %s", status, diagnostic.String())
+	}
+	folder := t.TempDir()
+	if err := os.WriteFile(filepath.Join(folder, "openapi.json"), []byte("{\"openapi\":\"3.0.0\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	destination := t.TempDir()
+	given := append(slices.Clone(args[:len(args)-2]), "--offers", folder, "--out", destination)
+	if status := run(given, &out, &diagnostic, os.ReadFile, files.New()); status != 0 {
+		t.Fatalf("status %d: %s", status, diagnostic.String())
+	}
+	written, err := os.ReadFile(filepath.Join(destination, "v2-apps/instances/demo-orders/staging/offers/openapi.json"))
+	if err != nil || len(written) == 0 {
+		t.Fatalf("the document was not written beside the manifests: %v", err)
 	}
 }

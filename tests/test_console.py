@@ -526,6 +526,23 @@ operations:
         self.assertIn('Nothing is offered in prod by team nobody', c.get('/catalogue?env=prod&team=nobody', headers=WHO).text)
         self.assertEqual(c.get('/catalogue').status_code, 401)
 
+    def test_documents_are_read_where_v2_keeps_them(self):
+        """A v2-owned instance's documents sit beside the manifests v2 compiles, not beside v1's records: the console
+        reads whichever folder Git holds, so the catalogue sees the instances v2 owns too."""
+        from swhurl.console import catalogue
+
+        folder = 'v2-apps/instances/orders/staging/offers'
+        files = {f'{folder}/source.yaml': 'repository: samclement/orders\ncommit: abc1234\napi: openapi.json\n',
+                 f'{folder}/openapi.json': self.OPENAPI}
+        reads = []
+        documents = catalogue.Documents(lambda path: reads.append(path) or files.get(path))
+        found = documents.of('orders', 'staging', 'abc1234')
+        self.assertEqual(found.problem, '')
+        self.assertIsNotNone(found.api, 'the API description is read from the v2 folder')
+        self.assertIn(f'{folder}/openapi.json', reads)
+        self.assertEqual(documents.of('orders', 'staging', 'abc1234'), found, 'read once per commit')
+        self.assertIn('is not in Git yet', catalogue.Documents(lambda path: None).of('orders', 'staging', 'abc1234').problem)
+
     def test_descriptions_that_cannot_be_read_leave_the_catalogue_standing(self):
         from swhurl.console import catalogue
 

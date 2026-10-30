@@ -82,7 +82,7 @@ func DecodeRelease(data []byte) (ReleaseBundle, error) {
 	if err := document(data); err != nil {
 		return ReleaseBundle{}, err
 	}
-	root, err := fields(data, "release", []string{"schemaVersion", "application", "source", "artifact", "runtime"}, "releaseId", "database", "telemetry", "publishes")
+	root, err := fields(data, "release", []string{"schemaVersion", "application", "source", "artifact", "runtime"}, "releaseId", "database", "telemetry", "publishes", "description", "apiPath", "offers")
 	if err != nil {
 		return ReleaseBundle{}, err
 	}

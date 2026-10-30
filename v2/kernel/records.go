@@ -69,7 +69,17 @@ type ReleaseBundle struct {
 	// Publishes is the events the image publishes, each an `<event>` name under the app's own subject. Its
 	// AsyncAPI document says so; the platform reads it at the image's commit and states the list here, so a
 	// new image cannot publish something the platform has not read.
-	Publishes []string  `json:"publishes,omitempty"`
+	Publishes []string `json:"publishes,omitempty"`
+	// Description is the one line the image says about itself. It is a release fact for the same reason as the
+	// rest: the image, not the environment, is what has a description, and a promotion carries it.
+	Description string `json:"description,omitempty"`
+	// APIPath is where a web image serves its API description, such as /openapi.json. A worker serves nothing, so
+	// it states none.
+	APIPath string `json:"apiPath,omitempty"`
+	// Offers is the commit at which the app's offered documents — the OpenAPI and AsyncAPI documents and the flags
+	// file kept beside the instance — were read. It is not source.commit: the image moves with every deploy, and
+	// the documents are refreshed separately, so one commit would be a claim about the other.
+	Offers    string    `json:"offers,omitempty"`
 	ReleaseID ReleaseID `json:"releaseId"`
 }
 
@@ -139,6 +149,10 @@ var (
 	// Deliberately narrow: dotted DNS registry, no port, credentials, tag or digest suffix.
 	imagePattern  = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]*[a-z0-9])?(/[a-z0-9]+([._-][a-z0-9]+)*)+$`)
 	healthPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$`)
+	// A description is served as one environment variable value, so one line of printable characters.
+	descriptionPattern = regexp.MustCompile(`^[ -~]{1,200}$`)
+	// The path an app serves its API description on, which a console links: narrower than a health path.
+	apiPathPattern = regexp.MustCompile(`^/[A-Za-z0-9_./-]*$`)
 )
 
 // validate checks the fields in the order of the field table, so the first broken one decides.
@@ -161,7 +175,28 @@ func (r ReleaseBundle) validate() error {
 	if r.Database != "" && r.Database != "sqlite" {
 		return refuse(Unsupported, "database", "only sqlite is supported")
 	}
-	return validateEventNames("publishes", r.Publishes)
+	if err := validateEventNames("publishes", r.Publishes); err != nil {
+		return err
+	}
+	return r.validateOffered()
+}
+
+// validateOffered checks the three facts the image states about what it offers, in the field table's order. An
+// absent fact is absent, never an empty string with a meaning of its own.
+func (r ReleaseBundle) validateOffered() error {
+	if r.Description != "" && !descriptionPattern.MatchString(r.Description) {
+		return refuse(Invalid, "description", "expected one line of at most 200 printable characters")
+	}
+	if r.APIPath != "" && r.Runtime.Kind != "web" {
+		return refuse(Invalid, "apiPath", "a worker serves no API description")
+	}
+	if r.APIPath != "" && !apiPathPattern.MatchString(r.APIPath) {
+		return refuse(Invalid, "apiPath", "expected an absolute path")
+	}
+	if r.Offers != "" && !commitPattern.MatchString(r.Offers) {
+		return refuse(Invalid, "offers", "expected a 40-character commit")
+	}
+	return nil
 }
 
 func (s Source) validate() error {

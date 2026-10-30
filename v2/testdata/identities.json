@@ -1,6 +1,6 @@
 {
-  "ReleaseCanonical": "[\"swhurl.release.v1\",1,\"demo-orders\",\"samclement/demo-orders\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"ghcr.io/samclement/demo-orders\",\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"application/vnd.oci.image.manifest.v1+json\",\"linux/amd64\",\"web\",8080,\"/healthz\",65532,\"\",true,[]]",
-  "ReleaseID": "rel-sha256:4e2bf5499fc5b3582e0ba2cd3ae59544b8f0df7a4ea101b658fea48baf316c49",
-  "InstanceCanonical": "[\"swhurl.instance.v1\",1,\"demo-orders\",\"prod\",\"rel-sha256:b357d4173dc8d515f46c6b3f019b744b59ee97d5d30f03ce1e3a9532f9bf904c\",1,256,\"private\",{},0,\"\",[],[],\"\",[]]",
-  "InstanceRevision": "inst-sha256:321613e780631d2d0a2a62773f24c1d9a26b37fffcd6cb370b0414eda0fb1663"
+  "ReleaseCanonical": "[\"swhurl.release.v1\",1,\"demo-orders\",\"samclement/demo-orders\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"ghcr.io/samclement/demo-orders\",\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"application/vnd.oci.image.manifest.v1+json\",\"linux/amd64\",\"web\",8080,\"/healthz\",65532,\"\",true,[],\"Demo orders service\",\"/openapi.json\",\"cccccccccccccccccccccccccccccccccccccccc\"]",
+  "ReleaseID": "rel-sha256:1ebebe8b24ace9543aefe4978b91136333df5f466d1f6c5eb1504571374f845b",
+  "InstanceCanonical": "[\"swhurl.instance.v1\",1,\"demo-orders\",\"prod\",\"rel-sha256:bddcaadb0e4d4c13aad4b388d13986ae7460775e521d42b3700dbfc91bc4c471\",1,256,\"private\",{},0,\"\",[],[],\"\",[]]",
+  "InstanceRevision": "inst-sha256:f081c8e8fa3de870cec6a87cd40fc653b6891e602cf165e6b3727802f9e28dc4"
 }

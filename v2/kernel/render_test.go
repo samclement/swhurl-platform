@@ -859,3 +859,32 @@ func TestWorkerAndKindRefusals(t *testing.T) {
 		})
 	}
 }
+
+// A release that states what it offers renders it: the description as the variable the image serves, the API path
+// and the documents' commit as the annotations a console reads. One that states nothing renders neither, rather
+// than an empty claim.
+func TestOffersRenderFromTheRelease(t *testing.T) {
+	p := profile(t)
+	offered := compile(t, instance(t, "staging.json"), releaseFile(t, "r42.json"), p)
+	release := jsonDocument(t, files(offered)["v2-apps/instances/demo-orders/staging/helmrelease.json"])
+	annotations := release["metadata"].(map[string]any)["annotations"].(map[string]any)
+	if annotations["platform.swhurl.com/api-description"] != "/openapi.json" {
+		t.Fatalf("the API description annotation: %v", annotations)
+	}
+	if annotations["platform.swhurl.com/offers"] != "ccccccc" {
+		t.Fatalf("the offered documents are named by their commit's abbreviation: %v", annotations)
+	}
+	env := release["spec"].(map[string]any)["values"].(map[string]any)["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)["env"].(map[string]any)
+	if env["SWHURL_DESCRIPTION"] != "Demo orders service" {
+		t.Fatalf("the description variable: %v", env["SWHURL_DESCRIPTION"])
+	}
+	plain := compile(t, instance(t, "prod.json"), releaseFile(t, "r41.json"), p)
+	quiet := jsonDocument(t, files(plain)["v2-apps/instances/demo-orders/prod/helmrelease.json"])
+	if _, found := quiet["metadata"].(map[string]any)["annotations"]; found {
+		t.Fatal("a release that offers nothing renders annotations")
+	}
+	env = quiet["spec"].(map[string]any)["values"].(map[string]any)["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)["env"].(map[string]any)
+	if _, found := env["SWHURL_DESCRIPTION"]; found {
+		t.Fatal("a release that says nothing about itself renders a description")
+	}
+}

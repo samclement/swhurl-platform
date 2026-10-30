@@ -1,11 +1,11 @@
 {
   "kind": "v2-compilation",
   "version": 1,
-  "id": "comp-sha256:9a475d25a5f2eb68eb8144ba5499daa37b3a68bd24e1e9f3933fc19783ba4e5c",
+  "id": "comp-sha256:aed9a80f85a4d8f5d418fa029da6f966c1fd5616963f1a93e11e3c081a03c537",
   "inputs": {
     "app": "app-sha256:50aa37430360ade5a48ce7d5c968b521b57e91bf8a1c4501fb14fc10d2672e0f",
-    "release": "rel-sha256:4e2bf5499fc5b3582e0ba2cd3ae59544b8f0df7a4ea101b658fea48baf316c49",
-    "instance": "inst-sha256:1ab36cbcd951989f7cdc3f33b1f18511449f203f8b1e1d92a73d1f3760d8dfcc",
+    "release": "rel-sha256:1ebebe8b24ace9543aefe4978b91136333df5f466d1f6c5eb1504571374f845b",
+    "instance": "inst-sha256:2f55424423d2f4d6291e7c41c0ffcc17133fd6c0095c5ae3b883194d993d5b05",
     "profile": "prof-sha256:20ea752df2122d3938202e9ab7569daad7690786e145f19f4e2714f3cdf18356",
     "calls": ""
   },
@@ -33,6 +33,10 @@
         "apiVersion": "helm.toolkit.fluxcd.io/v2",
         "kind": "HelmRelease",
         "metadata": {
+          "annotations": {
+            "platform.swhurl.com/api-description": "/openapi.json",
+            "platform.swhurl.com/offers": "ccccccc"
+          },
           "name": "demo-orders",
           "namespace": "demo-orders-staging"
         },
@@ -78,6 +82,7 @@
                       "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
                       "OTEL_SERVICE_NAME": "demo-orders",
                       "SWHURL_APP": "demo-orders",
+                      "SWHURL_DESCRIPTION": "Demo orders service",
                       "SWHURL_ENV": "staging",
                       "SWHURL_NOTIFY_URL": "http://notify.notify.svc.cluster.local:8080"
                     },

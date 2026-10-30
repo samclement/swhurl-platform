@@ -21,3 +21,7 @@ todo.md
 
 # uv environment (make test, make console-dev)
 .venv/
+
+# pigram local secrets/cache
+.pi/pigram.json
+.pi/tmp/

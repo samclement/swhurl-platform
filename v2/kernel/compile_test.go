@@ -483,6 +483,7 @@ func workerRecords(t *testing.T) (InstanceSpec, ReleaseBundle, AppSpec) {
 	t.Helper()
 	r := releaseFile(t, "r42.json")
 	r.Runtime.Kind, r.Runtime.Port, r.Runtime.HealthPath, r.ReleaseID = "worker", 0, "", ""
+	r.APIPath = "" // a worker serves nothing, so it publishes no API description
 	id, err := r.ID()
 	if err != nil {
 		t.Fatal(err)

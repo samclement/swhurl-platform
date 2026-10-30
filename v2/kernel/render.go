@@ -45,6 +45,18 @@ type InstanceFacts struct {
 	// Broker is the instance's side of the event service. The seed is not here: the folder lists the encrypted
 	// file that holds it.
 	Broker BrokerIdentity
+	// Description is the line the image says about itself, served to it as an environment variable.
+	Description string
+	// Offers is what the instance publishes for others to read: where a web image serves its API description, and
+	// the commit its offered documents were read at. Nil for a release that states neither.
+	Offers *Offers
+}
+
+// Offers is an instance's published description of itself. The documents themselves are files beside the
+// manifests, not resources: nothing in the cluster applies them.
+type Offers struct {
+	APIPath string
+	Commit  string
 }
 
 // BrokerIdentity is what rendering needs of an instance's broker identity: the public key it signs in with, and
@@ -158,9 +170,22 @@ func helmRelease(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile
 		"sourceRef": manifest{"kind": "HelmRepository", "name": profile.Chart.Repository, "namespace": profile.Chart.RepositoryNamespace}}
 	remediation := manifest{"remediation": manifest{"retries": retries}}
 	meta := metadata(spec.Application, namespaceName(spec))
+	annotations := manifest{}
 	if spec.Egress != nil && len(spec.Egress.Grants) > 0 {
 		// What the proxy may read from its log for this instance: the hosts the instance declares it needs.
-		meta["annotations"] = manifest{labelDomain + "egress": strings.Join(spec.Egress.Grants, ",")}
+		annotations[labelDomain+"egress"] = strings.Join(spec.Egress.Grants, ",")
+	}
+	if spec.Offers != nil {
+		if spec.Offers.APIPath != "" {
+			// Where the image serves the document a console links. Only a web image has one; a worker states none.
+			annotations[labelDomain+"api-description"] = spec.Offers.APIPath
+		}
+		if spec.Offers.Commit != "" {
+			annotations[labelDomain+"offers"] = offerCommit(spec.Offers.Commit)
+		}
+	}
+	if len(annotations) > 0 {
+		meta["annotations"] = annotations
 	}
 	return manifest{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease",
 		"metadata": meta,
@@ -169,6 +194,19 @@ func helmRelease(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile
 			"values": values(spec, http, profile.Workload, profile.Storage.Class, profile.Egress.Address,
 				profile.Notify.Address, profile.Telemetry, profile.NATS)}}
 }
+
+// offerCommit is the abbreviation a console links an app's offered documents by. The documents' own source file
+// states the same seven characters, so the annotation and the documents cannot disagree about which commit they are.
+func offerCommit(commit string) string {
+	if len(commit) <= offersAbbreviation {
+		return commit
+	}
+	return commit[:offersAbbreviation]
+}
+
+// offersAbbreviation is how many characters of the commit the platform names: a commit link's short form, and the
+// length v1 wrote in the same annotation.
+const offersAbbreviation = 7
 
 // values are the chart's values: one controller, one container, its /tmp and — for a web workload — its
 // Service. Omitting the Service is what makes a worker a worker: nothing in the namespace listens.
@@ -219,6 +257,9 @@ func container(spec InstanceFacts, http WorkloadFacts, workload Workload, egress
 		"SWHURL_NOTIFY_URL": notifyAddress}
 	if spec.Database == "sqlite" {
 		env["DATABASE_PATH"] = DatabasePath
+	}
+	if spec.Description != "" {
+		env["SWHURL_DESCRIPTION"] = spec.Description
 	}
 	if spec.Egress != nil || http.Telemetry {
 		// Both the proxy and the node-local collector are reached by the node's own address. The variable is

@@ -19,5 +19,11 @@
   },
   "database": "sqlite",
   "telemetry": true,
-  "releaseId": "rel-sha256:3b2568b5eb30df001f2650733fb80c7fa4f4ad72112a089552002ccaae78d189"
+  "publishes": [
+    "visited"
+  ],
+  "description": "throwaway: team platform T2 callee (orders), delete me",
+  "apiPath": "/openapi.json",
+  "offers": "e01ce488e4e9a1d8e31516026e38acfc48f465f4",
+  "releaseId": "rel-sha256:b58e7ca1cbbbc36041789ae73bd78f1a6caf738f31c1b79295504d66edba73c3"
 }

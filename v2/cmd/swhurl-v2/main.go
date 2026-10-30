@@ -293,7 +293,7 @@ type request struct {
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
 	records                                            string
-	eventsSecret                                       string
+	eventsSecret, offers                               string
 	rotate                                             bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
@@ -387,6 +387,7 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
 		flags.Var(&once{value: &r.eventsSecret}, "events-secret", "the instance's encrypted events Secret (optional)")
+		flags.Var(&once{value: &r.offers}, "offers", "the folder holding the documents the instance publishes (optional)")
 		r.registerOut(flags)
 	case "observe":
 		r.registerLive(flags)
@@ -448,6 +449,7 @@ func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
 		flags.Var(&once{value: &r.eventsSecret}, "events-secret", "the instance's encrypted events Secret, as Git holds it")
+		flags.Var(&once{value: &r.offers}, "offers", "the folder holding the documents the instance publishes, as Git holds it")
 		r.registerOut(flags)
 	}
 }
@@ -687,6 +689,11 @@ func (c cli) compile(r request) int {
 		}
 		inputs.EventsSecret = data
 	}
+	documents, status := c.offersAt(r.offers)
+	if status != 0 {
+		return status
+	}
+	inputs.Offers = documents
 	if r.out != "" {
 		if c.appTreeRefused(r.out) {
 			return 2
@@ -880,6 +887,35 @@ func (c cli) instance(path string) (kernel.InstanceSpec, int) {
 }
 
 // read refuses a file over maxInput (exit 2, like any refused input); other read errors are I/O (exit 1).
+// offersAt reads the documents an instance publishes: the plain files of one folder, each named by its own name
+// inside the instance's offers folder, in name order. An absent folder is no documents rather than a failure; the
+// use case refuses a record that states a provenance without documents, or documents without one.
+func (c cli) offersAt(folder string) ([]kernel.File, int) {
+	if folder == "" {
+		return nil, 0
+	}
+	entries, err := os.ReadDir(folder)
+	if err != nil {
+		// A folder named on the line is read or the command fails: silence would look like an instance that
+		// publishes nothing.
+		fmt.Fprintf(c.diagnostic, "io: offers: cannot read %s\n", folder)
+		return nil, 1
+	}
+	documents := make([]kernel.File, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			fmt.Fprintf(c.diagnostic, "invalid: offers: %s is a folder\n", entry.Name())
+			return nil, 2
+		}
+		data, status := c.read(filepath.Join(folder, entry.Name()), "offers document")
+		if status != 0 {
+			return nil, status
+		}
+		documents = append(documents, kernel.File{Path: entry.Name(), Document: data})
+	}
+	return documents, 0
+}
+
 func (c cli) read(path, what string) ([]byte, int) {
 	data, err := c.readFile(path)
 	switch {

@@ -110,12 +110,14 @@ func TestMigrateWritesTheSeedBesideTheRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	seed := []byte("a ciphertext v2 never reads\n")
+	documents := offered(t, "../testdata/legacy/demo-notifier/staging/offers")
 	inputs := MigrationInputs{
 		Records: legacy.Records{App: read("app.json"), Instance: read("instance.json"),
 			Release: read("release.json"), Committed: read("helmrelease.json")},
 		Supplied:     legacy.Supplied{Repository: "samclement/demo-notifier", Commit: "eab35a3" + strings.Repeat("0", 33)},
 		Profile:      profile,
 		EventsSecret: seed,
+		Offers:       documents,
 	}
 	writer := &filestest.Fake{Contents: map[string][]byte{}}
 	if _, err := Migrate(inputs, "/checkout", writer); err != nil {
@@ -130,7 +132,7 @@ func TestMigrateWritesTheSeedBesideTheRecord(t *testing.T) {
 		Instance: writer.Contents["v2-records/demo-notifier/staging/instance.json"],
 		Release:  writer.Contents["v2-records/demo-notifier/staging/release.json"],
 		App:      writer.Contents["v2-records/demo-notifier/app.json"],
-		Profile:  profile, EventsSecret: kept,
+		Profile:  profile, EventsSecret: kept, Offers: documents,
 	}, "/checkout", replay); err != nil {
 		t.Fatal(err)
 	}
@@ -245,5 +247,47 @@ func TestMigrateAWorker(t *testing.T) {
 		if claim.Kind == "Ingress" {
 			t.Fatal("a migrated worker claims a route")
 		}
+	}
+}
+
+// offered reads a predecessor's published documents out of a frozen fixture folder, as the operator supplies them:
+// each file by its name, in name order.
+func offered(t *testing.T, folder string) []kernel.File {
+	t.Helper()
+	entries, err := os.ReadDir(folder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	documents := make([]kernel.File, 0, len(entries))
+	for _, entry := range entries {
+		data, err := os.ReadFile(folder + "/" + entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		documents = append(documents, kernel.File{Path: entry.Name(), Document: data})
+	}
+	return documents
+}
+
+// The documents and the commit they were read at travel together: a record that states one without the other is a
+// console link to nothing, so the migration refuses either half before it writes anything.
+func TestMigrateRefusesDocumentsWithoutProvenance(t *testing.T) {
+	withDocuments := migrationInputs(t)
+	withDocuments.Offers = []kernel.File{{Path: "asyncapi.yaml", Document: []byte("events: {}\n")}}
+	if _, err := Migrate(withDocuments, "/checkout", &filestest.Fake{Contents: map[string][]byte{}}); err == nil ||
+		!strings.Contains(err.Error(), "documents_without_offers") {
+		t.Fatalf("documents with no provenance: %v", err)
+	}
+	withoutDocuments := migrationInputs(t)
+	withoutDocuments.Records.Release = edited(t, withoutDocuments.Records.Release, func(document map[string]any) {
+		document["offers"] = revision[:7]
+	})
+	writer := &filestest.Fake{Contents: map[string][]byte{}}
+	if _, err := Migrate(withoutDocuments, "/checkout", writer); err == nil ||
+		!strings.Contains(err.Error(), "offers_without_documents") {
+		t.Fatalf("provenance with no documents: %v", err)
+	}
+	if len(writer.Contents) != 0 {
+		t.Fatalf("a refusal wrote %d files", len(writer.Contents))
 	}
 }

@@ -99,6 +99,10 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 		if release.Database != "" {
 			args = append(args, "--egress", "../../../platform/egress/allocation.json")
 		}
+		if documents := filepath.Join("..", "..", "testdata", "legacy", application, environment, "offers"); folderExists(documents) {
+			// The predecessor's published documents, as the operator supplies them from the commit they were read at.
+			args = append(args, "--offers", documents)
+		}
 		status, stdout, diagnostic := runMigrate(t, args...)
 		if status != 0 {
 			t.Fatalf("%s: exit %d: %s", folder, status, diagnostic)
@@ -179,6 +183,9 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 				compileArgs = append(compileArgs, "--events-secret",
 					filepath.Join("../../../v2-apps/instances", application, environment, "events.sops.yaml"))
 			}
+		}
+		if documents := filepath.Join("..", "..", "testdata", "legacy", application, environment, "offers"); folderExists(documents) {
+			compileArgs = append(compileArgs, "--offers", documents)
 		}
 		var out, compileDiagnostic bytes.Buffer
 		if status := run(compileArgs, &out, &compileDiagnostic, os.ReadFile, files.New()); status != 0 {

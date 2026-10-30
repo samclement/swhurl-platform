@@ -30,6 +30,12 @@ class Described:
     flags: dict | None = None  # the image's feature flags (name -> declaration); None without flags.json
 
 
+def offer_folders(app: str, env: str) -> list[str]:
+    """Where an instance's offered documents can be, in the order they are read: v1 keeps them beside a v1
+    instance's records, v2 beside the manifests it compiles. One instance has them in one place, never both."""
+    return [f'apps/{app}/{env}/{offers.OFFERS_DIR}', f'v2-apps/instances/{app}/{env}/{offers.OFFERS_DIR}']
+
+
 class Documents:
     """Each instance's offers, read once per commit: the documents of a commit never change. A failure
     is kept for five minutes, so GitHub being away does not make every page wait."""
@@ -54,14 +60,24 @@ class Documents:
             self.failed[key] = (self.clock(), found)
         return found
 
+    def offered(self, app: str, env: str) -> tuple[str, str | None]:
+        """The folder holding one instance's documents and its source file: a v1 instance keeps them beside its
+        records, a v2-owned one beside the manifests v2 compiled (see docs/apps.md#what-an-app-offers). Git may hold
+        neither, which is the last folder and no source."""
+        folders = offer_folders(app, env)
+        for folder in folders:
+            text = self.reader(f'{folder}/{offers.SOURCE_FILE}')
+            if text is not None:
+                return folder, text
+        return folders[-1], None
+
     def read(self, app: str, env: str, commit: str) -> tuple[Described, bool]:
         """``(what was read, whether it can be kept)``: not kept when Git holds another commit's documents
         than the cluster runs (a change on its way in), or when reading failed."""
         if self.reader is None:
             return Described(problem='the documents are in Git, which this console cannot read (no GitHub token)'), False
-        folder = f'apps/{app}/{env}/{offers.OFFERS_DIR}'
         try:
-            source_text = self.reader(f'{folder}/{offers.SOURCE_FILE}')
+            folder, source_text = self.offered(app, env)
             if source_text is None:
                 return Described(problem=f'{folder}/ is not in Git yet'), False
             source = offers.Source.parse(source_text)

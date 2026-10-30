@@ -18,5 +18,7 @@
     "uid": 65532
   },
   "telemetry": true,
-  "releaseId": "rel-sha256:c75d112f0f3ada6eff2b53e5e15f96c9b643f11efbdb630467939fdeb7ab5294"
+  "description": "Demo: receives demo-orders.created and tells the team about big orders",
+  "offers": "eab35a3b0a162b5ff839afb8dcbe6bed74807193",
+  "releaseId": "rel-sha256:8b4cf156d70049374c97e1b1283a4231b89c18fa5ec2dd75e75cf1af9b78aafe"
 }

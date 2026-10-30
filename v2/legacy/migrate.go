@@ -31,9 +31,16 @@ type Migration struct {
 	// events it receives. The pair's private half is a Secret v2 never reads, so it is not a fact here.
 	EventsKey     string
 	Subscriptions []string
-	Sources       map[string]string
-	Gaps          []Gap
+	// Offered is what the release says about the app's published documents: the line it says about itself, where a
+	// web image serves its API description, and the commit those documents were read at.
+	Offered Offered
+	Sources map[string]string
+	Gaps    []Gap
 }
+
+// Offered is a predecessor's statement about its published documents. The commit is the abbreviation the record
+// keeps — the migration takes the full one from the operator and corroborates it, so nothing here is expanded.
+type Offered struct{ Description, APIPath, Commit string }
 
 // Migrate reads the records and the predecessor's committed output as v2's record pair needs them. It
 // refuses a layout it does not support, a supplied source the records contradict, and a legacy fact the
@@ -134,6 +141,7 @@ func (m *Migration) storage(release *record, committed effective) error {
 // it states, and the broker identity it signs in with.
 func (m *Migration) declared(instance, release *record, committed effective) error {
 	for _, step := range []func() error{
+		func() error { return m.offered(release) },
 		func() error { return m.brokerRelease(release) },
 		func() error { return m.storage(release, committed) },
 		func() error { return m.declarations(instance) },
@@ -142,6 +150,26 @@ func (m *Migration) declared(instance, release *record, committed effective) err
 		if err := step(); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// offered reads what the release says the app publishes: one line about itself, the path a web image serves its
+// API description on, and the commit its offered documents were read at. The documents themselves are files beside
+// the record, which the migration is given rather than reads.
+func (m *Migration) offered(release *record) error {
+	for _, field := range []struct {
+		name string
+		into *string
+	}{{"description", &m.Offered.Description}, {"apiPath", &m.Offered.APIPath}, {"offers", &m.Offered.Commit}} {
+		value, err := release.text(field.name)
+		if err != nil {
+			return err
+		}
+		if value == "" {
+			continue
+		}
+		*field.into, m.Sources["release."+field.name] = value, "release.yaml"
 	}
 	return nil
 }

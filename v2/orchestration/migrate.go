@@ -28,6 +28,9 @@ type MigrationInputs struct {
 	// EventsSecret is the instance's own events.sops.yaml as Git holds it. v2 neither reads nor decrypts it: it
 	// moves the file beside the manifests and lists it, because only Flux and the app ever need its plaintext.
 	EventsSecret []byte
+	// Offers are the app's published documents as Git holds them: the OpenAPI and AsyncAPI documents and the flags
+	// file, each named by its name in the offers folder. v2 copies them and parses none of them.
+	Offers []kernel.File
 }
 
 // Migration is what a migration produced: the translated facts with their sources and gaps, the record pair
@@ -88,6 +91,9 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 	if err != nil {
 		return Migration{}, err
 	}
+	if files, err = withOffers(files, facts, inputs.Offers); err != nil {
+		return Migration{}, err
+	}
 	result := Migration{Facts: facts, Release: release, Instance: spec, App: app, Compilation: compiled,
 		Rendered: rendered, Egress: egress, UnmetCalls: unmet(facts.Calls, callees(rendered)),
 		UnmetCallers: unmet(facts.Allows, rendered.Callers)}
@@ -95,6 +101,20 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 		inputs.EventsSecret), files...)
 	result.Written, err = writer.Write(destination, written)
 	return result, err
+}
+
+// offered are the documents a migration writes beside the manifests, checked against the provenance the release
+// states: a console reads a document by the commit its release names and shows nothing without it, so a record that
+// states one of the two without the other would be a link to nothing. The check is this use case's because the
+// compiler renders the annotation and the documents as they are given.
+func withOffers(manifests []kernel.File, facts legacy.Migration, documents []kernel.File) ([]kernel.File, error) {
+	switch {
+	case facts.Offered.Commit != "" && len(documents) == 0:
+		return nil, refuseOffers("offers_without_documents")
+	case facts.Offered.Commit == "" && len(documents) > 0:
+		return nil, refuseOffers("documents_without_offers")
+	}
+	return WithOffers(manifests, documents)
 }
 
 // recordsOf turns one predecessor's translated facts into v2's record pair. It maps fields and lets the
@@ -110,6 +130,8 @@ func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpe
 		SchemaVersion: 1,
 		Application:   facts.Application,
 		Publishes:     facts.Workload.Publishes,
+		Description:   facts.Offered.Description,
+		APIPath:       facts.Offered.APIPath,
 		Source:        kernel.Source{Repository: facts.Source.Repository, Commit: facts.Source.Commit},
 		Artifact: kernel.Artifact{Image: facts.Workload.Image, Digest: facts.Workload.Digest,
 			MediaType: kernel.ManifestMediaType, Platform: artifactPlatform},
@@ -117,6 +139,11 @@ func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpe
 			HealthPath: facts.Workload.HealthPath, UID: facts.Workload.UID},
 		Database:  facts.Database,
 		Telemetry: facts.Workload.Telemetry,
+	}
+	if facts.Offered.Commit != "" {
+		// The documents were read at the commit the predecessor's image was built from: its record keeps only an
+		// abbreviation, and sourceOf checked that against the commit the operator supplied. One fact, checked once.
+		release.Offers = facts.Source.Commit
 	}
 	identity, err := release.ID()
 	if err != nil {

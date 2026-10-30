@@ -244,3 +244,38 @@ func TestMigrateChecksTheWorkloadBeforeTheSource(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+// What the release says about the app's own documents — one line, where it serves its API description, and the
+// commit the documents were read at — is carried with its source, not left as a gap for someone else to resolve.
+func TestMigrateCarriesWhatTheAppOffers(t *testing.T) {
+	documents := withRecords(t, func(release map[string]any) {
+		release["description"] = "hello, from the fixture"
+		release["apiPath"] = "/openapi.json"
+		release["offers"] = commit[:7]
+	}, nil)
+	migration, err := legacy.Migrate(documents, supplied())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := legacy.Offered{Description: "hello, from the fixture", APIPath: "/openapi.json", Commit: commit[:7]}
+	if migration.Offered != want {
+		t.Fatalf("offered %+v", migration.Offered)
+	}
+	for _, fact := range []string{"release.description", "release.apiPath", "release.offers"} {
+		if migration.Sources[fact] != "release.yaml" {
+			t.Errorf("%s came from %q", fact, migration.Sources[fact])
+		}
+	}
+	for _, fact := range gapFacts(migration) {
+		if strings.HasSuffix(fact, ".description") || strings.HasSuffix(fact, ".apiPath") || strings.HasSuffix(fact, ".offers") {
+			t.Errorf("a carried fact is still a gap: %s", fact)
+		}
+	}
+	// A release that states none carries none: absent is absent, not an empty claim.
+	if migration, err = legacy.Migrate(withRecords(t, nil, nil), supplied()); err != nil {
+		t.Fatal(err)
+	}
+	if migration.Offered != (legacy.Offered{}) {
+		t.Fatalf("a release that offers nothing states %+v", migration.Offered)
+	}
+}

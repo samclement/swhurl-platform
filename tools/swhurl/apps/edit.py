@@ -24,10 +24,10 @@ from swhurl.apps.contract import (
     in_cookie_domain,
     quantity,
     schedule_problem,
-    secret_key_problem,
     stored_secrets,
     teams,
 )
+from swhurl.apps.defaults import secret_key_problem
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder
 from swhurl.apps.model import relations, workload, write

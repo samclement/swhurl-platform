@@ -17,6 +17,7 @@ from swhurl import ROOT, interface
 from swhurl.apps import calling, contract, declaration, edit
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
+from swhurl.apps.defaults import secret_key_problem
 from swhurl.apps.model import generated
 from swhurl.run import CommandError, FakeRunner, Result
 
@@ -335,7 +336,7 @@ class GeneratorTests(unittest.TestCase):
             with self.subTest(key):
                 self.assertEqual(self.gen('n', *WEB, '--secret-keys', f'API_TOKEN,{key}'), 2)
                 self.assertFalse((self.tmp / 'apps/n').exists())
-        self.assertEqual(contract.secret_key_problem(['API_TOKEN', 'OTELX', 'PORT']), '')
+        self.assertEqual(secret_key_problem(['API_TOKEN', 'OTELX', 'PORT']), '')
 
     def test_secret_names_need_no_sops(self):
         old_path = os.environ['PATH']

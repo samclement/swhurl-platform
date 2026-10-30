@@ -14,7 +14,6 @@ from swhurl.platform import base_domain
 CHART = 'app-template'
 CHART_VERSION = '5.2.1'
 CHART_REPOSITORY = 'bjw-s'
-DEFAULT_DATABASE_SIZE = '1Gi'
 # Each SQLite database's backup job (apps/model/backup.py; platform/backup holds MongoDB's, with the same
 # image): published by Validate's backup-image job, encrypting to the age recipient in .sops.yaml.
 BACKUP_FILE = 'backup.yaml'
@@ -132,21 +131,6 @@ def otlp_variables(service: str) -> dict:
         interface.OTLP_PROTOCOL_VARIABLE: OTLP_PROTOCOL,
         interface.OTLP_SERVICE_VARIABLE: service,
     }
-
-
-def secret_key_problem(keys: list[str]) -> str:
-    """Why these secret keys cannot be used, or '' if they can."""
-    bad = [k for k in keys if not re.fullmatch(r'[A-Z_][A-Z0-9_]*', k)]
-    if bad:
-        return f'secret keys must be environment variable names (A-Z, 0-9, _): {", ".join(bad)}'
-    reserved = [k for k in keys if k in interface.RESERVED_VARIABLE_NAMES or k.startswith(interface.RESERVED_VARIABLE_PREFIXES)]
-    if reserved:
-        return (f'reserved for the platform: {", ".join(reserved)} (the platform sets {", ".join(interface.RESERVED_VARIABLE_NAMES)} '
-                f'and names starting {", ".join(interface.RESERVED_VARIABLE_PREFIXES)}); choose another name')
-    duplicates = sorted({k for k in keys if keys.count(k) > 1})
-    if duplicates:
-        return f'secret keys repeated: {", ".join(duplicates)}'
-    return ''
 
 
 # An app's own Secret: every key becomes a variable (envFrom, optional so the app starts before its first
@@ -278,9 +262,6 @@ APP_WORKFLOW = 'Container'
 """The workflow in every app repository that checks and publishes its image (calls the template's app.yml)."""
 
 
-# What the stack templates (samclement/swhurl-app-template-*) use; swhurl.yaml's defaults.
-TEMPLATE_PORT = 8080
-TEMPLATE_UID = 65532
 
 
 def default_host(name: str, env: str) -> str:

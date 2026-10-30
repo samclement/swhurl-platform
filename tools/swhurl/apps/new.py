@@ -39,15 +39,14 @@ from swhurl.apps.contract import (
     AUTO_DEPLOY_ENV,
     AUTO_DEPLOY_TAG_PATTERN,
     COOKIE_DOMAIN,
-    DEFAULT_DATABASE_SIZE,
     JOB_SCHEDULE,
     JOB_TIME_ZONE,
     default_host,
     in_cookie_domain,
     schedule_problem,
-    secret_key_problem,
     teams,
 )
+from swhurl.apps.defaults import DEFAULT_DATABASE_SIZE, secret_key_problem
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import records as app_records

@@ -3,7 +3,8 @@ the operator sets (make app-secret); the encrypted file is listed when present o
 from __future__ import annotations
 
 from swhurl import interface
-from swhurl.apps.contract import SECRET_FILE, app_secret, secret_key_problem
+from swhurl.apps.contract import SECRET_FILE, app_secret
+from swhurl.apps.defaults import secret_key_problem
 from swhurl.apps.model.draft import APP_SECRET, Draft, Entry, RenderError
 
 

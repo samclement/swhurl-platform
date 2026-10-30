@@ -24,7 +24,7 @@ owns, and the first promotion between two v2-owned instances.
 - **The seed fix.** The migration now writes an instance's encrypted `events.sops.yaml` beside its record as well
   as beside its manifests, before the record that names the public key. `v2-records/swhurl-try-11/prod` and
   `v2-apps/instances/swhurl-try-11/prod` hold the same ciphertext, and the record folder recompiles from Git.
-- **The cost at the v1 callees.** Moving production out of v1 removed it from v1's graph: the Render workflow
+- **The cost at the v1 callees.** Moving production out of v1 removed it from v1's graph: v1's app-sync render
   deleted `apps/swhurl-try-11/app.yaml` and removed `swhurl-try-11` from `SWHURL_ALLOWED_CALLERS` in
   `apps/swhurl-try-10/prod` and `apps/swhurl-try-12/prod` (`ea0d6f32`). The v2 caller still renders its addresses
   and tokens, but those v1 callees no longer accept its identity, so its calls to them are expected to fail until

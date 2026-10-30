@@ -754,8 +754,9 @@ names and minimum memory, with every absent fact left out. It states that contra
 `description`, offers and flags stay v1's until v2 models them — and it states `secrets` and `memoryMiB` so v2
 holds an image that adds one rather than running it without. `swhurl-v2 deploy` reads the label with the
 manifest, refuses a need the instance cannot take, and writes v2's records and files. The images deployed today
-predate that label: the templates' shared build calls the command from their next release, and an image rebuilt
-with it carries the label. The workflow that starts it is the next gate
+predate that label: the templates' shared build writes it from TypeScript `v0.2.20` and Kotlin `v0.2.19`, and
+an image rebuilt with one of those carries it, as does the seed a new app copies. The workflow that starts it is
+the next gate
 ([v2 status](v2-status.md#slice-record-image-automations-offline-half-29-october-2026)). Production still
 changes only through a promotion.
 

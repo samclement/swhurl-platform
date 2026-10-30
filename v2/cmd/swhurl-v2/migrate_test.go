@@ -82,9 +82,15 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 			"--calls", "../../../v2-records/calls.json", "--out", destination}
 		if statedEventsKey(t, predecessor(t, application, environment)) {
 			// An instance that signs in to the broker travels with its seed: v2 copies the encrypted file and
-			// never reads it, so a placeholder is all a test needs.
+			// never reads it. Use the ciphertext Git keeps beside the record when this instance has one, so the
+			// copied file is compared byte for byte; otherwise a placeholder is all a test needs.
+			seed := []byte("a ciphertext v2 never reads\n")
+			if kept, err := os.ReadFile(filepath.Join("../../../v2-records", application, environment,
+				"events.sops.yaml")); err == nil {
+				seed = kept
+			}
 			secret := filepath.Join(destination, "events.sops.yaml")
-			if err := os.WriteFile(secret, []byte("a ciphertext v2 never reads\n"), 0o600); err != nil {
+			if err := os.WriteFile(secret, seed, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			args = append(args, "--events-secret", secret)

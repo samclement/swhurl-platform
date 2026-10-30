@@ -1,0 +1,16 @@
+{
+  "apiPath": "/openapi.json",
+  "healthPath": "/healthz",
+  "image": {
+    "digest": "sha256:99696c15be84b534c638b5e39da694fbe7cf637fd6aa57c3f421eed8c92c7db1",
+    "repository": "ghcr.io/samclement/swhurl-try-11",
+    "tag": "42-4390f25"
+  },
+  "kind": "web",
+  "offers": "4390f25",
+  "port": 8080,
+  "stack": "typescript",
+  "telemetry": true,
+  "uid": 65532,
+  "version": 1
+}

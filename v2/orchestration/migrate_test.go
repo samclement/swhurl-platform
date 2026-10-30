@@ -95,6 +95,52 @@ func TestMigrateWritesThePairAndTheCompilation(t *testing.T) {
 	}
 }
 
+// An instance with a broker identity keeps its seed beside its record, not only beside its manifests, so the
+// record folder alone is what a later compile reads. The migration copies the encrypted file as it found it.
+func TestMigrateWritesTheSeedBesideTheRecord(t *testing.T) {
+	read := func(name string) []byte {
+		data, err := os.ReadFile("../testdata/legacy/demo-notifier/staging/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	profile, err := os.ReadFile("../testdata/profile.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := []byte("a ciphertext v2 never reads\n")
+	inputs := MigrationInputs{
+		Records: legacy.Records{App: read("app.json"), Instance: read("instance.json"),
+			Release: read("release.json"), Committed: read("helmrelease.json")},
+		Supplied:     legacy.Supplied{Repository: "samclement/demo-notifier", Commit: "eab35a3" + strings.Repeat("0", 33)},
+		Profile:      profile,
+		EventsSecret: seed,
+	}
+	writer := &filestest.Fake{Contents: map[string][]byte{}}
+	if _, err := Migrate(inputs, "/checkout", writer); err != nil {
+		t.Fatal(err)
+	}
+	kept, ok := writer.Contents["v2-records/demo-notifier/staging/events.sops.yaml"]
+	if !ok || string(kept) != string(seed) {
+		t.Fatalf("the record folder keeps %q, not the supplied seed", kept)
+	}
+	replay := &filestest.Fake{Contents: map[string][]byte{}}
+	if _, err := CompileInto(Inputs{
+		Instance: writer.Contents["v2-records/demo-notifier/staging/instance.json"],
+		Release:  writer.Contents["v2-records/demo-notifier/staging/release.json"],
+		App:      writer.Contents["v2-records/demo-notifier/app.json"],
+		Profile:  profile, EventsSecret: kept,
+	}, "/checkout", replay); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range replay.Contents {
+		if got := writer.Contents[path]; string(got) != string(content) {
+			t.Errorf("%s: the record folder renders %q, the migration wrote %q", path, content, got)
+		}
+	}
+}
+
 // A translation refusal writes nothing: the pair is only written once every fact is sound.
 func TestMigrateRefusesBeforeWriting(t *testing.T) {
 	inputs := migrationInputs(t)

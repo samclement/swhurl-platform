@@ -1410,7 +1410,7 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
   write, and the command reads the tree and prints the document. The cutover is the operator's ordered handover:
   orphan, adopt, then remove; Flux never pruned the namespace or the HelmRelease.
 - **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
-  1. **v1 changed deliberately, at the cutover:** `apps/swhurl-try-11` left v1, so the Render workflow removed
+  1. **v1 changed deliberately, at the cutover:** `apps/swhurl-try-11` left v1, so v1's app-sync render removed
      `swhurl-try-11` from `swhurl-try-10` and `swhurl-try-12` production's `SWHURL_ALLOWED_CALLERS` and deleted
      `apps/swhurl-try-11/app.yaml`. That is [the v2-caller/v1-callee gap](iteration-2-plan.md#6-deliberately-deferred)
      now in the plan's gap list; no v1 command, workflow or other app's records changed.

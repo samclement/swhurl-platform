@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "application": "demo-notifier",
   "environment": "staging",
-  "release": "rel-sha256:95d672b32dd664ed8d507cc44d06d90d105682226a115b687d1407fcbab134bf",
+  "release": "rel-sha256:f271bcf48ee2ec4cceb7bdacfb54e5e47412051bd9a3a26f4f588748abf71622",
   "configuration": {
     "replicas": 1,
     "memoryMiB": 384

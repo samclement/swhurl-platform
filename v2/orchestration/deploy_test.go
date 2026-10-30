@@ -290,3 +290,41 @@ func TestDeployRefusesARevisionTheTagDoesNotAbbreviate(t *testing.T) {
 		t.Fatalf("a revision the tag does not abbreviate was not refused: %v", err)
 	}
 }
+
+// The declaration label names the runtime's needs, never what the app offers. A deploy therefore keeps the
+// description, the API path and the commit the documents were read at, and recomputes the identity it carries:
+// dropping them would un-describe a working app and forget where its documents came from.
+func TestDeployKeepsWhatTheImageCannotRestate(t *testing.T) {
+	inputs := stagingInputs(t)
+	offered, err := kernel.DecodeRelease(fixture(t, "r42.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	offered.Description, offered.APIPath, offered.Offers = "Demo orders service", "/openapi.json",
+		strings.Repeat("c", 40)
+	if offered.ReleaseID, err = offered.ID(); err != nil {
+		t.Fatal(err)
+	}
+	inputs.Release, err = kernel.EncodeRelease(offered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := DeployImage(context.Background(), inputs, images(declarationLabel(nil)), t.TempDir(), filestest.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Release.Description != "Demo orders service" || result.Release.APIPath != "/openapi.json" ||
+		result.Release.Offers != strings.Repeat("c", 40) {
+		t.Fatalf("the new release forgot what the app offers: %+v", result.Release)
+	}
+	if result.Release.ReleaseID == offered.ReleaseID && result.Release.Source.Commit == offered.Source.Commit {
+		t.Fatal("the new release is the old one")
+	}
+	id, err := result.Release.ID()
+	if err != nil {
+		t.Fatalf("the release it wrote does not hold its own identity: %v", err)
+	}
+	if result.Release.ReleaseID != id {
+		t.Fatalf("stated %s, content is %s", result.Release.ReleaseID, id)
+	}
+}

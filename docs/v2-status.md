@@ -1545,6 +1545,16 @@ and the one domain whose answer could have needed a new adapter.
   repository at the commit the documents were read at. The signed-in deployed page was not opened. `make verify-platform` warns for the three
   v2-owned staging instances that its image-automation check cannot find a v1 record for: a seam the first v2-owned
   instances opened, outside this slice.
+- **A deploy dropped them, found the same evening and fixed.** The image automation deploy rebuilt each release from
+  the image's **declaration** label, which states the runtime's needs and never what the app offers, so the first
+  deploy after this slice (`0034d16e`, for `demo-notifier`, `swhurl-try-10` and `swhurl-try-11` staging) wrote
+  releases without `description`, `apiPath` or `offers`: the annotations went, and `demo-notifier`'s and
+  `swhurl-try-10`'s `SWHURL_DESCRIPTION` with them. `deploy` now keeps the three facts from the release it replaces
+  and recomputes the identity it asserts (`carryingOffered`), because the declaration cannot state them and no later
+  read could recover them from Git; the three records were repaired from the deployed releases and recompiled, so
+  the same images stand with their annotations restored. `TestDeployKeepsWhatTheImageCannotRestate` holds it. The
+  rule this sharpens: **a deploy replaces what the image states and keeps what the record states**, so the slice's
+  own claim — that a new image keeps the documents of the commit they were read at — now holds through a deploy.
 - **Next gate:** a repository read (an adapter, its credential and its approval), so a v2-owned instance's documents
   keep up with its image.
 

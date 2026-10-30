@@ -2,6 +2,37 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The three v2-owned staging instances report their images (30 October 2026)
+
+`6a3715cd` recompiled their units with the `ImageRepository`/`ImagePolicy` pair and the
+`platform-image-automation` dependency. After the push and `make flux-reconcile`:
+
+- every unit is Ready at `main@sha1:6a3715cd`; the three repositories scanned successfully (7, 19 and 16 tags)
+  and their policies are Ready, each naming the newest tag and the tag's manifest digest: `demo-notifier`
+  `21-eab35a3` / `578f4aa7…`, `swhurl-try-10` `60-0c4462b` / `2b0ce8ab…`, `swhurl-try-11` `55-067f9ca` /
+  `748075aa…`;
+- no pod restarted: the three pods were created at `22:26`–`22:44Z` on 29 October, before the units applied at
+  `05:46Z`; the repositories already hold the Flux image webhook (`flux-webhook.homelab.swhurl.com`);
+- `make verify-platform` passed, including the image webhooks, the console image and every source.
+
+The v1 Deploy workflow did what the slice predicted: the Alert dispatched it for the three reports (runs
+`41010302796`, `41010304493`, `41010313652`; 16–20 s, all successful), its first step found no
+`apps/<app>/staging` record, and the run ended `Nothing changed.` — no v1 app moved.
+
+`swhurl-v2 deploy` was then run against the real registry, with the records and profile as Git holds them and a
+temporary `--out`, so nothing in the checkout was written:
+
+- `swhurl-try-10` staging: exit 0, `changed: false`. Tag `60-0c4462b`'s index resolved to the platform manifest
+  `sha256:9ae24d58…`, exactly the digest its release selects. The policy reports the index (`2b0ce8ab…`), as Flux
+  records it; v2 resolves the manifest.
+- `demo-notifier` and `swhurl-try-11` staging: exit 2, `refused: declaration: absent`. Their newest images were
+  built before the declaration label existed, so the path refused rather than guessing. Nothing was written.
+
+**What this proves:** the pair is live and reporting, the v1 dispatch is harmless, and the registry adapter's
+index → platform-manifest resolution matches the real registry. **Not yet true:** the deployed images carry no
+declaration, so the delivery path cannot select them until a template release writes the label and an image is
+rebuilt; and no workflow calls `deploy` yet.
+
 ## The three v2-owned instances export telemetry (29 October 2026)
 
 The slice (`09571ebb`) added the missing rule: a reporting image's policy admits `telemetry.nodeCIDR` on the

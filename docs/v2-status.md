@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: a live promotion — one app's production migrated to v2, then its staging release promoted into it
+Gate: the operator's choice of the next slice
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -21,6 +21,8 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 **Approved 29 October 2026: slice 3's cutover — v2 owns NATS's user list** — `platform/nats/users.json` is v2's output now, v1's generator is deleted, and the Render workflow regenerates it, so the list the broker serves can no longer be a second writer's opinion. Implemented and checked offline, then applied; see [the record](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026).
 
 **Approved 29 October 2026: image automation's offline half** — the operator said go ahead on the gate. v2 renders the `ImageRepository`/`ImagePolicy` pair into a staging instance's unit, and gains `swhurl-v2 deploy`: the platform's tag policy picks the newest tag, a read-only registry adapter resolves its `linux/amd64` manifest and reads the declaration the build wrote into the image's config labels, the instance refuses a fact it cannot take, and the use case selects, compiles and writes the pair and the files in one effect. **The pair is live (30 October 2026) and reporting; no workflow calls `deploy` and no image has travelled it**, and the deployed images predate the declaration label. That is the next gate. See [the record](#slice-record-image-automations-offline-half-29-october-2026).
+
+**Worked 30 October 2026: the promotion gate, live** — on the operator's instruction to take the next gate, `swhurl-try-11` production was migrated to v2 and then promoted to the release its staging selects; the migration now keeps an instance's encrypted seed beside its record, so the record folder recompiles from Git alone. See [the record](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026).
 
 **Approved 29 October 2026: the telemetry export** — the operator said go ahead on the slice found while testing the rotation. A v2-owned instance's policy states `Egress` and admitted only DNS, its broker and its callers, so the collector its env names (`http://$(HOST_IP):4318`, a host-network DaemonSet) was refused. The profile now states the block that address is in (`telemetry.nodeCIDR`, with a telemetry block required to state it), and a reporting image's policy admits that block on the endpoint's own port. Nothing else about the policy changed: an instance that reports nowhere gets no such rule, and everything else is still denied. See [the record](#slice-record-the-telemetry-export-29-october-2026).
 
@@ -62,7 +64,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), the keys rendered once for every managed namespace, and the auth material reaching a callee only as files its image re-reads | **Done, proved live**: the pair (26 Oct), and on 29 Oct a new caller and a key rotation each taking effect in the running pod with **no restart** |
 | Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
-| Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **`swhurl-try-11` production was promoted to the release its staging selects on 30 October 2026**, after the migration wrote its broker seed beside the record; the live verification follows this commit. Offline 30 October 2026: `kernel.SelectPromotion` and `swhurl-v2 promote` refuse a release staging does not select, another environment or application, a user change on a volume, a stale expectation, and whatever the compiler refuses; a first promotion (creating production) is not modelled and a rollback's direction is stated, not decided |
+| Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Done live 30 October 2026**: `swhurl-try-11` production was migrated to v2 and promoted from its v1 digest to its staging's release; `make app-status` and `observe` agree, and a repeat promotion is a no-op. A first promotion (creating production) is still not modelled, a rollback's direction is stated rather than decided, and v1 callees no longer admit the migrated caller | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Two live** (`swhurl-try-11`, `swhurl-try-10` staging, the second stateful on its own volume), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
 | Always-on instance surface | Telemetry (the endpoint and the way out to it), the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: the env, tokens and team labels rolled to both v2-owned instances, and a reporting image's policy admits the collector the env names (the export was found blocked the same day; [evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)) |
@@ -72,9 +74,9 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Minting a broker identity | v2 can create a pair, not only adopt one: the seed is encrypted to the platform's recipient and the record states the public key | **Done, live 29 October 2026**: `swhurl-v2 mint`, used for the two v2-owned instances that had no pair; rotation is the same command with `--rotate` |
 | Image automation | A migrated staging instance following its published images | **Done, live 30 October 2026**: all three v2-owned staging instances followed their images end to end — the image states what it needs and the commit it was built from, the platform's tag policy and digest are read anonymously, v2 selects and compiles, the [v2 Deploy workflow](v2-status.md#slice-record-image-automations-workflow-30-october-2026) commits the records, the files and the broker's new permission, Flux applies them and the pods run the delivered digest; a repeated run is a no-op. The images come from the templates' shared build (TypeScript `v0.2.21`, Kotlin `v0.2.20`); auto-merge is not modelled |
 
-**Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
+**Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); the first promotion between two v2-owned instances; and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** delivery is manual (compile, commit, push) for everything except a v2-owned staging instance's images, which the v2 Deploy workflow delivers; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*.
+**Not yet true, and what would make it true:** delivery is manual (compile, commit, push) for everything except a v2-owned staging instance's images, which the v2 Deploy workflow delivers; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no team grants, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*. A v2 caller of a v1-owned callee now loses its grant: after `swhurl-try-11` production left v1, `swhurl-try-10` and `swhurl-try-12` production stopped admitting it, until those callees migrate or v1 reads v2's records.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); the egress cutover, which changes live outbound traffic and needs the grants recorded before it can refuse the rest; and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -99,6 +101,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Image automation | **done and live 30 October 2026**: `swhurl-v2 deploy` (one instance or every `v2-records/<app>/staging`), the v2 Deploy workflow started by the image Alert and hourly, the declaration and revision labels from both templates (`v0.2.21` / `v0.2.20`), the broker's user list rendered in the same commit, and the three staging instances running their delivered digests (`make app-status` matches, `swhurl-v2 observe` says `running`) | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | 7. Selective replacement | three live: `swhurl-try-11` staging, `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
+| Promotion | done and live 30 October 2026: `swhurl-try-11` production is v2's and runs the release its staging selects; the handover orphaned v1's unit, adopted the same namespace and release, and then moved one release reference | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
 
@@ -1385,6 +1388,52 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
   command tests (the fixture pair promotes, repeats as a no-op, and refuses each case), and the run above.
 - **Next gate:** a live promotion — migrate one app's production to v2, then promote its staging release into it
   (`swhurl-try-11` prod is stateless and is the simpler first).
+
+
+## Slice record: the first live promotion of swhurl-try-11 (30 October 2026)
+
+**Worked on the operator's instruction to take the next gate.**
+
+- **Outcome:** `swhurl-try-11` production is v2's and runs the release its staging selects (`rel-sha256:8263…`,
+  digest `sha256:a23497c7…`, source `8811403f…`). The gate was three live steps. The v1 unit was made `Orphan`
+  through a kustomize patch (`178ebb24`), because the Render workflow rewrites generated unit files and drops a
+  hand-added field. The migration (`ea0d6f32`) wrote `v2-records/swhurl-try-11/prod`, its compiled files and the
+  unit, and removed v1's production records and unit. The promotion (`3515ae99`) replaced production's release
+  and nothing else. `make app-status` reports Healthy, `1/1` ready on the promoted digest and TLS `True`;
+  `swhurl-v2 observe` says `running`; a second `promote` reports `changed: false` and writes no file; signed out,
+  HTTPS answers `302` to the shared sign-in and HTTP `301`.
+- **The seed fix this exposed:** `migrate` copied an instance's encrypted `events.sops.yaml` only beside its
+  manifests, so a migrated instance with a broker identity could not recompile from `v2-records` alone. It now
+  writes the seed beside the record, before the instance that names its public key, and a test replays the
+  record folder through `CompileInto`. `swhurl-try-11` production's seed is in both places, byte for byte.
+- **Owners and boundaries:** unchanged: `kernel` owns promotion's rule, `orchestration.Migrate` owns the one
+  write, and the command reads the tree and prints the document. The cutover is the operator's ordered handover:
+  orphan, adopt, then remove; Flux never pruned the namespace or the HelmRelease.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 changed deliberately, at the cutover:** `apps/swhurl-try-11` left v1, so the Render workflow removed
+     `swhurl-try-11` from `swhurl-try-10` and `swhurl-try-12` production's `SWHURL_ALLOWED_CALLERS` and deleted
+     `apps/swhurl-try-11/app.yaml`. That is [the v2-caller/v1-callee gap](iteration-2-plan.md#6-deliberately-deferred)
+     now in the plan's gap list; no v1 command, workflow or other app's records changed.
+  2. **Pure:** no kernel rule changed; `migrate` gained one input file to copy, with no new adapter, clock,
+     network, credential or subprocess.
+  3. **Nothing regenerated to pass:** existing goldens, identities and platform files are unchanged; the new
+     production pair and the frozen predecessor in `v2/testdata/legacy/swhurl-try-11/prod/` are the only new
+     fixtures.
+  4. **Refusals:** no refusal moved. `promote`'s existing order and codes are the ones that ran, and the no-op
+     was exercised live.
+  5. **Failure paths:** the seed-beside-record test, the migration suite over the frozen prod predecessor and the
+     command tests pass. The live failure paths — a cutover interrupted between orphan and adoption, a rollback,
+     a failed promotion — are not exercised.
+  6. **Scope stated:** a first promotion (creating production) is still not modelled; a rollback's direction is
+     still stated, not decided; readiness is `make app-status` and `observe`, not a promotion rule.
+  7. **Offline is not live:** the checks below ran before the push; the live facts above were read after
+     `make flux-reconcile` and are dated in [current state](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026).
+  8. **Recorded together:** this page, the plan's promotion and gap rows, [current state](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026)
+     and the workstream registry change with the final evidence.
+- **Evidence:** `make check-v2` (all packages, chart render and platform freshness), `make check` (1041 tests)
+  and `git diff --check` passed; the live checks are above at `3515ae99`. The migration's provenance was
+  corroborated against the image's tag and the offered documents.
+- **Next gate:** the operator's choice of the next slice.
 
 
 ## Resume

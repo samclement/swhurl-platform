@@ -174,6 +174,11 @@ The trigger is Flux's; the facts are the image's. An image states its declaratio
 `platform.swhurl.com/declaration`: one JSON document the build writes from `swhurl.yaml` and the events document
 it names (the internal `swhurl image-declaration` command), read by `adapters/registry` with the manifest.
 
+The same build states the commit it was built from, in the standard `org.opencontainers.image.revision` label. The
+tag carries an abbreviation (`<run>-<7 hex>`), and a release states a full 40-character commit, so the image states
+one and the tag has to agree: a tag whose suffix the revision does not start with is another build and is refused,
+and a revision that is itself an abbreviation is not a commit. Neither label is optional.
+
 | Field | Accepted value |
 | --- | --- |
 | `schemaVersion` | Integer `1` |
@@ -193,8 +198,9 @@ only so an image that adds one is held rather than run without it.
 `adapters/registry` is the one new integration: one public repository's tags, then one tag's index resolved to its
 `linux/amd64` manifest, then that manifest's config labels. It reads anonymously, takes no credential, and names no
 policy: the tag ranking is the kernel's. `swhurl-v2 deploy` composes them — decode the records, read the tags, take
-the newest by the platform's policy, describe it, read the declaration, refuse what the instance cannot take,
-select the release against `--expect`, compile, and write the record pair and the compiled files in one effect. A
+the newest by the platform's policy, describe it, read the declaration and the revision, refuse what the instance
+cannot take, select the release against `--expect`, compile, and write the record pair and the compiled files in one
+effect. A
 tag that matches no policy is a refusal; an image already selected is a no-op that writes nothing; a registry it
 cannot read is exit 1; and a refused image leaves the running one selected. With `--records` the same delivery runs
 for every `v2-records/<app>/staging`: one instance's refusal or failure does not stop the others, the exit status is

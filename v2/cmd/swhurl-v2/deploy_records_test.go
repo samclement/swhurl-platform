@@ -17,8 +17,9 @@ import (
 const (
 	recordsFixture = "demo-orders"
 	nextCommit     = "cccccccccccccccccccccccccccccccccccccccc"
-	nextTag        = "43-" + nextCommit
-	nextDigest     = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	// The platform publishes the tag's commit abbreviated: the image states the whole one.
+	nextTag    = "43-ccccccc"
+	nextDigest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 )
 
 // recordsTree lays the fixture instance's records out as a v2 checkout keeps them: one folder per app, its own
@@ -98,7 +99,7 @@ func TestRecordsReportsAnInstanceThatAlreadyRunsItsNewestImage(t *testing.T) {
 func TestRecordsWritesTheSelectedReleaseAndItsFiles(t *testing.T) {
 	status, document, diagnostic, writer := recordsDeploy(t, recordsTree(t), nil, answering(registrytest.Scenario{
 		Tags:   []string{nextTag},
-		Images: map[string]registry.Image{nextTag: deployedImage(nextDigest)},
+		Images: map[string]registry.Image{nextTag: deployedImage(nextDigest, nextCommit)},
 	}))
 	if status != 0 {
 		t.Fatalf("exit %d: %s", status, diagnostic)
@@ -215,7 +216,7 @@ func TestRecordsGivesAnInstanceItsAllocationOnlyWhenItGrantsSomething(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			status, _, diagnostic, writer := recordsDeploy(t, recordsTree(t),
 				[]string{"--egress", allocation(test.grants)}, answering(registrytest.Scenario{
-					Tags: []string{nextTag}, Images: map[string]registry.Image{nextTag: deployedImage(nextDigest)},
+					Tags: []string{nextTag}, Images: map[string]registry.Image{nextTag: deployedImage(nextDigest, nextCommit)},
 				}))
 			if status != 0 {
 				t.Fatalf("exit %d: %s", status, diagnostic)

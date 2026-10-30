@@ -142,6 +142,7 @@ kernel: const OverQuota Code = "over_quota"
 kernel: const OwnershipConflict Code = "ownership_conflict"
 kernel: const RestoreDeadline = 15 * time.Minute
 kernel: const RestoreLabel = labelDomain + "restore"
+kernel: const RevisionLabel = "org.opencontainers.image.revision"
 kernel: const StaleInstance Code = "stale_instance"
 kernel: const Unsupported Code = "unsupported"
 kernel: const WrongApplication Code = "wrong_application"
@@ -192,6 +193,7 @@ kernel: func RenderReloader(namespaces []string) (ResourceSet, error)
 kernel: func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, egress *Egress, job RestoreJob) (RestoreObjects, error)
 kernel: func RenderUsers(users NATSUsers) (ResourceSet, error)
 kernel: func RestoreJobName(application string, started time.Time) string
+kernel: func RevisionOf(tag ImageTag, revision string) (string, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: func WithBrokerKey(spec InstanceSpec, pair UserKey, rotate bool) (InstanceSpec, error)
 kernel: type AppID string

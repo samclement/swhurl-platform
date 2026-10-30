@@ -20,11 +20,12 @@ const (
 	newTag    = "43-" + newCommit
 )
 
-// deployedImage is one image a test's registry answers, with the declaration its build wrote.
-func deployedImage(digest string) registry.Image {
+// deployedImage is one image a test's registry answers: the declaration its build wrote, and the commit its tag
+// abbreviates.
+func deployedImage(digest, commit string) registry.Image {
 	label := `{"schemaVersion":1,"runtime":{"kind":"web","port":8080,"healthPath":"/healthz","uid":65532},"telemetry":true}`
 	return registry.Image{Digest: digest, MediaType: kernel.ManifestMediaType,
-		Labels: map[string]string{kernel.DeclarationLabel: label}}
+		Labels: map[string]string{kernel.DeclarationLabel: label, kernel.RevisionLabel: commit}}
 }
 
 // deploy runs the command against a scripted registry and a destination that writes nothing to disk.
@@ -49,7 +50,7 @@ func deploy(t *testing.T, answered *registrytest.Fake) (int, string, string, *fi
 
 func TestDeployCommandWritesTheRecordsAndFiles(t *testing.T) {
 	images := registrytest.New(registrytest.Scenario{Tags: []string{"42-" + strings.Repeat("b", 40), newTag},
-		Images: map[string]registry.Image{newTag: deployedImage(newDigest)}})
+		Images: map[string]registry.Image{newTag: deployedImage(newDigest, newCommit)}})
 	status, out, diagnostic, writer := deploy(t, images)
 	if status != 0 {
 		t.Fatalf("exit %d: %s", status, diagnostic)
@@ -98,7 +99,7 @@ func TestDeployCommandNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 	images := registrytest.New(registrytest.Scenario{Tags: []string{newTag},
-		Images: map[string]registry.Image{newTag: deployedImage(current.Artifact.Digest)}})
+		Images: map[string]registry.Image{newTag: deployedImage(current.Artifact.Digest, newCommit)}})
 	status, out, diagnostic, writer := deploy(t, images)
 	if status != 0 || writer.Writes != 0 {
 		t.Fatalf("exit %d, %d writes: %s", status, writer.Writes, diagnostic)

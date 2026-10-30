@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: a rebuilt image carries the declaration label, the v2 Deploy workflow is started by the image Alert, and a live image travels dispatch → record → compile → Flux
+Gate: rebuilt images carry the declaration and revision labels, the image Alert's dispatch delivers them, and a live image travels dispatch → record → compile → Flux
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -95,7 +95,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
 | Broker identity minting | done and live 29 October 2026: `swhurl-v2 mint` derives the pair in the pure model, encrypts the seed through `adapters/sops` (the one command v2 starts) to `sops.recipient`, writes it beside the record and then the record; the two v2-owned instances without a pair were minted, and `make v2-users` and the Reloader list gained them | [slice](#slice-record-minting-a-broker-identity-29-october-2026) |
 | Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
-| Image automation | the pair is **live 30 October 2026** (three policies Ready and reporting, no pod restarted); the label's producer (`swhurl image-declaration`) is released and asserted per app type in both templates (TypeScript `v0.2.20`, Kotlin `v0.2.19`), and the v2 Deploy workflow delivers `v2-records/<app>/staging` — `make v2-deploy` in a bot worktree, checked with `make check-v2`; v1's Deploy now ends early for those apps. **The deployed images predate the label, so nothing has been delivered yet** | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
+| Image automation | the pair is **live 30 October 2026** (three policies Ready and reporting, no pod restarted); the label's producer (`swhurl image-declaration`) and the revision label are released and asserted per app type in both templates (TypeScript `v0.2.21`, Kotlin `v0.2.20`), and the v2 Deploy workflow delivers `v2-records/<app>/staging` — `make v2-deploy` in a bot worktree, checked with `make check-v2`; v1's Deploy now ends early for those apps. **First live delivery: the tag carries only 7 characters of the commit and a release states 40, so the image now states its revision too (below); nothing has been delivered yet** | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | 7. Selective replacement | three live: `swhurl-try-11` staging, `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 
@@ -1279,7 +1279,10 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
      the records' freshness, not by the Kubernetes schemas; both the hourly run and the dispatch trigger are
      deliberately absent until a labelled image exists, because a delivery now refuses `declaration: absent` and
      would redden every run for a known refusal; `v2-records/<app>/prod` is not delivered.
-  7. **Offline is not live** — nothing was applied. The command was exercised against the real registry and the
+  7. **Offline is not live** — nothing was applied. The first dispatch found a contract defect: the tag carries
+     seven characters of the commit, a release states forty, and the deploy supplied the tag's suffix, so every
+     delivery was refused `invalid: source.commit` ([the fix](#slice-record-the-image-states-the-commit-it-was-built-from-30-october-2026)).
+     The command was exercised against the real registry and the
      committed tree, read-only: `swhurl-try-10` staging unchanged, `demo-notifier` and `swhurl-try-11` staging
      refused `declaration: absent`, nothing written; `make v2-deploy` did the same through the target and left the
      checkout clean. The workflow itself was then run by hand ([the run](https://github.com/samclement/swhurl-platform/actions/runs/41023347779)): it set up Go, the chart and sops,
@@ -1295,6 +1298,48 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
 - **Next gate:** a rebuilt image carries the declaration label (Renovate's pin bump), the image Alert's
   dispatch is added to the workflow, and a real image travels dispatch → record → compile → Flux, with
   `make app-status` and `swhurl-v2 observe` as evidence.
+
+## Slice record: the image states the commit it was built from (30 October 2026)
+
+**Found by the first dispatch, not by a test: the tag carries an abbreviation and a release states a commit.**
+
+- **Outcome and the refusals it must produce:** every delivery was refused `invalid: source.commit`, because
+  `deploy` filled the release's source commit from the tag's seven-character suffix while the release contract
+  requires forty. An image now also states its build's commit in the standard
+  `org.opencontainers.image.revision` label; `deploy` reads it, the tag's suffix must abbreviate it, and the
+  release states it. A tag whose suffix the revision does not start with is another build (`invalid:
+  source.revision`), an abbreviated revision is not a commit, and an image that states none is refused
+  (`refused: source: revision_absent`).
+- **Owners and boundaries:** the **image** owns the commit it was built from (the build knows it); the **tag**
+  owns only the abbreviation the platform's policy ranks; the **release** owns the full commit, as it always did;
+  **`kernel.RevisionOf`** holds the one rule (a full commit, abbreviated by the tag); **`orchestration`** reads the
+  label and sequences it beside the declaration; the **templates** write the label from `github.sha` and assert
+  it; the **catalogue** pins the two releases.
+- **What crosses the seam:** one more config label from the registry, read with the manifest and no credential.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 untouched** — no v1 file, record or workflow changed; the templates' own builds are the only other
+     writers, and their checks and versions moved for this.
+  2. **Pure** — the rule is a pure kernel function; no new effect anywhere.
+  3. **Nothing regenerated** — no record, compiled file or platform file moved. The public-API baseline gained the
+     two intended kernel declarations (the label constant and the rule).
+  4. **Refusals stated** — the old refusal set said "a tag whose commit is abbreviated", which was the symptom;
+     it is replaced by the three above, and the release's own `source.commit` rule is unchanged.
+  5. **Failure paths tested** — a seven-character tag with a matching full revision is delivered (the live shape);
+     no revision, a revision the tag does not abbreviate, and an abbreviated revision are refused with nothing
+     written; the rule itself is a table test.
+  6. **Scope** — the automated path is what gains provenance; a hand-written release's claims remain unchecked
+     (the deferred list's row stands). `image-declaration` still carries only what the app states; the revision is
+     the build's own fact, so the template writes it.
+  7. **Offline is not live** — nothing was applied. The defect was found by the first real dispatch, against the
+     three labelled images; the fix is exercised by the unit tests and by the templates' CI, and the live delivery
+     is the next act.
+  8. **Recorded in the same change** — this page, the plan's contract and refusal text, [apps](apps.md#deploy-a-new-image),
+     the two template releases and the catalogue pin.
+- **Evidence:** `make check-v2` (kernel, orchestration, cmd and archtest, including the new rule and the
+  seven-character tag), both templates' Template workflows green with the revision assertion, `make check-templates`
+  against the new pins.
+- **Next gate:** the apps rebuilt onto the new template versions, then the live delivery.
+
 
 ## Resume
 

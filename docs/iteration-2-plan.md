@@ -117,11 +117,16 @@ Three value records and one pure operation live in [`v2/kernel`](../v2/kernel/re
 | `database` | Optional `sqlite`; empty for an image that keeps no state |
 | `telemetry` | Optional boolean; true when the image has an SDK that reports to the platform collector |
 | `publishes` | Optional list of event names, each an app-name-style segment, each at most once: what the image's AsyncAPI document says it publishes |
+| `description` | Optional one line of 1–200 printable characters: what the image says about itself, served to it as `SWHURL_DESCRIPTION` |
+| `apiPath` | Optional absolute path (`/openapi.json`-shaped) where a **web** image serves its API description; a `worker` states none. It is the path the app serves, not the file its repository keeps |
+| `offers` | Optional 40-hex commit the app's offered documents were read at. It is **not** `source.commit`: the image moves with every deploy and the documents are refreshed separately. The annotation renders its first seven characters, which is what the documents' own `source.yaml` states |
 | `releaseId` | Optional identity assertion; if supplied, must match the computed release ID |
 
 Values are compared exactly, never normalised: `Owner/Repo` and `owner/repo` are different sources and give different release IDs, though GitHub treats them as one repository.
 
-All fields except `releaseId` are required. Absence of the assertion computes it; encoding always includes it. Empty/null assertions are invalid, not absence. No grants, secret requirements, offers, command override or integrations are accepted.
+All fields except `releaseId` are required. Absence of the assertion computes it; encoding always includes it. Empty/null assertions are invalid, not absence. No grants, secret requirements, command override or integrations are accepted. The three offered facts are what the
+image declares about itself; the documents they describe are files beside the instance
+([what an app offers](apps.md#what-an-app-offers)), never a resource.
 
 The artifact digest names an **OCI image manifest**, not an index/list or a configuration blob. Indexes, Docker media types and other platforms are unsupported. This intentionally does not accept every v1 image pin. These are descriptor claims: the offline kernel cannot prove existence, object type, runtime platform or trusted build provenance. It never contacts a registry or fetches source.
 
@@ -1719,7 +1724,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | A credential source for reading a cluster | The [third observation slice](#third-observation-slice-a-credential-source-and-an-observe-command-implemented-25-october-2026) reads a kubeconfig in its **JSON** form (`kubectl config view --raw -o json`) and refuses a credential plugin. YAML, and the in-cluster service-account token, are not read | Reopened by an approved YAML dependency, or by a v2 that runs inside the cluster |
 | An operator-facing observation report (envelope, exit codes, document schema) | `swhurl-v2 observe` writes `v2-observation` version 2 to stdout: source, time, verdict, findings, the protection's own answer, assessed/unassessed, not covered, target. Exit 0 means a report was produced, never that the instance is running | Changes with the next consumer of the document (a console, a checker); `version` rises with its shape |
 | Observation from a live cluster: what it cannot read | Reads are the four kinds; pod phase, restarts, events, terminating and evicted pods, foreign ownership and every other kind are not read. A `--revision` is required, because the command cannot know which commit Flux should be at | `observe` now takes `--calls` and `--egress`, so it can observe what compile can render; further kinds with the first consumer that needs them |
-| What an app offers (offers documents) | Not generated | Phase 7 |
+| What an app offers (offers documents) | **Implemented offline 30 October 2026** ([slice](v2-status.md#slice-record-what-an-app-offers-30-october-2026)): the release states `description`, `apiPath` and the commit its documents were read at; an instance renders `SWHURL_DESCRIPTION` and the two annotations; `migrate` carries all of it and copies the documents as a declared input beside the record; `compile` writes them beside the manifests, where the console reads them. **v2 generates and refreshes nothing**: a document comes from the predecessor or from the operator, and no repository is read | A repository read (`adapters/` for the app's Git host, its credential and approval), so a new image's documents travel without a person; until then a v2-owned instance's documents are as old as its migration |
 | Live feature flags | None | Later |
 | Console: repository creation, seed images, historical Activity | None | Later |
 | Multiple stacks and app types (the templates) | None | Later |

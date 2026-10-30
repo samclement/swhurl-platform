@@ -2,6 +2,47 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## What an app offers, carried and rendered (offline, 30 October 2026)
+
+**Offline only: nothing was applied, pushed or reconciled, and the cluster runs exactly what it ran before.** The
+extent of the change is the working tree, and the four v2-owned instances' compiled HelmReleases were re-rendered in
+it.
+
+- **What changed.** A release states `description`, `apiPath` (web only) and `offers` — the commit its offered
+  documents were read at — and an instance renders `SWHURL_DESCRIPTION` and the two HelmRelease annotations
+  (`api-description`, `offers`). The documents themselves are declared inputs: `migrate --offers DIR` copies them to
+  `v2-records/<app>/<env>/offers/`, `compile --offers DIR` writes them to `v2-apps/instances/<app>/<env>/offers/`, and
+  the console reads that folder when v1's `apps/<app>/<env>/offers/` is absent. No adapter was added: v2 fetches and
+  generates nothing.
+- **Every release identity moved, deliberately.** The release canonical form gained three positional facts, so the
+  three fixtures, both goldens, the pinned escaping vector and the four v2-owned records changed with it. The four
+  records now name `rel-sha256:3e28b916…` (`swhurl-try-11` staging), `70b1be9d…` (its production), `1dbd670d…`
+  (`swhurl-try-10` staging) and `8b4cf156…` (`demo-notifier` staging), and their instance revisions moved with them.
+  `v2/testdata/identities.json` was recomputed **independently in Python** from the documented positional encoding and
+  agrees with Go on the release canonical, the release ID, the instance canonical and the instance revision.
+- **The documents are the ones the platform had already read.** They were taken from the commits the four predecessors
+  recorded: `d771828acf7b…`, `4390f2534c2d…`, `e01ce488e4e9…` and `eab35a3b0a16…`. Each copied `source.yaml` states the
+  same seven characters the new annotation renders (`d771828`, `4390f25`, `e01ce48`, `eab35a3`), so the console's
+  commit check matches and the documents are not claimed at a commit they were not read at. `swhurl-try-11` staging
+  and production and `swhurl-try-10` staging also render `platform.swhurl.com/api-description: /openapi.json`;
+  `demo-notifier` staging is a worker and renders none.
+- **Recompiling changed the HelmRelease and nothing else.** All four instances were recompiled from their record
+  folders: each wrote only its `helmrelease.json` (the variable and the annotations) and its `offers/` files; every
+  namespace, quota, policy, ingress, stream, consumer, backup object, unit file and kustomization is byte-identical, so
+  the egress rules and the pods' templates do not move with this slice.
+- **Checked.** `make check-v2` passes (gofmt, vet, every package, the chart render, and `platform/egress`,
+  `platform/auth`, `platform/nats` and `platform/reloader` still render from the records: 16 instance ports, 17 auth
+  namespaces, 19 broker users, 20 watched namespaces). `make check` passes (`Ran 1042 tests in 83.5s with 4
+  workers`), and `make -s check-docs` reports 0 errors. The acceptance run migrated each frozen predecessor with `--offers` (4 of 4 exit 0, 14, 14, 23 and
+  16 files) and reproduced the paused pairs frozen beside them.
+- **Not exercised, and the gap this leaves live.** Nothing tested this in the cluster: the annotations, the variable
+  and the documents reach `swhurl-try-11` staging and production, `swhurl-try-10` staging and `demo-notifier` staging
+  only when this tree is committed, pushed and reconciled. After that, a new image does **not** bring new documents —
+  `swhurl-v2 deploy` refreshes the image and leaves the documents as they are, and the annotation keeps saying which
+  commit they came from — until v2 can read an app's repository. A v2-owned instance that no migration created has no
+  documents at all, and `migrate` now refuses a predecessor that states `offers` without them (and one that supplies
+  them without a commit).
+
 ## Team grants carry from a predecessor's records (30 October 2026)
 
 Offline only: nothing was applied and no instance migrated. An instance's `allows` may now state a team grant

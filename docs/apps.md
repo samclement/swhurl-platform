@@ -571,7 +571,7 @@ flowchart LR
 
 | What | Where | Why |
 | --- | --- | --- |
-| The documents, as the repository has them, and where they came from | `apps/<app>/<env>/offers/` (`source.yaml`: repository, commit, file names; `flags.json`: the [feature flags](#feature-flags) its `swhurl.yaml` declares, for the console's form). Not Kubernetes resources: nothing is applied | The offline checks and the console read them without building or calling the app |
+| The documents, as the repository has them, and where they came from | `apps/<app>/<env>/offers/` (`source.yaml`: repository, commit, file names; `flags.json`: the [feature flags](#feature-flags) its `swhurl.yaml` declares, for the console's form), or `v2-apps/instances/<app>/<env>/offers/` for an instance [v2 owns](#what-an-app-offers). Not Kubernetes resources: nothing is applied | The offline checks and the console read them without building or calling the app |
 | Where the running app serves its API description | The annotation `platform.swhurl.com/api-description` on the instance's HelmRelease, from `provides.api` (no app reads it, so it is not a variable) | The console links it; it goes when `provides.api` goes |
 | The commit they were read at | The annotation `platform.swhurl.com/offers` on the instance's HelmRelease | The console sees that the app describes itself; an annotation does not restart the app |
 | The events the app publishes | `SWHURL_EVENTS_PUBLISH`, set from the channels `asyncapi.yaml` sends to (a channel's `address` is the event's name) | The AsyncAPI document is the declaration: nobody lists the events a second time. Everything that follows from the list is [as for any event](#events) |
@@ -583,6 +583,17 @@ flowchart LR
 **What is refused.** A document that is not OpenAPI 3 or AsyncAPI 3, a file `swhurl.yaml` names but the commit lacks, an event name that is not a lowercase name, and a document that no longer sends an event another app of that environment still receives: the workflow fails for that app, which keeps its image and what it had (the others still deploy), and a promotion is refused. Remove the subscription first, or keep the event. `make check-apps` fails when what an instance publishes is not what its kept document describes (rule `offers`). Production is refused offers that were read for another image than staging runs.
 
 **Where it shows.** The console's [Catalogue](console.md#use-it) lists what every app offers, described or not, and the Connect picker on an app page and in New app says what each choice is.
+
+**A v2-owned instance.** An instance v2 owns ([v2 status](v2-status.md)) keeps its documents in
+`v2-records/<app>/<env>/offers/`, beside its records, and v2 copies them into
+`v2-apps/instances/<app>/<env>/offers/` with the manifests it compiles
+(`compile --offers v2-records/<app>/<env>/offers`): declared inputs, byte for byte, never parsed. The release states
+what they are — its description, the path it serves its API description on, and the commit the documents were read at
+— and the compiled HelmRelease carries the same two annotations and the `SWHURL_DESCRIPTION` variable, so the app page
+and the Catalogue show it exactly as they show a v1 instance. v2 **copies** the documents and never fetches them:
+`swhurl-v2 migrate --offers DIR` takes the predecessor's folder, and a repository read is still planned
+([the gap list](iteration-2-plan.md#6-deliberately-deferred)). A v2-owned staging instance that has followed a new
+image therefore still shows the documents of the commit they were read at, and the annotation says so.
 
 **Limits.** The repository is read anonymously, so it must be public (a private one needs `GITHUB_TOKEN`). The documents are checked for the shape the platform uses, not against the full specifications; the templates' own tests do more. Operations must be mappings with `action: send` or `action: receive` and a channel reference to an existing entry in `channels`; malformed operations are refused without writes. Channels without send operations declare no publications. An app that stops naming its documents loses `offers/` and clears publications, subject to [subscriber checks and retained-stream protection](#events).
 

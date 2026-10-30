@@ -2,11 +2,11 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
-## What an app offers, carried and rendered (offline, 30 October 2026)
+## What an app offers, carried and rendered (30 October 2026)
 
-**Offline only: nothing was applied, pushed or reconciled, and the cluster runs exactly what it ran before.** The
-extent of the change is the working tree, and the four v2-owned instances' compiled HelmReleases were re-rendered in
-it.
+Pushed as `f903a461` and `4ae07bc9`, applied by `make flux-reconcile`, and verified in the cluster the same evening;
+the console image `src-91290cae3e0958a5` was deployed by Validate (`0882727a`) and is the one running. The bullets
+below were checked in the tree before the push and are kept as the offline record.
 
 - **What changed.** A release states `description`, `apiPath` (web only) and `offers` — the commit its offered
   documents were read at — and an instance renders `SWHURL_DESCRIPTION` and the two HelmRelease annotations
@@ -35,13 +35,34 @@ it.
   namespaces, 19 broker users, 20 watched namespaces). `make check` passes (`Ran 1042 tests in 83.5s with 4
   workers`), and `make -s check-docs` reports 0 errors. The acceptance run migrated each frozen predecessor with `--offers` (4 of 4 exit 0, 14, 14, 23 and
   16 files) and reproduced the paused pairs frozen beside them.
-- **Not exercised, and the gap this leaves live.** Nothing tested this in the cluster: the annotations, the variable
-  and the documents reach `swhurl-try-11` staging and production, `swhurl-try-10` staging and `demo-notifier` staging
-  only when this tree is committed, pushed and reconciled. After that, a new image does **not** bring new documents —
-  `swhurl-v2 deploy` refreshes the image and leaves the documents as they are, and the annotation keeps saying which
-  commit they came from — until v2 can read an app's repository. A v2-owned instance that no migration created has no
-  documents at all, and `migrate` now refuses a predecessor that states `offers` without them (and one that supplies
-  them without a commit).
+- **Live, and what it showed.** All four HelmReleases carry the annotations the records render:
+  `swhurl-try-11` staging `api-description: /openapi.json` and `offers: d771828`, its production the same path and
+  `4390f25`, `swhurl-try-10` staging the path with `e01ce48` (and its egress annotation beside them, one map), and
+  `demo-notifier` staging `offers: eab35a3` with no `api-description`, because a worker serves none. The two
+  instances whose release states a description restarted onto it — `swhurl-try-10` staging and `demo-notifier`
+  staging, both new pods at 17:42 with `SWHURL_DESCRIPTION` in the pod spec. `swhurl-try-11` staging and production
+  **did not restart** (their pod is from 11:51): an annotation is metadata, not a pod template change, which is the
+  property the platform relies on. `make app-status` reports all four **Healthy** on their pinned digests,
+  `make flux-reconcile` re-applied the console image, `make verify-platform` passed, and the console runs the new
+  image with no warning about it.
+- **The console reads them.** `make console-dev` served `/apps/swhurl-try-10/staging` from the checkout as the fixed
+  dev identity: it linked the app's repository at
+  `e01ce48`, its API description at
+  `http://swhurl-try-10.swhurl-try-10-staging.svc.cluster.local:8080/openapi.json`, and its description, all read from
+  `v2-apps/instances/swhurl-try-10/staging/offers/` — a folder the old console never looked at, since
+  `apps/swhurl-try-10/` does not exist. `/catalogue` links the same document. `demo-orders/staging`, whose documents
+  are v1's, renders unchanged. The signed-in deployed console has not been opened: that needs a browser session, so
+  the deployed page is the operator's to confirm.
+- **A new image does not bring new documents — the gap this slice leaves.** `swhurl-v2 deploy` refreshes the image and
+  leaves the documents as they are, and the annotation keeps saying which commit they came from, until v2 can read an
+  app's repository. A v2-owned instance that no migration created has no documents at all, and `migrate` now refuses a
+  predecessor that states `offers` without them (and one that supplies them without a commit).
+- **An unrelated warning this made visible.** `make verify-platform` now reports three WARNs,
+  `swhurl-try-11-staging`, `swhurl-try-10-staging` and `demo-notifier-staging`: "newest image …, but this checkout has
+  no apps/<app>/<env>/release.yaml". That check compares image automation's newest tag with **v1's** record, and these
+  instances have none, so it cannot tell whether their image moved ahead of Git. It is a v1/v2 seam the first v2-owned
+  instances opened, not this slice's change; whether it learns to skip what v2 owns or reads the v2 record is the next
+  decision.
 
 ## Team grants carry from a predecessor's records (30 October 2026)
 

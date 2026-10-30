@@ -747,10 +747,17 @@ The [Deploy workflow](../.github/workflows/deploy.yml) also runs hourly and by h
 
 **A v2-owned staging instance** follows the same trigger: its unit carries the same `ImageRepository` and
 `ImagePolicy`, and the image states what it needs in a declaration its build writes into the image's config
-labels. `swhurl-v2 deploy` reads it, refuses a need the instance cannot take, and writes v2's records and files.
-The images deployed today predate that label, so the path holds them until a template release writes it and an
-image is rebuilt; the workflow that starts it is the next gate ([v2 status](v2-status.md#slice-record-image-automations-offline-half-29-october-2026)).
-Production still changes only through a promotion.
+labels. Its producer is the internal `image-declaration` command
+([`image_declaration.py`](../tools/swhurl/apps/image_declaration.py)), which prints one line from the app's
+`swhurl.yaml` and the events document it names, holding the runtime, telemetry, database, publications, secret
+names and minimum memory, with every absent fact left out. It states that contract and nothing else —
+`description`, offers and flags stay v1's until v2 models them — and it states `secrets` and `memoryMiB` so v2
+holds an image that adds one rather than running it without. `swhurl-v2 deploy` reads the label with the
+manifest, refuses a need the instance cannot take, and writes v2's records and files. The images deployed today
+predate that label: the templates' shared build calls the command from their next release, and an image rebuilt
+with it carries the label. The workflow that starts it is the next gate
+([v2 status](v2-status.md#slice-record-image-automations-offline-half-29-october-2026)). Production still
+changes only through a promotion.
 
 **What the image needs comes with it.** The run reads `swhurl.yaml` at the image's commit and writes its [needs](#swhurlyaml) into the release with the tag. Example: the developer changes the code and `port: 9090` in one commit; staging's next release has the new image, Service port 9090, probes on 9090, and its callers' `SWHURL_SERVICE_*_URL` and its NetworkPolicy on 9090. An image already deployed is not read again; after a change to how the platform applies a need, `make app-deploy ARGS=--refresh` (or `gh workflow run deploy.yml -f refresh=true`) reads every staging image again.
 

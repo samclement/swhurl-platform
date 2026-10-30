@@ -171,8 +171,8 @@ dispatch names the app — so they are kernel constants, tied by a test to v1's 
 `contract.py`.
 
 The trigger is Flux's; the facts are the image's. An image states its declaration in its config labels under
-`platform.swhurl.com/declaration`: one JSON document the build writes from `swhurl.yaml`, read by
-`adapters/registry` with the manifest.
+`platform.swhurl.com/declaration`: one JSON document the build writes from `swhurl.yaml` and the events document
+it names (the internal `swhurl image-declaration` command), read by `adapters/registry` with the manifest.
 
 | Field | Accepted value |
 | --- | --- |

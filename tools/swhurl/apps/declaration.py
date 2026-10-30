@@ -42,6 +42,11 @@ TELEMETRY = ('otlp', 'none')
 MAX_BYTES = 512 * 1024
 MAX_DESCRIPTION = 200
 """One line, as the New app form and make app-repo take it."""
+IMAGE_LABEL = 'platform.swhurl.com/declaration'
+"""Where an image states what it needs: one JSON document in its config labels, the key v2's kernel reads.
+The build passes `<key>=<document>` to the image build; the document's shape is v2's contract, not this file's."""
+IMAGE_LABEL_VERSION = 1
+"""The document's version: v2 reads this one and refuses another."""
 LIVE, IGNORED, REFUSED = 'live', 'ignored', 'refused'
 IDENTITY, NEED, OFFER, GRANT, DROPPED = 'identity', 'need', 'offer', 'grant', 'dropped'
 WITH_IMAGE = 'with every new staging image (make app-deploy, the Deploy workflow)'
@@ -127,6 +132,42 @@ class Declaration:
                      {key: seed[key] for key in RESOURCES if key in seed}, seed.get('database') or '',
                      seed.get('database_size') or (DEFAULT_DATABASE_SIZE if seed.get('database') else ''),
                      tuple(seed.get('secret_keys') or ()))
+
+    def image_label(self, publishes: tuple[str, ...] = ()) -> dict:
+        """What this image states about itself: the declaration v2 reads from the image's config labels.
+
+        The needs are this file's and the publications its events document's. A fact the image does not
+        have is left out (v2 refuses nulls and unknown fields); `secrets` and `memoryMiB` are stated
+        because v2 holds an image that adds one rather than running it without. A job's kind is stated
+        as it is: v2 refuses a kind it does not model instead of being told the image is a worker.
+        """
+        needs = self.needs
+        runtime = {'kind': needs.kind, 'uid': needs.uid}
+        if needs.kind == 'web':
+            runtime |= {'port': needs.port, 'healthPath': needs.health_path}
+        label = {'schemaVersion': IMAGE_LABEL_VERSION, 'runtime': runtime}
+        if needs.otlp:
+            label['telemetry'] = True
+        if needs.database:
+            label['database'] = needs.database
+        if publishes:
+            label['publishes'] = list(publishes)
+        if needs.secrets:
+            label['secrets'] = list(needs.secrets)
+        if memory := needs.minimum.get('memory'):
+            label['memoryMiB'] = mebibytes(memory)
+        return label
+
+
+QUANTITY_KIB = {'Ki': 1, 'Mi': 1024, 'Gi': 1024 * 1024}
+"""A memory quantity's unit in KiB: whole MiB is an exact division of it, rounded up."""
+
+
+def mebibytes(quantity: str) -> int:
+    """A memory quantity as swhurl.yaml states it (`192Mi`) in whole MiB, rounded up so a need is never
+    understated. Only the units its own check accepts are read."""
+    value, unit = int(quantity[:-2]), quantity[-2:]
+    return -(-value * QUANTITY_KIB[unit] // 1024)
 
 
 RESOURCES = {'cpu': 'cpu', 'memory': 'memory', 'memory_limit': 'memoryLimit'}

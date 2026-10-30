@@ -3,11 +3,11 @@
   "application": "demo-notifier",
   "source": {
     "repository": "samclement/demo-notifier",
-    "commit": "2c47027a86e9ac35c0936e6bf1ce8f6490a50a4c"
+    "commit": "8cf2d30d4a68314770ef9f96d60454407ca0a61d"
   },
   "artifact": {
     "image": "ghcr.io/samclement/demo-notifier",
-    "digest": "sha256:a5ca7d169e15a08b4bcbf529a6c1f729a3e48bb42194c1c6db9e20a74669bf80",
+    "digest": "sha256:fbc4ebc999582b3271df586492cc7f94670f9c310bb58301bdbd6c2ad3cf9096",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -20,5 +20,5 @@
   "telemetry": true,
   "description": "Demo: receives demo-orders.created and tells the team about big orders",
   "offers": "eab35a3b0a162b5ff839afb8dcbe6bed74807193",
-  "releaseId": "rel-sha256:38f88ad9dc596b1e9c67e23870d49e7aaaa88fe91e7106acb71bf916f7b66486"
+  "releaseId": "rel-sha256:95d672b32dd664ed8d507cc44d06d90d105682226a115b687d1407fcbab134bf"
 }

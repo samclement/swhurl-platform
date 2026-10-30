@@ -3,11 +3,11 @@
   "application": "swhurl-try-10",
   "source": {
     "repository": "samclement/swhurl-try-10",
-    "commit": "0c4462b34a8d31c15d64737c7586a174ebdd3944"
+    "commit": "034b52da9719f774b9d6e77facc6b7b193eedb1a"
   },
   "artifact": {
     "image": "ghcr.io/samclement/swhurl-try-10",
-    "digest": "sha256:9ae24d58d25bcc6b156c5e5d20a322be56f0de7df27110a6826f26cdd4221df5",
+    "digest": "sha256:827f8705110e23ca7e021cc1cb62657ead41897e17fd228e67a6046134682cb8",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -19,5 +19,8 @@
   },
   "database": "sqlite",
   "telemetry": true,
-  "releaseId": "rel-sha256:9653a3aa5af9c95d1fc69c03e5821f9c3db8b6d7a3f38ecc615383b885c94ec3"
+  "publishes": [
+    "visited"
+  ],
+  "releaseId": "rel-sha256:88b235f002bcde43bf21da2701a136436139ee16a8e59f2941f1a613ea56b635"
 }

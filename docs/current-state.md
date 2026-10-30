@@ -2,6 +2,34 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## A reused PR image could not be deployed (30 October 2026)
+
+`Deploy v2` failed five times between 15:45 and 18:08, every time for one reason, and it was not this session's
+changes: `demo-notifier/staging: refused invalid: source.revision: the tag's suffix does not abbreviate the
+revision`. `swhurl-try-10` and `swhurl-try-11` staging reported `unchanged` in the same runs, and no other workflow
+failed.
+
+- **What the policy picked and what the image said.** The newest tag was `demo-notifier:41-66520d2`; its config
+  label states `org.opencontainers.image.revision=3c25ed7b…`, a **temporary PR merge ref**, not a commit on `main`.
+  `3c25ed7b` and the merged commit `66520d2` have the **same tree** (`69e36cedba`), so the image content was right:
+  it was Renovate PR #15's tested image, published unchanged by the merge.
+- **Why.** The app's `container.yml` passed `reuse-pr-image: true`, so the templates' shared `app.yml` copied the
+  PR's retained OCI image to GHCR under the main run's tag (`skopeo copy --preserve-digests`, with
+  `app-build-image publish` asserting the digest was unchanged). A copied image keeps its labels, so the tag named
+  the merged commit and the label named the PR's. v2 requires the tag's suffix to abbreviate the stated revision
+  ([what a release states](apps.md#deploy-a-new-image)), refused the tag, and the app stayed on
+  `36-bf1c7df` (its record's digest `6f1c2f21…`). v1 never read that label, which is why nothing noticed while
+  `demo-notifier` was v1's — the failure appeared when the first v2-owned app merged a PR.
+- **The fix, in the order it landed.** Kotlin template **v0.2.21** (`8113914`) and TypeScript **v0.2.22**
+  (`3619c3e`) stop the rendered caller passing `reuse-pr-image` (and drop the `actions: read` grant only that path
+  needed); `STACK_REVISIONS` here pins both. The three v2-owned apps stop opting in: `demo-notifier` (`2c47027`),
+  `swhurl-try-10` (`de0ff0c`), `swhurl-try-11` (`4722d96`). Every `main` merge now builds and smoke-tests its own
+  image, so the tag and the revision label name the same commit.
+- **Checked.** `make check-templates` renders both templates at the new pins and every app type still passes the
+  app policy; `make check` passes. The other eight app repositories still pass `reuse-pr-image: true` — they are
+  v1-owned, where the label is not read, so they carry the same defect latently until they update from their
+  template.
+
 ## What an app offers, carried and rendered (30 October 2026)
 
 Pushed as `f903a461` and `4ae07bc9`, applied by `make flux-reconcile`, and verified in the cluster the same evening;
@@ -53,6 +81,16 @@ below were checked in the tree before the push and are kept as the offline recor
   `apps/swhurl-try-10/` does not exist. `/catalogue` links the same document. `demo-orders/staging`, whose documents
   are v1's, renders unchanged. The signed-in deployed console has not been opened: that needs a browser session, so
   the deployed page is the operator's to confirm.
+- **The first deploy after this slice dropped them, found and fixed the same evening.** The image automation deploy
+  (`0034d16e`, 19:42) brought all three staging instances to the images the reuse fix published, and rebuilt each
+  release from the image's **declaration** label — which states the runtime's needs and not what the app offers. So
+  `description`, `apiPath` and `offers` went with it: the three HelmReleases lost their annotations
+  (`platform.swhurl.com/offers`, `api-description`) and the pods that rolled at 19:42 came up without
+  `SWHURL_DESCRIPTION` for `demo-notifier` and `swhurl-try-10`. `deploy` now keeps those three facts from the release
+  it replaces and recomputes the identity it asserts (`carryingOffered`), held by
+  `TestDeployKeepsWhatTheImageCannotRestate`; the three records were repaired from the deployed releases and
+  recompiled, so the annotations and the description are back with **the same images** and every other rendered file
+  unchanged.
 - **A new image does not bring new documents — the gap this slice leaves.** `swhurl-v2 deploy` refreshes the image and
   leaves the documents as they are, and the annotation keeps saying which commit they came from, until v2 can read an
   app's repository. A v2-owned instance that no migration created has no documents at all, and `migrate` now refuses a

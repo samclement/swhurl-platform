@@ -771,7 +771,9 @@ templates' shared build (TypeScript `v0.2.21`, Kotlin `v0.2.20`), and the seed a
 The [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) delivers every `v2-records/<app>/staging`: Flux
 starts it from the image Alert when a policy picks a newer image, and an hourly run and a manual run catch a lost
 dispatch. `swhurl-v2 deploy` reads the labels with the manifest, refuses a need the instance cannot take, and
-writes v2's records and files. Each instance is one delivery — a refused or failed one keeps its image while the
+writes v2's records and files. A deploy replaces what the **image** states — runtime, telemetry, database,
+publications, memory — and keeps what the **record** states: the description, the API path and the commit its
+documents were read at, because the declaration label cannot carry them and no later read would recover them. Each instance is one delivery — a refused or failed one keeps its image while the
 others still deploy, and the run fails after they are pushed — and the commit (`make v2-deploy`) is checked with
 `make check-v2` before it is pushed, because the bot's push starts no workflows. An instance takes its allocation
 only when the allocation records a grant for it, so a retained port with nothing behind it does not put the
@@ -787,7 +789,7 @@ instance behind the proxy. Production still changes only through a promotion.
 
 ## Dependency updates in app repositories
 
-Apps from a template update their own dependencies. The Renovate GitHub App is installed for all repositories (a config file required), so a new app's repository is registered on Renovate's next run; its `renovate.json` extends its template's shared `renovate-preset.json` (TypeScript: npm packages, OpenTelemetry grouped; Kotlin: Gradle plugins and libraries, Kotlin and Micronaut grouped). Every pull request runs the app's checks from the template's shared `app.yml`: compilation and type-checking, tests, an image build, and a smoke test that starts the image as the cluster does, from the app's `swhurl.yaml` (details in each template's README). The [compile-once build](#compiling-typescript-once) and [tested image reuse](#reusing-a-tested-pr-image) below remove repeated work. A failed compilation or test prevents image publication.
+Apps from a template update their own dependencies. The Renovate GitHub App is installed for all repositories (a config file required), so a new app's repository is registered on Renovate's next run; its `renovate.json` extends its template's shared `renovate-preset.json` (TypeScript: npm packages, OpenTelemetry grouped; Kotlin: Gradle plugins and libraries, Kotlin and Micronaut grouped). Every pull request runs the app's checks from the template's shared `app.yml`: compilation and type-checking, tests, an image build, and a smoke test that starts the image as the cluster does, from the app's `swhurl.yaml` (details in each template's README). The [compile-once build](#compiling-typescript-once) below removes repeated work; [image reuse of a tested PR](#reusing-a-tested-pr-image-retired-30-october-2026) was retired. A failed compilation or test prevents image publication.
 
 | Situation | What validates an update | What deploys |
 | --- | --- | --- |
@@ -815,46 +817,25 @@ TypeScript templates from `v0.2.2` provide this build. The Dockerfile's `checked
 
 Existing TypeScript apps adopt the Dockerfile and caller's `checks-in-image: true` together through a reviewed [template update](#template-updates). A workflow-only version upgrade retains the older runner checks. This optimisation applies whenever an image needs building, including a main run that cannot reuse a PR image.
 
-### Reusing a tested PR image
+### Reusing a tested PR image (retired 30 October 2026)
 
-After the demo-orders PR passes, a matching merge can publish its already tested image. The main job downloads and verifies that image, then copies it to GHCR; compilation, tests, image building and the smoke test have already succeeded on the PR. Staging deploys the published digest through the usual Flux path, and production still uses explicit promotion.
+**Retired: an instance v2 owns cannot deploy an image this publishes.** The optimisation let a matching merge publish its already tested image: the main job downloaded and verified that image, then copied it to GHCR, so compilation, tests, image building and the smoke test had all happened on the PR. Staging deployed the published digest through the usual Flux path, and production still used explicit promotion.
+
+It cannot coexist with [what a release states about its image](#deploy-a-new-image). A copied image keeps its config labels, including `org.opencontainers.image.revision`, which names the commit the **PR** built it from — a temporary merge ref, not the merged commit the deployment tag names. v2 requires the tag's suffix to abbreviate that revision, so it refuses the tag (`source.revision: the tag's suffix does not abbreviate the revision`), and the app stops at its previous image while the deploy run fails. That happened to `demo-notifier` staging on 30 October 2026 ([evidence](current-state.md#a-reused-pr-image-could-not-be-deployed-30-october-2026)): the policy picked `41-66520d2`, whose image states `3c25ed7b`, the merge ref of the Renovate PR that produced it. v1 never read the label, which is why nothing noticed while the app was v1's.
+
+Both templates (`typescript` v0.2.22, `kotlin` v0.2.21) and the apps rendered from them therefore no longer pass `reuse-pr-image`, and every `main` merge builds and smoke-tests its own image, so the tag and the revision label name the same commit. The shared `app.yml` still accepts the input and the internal `app-build-image` command still exists, for a caller that owns a v1 instance and accepts that trade; nothing in the platform uses them.
 
 | Optimisation | Work saved | Work still needed |
 | --- | --- | --- |
 | Compile TypeScript once | Repeated compilation within an ordinary build | Tests and an image smoke test on each ordinary build |
-| Reuse the tested PR image | A second build and smoke test on a matching main merge | Build-input comparison, artifact download and verification, registry copy, and staging health checks |
 
-The internal `app-build-image` command in [`build_image.py`](../tools/swhurl/apps/build_image.py) is used by TypeScript template `v0.2.5` and Kotlin template `v0.2.5` to retain a smoke-tested OCI image as a GitHub Actions artifact for one day. The artifact contains the image and a proof binding its runtime config to the image that passed the smoke test. It is reconstructible from Git and needs no backup or in-cluster service; its logs and failures stay in GitHub Actions.
-
-Main can publish that exact image when the checked-out source tree, immutable shared workflow, helper, build target, platform and resolved base/BuildKit image digests match. External base tags are resolved and pinned before building, so a changed tag cannot race the comparison. Source comparison includes the whole tracked file tree: dependency locks, the caller workflow and README changes all count. A squash or merge commit with the same file tree is eligible even though its commit ID differs. The helper loads the runnable part of the OCI export into Docker for smoke tests and verifies its config digest, leaving the export and its provenance intact. OCI publication preserves the original PR's build attestations and verifies the published digest. The deployment tag names the merged commit; the preserved provenance describes the original PR build.
-
-```mermaid
-flowchart LR
-    PR[PR build and smoke test] --> Archive[OCI image and proof: one day]
-    Archive --> Match{Main build inputs match?}
-    Match -->|yes| Copy[Publish the tested image]
-    Match -->|no or unavailable| Build[Build and smoke test]
-    Copy --> Registry[GHCR]
-    Build --> Registry
-    subgraph Cluster[k3s]
-        Flux[Flux ImagePolicy]
-        App[Staging app]
-    end
-    Registry --> Flux
-    Flux --> Deploy[Deploy workflow commits the pin]
-    Deploy --> App
-```
-
-Candidates come only from successful PR runs whose head repository is the app's own, with matching unexpired artifact names and matching proof and archive hashes. Forks, direct pushes without a matching PR, missing permissions or artifacts, and unsupported Dockerfiles take the ordinary build path. New callers opt in with `reuse-pr-image: true` and grant their existing `GITHUB_TOKEN` `actions: read` to retrieve artifacts; existing workflow-only upgrades keep this feature off.
-
-The trade-offs are:
-
-- **More work on the PR.** Exporting the full OCI image, loading its runtime and uploading an artifact add time and use GitHub artifact storage. The one-day lifetime limits storage, but a PR merged later needs a fresh successful run to reuse its image. Lookup and input-comparison work also happens before a fallback build.
-- **Conservative reuse.** An intervening dependency update, a changed base-image tag or even an app README edit can force a normal build. Keeping the whole tracked tree in the comparison avoids guessing which files affect a custom app's image.
-- **Dependence on registries and artifacts.** Skopeo copies the runtime into Docker for the smoke test and the complete OCI image into GHCR for publication. It is pinned by digest to an [immutable upstream release](https://github.com/podman-container-tools/image_build#readme), because rolling upstream tags can lose their previous digests after a rebuild. CI still needs those registries to be available. Candidate lookup problems fall back to a build; runtime loading, smoke-test, proof or publication failures stop the job.
-- **Main relies on the PR's checks.** A match skips repeating them and preserves the PR build's provenance. The subsequent [staging health check](#operate-an-instance) remains necessary: the CI smoke test runs without the live platform's sign-in, service calls and event credentials.
-
-[Initial reuse/fallback evidence](current-state.md#tested-pr-image-reuse-13-to-14-october-2026) and the [eight-app rollout timings](current-state.md#skopeo-dependency-repair-and-remaining-template-adoption-14-october-2026) show the benefit and its limits. Cache warmth, image size, registry latency and runner queues affect elapsed time; these optimisations save repeated work, and individual timings are not a speed guarantee.
+What it did, for reading an older log: the internal `app-build-image` command in
+[`build_image.py`](../tools/swhurl/apps/build_image.py) retained a smoke-tested OCI image as a GitHub Actions
+artifact for a day, with a proof binding its runtime config to the image that passed the smoke test; a `main` run
+whose source tree, shared workflow, helper, target, platform and resolved base/BuildKit digests matched that proof
+re-downloaded the image and copied it to GHCR unchanged, preserving the PR build's attestations. A `matching tested
+PR image` line in a main log is that path; the trade-offs were extra PR time and artifact storage, conservative
+comparison that any tracked-file edit defeats, and a dependence on both registries.
 
 ## Promote to production
 

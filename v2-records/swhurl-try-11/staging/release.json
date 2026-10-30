@@ -18,5 +18,7 @@
     "uid": 65532
   },
   "telemetry": true,
-  "releaseId": "rel-sha256:8d6767d34a2a18a21df61c6756a1bda86584628745db6e3366e58413975022a9"
+  "apiPath": "/openapi.json",
+  "offers": "d771828acf7bc301ed79df502f75c5866c65b774",
+  "releaseId": "rel-sha256:7ecb05a788b9062f9e8180c26dde652428428619b6d4ca24fac0eb706f385096"
 }

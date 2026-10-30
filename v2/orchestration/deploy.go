@@ -120,7 +120,9 @@ func (r deployRequest) unchanged(tag string) (Deploy, error) {
 }
 
 // candidate is the release the newest image states, after the instance refuses what it cannot take. The release
-// states the commit the image says it was built from, checked against the tag that published it.
+// states the commit the image says it was built from, checked against the tag that published it, and keeps what the
+// image cannot restate: a declaration label names the runtime's needs, never what the app offers, so the description,
+// the API path and the commit its documents were read at are the record's until a repository read refreshes them.
 func (r deployRequest) candidate(tag kernel.ImageTag, published registry.Image) (kernel.ReleaseBundle, error) {
 	declaration, err := declarationOf(published)
 	if err != nil {
@@ -133,8 +135,26 @@ func (r deployRequest) candidate(tag kernel.ImageTag, published registry.Image) 
 	if err := kernel.AcceptDeclaration(declaration, r.instance, r.current); err != nil {
 		return kernel.ReleaseBundle{}, err
 	}
-	return declaration.Release(r.instance.Application, r.current.Source.Repository, commit,
+	release, err := declaration.Release(r.instance.Application, r.current.Source.Repository, commit,
 		r.current.Artifact.Image, published.Digest, published.MediaType)
+	if err != nil {
+		return kernel.ReleaseBundle{}, err
+	}
+	return carryingOffered(release, r.current)
+}
+
+// carryingOffered is the candidate with the three offered facts the image does not state, and its identity
+// recomputed for them: a deploy that dropped them would un-describe a working app and forget which commit its
+// documents came from, which no later read could recover from Git.
+func carryingOffered(candidate, current kernel.ReleaseBundle) (kernel.ReleaseBundle, error) {
+	candidate.Description, candidate.APIPath, candidate.Offers = current.Description, current.APIPath, current.Offers
+	candidate.ReleaseID = "" // the identity `Release` asserted is the one without them
+	id, err := candidate.ID()
+	if err != nil {
+		return kernel.ReleaseBundle{}, err
+	}
+	candidate.ReleaseID = id
+	return candidate, nil
 }
 
 // revisionOf reads the commit an image states it was built from. A tag alone never supplies it: the platform's tag

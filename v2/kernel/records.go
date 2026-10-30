@@ -97,8 +97,10 @@ type InstanceSpec struct {
 	// the platform; a size is a decision, so there is no default.
 	Storage Storage `json:"storage,omitempty"`
 	// Calls and Allows are the instance's own declarations — the apps it calls, and the apps whose calls it
-	// accepts, by app name (teams are not modelled). The resolver reads them to decide consent; the
-	// compiler renders only the connected pairs a resolution gives it, so these never reach a resource.
+	// accepts. `calls` states app names; `allows` states app names and, beside them, a team grant
+	// (`team:<name>`) that admits any caller whose app record names that team. The resolver reads them to
+	// decide consent; the compiler renders only the connected pairs a resolution gives it, so these never
+	// reach a resource.
 	Calls  []string `json:"calls,omitempty"`
 	Allows []string `json:"allows,omitempty"`
 	// Events is the identity an instance signs in to the event service with: the public key, and the
@@ -241,17 +243,25 @@ func (s InstanceSpec) validateEventsAndDeclarations() error {
 	return s.validateDeclarations()
 }
 
-// validateDeclarations checks both sides of an instance's declarations: app names, each at most once. A team
-// grant is v1's spelling and not v2's: the record states app names, and migration refuses a team grant rather
-// than quietly changing what the instance accepts.
+// validateDeclarations checks both sides of an instance's declarations, each name at most once. A call is an
+// app name, because it needs one instance's address; an `allows` entry may also be a team grant, which names a
+// team instead. A grant states the rule and never a member list: the resolver matches it against each caller's
+// own app record, so a caller that joins or leaves a team needs no record elsewhere rewritten.
 func (s InstanceSpec) validateDeclarations() error {
 	for _, declared := range []struct {
 		field string
 		names []string
-	}{{"calls", s.Calls}, {"allows", s.Allows}} {
+		teams bool
+	}{{"calls", s.Calls, false}, {"allows", s.Allows, true}} {
 		seen := map[string]bool{}
 		for _, name := range declared.names {
-			if !namePattern.MatchString(name) {
+			team, granted := strings.CutPrefix(name, "team:")
+			switch {
+			case granted && !declared.teams:
+				return refuse(Invalid, declared.field, "expected an app name")
+			case granted && !namePattern.MatchString(team):
+				return refuse(Invalid, declared.field, "expected a team name")
+			case !granted && !namePattern.MatchString(name):
 				return refuse(Invalid, declared.field, "expected an app name")
 			}
 			if seen[name] {

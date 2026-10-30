@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -343,19 +344,39 @@ func TestMigrateReportsUnconnectedDeclarations(t *testing.T) {
 	}
 }
 
-// A grant by team is a v1 fact v2 does not model: the record states app names, so the migration refuses it
-// rather than carrying a consent rule that would quietly change what the instance accepts.
-func TestMigrateRefusesATeamGrant(t *testing.T) {
+// A grant by team travels as the record states it. The record names a team, not a member list, so the
+// migration neither widens nor narrows what the instance accepts: the resolution matches the grant against
+// each caller's own app record when the pair is decided.
+func TestMigrateCarriesATeamGrant(t *testing.T) {
 	snapshot := writeSnapshot(t, snapshotDocument(t, map[string]any{"instance": map[string]any{
 		"version": 1, "exposure": "authenticated-web", "replicas": 1,
-		"allows": []any{"team:demo"},
+		"allows": []any{"team:demo", "swhurl-try-11"},
 	}}))
+	destination := t.TempDir()
 	status, stdout, diagnostic := runMigrate(t, "--snapshot", snapshot, "--app", "hello", "--env", "staging",
 		"--profile", filepath.Join("..", "..", "testdata", "profile.json"),
 		"--source-repository", "nginxinc/nginx-unprivileged", "--source-commit", strings.Repeat("b", 40),
-		"--out", t.TempDir())
-	if status != 2 || stdout != "" || !strings.Contains(diagnostic, "allows: teams_are_not_modelled") {
-		t.Fatalf("exit %d, stdout %q, stderr %q", status, stdout, diagnostic)
+		"--out", destination)
+	if status != 0 {
+		t.Fatalf("exit %d, diagnostic %q", status, diagnostic)
+	}
+	// The record is the one the migration wrote, and it states the grant beside the app name, sorted.
+	written := filepath.Join(destination, "v2-records", "hello", "staging", "instance.json")
+	instance, err := kernel.DecodeInstance(readFile(t, written))
+	if err != nil {
+		t.Fatalf("the written record: %v", err)
+	}
+	if want := []string{"swhurl-try-11", "team:demo"}; !slices.Equal(instance.Allows, want) {
+		t.Fatalf("the record's grants: %v, want %v", instance.Allows, want)
+	}
+	// The report names it as declared and nothing as unmet: a team grant has no caller of its own to be
+	// missing, and the resolution says whether anyone asked and was turned away.
+	relationships := migrationOf(t, stdout)["relationships"].(map[string]any)
+	if declared := relationships["declaredCallers"].([]any); len(declared) != 2 || declared[1] != "team:demo" {
+		t.Errorf("declared callers %v", declared)
+	}
+	if unmet := relationships["unmetCallers"].([]any); len(unmet) != 1 || unmet[0] != "swhurl-try-11" {
+		t.Errorf("unmet callers %v", unmet)
 	}
 }
 

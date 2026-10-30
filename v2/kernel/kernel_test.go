@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -474,6 +475,50 @@ func TestDomainValidation(t *testing.T) {
 	s = original
 	if again, _ := s.Revision(); rev != again {
 		t.Fatal("revision depends on history")
+	}
+}
+
+// A team grant is a declaration beside the app names it consents to: the record states the rule, and the
+// resolver matches it against each caller's own app record, so membership is one fact in one place. Only the
+// side that can have one may name a team, because a call needs one instance's address.
+func TestTeamGrants(t *testing.T) {
+	granted := instance(t, "prod.json")
+	granted.Allows = []string{"team:demo", "alpha"}
+	encoded, err := EncodeInstance(granted)
+	if err != nil {
+		t.Fatalf("an instance that allows a team: %v", err)
+	}
+	if !bytes.Contains(encoded, []byte(`"team:demo"`)) {
+		t.Fatalf("the team grant is not in the record:\n%s", encoded)
+	}
+	decoded, err := DecodeInstance(encoded)
+	if err != nil {
+		t.Fatalf("the written record: %v", err)
+	}
+	if !slices.Equal(decoded.Allows, []string{"alpha", "team:demo"}) {
+		t.Fatalf("the grants round-trip as %v", decoded.Allows)
+	}
+	withTeam, err := granted.Revision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain, _ := instance(t, "prod.json").Revision(); plain == withTeam {
+		t.Fatal("a team grant does not participate in the instance's identity")
+	}
+	for _, tt := range []struct {
+		field  string
+		calls  []string
+		allows []string
+	}{
+		{"calls", []string{"team:demo"}, nil},
+		{"allows", nil, []string{"team:"}},
+		{"allows", nil, []string{"team:Demo"}},
+		{"allows", nil, []string{"team:demo", "team:demo"}},
+	} {
+		s := instance(t, "prod.json")
+		s.Calls, s.Allows = tt.calls, tt.allows
+		_, err := s.Revision()
+		refusal(t, err, Invalid, tt.field)
 	}
 }
 

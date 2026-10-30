@@ -100,14 +100,8 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 // recordsOf turns one predecessor's translated facts into v2's record pair. It maps fields and lets the
 // kernel decide what a record may say: identity, validation and encoding stay there.
 func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpec, kernel.AppSpec, error) {
-	// Consent by team is a v1 fact v2 does not model: a record states app names only, so carrying a team grant
-	// would quietly widen or narrow what the instance accepts. Refuse instead, and name the reason.
-	for _, granted := range facts.Allows {
-		if strings.HasPrefix(granted, "team:") {
-			return kernel.ReleaseBundle{}, kernel.InstanceSpec{}, kernel.AppSpec{},
-				&Refusal{Subject: "allows", Reason: "teams_are_not_modelled"}
-		}
-	}
+	// Consent by team travels as the record states it: the grant names a team, the resolution matches it against
+	// each caller's own team, and the migration neither widens nor narrows what the instance accepts.
 	if facts.Instance.Team == "" {
 		return kernel.ReleaseBundle{}, kernel.InstanceSpec{}, kernel.AppSpec{},
 			&Refusal{Subject: "app.team", Reason: "a_team_is_required"}
@@ -171,7 +165,8 @@ func callees(connections kernel.Connections) []string {
 }
 
 // unmet is the declarations the resolution does not connect. A team grant has no caller of its own — the
-// resolver expands it — so it is not compared; its effect appears in the rendered callers.
+// resolver matches it against a caller's team — so there is no one name to look for; the resolution's own
+// waiting and refused lists say whether a caller asked and was turned away.
 func unmet(declared, resolved []string) []string {
 	missing := []string{}
 	for _, name := range declared {

@@ -6,10 +6,10 @@ name: Deploy v2
 # image's config labels, refuses a fact the instance cannot take, and selects and compiles in one commit
 # (make v2-deploy; swhurl-v2 deploy --records).
 #
-# What starts it: the hourly run and a manual run. Flux starts it too, through the image-dispatch Alert's
-# repository_dispatch (platform/image-automation/dispatch.yaml), once a rebuilt image carries the declaration
-# label the templates write: until then every dispatch would refuse with declaration: absent and fail the run,
-# so the trigger is added with the first labelled image rather than reddening every policy reconcile.
+# What starts it: a manual run, for now. The hourly run and Flux's image-dispatch Alert
+# (platform/image-automation/dispatch.yaml, a repository_dispatch) are added with the first rebuilt image that
+# carries the declaration label the templates write: until then every delivery refuses with declaration: absent
+# and fails the run, so both would redden CI on every policy reconcile and every hour for a known refusal.
 #
 # The commit is pushed with GITHUB_TOKEN, which starts no workflows (so not this one again, and not Validate):
 # the run therefore checks the result itself with make check-v2 — v2's Go rules, and that the platform files the
@@ -18,8 +18,6 @@ name: Deploy v2
 # fresh worktree, so a push lost to another writer deploys again on the newer main.
 
 on:
-  schedule:
-    - cron: '47 * * * *'
   workflow_dispatch:
 
 permissions:

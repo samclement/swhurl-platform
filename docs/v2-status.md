@@ -69,7 +69,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | App kinds | A worker release compiles to an instance that serves nothing, with every other fact intact | **Done, offline 29 October 2026** (the worker kind); `job` still refused |
 | Events | The server's user list, and per instance its key, stream, consumers and seed | **Parts one and two, offline 29 October 2026**: the user list renders identically to the platform's, and a keyed instance renders its variables, stream, consumers and unit; the seed is the encrypted file v2 copies without reading |
 | Minting a broker identity | v2 can create a pair, not only adopt one: the seed is encrypted to the platform's recipient and the record states the public key | **Done, live 29 October 2026**: `swhurl-v2 mint`, used for the two v2-owned instances that had no pair; rotation is the same command with `--rotate` |
-| Image automation | A migrated staging instance following its published images | **The pair is live 30 October 2026** and reports each repository; the delivery path is offline: `swhurl-v2 deploy` resolves the newest tag, reads the image's declaration label, refuses what the instance cannot take, and writes the records and files. The deployed images predate the label, whose producer is released in both templates (TypeScript `v0.2.20`, Kotlin `v0.2.19`, 30 October 2026: the build's `image-declaration` command, from `swhurl.yaml` and its events document); the [v2 Deploy workflow](v2-status.md#slice-record-image-automations-workflow-30-october-2026) delivers every v2-owned staging instance from those records, hourly and by hand, and starts from the image Alert once one labelled image exists |
+| Image automation | A migrated staging instance following its published images | **The pair is live 30 October 2026** and reports each repository; the delivery path is offline: `swhurl-v2 deploy` resolves the newest tag, reads the image's declaration label, refuses what the instance cannot take, and writes the records and files. The deployed images predate the label, whose producer is released in both templates (TypeScript `v0.2.20`, Kotlin `v0.2.19`, 30 October 2026: the build's `image-declaration` command, from `swhurl.yaml` and its events document); the [v2 Deploy workflow](v2-status.md#slice-record-image-automations-workflow-30-october-2026) delivers every v2-owned staging instance from those records by hand, and its hourly run and the image Alert are added with the first labelled image |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
@@ -1243,7 +1243,7 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
   `v2-records/<app>/staging` — production follows a promotion and is not read — and writes each instance's record
   pair and compiled files, one document per run naming what happened to every instance. `make v2-deploy` builds it
   and writes into the checkout; the [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) runs that in a bot
-  worktree, checks it with `make check-v2` and pushes with `GITHUB_TOKEN`, hourly and by hand now, and from the
+  worktree, checks it with `make check-v2` and pushes with `GITHUB_TOKEN` — by hand now, and hourly and from the
   image Alert once a rebuilt image carries the declaration label. The v1 Deploy workflow ends at its first step
   for an app whose `v2-records/<app>/staging/instance.json` exists on `main`. A delivery refuses what the single
   delivery refuses; a tree that does not hold an instance's records refuses the whole run (`invalid: records:` for
@@ -1276,9 +1276,9 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
      keeps its tests (nothing to push, a lost push, a failed check).
   6. **Scope stated** — the workflow neither promotes nor auto-merges, and `make check-v2` does not schema-validate
      the compiled files (a bot push starts no Validate run), so the compiled output is checked by its own tests and
-     the records' freshness, not by the Kubernetes schemas; the scheduling trigger is deliberately absent until a
-     labelled image exists, because a dispatch now refuses `declaration: absent` and would redden every policy
-     reconcile; `v2-records/<app>/prod` is not delivered.
+     the records' freshness, not by the Kubernetes schemas; both the hourly run and the dispatch trigger are
+     deliberately absent until a labelled image exists, because a delivery now refuses `declaration: absent` and
+     would redden every run for a known refusal; `v2-records/<app>/prod` is not delivered.
   7. **Offline is not live** — nothing was applied. The command was exercised against the real registry and the
      committed tree, read-only: `swhurl-try-10` staging unchanged, `demo-notifier` and `swhurl-try-11` staging
      refused `declaration: absent`, nothing written; `make v2-deploy` did the same through the target and left the

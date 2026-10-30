@@ -2,6 +2,26 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Tested-PR-image reuse retired in the eight v1 app repositories (30 October 2026)
+
+- **What changed.** `demo-orders`, `demo-shop`, `demo-shopper`, `swhurl-try-12`, `swhurl-try-13`, `swhurl-try-30`,
+  `swhurl-try-31` and `swhurl-try-32` each lost `reuse-pr-image: true` from
+  `.github/workflows/container.yml`, committed "Stop reusing a tested PR image" and pushed to `main`
+  (`312b8b3`, `0061677`, `5f446fe`, `d1dfe08`, `370b772`, `3e2096c`, `ed0b7f2`, `e27a973`). `swhurl-try-12`'s `with:`
+  block held only that input, so it went too. Their `actions: read` grant stays: removing it belongs to removing the
+  machinery ([why it was retired](apps.md#reusing-a-tested-pr-image-retired-30-october-2026)).
+- **Checked.** All eight Container runs on `main` finished green between 23:36 and 23:42 UTC, and each new tag's
+  `org.opencontainers.image.revision` label was read from GHCR's config blob: `66-312b8b3` states `312b8b3d…`,
+  `83-0061677` states `00616775…`, `73-5f446fe` states `5f446fe7…`, `68-370b772` states `370b772f…`, `20-ed0b7f2`
+  states `ed0b7f2d…` — each the merged commit the tag names. An untouched tag shows the defect that was retired:
+  `62-ea1c8b3` states `7cbb4665…`, its PR's merge ref.
+- **Not yet true.** `swhurl-try-12` (`kotlin` v0.2.18), `swhurl-try-30` and `swhurl-try-32` (`typescript` v0.2.18)
+  pin a template older than the release that writes the label (`kotlin` v0.2.20, `typescript` v0.2.21), so their new
+  tags `73-d1dfe08`, `7-3e2096c` and `6-e27a973` carry no `org.opencontainers.image.revision` at all — v2 would
+  refuse them for naming no revision rather than a wrong one. Each repository has a green Renovate PR that bumps the
+  pin (to `kotlin` v0.2.21, `typescript` v0.2.22); merging it is a reviewed template update, not a reuse decision.
+  v1 reads no label, so nothing is broken meanwhile.
+
 ## A reused PR image could not be deployed (30 October 2026)
 
 `Deploy v2` failed five times between 15:45 and 18:08, every time for one reason, and it was not this session's
@@ -26,9 +46,9 @@ failed.
   `swhurl-try-10` (`de0ff0c`), `swhurl-try-11` (`4722d96`). Every `main` merge now builds and smoke-tests its own
   image, so the tag and the revision label name the same commit.
 - **Checked.** `make check-templates` renders both templates at the new pins and every app type still passes the
-  app policy; `make check` passes. The other eight app repositories still pass `reuse-pr-image: true` — they are
-  v1-owned, where the label is not read, so they carry the same defect latently until they update from their
-  template.
+  app policy; `make check` passes. At the time, the other eight app repositories still passed
+  `reuse-pr-image: true` — v1-owned, where the label is not read, so they carried the defect latently until they
+  updated from their template; they were retired the same evening ([above](#tested-pr-image-reuse-retired-in-the-eight-v1-app-repositories-30-october-2026)).
 
 ## What an app offers, carried and rendered (30 October 2026)
 

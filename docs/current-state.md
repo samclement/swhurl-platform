@@ -26,6 +26,12 @@ beside app names, and `resolve` matches it against each caller's **own** `app.js
 - **Not exercised:** a migrated callee whose grant admits a caller that is *live* today, a team rename across a
   v2-owned record (nothing rewrites the grant), and a grant naming a team no app declares (an unused grant, by
   decision, not an error).
+- **Delivered (`3d5eb38b`, 30 October 2026).** Pushed to `main`; Validate green (manifest, documentation and
+  schema validation, tooling tests, the templates' app-type check, the instance policy check, both image builds,
+  the console deploy job — which found nothing to deploy). `make flux-reconcile` reported every platform unit
+  `OK` and applied nothing new, because this change touches no manifest. `make verify-platform` printed
+  `Validation passed.`, and `make app-status` for `swhurl-try-11` prod and `swhurl-try-10` staging shows both
+  unchanged and `TLS: True`. `make -s check-docs` passed on the committed tree.
 
 ## The first live promotion: swhurl-try-11 production moves to v2 (30 October 2026)
 

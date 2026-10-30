@@ -119,17 +119,32 @@ func (r deployRequest) unchanged(tag string) (Deploy, error) {
 	return Deploy{Tag: tag, Release: r.current, Instance: r.instance, Changed: false}, nil
 }
 
-// candidate is the release the newest image states, after the instance refuses what it cannot take.
+// candidate is the release the newest image states, after the instance refuses what it cannot take. The release
+// states the commit the image says it was built from, checked against the tag that published it.
 func (r deployRequest) candidate(tag kernel.ImageTag, published registry.Image) (kernel.ReleaseBundle, error) {
 	declaration, err := declarationOf(published)
+	if err != nil {
+		return kernel.ReleaseBundle{}, err
+	}
+	commit, err := revisionOf(tag, published)
 	if err != nil {
 		return kernel.ReleaseBundle{}, err
 	}
 	if err := kernel.AcceptDeclaration(declaration, r.instance, r.current); err != nil {
 		return kernel.ReleaseBundle{}, err
 	}
-	return declaration.Release(r.instance.Application, r.current.Source.Repository, tag.Commit,
+	return declaration.Release(r.instance.Application, r.current.Source.Repository, commit,
 		r.current.Artifact.Image, published.Digest, published.MediaType)
+}
+
+// revisionOf reads the commit an image states it was built from. A tag alone never supplies it: the platform's tag
+// carries an abbreviation, and the release states a full commit.
+func revisionOf(tag kernel.ImageTag, published registry.Image) (string, error) {
+	revision := published.Labels[kernel.RevisionLabel]
+	if revision == "" {
+		return "", &Refusal{"source", "revision_absent"}
+	}
+	return kernel.RevisionOf(tag, revision)
 }
 
 // compile renders the selected pair with the platform's documents.

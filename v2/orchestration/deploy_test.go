@@ -49,10 +49,22 @@ func declarationLabel(change func(map[string]any)) string {
 	return string(data)
 }
 
-// published is the image a registry answers for one tag.
+// published is the image a registry answers for one tag: what it needs, and the commit its tag abbreviates.
 func published(digest, declaration string) registry.Image {
 	return registry.Image{Digest: digest, MediaType: kernel.ManifestMediaType,
-		Labels: map[string]string{kernel.DeclarationLabel: declaration}}
+		Labels: map[string]string{kernel.DeclarationLabel: declaration, kernel.RevisionLabel: newCommit}}
+}
+
+// withoutRevision is an image whose build stated no commit.
+func withoutRevision(image registry.Image) registry.Image {
+	delete(image.Labels, kernel.RevisionLabel)
+	return image
+}
+
+// misrevisioned is an image whose stated commit is not the one its tag abbreviates.
+func misrevisioned(image registry.Image) registry.Image {
+	image.Labels[kernel.RevisionLabel] = strings.Repeat("e", 40)
+	return image
 }
 
 // tag is a tag the platform's contract accepts, with a full commit in its suffix.
@@ -172,10 +184,14 @@ func TestDeployRefusals(t *testing.T) {
 		})), nil, kernel.Unsupported, "runtime.kind", ""},
 		{"an added database", images(declarationLabel(func(d map[string]any) { d["database"] = "sqlite" })),
 			nil, kernel.Unsupported, "declaration.database", ""},
-		{"an abbreviated commit", registrytest.New(registrytest.Scenario{
+		{"an image with no revision", registrytest.New(registrytest.Scenario{
 			Tags:   []string{"43-" + strings.Repeat("d", 7)},
-			Images: map[string]registry.Image{"43-" + strings.Repeat("d", 7): published(newDigest, declarationLabel(nil))},
-		}), nil, kernel.Invalid, "source.commit", ""},
+			Images: map[string]registry.Image{"43-" + strings.Repeat("d", 7): withoutRevision(published(newDigest, declarationLabel(nil)))},
+		}), nil, kernel.Invalid, "", "source"},
+		{"a revision the tag does not abbreviate", registrytest.New(registrytest.Scenario{
+			Tags:   []string{"43-" + strings.Repeat("d", 7)},
+			Images: map[string]registry.Image{"43-" + strings.Repeat("d", 7): misrevisioned(published(newDigest, declarationLabel(nil)))},
+		}), nil, kernel.Invalid, "source.revision", ""},
 		{"a stale revision", nil, func(i *DeployInputs) {
 			i.Expected = kernel.InstanceRevision("inst-sha256:" + strings.Repeat("0", 64))
 		}, kernel.StaleInstance, "expected", ""},
@@ -229,5 +245,48 @@ func TestDeployWriteFailure(t *testing.T) {
 	writer.Fail = &files.Error{Code: files.IO, Path: "destination", Reason: "cannot write the file"}
 	if _, err := DeployImage(context.Background(), stagingInputs(t), images(declarationLabel(nil)), t.TempDir(), writer); err == nil {
 		t.Fatal("a failed write was reported as success")
+	}
+}
+
+// A tag carries an abbreviation, never the commit: the image states the full one, and the release is checked
+// against it.
+func TestDeployTakesTheRevisionFromTheImageAndChecksTheTagAbbreviatesIt(t *testing.T) {
+	short := fmt.Sprintf("%d-%s", 43, newCommit[:7])
+	image := published(newDigest, declarationLabel(nil))
+	registryAnswer := registrytest.New(registrytest.Scenario{Tags: []string{short},
+		Images: map[string]registry.Image{short: image}})
+	writer := filestest.New()
+	result, err := DeployImage(context.Background(), stagingInputs(t), registryAnswer, t.TempDir(), writer)
+	if err != nil {
+		t.Fatalf("a seven-character tag was refused: %v", err)
+	}
+	if result.Release.Source.Commit != newCommit || result.Tag != short {
+		t.Fatalf("release states %s at %s, tag %s", result.Release.Source.Commit, result.Release.Source.Repository, result.Tag)
+	}
+}
+
+func TestDeployRefusesAnImageWithoutItsRevision(t *testing.T) {
+	image := published(newDigest, declarationLabel(nil))
+	delete(image.Labels, kernel.RevisionLabel)
+	writer := filestest.New()
+	_, err := DeployImage(context.Background(), stagingInputs(t), registrytest.New(registrytest.Scenario{
+		Tags: []string{tag(43, newCommit)}, Images: map[string]registry.Image{tag(43, newCommit): image}}),
+		t.TempDir(), writer)
+	if err == nil || !strings.Contains(err.Error(), "revision_absent") {
+		t.Fatalf("an image with no revision was not refused: %v", err)
+	}
+	if writer.Writes != 0 {
+		t.Fatalf("a refusal wrote %d times", writer.Writes)
+	}
+}
+
+func TestDeployRefusesARevisionTheTagDoesNotAbbreviate(t *testing.T) {
+	image := published(newDigest, declarationLabel(nil))
+	image.Labels[kernel.RevisionLabel] = strings.Repeat("e", 40)
+	_, err := DeployImage(context.Background(), stagingInputs(t), registrytest.New(registrytest.Scenario{
+		Tags: []string{tag(43, newCommit)}, Images: map[string]registry.Image{tag(43, newCommit): image}}),
+		t.TempDir(), filestest.New())
+	if err == nil || !strings.Contains(err.Error(), "source.revision") {
+		t.Fatalf("a revision the tag does not abbreviate was not refused: %v", err)
 	}
 }

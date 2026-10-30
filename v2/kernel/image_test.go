@@ -279,3 +279,33 @@ func TestImageAutomationRendersOnlyAStagingAppsOwnImage(t *testing.T) {
 		t.Fatal("a worker rendered no image policy")
 	}
 }
+
+func TestRevisionOf(t *testing.T) {
+	full := strings.Repeat("a", 40)
+	for _, test := range []struct {
+		name     string
+		tag      string
+		revision string
+		ok       bool
+	}{
+		{name: "the tag abbreviates the revision", tag: "42-" + full[:7], revision: full, ok: true},
+		{name: "the tag holds the whole revision", tag: "42-" + full, revision: full, ok: true},
+		{name: "an abbreviation is not a commit", tag: "42-" + full[:7], revision: full[:7]},
+		{name: "another build's revision", tag: "42-" + full[:7], revision: strings.Repeat("b", 40)},
+		{name: "not hexadecimal", tag: "42-" + full[:7], revision: strings.Repeat("z", 40)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tag, found := NewestTag([]string{test.tag})
+			if !found {
+				t.Fatalf("the tag %q does not match the platform's tag contract", test.tag)
+			}
+			revision, err := RevisionOf(tag, test.revision)
+			if test.ok != (err == nil) {
+				t.Fatalf("ok %v, err %v", test.ok, err)
+			}
+			if test.ok && revision != test.revision {
+				t.Fatalf("revision %q", revision)
+			}
+		})
+	}
+}

@@ -752,19 +752,19 @@ labels. Its producer is the internal `image-declaration` command
 `swhurl.yaml` and the events document it names, holding the runtime, telemetry, database, publications, secret
 names and minimum memory, with every absent fact left out. It states that contract and nothing else —
 `description`, offers and flags stay v1's until v2 models them — and it states `secrets` and `memoryMiB` so v2
-holds an image that adds one rather than running it without. `swhurl-v2 deploy` reads the label with the
-manifest, refuses a need the instance cannot take, and writes v2's records and files.
+holds an image that adds one rather than running it without. Beside it the build states the commit it built from,
+in the standard `org.opencontainers.image.revision` label: the tag carries an abbreviation and a release states a
+full commit, so v2 refuses an image whose tag does not abbreviate the revision it states. Both labels come from the
+templates' shared build (TypeScript `v0.2.21`, Kotlin `v0.2.20`), and the seed a new app copies carries them too.
 
-The [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) runs it for every `v2-records/<app>/staging`: by
-hand now, and hourly and from the image webhook once a rebuilt image carries the label. Each instance is one
-delivery — a refused or failed one keeps its image while the others still deploy, and the run fails after they
-are pushed — and the commit (`make v2-deploy`) is checked with `make check-v2` before it is pushed, because the
-bot's push starts no workflows. An instance takes its allocation only when the allocation records a grant for
-it, so a retained port with nothing behind it does not put the instance behind the proxy. The images deployed
-today predate the label: the templates' shared build writes it from TypeScript `v0.2.20` and Kotlin `v0.2.19`,
-and an image rebuilt with one of those carries it, as does the seed a new app copies
-([v2 status](v2-status.md#slice-record-image-automations-offline-half-29-october-2026)). Production still
-changes only through a promotion.
+The [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) delivers every `v2-records/<app>/staging`: Flux
+starts it from the image Alert when a policy picks a newer image, and an hourly run and a manual run catch a lost
+dispatch. `swhurl-v2 deploy` reads the labels with the manifest, refuses a need the instance cannot take, and
+writes v2's records and files. Each instance is one delivery — a refused or failed one keeps its image while the
+others still deploy, and the run fails after they are pushed — and the commit (`make v2-deploy`) is checked with
+`make check-v2` before it is pushed, because the bot's push starts no workflows. An instance takes its allocation
+only when the allocation records a grant for it, so a retained port with nothing behind it does not put the
+instance behind the proxy. Production still changes only through a promotion.
 
 **What the image needs comes with it.** The run reads `swhurl.yaml` at the image's commit and writes its [needs](#swhurlyaml) into the release with the tag. Example: the developer changes the code and `port: 9090` in one commit; staging's next release has the new image, Service port 9090, probes on 9090, and its callers' `SWHURL_SERVICE_*_URL` and its NetworkPolicy on 9090. An image already deployed is not read again; after a change to how the platform applies a need, `make app-deploy ARGS=--refresh` (or `gh workflow run deploy.yml -f refresh=true`) reads every staging image again.
 

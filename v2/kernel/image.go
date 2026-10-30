@@ -25,6 +25,10 @@ const (
 	// DeclarationLabel is where an image states what it needs: one JSON document in its config labels, written
 	// by the build that produced it. It is the delivery contract, not the whole app declaration.
 	DeclarationLabel = "platform.swhurl.com/declaration"
+	// RevisionLabel is where an image states the full commit it was built from (the standard OCI label). The
+	// platform's tag carries an abbreviation only, and a release states a full commit, so the image states one and
+	// the tag has to agree with it.
+	RevisionLabel = "org.opencontainers.image.revision"
 )
 
 // ImageRepositoryName is the app's repository object in flux-system, as v1 names it.
@@ -64,6 +68,19 @@ func NewestTag(tags []string) (ImageTag, bool) {
 		}
 	}
 	return best, found
+}
+
+// RevisionOf is the commit an image was built from, checked against the tag that published it: the revision is a
+// full commit, and the tag's own suffix abbreviates it. A tag whose suffix a revision does not start with is another
+// build, and an abbreviation is not a commit.
+func RevisionOf(tag ImageTag, revision string) (string, error) {
+	if !commitPattern.MatchString(revision) {
+		return "", refuse(Invalid, "source.revision", "invalid format")
+	}
+	if !strings.HasPrefix(revision, tag.Commit) {
+		return "", refuse(Invalid, "source.revision", "the tag's suffix does not abbreviate the revision")
+	}
+	return revision, nil
 }
 
 // ImageParts splits an artifact image into its registry host and repository path. Both are what the registry

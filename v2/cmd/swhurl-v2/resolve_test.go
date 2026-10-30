@@ -145,6 +145,81 @@ func TestResolveReadsAV2OwnedPair(t *testing.T) {
 	}
 }
 
+// A v2 record states a team grant, never a member list: the resolution matches it against the caller's own app
+// record, so the callee renders a concrete caller name and a caller on another team is refused by the grant
+// itself rather than quietly connected.
+func TestAV2RecordConsentsByTeam(t *testing.T) {
+	owned := func(callerTeam string) string {
+		document := twoInstances(t)
+		for _, raw := range document["instances"].([]any) {
+			instance := raw.(map[string]any)
+			records := instance["records"].(map[string]any)
+			settings := records["instance"].(map[string]any)
+			team := "demo"
+			if instance["application"] == "shop" {
+				team = callerTeam
+			}
+			records["app"] = map[string]any{"schemaVersion": 1, "application": instance["application"], "team": team}
+			instance["format"] = "v2"
+			records["instance"] = map[string]any{
+				"schemaVersion": 1, "application": instance["application"], "environment": "staging",
+				"calls": settings["calls"], "allows": settings["allows"],
+			}
+			records["release"] = map[string]any{"schemaVersion": 1, "runtime": map[string]any{"kind": "web", "port": 8080}}
+		}
+		return writeSnapshot(t, document)
+	}
+	resolve := func(snapshot string) []byte {
+		t.Helper()
+		var resolved, diagnostic bytes.Buffer
+		if status := run([]string{"resolve", "--snapshot", snapshot}, &resolved, &diagnostic, os.ReadFile,
+			files.New()); status != 0 {
+			t.Fatalf("resolve exit %d: %s", status, diagnostic.String())
+		}
+		return resolved.Bytes()
+	}
+	documentOf := func(raw []byte) map[string]any {
+		t.Helper()
+		document := map[string]any{}
+		if err := json.Unmarshal(raw, &document); err != nil {
+			t.Fatalf("the resolution is not JSON: %v", err)
+		}
+		return document
+	}
+	resolved := resolve(owned("demo"))
+	document := documentOf(resolved)
+	pairs := document["pairs"].([]any)
+	if len(pairs) != 1 || pairs[0].(map[string]any)["caller"] != "shop" {
+		t.Fatalf("the team grant's pair: %v", pairs)
+	}
+	// The callee's own side names the caller it admitted: the grant decided consent, not the rendered list.
+	callsPath := filepath.Join(t.TempDir(), "calls.json")
+	if err := os.WriteFile(callsPath, resolved, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	allowed := ""
+	for _, file := range compileWithCalls(t, callsPath, "orders", calleeRelease(t)).Files {
+		if strings.HasSuffix(file.Path, "/callers.json") {
+			callers := map[string]any{}
+			if err := json.Unmarshal(file.Document, &callers); err != nil {
+				t.Fatal(err)
+			}
+			allowed, _ = callers["data"].(map[string]any)["SWHURL_ALLOWED_CALLERS"].(string)
+		}
+	}
+	if allowed != "shop" {
+		t.Fatalf("the callee's callers: %q", allowed)
+	}
+	document = documentOf(resolve(owned("payments")))
+	if pairs := document["pairs"].([]any); len(pairs) != 0 {
+		t.Fatalf("a caller outside the team: %v", pairs)
+	}
+	if waiting := document["waiting"].([]any); len(waiting) != 1 ||
+		waiting[0].(map[string]any)["reason"] != "no_consent" {
+		t.Fatalf("the outside caller's declaration: %v", waiting)
+	}
+}
+
 // compileWithCalls builds one instance's files from the fixture profile and the given resolution.
 func compileWithCalls(t *testing.T, callsPath, application string, release kernel.ReleaseBundle) kernel.Compilation {
 	t.Helper()

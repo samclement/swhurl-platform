@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Team grants carry from a predecessor's records (30 October 2026)
+
+Offline only: nothing was applied and no instance migrated. An instance's `allows` may now state a team grant
+beside app names, and `resolve` matches it against each caller's **own** `app.json` team.
+
+- **Why it was blocked.** `orchestration.migrate` refused any `allows` entry starting with `team:`
+  (`allows: teams_are_not_modelled`) and the kernel's grammar accepted app names only — although `v2/calls` had
+  consented by team since the calls slice, and the resolution already carried each caller's team from its app
+  record.
+- **The acceptance run.** From a snapshot of `HEAD` (`git stash create`, so the working tree), the binary built
+  from the working tree migrated each of the five v1 instances that declare a grant into a throwaway
+  destination: `demo-orders/staging` and `demo-orders/prod` (`allows: ["team:demo"]`),
+  `demo-shop/staging` (`["team:demo"]`), `swhurl-try-12/staging` and `swhurl-try-12/prod`
+  (`["team:insights"]`). All five exited 0 and wrote 14–19 files each; the run supplied the app's own
+  `offers/source.yaml` commit as the full source commit and a placeholder ciphertext for the events seed,
+  which v2 copies and never reads. Before the change each refused with `allows: teams_are_not_modelled`.
+- **Nothing else moved.** No record in `v2-records/`, no golden, no rendered platform file and no identity
+  changed: `allows` already participated in an instance's identity, and no v2-owned record states a grant.
+- **Proved offline, not live.** That the grant connects the right caller is a command test: a v2-record pair
+  where the caller's `app.json` names the granted team resolves to one pair and the callee renders
+  `SWHURL_ALLOWED_CALLERS=shop`; the same caller on another team waits `no_consent`.
+- **Not exercised:** a migrated callee whose grant admits a caller that is *live* today, a team rename across a
+  v2-owned record (nothing rewrites the grant), and a grant naming a team no app declares (an unused grant, by
+  decision, not an error).
+
 ## The first live promotion: swhurl-try-11 production moves to v2 (30 October 2026)
 
 `swhurl-try-11` production left v1 and then followed its staging release: the first app whose **production** v2

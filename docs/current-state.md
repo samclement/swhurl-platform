@@ -90,7 +90,13 @@ below were checked in the tree before the push and are kept as the offline recor
   it replaces and recomputes the identity it asserts (`carryingOffered`), held by
   `TestDeployKeepsWhatTheImageCannotRestate`; the three records were repaired from the deployed releases and
   recompiled, so the annotations and the description are back with **the same images** and every other rendered file
-  unchanged.
+  unchanged (`f83a29ae`; the three pods that carry a description rolled once more at 19:55, `swhurl-try-11`'s did
+  not).
+- **The fix proved itself on the next real deploy.** `demo-notifier` then moved to the image its Copier update built
+  (`50-8cf2d30`, tag and revision label agreeing, which is what the reuse retirement bought) and the bot's commit
+  (`edf9f2d4`) kept `description` and `offers`: the HelmRelease still carries
+  `platform.swhurl.com/offers: eab35a3` and the pod that rolled at 20:02 has `SWHURL_DESCRIPTION`. `make app-status`
+  reports it Healthy on `sha256:fbc4ebc9…`.
 - **A new image does not bring new documents — the gap this slice leaves.** `swhurl-v2 deploy` refreshes the image and
   leaves the documents as they are, and the annotation keeps saying which commit they came from, until v2 can read an
   app's repository. A v2-owned instance that no migration created has no documents at all, and `migrate` now refuses a

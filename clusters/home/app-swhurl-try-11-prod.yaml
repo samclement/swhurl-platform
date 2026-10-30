@@ -4,7 +4,6 @@ metadata:
   name: app-swhurl-try-11-prod
   namespace: flux-system
 spec:
-  deletionPolicy: Orphan
   dependsOn:
   - name: infra-base
   - name: platform-oauth2-proxy

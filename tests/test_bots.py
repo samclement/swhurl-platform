@@ -15,7 +15,8 @@ BASE = 'b' * 40
 
 
 class PushMainTests(unittest.TestCase):
-    def runner(self, *, checks=0, push_failures=0, sync=None):
+    def runner(self, *, checks=0, push_failures=0, sync=None, deploy=None,
+               paths='apps/a/staging/helmrelease.yaml\nplatform/auth/kustomization.yaml'):
         runner = FakeRunner()
         self.pushes, self.worktrees = 0, []
 
@@ -30,12 +31,14 @@ class PushMainTests(unittest.TestCase):
 
         if sync:
             runner.on(sys.executable, handler=sync)
+        if deploy is not None:  # before the generic make rule: the first match wins
+            runner.on('make', 'v2-deploy', handler=deploy)
         (runner.on('git', 'fetch')
          .on('git', 'rev-parse', 'origin/main', stdout=BASE)
          .on('git', 'worktree', 'add', handler=add)
          .on('git', 'worktree', 'remove')
          .on('git', 'add')
-         .on('git', 'diff', '--cached', '--name-only', stdout='apps/a/staging/helmrelease.yaml\nplatform/auth/kustomization.yaml')
+         .on('git', 'diff', '--cached', '--name-only', stdout=paths)
          .on('git', 'write-tree', stdout='tree0')
          .on('git', 'commit-tree', stdout='c' * 40)
          .on('git', 'push', handler=push)
@@ -102,6 +105,34 @@ class PushMainTests(unittest.TestCase):
         self.assertTrue(message.startswith('deploy: a (deploy workflow)\n\n[OK] a/staging: image'), message)
         self.assertIn('needs: port 8080', message)
         self.assertNotIn('[ERROR]', message)
+
+    def test_deploy_v2_pushes_what_moved_and_fails_the_run(self):
+        report = ('{"kind":"v2-deploy-records","version":1,"records":"v2-records","instances":['
+                  '{"application":"a","environment":"staging","outcome":"changed","tag":"5-abc"},'
+                  '{"application":"b","environment":"staging","outcome":"refused","reason":"refused: declaration: absent"}]}\n')
+        lines = 'a/staging: changed 5-abc\nb/staging: refused declaration: absent\n1 changed, 0 unchanged, 1 refused, 0 failed\n'
+        runner = self.runner(deploy=lambda args, _: Result(args, 2, report, lines),
+                             paths='v2-records/a/staging/release.json\nv2-records/a/staging/instance.json\n'
+                                   'v2-apps/instances/a/staging/helmrelease.json')
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            code = bots.main_deploy_v2(['--root', '/repo'], runner=runner)
+        self.assertEqual((code, self.pushes), (1, 1), 'the refusal keeps its image and the run still fails')
+        self.assertIn('b/staging: refused declaration: absent', out.getvalue())
+        message = self.commits(runner)[0][-1]
+        self.assertTrue(message.startswith('deploy: a (v2 deploy workflow)\n\nv2-records/a/staging/release.json'), message)
+        self.assertNotIn('refused', message)
+        self.assertIn(('make', 'check-v2'), runner.calls)
+        self.assertFalse([c for c in runner.calls if c[:2] == ('make', '-j2')], "v1's checks are not v2's")
+
+    def test_deploy_v2_pushes_nothing_when_no_instance_moved(self):
+        report = ('{"kind":"v2-deploy-records","version":1,"records":"v2-records","instances":['
+                  '{"application":"a","environment":"staging","outcome":"unchanged","tag":"4-abc"}]}\n')
+        runner = self.runner(deploy=lambda args, _: Result(args, 0, report, ''), paths='')
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(bots.main_deploy_v2(['--root', '/repo'], runner=runner), 0)
+        self.assertEqual((self.pushes, self.commits(runner)), (0, []))
+        self.assertIn('Nothing changed.', out.getvalue())
+        self.assertFalse([c for c in runner.calls if c[0] == 'make' and c[1] != 'v2-deploy'], 'nothing to check')
 
     def test_render_names_the_apps_it_rendered(self):
         runner = self.runner(sync=lambda args, _: Result(args))

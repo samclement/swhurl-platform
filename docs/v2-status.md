@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: a template release writes the declaration label, then the Deploy workflow calls `swhurl-v2 deploy` for v2-owned staging instances, then a live image
+Gate: a rebuilt image carries the declaration label, the v2 Deploy workflow is started by the image Alert, and a live image travels dispatch → record → compile → Flux
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -69,7 +69,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | App kinds | A worker release compiles to an instance that serves nothing, with every other fact intact | **Done, offline 29 October 2026** (the worker kind); `job` still refused |
 | Events | The server's user list, and per instance its key, stream, consumers and seed | **Parts one and two, offline 29 October 2026**: the user list renders identically to the platform's, and a keyed instance renders its variables, stream, consumers and unit; the seed is the encrypted file v2 copies without reading |
 | Minting a broker identity | v2 can create a pair, not only adopt one: the seed is encrypted to the platform's recipient and the record states the public key | **Done, live 29 October 2026**: `swhurl-v2 mint`, used for the two v2-owned instances that had no pair; rotation is the same command with `--rotate` |
-| Image automation | A migrated staging instance following its published images | **The pair is live 30 October 2026** and reports each repository; the delivery path is offline: `swhurl-v2 deploy` resolves the newest tag, reads the image's declaration label, refuses what the instance cannot take, and writes the records and files. The deployed images predate the label, whose producer is released in both templates (TypeScript `v0.2.20`, Kotlin `v0.2.19`, 30 October 2026: the build's `image-declaration` command, from `swhurl.yaml` and its events document), so an image rebuilt with them and the workflow are the next gate |
+| Image automation | A migrated staging instance following its published images | **The pair is live 30 October 2026** and reports each repository; the delivery path is offline: `swhurl-v2 deploy` resolves the newest tag, reads the image's declaration label, refuses what the instance cannot take, and writes the records and files. The deployed images predate the label, whose producer is released in both templates (TypeScript `v0.2.20`, Kotlin `v0.2.19`, 30 October 2026: the build's `image-declaration` command, from `swhurl.yaml` and its events document); the [v2 Deploy workflow](v2-status.md#slice-record-image-automations-workflow-30-october-2026) delivers every v2-owned staging instance from those records, hourly and by hand, and starts from the image Alert once one labelled image exists |
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
@@ -95,7 +95,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Worker kind | done, offline 29 October 2026: a `worker` release renders no Service, no probes and no route, and keeps every other instance fact; `job` still refused | [slice](#slice-record-the-worker-kind-29-october-2026) |
 | Broker identity minting | done and live 29 October 2026: `swhurl-v2 mint` derives the pair in the pure model, encrypts the seed through `adapters/sops` (the one command v2 starts) to `sops.recipient`, writes it beside the record and then the record; the two v2-owned instances without a pair were minted, and `make v2-users` and the Reloader list gained them | [slice](#slice-record-minting-a-broker-identity-29-october-2026) |
 | Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
-| Image automation | the pair is **live 30 October 2026** (three policies Ready and reporting, no pod restarted); `swhurl-v2 deploy` is offline, the deployed images predate the declaration label, and the label's producer (`swhurl image-declaration`) is released and asserted per app type in both templates (TypeScript `v0.2.20`, Kotlin `v0.2.19`) | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
+| Image automation | the pair is **live 30 October 2026** (three policies Ready and reporting, no pod restarted); the label's producer (`swhurl image-declaration`) is released and asserted per app type in both templates (TypeScript `v0.2.20`, Kotlin `v0.2.19`), and the v2 Deploy workflow delivers `v2-records/<app>/staging` — `make v2-deploy` in a bot worktree, checked with `make check-v2`; v1's Deploy now ends early for those apps. **The deployed images predate the label, so nothing has been delivered yet** | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | 7. Selective replacement | three live: `swhurl-try-11` staging, `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 
@@ -1234,6 +1234,64 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
   the Deploy workflow calls `swhurl-v2 deploy` for v2-owned staging instances (leaving v1's path for v1's apps)
   and a real image travels dispatch → record → compile → Flux, with `make app-status` and `make verify-platform`
   as evidence.
+
+## Slice record: image automation's workflow (30 October 2026)
+
+**Approved by the operator's "go ahead to next gate", after the templates' release and the platform's declaration command.**
+
+- **Outcome and the refusals it must produce:** `swhurl-v2 deploy --records DIR` delivers every
+  `v2-records/<app>/staging` — production follows a promotion and is not read — and writes each instance's record
+  pair and compiled files, one document per run naming what happened to every instance. `make v2-deploy` builds it
+  and writes into the checkout; the [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) runs that in a bot
+  worktree, checks it with `make check-v2` and pushes with `GITHUB_TOKEN`, hourly and by hand now, and from the
+  image Alert once a rebuilt image carries the declaration label. The v1 Deploy workflow ends at its first step
+  for an app whose `v2-records/<app>/staging/instance.json` exists on `main`. A delivery refuses what the single
+  delivery refuses; a tree that does not hold an instance's records refuses the whole run (`invalid: records:` for
+  a name that does not match its folders, `io: records:` for one it cannot read); `--records` mixed with
+  `--instance` is a usage error; an instance the allocation does not name, or names with no grant, is compiled
+  without it, and one that keeps a database and is granted nothing is refused by the compiler rather than passed
+  silently.
+- **Owners and boundaries:** the **records tree** says which instances v2 owns and where their documents are; the
+  **command** walks `v2-records/<app>/staging`, reads one app's four documents, derives each `--expect` from its
+  own record, classifies every outcome with the single delivery's exit rule (1 for I/O or an unavailable registry,
+  2 for a refusal) and reports the worst; **`orchestration.DeployImage`** is unchanged and still decides; **`bots.py`**
+  owns the read-run-commit-push loop, reusing `push_main` with `check-v2` as the run's check; **`make v2-deploy`**
+  owns the build and the arguments; the **workflow** owns setup and the trigger.
+- **What crosses each seam:** the same registry read as the single delivery, per instance; the records and compiled
+  files into the files adapter; no cluster, credential, clock or subprocess.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1's files and instances are unchanged** — v1's Deploy workflow now ends early for v2-owned staging apps,
+     which is the idempotent run it already made and found `Nothing changed.` ([recorded 30 October](current-state.md#the-three-v2-owned-staging-instances-report-their-images-30-october-2026));
+     every v1 app's own path is untouched.
+  2. **Pure** — no package changed: the walk is the command's own read of the tree, and the loop repeats the same
+     one write per instance.
+  3. **Nothing regenerated** — no record, compiled file, platform file or identity moved. The run against the tree
+     as Git holds it today reports one unchanged instance and two refusals and writes nothing.
+  4. **Refusals stated, precedence unmoved** — a delivery's refusals are the single command's; the aggregate adds
+     `invalid: records:` and `io: records:` for the tree, and the exit status is 1 if any delivery failed, else 2
+     if any refused, else 0.
+  5. **Failure paths tested** — an unchanged instance, a changed one (its record pair and files written, no proxy
+     env without a grant), an image with no declaration, an unavailable registry, a tree without one instance's
+     release record, an app folder with no staging instance, and the allocation rule both ways; the bot's push loop
+     keeps its tests (nothing to push, a lost push, a failed check).
+  6. **Scope stated** — the workflow neither promotes nor auto-merges, and `make check-v2` does not schema-validate
+     the compiled files (a bot push starts no Validate run), so the compiled output is checked by its own tests and
+     the records' freshness, not by the Kubernetes schemas; the scheduling trigger is deliberately absent until a
+     labelled image exists, because a dispatch now refuses `declaration: absent` and would redden every policy
+     reconcile; `v2-records/<app>/prod` is not delivered.
+  7. **Offline is not live** — nothing was applied and the workflow has not run. The command was exercised against
+     the real registry and the committed tree, read-only: `swhurl-try-10` staging unchanged, `demo-notifier` and
+     `swhurl-try-11` staging refused `declaration: absent`, nothing written; `make v2-deploy` did the same through
+     the target and left the checkout clean.
+  8. **Recorded in the same change** — this page, [apps](apps.md#deploy-a-new-image), [commands](commands.md),
+     [architecture](architecture.md#how-changes-reach-the-cluster), the plan's row and gap list, and the workstream
+     registry.
+- **Evidence:** `make check-v2` (gofmt, vet, 20 packages, chart render and the four rendered platform folders),
+  `make check` (N tests), the run above (exit 2, `1 unchanged, 2 refused, 0 failed`, `git status` clean), and the
+  bot's tests in `tests/test_bots.py`.
+- **Next gate:** a rebuilt image carries the declaration label (Renovate's pin bump), the image Alert's
+  dispatch is added to the workflow, and a real image travels dispatch → record → compile → Flux, with
+  `make app-status` and `swhurl-v2 observe` as evidence.
 
 ## Resume
 

@@ -753,10 +753,16 @@ labels. Its producer is the internal `image-declaration` command
 names and minimum memory, with every absent fact left out. It states that contract and nothing else —
 `description`, offers and flags stay v1's until v2 models them — and it states `secrets` and `memoryMiB` so v2
 holds an image that adds one rather than running it without. `swhurl-v2 deploy` reads the label with the
-manifest, refuses a need the instance cannot take, and writes v2's records and files. The images deployed today
-predate that label: the templates' shared build writes it from TypeScript `v0.2.20` and Kotlin `v0.2.19`, and
-an image rebuilt with one of those carries it, as does the seed a new app copies. The workflow that starts it is
-the next gate
+manifest, refuses a need the instance cannot take, and writes v2's records and files.
+
+The [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) runs it for every `v2-records/<app>/staging`:
+hourly and by hand now, and from the image webhook once a rebuilt image carries the label. Each instance is one
+delivery — a refused or failed one keeps its image while the others still deploy, and the run fails after they
+are pushed — and the commit (`make v2-deploy`) is checked with `make check-v2` before it is pushed, because the
+bot's push starts no workflows. An instance takes its allocation only when the allocation records a grant for
+it, so a retained port with nothing behind it does not put the instance behind the proxy. The images deployed
+today predate the label: the templates' shared build writes it from TypeScript `v0.2.20` and Kotlin `v0.2.19`,
+and an image rebuilt with one of those carries it, as does the seed a new app copies
 ([v2 status](v2-status.md#slice-record-image-automations-offline-half-29-october-2026)). Production still
 changes only through a promotion.
 

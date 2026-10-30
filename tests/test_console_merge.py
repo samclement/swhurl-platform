@@ -689,10 +689,10 @@ class NewAppGateTests(GateCase):
         self.open()
         self.change_record('release.yaml', lambda doc: doc['image'].update(repository='ghcr.io/other/fresh'))
         runner = self.runner()
-        def checked(_, work):
+        def checked(_, work, checks=bots.CHECKS):
             problems = policy.platform_image(work / 'apps/fresh/staging')
             self.assertTrue(any('not ghcr.io/samclement/fresh' in p for p in problems))
-            raise CommandError(['make', *bots.CHECKS], 'platform-image: refused')
+            raise CommandError(['make', *checks], 'platform-image: refused')
         with mock.patch.object(bots, 'checked', side_effect=checked), self.assertRaises(CommandError):
             self.check(runner)
         self.assertEqual(self.pushes(runner), [])

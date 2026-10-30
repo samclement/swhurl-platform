@@ -35,6 +35,7 @@ const usage = `usage:
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
   swhurl-v2 deploy --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json \
       --expect REVISION --out DIR [--calls CALLS.json] [--egress EGRESS.json]
+  swhurl-v2 deploy --records DIR --profile PROFILE.json --out DIR [--calls CALLS.json] [--egress EGRESS.json]
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
@@ -48,6 +49,14 @@ const usage = `usage:
       --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] \
       [--max-age DURATION] [--from KEY] [--region REGION] \
       [--confirm APPLICATION/ENVIRONMENT [--age-key-file FILE] [--url-ttl DURATION]]
+
+deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
+platform's tag policy, and writes the record pair and the compiled files under --out. With --records it reads
+v2-records/<app>/staging under DIR: every folder holding an instance record is one delivery, production follows a
+promotion and is not read, an instance that refuses or fails does not stop the others, and the exit status is 1 if
+any failed, else 2 if any refused, else 0. The --egress document is given whole to every delivery and an instance
+takes it only when the allocation records a grant for it, so a port kept for an instance with nothing to reach
+puts nothing behind the proxy.
 
 compile reads the instance, its release, the app record (one per app: its team) and the platform profile;
 the app record is required for delivery, because the namespace team label is the app's fact. Input files are
@@ -273,6 +282,7 @@ type request struct {
 	app, settings, committed, snapshot, callFile       string
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
+	records                                            string
 	eventsSecret                                       string
 	rotate                                             bool
 	confirm, ageKey                                    string
@@ -345,6 +355,7 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 	case "select-release":
 		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
 	case "deploy":
+		flags.Var(&once{value: &r.records}, "records", "every v2-owned staging instance under this tree")
 		r.registerRecords(flags)
 		flags.Var(&once{value: &r.app}, "app", "app record (its team)")
 		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
@@ -477,7 +488,7 @@ func (r *request) named() []string {
 	case "migrate":
 		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}
 	case "deploy":
-		return []string{r.instance, r.release, r.app, r.profile, r.expected, r.out}
+		return r.deployNamed()
 	case "compile":
 		return []string{r.instance, r.release, r.app, r.profile}
 	case "preview":
@@ -491,6 +502,18 @@ func (r *request) named() []string {
 		return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig}
 	}
 	return []string{r.instance, r.release, r.profile}
+}
+
+// deployNamed is the two forms the deploy command has: one instance's records named on the line, or the tree every
+// v2-owned staging instance keeps its records in. Mixing them is a usage error.
+func (r *request) deployNamed() []string {
+	if r.records == "" {
+		return []string{r.instance, r.release, r.app, r.profile, r.expected, r.out}
+	}
+	if r.instance != "" || r.release != "" || r.app != "" || r.expected != "" {
+		return []string{""}
+	}
+	return []string{r.records, r.profile, r.out}
 }
 
 // platformNamed is the flags a command that renders or reads the platform's own documents requires: one snapshot,
@@ -698,6 +721,12 @@ func (c cli) wrote(outcomes []files.Outcome, err error) int {
 // filesystem itself failed while writing (1).
 func (c cli) failure(err error) int {
 	fmt.Fprintln(c.diagnostic, err)
+	return exitFor(err)
+}
+
+// exitFor is the status an error earns wherever a delivery reports one: 1 for I/O and an unavailable registry,
+// 2 for anything the instance or the caller refused.
+func exitFor(err error) int {
 	var failure *files.Error
 	if errors.As(err, &failure) && failure.Code == files.IO {
 		return 1

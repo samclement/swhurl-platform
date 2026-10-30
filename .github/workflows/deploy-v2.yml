@@ -1,0 +1,95 @@
+name: Deploy v2
+
+# Brings every v2-owned staging instance to the newest image its own repository publishes, with what the image
+# states about itself (docs/apps.md#deploy-a-new-image): for each v2-records/<app>/staging, the platform's tag
+# policy picks the newest tag, v2 resolves its platform manifest, reads the declaration the build wrote into the
+# image's config labels, refuses a fact the instance cannot take, and selects and compiles in one commit
+# (make v2-deploy; swhurl-v2 deploy --records).
+#
+# What starts it: the hourly run and a manual run. Flux starts it too, through the image-dispatch Alert's
+# repository_dispatch (platform/image-automation/dispatch.yaml), once a rebuilt image carries the declaration
+# label the templates write: until then every dispatch would refuse with declaration: absent and fail the run,
+# so the trigger is added with the first labelled image rather than reddening every policy reconcile.
+#
+# The commit is pushed with GITHUB_TOKEN, which starts no workflows (so not this one again, and not Validate):
+# the run therefore checks the result itself with make check-v2 — v2's Go rules, and that the platform files the
+# records render are what Git holds. An instance that refuses or fails keeps the image it runs while the others
+# still deploy, and the run fails after the others are pushed. Each attempt starts from the newest main in a
+# fresh worktree, so a push lost to another writer deploys again on the newer main.
+
+on:
+  schedule:
+    - cron: '47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # push the commit to main
+
+jobs:
+  deploy:
+    name: Deploy the newest staging images
+    runs-on: ubuntu-latest
+    env:
+      SOPS_VERSION: v3.12.1   # the same release and checksum as the console image and Validate
+      SOPS_SHA256: cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the bot starts each attempt from a worktree of the newest main
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: v2/go.mod
+          cache: false # no go.sum: v2 has no dependencies
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.19.0'
+
+      # check-v2's chart test reads the chart the profile pins, from the cache make check-apps keeps.
+      - name: Fetch the chart v2 compiles for
+        run: |
+          set -Eeuo pipefail
+          chart=$(python3 -c 'import json; c = json.load(open("v2/testdata/profile.json"))["chart"]; print(c["name"], c["version"])')
+          read -r name version <<< "$chart"
+          charts="${XDG_CACHE_HOME:-$HOME/.cache}/swhurl-platform/charts"
+          if [ ! -f "$charts/$name-$version/Chart.yaml" ]; then
+            mkdir -p "$charts"
+            tmp=$(mktemp -d "$charts/pull.XXXXXX")
+            helm pull "$name" --repo https://bjw-s-labs.github.io/helm-charts --version "$version" --untar --untardir "$tmp"
+            mv "$tmp/$name" "$charts/$name-$version"
+            rmdir "$tmp"
+          fi
+
+      # v2's sops adapter contract runs the real command, which the runner image does not carry.
+      - name: Install sops for v2's encryption contract
+        run: |
+          set -Eeuo pipefail
+          dir="$RUNNER_TEMP/sops"
+          mkdir -p "$dir"
+          curl -fsSLo "$dir/sops" "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64"
+          (cd "$dir" && echo "${SOPS_SHA256}  sops" | sha256sum --check --strict)
+          chmod 0755 "$dir/sops"
+          echo "$dir" >> "$GITHUB_PATH"
+
+      - name: Deploy, check and commit
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        # tools/swhurl/bots.py: a fresh worktree of the newest main, make v2-deploy, make check-v2, one commit, a
+        # non-forced push; a push lost to another writer deploys again on the newer main.
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=tools python3 -m swhurl bot-deploy-v2 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"

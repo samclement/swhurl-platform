@@ -72,6 +72,13 @@ v2-users:
 v2-reloader:
 	@set -Eeuo pipefail; 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 	revision=$$(git stash create); 	$(MAKE) -s v2-snapshot REVISION="$${revision:-HEAD}" OUT="$$work/snapshot.json" >/dev/null; 	(cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2); 	"$$work/swhurl-v2" reloader --snapshot "$$work/snapshot.json" --profile v2/testdata/profile.json --out platform
 
+# Bring every v2-owned staging instance to the newest image its repository publishes, with v2's own records and
+# files: swhurl-v2 deploy --records reads v2-records/<app>/staging, delivers each instance on its own, and fails the
+# run if any refused or failed. Needs Go 1.26.0 and read-only access to the public registry.
+.PHONY: v2-deploy
+v2-deploy:
+	@set -Eeuo pipefail; 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 	(cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2); 	"$$work/swhurl-v2" deploy --records v2-records --profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json --out .
+
 .PHONY: v2-report
 v2-report:
 	@BASE='$(BASE)' AFTER='$(AFTER)' FORMAT='$(FORMAT)' v2/archtest/report.sh

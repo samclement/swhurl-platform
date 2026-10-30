@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the operator's choice of the next slice (offers is the last blocked domain; it needs a repository read v2 has no adapter for)
+Gate: the operator's review, commit and push of this tree (nothing is applied yet), then a repository read so a v2-owned instance's documents keep up with its image
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -48,6 +48,17 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 
 **Approved 26 October 2026: the `migrate` use case, as its brief proposed** — the translation is a second pure function in `legacy`, so the preview's own scope does not widen, and the full source commit is supplied by the operator and only *checked* against what the records abbreviate: it is never expanded from one. [The slice](#slice-record-the-migrate-use-case).
 
+**Approved and worked 30 October 2026: what an app offers, the offline half** — the operator said to take the next
+gate, which was the last blocked domain in the [approved order](iteration-2-plan.md#domain-order-before-more-migrations-decision-brief-approved-29-october-2026).
+A release states what the image says about itself (`description`), where a web image serves its API description
+(`apiPath`) and the commit its offered documents were read at (`offers`); an instance renders `SWHURL_DESCRIPTION`
+and the two HelmRelease annotations; `migrate` carries all of it and copies the documents as a declared input beside
+the record; `compile` writes them beside the manifests, where the console now reads them (a second folder, v1's
+unchanged). **No adapter was added**: v2 generates, fetches and refreshes nothing, and a repository read stays in the
+gap list. The four v2-owned instances were recompiled in the tree — their documents restored from the commits they
+were read at — and nothing was applied or pushed. See [the record](#slice-record-what-an-app-offers-30-october-2026)
+and [the evidence](current-state.md#what-an-app-offers-carried-and-rendered-offline-30-october-2026).
+
 **Implementing more needs the operator's approval of a concrete slice** — design approval and permission to push are separate decisions.
 
 ## Progress towards the goals
@@ -67,6 +78,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Done live 30 October 2026**: `swhurl-try-11` production was migrated to v2 and promoted from its v1 digest to its staging's release; `make app-status` and `observe` agree, and a repeat promotion is a no-op. A first promotion (creating production) is still not modelled, a rollback's direction is stated rather than decided, and v1 callees no longer admit the migrated caller | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
+| What an app offers | A release states its own description, API path and the commit its documents were read at; an instance renders them and carries the documents | **Done, offline 30 October 2026**: the three facts are release identity, the compiled HelmRelease carries `SWHURL_DESCRIPTION` and the two annotations in all four v2-owned instances, and the documents travel as declared inputs from `v2-records/` to `v2-apps/`, where the console reads them | [slice](#slice-record-what-an-app-offers-30-october-2026) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **Two live** (`swhurl-try-11`, `swhurl-try-10` staging, the second stateful on its own volume), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
 | Always-on instance surface | Telemetry (the endpoint and the way out to it), the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: the env, tokens and team labels rolled to both v2-owned instances, and a reporting image's policy admits the collector the env names (the export was found blocked the same day; [evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)) |
@@ -79,7 +91,10 @@ The goal is a v2 that can own instances without breaking the running platform. T
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); the first promotion between two v2-owned instances; consent by team as a rule the callee states rather than a member list it copies; and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** delivery is manual (compile, commit, push) for everything except a v2-owned staging instance's images, which the v2 Deploy workflow delivers; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*. A v2 caller of a v1-owned callee now loses its grant: after `swhurl-try-11` production left v1, `swhurl-try-10` and `swhurl-try-12` production stopped admitting it, until those callees migrate or v1 reads v2's records.
+**Not yet true, and what would make it true:** v2 copies an instance's offered documents and never fetches them, so a
+v2-owned instance that follows a new image still shows the documents of the commit they were read at, and a v2-owned
+instance that no migration created has none until the operator supplies them — a repository read, with its adapter and
+credential, would make them travel; delivery is manual (compile, commit, push) for everything except a v2-owned staging instance's images, which the v2 Deploy workflow delivers; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*. A v2 caller of a v1-owned callee now loses its grant: after `swhurl-try-11` production left v1, `swhurl-try-10` and `swhurl-try-12` production stopped admitting it, until those callees migrate or v1 reads v2's records.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); the egress cutover, which changes live outbound traffic and needs the grants recorded before it can refuse the rest; and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -104,6 +119,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Events | parts one and two, offline 29 October 2026, and **the user list is v2's file**: v1's generator is deleted and the Render workflow regenerates `platform/nats/users.json`; the instance side renders variables, stream, consumers, the unit's broker dependency and `decryption`, with the seed as a declared input | [part one](#slice-record-events-part-one-the-servers-user-list-29-october-2026), [part two](#slice-record-events-part-two-the-instance-side-29-october-2026), [cutover](#slice-record-the-cutover-v2-owns-the-user-list-29-october-2026) |
 | Image automation | **done and live 30 October 2026**: `swhurl-v2 deploy` (one instance or every `v2-records/<app>/staging`), the v2 Deploy workflow started by the image Alert and hourly, the declaration and revision labels from both templates (`v0.2.21` / `v0.2.20`), the broker's user list rendered in the same commit, and the three staging instances running their delivered digests (`make app-status` matches, `swhurl-v2 observe` says `running`) | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
+| What an app offers | **done, offline 30 October 2026**: a release's `description`, `apiPath` and `offers` commit render the variable and the two annotations; `migrate` carries them and the documents; nothing is generated or fetched | [slice](#slice-record-what-an-app-offers-30-october-2026) |
 | 7. Selective replacement | three live: `swhurl-try-11` staging, `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging; the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 | Promotion | done and live 30 October 2026: `swhurl-try-11` production is v2's and runs the release its staging selects; the handover orphaned v1's unit, adopted the same namespace and release, and then moved one release reference | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
 
@@ -1460,6 +1476,69 @@ OTLP endpoint; a v2 instance's own policy then refused to let anything reach it.
   8. **Recorded in the same change** — this page, the plan's record contract, census section, gap rows and the [gap list](iteration-2-plan.md#6-deliberately-deferred), [current state](current-state.md#team-grants-carry-from-a-predecessors-records-30-october-2026) and the workstream registry. [apps](apps.md#calling-another-app) needs no change: the semantics are v1's, unchanged.
 - **Evidence:** `make check-v2` (gofmt, vet, every package, chart render and the four rendered platform folders), the new kernel/migration/resolution tests, the acceptance run above (exit 0 for all five), `make check` and `make -s check-docs`.
 - **Next gate:** the operator's choice of the next slice. The remaining blocked domains are, in the [approved order](iteration-2-plan.md#domain-order-before-more-migrations-decision-brief-approved-29-october-2026), offers (all 15, and it needs a repository read v2 has no adapter for) and then secrets and custom alerts (no current user); after those the demo chain can move as a group.
+
+
+## Slice record: what an app offers (30 October 2026)
+
+**Worked on the operator's instruction to take the next gate**, which was the last blocked domain in the
+[approved order](iteration-2-plan.md#domain-order-before-more-migrations-decision-brief-approved-29-october-2026),
+and the one domain whose answer could have needed a new adapter.
+
+- **Outcome and the refusals it must produce:** a release states the three facts v1 read from an image's
+  `swhurl.yaml` — `description` (one line, 1–200 printable characters), `apiPath` (an absolute path, **web only**;
+  a worker states none) and `offers` (a 40-hex commit) — and an instance renders `SWHURL_DESCRIPTION`, the
+  `platform.swhurl.com/api-description` annotation and `platform.swhurl.com/offers` (the commit's first seven
+  characters, which is what the documents' own `source.yaml` names). The documents are declared inputs:
+  `migrate --offers DIR` copies them into `v2-records/<app>/<env>/offers/` and `compile --offers DIR` writes them at
+  `<instance>/offers/`, unlisted — they are not resources. `migrate` refuses `offers_without_documents` and
+  `documents_without_offers`: a record that states one half is a console link to nothing. `compile`'s
+  `WithOffers` refuses `document_names_are_file_names` for a name that is not one path segment.
+- **Owners and boundaries:** the **release** owns what the image says about itself, because a promotion carries it
+  with the image; the **documents** are declared inputs owned by whoever supplies them (the predecessor's commit, or
+  the operator); the **kernel** renders, and never generates a document; `orchestration` places them under the one
+  offers folder and refuses a name that would escape it; the **console** reads them, at v1's folder or v2's.
+- **What crosses each seam:** the three facts, from the predecessor's `release.yaml` through `legacy.Offered` into
+  `release.json`; the documents, byte for byte, from a folder into `offers/<name>` files in the instance's folder; the
+  commit, from `sourceOf`'s corroborated `--source-commit` into `offers` — **never expanded from the abbreviation**;
+  the annotation, from the release into the HelmRelease. No adapter, no credential, no network, no new command.
+- **The eight slice invariants** ([what a status page is](workstreams.md#what-a-status-page-is)):
+  1. **v1 changed deliberately and read-only:** `tools/swhurl/console/catalogue.py` now looks for an instance's
+     documents at `v2-apps/instances/<app>/<env>/offers/` when v1's `apps/<app>/<env>/offers/` is absent (a v2-owned
+     instance has no `apps/` folder at all), so the Catalogue and the app page see the instances v2 owns. No v1 record,
+     command, workflow, rendered file or live object changed; the console reads the same documents it read before for
+     every v1-owned instance.
+  2. **Pure:** `kernel` gained fields, one rule and one renderer branch; `legacy` reads three more fields of a record
+     it already reads; no clock, network, filesystem, environment, randomness or subprocess entered a pure package, and
+     no adapter was added.
+  3. **Identities moved deliberately, in one place:** the release canonical form gained three positional facts, so
+     **every** release ID moved (the three fixtures, the four v2-owned records, both goldens and the pinned vector),
+     and with them the four instance revisions and every compiled file. `v2/testdata/identities.json` was recomputed
+     **independently in Python** from the documented encoding and agrees with Go on all four values. Nothing was
+     regenerated to make a check pass: the goldens changed because the release they compile changed.
+  4. **Refusals stated, precedence kept:** a description that is empty, too long or carries a newline;
+     `apiPath` on a worker, `apiPath` that is not absolute, and `offers` that is not a 40-hex commit are each
+     `invalid` under their own field, checked after `publishes` and before nothing else moved. The kernel's existing
+     order — kind, port, path, uid, database, publishes, then these — is the field table's.
+  5. **Failure paths tested:** the record's refusals and round trip, the renderer's presence and absence, the
+     documents' placement and five bad names, and both halves of the migrate mismatch. The real migration is still
+     its own acceptance test: the four frozen predecessors migrate with `--offers` and reproduce their frozen pairs.
+  6. **Scope stated:** v2 copies documents and **never generates or refreshes them**; an app whose image moves keeps
+     the documents of the commit they were read at, and the annotation says so. A v2-owned instance created without a
+     migration has no documents until someone supplies them. The image's own declaration still cannot carry offers, so
+     `deploy` cannot refresh them; the HTTP preview still reports these three fields as gaps because it compares the
+     HTTP surface only.
+  7. **Offline is not live:** nothing was applied, pushed or reconciled. The evidence is the tree: the four compiled
+     HelmReleases now carry the variable and the annotations, and their documents sit in `v2-apps/`.
+  8. **Recorded in the same change:** this page, the [release contract and gap row](iteration-2-plan.md#6-deliberately-deferred),
+     [what an app offers](apps.md#what-an-app-offers), [current state](current-state.md#what-an-app-offers-carried-and-rendered-offline-30-october-2026)
+     and the workstream registry.
+- **Evidence:** `make check-v2` (gofmt, vet, every package, the chart render and the four rendered platform folders),
+  `make check` and `make -s check-docs`. The acceptance run: `migrate --offers` over each frozen predecessor, 4/4
+  exit 0 with their record pairs reproduced; the four v2-owned instances recompiled, their only rendered change the
+  HelmRelease and the new `offers/` files.
+- **Next gate:** the operator's review of this tree and its commit; after that, the live half is a push (Flux applies
+  the annotations and the variable), and the domain's own remainder is the repository read that would keep a v2-owned
+  instance's documents as new as its image.
 
 
 ## Resume

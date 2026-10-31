@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The tested-PR-image reuse machinery is gone (31 October 2026)
+
+- **Templates.** `typescript` **v0.2.23** (`e69a67d`) and `kotlin` **v0.2.22** (`d0a29bf`) drop the
+  `reuse-pr-image` input and every step behind it: the build-input fingerprint, the OCI export and its proof, the
+  one-day artifact, the "publish the image already tested on the PR" copy, the `actions: read` grant the artifacts
+  needed, and the `.github/fixtures/oci-proof-state.json` the template's own CI compared against. The build step now
+  always loads the image it just built, which is the image the smoke test runs. Each template's rendered caller pins
+  its new release.
+- **Platform.** `STACK_REVISIONS` names the two new commits, and `tools/swhurl/apps/build_image.py`, its 259-line
+  test and the internal `app-build-image` command are deleted: nothing could reach them once no app passed the input,
+  and the docs no longer describe a reuse path. What stays is `image-declaration`, the reader that writes the label
+  every image carries, so the templates still check the platform's `tools` out (pinned) on each build.
+- **Checked.** `make check-templates` renders every app type from both new pins and `make check` passes (1029
+  tests). The templates' own Template workflow is the live check — it renders each app type and builds and
+  smoke-tests its image. Both new releases are green (typescript `e69a67d` and kotlin `d0a29bf`, Template
+  workflow 00:23 UTC), and so are their rendered caller pins.
+- **The removal also fixed the templates' own CI.** The two releases before it were red: typescript v0.2.22
+  (`3619c3e`) and kotlin v0.2.21 (`8113914`) both failed their Template workflow at `app-build-image load` in the
+  export-proof path (`##[error]Process completed with exit code 1`), so the first matrix entry — the API app type,
+  the one that exercised the OCI export — was never smoke-tested at those releases. That step is gone, which is why
+  the same matrix passes now.
+- **No instance's behaviour changes.** Apps publish images built exactly as they were after 30 October 2026: no
+  repository ever set the input the templates no longer offer, and the images in the cluster were built by the
+  step-reduced workflow already.
+
 ## Tested-PR-image reuse retired in the eight v1 app repositories (30 October 2026)
 
 - **What changed.** `demo-orders`, `demo-shop`, `demo-shopper`, `swhurl-try-12`, `swhurl-try-13`, `swhurl-try-30`,
@@ -9,7 +34,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   `.github/workflows/container.yml`, committed "Stop reusing a tested PR image" and pushed to `main`
   (`312b8b3`, `0061677`, `5f446fe`, `d1dfe08`, `370b772`, `3e2096c`, `ed0b7f2`, `e27a973`). `swhurl-try-12`'s `with:`
   block held only that input, so it went too. Their `actions: read` grant stays: removing it belongs to removing the
-  machinery ([why it was retired](apps.md#reusing-a-tested-pr-image-retired-30-october-2026)).
+  machinery ([what a release states about its image](apps.md#deploy-a-new-image)).
 - **Checked.** All eight Container runs on `main` finished green between 23:36 and 23:42 UTC, and each new tag's
   `org.opencontainers.image.revision` label was read from GHCR's config blob: `66-312b8b3` states `312b8b3d…`,
   `83-0061677` states `00616775…`, `73-5f446fe` states `5f446fe7…`, `68-370b772` states `370b772f…`, `20-ed0b7f2`

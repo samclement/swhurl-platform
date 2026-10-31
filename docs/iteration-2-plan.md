@@ -440,7 +440,6 @@ v1 is evidence to evaluate, not the specification of v2 or an expected-output ge
 - [`tests/fixtures/instance`](../tests/fixtures/instance): a frozen staging/production example with records and rendered resources.
 - [`tests/fakecluster.py`](../tests/fakecluster.py): healthy-cluster responses across Flux, apps, observability, backups and notifications.
 - [`tests/test_console_stages.py`](../tests/test_console_stages.py): earlier targets, current intent and live observations combined.
-- [`tests/test_build_image.py`](../tests/test_build_image.py): build evidence and sample image archives.
 - [`tests/test_app_model.py`](../tests/test_app_model.py): deterministic rendering and relationship rules.
 
 Copy scenarios and data, not the `FakeRunner` command matching: v2 tests name operations, not command strings. Some v1 fixtures read the current checkout or clock; freeze those values when exporting.

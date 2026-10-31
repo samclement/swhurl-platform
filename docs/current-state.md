@@ -10,6 +10,11 @@ What has been verified on the live cluster, and when: current facts first, then 
   `demo-shop` `bf6a217`, `demo-shopper` `51519ea`, `swhurl-try-10` `364c0f9`, `swhurl-try-13` `900f5e5`,
   `swhurl-try-30` `b32c6a0`, `swhurl-try-31` `ab1f593`, `swhurl-try-32` `545c2c7`. `swhurl-try-32`'s older
   Renovate PR for the same bump was closed as superseded. No app repository has an open pull request.
+- **Every staging instance runs it.** The Deploy workflow pinned each v1 staging instance to its new tag —
+  `71-b8d5223`, `90-bf6a217`, `80-51519ea`, `73-900f5e5`, `23-b32c6a0`, `26-ab1f593`, `23-545c2c7` — and the pods
+  run those digests (checked directly for `demo-orders`, `swhurl-try-13` and `swhurl-try-30`). The two v2-owned
+  staging records moved too: `swhurl-try-10` to `sha256:8ff7d4a1…` (v2 Deploy `e85373b0`) and `demo-notifier` to
+  `sha256:a9f32b16…` (was `962f228e…`).
 - **Why `swhurl-try-11` and `swhurl-try-12` went.** Both record `kind=web database=none`, which the templates no
   longer accept, so neither could take a template update and they were the only two repositories left granting
   `actions: read`. They are throwaways, so the operator had them removed rather than given a database.
@@ -90,8 +95,8 @@ What has been verified on the live cluster, and when: current facts first, then 
   Each merge published an image whose `org.opencontainers.image.revision` is its tag's commit — `69-be8372e`,
   `88-b8e4fb3`, `78-7c7da86`, `71-a7e4a5f`, `21-2f237f7`, `23-9f374a5`, `21-2b53284` (TypeScript) and `58-bd44c68`
   (Kotlin) — and the Deploy workflow pinned the seven v1 staging instances to them (`33dd4adc`, `d775c5fc`).
-  `swhurl-try-10`'s v2 record moved to the new digest (`4f0c02e9…`) in `185c5b3a`; `demo-notifier`'s record still
-  names its previous digest (`962f228e…`), so its next v2 Deploy run is the step that follows.
+  `swhurl-try-10`'s v2 record moved to the new digest (`4f0c02e9…`) in `185c5b3a`, and later to `8ff7d4a1…` with
+  the Node.js 26 image; `demo-notifier`'s moved to `a9f32b16…` on its next v2 Deploy run.
 - **Two throwaways could not.** `swhurl-try-11` and `swhurl-try-12` record `kind=web database=none`, which no
   longer names an app type (a web app needs `database=sqlite`), so `copier update` refuses them by design and they
   keep their current pins — and the unused `actions: read` grant, the only two repositories that still have it.

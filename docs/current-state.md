@@ -26,6 +26,20 @@ What has been verified on the live cluster, and when: current facts first, then 
   `make check` (1034 tests) with the documentation checks after this record. New tests: the digest reference in the
   shared registry contract, a fresh reader authorizing its own `Describe`, a migration stating the resolved manifest,
   a registry that cannot be read writing nothing, and the one-line summary naming the resolution.
+- **Verified live (31 October 2026, `897675a5`):** pushed and `make flux-reconcile` — all **34 Flux units** `Ready` on
+  that revision. Each of the seven re-rendered deployments runs the manifest digest its record states (`demo-orders`
+  `sha256:a030c3…`, `swhurl-try-31` `sha256:c54029…`), `1/1` ready, one rolling restart as the pin moved from the
+  index to the manifest; nothing else moved — the staging namespaces keep their 11–20 October creation timestamps and
+  the `demo-orders` and `demo-shop` PVCs are still Bound to the same 18- and 12-day-old volumes. `make
+  verify-platform` reports **90 OK, 1 WARN**: the Image Automation check names all nine staging instances `deployed`
+  with no digest warning, and the one warning is the console image being older than `tools/`, which this commit does
+  not touch (its inputs last changed at `d3ae58ab`). The graph works across the restarts: `swhurl-try-30`, `-31` and
+  `-32` log `WORK DONE`, `demo-shopper` `work done`, `demo-shop` and `demo-orders` `request handled`, `demo-notifier`
+  `event received: demo-orders.created …`, and `swhurl-try-13` logs no `Permissions Violation`;
+  `https://staging-demo-shop.…` and `https://staging-demo-orders.…` return 302 signed out; and `make app-status
+  APP=demo-orders ENV=staging` says `Healthy` with the image desired and running equal.
+- **Not exercised:** the four production instances (1b), and a delivery through the hourly Deploy workflow to a record
+  this migration wrote.
 
 ## The cutover reaches the cluster (31 October 2026)
 

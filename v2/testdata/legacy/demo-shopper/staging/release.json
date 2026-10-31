@@ -1,0 +1,14 @@
+{
+  "description": "Demo: a worker that buys something from demo-shop every half minute, so there is always some traffic",
+  "image": {
+    "digest": "sha256:db8b46171217c395abdea6a4060a452e3baa8ada18c72ee92fd046858c44b534",
+    "repository": "ghcr.io/samclement/demo-shopper",
+    "tag": "80-51519ea"
+  },
+  "kind": "worker",
+  "offers": "51519ea",
+  "stack": "typescript",
+  "telemetry": true,
+  "uid": 65532,
+  "version": 1
+}

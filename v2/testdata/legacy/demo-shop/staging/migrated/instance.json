@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "application": "demo-shop",
+  "environment": "staging",
+  "release": "rel-sha256:d33e02e3b60cc958648cd24a853ee2fc72c2674f63115996eb0cf24b199480f8",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "authenticated-web"
+  },
+  "bindings": {},
+  "storage": {
+    "claimName": "demo-shop"
+  },
+  "calls": [
+    "demo-orders"
+  ],
+  "allows": [
+    "team:demo"
+  ],
+  "events": {
+    "key": "UA7ZLBBXHVDXOTNNDGOPVWCXCH4OBVFBR7TQFRDUKWJ3NAZVV64DXEV4"
+  }
+}

@@ -218,7 +218,8 @@ func TestTheImagePolicyIsV1sCommittedObjects(t *testing.T) {
 		}
 		documents[file.Path] = document
 	}
-	v1 := yamlDocuments(t, "../../../apps/demo-orders/staging/image-automation.yaml")
+	// The fleet is v2's now, so the objects v1 committed are frozen here: the same two, byte for byte.
+	v1 := yamlDocuments(t, "../../testdata/v1-demo-orders-staging-image-automation.yaml")
 	if len(v1) != 2 {
 		t.Fatalf("%d v1 objects", len(v1))
 	}
@@ -228,7 +229,7 @@ func TestTheImagePolicyIsV1sCommittedObjects(t *testing.T) {
 			t.Errorf("%s is not v1's committed object:\nv2 %v\nv1 %v", path, documents[path], v1[i])
 		}
 	}
-	unit := yamlDocuments(t, "../../../clusters/home/app-demo-orders-staging.yaml")[0]
+	unit := yamlDocuments(t, "../../testdata/v1-demo-orders-staging-unit.yaml")[0]
 	if !hasDependency(unit, kernel.ImageAutomationUnit) {
 		t.Fatalf("v1's unit does not wait for %s", kernel.ImageAutomationUnit)
 	}

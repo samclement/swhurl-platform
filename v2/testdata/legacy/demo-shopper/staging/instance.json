@@ -1,0 +1,11 @@
+{
+  "allocations": {
+    "egressPort": 30104,
+    "eventsKey": "UBTEFDHXMWLBQALKXYVDS3WWMVTEAEATHTX36DHE5ENJAFUTGYBCX62N"
+  },
+  "calls": [
+    "demo-shop"
+  ],
+  "exposure": "private",
+  "version": 1
+}

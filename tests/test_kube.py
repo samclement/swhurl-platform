@@ -1,5 +1,6 @@
 """Reads of the API server in place of ``kubectl get``: what is translated, what is left to kubectl, and
 that an answer and a failure look to a caller as kubectl's do."""
+import json
 import re
 import tempfile
 import unittest
@@ -68,14 +69,28 @@ class TranslationTests(unittest.TestCase):
         """kubectl asks the server which version to read; the table states it, so it has to follow Git."""
         kinds = {resource.kind: resource for resource in kube.RESOURCES if resource.group}
         seen = set()
-        for folder in ('clusters', 'platform', 'apps', 'tests/fixtures'):
-            for path in (ROOT / folder).rglob('*.yaml'):
-                for version, kind in re.findall(r'^apiVersion: (\S+)\nkind: (\S+)$', path.read_text(), re.MULTILINE):
+        for folder in ('clusters', 'platform', 'apps', 'tests/fixtures', 'v2-apps'):
+            for path in (ROOT / folder).rglob('*'):
+                for version, kind in self.manifests(path):
                     resource = kinds.get(kind)
                     if resource and version.startswith(resource.group + '/'):
                         seen.add(kind)
                         self.assertEqual(version, resource.api_version, f'{kind} in {path.relative_to(ROOT)}')
         self.assertLessEqual({'Kustomization', 'HelmRelease', 'GitRepository', 'Alert', 'Provider', 'ImagePolicy'}, seen)
+
+
+    @staticmethod
+    def manifests(path):
+        """The (apiVersion, kind) each top-level manifest in one file states: v1 writes YAML, v2 writes JSON."""
+        if path.suffix == '.json':
+            try:
+                document = json.loads(path.read_text())
+            except ValueError:
+                return []
+            return [(str(document.get('apiVersion')), str(document.get('kind')))] if isinstance(document, dict) else []
+        if path.suffix != '.yaml':
+            return []
+        return re.findall(r'^apiVersion: (\S+)\nkind: (\S+)$', path.read_text(), re.MULTILINE)
 
 
 class ApiReadsTests(unittest.TestCase):

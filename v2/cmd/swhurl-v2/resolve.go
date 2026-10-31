@@ -174,14 +174,15 @@ func encodeResolution(document resolutionDocument) ([]byte, error) {
 }
 
 // eventDeclarationsOf is every instance's side of the event relationships: the events its release publishes and
-// the subscriptions its own record grants. An instance whose records are v2's cannot state publications yet, so
-// its declaration says so and a subscription to it waits.
+// the subscriptions its own record grants. Both record shapes state the publications a release has — a v2 release
+// renders its stream and its publish variable from them, so an absent list means none — and a subscription to an
+// instance that does not publish that event is refused rather than left waiting for something that will never come.
 func eventDeclarationsOf(pinned snapshot) []events.Declaration {
 	declarations := make([]events.Declaration, 0, len(pinned.Instances))
 	for _, instance := range pinned.Instances {
 		declarations = append(declarations, events.Declaration{Application: instance.Application,
 			Environment: instance.Environment, Publishes: declaredPublishes(instance),
-			Subscriptions: declaredSubscriptions(instance), PublicationsKnown: instance.Format != "v2"})
+			Subscriptions: declaredSubscriptions(instance), PublicationsKnown: true})
 	}
 	return declarations
 }

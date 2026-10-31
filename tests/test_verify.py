@@ -281,21 +281,31 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn('[BAD] cannot read flux-system/kustomize-controller (kubectl -n flux-system get deploy kustomize-controller)', report.lines)
 
     def test_image_automation_problems(self):
-        from fakecluster import policy, staging_tag
-        tag = staging_tag('demo-shop')
+        # A v1 instance's record states the tag, so this needs no registry: the fixture is the only v1 staging
+        # instance in the tree today (the fleet is v2's, and a v2 record states a digest instead).
+        from fakecluster import policy
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        shutil.copytree(ROOT / 'tests/fixtures/instance/apps/hello', root / 'apps/hello')
+        tag = '1.27-alpine'
         cases = {
-            'policy': ({'policies': {'items': [policy('demo-shop', tag, {'conditions': [
-                {'type': 'Ready', 'status': 'False', 'message': 'no tags match'}]})]}},
-                       '[BAD] ImagePolicy demo-shop-staging is not Ready, so staging gets no new images: no tags match'),
-            'behind': ({'policies': {'items': [policy('demo-shop', '999-abcdef0')]}},
-                       f'[WARN] demo-shop-staging: newest image 999-abcdef0 is not deployed; staging in Git runs {tag}'),
+            'policy': ([policy('hello', tag, {'conditions': [
+                {'type': 'Ready', 'status': 'False', 'message': 'no tags match'}]})],
+                       '[BAD] ImagePolicy hello-staging is not Ready, so staging gets no new images: no tags match'),
+            'behind': ([policy('hello', '999-abcdef0')],
+                       f'[WARN] hello-staging: newest image 999-abcdef0 is not deployed; staging in Git runs {tag}'),
         }
-        for name, (overrides, expected) in cases.items():
+
+        def lines(items):
+            report = Report(io.StringIO())
+            app_checks.check_image_automation(healthy(policies={'items': items}), report, root)
+            return [line for line in report.lines if 'hello' in line]
+
+        for name, (items, expected) in cases.items():
             with self.subTest(name=name):
-                _, report, text = run(healthy(**overrides))
-                self.assertTrue(any(line.startswith(expected) for line in report.lines), text)
-        _, report, _ = run(healthy())
-        self.assertIn(f'[OK] demo-shop-staging: newest image {tag}, deployed', report.lines)
+                found = lines(items)
+                self.assertTrue(any(line.startswith(expected) for line in found), found)
+        self.assertIn(f'[OK] hello-staging: newest image {tag}, deployed', lines([policy('hello', tag)]))
 
     def test_isolation_problems(self):
         root = Path(tempfile.mkdtemp())

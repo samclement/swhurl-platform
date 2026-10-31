@@ -1,0 +1,1 @@
+{"apiVersion":"jetstream.nats.io/v1beta2","kind":"Stream","metadata":{"name":"staging-demo-orders","namespace":"demo-orders-staging"},"spec":{"discard":"old","maxAge":"168h","maxBytes":67108864,"name":"staging-demo-orders","preventDelete":true,"replicas":1,"retention":"limits","storage":"file","subjects":["staging.demo-orders.>"]}}

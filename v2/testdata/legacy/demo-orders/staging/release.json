@@ -1,0 +1,21 @@
+{
+  "apiPath": "/openapi.json",
+  "database": "sqlite",
+  "description": "Demo: takes orders, keeps them in SQLite, describes its API and publishes an event for each",
+  "healthPath": "/healthz",
+  "image": {
+    "digest": "sha256:ce86ab14ebd634eed091f89858abe212ea0a5dc4cffa8f76ece8f595fb8b8077",
+    "repository": "ghcr.io/samclement/demo-orders",
+    "tag": "71-b8d5223"
+  },
+  "kind": "web",
+  "offers": "b8d5223",
+  "port": 8080,
+  "publishes": [
+    "created"
+  ],
+  "stack": "typescript",
+  "telemetry": true,
+  "uid": 65532,
+  "version": 1
+}

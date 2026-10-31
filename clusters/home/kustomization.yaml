@@ -7,9 +7,9 @@ resources:
   - app-swhurl-try-10-staging.json
   - app-swhurl-try-13-staging.json
   - app-swhurl-try-10-prod.yaml
-  - app-demo-orders-staging.yaml
-  - app-demo-shop-staging.yaml
-  - app-demo-shopper-staging.yaml
+  - app-demo-orders-staging.json
+  - app-demo-shop-staging.json
+  - app-demo-shopper-staging.json
   - app-demo-notifier-staging.json
   - app-demo-orders-prod.yaml
   - app-demo-shop-prod.yaml

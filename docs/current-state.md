@@ -22,11 +22,23 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Checked offline:** `make check-v2` (all packages; `check-rendered.sh` finds `platform/` unchanged),
   `REQUIRE_HELM=1 make check-v2`, and `make check` after the change. The two frozen predecessors
   (`v2/testdata/legacy/{demo-orders,demo-shop}/prod/`) make `TestMigrateReproducesCommittedInstances` replay both.
-- **Applied live (`d4e68b75`):** all 34 Flux units are `Ready`; both pods run the manifest digest their record states;
-  the PVCs are the same volumes (12 and 19 October) and `GET /` on `demo-orders` still reports the one order it
-  held. **The first call exposed a defect** — `demo-orders` refused `demo-shop`'s call with `401 this app is not
-  configured to verify tokens`, because the production images predate the `_FILE` variables — and the envFrom fix
-  above is what repairs it; the call is verified after that commit.
+- **Applied live (`d4e68b75`, then `5fe6b5e8`):** all 34 Flux units `Ready` at each revision. Each deployment
+  runs the manifest digest its record states (`demo-orders` `sha256:6e7fbd…`, `demo-shop` `sha256:a4b652…`),
+  `1/1` ready, one rolling restart as the pin moved from the index to the manifest and one more for the envFrom
+  fix. The PVCs are the same volumes — `demo-orders` `pvc-9f7bac9d…` created 12 October, `demo-shop`
+  `pvc-a205a858…` created 19 October — and `GET /` on `demo-orders` returns the order it held before the
+  migration (`at 2026-10-19T07:56:11.743Z`), so the app reads its existing data back.
+- **The first call exposed the file-variable defect, and the fix is proved by the call:** before `5fe6b5e8`,
+  `demo-shop`'s `/api/shop` got `401 this app is not configured to verify tokens`; after the rollout the same
+  request returns its `latestOrders` and `demo-orders` logs `GET /orders 200 caller.type=app caller.id=demo-shop`.
+- **Checks:** `make verify-platform` reports **94 OK, 0 WARN** — all nine staging Image Automation checks are
+  `deployed`, and the six SQLite backups include the two migrated production instances (their releases are read
+  from `v2-records/`). `swhurl-v2 observe` says `running` with backup `current` for both, `make app-status`
+  reports Healthy with the running digest matching the desired one, and the production and staging hosts return
+  `302` signed out. The graph still works: `demo-shopper` `work done`, `demo-shop` `request handled`,
+  `demo-orders` `request handled` (including `caller.id=demo-shop`), and `demo-notifier` `event received:
+  demo-orders.created …`.
+- **Not exercised:** `swhurl-try-10` and `swhurl-try-30` production, and the v1 deletion.
 
 ## A migrated record states the platform's digest (31 October 2026)
 

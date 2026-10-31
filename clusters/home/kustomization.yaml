@@ -13,7 +13,7 @@ resources:
   - app-demo-notifier-staging.json
   - app-demo-orders-prod.yaml
   - app-demo-shop-prod.yaml
-  - app-swhurl-try-30-staging.yaml
+  - app-swhurl-try-30-staging.json
   - app-swhurl-try-30-prod.yaml
   - app-swhurl-try-32-staging.yaml
   - app-swhurl-try-31-staging.yaml

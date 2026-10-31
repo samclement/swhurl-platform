@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: 1a's live half: the nine staging instances migrated, their units switched to `.json`, and v1's staging records and writers deleted (the repository read follows 1b)
+Gate: 1a's live half: `swhurl-try-30` staging is migrated (31 October 2026); the other six staging instances, then v1's staging records and writers deleted (the repository read follows 1b)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -187,6 +187,54 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 **25 October 2026 — the backup job: six decisions, all as proposed ("go").** A database instance renders its own backup — the Secret holding two *references* to the upload key, the nightly CronJob, and a policy for the pod that reaches S3 — from a new `PlatformProfile.backup` block (image and digest, S3 prefix, age recipient, writer Secret, `suspended`); Flux substitution stays the credential mechanism, with a rule that no other `${…}` may appear in a substituted instance's documents; the backup pod is the instance's second workload, so it gets the platform's narrow policy and the quota counts it; the schedule keeps v1's derivation, so a migration keeps its slot; restore and freshness are not modelled. [The slice](iteration-2-plan.md#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026). What reopens it: v2 owning secret material, or a second workload with different needs.
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
+
+## Slice record: the cutover's first live instance (`swhurl-try-30` staging)
+
+- **Outcome:** `swhurl-try-30` staging is v2's: `swhurl-v2 migrate` read its v1 records from a pinned snapshot and
+  wrote the pair at `v2-records/swhurl-try-30/staging/` (with its encrypted seed and the documents it offers beside
+  it), the compiled instance at `v2-apps/instances/swhurl-try-30/staging/`, and the unit as
+  `clusters/home/app-swhurl-try-30-staging.json`, whose registration replaces the `.yaml` one in the same commit.
+  v1's staging half — thirteen files under `apps/swhurl-try-30/staging/` and the unit YAML — is deleted in that
+  commit too, so the instance keeps one writer. The object names are unchanged: same namespace, same HelmRelease,
+  same stream `staging-swhurl-try-30`, same NATS identity, same image digest, so Flux updates the unit rather than
+  creating a second one, and nothing is pruned but the old path.
+- **What the operator will see, field by field** (a `kubectl kustomize` comparison of v1's folder with v2's, before
+  the commit, found these and nothing else): the `platform.swhurl.com/render` annotation is gone (v1's own render
+  hash; v2 tracks its files by their revision instead); the image is pinned by digest with no tag (v2's release
+  model is digest-only — the same bytes); the memory **request** rises from 32Mi to 128Mi (v2 states one memory
+  fact; the limit was already 128Mi); `replicas: 1` is stated rather than left to the chart; and the egress
+  environment (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `JAVA_TOOL_OPTIONS`, `NODE_USE_ENV_PROXY`) is gone, because
+  v2 grants the proxy only to an instance that needs it and this worker reaches nothing outside the cluster. Its
+  NetworkPolicy becomes deny-by-default egress with the peers it does use: cluster DNS, the collector's node address
+  and NATS. The allocation keeps the instance's port 30109 although no grant uses it, which is the recorded
+  behaviour of a port once allocated.
+- **Why it is safe to hand over in one commit:** the unit is the same Flux object (same name, same `dependsOn`,
+  `prune: true`, `wait: true`, sops decryption) with a new path, which is an update rather than a move between
+  units; every object the new path renders has the same kind, name and namespace as the old path's, so Flux's prune
+  finds nothing to delete. `make check-v2` re-renders the platform documents from the committed tree and finds them
+  unchanged, so the migration moves no port, user, watch list or auth object.
+- **A defect the cutover found, fixed in this change:** `migrate` wrote an instance's offered documents beside its
+  manifests but not into its record folder, so the first later `compile`/`deploy`/`edit` from the records would
+  have compiled without them and — with the pruning writer — removed them from the compiled folder. It now writes
+  them as declared inputs of `v2-records/<app>/<env>/offers/`, tested by replaying a compile from the record folder.
+  Its predecessor fixtures are frozen under `v2/testdata/legacy/swhurl-try-30/staging/`, so
+  `TestMigrateReproducesCommittedInstances` now covers three real migrations.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1's live behaviour changes
+  deliberately, listed above; no other instance, manifest or record changed. 2. No pure package gained an effect.
+  3. No identity moved: the release, instance and compilation hashes are the migration's own, and the namespace,
+  host, stream and nats user are unchanged. 4. No refusal moved; the migration's own three gaps (image provenance,
+  the image tag, the stack answer) are recorded in its report and belong to the release build. 5. Failure paths:
+  the migrate tests and the frozen replay; a stale `platform/` document is caught by `check-rendered.sh` rather
+  than assumed. 6. Scope: one instance — the remaining six staging instances follow. 7. **Live:** see
+  [current state](current-state.md#the-cutover-reaches-the-cluster-one-staging-instance-31-october-2026).
+  8. This record, the registry and the plan's gap rows change together.
+- **Evidence:** `make check-v2` (all packages, `check-rendered.sh`: `platform/` unchanged), `make check` (1034
+  tests) with the documentation checks after this record; the kustomize field comparison above; locally
+  `git show HEAD:apps/swhurl-try-30/staging/offers/...` supplied the predecessor's documents, as the operator's
+  `--offers` does.
+- **Next gate:** the other six staging instances — `demo-orders`, `demo-shop`, `demo-shopper`, `swhurl-try-13`,
+  `swhurl-try-31`, `swhurl-try-32` — then v1's staging records and `make destroy-data`-free removal of the v1
+  staging commands, and 1b.
 
 ## Slice record: the cutover's write primitives (offline, 31 October 2026)
 

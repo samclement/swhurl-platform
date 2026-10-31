@@ -174,13 +174,15 @@ phase 3 (§2.3).
   `of(app, env, read)` trying v2 first and v1 second, and `rows(...)` composing the declared connections (with why
   each does not connect yet) with the live ones. No SOPS file is read, and no v1 shape is translated: the page shows
   v2's facts, and says so where v2 has none (`minimum` is v1's only; a v2 release states no floor).
-- **Reading the cluster, not Git, is where v2 moved facts.** The recon expected four v1-shaped HelmRelease reads;
-  measured on the live cluster, two of them were not HelmRelease reads at all but objects v2 renders separately:
-  **the Ingress** (so `hosts`, the web address and the API URL were empty for all 13 instances) and **the callers
-  ConfigMap** (`<app>-callers`, so `SWHURL_ALLOWED_CALLERS` and every "called by" was empty). `cluster.apps` now
-  lists both (`INGRESSES`, `CALLERS`) beside the releases, so one seam serves v1 and v2 and no page depends on Git
-  for a live fact. The API annotation, the exposure annotation, the offer commit, the variables and the digest are
-  rendered, so they needed nothing.
+- **Reading the cluster, not Git, is where v2 moved facts.** The recon expected four v1-shaped HelmRelease reads.
+  Measured on the live cluster: **the Ingress** is a separate object, so `hosts`, the web address and the API URL
+  were empty for all 13 instances — `cluster.apps` lists ingresses now (`INGRESSES`) and reads the hosts from them
+  when the release's values carry none. The **allow-list** moved into a `<app>-callers` ConfigMap, but it need not
+  be read at all: v2 renders a *resolved* pair, so the caller's own variables (`SWHURL_SERVICE_<APP>_URL`) name the
+  apps it may call, and inverting those gives exactly the rendered allow-list (checked against the live ConfigMaps:
+  `demo-shop/staging` is called by `demo-shopper`, `demo-orders` by `demo-shop`). That keeps `platform/console/rbac.yaml`
+  as it is — the console still reads no ConfigMap outside its own namespace. The API annotation, the exposure
+  annotation, the offer commit and the digest are rendered, so they needed nothing.
 - **The page's write forms are gone for a v2 instance**, replaced by one line naming `swhurl-v2 edit <app>/<env>
   --set <field>=<value>`, `swhurl-v2 promote <app>` and `swhurl-v2 remove <app>/<env>`; the promotion row and the
   Uninstall card say the same, and `change_app` and `review_promotion` refuse with the same words (409) rather than

@@ -25,7 +25,6 @@ RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-name
 APP_NAMESPACES = ['kubectl', 'get', 'namespaces', '-l', interface.APP, '-o', 'json']
 SOURCE = ['kubectl', '-n', 'flux-system', 'get', 'gitrepository', ops.SOURCE, '-o', 'json']
 PODS = ['kubectl', 'get', 'pods', '--all-namespaces', '-l', ops.INSTANCE_LABEL, '-o', 'json']
-CALLERS = ['kubectl', 'get', 'configmaps', '--all-namespaces', '-o', 'json']
 INGRESSES = ['kubectl', 'get', 'ingresses.networking.k8s.io', '--all-namespaces', '-o', 'json']
 WORKLOADS = ['kubectl', 'get', ops.WORKLOAD_KINDS, '--all-namespaces', '-l', ops.INSTANCE_LABEL, '-o', 'json']
 CONSOLE_CHECKS = frozenset({'cluster'})
@@ -192,24 +191,18 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
         except ReadError:  # an account that may not list namespaces still gets the rest
             return []
 
-    def allow_lists() -> list[dict]:
-        try:
-            return items(runner, CALLERS)
-        except ReadError:  # an account without ConfigMaps still gets every other fact (see platform/console/rbac.yaml)
-            return []
-
     def git_source() -> dict:
         try:
             return runner.json(SOURCE) or {}
         except CommandError as error:
             raise ReadError(str(error)) from None
     listed = [functools.partial(items, runner, RELEASES), namespaces, functools.partial(items, runner, UNITS),
-              allow_lists, functools.partial(items, runner, INGRESSES)]
+              functools.partial(items, runner, INGRESSES)]
     judged = [git_source, functools.partial(items, runner, PODS), functools.partial(items, runner, WORKLOADS)]
     read = runner.together(*listed, *(judged if states else ()))
     releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in read[0]}
     teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(interface.TEAM, '') for n in read[1]}
-    rendered_callers, ingresses = read[3], read[4]
+    ingresses = read[3]
     found = [(instance, unit, releases.get((instance.namespace, instance.app)))
              for unit in read[2] if (instance := Instance.of_unit(unit['metadata']['name']))]
     # A unit may disappear before Helm finishes uninstalling its release. Keep it visible until both are gone.
@@ -217,15 +210,23 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
     if include_removing:
         found += [(instance, {}, release) for (namespace, name), release in releases.items()
                   if (instance := Instance.of_namespace(namespace)) and instance.app == name and instance not in known]
-    source = read[5] if states else {}
+    source = read[4] if states else {}
     owned: dict[str, dict[tuple[str, str], list[dict]]] = {}
-    for kind, found_items in (('pods', read[6:7]), ('workloads', read[7:8])):
+    for kind, found_items in (('pods', read[5:6]), ('workloads', read[6:7])):
         owned[kind] = defaultdict(list)
         for item in found_items[0] if found_items else ():
             metadata = item['metadata']
             owned[kind][metadata.get('namespace', ''), (metadata.get('labels') or {}).get(ops.INSTANCE_LABEL, '')].append(item)
     subscribed = [(instance.env, publisher, event, instance.app) for instance, _, release in found
                   for publisher, event in events.subscribed(helmrelease.variables(release))]
+    # Who calls an instance: v2 renders an allow-list as a resolved pair, so the caller carries the callee's
+    # address in its own variables. Read the callers' variables rather than the callee's allow-list, which v2
+    # keeps in a ConfigMap of its own the console does not read.
+    called: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for instance, _, release in found:
+        for callee in calling.declared_calls(helmrelease.variables(release)):
+            if callee != instance.app:
+                called[instance.env, callee].append(instance.app)
     rows = []
     for instance, unit, release in found:
         variables, port, image = helmrelease.variables(release), helmrelease.port(release), helmrelease.image(release)
@@ -234,7 +235,7 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
         annotations = ((release or {}).get('metadata') or {}).get('annotations') or {}
         path = str(annotations.get(interface.API_ANNOTATION, '')) if address else ''
         calls = calling.declared_calls(variables)
-        callers = calling.allowed_callers(variables) or calling.allowed_callers(allow_list(rendered_callers, instance))
+        callers = calling.allowed_callers(variables) or called[instance.env, instance.app]
         publishes, subscribes = events.published(variables), events.subscribed(variables)
         subscribers = [(event, subscriber) for env, publisher, event, subscriber in subscribed
                        if (env, publisher) == (instance.env, instance.app)]
@@ -268,19 +269,6 @@ def release_ready(release: dict | None) -> bool:
     condition = next((c for c in (release.get('status') or {}).get('conditions') or [] if c.get('type') == 'Ready'), {})
     return (generation is not None and condition.get('status') == 'True'
             and condition.get('observedGeneration') == generation)
-
-
-def allow_list(configmaps: list[dict], instance: Instance) -> dict:
-    """An instance's rendered allow-list, as its app reads it: v2 writes it to a ConfigMap of its own
-    (``<app>-callers``) and mounts it as a file, so the app's variables no longer carry it; v1 put it in a
-    variable (which ``calling.allowed_callers`` finds first, so a v1 instance keeps what it declared).
-    Empty when the console may not read ConfigMaps, which is why the caller asks nothing of this page: what
-    the records declare is still shown as a row per grant."""
-    for item in configmaps:
-        metadata = item.get('metadata') or {}
-        if (metadata.get('namespace'), metadata.get('name')) == (instance.namespace, f'{instance.app}-callers'):
-            return item.get('data') or {}
-    return {}
 
 
 def ingress_hosts(ingresses: list[dict], instance: Instance) -> tuple[str, ...]:

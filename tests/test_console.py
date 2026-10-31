@@ -91,7 +91,6 @@ def fake(units=UNITS, releases=RELEASES, **extra):
     runner.on(*cluster.PODS[:4], stdout=json.dumps(pods))
     runner.on(*cluster.WORKLOADS[:4], stdout=json.dumps(workloads))
     runner.on(*cluster.INGRESSES[:4], stdout=json.dumps({'items': []}))
-    runner.on(*cluster.CALLERS[:4], stdout=json.dumps({'items': []}))
     runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
     return runner
 

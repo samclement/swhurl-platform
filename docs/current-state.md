@@ -53,6 +53,15 @@ What has been verified on the live cluster, and when: current facts first, then 
   names no `SWHURL_SERVICE_*` variable any more, and `demo-notifier` staging is Ready. The rebase brought the two
   files both sides had touched together: `make app-sync` re-rendered `swhurl-try-13`'s HelmRelease from the merged
   records and `compile` re-rendered `swhurl-try-10` staging's, so no rendered file is a hand-merged copy.
+- **One file needed deleting by hand.** `compile` writes the files an instance's records render, but does not
+  remove a file they no longer render: with `allows` empty, `v2-apps/instances/swhurl-try-10/staging/callers.json`
+  (still naming `swhurl-try-11` and `swhurl-try-12`) stayed behind, out of the folder's kustomization and so not
+  applied, and was deleted here. A writer that prunes is a v2 gap, not this change's — flagged, not fixed.
+- **The egress proxy keeps their ports.** `platform/egress/configmap.json` still opens 30107, 30114 and 30115 for
+  them, with no `acl` and so no grant: `Allocate` keeps a removed instance's port on purpose, and the proxy renders
+  one port per allocation entry. The cluster applies it and every request on those ports is refused as ungranted
+  (`granted=-`). Rendering a port only where an instance still needs egress is a smaller document and an option,
+  not something this change decided.
 - **The repositories and packages are gone.** Deleted with the tokens in the gitignored `secrets/`:
   `secrets/github-packages.sops.yaml` (a classic token with `delete:packages`) removed both GHCR packages, and
   `secrets/github-cleanup.sops.yaml` (fine-grained, `administration: write`) removed both repositories. Both

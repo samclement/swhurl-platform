@@ -664,8 +664,7 @@ def tree_fake(app_new=APP_NEW_OK, edit=None, staging=()):
     for prefix, found in ((cluster.UNITS[:5], [unit for unit, _ in staging]),
                           (cluster.RELEASES[:3], [release for _, release in staging]),
                           (('kubectl', 'get', 'namespaces'), []),
-                          (cluster.PODS[:4], []), (cluster.WORKLOADS[:4], []), (cluster.INGRESSES[:4], []),
-                          (cluster.CALLERS[:4], [])):
+                          (cluster.PODS[:4], []), (cluster.WORKLOADS[:4], []), (cluster.INGRESSES[:4], [])):
         runner.on(*prefix, stdout=json.dumps({'items': found}))
     runner.on(*cluster.SOURCE[:6], stdout=json.dumps({'status': {'artifact': {'revision': REVISION}}}))
     runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded

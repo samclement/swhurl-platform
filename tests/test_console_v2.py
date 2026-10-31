@@ -10,7 +10,6 @@ import unittest
 from test_console import WHO, client, fake, release, unit
 
 from swhurl.console import cluster
-from swhurl.run import Result
 
 ORIGIN = {**WHO, 'Origin': 'http://testserver'}
 
@@ -105,16 +104,20 @@ class PageTests(unittest.TestCase):
         self.assertNotIn('Allowed callers', text, 'nothing declares who may call it')
 
 
-class PermissionTests(unittest.TestCase):
-    def test_the_page_renders_when_the_console_may_not_list_configmaps(self):
-        """The console's account reads no ConfigMaps (platform/console/rbac.yaml), so the rendered allow-lists are
-        unknown: every other fact is still shown, and the grants the records declare are still a row each."""
-        runner = running()
-        runner._rules.insert(0, (tuple(cluster.CALLERS[:4]), Result((), 1, '', 'Error from server (Forbidden)')))
-        text = client(runner, documents=records()).get('/apps/hello/staging', headers=WHO).text
-        self.assertIn('href="https://staging-hello.homelab.swhurl.com"', text)
-        self.assertIn('waiting for other to allow it', text)
-        self.assertIn('connected in Git, not yet observed live', text)
+class CallerTests(unittest.TestCase):
+    def test_who_calls_an_instance_comes_from_the_callers_own_variables(self):
+        """v2 renders each allow-list as a resolved pair, so the caller's variables carry the callee's address
+        and the callee's page needs no ConfigMap to say who calls it."""
+        caller = release('caller-staging', 'caller')
+        caller['spec']['values']['controllers']['main']['containers']['main']['env'] = {
+            'SWHURL_SERVICE_HELLO_URL': 'http://hello.hello-staging.svc.cluster.local:8080'}
+        runner = fake(units=[unit('app-hello-staging'), unit('app-caller-staging')],
+                      releases=[helmrelease(), caller])
+        rows = {row.instance.app: row for row in cluster.apps(runner, states=False)}
+        self.assertEqual(rows['hello'].connections.callers, ('caller',))
+        self.assertEqual(rows['caller'].connections.calls, ('hello',))
+        self.assertNotIn('configmaps', ' '.join(' '.join(call) for call in runner.calls),
+                         'the console reads no ConfigMap for this')
 
 
 class WriteRefusalTests(unittest.TestCase):

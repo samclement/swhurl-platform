@@ -1,6 +1,7 @@
 # Deleting v1: the plan for 1b's second half
 
-**Status: draft, not started (31 October 2026).** The migrations are done: nine staging and four production
+**Status: in progress (31 October 2026). Phase 0 done, phase 1 next; the four decisions in section 5 were
+confirmed 31 October 2026.** The migrations are done: nine staging and four production
 instances are v2-owned, `apps/` holds no instance record, and the live checks in
 [current state](current-state.md#the-production-cutover-four-instances-31-october-2026) pass. What remains is the
 operator's write surface, the console's reader, and the v1-only branches in `verify-platform` and `resolve`.
@@ -45,15 +46,31 @@ it. The writer functions are in `tools/swhurl/apps/cli.py`, `new.py`, `offers.py
 | `app-check` | v1 render + policy | `compile` and `observe` | **delete** |
 | `platform-signing-keys` | `apps/signing-keys.json` | `auth` (profile-owned) | **delete** |
 | `app-offers` | offered documents | v2 records/offers and `deploy` | **delete** |
-| `app-egress` | egress grants | none (v2 has no egress-grant field) | **keep** (v1-only fact) |
-| `app-alerts` | alert settings | none (v2 renders no alert) | **keep** (v1-only) |
-| `app-schedule` | job schedule | none (no `job` kind) | **keep** (v1-only) |
-| `app-secret` | secret names/values | none (secrets are not modelled) | **keep** (v1-only) |
-| `app-new` | a new staging instance | none yet (create is a later v2 capability) | **keep** (v1-only) |
+| `app-egress` | egress grants | none (v2 has no egress-grant field) | **delete** (inert, below) |
+| `app-alerts` | alert settings | none (v2 renders no alert) | **delete** (inert, below) |
+| `app-schedule` | job schedule | none (no `job` kind) | **delete** (inert, below) |
+| `app-secret` | secret names/values | none (secrets are not modelled) | **delete** (inert, below) |
+| `app-new` | a new staging instance | none yet (create is a later v2 capability) | **keep** (the create path, below) |
 | `app-repo` | a GitHub repository from a template | none yet | **keep** |
 | `app-hooks` | image webhooks | none yet | **keep** |
 | `team-*`, `channel-*` | `apps/teams.yaml` | none (v2 reads the team string, not the registry) | **keep** |
 | `app-status`, `app-logs`, `app-reconcile` | reads only | n/a | **keep** |
+
+The four **keep** rows the plan proposed as v1-only facts were measured before phase 0 on a clean archive of
+`dfe4dafa`: each refuses before writing, because it reads v1's world (`apps/` records, through `write.read`) and no
+instance has one. `app-egress`, `app-alerts`, `app-secret` and `app-schedule` all stop with `no instance
+demo-shop/staging (missing apps/demo-shop/staging/release.yaml)` and exit 2. Keeping them would keep dead code whose
+first act is to write a v1 record for an instance v2 owns, so **decision 1a deletes them** and the four facts (egress
+grants, alert thresholds, job schedule, secret values) are recorded as lost until v2 models them. `app-new`,
+`app-repo`, `app-hooks`, `team-*` and `channel-*` are not in that position: they need no existing record — they are
+the create path, the GitHub side and the shared team registry, none of which v2 writes. **Decision 1b keeps them.**
+The create flow after phase 3 is `app-repo` → `app-new` → `swhurl-v2 migrate` → delete the v1 record and switch the
+unit, the sequence all 13 migrations took: a v1-created instance is a staging post, not a state the platform stays
+in.
+
+`platform-signing-keys` stays a **delete** row, but `apps/signing-keys.json` outlives it until phase 4: `verify`'s
+`signing-keys` check and `check-apps`' policy still read the file, whose keys now reach the instances as
+`platform/auth/` objects — a v1 copy waiting for its last two readers.
 
 **Dependencies that move with the table:**
 
@@ -101,24 +118,73 @@ conventions) for `edit`, `remove` and `promote`. That keeps one compiler and one
 Python port of v2's edit — duplicates the contract and is not recommended. A read-only console (change/new
 buttons disabled with "use `swhurl-v2 edit`") is the fallback if the binary cannot be shipped in the image.
 
+### 2.3 The surface, frozen (phase 0, 31 October 2026)
+
+`make v2-snapshot REVISION=HEAD OUT=/tmp/v2work/snapshot.json` at `dfe4dafa` wrote **13 instances, 0 units without
+records**; its SHA-256 is `778b60a82a7be41051e200426afb6af387ed4bf74c70cb877d1966889d536c63`. It is not committed: the
+records change from here, and the pin is the commit, so a later comparison regenerates it with
+`make v2-snapshot REVISION=dfe4dafa OUT=…`.
+
+**Commands:** 79 in `tools/swhurl/commands.py`, plus 11 internal ones (`make`, `console`, `console-merge`,
+`bot-render`, `bot-deploy`, `bot-deploy-v2`, `image-declaration`, `notify-serve`, `flux-wait`,
+`backup-job-sqlite`, `backup-job-mongodb`). `docs/commands.md` and the Makefile's `COMMANDS` are checked against that
+list, so a deletion that misses one of the three fails `make check` rather than sitting unnoticed.
+
+**Console routes** (`tools/swhurl/console/routes/`): `/`, `/apps`, `/catalogue`, `/catalogue/{env}/use`, `/platform`,
+`/egress`, `/units/{unit}`, `/units/{unit}/{action}`, `/healthz`, `/apps/{app}/{env}`,
+`/apps/{app}/staging/promotion`, `/apps/{app}/{env}/flags/{flag}`, `/apps/{app}/{env}/{change}`, `/new`, `/new/repo`,
+`/jobs/{id}/resume`, `/activity`, `/jobs`, `/jobs/{id}`, `/jobs/{id}/events`, `/teams`, `/teams/{action}`,
+`/team-channel/{action}`, with `/services` and `/units` as redirects.
+
+**Tests that exercise the surface**, by `def test_` count at this commit:
+
+| Test file | Tests | The phase that rewrites it |
+| --- | --- | --- |
+| `tests/test_console_changes.py` | 93 | phase 2: the console's write and propose paths |
+| `tests/test_console_merge.py` | 44 | phase 2: PR validation and merge |
+| `tests/test_console_stages.py` | 14 | phase 1: `stages.py` |
+| `tests/test_console_reading.py` | 11 | phase 1: the Git reader every page shares |
+| `tests/test_console_jobs.py` | 9 | untouched |
+| `tests/test_console_logging.py` | 4 | untouched |
+| `tests/test_app_edit.py` | 60 | phase 3: the v1 writer every deleted command calls |
+| `tests/test_app_ops.py` | 24 | phase 3 (`app-check`) and 4 (`verify-platform`) |
+| `tests/test_app_manifest.py` | 19 | phase 3: v1's render |
+| `tests/test_commands.py` | 17 | phase 3: the command table against the Makefile |
+| `tests/test_verify.py` | 47 | phase 4: `verify-platform`'s two branches |
+| `tests/test_manifest_policy.py` | 15 | phase 4: the app policy |
+| `tests/test_command_safety.py` | 7 | phase 3: dry-run and live separations |
+
+**The ratchet test lands with phase 3, not here.** A test that fails when a deleted command reappears can only assert
+the list it is handed: written now it would either fail on today's tree or assert nothing, and a permanently failing
+test is not a guard. It is phase 3's first step, in the same commit as the first deletion.
+
 ## 3. Phases
 
 Each phase ends with a commit on `main`, `make check`, and the focused v2 checks. Nothing under `flux-system` is
 touched. No live cluster change is expected after phase 1's console deploy, except the normal console image
 rollout; phase 2's first live edit is confirmed with the operator.
 
-**Phase 0 — freeze the surface (half a day).**
-- `make v2-snapshot REVISION=HEAD OUT=/tmp/v2work/snapshot.json` and keep it with the plan.
-- Record the exact command list, the console routes, and the test files that exercise them.
-- Add a test that fails if a deleted command reappears or a console module imports a v1 writer module after
-  phase 3.
+**Phase 0 — freeze the surface. Done 31 October 2026.** The snapshot pin, the command list, the console routes and
+the test inventory are in §2.3; the decision the inventory changed is in §2.1 and §5. The ratchet test moved to
+phase 3 (§2.3).
 
 **Phase 1 — the console reads v2 (1–2 days).**
+- **The reader speaks v2's vocabulary.** Templates and view models are changed to v2's facts rather than feeding
+  v1's `App`/`Release`/`Settings` shapes from v2 records: v1 compatibility is not required (operator, 31 October
+  2026), and a Python translation layer would be the second model this slice exists to remove. Where v2 has no
+  fact, the page says so instead of showing a v1 field that is always empty. Phase 0's recon found that only three
+  page reads and one Git-target read go to v1 records (`routes/instance.py`'s `instance_settings`, `image_minimum`
+  and `secret_states`, `apps/connections.py`'s `intent`, and `stages.render_targets`); everything else already comes
+  from the live cluster. Four of those live reads parse v1-shaped HelmRelease values that v2 does not render — the
+  image tag, the API annotation, `SWHURL_ALLOWED_CALLERS` and the render annotation — so those are page fixes too.
+- **`app-new` keeps one v1 read path.** A v1-created instance is v1-owned until it is migrated (decision 1b), so the
+  reader reads `apps/<app>/{app,instance,release}.yaml` as well, marked for deletion when v2 gains `create`.
 - Add a small Python reader for `v2-records/<app>/{app,instance,release}.json` and
   `v2-apps/instances/<app>/<env>/*.json`; do not parse SOPS files.
 - Switch `catalogue`, `context`, `pages`, `cluster`, `checks`, `flagstore` and `stages` reads to it. Keep the
   templates' view models stable.
-- Disable the change/new/promotion **write** buttons for v2 instances with a clear message until phase 2.
+- Disable the change/new/promotion **write** buttons for v2 instances with a clear message until phase 2 — the
+  message names `swhurl-v2 edit`, `remove` and `promote`, so an operator who needs the change now has the command.
 - Tests: a fixture repo with one v2 app/instance; every page renders for all 13 live instances; signed in and
   signed out.
 - Deploy the console; check `make verify-platform`'s console image check.
@@ -169,28 +235,39 @@ rollout; phase 2's first live edit is confirmed with the operator.
   `make check-apps` (or its replacement) pass.
 - `rg "from swhurl\.apps" tools/swhurl/console` has no import of a **deleted** writer; the allowed imports are
   listed in §2.2/§3.
-- `rg "app-(scale|expose|calls|allows|events|team|remove|deploy|promote|sync|check|offers)" Makefile
-  tools/swhurl tests docs` has no live command entry (only historical records).
+- `rg "app-(scale|expose|calls|allows|events|team|remove|deploy|promote|sync|check|offers|egress|alerts|schedule|secret)"
+  Makefile tools/swhurl tests docs` has no live command entry (only historical records).
 - `verify-platform` has no v1 branch and still checks the four production namespaces' team, quota, policy and
   port from v2 records.
 - `swhurl-v2 resolve` reads one record shape.
 - The console, signed in and out, renders the catalogue, every instance page and the platform page; a change to
   a throwaway v2 instance succeeds; a promotion is proposed and applied; a v1-only fact (egress, alerts,
-  schedule, secret) still points at its v1 command and says so.
+  schedule, secret) is named on the page as not modelled by v2, with no command left that pretends to set it.
 - No `clusters/home/*.yaml` app unit; `apps/` has no instance record.
 - Live evidence goes in [current state](current-state.md), with the same "what changed / checked / not
   exercised" shape as the cutover section.
 
-## 5. Decisions to confirm before phase 2
+## 5. Decisions (confirmed 31 October 2026)
 
-1. **Keep the v1-only capabilities?** The plan keeps `app-egress`, `app-alerts`, `app-schedule`, `app-secret`,
-   `app-new`, `app-repo`, `app-hooks`, `team-*` and `channel-*` because v2 has no replacement. If the operator
-   prefers a strict "no v1 writer at all", they are deleted in phase 3 and the capabilities are listed as lost
-   until v2 models them. **Recommendation: keep**, because none of them is a fact v2 also writes.
-2. **Console write path:** build `swhurl-v2` into the console image and call it (recommended), or keep the
-   console read-only until a v2 API exists. A Python port of v2 edit is refused: it creates a second model.
-3. **External `deploy.yml`:** defer to phase 5 with explicit confirmation (recommended), or stop before phase 5
-   and leave the external workflow as the only second writer, recorded in the gap list.
+The operator took every recommendation, with one qualification that governs the rest of the slice: **v1
+compatibility is not required.** A phase may leave a service not working rather than buy it with a second model;
+what is refused is a design chosen because the answer was not known yet.
+
+1. **The four inert editors are deleted; the rest stay.** `app-egress`, `app-alerts`, `app-schedule` and
+   `app-secret` refuse on every instance (§2.1), so keeping them preserves dead code, not a capability: they go in
+   phase 3, and their four facts are listed as lost until v2 models them. `app-new`, `app-repo`, `app-hooks`,
+   `team-*` and `channel-*` stay: create, the GitHub side and the shared team registry are facts v2 does not write.
+   After phase 3 a new app arrives as `app-repo` → `app-new` → `swhurl-v2 migrate` → the v1 record deleted and the
+   unit switched.
+2. **The console writes v2 by running v2's binary.** Phase 2 builds `swhurl-v2` in `images/console/Dockerfile`
+   (pinned `golang:1.26.0-bookworm`, the precedent `images/backup/Dockerfile` set) and routes `edit`, `remove` and
+   `promote` through one `console/v2.py`; a Python port of v2's edit is refused because it is a second model. A
+   read-only console stays the fallback if the binary cannot ship. The image's CI content hash gains `v2/`, so a v2
+   change rebuilds the console.
+3. **The eight app repositories' `deploy.yml` waits for phase 5**, with its own confirmation and the GitHub tokens.
+   Until then it is the only second writer left, and it is external.
+4. **The freeze is a pin, not a file.** The snapshot is regenerated from `dfe4dafa`, so §2.3 records the command,
+   the revision and the hash rather than a 49 KB copy the next phase invalidates.
 
 ## 6. The reconcile delay, for the record
 
@@ -216,16 +293,17 @@ inherit it as a mystery.
 Paste this prompt:
 
 > Read `docs/v2-deletion-plan.md` and `docs/iteration-2-plan.md` §8. The migrations are done; this is the deletion
-> slice. Confirm decisions 1–3 in §5 with me before editing. Start at phase 0 and phase 1. Do not delete v1
-> modules or commands until phase 3. Run `make check` after each commit (commit first, then check on the clean
-> tree) and `make check-v2` for every v2 change. Do not touch `flux-system` or the eight app repositories; the
-> external `deploy.yml` is phase 5 and needs separate confirmation. Keep one implementation writer at a time.
+> slice. The decisions in §5 are confirmed; do not reopen them. Start at the next phase the status line names. Do
+> not delete v1 modules or commands before phase 3. Run `make check` after each commit (commit first, then check on
+> the clean tree) and `make check-v2` for every v2 change. Do not touch `flux-system` or the eight app
+> repositories; the external `deploy.yml` is phase 5 and needs separate confirmation. Keep one implementation writer
+> at a time.
 
 The first commands to run in that session:
 
 ```bash
 git status -sb
-sed -n '1,220p' docs/v2-deletion-plan.md
+sed -n '1,60p' docs/v2-deletion-plan.md
 sed -n '1895,1925p' docs/iteration-2-plan.md
 rg -n "from swhurl\.apps" tools/swhurl/console
 rg -n "_edit\(|Command\('app-" tools/swhurl/commands.py

@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/swhurl-try-12
-  tag: 80-cfa9fdb
-  digest: sha256:12ad78d375fdf2de2bf418f2d4ee4442f68f11f4d16af9dcb7bf29ed547a36b8
+  tag: 82-84b138e
+  digest: sha256:3d0dc2dba7fbc4d0d6f6bf1ecdb919b81f6fc37d75e80d3cda712f149af360b8
 kind: web
 uid: 65532
 stack: kotlin
@@ -17,4 +17,4 @@ resources:
 apiPath: /openapi.yaml
 publishes:
 - visited
-offers: cfa9fdb
+offers: 84b138e

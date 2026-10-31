@@ -98,7 +98,7 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 		Rendered: rendered, Egress: egress, UnmetCalls: unmet(facts.Calls, callees(rendered)),
 		UnmetCallers: unmet(facts.Allows, rendered.Callers)}
 	written := append(recordFiles(facts.Application, facts.Environment, appDocument, releaseDocument, instanceDocument,
-		inputs.EventsSecret), files...)
+		inputs.EventsSecret, inputs.Offers), files...)
 	result.Written, err = writeCompiled(destination, compiled, written, writer)
 	return result, err
 }
@@ -169,7 +169,10 @@ func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpe
 // recordFiles is the records a migration writes: one app record and the environment's pair, under the root
 // the snapshot exporter reads. An instance with a broker identity also keeps its encrypted seed beside the
 // record, before the instance that names its public key, so the record folder is what a later compile reads.
-func recordFiles(application, environment string, app, release, instance, eventsSecret []byte) []kernel.File {
+// The documents it publishes are declared inputs of the same folder, so a later compile reads them from the
+// record rather than from the compiled copy a prune may remove.
+func recordFiles(application, environment string, app, release, instance, eventsSecret []byte,
+	offers []kernel.File) []kernel.File {
 	folder := recordsRoot + "/" + application + "/" + environment
 	records := []kernel.File{
 		{Path: recordsRoot + "/" + application + "/app.json", Document: app},
@@ -178,7 +181,12 @@ func recordFiles(application, environment string, app, release, instance, events
 	if len(eventsSecret) > 0 {
 		records = append(records, kernel.File{Path: folder + "/" + kernel.EventsSecretFile, Document: eventsSecret})
 	}
-	return append(records, kernel.File{Path: folder + "/instance.json", Document: instance})
+	records = append(records, kernel.File{Path: folder + "/instance.json", Document: instance})
+	for _, document := range offers {
+		records = append(records, kernel.File{Path: folder + "/offers/" + document.Path,
+			Document: document.Document})
+	}
+	return records
 }
 
 // callees is the names a resolution's calls point at: what a predecessor's own declarations are compared

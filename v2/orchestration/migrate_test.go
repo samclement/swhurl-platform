@@ -137,8 +137,18 @@ func TestMigrateWritesTheSeedBesideTheRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	for path, content := range replay.Contents {
+		// The records themselves are inputs to the replay, not its output.
+		if strings.HasPrefix(path, "v2-records/") {
+			continue
+		}
 		if got := writer.Contents[path]; string(got) != string(content) {
 			t.Errorf("%s: the record folder renders %q, the migration wrote %q", path, content, got)
+		}
+	}
+	for _, document := range documents {
+		path := "v2-records/demo-notifier/staging/offers/" + document.Path
+		if got := writer.Contents[path]; string(got) != string(document.Document) {
+			t.Errorf("%s: the record folder keeps %q, not %q", path, got, document.Document)
 		}
 	}
 }

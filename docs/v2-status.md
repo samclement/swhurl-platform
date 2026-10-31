@@ -95,7 +95,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Done live 30 October 2026**: `swhurl-try-11` production was migrated to v2 and promoted from its v1 digest to its staging's release; `make app-status` and `observe` agree, and a repeat promotion is a no-op. A first promotion (creating production) is still not modelled, a rollback's direction is stated rather than decided, and v1 callees no longer admit the migrated caller. Both instances were removed on 31 October 2026; the record of what they proved stands | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
 | What an app offers | A release states its own description, API path and the commit its documents were read at; an instance renders them and carries the documents | **Done and live 30 October 2026**: the three facts are release identity, all four v2-owned HelmReleases then carried the variable and the two annotations in the cluster (the two described instances restarted onto it; the other two did not, an annotation being metadata; two remain), and the documents travel as declared inputs from `v2-records/` to `v2-apps/`, where the console reads them | [slice](#slice-record-what-an-app-offers-30-october-2026), [evidence](current-state.md#what-an-app-offers-carried-and-rendered-30-october-2026) |
-| Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **Approved 31 October 2026; the write primitives are in, offline**: `edit`, `remove` and a pruning writer, with their tests; 1a's live half (nine staging instances, their units switched, v1's staging records and writers deleted) is next, then 1b (four production) — [record](#slice-record-the-cutovers-write-primitives-offline-31-october-2026), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
+| Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **1a done, live 31 October 2026**: the nine staging instances are v2's — records, compiled files and units, one writer per instance — and a migrated record states the platform's manifest digest, read from the registry rather than copied from the predecessor; 1b (four production) is next — [record](#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **One live** (`swhurl-try-10` staging, stateful on its own volume; the other, `swhurl-try-11`, was removed on 31 October 2026), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
 | Always-on instance surface | Telemetry (the endpoint and the way out to it), the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: the env, tokens and team labels rolled to both v2-owned instances, and a reporting image's policy admits the collector the env names (the export was found blocked the same day; [evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)) |
@@ -144,6 +144,20 @@ credential, would make them travel; delivery is manual (compile, commit, push) f
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
 
 ## Decisions
+
+**31 October 2026 — a migration states the platform's digest, not the reference its record kept (approved: option 1).** A
+predecessor's record keeps the digest v1's image automation selected, and for a multi-platform build that is its
+**index**'s; v2's release states the `linux/amd64` manifest the cluster runs. `migrate` now reads that manifest from the
+registry through the adapter a delivery already uses and states its digest and media type, instead of claiming a
+media type over a digest it never checked. Option 1 was chosen over a one-off correction (1b's four production
+instances would meet the same thing) and over leaving the records to the hourly Deploy (which would fix the records
+and leave `migrate` asserting an unchecked digest). The read is the use case's one external effect and happens
+**before anything is written**, so a registry it cannot read fails the migration rather than recording an unverified
+claim. `adapters/registry.Describe` was widened to take a *reference* — a tag, or an image digest — because the
+registry's own API accepts both, and it now obtains its own token: until then only a caller that had listed tags
+first could read (`deploy` happened to), which a migration holding a record's digest does not. The nine migrated
+staging records were re-run through the fixed path. What reopens it: a release whose image the registry will not
+answer for, or recording the tag an instance was selected with (a v2 release identity change, [the gap](iteration-2-plan.md#6-deliberately-deferred)).
 
 **31 October 2026 — the cutover's write primitives (worked, offline).** Three choices made once, on the operator's
 instruction to take the gate rather than discover them at the fleet. (1) **A change is named, not a mini-language**:
@@ -266,11 +280,10 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   commands stay until 1b, because they still write the four production instances.
 - **Where the fleet stands after it:** four `.json` units and five `.json` units' worth of records — all **34 Flux
   units** `Ready`, **15 managed namespaces** unchanged in age, and **four v1 instances left, all production**
-  (`demo-orders`, `demo-shop`, `swhurl-try-10`, `swhurl-try-30`). `make verify-platform` reports **83 OK, 5 WARN**:
-  each warning is a migrated record stating the **index** digest v1 recorded, where the platform states the image
-  by its linux/amd64 manifest digest. The image is the same bytes and the hourly Deploy workflow would rewrite
-  those records, but `migrate` has no registry read, so the contract cannot state the platform digest it asserts —
-  the open decision below.
+  (`demo-orders`, `demo-shop`, `swhurl-try-10`, `swhurl-try-30`). `make verify-platform` reported **83 OK, 5 WARN**:
+  each warning was a migrated record stating the **index** digest v1 recorded, where the platform states the image
+  by its linux/amd64 manifest digest — [fixed the same day](#decisions) by teaching `migrate` to resolve the digest
+  through the registry and re-running the nine migrated records through it ([evidence](current-state.md#a-migrated-record-states-the-platforms-digest-31-october-2026)).
 - **Next gate:** 1b — the four production instances (`demo-orders`, `demo-shop`, `swhurl-try-10`, `swhurl-try-30`)
   with the volume path exercised first, then the deletions that make v2 the only writer: the rest of `apps/`, the
   `app-*` commands, `resolve`'s v1 reading and `verify-platform`'s v1 branch.

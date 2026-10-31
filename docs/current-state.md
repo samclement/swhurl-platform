@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## A migrated record states the platform's digest (31 October 2026)
+
+- **What was wrong:** five `make verify-platform` warnings after the staging cutover, one per migrated instance whose
+  record stated the **index** digest v1's image automation had selected (`sha256:ce86ab…` for `demo-orders`) where the
+  register names the image by its `linux/amd64` manifest (`sha256:a030c3…`). The image was the same bytes; the record
+  was not. `migrate` copied the predecessor's digest and asserted the manifest media type over it, so nothing in v2
+  could have caught the mismatch — the assertion was never read.
+- **What changed:** `orchestration.Migrate` asks the registry, through the reader the command builds for the image the
+  release names, about the digest the record states, and states the digest and media type the registry answers with.
+  The read happens before anything is written, so a registry it cannot read fails the migration rather than recording
+  an unverified claim. `adapters/registry.Describe` now takes a *reference* — a tag, or an image digest, as the
+  registry's own API does — and obtains its own token: until then only a caller that had listed tags first could read,
+  which `deploy` did and a migration holding a record's digest does not (a fresh reader got `unavailable: registry:
+  forbidden`). `registrytest`'s scenario keys one reference by its digest, so both readers prove the widening.
+- **The records were re-run, not patched:** all nine migrated staging instances' pairs and compiled files were produced
+  again by `swhurl-v2 migrate` from the revision their v1 records last existed at, and the frozen predecessor
+  fixtures under `v2/testdata/legacy/*/*/migrated/` with them. The only differences are the artifact digest, the
+  release and instance identities that hash it, and the compiled HelmRelease that pins it; the instance's other
+  facts, its seed, its offered documents and the unit are byte-identical, so nothing else was rewritten.
+- **Checked offline:** `make check-v2` (gofmt, `go vet`, every package's tests, the archtest baselines updated for the
+  widened `Describe` and `Migrate` signatures, and `check-rendered.sh` reporting `platform/` unchanged) and
+  `make check` (1034 tests) with the documentation checks after this record. New tests: the digest reference in the
+  shared registry contract, a fresh reader authorizing its own `Describe`, a migration stating the resolved manifest,
+  a registry that cannot be read writing nothing, and the one-line summary naming the resolution.
+
 ## The cutover reaches the cluster (31 October 2026)
 
 - **The whole staging fleet is v2's: nine instances.** `swhurl-try-30` (`bb7ae079`), then `swhurl-try-13`,
@@ -31,11 +56,12 @@ What has been verified on the live cluster, and when: current facts first, then 
   (about a minute), the violations stopped and the notifier logged `received: demo-orders.created` again.
   `swhurl-try-13`'s retry loop ended at 10:56:07 and its consumer `swhurl-try-10-visited` is `Ready` — the first
   time its subscription has ever connected.
-- **Open, from the same hour:** `make verify-platform` reports **83 OK, 5 WARN** — each a migrated instance whose
-  record states the **index** digest v1 recorded (`sha256:ce86ab…`) rather than the platform manifest the register
-  names (`sha256:a030c3…`). The deployment is unaffected (an index reference pulls the same image), the hourly
-  Deploy workflow would rewrite the records to the platform digest, and where the migration should resolve it is
-  an open decision.
+- **Open, from the same hour, then closed the same day:** `make verify-platform` reported **83 OK, 5 WARN** — each a
+  migrated instance whose record stated the **index** digest v1 recorded (`sha256:ce86ab…`) rather than the platform
+  manifest the register names (`sha256:a030c3…`). The deployment was unaffected (both reference the same image), and
+  the decision — teach `migrate` to resolve the digest through the registry, rather than correct the records once or
+  leave them to the hourly Deploy — was taken and implemented; see
+  [the fix](current-state.md#a-migrated-record-states-the-platforms-digest-31-october-2026).
 - **Not exercised:** 1b's four production instances, and a delivery (`make v2-deploy`) to any migrated instance.
 
 ## The cutover's write primitives, offline (31 October 2026)

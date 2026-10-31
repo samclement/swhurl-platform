@@ -7,7 +7,7 @@
   },
   "artifact": {
     "image": "ghcr.io/samclement/demo-orders",
-    "digest": "sha256:ce86ab14ebd634eed091f89858abe212ea0a5dc4cffa8f76ece8f595fb8b8077",
+    "digest": "sha256:a030c32ccc82f236ec11d3ea552832b361abac03906c91cdfdb8d1e34e6e1403",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -25,5 +25,5 @@
   "description": "Demo: takes orders, keeps them in SQLite, describes its API and publishes an event for each",
   "apiPath": "/openapi.json",
   "offers": "b8d522387c728298a597b312c375376efbbc268e",
-  "releaseId": "rel-sha256:97fbbaf2f23bf4a565ae06e2bd35b0d36b4afb5fbc51c63644ee483688cadc28"
+  "releaseId": "rel-sha256:6cede05382da5b040568f11ecaeac62cf80d60b35131fd7565ab7efac6d6ccdd"
 }

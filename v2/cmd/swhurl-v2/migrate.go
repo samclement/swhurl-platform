@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,7 +28,7 @@ func (c cli) migrate(r request) int {
 	if c.appTreeRefused(r.out) {
 		return 2
 	}
-	result, err := orchestration.Migrate(inputs, r.out, c.writer)
+	result, err := orchestration.Migrate(context.Background(), inputs, c.registries, r.out, c.writer)
 	if err != nil {
 		// A migration that stopped part-way says which files it did write before the failure.
 		for _, outcome := range result.Written {
@@ -233,6 +234,12 @@ func migrationSummary(result orchestration.Migration) string {
 	}
 	if len(result.UnmetCalls)+len(result.UnmetCallers) > 0 {
 		summary += ", unresolved declarations reported"
+	}
+	// A predecessor's record states the reference it selected; the record this wrote states the platform's
+	// manifest, so the line says when the two differ rather than leaving the operator to compare records.
+	if declared := result.Facts.Workload.Digest; declared != result.Release.Artifact.Digest {
+		summary += fmt.Sprintf(", image digest resolved from %s to %s", short(declared),
+			short(result.Release.Artifact.Digest))
 	}
 	return summary
 }

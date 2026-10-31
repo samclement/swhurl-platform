@@ -11,14 +11,51 @@ import (
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/registry"
+	"github.com/samclement/swhurl-platform/v2/adapters/registry/registrytest"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// runMigrate runs the command against real files and returns its status and streams.
+// registryAnswers is what the registry publishes for each frozen predecessor's digest, read on 31 October 2026:
+// v1 recorded an index's digest for a multi-platform build, so the migration states the linux/amd64 manifest the
+// cluster runs. Each entry is keyed by the reference the record states, as the registry is asked for it.
+var registryAnswers = map[string]registry.Image{
+	// The hello fixtures: nginx-unprivileged's index and its linux/amd64 entry.
+	"sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0": {
+		Digest: "sha256:28d91bdce70ad09025ea901458fdd149259d8e05982ade79d4ef2c0d9470eb48", MediaType: kernel.ManifestMediaType},
+	"sha256:578f4aa722861ac50fcc67805e9e82bb0cfb67c2503216c276b84e9dd09a09be": {
+		Digest: "sha256:2bd56b2cd701083520983b847b7e26609f55465253b421483a362fafe14115d5", MediaType: kernel.ManifestMediaType},
+	"sha256:ce86ab14ebd634eed091f89858abe212ea0a5dc4cffa8f76ece8f595fb8b8077": {
+		Digest: "sha256:a030c32ccc82f236ec11d3ea552832b361abac03906c91cdfdb8d1e34e6e1403", MediaType: kernel.ManifestMediaType},
+	"sha256:33c6e1da2a0530e154e768268b599d1162bf3b4ab591472e3947218cbe740dd1": {
+		Digest: "sha256:3f1587e04100ccac3fcce9c64cd8b71cd332888cfc0322dc2aab71d6b2cabb1f", MediaType: kernel.ManifestMediaType},
+	"sha256:db8b46171217c395abdea6a4060a452e3baa8ada18c72ee92fd046858c44b534": {
+		Digest: "sha256:65f2cd0e43a5ea51998d4baea8243677b8c3bd35deb117699aa22fb625a0c267", MediaType: kernel.ManifestMediaType},
+	"sha256:9c48c58a6f76447d129925a942bc64fc9a167a6f75bfc85afcbb4b3c7c79a674": {
+		Digest: "sha256:3fe51b24094029a12b991e334d6c024c3300bcb6367d8c0d4e6f78e5013df99b", MediaType: kernel.ManifestMediaType},
+	"sha256:124b834e9df60ac02d49de8a488105c24d95746dbb3295129d171f5cfcd997d8": {
+		Digest: "sha256:5e9de9390433a6848a8dccc3467c4f6499cb704c828a809dfc8e6ecc634ce74d", MediaType: kernel.ManifestMediaType},
+	"sha256:2b48b06160e7129becec3222a88e63863071c44c01c2e2fc6dc050e94853b2e9": {
+		Digest: "sha256:9a04956c803a94f883b9ffee730731dbcb1a3d484e79596f084f9f02e5f64ca9", MediaType: kernel.ManifestMediaType},
+	"sha256:aef4e59480e0d4d2d0fdc8f31c5c22a5e980102a9e07d4efa33be1caae6173d3": {
+		Digest: "sha256:c54029a7d7b846191bf5377fa0fcc292e4352bed0cab08e8ad8e337587707de2", MediaType: kernel.ManifestMediaType},
+	"sha256:14ef2d2d442354827721b0e3fbf21594dc0b073d86ba915f0bf9ee042b959a76": {
+		Digest: "sha256:2b6990c2ce1c46bc2fe8eb68eb8b997c20562afec33a5ad414cb949baf97fd42", MediaType: kernel.ManifestMediaType},
+}
+
+// migrateImages answers the frozen predecessors' digests from the recorded registry answer.
+func migrateImages() func(string) (registry.Reader, error) {
+	reader := registrytest.New(registrytest.Scenario{Images: registryAnswers})
+	return func(string) (registry.Reader, error) { return reader, nil }
+}
+
+// runMigrate runs the command against real files and the recorded registry answer, and returns its status and
+// streams.
 func runMigrate(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var out, diagnostic bytes.Buffer
-	status := run(append([]string{"migrate"}, args...), &out, &diagnostic, os.ReadFile, files.New())
+	status := runWithRegistry(append([]string{"migrate"}, args...), &out, &diagnostic, os.ReadFile, files.New(),
+		migrateImages())
 	return status, out.String(), diagnostic.String()
 }
 
@@ -278,6 +315,10 @@ func TestMigrateWritesAPairCompileCanRecompile(t *testing.T) {
 	report := migrationOf(t, stdout)
 	if report["snapshot"] != strings.Repeat("a", 40) {
 		t.Errorf("snapshot revision %v", report["snapshot"])
+	}
+	// The one line on stderr says the record now states the platform manifest, not the index the fixture names.
+	if !strings.Contains(diagnostic, "image digest resolved from") {
+		t.Errorf("the summary does not say what the digest became: %q", diagnostic)
 	}
 	source := report["source"].(map[string]any)
 	if source["repository"] != "nginxinc/nginx-unprivileged" || source["commit"] != strings.Repeat("b", 40) {

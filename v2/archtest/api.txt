@@ -53,7 +53,7 @@ adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
 adapters/kube: type Error struct {Code, Subject, Reason string}
 adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)}
 adapters/kube: type Writer interface {// Patch applies a JSON merge patch to one object: the shape the platform uses to suspend a release or // set a replica count. Patch(ctx context.Context, ref observe.Ref, patch []byte) error // Create creates one object from its document. Create(ctx context.Context, ref observe.Ref, document []byte) error // Delete removes one object. An object that is already gone is not an error. Delete(ctx context.Context, ref observe.Ref) error // Logs reads the last lines of one pod's log: the evidence a restore job leaves about what it did. Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)}
-adapters/registry/registrytest: func (*Fake) Describe(_ context.Context, tag string) (registry.Image, error)
+adapters/registry/registrytest: func (*Fake) Describe(_ context.Context, reference string) (registry.Image, error)
 adapters/registry/registrytest: func (*Fake) Tags(context.Context) ([]string, error)
 adapters/registry/registrytest: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) registry.Reader)
 adapters/registry/registrytest: func New(scenario Scenario) *Fake
@@ -63,12 +63,12 @@ adapters/registry: const NoPlatformManifest = "no_platform_manifest"
 adapters/registry: const RefusedRequest = "refused_request"
 adapters/registry: const Unavailable = "unavailable"
 adapters/registry: func (*Error) Error() string
-adapters/registry: func (*Remote) Describe(ctx context.Context, tag string) (Image, error)
+adapters/registry: func (*Remote) Describe(ctx context.Context, reference string) (Image, error)
 adapters/registry: func (*Remote) Tags(ctx context.Context) ([]string, error)
 adapters/registry: func New(image string, client *http.Client) (Reader, error)
 adapters/registry: type Error struct {Code, Subject, Reason string}
 adapters/registry: type Image struct {Digest string MediaType string Labels map[string]string}
-adapters/registry: type Reader interface {Tags(ctx context.Context) ([]string, error) Describe(ctx context.Context, tag string) (Image, error)}
+adapters/registry: type Reader interface {Tags(ctx context.Context) ([]string, error) Describe(ctx context.Context, reference string) (Image, error)}
 adapters/registry: type Remote struct {}
 adapters/s3/s3test: func (*Fake) Get(_ context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
 adapters/s3/s3test: func (*Fake) List(_ context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
@@ -435,7 +435,7 @@ orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
 orchestration: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 orchestration: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
-orchestration: func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error)
+orchestration: func Migrate(ctx context.Context, inputs MigrationInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer) (Migration, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
 orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)

@@ -7,7 +7,7 @@
   },
   "artifact": {
     "image": "ghcr.io/samclement/demo-shopper",
-    "digest": "sha256:db8b46171217c395abdea6a4060a452e3baa8ada18c72ee92fd046858c44b534",
+    "digest": "sha256:65f2cd0e43a5ea51998d4baea8243677b8c3bd35deb117699aa22fb625a0c267",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -20,5 +20,5 @@
   "telemetry": true,
   "description": "Demo: a worker that buys something from demo-shop every half minute, so there is always some traffic",
   "offers": "51519ea2dfb6cf6a50da38fca8681dd10e7eadbb",
-  "releaseId": "rel-sha256:0f158133968de511f07146295788a1b0420cff61be42cbbe4ec987612d109605"
+  "releaseId": "rel-sha256:005d354fab709064edc7ab84d4c6ea1639e57921067ab8b5a2b9475546292f85"
 }

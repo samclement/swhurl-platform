@@ -1,10 +1,12 @@
 package orchestration
 
 import (
+	"context"
 	"slices"
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/legacy"
 )
@@ -15,7 +17,8 @@ import (
 const recordsRoot = "v2-records"
 
 // artifactPlatform is the platform's own fact about the images it runs: one amd64 node. The kernel accepts
-// no other platform and no other media type, so a migration asserts what the compiler already enforces.
+// no other platform and no other media type, so a migration reads the platform manifest to state them rather
+// than asserting what the predecessor's record happens to hold.
 const artifactPlatform = "linux/amd64"
 
 // MigrationInputs is what a migration takes: the predecessor's records, the source no record in this
@@ -52,13 +55,31 @@ type Migration struct {
 
 // Migrate translates one predecessor instance into v2's record pair, compiles the pair with the platform's
 // documents, and writes the pair and the compiled files under destination. The compilation is the compile
-// use case's own — the translation sits above it and decides nothing the kernel decides.
-func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error) {
+// use case's own — the translation sits above it and decides nothing the kernel decides. The image is the one
+// fact a migration reads from outside the records: a predecessor states the digest it selected, which for a
+// multi-platform build is its index's, and images builds the registry reader that resolves it to the manifest
+// the cluster runs, as a delivery does.
+func Migrate(ctx context.Context, inputs MigrationInputs, images func(image string) (registry.Reader, error),
+	destination string, writer files.Writer) (Migration, error) {
 	facts, err := legacy.Migrate(inputs.Records, inputs.Supplied)
 	if err != nil {
 		return Migration{}, err
 	}
-	release, spec, app, err := recordsOf(facts)
+	artifact, err := artifactOf(ctx, facts.Workload, images)
+	if err != nil {
+		return Migration{}, err
+	}
+	// The record's digest is not the predecessor's any more: it is what the registry publishes for the reference
+	// the record states, so the report names that source beside the facts the translation read.
+	facts.Sources["artifact.digest"] = "registry"
+	return writeMigration(facts, artifact, inputs, destination, writer)
+}
+
+// writeMigration states one translated instance as v2's pair, compiles it and writes both: the translation and
+// the platform's answer about the image are already decided when it runs.
+func writeMigration(facts legacy.Migration, artifact kernel.Artifact, inputs MigrationInputs, destination string,
+	writer files.Writer) (Migration, error) {
+	release, spec, app, err := recordsOf(facts, artifact)
 	if err != nil {
 		return Migration{}, err
 	}
@@ -117,9 +138,10 @@ func withOffers(manifests []kernel.File, facts legacy.Migration, documents []ker
 	return WithOffers(manifests, documents)
 }
 
-// recordsOf turns one predecessor's translated facts into v2's record pair. It maps fields and lets the
-// kernel decide what a record may say: identity, validation and encoding stay there.
-func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpec, kernel.AppSpec, error) {
+// recordsOf turns one predecessor's translated facts and the platform's answer about its image into v2's
+// record pair. It maps fields and lets the kernel decide what a record may say: identity, validation and
+// encoding stay there.
+func recordsOf(facts legacy.Migration, artifact kernel.Artifact) (kernel.ReleaseBundle, kernel.InstanceSpec, kernel.AppSpec, error) {
 	// Consent by team travels as the record states it: the grant names a team, the resolution matches it against
 	// each caller's own team, and the migration neither widens nor narrows what the instance accepts.
 	if facts.Instance.Team == "" {
@@ -133,8 +155,7 @@ func recordsOf(facts legacy.Migration) (kernel.ReleaseBundle, kernel.InstanceSpe
 		Description:   facts.Offered.Description,
 		APIPath:       facts.Offered.APIPath,
 		Source:        kernel.Source{Repository: facts.Source.Repository, Commit: facts.Source.Commit},
-		Artifact: kernel.Artifact{Image: facts.Workload.Image, Digest: facts.Workload.Digest,
-			MediaType: kernel.ManifestMediaType, Platform: artifactPlatform},
+		Artifact:      artifact,
 		Runtime: kernel.Runtime{Kind: facts.Workload.Kind, Port: facts.Workload.Port,
 			HealthPath: facts.Workload.HealthPath, UID: facts.Workload.UID},
 		Database:  facts.Database,
@@ -187,6 +208,24 @@ func recordFiles(application, environment string, app, release, instance, events
 			Document: document.Document})
 	}
 	return records
+}
+
+// artifactOf is the platform's answer about the image a predecessor's record names. The record keeps the
+// digest v1 selected — an index's, for a multi-platform build — while v2 states the digest and media type of
+// the linux/amd64 manifest the cluster runs, so the migration reads the registry through the adapter a delivery
+// uses instead of trusting the record's shape. A failed read fails the migration before it writes anything.
+func artifactOf(ctx context.Context, workload legacy.Workload,
+	images func(image string) (registry.Reader, error)) (kernel.Artifact, error) {
+	reader, err := images(workload.Image)
+	if err != nil {
+		return kernel.Artifact{}, err
+	}
+	published, err := reader.Describe(ctx, workload.Digest)
+	if err != nil {
+		return kernel.Artifact{}, err
+	}
+	return kernel.Artifact{Image: workload.Image, Digest: published.Digest, MediaType: published.MediaType,
+		Platform: artifactPlatform}, nil
 }
 
 // callees is the names a resolution's calls point at: what a predecessor's own declarations are compared

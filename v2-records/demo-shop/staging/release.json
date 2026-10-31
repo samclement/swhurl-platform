@@ -7,7 +7,7 @@
   },
   "artifact": {
     "image": "ghcr.io/samclement/demo-shop",
-    "digest": "sha256:33c6e1da2a0530e154e768268b599d1162bf3b4ab591472e3947218cbe740dd1",
+    "digest": "sha256:3f1587e04100ccac3fcce9c64cd8b71cd332888cfc0322dc2aab71d6b2cabb1f",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -24,5 +24,5 @@
   ],
   "description": "Demo: the shop people open; a page that places orders in demo-orders and keeps its own purchase log",
   "offers": "bf6a217244a3779c81dd68abc426fa54c88e1273",
-  "releaseId": "rel-sha256:d33e02e3b60cc958648cd24a853ee2fc72c2674f63115996eb0cf24b199480f8"
+  "releaseId": "rel-sha256:4812af238a31c26b59963ba3a79e3b32195e0ec1adde0e0e00eb3398107d1c36"
 }

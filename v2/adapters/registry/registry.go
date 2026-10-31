@@ -1,7 +1,9 @@
-// Package registry reads one image repository's published tags and what one tag resolves to, over the
-// registry's read-only API. The platform's tag policy is the kernel's; this adapter answers only what the
-// registry publishes, for the one platform it runs on. It takes no credential: the platform reads its app
-// packages anonymously, and a package it may not read is a failed read rather than an empty answer.
+// Package registry reads one image repository's published tags and what one manifest reference resolves to,
+// over the registry's read-only API. A reference is a tag or an image digest: the registry's own API accepts
+// both, which is how a record that states a multi-platform index's digest reaches the manifest it names. The
+// platform's tag policy is the kernel's; this adapter answers only what the registry publishes, for the one
+// platform it runs on. It takes no credential: the platform reads its app packages anonymously, and a package
+// it may not read is a failed read rather than an empty answer.
 package registry
 
 import (
@@ -36,19 +38,21 @@ func unavailable(subject, reason string) error {
 	return &Error{Unavailable, subject, reason}
 }
 
-// Image is what one published tag resolves to for the platform: the digest and media type of its linux/amd64
-// manifest, and the labels its image config carries.
+// Image is what one published reference resolves to for the platform: the digest and media type of its
+// linux/amd64 manifest, and the labels its image config carries.
 type Image struct {
 	Digest    string
 	MediaType string
 	Labels    map[string]string
 }
 
-// Reader answers one repository's tags and one tag's image. A tag outside the platform's contract is the
-// kernel's to rank, so this adapter does not filter.
+// Reader answers one repository's tags and what one reference resolves to. A reference is a tag or an image
+// digest: the answer is the same manifest either way, so a caller holding only the digest a record states reads
+// the platform's fact about it. A tag outside the platform's contract is the kernel's to rank, so this adapter
+// does not filter.
 type Reader interface {
 	Tags(ctx context.Context) ([]string, error)
-	Describe(ctx context.Context, tag string) (Image, error)
+	Describe(ctx context.Context, reference string) (Image, error)
 }
 
 // The registry protocol's names, and the bounds this adapter reads within.
@@ -114,29 +118,42 @@ func (r *Remote) Tags(ctx context.Context) ([]string, error) {
 	return nil, unavailable("tags", "too_many_pages")
 }
 
-// Describe resolves one tag to the platform's manifest and reads the labels its config states. A tag that
-// names an index is resolved to its linux/amd64 manifest; an index without one is refused, not guessed.
-func (r *Remote) Describe(ctx context.Context, tag string) (Image, error) {
-	if tag == "" {
-		return Image{}, refuse("tag", "required")
+// Describe resolves one reference — a tag, or an image digest — to the platform's manifest and reads the labels
+// its config states. A reference that names an index is resolved to its linux/amd64 manifest; an index without
+// one is refused, not guessed. A digest is its own reference, so a record that states one is read the same way a
+// tag is.
+func (r *Remote) Describe(ctx context.Context, reference string) (Image, error) {
+	if reference == "" {
+		return Image{}, refuse("reference", "required")
 	}
-	manifest, digest, mediaType, err := r.manifest(ctx, tag)
+	// The token is this reader's, not a caller's: a caller that asks about a reference without listing tags first
+	// — a migration holding a record's digest — reads the same registry as one that does.
+	if _, err := r.authorize(ctx); err != nil {
+		return Image{}, err
+	}
+	manifest, digest, mediaType, err := r.manifest(ctx, reference)
 	if err != nil {
 		return Image{}, err
 	}
-	if mediaType == indexMediaType || mediaType == listMediaType || len(manifest.Manifests) > 0 {
-		for _, entry := range manifest.Manifests {
-			if entry.Platform.OS == "linux" && entry.Platform.Architecture == "amd64" {
-				platform, platformDigest, platformType, err := r.manifest(ctx, entry.Digest)
-				if err != nil {
-					return Image{}, err
-				}
-				return r.image(ctx, platform, platformDigest, platformType)
-			}
-		}
-		return Image{}, &Error{NoPlatformManifest, "manifest", "linux/amd64"}
+	return r.forPlatform(ctx, manifest, digest, mediaType)
+}
+
+// forPlatform reads the manifest a reference resolves to for the cluster's own platform: an index's linux/amd64
+// entry when the reference names an index, and the manifest itself when it names one.
+func (r *Remote) forPlatform(ctx context.Context, manifest manifest, digest, mediaType string) (Image, error) {
+	if mediaType != indexMediaType && mediaType != listMediaType && len(manifest.Manifests) == 0 {
+		return r.image(ctx, manifest, digest, mediaType)
 	}
-	return r.image(ctx, manifest, digest, mediaType)
+	for _, entry := range manifest.Manifests {
+		if entry.Platform.OS == "linux" && entry.Platform.Architecture == "amd64" {
+			platform, platformDigest, platformType, err := r.manifest(ctx, entry.Digest)
+			if err != nil {
+				return Image{}, err
+			}
+			return r.image(ctx, platform, platformDigest, platformType)
+		}
+	}
+	return Image{}, &Error{NoPlatformManifest, "manifest", "linux/amd64"}
 }
 
 // manifest reads one manifest reference, returning its references, its digest and its media type.

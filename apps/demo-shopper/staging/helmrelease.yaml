@@ -4,8 +4,8 @@ metadata:
   name: demo-shopper
   namespace: demo-shopper-staging
   annotations:
-    platform.swhurl.com/offers: 5f446fe
-    platform.swhurl.com/render: afe24047f7f783d211cfea575c94bec0c12b1296fada370233e7e61bfe2c5759
+    platform.swhurl.com/offers: 7c7da86
+    platform.swhurl.com/render: f0b217a95994c49f61d3e55e7ef8158b6dbb157e451d2d326e4412e85ce0f67e
 spec:
   interval: 30m
   timeout: 3m
@@ -40,8 +40,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-shopper
-              tag: 73-5f446fe
-              digest: sha256:eebb54fb2f7c5806b1b767e87943378fd9eba95116ddd2e4966bdc92a1eecb49
+              tag: 78-7c7da86
+              digest: sha256:11f79c67f898e4707f49cb3fe8e1215d2497003818123a35b7d635b2244aca82
             resources:
               requests:
                 cpu: 10m

@@ -2,11 +2,11 @@
 version: 1
 image:
   repository: ghcr.io/samclement/demo-shopper
-  tag: 73-5f446fe
-  digest: sha256:eebb54fb2f7c5806b1b767e87943378fd9eba95116ddd2e4966bdc92a1eecb49
+  tag: 78-7c7da86
+  digest: sha256:11f79c67f898e4707f49cb3fe8e1215d2497003818123a35b7d635b2244aca82
 kind: worker
 uid: 65532
 stack: typescript
 telemetry: true
 description: 'Demo: a worker that buys something from demo-shop every half minute, so there is always some traffic'
-offers: 5f446fe
+offers: 7c7da86

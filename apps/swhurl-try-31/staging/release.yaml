@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/swhurl-try-31
-  tag: 23-9f374a5
-  digest: sha256:60ae9aaa9d98d7031fada2c40417eb0631423f7db1e9685033a6d8ea628f5719
+  tag: 26-ab1f593
+  digest: sha256:aef4e59480e0d4d2d0fdc8f31c5c22a5e980102a9e07d4efa33be1caae6173d3
 kind: worker
 uid: 65532
 stack: typescript
@@ -11,4 +11,4 @@ telemetry: true
 description: B3 concurrent records-only creation proof
 publishes:
 - worked
-offers: 9f374a5
+offers: ab1f593

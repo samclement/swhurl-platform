@@ -250,9 +250,9 @@ class RenderedJobTests(unittest.TestCase):
         unit = files[Path('clusters/home/app-demo-orders-prod.yaml')][0]['spec']
         self.assertIn({'name': contract.BACKUP_UNIT}, unit['dependsOn'])
         self.assertEqual(unit['postBuild']['substituteFrom'], [{'kind': 'Secret', 'name': contract.BACKUP_WRITER, 'optional': False}])
-        plain = self.render('swhurl-try-12', 'prod')  # a web app made before the types: no database
-        self.assertNotIn(Path('apps/swhurl-try-12/prod') / contract.BACKUP_FILE, plain, 'no database, no job')
-        self.assertNotIn('postBuild', plain[Path('clusters/home/app-swhurl-try-12-prod.yaml')][0]['spec'])
+        plain = self.render('swhurl-try-13', 'staging')  # a worker states no database
+        self.assertNotIn(Path('apps/swhurl-try-13/staging') / contract.BACKUP_FILE, plain, 'no database, no job')
+        self.assertNotIn('postBuild', plain[Path('clusters/home/app-swhurl-try-13-staging.yaml')][0]['spec'])
 
     def test_schedules_are_stable_and_after_mongodb(self):
         times = {namespace: backup.schedule(namespace) for namespace in ('a-prod', 'b-staging', 'demo-orders-prod')}

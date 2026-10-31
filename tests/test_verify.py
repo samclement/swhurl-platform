@@ -10,8 +10,8 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
-from urllib.parse import urlparse
 from unittest import mock
+from urllib.parse import urlparse
 
 from fakecluster import CONSOLE_TAG, KEY, TOKEN, b64, fresh_backup, healthy
 

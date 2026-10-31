@@ -255,7 +255,7 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   difference); the frozen predecessors under `v2/testdata/legacy/{demo-orders,demo-shop,swhurl-try-10,
   swhurl-try-30}/prod/` make `TestMigrateReproducesCommittedInstances` replay all four. Live evidence is in
   [current state](current-state.md#the-production-cutover-four-instances-31-october-2026).
-- **Next gate:** the deletions that make v2 the only writer.
+- **Next gate:** [the deletions](v2-deletion-plan.md) that make v2 the only writer.
 
 ## Slice record: the cutover reaches the cluster (a staging instance, then three, then three)
 

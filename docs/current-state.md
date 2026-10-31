@@ -2,7 +2,7 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
-## The production cutover begins: two instances (31 October 2026)
+## The production cutover: four instances (31 October 2026)
 
 - **What changed:** `demo-orders` and `demo-shop` production are v2's. `swhurl-v2 migrate` read their v1 records
   from a snapshot at `ff467306`, resolved each record's index digest to the platform manifest through the registry
@@ -11,6 +11,11 @@ What has been verified on the live cluster, and when: current facts first, then 
   `v2-apps/instances/<app>/prod/`, and the units as `clusters/home/app-<app>-prod.json`; v1's prod records and
   unit YAMLs are deleted, so each instance keeps one writer. The two move together because `demo-shop` calls
   `demo-orders`, and v1 cannot render a caller's call variables from a callee it no longer owns.
+- **The remaining two (`9e099150`):** `swhurl-try-10` (`sha256:47c6f4c7…` → `sha256:b0b406cd…`) and
+  `swhurl-try-30` (`sha256:b9dc9318…` → `sha256:d6b10b8a…`) followed in their own commit. Neither calls or is
+  called; `swhurl-try-10` is the third SQLite instance and adopts its claim, `swhurl-try-30` is a worker with an
+  events key and no storage. With them `apps/` holds no instance record, and v1's last database test went with
+  the last v1 database instance.
 - **The first production migration found a defect, fixed in the same change:** v2 derived every route host as
   `<environment>-<app>.<domain>`, which would have moved production from `demo-orders.homelab.swhurl.com` to
   `prod-demo-orders.homelab.swhurl.com`. Production now renders the bare app name, as v1 did; staging is unchanged
@@ -38,6 +43,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   `302` signed out. The graph still works: `demo-shopper` `work done`, `demo-shop` `request handled`,
   `demo-orders` `request handled` (including `caller.id=demo-shop`), and `demo-notifier` `event received:
   demo-orders.created …`.
+- **The last two, live (`52f257bc`):** all 34 units `Ready`; `swhurl-try-10` runs `sha256:b0b406cd…` on the same
+  PVC `swhurl-try-10` (`pvc-7fcdc65c…`, created 11 October) and its host returns `302` signed out;
+  `swhurl-try-30` runs `sha256:d6b10b8a…` and logs `work done` every minute. `observe` says `running` for both
+  (try-10's backup `current`, try-30's `not_applicable`), and `verify-platform` passes with no warning. Its count
+  is one lower because v1's branch now sees no v1 instance; that branch is the deletion's job.
+- **Not exercised:** `verify-platform`'s v1 branch, the `app-*` commands and v1's readers still exist (and check
+  nothing for an app now), and v1's repository writer is still present. The deletion is the next gate.
 - **Not exercised:** `swhurl-try-10` and `swhurl-try-30` production, and the v1 deletion.
 
 ## A migrated record states the platform's digest (31 October 2026)

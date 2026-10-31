@@ -13,6 +13,14 @@
 {% for env in ('staging', 'prod') %}{% if summary and env in summary.envs %}<a href="/apps/{{ i.app }}/{{ env }}"{% if env == i.env %} class="here" aria-current="page"{% endif %}>{{ env }}</a>{% endif %}{% endfor %}
 </nav>
 
+{% if not writable %}
+<p class="warn">Its records are v2's (<code>v2-records/{{ i.app }}/{{ i.env }}/</code>), and the console cannot write
+  them yet, so the forms below are gone. In your own terminal:
+  <code>swhurl-v2 edit {{ i.app }}/{{ i.env }} --set &lt;field&gt;=&lt;value&gt;</code>{% if i.env == 'staging' %},
+  <code>swhurl-v2 promote {{ i.app }}</code>{% endif %}, or
+  <code>swhurl-v2 remove {{ i.app }}/{{ i.env }}</code>.</p>
+{% endif %}
+
 {# What this environment is, at a glance: one fact per column. #}
 <section class="card" aria-label="Summary">
   <div class="card-body facts">
@@ -48,12 +56,12 @@
 
 {# Each part is a card: its facts one per line, its changes at the top right. A change opens its form in
    the card (one at a time); the form's own button, with the pull-request icon, opens the pull request. #}
-<section class="card" id="use" style="--acts: {{ 2 if status.routes else 1 }}; --pitch: 9.5rem">
+<section class="card" id="use" style="--acts: {{ (2 if status.routes else 1) if writable else 0 }}; --pitch: 9.5rem">
   <div class="card-head">
     <h2>Use</h2>
     <p class="muted">Its web address, and who can reach it: granted here, not in the app's repository.</p>
     {% if status.routes %}<a class="button primary act" style="--slot: 0; --wide: 9rem" href="https://{{ status.routes[0] }}">Open {{ st.icon('external') }}</a>{% endif %}
-    <details class="act" name="app-form" style="--slot: {{ 1 if status.routes else 0 }}; --wide: 9rem">
+    {% if writable %}<details class="act" name="app-form" style="--slot: {{ 1 if status.routes else 0 }}; --wide: 9rem">
       <summary class="button">{{ st.icon('edit') }} Change access</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
         <fieldset>
@@ -63,7 +71,7 @@
         </fieldset>
         {{ ui.submit('Open access PR', 'Private removes the web address. You review and merge it on GitHub.') }}
       </form>
-    </details>
+    </details>{% endif %}
   </div>
   <div class="card-body">
     <dl class="plain">
@@ -74,11 +82,11 @@
   </div>
 </section>
 
-<section class="card" id="connect" style="--acts: {{ 3 if c.address else 2 }}; --pitch: 11.5rem">
+<section class="card" id="connect" style="--acts: {{ (2 if c.address else 1) if writable else 0 }}; --pitch: 11.5rem">
   <div class="card-head">
     <h2>Connect</h2>
-    <p class="muted">How other apps reach it, and what it reaches, in {{ i.env }}. Calls, subscriptions and hosts outside the cluster are granted here, not in the app's repository.</p>
-    {% if c.address %}
+    <p class="muted">How other apps reach it, and what it reaches, in {{ i.env }}. Calls and subscriptions are granted here, not in the app's repository{% if c.egress %}; the hosts outside the cluster it is granted are v2's, and this page shows them without offering to change them{% endif %}.</p>
+    {% if writable and c.address %}
     <details class="act" name="app-form" style="--slot: 1; --wide: 11rem">
       <summary class="button">{{ st.icon('plus') }} Allow callers</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/allow">
@@ -89,16 +97,7 @@
       </form>
     </details>
     {% endif %}
-    <details class="act" name="app-form" style="--slot: {{ 2 if c.address else 1 }}; --wide: 11rem">
-      <summary class="button">{{ st.icon('plus') }} Reach a host outside</summary>
-      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/egress">
-        <fieldset>
-          {{ ui.text_field('egress_hosts', 'Host', name='hosts', placeholder='api.stripe.com', hint='A host name, with :port when not 443; *.example.com is any name under example.com; several comma-separated. Granted in ' ~ i.env ~ ' only' ~ (': a promotion never grants it in production.' if i.env == 'staging' else '.')) }}
-        </fieldset>
-        {{ ui.submit('Open egress PR', 'It changes this instance only; granting a host waits for you to merge it on GitHub.') }}
-      </form>
-    </details>
-    <details class="act" name="app-form" style="--slot: 0; --wide: 11rem">
+    {% if writable %}<details class="act" name="app-form" style="--slot: 0; --wide: 11rem">
       <summary class="button">{{ st.icon('plus') }} Connect to an app</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/connect">
         <div class="rows">
@@ -106,7 +105,7 @@
         </div>
         {{ ui.submit('Open connection PR', 'It changes this instance only and merges itself; a call connects once the app called allows it.') }}
       </form>
-    </details>
+    </details>{% endif %}
   </div>
   <div class="card-body">
     <dl class="plain">
@@ -116,7 +115,7 @@
       {% if c.address and allows is not none %}<dt>Allowed callers</dt>
       <dd>{% for name in allows %}<span class="pill">{{ name }}</span>
         <form class="inline" method="post" action="/apps/{{ i.app }}/{{ i.env }}/allow" data-confirm="Open a pull request so that {{ name }} may no longer call {{ i.app }}/{{ i.env }}? It merges itself." data-confirm-label="Open removal PR">
-          <input type="hidden" name="remove" value="{{ name }}"><button {{ 'disabled' if not github }} title="Open a pull request removing this grant">Remove</button></form>
+          <input type="hidden" name="remove" value="{{ name }}"><button {{ 'disabled' if not github or not writable }} title="Open a pull request removing this grant">Remove</button></form>
         {% else %}<span class="muted">nobody: no app may call it yet (Allow callers)</span>{% endfor %}</dd>{% endif %}
       {% if c.api %}<dt>API description</dt><dd>{% if c.api.startswith('https://') %}<a href="{{ c.api }}">{{ c.api }}</a>{% else %}<code>{{ c.api }}</code>{% endif %}</dd>{% endif %}
     </dl>
@@ -206,22 +205,11 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
   </div>
 </section>
 
-<section class="card" id="operate" style="--acts: {{ 2 if status.job else 1 }}; --pitch: 9.5rem">
+<section class="card" id="operate" style="--acts: {{ 1 if writable else 0 }}; --pitch: 9.5rem">
   <div class="card-head">
     <h2>Operate</h2>
     <p class="muted">What runs, whether it matches Git, and how to change it.</p>
-    {% if status.job %}
-    <details class="act" name="app-form" style="--slot: 1; --wide: 9rem">
-      <summary class="button">{{ st.icon('edit') }} Schedule</summary>
-      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/schedule">
-        <fieldset>
-          {{ ui.text_field('schedule', 'Schedule', status.runs.schedule if status.runs else '', '17 3 * * *', 'Five cron fields in Etc/UTC (minute hour day-of-month month day-of-week), for example */10 * * * * for every ten minutes, or @hourly, @daily. Changes this environment only.') }}
-        </fieldset>
-        {{ ui.submit('Open schedule PR', 'You review and merge it on GitHub.') }}
-      </form>
-    </details>
-    {% endif %}
-    <details class="act" name="app-form" style="--slot: 0; --wide: 9rem">
+    {% if writable %}<details class="act" name="app-form" style="--slot: 0; --wide: 9rem">
       <summary class="button">{{ st.icon('edit') }} Scale</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
         <fieldset>
@@ -231,7 +219,7 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
         </fieldset>
         {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
       </form>
-    </details>
+    </details>{% endif %}
   </div>
   <div class="card-body">
     <dl class="plain">
@@ -273,7 +261,8 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
         <dd>{% for name, value in status.variables.items() %}<div><code>{{ name }}</code> <span class="muted mono">{{ value }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
         <dt>Your secrets</dt>
         <dd>{% if secret_states %}{% for name, state in secret_states.items() %}<div><code>{{ name }}</code> {% if state == 'value missing' %}<span class="pill attention">value missing</span>{% elif state == 'unused' %}<span class="pill">unused</span>{% else %}<span class="muted">set</span>{% endif %}</div>{% endfor %}{% endif %}
-          {%- if status.secret %}<div class="muted">Every key of the Secret <code>{{ status.secret }}</code> arrives as a variable of the same name; the names come from the image's <code>swhurl.yaml</code>. Values are encrypted in <a href="https://github.com/samclement/swhurl-platform/blob/main/apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml"><code>apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml</code></a>; set one in your own terminal with <code>make app-secret APP={{ i.app }} ENV={{ i.env }} NAME=&lt;name&gt;</code>.</div>{% elif not secret_states %}<span class="muted">none</span>{% endif %}</dd>
+          {%- if v2 %}<span class="muted">none: v2 does not model secrets, so the platform holds none for this instance (an image that declares one is held instead of deployed)</span>
+          {%- elif status.secret %}<div class="muted">Every key of the Secret <code>{{ status.secret }}</code> arrives as a variable of the same name; the names come from the image's <code>swhurl.yaml</code>. Values are encrypted in <a href="https://github.com/samclement/swhurl-platform/blob/main/apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml"><code>apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml</code></a>.</div>{% elif not secret_states %}<span class="muted">none</span>{% endif %}</dd>
       </dl>
     </details>
   </div>
@@ -289,6 +278,7 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
     {% if i.env == 'staging' %}
     <div class="action-row">
       {% if summary and summary.comparison == 'same' %}<span class="pill ok">In sync</span><span class="muted">Production runs this image: there is nothing to promote.</span>
+      {% elif not writable %}<span class="muted">Promotion is v2's: <code>swhurl-v2 promote {{ i.app }}</code>, in your own terminal.</span>
       {% else %}<span class="go"><a href="/apps/{{ i.app }}/staging/promotion">Review promotion</a></span>
       <span class="muted">{{ promotion_problem or 'See exactly what would go to production, then promote it. Nothing changes until you confirm there.' }}</span>{% endif %}
     </div>
@@ -303,10 +293,10 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
 <section class="card danger" style="--acts: 0; margin-top: var(--gap-6)">
   <div class="card-head">
     <h2>Uninstall</h2>
-    <p class="muted">Opens a pull request that removes {{ i.app }}/{{ i.env }}. Once merged, Flux deletes it; a retained volume and its namespace are kept.</p>
+    {% if writable %}<p class="muted">Opens a pull request that removes {{ i.app }}/{{ i.env }}. Once merged, Flux deletes it; a retained volume and its namespace are kept.</p>{% else %}<p class="muted">Removing it is v2's: <code>swhurl-v2 remove {{ i.app }}/{{ i.env }}</code>, in your own terminal. A retained volume and its namespace are kept.</p>{% endif %}
   </div>
   <div class="card-body">
-    <form method="post" action="/apps/{{ i.app }}/{{ i.env }}/remove" data-confirm="Open a pull request removing {{ i.app }}/{{ i.env }}? Once merged, Flux uninstalls it; a retained volume and its namespace are kept." data-confirm-label="Open uninstall PR"><button class="danger" {{ 'disabled' if not github }}>{{ st.icon('pr') }} Open uninstall PR</button></form>
+    <form method="post" action="/apps/{{ i.app }}/{{ i.env }}/remove" data-confirm="Open a pull request removing {{ i.app }}/{{ i.env }}? Once merged, Flux uninstalls it; a retained volume and its namespace are kept." data-confirm-label="Open uninstall PR"><button class="danger" {{ 'disabled' if not github or not writable }}>{{ st.icon('pr') }} Open uninstall PR</button></form>
   </div>
 </section>
 {% endblock %}

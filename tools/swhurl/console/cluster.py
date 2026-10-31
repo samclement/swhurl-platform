@@ -25,6 +25,8 @@ RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-name
 APP_NAMESPACES = ['kubectl', 'get', 'namespaces', '-l', interface.APP, '-o', 'json']
 SOURCE = ['kubectl', '-n', 'flux-system', 'get', 'gitrepository', ops.SOURCE, '-o', 'json']
 PODS = ['kubectl', 'get', 'pods', '--all-namespaces', '-l', ops.INSTANCE_LABEL, '-o', 'json']
+CALLERS = ['kubectl', 'get', 'configmaps', '--all-namespaces', '-o', 'json']
+INGRESSES = ['kubectl', 'get', 'ingresses.networking.k8s.io', '--all-namespaces', '-o', 'json']
 WORKLOADS = ['kubectl', 'get', ops.WORKLOAD_KINDS, '--all-namespaces', '-l', ops.INSTANCE_LABEL, '-o', 'json']
 CONSOLE_CHECKS = frozenset({'cluster'})
 
@@ -179,11 +181,11 @@ def fetched(runner: Runner) -> str:
 
 
 def apps(runner: Runner, states: bool = True, *, include_removing: bool = False) -> list[AppRow]:
-    """Every app instance, from what runs: its Flux unit, its HelmRelease (image, hosts and the
-    platform's SWHURL_* variables, which say who it calls and what events it handles), its
-    namespace's team label, and its state from the same facts as its own page (the Git source,
-    its pods and its workloads). ``states=False`` skips those three reads for a page that shows
-    no state: every row is then Unknown and says why."""
+    """Every app instance, from what runs: its Flux unit, its HelmRelease (image and the platform's
+    SWHURL_* variables, which say who it calls and what events it handles), the Ingress that publishes its
+    hosts (v1's chart rendered it, v2 keeps it apart), its namespace's team label, and its state from the same
+    facts as its own page (the Git source, its pods and its workloads). ``states=False`` skips those three
+    reads for a page that shows no state: every row is then Unknown and says why."""
     def namespaces() -> list[dict]:
         try:
             return items(runner, APP_NAMESPACES)
@@ -195,11 +197,13 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
             return runner.json(SOURCE) or {}
         except CommandError as error:
             raise ReadError(str(error)) from None
-    lists = [functools.partial(items, runner, RELEASES), namespaces, functools.partial(items, runner, UNITS)]
+    listed = [functools.partial(items, runner, RELEASES), namespaces, functools.partial(items, runner, UNITS),
+              functools.partial(items, runner, CALLERS), functools.partial(items, runner, INGRESSES)]
     judged = [git_source, functools.partial(items, runner, PODS), functools.partial(items, runner, WORKLOADS)]
-    read = runner.together(*lists, *(judged if states else ()))
+    read = runner.together(*listed, *(judged if states else ()))
     releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in read[0]}
     teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(interface.TEAM, '') for n in read[1]}
+    allow_lists, ingresses = read[3], read[4]
     found = [(instance, unit, releases.get((instance.namespace, instance.app)))
              for unit in read[2] if (instance := Instance.of_unit(unit['metadata']['name']))]
     # A unit may disappear before Helm finishes uninstalling its release. Keep it visible until both are gone.
@@ -207,11 +211,11 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
     if include_removing:
         found += [(instance, {}, release) for (namespace, name), release in releases.items()
                   if (instance := Instance.of_namespace(namespace)) and instance.app == name and instance not in known]
-    source = read[3] if states else {}
+    source = read[5] if states else {}
     owned: dict[str, dict[tuple[str, str], list[dict]]] = {}
-    for kind, listed in (('pods', read[4:5]), ('workloads', read[5:6])):
+    for kind, found_items in (('pods', read[6:7]), ('workloads', read[7:8])):
         owned[kind] = defaultdict(list)
-        for item in listed[0] if listed else ():
+        for item in found_items[0] if found_items else ():
             metadata = item['metadata']
             owned[kind][metadata.get('namespace', ''), (metadata.get('labels') or {}).get(ops.INSTANCE_LABEL, '')].append(item)
     subscribed = [(instance.env, publisher, event, instance.app) for instance, _, release in found
@@ -219,11 +223,12 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
     rows = []
     for instance, unit, release in found:
         variables, port, image = helmrelease.variables(release), helmrelease.port(release), helmrelease.image(release)
-        hosts = helmrelease.hosts(release)
+        hosts = helmrelease.hosts(release) or ingress_hosts(ingresses, instance)
         address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
         annotations = ((release or {}).get('metadata') or {}).get('annotations') or {}
         path = str(annotations.get(interface.API_ANNOTATION, '')) if address else ''
-        calls, callers = calling.declared_calls(variables), calling.allowed_callers(variables)
+        calls = calling.declared_calls(variables)
+        callers = calling.allowed_callers(variables) or calling.allowed_callers(allow_list(allow_lists, instance))
         publishes, subscribes = events.published(variables), events.subscribed(variables)
         subscribers = [(event, subscriber) for env, publisher, event, subscriber in subscribed
                        if (env, publisher) == (instance.env, instance.app)]
@@ -257,6 +262,35 @@ def release_ready(release: dict | None) -> bool:
     condition = next((c for c in (release.get('status') or {}).get('conditions') or [] if c.get('type') == 'Ready'), {})
     return (generation is not None and condition.get('status') == 'True'
             and condition.get('observedGeneration') == generation)
+
+
+def allow_list(configmaps: list[dict], instance: Instance) -> dict:
+    """An instance's rendered allow-list, as its app reads it: v2 writes it to a ConfigMap of its own
+    (``<app>-callers``) and mounts it as a file, so the app's variables no longer carry it; v1 put it in a
+    variable (which ``calling.allowed_callers`` finds first, so a v1 instance keeps what it declared)."""
+    for item in configmaps:
+        metadata = item.get('metadata') or {}
+        if (metadata.get('namespace'), metadata.get('name')) == (instance.namespace, f'{instance.app}-callers'):
+            return item.get('data') or {}
+    return {}
+
+
+def ingress_hosts(ingresses: list[dict], instance: Instance) -> tuple[str, ...]:
+    """The hosts an instance's Ingress routes: v2 keeps the Ingress apart from the HelmRelease (so its values
+    carry none), v1's chart rendered it. The Ingress is named after the app, or (a chart's) routes to its
+    Service; either way it is the one object in the instance's namespace that publishes the app's addresses."""
+    here = [each for each in ingresses if (each.get('metadata') or {}).get('namespace') == instance.namespace]
+    chosen = [each for each in here if (each.get('metadata') or {}).get('name') == instance.app] or \
+        [each for each in here
+         if any(_backend(rule) == instance.app for rule in (each.get('spec') or {}).get('rules') or [])]
+    return tuple(dict.fromkeys(host for each in chosen for rule in (each.get('spec') or {}).get('rules') or []
+                               if (host := rule.get('host'))))
+
+
+def _backend(rule: dict) -> str:
+    """The Service an Ingress rule's first path sends to."""
+    paths = ((rule.get('http') or {}).get('paths') or [{}])
+    return str((((paths[0] if paths else {}).get('backend') or {}).get('service') or {}).get('name') or '')
 
 
 @dataclass(frozen=True)

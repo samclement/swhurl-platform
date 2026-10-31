@@ -12,19 +12,22 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
-from swhurl import yamlio
-from swhurl.apps import connections as links
 from swhurl.apps import contract, declaration, new, ops
 from swhurl.apps import promotion as gate
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import records
 from swhurl.apps.state import verdict
 from swhurl.console import actions, cluster, flagstore, merge, promotion, proposal, stages
 from swhurl.console import github as gh
+from swhurl.console import records as declared_records
 from swhurl.console.context import STACK_NAMES, Context, dashboard_urls, logs_url
 from swhurl.console.reading import Files
 from swhurl.run import CommandError
+
+
+def _in_git(root, found: Instance) -> bool:
+    """Whether the instance's declaration is in a checkout: v2's records, or v1's while `app-new` still creates one."""
+    return (root / declared_records.V2_RECORDS / found.app / found.env).is_dir() or found.folder(root).is_dir()
 
 
 def routes(ctx: Context) -> list[Route]:
@@ -45,7 +48,7 @@ def routes(ctx: Context) -> list[Route]:
             prs = [pr for pr in prs if stages.target_of(pr.branch) in (('new', label), ('promote', label))]
             in_git = False
             if not pending and not prs and github:
-                in_git = promotion.main_tree(runner, github, lambda root: found.folder(root).exists())
+                in_git = promotion.main_tree(runner, github, lambda root: _in_git(root, found))
             if pending or prs or in_git:
                 return page(request, 'pending.html', label=label, jobs=pending, prs=prs, prs_error=prs_error, in_git=in_git)
         if status is None:
@@ -55,24 +58,40 @@ def routes(ctx: Context) -> list[Route]:
         row = summary.envs.get(found.env) if summary else None
         shown = row.connections if row else cluster.Connections()
         files = request_files.get()
-        (flag_list, flag_problem), settings, (relation_rows, relation_problem), secrets, minimum = files.together(
-            lambda: flag_rows(found, shown.offers), lambda: instance_settings(found),
-            lambda: links.intent(found, shown.rows, document_source, together=files.together),
-            lambda: secret_states(found, status), lambda: image_minimum(found))
+        declared = declared_records.of(found.app, found.env, document_source)
+        (flag_list, flag_problem), secrets = files.together(
+            lambda: flag_rows(found, shown.offers), lambda: secret_states(found, status, declared))
+        relation_rows, relation_problem = declared_records.rows(declared, shown.rows, document_source,
+                                                                together=files.together), declared.problem
         shown = replace(shown, rows=relation_rows)
         return page(request, 'app.html', status=status, secret_states=secrets, flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
+                    writable=declared.source != declared_records.V2, v2=declared.source == declared_records.V2,
                     flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
-                    connections=shown, relation_problem=relation_problem, allows=settings.grants.allows if settings else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
+                    connections=shown, relation_problem=relation_problem, allows=declared.allows if declared.declared else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
-                    scale_fields=merge.SCALE_FIELDS, minimum=minimum, github=github,
+                    scale_fields=merge.SCALE_FIELDS, minimum=declared.minimum, declared=declared, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=proposal.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
 
-    def secret_states(found: Instance, status: ops.InstanceStatus) -> dict[str, str] | None:
+    def v2_writes(request: Request, found: Instance, declared: declared_records.Declared, change: str) -> Response | None:
+        """Why the console will not change this instance, or None when it may: the console writes a v1 record and
+        nothing else, so a v2 instance is named with the command that does write it (deletion plan, phase 1).
+        Any other instance goes on to the command, whose own precondition refuses what Git does not hold."""
+        if declared.source != declared_records.V2:
+            return None
+        label = f'{found.app}/{found.env}'
+        command = {'remove': f'swhurl-v2 remove {label}', 'promote': f'swhurl-v2 promote {found.app}'}.get(
+            change, f'swhurl-v2 edit {label} --set <field>=<value>')
+        return page(request, 'error.html', status_code=409,
+                    error=f'v2 writes {label}, and the console cannot write v2 yet: run `{command}` in your own terminal.')
+
+    def secret_states(found: Instance, status: ops.InstanceStatus, declared: declared_records.Declared) -> dict[str, str] | None:
         """Each secret name and whether Git has its value (ops.secret_states); None when Git cannot be read.
-        Only the Secret file's key names are read: SOPS leaves them in plain text, the values stay encrypted."""
-        if document_source is None:
+        Only the Secret file's key names are read: SOPS leaves them in plain text, the values stay encrypted.
+        A v2 instance has no such file: v2 holds no secret values, so the page says what the image declares
+        and that v2 does not carry it, instead of naming a file that is not there."""
+        if document_source is None or declared.source != declared_records.V1:
             return None
         try:
             text = document_source(f'apps/{found.app}/{found.env}/{contract.SECRET_FILE}')
@@ -83,17 +102,17 @@ def routes(ctx: Context) -> list[Route]:
     def flag_rows(found: Instance, offers_commit: str) -> tuple[list[dict], str]:
         """Each flag the instance's image declares, with its override, then each override of a flag it does
         not declare; and why overrides could not be read. An override older than STALE_DAYS is ``stale``."""
-        declared = described.of(found.app, found.env, offers_commit)
+        images = described.of(found.app, found.env, offers_commit)
         problem, overrides = '', {}
         if flags is None:
-            problem = 'This console has no NATS key (console-nats Secret), so overrides cannot be read or set.' if declared.flags else ''
+            problem = 'This console has no NATS key (console-nats Secret), so overrides cannot be read or set.' if images.flags else ''
         else:
             try:
                 overrides = flags.overrides(found.env, found.app)
             except flagstore.FlagStoreError as error:
                 problem = f'Overrides could not be read: {error}'
-        if not declared.flags and not overrides:
-            return [], problem or declared.problem
+        if not images.flags and not overrides:
+            return [], problem or images.problem
         now = dt.datetime.now(dt.UTC)
 
         def row(name: str, flag: dict | None) -> dict:
@@ -104,7 +123,7 @@ def routes(ctx: Context) -> list[Route]:
                     'override': override.value if override else flagstore.NO_VALUE, 'overridden': override is not None,
                     'age': age, 'stale': age is not None and age >= flagstore.STALE_DAYS,
                     'effective': value if override is None else override.value}
-        declared_flags = declared.flags or {}
+        declared_flags = images.flags or {}
         return [row(name, flag) for name, flag in declared_flags.items()] + \
             [row(name, None) for name in overrides if name not in declared_flags], problem
 
@@ -155,35 +174,14 @@ def routes(ctx: Context) -> list[Route]:
             finally:
                 request_files.reset(token)
 
-    def instance_settings(found: Instance) -> records.Settings | None:
-        """The instance's Settings in Git (its calls and who it allows); None when Git cannot be read."""
-        if document_source is None:
-            return None
-        try:
-            text = document_source(f'apps/{found.app}/{found.env}/{records.SETTINGS_FILE}')
-            return records.Settings.parse(yamlio.load(text)) if text is not None else None
-        except Exception:  # noqa: BLE001 (GitHub unavailable or an unreadable record: the page shows what runs)
-            return None
-
-    def image_minimum(found: Instance) -> dict | None:
-        """The resources the image needs at least, by Scale field, from the instance's Release in Git (written
-        with each image, as make app-scale reads it); None when Git cannot be read."""
-        if document_source is None:
-            return None
-        try:
-            text = document_source(f'apps/{found.app}/{found.env}/{records.RELEASE_FILE}')
-            if text is None:
-                return None
-            resources = records.Release.parse(yamlio.load(text)).resources
-        except Exception:  # noqa: BLE001 (GitHub unavailable or an unreadable record: the form says nothing)
-            return None
-        return {field: value for field in ('cpu', 'memory', 'memory_limit') if (value := getattr(resources, field))}
-
     def review_promotion(request: Request) -> Response:
         app = request.path_params['app']
         found = Instance.named(app, 'staging')
         if found is None or github is None:
             return page(request, 'error.html', status_code=409, error='Staging and a GitHub token are required.')
+        refused = v2_writes(request, found, declared_records.of(app, 'staging', document_source), 'promote')
+        if refused:
+            return refused
         try:
             existing = [pr for pr in gh.console_prs(runner, github) if promotion.matching(pr, app)]
             if existing:
@@ -206,6 +204,9 @@ def routes(ctx: Context) -> list[Route]:
             return page(request, 'error.html', status_code=404, error='No such app instance or change.')
         if github is None:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
+        refused = v2_writes(request, found, declared_records.of(app, env, document_source), change)
+        if refused:
+            return refused
         fields = parse_qs((await request.body()).decode(), keep_blank_values=True)
         form = {k: v[0] for k, v in fields.items()}
         try:

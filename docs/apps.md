@@ -530,21 +530,19 @@ Rotation is **one-step replacement**, not a dual-key handover: the old user leav
 
 ## Reaching outside the cluster
 
-Every instance reaches the internet through the [egress proxy](services.md#egress-proxy), on a port of its own. Which hosts it may reach is a grant, made on the platform per environment, never in the app's repository. For example, letting `demo-shop` in staging call Stripe:
+Every instance reaches the internet through the [egress proxy](services.md#egress-proxy), on a port of its own. Which hosts it may reach is a grant, held on the platform per instance, never in the app's repository.
 
-```bash
-make app-egress APP=demo-shop ENV=staging ARGS="--add api.stripe.com"            # port 443 unless named: api.example.com:8443
-make app-egress APP=demo-shop ENV=staging ARGS="--add *.stripe.com,status.example.org"
-make app-egress APP=demo-shop ENV=staging ARGS="--remove api.stripe.com"
-```
-
-Or, on the app page's **Connect** part, **Reach a host outside**; each grant is then a row of its connections with its own **Remove**. The console's **Egress** page (from **Platform**) lists every instance's grants. Both open the same change: the release's annotation `platform.swhurl.com/egress: api.stripe.com:443` and, after the proxy is re-rendered ([egress proxy](services.md#egress-proxy)), its configuration. A grant restarts the proxy, one replica at a time, never the app.
+**v2 records no grant.** An instance's records say nothing about the hosts it may reach, and no command or console form
+grants one: the only host granted today is the platform's backup endpoint, which the profile names for every instance
+that keeps a database ([deletion plan](v2-deletion-plan.md#21-commands)). An app that needs Stripe cannot be granted it
+yet. The console's **Egress** page (from **Platform**) and each app page's connections still show the grants that are
+rendered ([egress proxy](services.md#egress-proxy)); they do not change them.
 
 **Which clients follow the proxy** by themselves, and how to point Micronaut's client or an SDK with its own at it: the generated app's README, section *Reaching outside the cluster*.
 
 **What a grant does.** The proxy refuses a request whose host and port no grant of that instance names: the client gets `403`, the line is logged `granted=-`, and the app's log shows the failed request. A grant is therefore required before an app depends on a host. In ClickStack, search service `egress` for `granted=-` to find traffic nothing covers; the platform's own backup jobs reach the backup bucket through their instance's grant ([services](services.md#egress-proxy)).
 
-**Rules.** A grant is a host name with a port (443 when none is given); `*.stripe.com` is any name under `stripe.com` and `stripe.com` itself. IP addresses are refused: only HTTP(S) through the proxy is planned, and only host names are checked, never the path inside HTTPS. A name already inside a wildcard grant of the same port is refused, as is granting a host twice. Grants are per environment: a promotion never widens production (staging may use a sandbox host); after it, `make app-promote` names the hosts staging has and production lacks, with the command that grants them. `make check-apps` fails on a malformed grant (rule `egress-grants`), and `make check-v2` fails when the proxy's committed configuration is not what the records and the allocation render (CI regenerates it and fails on a diff).
+**Rules.** A grant is a host name with a port (443 when none is given); `*.stripe.com` is any name under `stripe.com` and `stripe.com` itself. IP addresses are refused: only HTTP(S) through the proxy is planned, and only host names are checked, never the path inside HTTPS. A name already inside a wildcard grant of the same port is refused, as is granting a host twice. Grants are per environment: a promotion never widens production (staging may use a sandbox host). `make check-apps` fails on a malformed grant (rule `egress-grants`), and `make check-v2` fails when the proxy's committed configuration is not what the records and the allocation render (CI regenerates it and fails on a diff).
 
 ## What an app offers
 

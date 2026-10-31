@@ -5,9 +5,9 @@ metadata:
   namespace: demo-orders-staging
   annotations:
     platform.swhurl.com/api-description: /openapi.json
-    platform.swhurl.com/offers: 312b8b3
+    platform.swhurl.com/offers: be8372e
     platform.swhurl.com/egress: swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443
-    platform.swhurl.com/render: 2a698790e16f10eb06af50d9c8956cd63b593e4558c523fca562e381f2c5ab9d
+    platform.swhurl.com/render: 18df64fb3d499e1e245de21a41210137265f189c768448497184086e328ff1cf
 spec:
   interval: 30m
   timeout: 3m
@@ -42,8 +42,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-orders
-              tag: 66-312b8b3
-              digest: sha256:d8283b54e9be528240d204bd66e03f396e7e9d733a381b08bdd51063cb1e86e2
+              tag: 69-be8372e
+              digest: sha256:99acda89c9dc222316b8eead222c0aa666959acd997b7a7d31cf7a9abe127b40
             resources:
               requests:
                 cpu: 10m

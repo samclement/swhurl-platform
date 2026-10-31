@@ -20,6 +20,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   of either kind. `make verify-platform` on the live cluster reports all nine staging instances deployed, including
   `swhurl-try-10-staging` (`78-364c0f9` → `sha256:8ff7d4a1…`) and `demo-notifier-staging` (`58-bd44c68` →
   `sha256:a9f32b16…`), which were the two warnings left.
+- **The console carries the change.** `tools/` is console input, so Validate rebuilt and deployed the console image
+  (`src-aee24288efd60aac`, bot commit `4a65f5fa`) and `make verify-platform` reports it current. The console never runs
+  this check — it runs only the `cluster` checks — so no pod reads the registry on its behalf.
 - **A false alarm on the way.** The first version compared the digest of the tag's whole body and reported both stale
   while their pods ran exactly the recorded digests: the templates' builds publish an OCI **index** (the platform
   manifest plus a provenance entry), and the record's `artifact.digest` is the platform entry, not the index.

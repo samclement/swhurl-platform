@@ -1,0 +1,21 @@
+{
+  "apiPath": "/openapi.json",
+  "database": "sqlite",
+  "description": "throwaway: team platform T2 callee (orders), delete me",
+  "healthPath": "/healthz",
+  "image": {
+    "digest": "sha256:47c6f4c7a0103ddf5ec4ba83900e9b135b09dcddb46fbcad8c4908797495302a",
+    "repository": "ghcr.io/samclement/swhurl-try-10",
+    "tag": "52-af4d55c"
+  },
+  "kind": "web",
+  "offers": "af4d55c",
+  "port": 8080,
+  "publishes": [
+    "visited"
+  ],
+  "stack": "typescript",
+  "telemetry": true,
+  "uid": 65532,
+  "version": 1
+}

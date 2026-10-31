@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "application": "swhurl-try-10",
+  "source": {
+    "repository": "samclement/swhurl-try-10",
+    "commit": "af4d55cc4ea4e5bcfb28c4b69774fd9742d87d4c"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/swhurl-try-10",
+    "digest": "sha256:b0b406cd418b26008f1603d4394495d1c00b434a5a14c1b8680cf3bcfafaccc2",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "web",
+    "port": 8080,
+    "healthPath": "/healthz",
+    "uid": 65532
+  },
+  "database": "sqlite",
+  "telemetry": true,
+  "publishes": [
+    "visited"
+  ],
+  "description": "throwaway: team platform T2 callee (orders), delete me",
+  "apiPath": "/openapi.json",
+  "offers": "af4d55cc4ea4e5bcfb28c4b69774fd9742d87d4c",
+  "releaseId": "rel-sha256:c2fed40bc785b127d675af9db890e71ecfa76e6925a59c5a17f35e98af2fe0db"
+}

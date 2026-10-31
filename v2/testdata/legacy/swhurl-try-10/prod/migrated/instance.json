@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "application": "swhurl-try-10",
+  "environment": "prod",
+  "release": "rel-sha256:c2fed40bc785b127d675af9db890e71ecfa76e6925a59c5a17f35e98af2fe0db",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "authenticated-web"
+  },
+  "bindings": {},
+  "storage": {
+    "claimName": "swhurl-try-10"
+  },
+  "events": {
+    "key": "UBVLFIHPHB7BHIWSWZ62QXVTPYFQRJ7G4BHW3G5DT4HN7XTTJ7UAOH4V"
+  }
+}

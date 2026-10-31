@@ -47,11 +47,12 @@ func compiledDatabase(t *testing.T) map[string]map[string]any {
 	return files
 }
 
-// committedBackup is v1's rendered backup for the same instance, read as the tools read it: the file is
-// YAML and v2 reads none, so kubectl parses it offline.
+// committedBackup is v1's rendered backup for the same instance, frozen at 913046e5, the last commit that held
+// it, and read as the tools read it: the file is YAML and v2 reads none, so kubectl parses it offline. The
+// instance is v2's now, so the document lives in testdata rather than in the tree v1 no longer writes.
 func committedBackup(t *testing.T) (secret, job map[string]any) {
 	t.Helper()
-	items := yamlDocuments(t, "../../../apps/demo-orders/staging/backup.yaml")
+	items := yamlDocuments(t, "../../testdata/v1-demo-orders-staging-backup.yaml")
 	if len(items) != 2 {
 		t.Fatalf("v1's backup holds %d objects", len(items))
 	}
@@ -74,9 +75,6 @@ func committedBackup(t *testing.T) (secret, job map[string]any) {
 // same Secret, the same job, field for field. A migration then changes the owner of the file and nothing
 // about the backup — the tie that says so, rather than an assertion that it looks about right.
 func TestBackupMatchesTheCommittedJob(t *testing.T) {
-	if _, err := os.Stat("../../../apps/demo-orders/staging/backup.yaml"); err != nil {
-		need(t, "v1's committed backup job")
-	}
 	files := compiledDatabase(t)
 	committedSecret, committedJob := committedBackup(t)
 	renderedSecret, renderedJob := files["backup-secret.json"], files["backup-cronjob.json"]

@@ -296,14 +296,24 @@ func container(spec InstanceFacts, http WorkloadFacts, workload Workload, egress
 		container["probes"] = probes(http, workload)
 	}
 	if len(spec.Callers) > 0 {
-		// The verification facts are named, never copied: the keys are the platform's object in this
-		// namespace (RenderAuth) and the allow-list is the instance's own, each mounted as a file.
-		env["SWHURL_ALLOWED_CALLERS_FILE"] = callersFile
-		env["SWHURL_AUTH_KEYS_FILE"] = authKeysFile
-		env["SWHURL_AUTH_ISSUER_FILE"] = authIssuerFile
+		spec.addCalleeMaterial(container)
 	}
 	spec.addBroker(container, http, nats)
 	return container
+}
+
+// addCalleeMaterial gives a callee what verifies a caller: the three facts as files an image re-reads, and the
+// same ConfigMaps through envFrom for an image built before those files existed. envFrom references the objects
+// rather than copying a value, so a rotated key or a new caller still changes nothing the kubelet would roll.
+func (spec InstanceFacts) addCalleeMaterial(container manifest) {
+	env := container["env"].(manifest)
+	env["SWHURL_ALLOWED_CALLERS_FILE"] = callersFile
+	env["SWHURL_AUTH_KEYS_FILE"] = authKeysFile
+	env["SWHURL_AUTH_ISSUER_FILE"] = authIssuerFile
+	container["envFrom"] = []any{
+		manifest{"configMapRef": manifest{"name": authObjectName}},
+		manifest{"configMapRef": manifest{"name": callersName(spec)}},
+	}
 }
 
 // addBroker adds what an instance's event identity needs to its container: the variables it signs in and reads
@@ -316,7 +326,9 @@ func (spec InstanceFacts) addBroker(container manifest, http WorkloadFacts, nats
 	for name, value := range eventsEnv(spec, http, nats) {
 		env[name] = value
 	}
-	container["envFrom"] = []any{manifest{"secretRef": manifest{"name": eventsSecretName(spec.Application)}}}
+	// The seed is one more source beside the ConfigMaps a callee already reads from its environment.
+	sources, _ := container["envFrom"].([]any)
+	container["envFrom"] = append(sources, manifest{"secretRef": manifest{"name": eventsSecretName(spec.Application)}})
 }
 
 // callVariable is the variable an app reads one callee's address from: the callee's name in the

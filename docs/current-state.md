@@ -2,6 +2,28 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Image Automation reads a v2-owned instance's record (31 October 2026)
+
+- **What was wrong.** `make verify-platform`'s Image Automation check compared the tag an app's `ImagePolicy` picked with
+  v1's `apps/<app>/staging/release.yaml`, and warned when that record was missing: `swhurl-try-10-staging`,
+  `demo-notifier-staging` and, before its removal, `swhurl-try-11-staging` — every v2-owned instance.
+- **What it does now.** `apps.checks.judge_staging` reads v1's record when there is one (unchanged) and otherwise
+  `v2-records/<app>/staging/release.json`. A v2 record states the digest of the tag's **linux/amd64** manifest
+  (`artifact.digest` with `artifact.platform`), so the tag the policy picked is resolved through its index — an
+  anonymous pull token on the image the record names, no credential — and that entry compared. `images.platform_digest`
+  does the resolving: a tag that names one manifest is its own digest, and an index without the platform is refused
+  rather than guessed, as v2's own adapter does. Equal ⇒ `deployed`; a different digest ⇒ a warning naming both and
+  `make v2-deploy`; an unreadable registry, or a record that states no image or no platform manifest ⇒ a warning saying
+  what is unchecked; no record of either kind ⇒ a warning naming both paths.
+- **Checked.** `make check` passes 1034 tests, five of them new: the match (with the anonymous read asserted), a stale
+  digest still warning, an index with no `linux/amd64` manifest, a plain-manifest tag, and an instance with no record
+  of either kind. `make verify-platform` on the live cluster reports all nine staging instances deployed, including
+  `swhurl-try-10-staging` (`78-364c0f9` → `sha256:8ff7d4a1…`) and `demo-notifier-staging` (`58-bd44c68` →
+  `sha256:a9f32b16…`), which were the two warnings left.
+- **A false alarm on the way.** The first version compared the digest of the tag's whole body and reported both stale
+  while their pods ran exactly the recorded digests: the templates' builds publish an OCI **index** (the platform
+  manifest plus a provenance entry), and the record's `artifact.digest` is the platform entry, not the index.
+
 ## Two throwaway apps removed, and Node.js 26 (31 October 2026)
 
 - **Node.js 26 in all eight TypeScript apps.** Each built on `node:24-bookworm-slim` with `@types/node ^25.8.0`.
@@ -241,8 +263,8 @@ below were checked in the tree before the push and are kept as the offline recor
   `swhurl-try-11-staging`, `swhurl-try-10-staging` and `demo-notifier-staging`: "newest image …, but this checkout has
   no apps/<app>/<env>/release.yaml". That check compares image automation's newest tag with **v1's** record, and these
   instances have none, so it cannot tell whether their image moved ahead of Git. It is a v1/v2 seam the first v2-owned
-  instances opened, not this slice's change; whether it learns to skip what v2 owns or reads the v2 record is the next
-  decision.
+  instances opened; it now reads the v2 record
+  ([below](#image-automation-reads-a-v2-owned-instances-record-31-october-2026)).
 
 ## Team grants carry from a predecessor's records (30 October 2026)
 

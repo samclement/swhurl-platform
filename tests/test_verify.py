@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
+from urllib.parse import urlparse
 from unittest import mock
 
 from fakecluster import CONSOLE_TAG, KEY, TOKEN, b64, fresh_backup, healthy
@@ -135,6 +136,85 @@ class VerifyPlatformTests(unittest.TestCase):
             else:
                 request = json.loads(program.split(', ', 1)[1].split(');\n', 1)[0])
                 self.assertEqual(request['method'], 'GET', f'HyperDX API call is not a GET: {program}')
+
+
+class V2ImageAutomationTests(unittest.TestCase):
+    """Image Automation judges a v2-owned instance by its own record, not v1's.
+
+    v1's record states the tag staging runs; a v2 record states the digest of the tag's linux/amd64
+    manifest, so the tag is read from the registry through its index and that entry compared.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.record = json.loads((ROOT / 'v2-records/demo-notifier/staging/release.json').read_text())
+        cls.digest = cls.record['artifact']['digest']
+        cls.repository = cls.record['artifact']['image'].removeprefix('ghcr.io/')
+        cls.tag = '58-bd44c68'
+
+    def registry(self, *digests, platform=None):
+        """An opener serving GHCR: a pull token, then an index naming one manifest per digest."""
+        platform = platform or {'os': 'linux', 'architecture': 'amd64'}
+        asked = []
+
+        def opener(request):
+            asked.append((urlparse(request.full_url).path, request.get_header('Authorization')))
+            if urlparse(request.full_url).path == '/token':
+                return b'{"token": "t"}'
+            return json.dumps({'schemaVersion': 2, 'mediaType': 'application/vnd.oci.image.index.v1+json',
+                               'manifests': [{'digest': digest, 'platform': platform,
+                                              'mediaType': 'application/vnd.oci.image.manifest.v1+json'}
+                                             for digest in digests]}).encode()
+        return opener, asked
+
+    def lines(self, opener, root=ROOT):
+        from fakecluster import apps_answers, policy
+        items = [*apps_answers()['policies']['items'], policy('demo-notifier', self.tag)]
+        report = Report(io.StringIO())
+        app_checks.check_image_automation(healthy(policies={'items': items}), report, root, opener=opener)
+        return [line for line in report.lines if 'demo-notifier' in line]
+
+    def test_the_v2_record_says_staging_runs_the_picked_image(self):
+        opener, asked = self.registry(self.digest)
+        self.assertEqual(self.lines(opener), [f'[OK] demo-notifier-staging: newest image {self.tag}, deployed'])
+        self.assertEqual([path for path, _ in asked],
+                         ['/token', f'/v2/{self.repository}/manifests/{self.tag}'],
+                         "the tag is resolved on the record's own image, anonymously")
+        self.assertEqual(asked[1][1], 'Bearer t')
+
+    def test_a_stale_v2_digest_still_warns(self):
+        opener, _ = self.registry('sha256:' + '0' * 64)
+        (line,) = self.lines(opener)
+        self.assertTrue(line.startswith(
+            f'[WARN] demo-notifier-staging: newest image {self.tag} is not what v2 records state'), line)
+        self.assertIn(self.digest, line)
+        self.assertIn('make v2-deploy', line)
+
+    def test_an_index_without_the_platform_states_that_the_check_is_unchecked(self):
+        opener, _ = self.registry(self.digest, platform={'os': 'unknown', 'architecture': 'unknown'})
+        (line,) = self.lines(opener)
+        self.assertTrue(line.startswith('[WARN] demo-notifier-staging: cannot read the digest of'), line)
+        self.assertIn('has no linux/amd64 manifest', line)
+        self.assertIn('is deployed is unchecked', line)
+
+    def test_a_plain_manifest_tag_is_its_own_digest(self):
+        import hashlib
+        body = b'{"mediaType": "application/vnd.oci.image.manifest.v1+json"}'
+
+        def opener(request):
+            return b'{"token": "t"}' if urlparse(request.full_url).path == '/token' else body
+        self.assertEqual(app_checks.images.platform_digest(self.repository, self.tag, opener=opener),
+                         'sha256:' + hashlib.sha256(body).hexdigest())
+
+    def test_an_instance_with_no_record_of_either_kind_warns_about_both(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        (root / 'apps').symlink_to(ROOT / 'apps')
+        opener, _ = self.registry(self.digest)
+        (line,) = self.lines(opener, root=root)
+        self.assertTrue(line.startswith(
+            f'[WARN] demo-notifier-staging: newest image {self.tag}, but this checkout has neither'), line)
+        self.assertIn('v2-records/demo-notifier/staging/release.json', line)
 
 
 class ConsoleCheckTests(unittest.TestCase):

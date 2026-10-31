@@ -14,10 +14,7 @@
   "storage": {
     "claimName": "swhurl-try-10"
   },
-  "allows": [
-    "swhurl-try-11",
-    "swhurl-try-12"
-  ],
+  "allows": [],
   "events": {
     "key": "UDCH7SX2Z6LQYZXJI42BXM5VZ5T5EM5DFFPWM7KUZALWZOG4I5YDCCFZ"
   }

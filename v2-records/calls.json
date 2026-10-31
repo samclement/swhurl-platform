@@ -1,29 +1,11 @@
 {
   "kind": "v2-calls",
   "version": 1,
-  "revision": "5969b0d8249050d42e53816b84a33ffb3c391602",
+  "revision": "8ae21b491dcbbe7306bc56073460fff24d61a7f2",
   "pairs": [
     {
       "caller": "demo-shop",
       "callee": "demo-orders",
-      "environment": "prod",
-      "port": 8080
-    },
-    {
-      "caller": "swhurl-try-11",
-      "callee": "swhurl-try-10",
-      "environment": "prod",
-      "port": 8080
-    },
-    {
-      "caller": "swhurl-try-11",
-      "callee": "swhurl-try-12",
-      "environment": "prod",
-      "port": 8080
-    },
-    {
-      "caller": "swhurl-try-12",
-      "callee": "swhurl-try-10",
       "environment": "prod",
       "port": 8080
     },
@@ -36,24 +18,6 @@
     {
       "caller": "demo-shopper",
       "callee": "demo-shop",
-      "environment": "staging",
-      "port": 8080
-    },
-    {
-      "caller": "swhurl-try-11",
-      "callee": "swhurl-try-10",
-      "environment": "staging",
-      "port": 8080
-    },
-    {
-      "caller": "swhurl-try-11",
-      "callee": "swhurl-try-12",
-      "environment": "staging",
-      "port": 8080
-    },
-    {
-      "caller": "swhurl-try-12",
-      "callee": "swhurl-try-10",
       "environment": "staging",
       "port": 8080
     }
@@ -70,16 +34,6 @@
       "consumer": "demo-notifier_created",
       "subject": "staging.demo-orders.created",
       "object": "demo-orders-created"
-    },
-    {
-      "subscriber": "swhurl-try-13",
-      "publisher": "swhurl-try-12",
-      "event": "visited",
-      "environment": "staging",
-      "stream": "staging-swhurl-try-12",
-      "consumer": "swhurl-try-13_visited",
-      "subject": "staging.swhurl-try-12.visited",
-      "object": "swhurl-try-12-visited"
     }
   ],
   "eventWaiting": [

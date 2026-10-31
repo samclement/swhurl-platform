@@ -219,6 +219,12 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   `<environment>-<app>.<domain>` for every environment, so production would have moved
   `demo-orders.homelab.swhurl.com` to `prod-demo-orders.homelab.swhurl.com`. Production is now the bare app name,
   which is v1's own rule; staging is unchanged and a kernel test pins production's host.
+- **A live defect the same migration exposed, fixed here:** the production images predate the `_FILE` variables
+  (`demo-orders` 12 October, `demo-shop` 19 October), so a callee that was given only `SWHURL_AUTH_KEYS_FILE`
+  refused `demo-shop`'s first call with `401 this app is not configured to verify tokens`. A callee now also names
+  the auth and callers ConfigMaps through `envFrom`: an image built before the files reads the variables from its
+  environment, an image that reads the files still prefers them, and no value is copied into the pod template, so a
+  rotated key or a new caller still changes nothing the kubelet would roll.
 - **What the operator will see, field by field** (the `kubectl kustomize` comparison of each v1 folder with v2's,
   before the commit): the chart's Ingress becomes its own object with the same host, TLS secret and sign-in
   middleware; the callers ConfigMap and auth mount are added (`demo-orders` is a callee, so only it mounts them);

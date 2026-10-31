@@ -15,11 +15,18 @@ What has been verified on the live cluster, and when: current facts first, then 
   `<environment>-<app>.<domain>`, which would have moved production from `demo-orders.homelab.swhurl.com` to
   `prod-demo-orders.homelab.swhurl.com`. Production now renders the bare app name, as v1 did; staging is unchanged
   and a kernel test pins both.
+- **A live defect the same migration exposed, fixed:** the production images predate the `_FILE` variables, so
+  `demo-orders` refused `demo-shop`'s first call with `401 this app is not configured to verify tokens`; a callee
+  now also names its auth and callers ConfigMaps through `envFrom`, which an image built before the files reads
+  from its environment, while an image that reads the files still prefers them and no value enters the template.
 - **Checked offline:** `make check-v2` (all packages; `check-rendered.sh` finds `platform/` unchanged),
   `REQUIRE_HELM=1 make check-v2`, and `make check` after the change. The two frozen predecessors
   (`v2/testdata/legacy/{demo-orders,demo-shop}/prod/`) make `TestMigrateReproducesCommittedInstances` replay both.
-- **Not yet applied:** the push, the rollout, the live claim and data check, `make verify-platform` and the graph
-  checks. This section is completed after them.
+- **Applied live (`d4e68b75`):** all 34 Flux units are `Ready`; both pods run the manifest digest their record states;
+  the PVCs are the same volumes (12 and 19 October) and `GET /` on `demo-orders` still reports the one order it
+  held. **The first call exposed a defect** — `demo-orders` refused `demo-shop`'s call with `401 this app is not
+  configured to verify tokens`, because the production images predate the `_FILE` variables — and the envFrom fix
+  above is what repairs it; the call is verified after that commit.
 
 ## A migrated record states the platform's digest (31 October 2026)
 

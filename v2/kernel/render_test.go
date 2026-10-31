@@ -358,8 +358,9 @@ func documentOf(t *testing.T, resources ResourceSet, name string) map[string]any
 	return nil
 }
 
-// A callee's auth material is mounted as files an app re-reads, and only as files: no env form copies the keys
-// or the allow-list, so nothing in the pod template depends on them.
+// A callee's auth material is mounted as files an app re-reads, and no value is copied into the pod template:
+// the same ConfigMaps are also named through envFrom, so an image built before the files existed still finds the
+// variables, while a rotation or a new caller changes only the objects the kubelet refreshes in place.
 func TestCalleeMountsTheAuthMaterialAsFiles(t *testing.T) {
 	_, workload := previewFacts()
 	callee := InstanceFacts{Application: "orders", Environment: "staging", Configuration: Configuration{1, 128},
@@ -399,8 +400,16 @@ func TestCalleeMountsTheAuthMaterialAsFiles(t *testing.T) {
 			t.Fatalf("the env form %s is still rendered: %v", name, value)
 		}
 	}
-	if from, set := container["envFrom"]; set {
-		t.Fatalf("the container still reads the keys into its environment: %v", from)
+	// The ConfigMaps are named, not copied: an image that predates the files reads them from its environment.
+	from, set := container["envFrom"].([]any)
+	if !set || len(from) != 2 {
+		t.Fatalf("the callee's envFrom sources: %v", container["envFrom"])
+	}
+	for index, want := range []string{"swhurl-auth", "orders-callers"} {
+		ref := from[index].(map[string]any)["configMapRef"].(map[string]any)["name"]
+		if ref != want {
+			t.Fatalf("envFrom source %d is %v, want ConfigMap %s", index, ref, want)
+		}
 	}
 	// One object carries the allow-list, sorted.
 	callers := documentOf(t, rendered, "callers.json")

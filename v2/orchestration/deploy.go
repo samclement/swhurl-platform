@@ -102,7 +102,7 @@ func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reade
 	if err != nil {
 		return Deploy{}, err
 	}
-	outcomes, err := writer.Write(destination, documents)
+	outcomes, err := writeCompiled(destination, compiled, documents, writer)
 	return Deploy{Tag: tag.Name, Release: candidate, Instance: selected, Compilation: compiled,
 		Written: outcomes, Changed: true}, err
 }

@@ -12,15 +12,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// Written and Unchanged are the two outcomes a path can have.
+// Written, Unchanged and Removed are the outcomes a path can have.
 const (
 	Written   = "written"
 	Unchanged = "unchanged"
+	Removed   = "removed"
 )
 
 // Outcome says what happened to one path the compilation named, in the compilation's order.
@@ -45,10 +47,12 @@ type Error struct {
 
 func (e *Error) Error() string { return fmt.Sprintf("%s: %s: %s", e.Code, e.Path, e.Reason) }
 
-// Writer writes every file it is given, or reports why it cannot. It never deletes, and it writes
-// only the paths it was given.
+// Writer writes every file it is given, or reports why it cannot. It writes only the paths it was given, and it
+// deletes only what a pruned folder or a removal names: a write never removes anything by itself.
 type Writer interface {
 	Write(dir string, files []kernel.File) ([]Outcome, error)
+	Prune(dir, folder string, rendered []string) ([]Outcome, error)
+	Remove(dir, path string) ([]Outcome, error)
 }
 
 // Target checks one compilation path against a destination and reports where it would be written.
@@ -190,4 +194,156 @@ func decide(relative, target string, content []byte) (Outcome, []byte, error) {
 
 func refuse(relative, reason string) *Error {
 	return &Error{RefusedDestination, relative, reason}
+}
+
+// Prune removes the files in one compiled folder that the compilation no longer renders: the names the renderer
+// produces (kernel.Rendered) minus the names this compilation produced. A declared input beside them — the
+// instance's seed, the documents it publishes — is not a rendered name, so it is never removed, and neither is
+// anything below a folder, which is a copy rather than a render. A folder that does not exist has nothing to
+// prune, so pruning an unmade destination is not a failure.
+func (Disk) Prune(dir, folder string, rendered []string) ([]Outcome, error) {
+	target, entries, err := folderEntries(dir, folder)
+	if err != nil || entries == nil {
+		return nil, err
+	}
+	kept := map[string]bool{}
+	for _, name := range rendered {
+		kept[name] = true
+	}
+	outcomes := make([]Outcome, 0, len(entries))
+	for _, entry := range entries {
+		if !prunable(entry, kept) {
+			continue
+		}
+		relative := folder + "/" + entry.Name()
+		if err := removeFile(filepath.Join(target, entry.Name()), relative); err != nil {
+			return outcomes, err
+		}
+		outcomes = append(outcomes, Outcome{relative, Removed})
+	}
+	return outcomes, nil
+}
+
+// folderEntries is a folder's direct entries under the destination, or none when it does not exist.
+func folderEntries(dir, folder string) (string, []os.DirEntry, error) {
+	base, err := filepath.Abs(dir)
+	if err != nil {
+		return "", nil, &Error{IO, folder, "cannot resolve the destination"}
+	}
+	target, err := Target(base, folder)
+	if err != nil {
+		return "", nil, err
+	}
+	entries, err := os.ReadDir(target)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return target, nil, nil
+	case err != nil:
+		return "", nil, &Error{IO, folder, "cannot read the folder"}
+	}
+	return target, entries, nil
+}
+
+// prunable is a file the renderer produced that this compilation no longer names. A folder and a symlink are never
+// pruned: one is a copy, and the other does not belong to the compilation.
+func prunable(entry os.DirEntry, kept map[string]bool) bool {
+	return kernel.Rendered(entry.Name()) && !kept[entry.Name()] &&
+		!entry.IsDir() && entry.Type()&os.ModeSymlink == 0
+}
+
+// Remove deletes one file or one folder tree beneath dir, reporting every file it removed. It is what a removal
+// of an instance takes: the files are listed before anything is deleted, so the report names what was there even
+// when a deletion fails part-way. A path that is not there is not a failure — a removal is idempotent — and the
+// destination itself is refused, because removing it would take everything the caller did not name.
+func (Disk) Remove(dir, path string) ([]Outcome, error) {
+	base, target, info, err := removedTarget(dir, path)
+	if err != nil || info == nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		if err := removeFile(target, path); err != nil {
+			return nil, err
+		}
+		return []Outcome{{path, Removed}}, nil
+	}
+	outcomes, err := listTree(base, path, target)
+	if err != nil {
+		return nil, err
+	}
+	if err := removeListed(base, outcomes); err != nil {
+		return outcomes, err
+	}
+	if err := os.RemoveAll(target); err != nil {
+		return outcomes, &Error{IO, path, "cannot remove the folder"}
+	}
+	return outcomes, nil
+}
+
+// removedTarget resolves what a removal names. An absent path is a nil info and no error: there is nothing to remove.
+func removedTarget(dir, path string) (string, string, os.FileInfo, error) {
+	base, err := filepath.Abs(dir)
+	if err != nil {
+		return "", "", nil, &Error{IO, path, "cannot resolve the destination"}
+	}
+	if path == "" || path == "." {
+		return "", "", nil, refuse(path, "cannot_remove_the_destination")
+	}
+	target, err := Target(base, path)
+	if err != nil {
+		return "", "", nil, err
+	}
+	info, err := os.Lstat(target)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return base, target, nil, nil
+	case err != nil:
+		return "", "", nil, &Error{IO, path, "cannot inspect the path"}
+	}
+	return base, target, info, nil
+}
+
+// removeListed deletes every file a tree listing named, in the listing's order, which is deepest first.
+func removeListed(base string, outcomes []Outcome) error {
+	for _, outcome := range outcomes {
+		current, err := Target(base, outcome.Path)
+		if err != nil {
+			return err
+		}
+		if err := removeFile(current, outcome.Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeFile deletes one file, and a file that is already gone is not a failure.
+func removeFile(target, relative string) error {
+	if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return &Error{IO, relative, "cannot remove the file"}
+	}
+	return nil
+}
+
+// listTree is every regular file in a folder, deepest first, as the relative paths a report states.
+func listTree(base, folder, target string) ([]Outcome, error) {
+	outcomes := make([]Outcome, 0, 8)
+	err := filepath.WalkDir(target, func(current string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return &Error{IO, folder, "cannot read the folder"}
+		}
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		relative, err := filepath.Rel(base, current)
+		if err != nil {
+			return &Error{IO, folder, "cannot name a file in the folder"}
+		}
+		outcomes = append(outcomes, Outcome{filepath.ToSlash(relative), Removed})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(outcomes, func(a, b Outcome) int { return strings.Compare(b.Path, a.Path) })
+	return outcomes, nil
 }

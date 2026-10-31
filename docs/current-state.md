@@ -38,7 +38,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   `event received: demo-orders.created …`, and `swhurl-try-13` logs no `Permissions Violation`;
   `https://staging-demo-shop.…` and `https://staging-demo-orders.…` return 302 signed out; and `make app-status
   APP=demo-orders ENV=staging` says `Healthy` with the image desired and running equal. `make v2-deploy` then
-  reports all nine `unchanged`, so the hourly Deploy workflow has no digest to rewrite.
+  reports all nine `unchanged`, so the hourly Deploy workflow has no digest to rewrite. Validate, which runs
+  `REQUIRE_HELM=1 make check-v2`, had been red since `ce9e717c`: moving demo-orders/staging to v2 removed
+  `apps/demo-orders/staging/backup.yaml`, which `TestBackupMatchesTheCommittedJob` reads, and without that
+  variable the test skips locally. The document is frozen at `913046e5` in
+  `v2/testdata/v1-demo-orders-staging-backup.yaml` and the skip guard is gone; Validate passes at `a3e1b056`,
+  and after its deploy job committed the console image (`29101901`, all 34 units `Ready` on it)
+  `make verify-platform` reports **91 OK, 0 WARN**.
 - **Not exercised:** the four production instances (1b), and a delivery through the hourly Deploy workflow to a record
   this migration wrote.
 

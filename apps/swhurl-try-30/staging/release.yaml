@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/swhurl-try-30
-  tag: 12-eb925a7
-  digest: sha256:f7f55f46779397c4e066568975326ea2051987178a2b8f135e081df856a86438
+  tag: 15-4172807
+  digest: sha256:1499801218451b6521d471560ea2c493b5929c1e1320089016ecbafce98b8c1c
 kind: worker
 uid: 65532
 stack: typescript
@@ -11,4 +11,4 @@ telemetry: true
 description: A swhurl app
 publishes:
 - worked
-offers: eb925a7
+offers: '4172807'

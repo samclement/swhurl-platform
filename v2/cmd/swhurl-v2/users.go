@@ -67,7 +67,7 @@ func (c cli) users(r request) int {
 // usersFactOf is every instance that signs in, with what it may do. An instance that declares events and has no
 // key is refused rather than left out: the list would otherwise say it needs nothing.
 func usersFactOf(pinned snapshot) ([]kernel.NATSUser, error) {
-	facts := eventsFacts(pinned)
+	facts := eventDeclarationsOf(pinned)
 	answers, err := events.Resolve(facts)
 	if err != nil {
 		return nil, err
@@ -86,21 +86,6 @@ func usersFactOf(pinned snapshot) ([]kernel.NATSUser, error) {
 			NKey: key, Publishes: len(facts[index].Publishes) > 0, Subscriptions: subscriptions(answers[index])})
 	}
 	return users, nil
-}
-
-// eventsFacts is what each instance's records state about events: the events its release publishes and the
-// subscriptions its own record grants.
-func eventsFacts(pinned snapshot) []events.Declaration {
-	facts := make([]events.Declaration, 0, len(pinned.Instances))
-	for _, instance := range pinned.Instances {
-		facts = append(facts, events.Declaration{Application: instance.Application,
-			Environment: instance.Environment, Publishes: declaredPublishes(instance),
-			Subscriptions: declaredSubscriptions(instance),
-			// A v2-owned release cannot state its publications until the instance side of this domain lands, so a
-			// subscription to one waits rather than being refused for an event its image may well publish.
-			PublicationsKnown: instance.Format != "v2"})
-	}
-	return facts
 }
 
 // eventsKey is the public key an instance signs in with, or empty when it has none. Every instance the platform

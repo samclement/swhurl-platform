@@ -254,6 +254,11 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   ← `demo-orders.created` (whose publisher v2 now owns) and `swhurl-try-13` ← `swhurl-try-10.visited`, which v2
   renders on **both** sides for the first time — the consumer object, the subscribe variable and the NATS
   permissions. `swhurl-try-13` therefore starts receiving an event it was built for and had never been given.
+- **A second defect the cutover found, fixed in this change:** the events facts were built twice — once for
+  `resolve`, once for `users` — and only the first was corrected, so for an hour the platform said a subscription
+  connected (`resolve`: consumer, subscribe variable) while the broker's user list withheld its permissions:
+  `demo-notifier`'s consumer was refused `MSG.NEXT` and `swhurl-try-13`'s `CONSUMER.INFO` in its own log. `users`
+  now uses `resolve`'s one builder (`eventDeclarationsOf`), and the list grants both again.
 - **v1's tooling reads v2's records where it must, and nowhere else.** `make app-hooks` now takes each v2-owned
   staging instance's repository from its release record as well as v1's world (its webhook is how a published image
   reaches Flux at once), and the v1 tests that used migrated staging records as fixtures now use production, a

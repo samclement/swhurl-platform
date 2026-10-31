@@ -195,8 +195,10 @@ phase 3 (§2.3).
   declared rows with their pending reasons, no form, the three commands named by the page and by both POST paths.
   The v1-shaped console tests keep their fixtures and pass unchanged where they still describe something: they are
   the `app-new` path of decision 1b.
-- **Not verified live**: the console image deploys from CI with this commit. The 13 live pages are checked next, and
-  the evidence goes in [current state](current-state.md).
+- **Verified live 31 October 2026** (image `src-ef5da49e447a3c90`): every page answers `200`, and a v2 instance's page
+  carries its host, its grants, its declared connections and the three commands, with no form. The first deploy broke
+  every instance page on a ConfigMap permission the console does not hold; the derivation above replaced that read.
+  [Current state](current-state.md#the-console-reads-v2-and-writes-nothing-31-october-2026) has the evidence.
 
 **Phase 2 — the console writes v2 (2–3 days).**
 - Build `swhurl-v2` in `images/console/Dockerfile`; add `tools/swhurl/console/v2.py` as the only adapter

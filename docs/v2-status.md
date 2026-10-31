@@ -188,7 +188,7 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
 
-## Slice record: the cutover's first live instance (`swhurl-try-30` staging)
+## Slice record: the cutover reaches the cluster (staging, part one)
 
 - **Outcome:** `swhurl-try-30` staging is v2's: `swhurl-v2 migrate` read its v1 records from a pinned snapshot and
   wrote the pair at `v2-records/swhurl-try-30/staging/` (with its encrypted seed and the documents it offers beside
@@ -226,15 +226,23 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   the image tag, the stack answer) are recorded in its report and belong to the release build. 5. Failure paths:
   the migrate tests and the frozen replay; a stale `platform/` document is caught by `check-rendered.sh` rather
   than assumed. 6. Scope: one instance — the remaining six staging instances follow. 7. **Live:** see
-  [current state](current-state.md#the-cutover-reaches-the-cluster-one-staging-instance-31-october-2026).
+  [current state](current-state.md#the-cutover-reaches-the-cluster-31-october-2026).
   8. This record, the registry and the plan's gap rows change together.
 - **Evidence:** `make check-v2` (all packages, `check-rendered.sh`: `platform/` unchanged), `make check` (1034
   tests) with the documentation checks after this record; the kustomize field comparison above; locally
   `git show HEAD:apps/swhurl-try-30/staging/offers/...` supplied the predecessor's documents, as the operator's
   `--offers` does.
-- **Next gate:** the other six staging instances — `demo-orders`, `demo-shop`, `demo-shopper`, `swhurl-try-13`,
-  `swhurl-try-31`, `swhurl-try-32` — then v1's staging records and `make destroy-data`-free removal of the v1
-  staging commands, and 1b.
+- **Then the same handover for three more, in one change:** `swhurl-try-13`, `swhurl-try-31` and `swhurl-try-32`
+  staging — the same migration, the same deletions, three more `.json` registrations. Their fields differ from
+  `swhurl-try-30` exactly as it did, and `swhurl-try-13`'s subscription to `swhurl-try-10.visited` stays recorded
+  and **unconnected**, because its publisher no longer states that publication: the resolution already reported the
+  pair as `waiting: publisher_not_ready` under v1, and nothing about the instance's own render changed. The pinned
+  resolution is re-rendered from the merged tree (`v2-records/calls.json`, whose only change is its `revision`), and
+  each migrated instance is recompiled from its own record folder, so the files Git holds are what that folder
+  renders.
+- **Next gate:** the demo graph — `demo-shopper`, `demo-shop` (a caller and its callee) and `demo-orders` (the
+  callee, with a SQLite volume), moved in one change so no pair is left half-rendered; then v1's staging records
+  are gone and 1b starts.
 
 ## Slice record: the cutover's write primitives (offline, 31 October 2026)
 

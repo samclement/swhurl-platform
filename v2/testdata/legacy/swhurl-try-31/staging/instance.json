@@ -1,0 +1,14 @@
+{
+  "allocations": {
+    "egressPort": 30117,
+    "eventsKey": "UAMZ4WQFANV4QSBMND66ESMQAA6ZVIG244H3TR3HUGHKE7CDHBNSSILG"
+  },
+  "capacity": {
+    "cpu": "10m",
+    "memory": "32Mi",
+    "memoryLimit": "128Mi"
+  },
+  "exposure": "private",
+  "replicas": 1,
+  "version": 1
+}

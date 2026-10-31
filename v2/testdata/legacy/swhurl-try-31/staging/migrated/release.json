@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "application": "swhurl-try-31",
+  "source": {
+    "repository": "samclement/swhurl-try-31",
+    "commit": "ab1f5936500dace8c203a369c8dae7199a62f147"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/swhurl-try-31",
+    "digest": "sha256:aef4e59480e0d4d2d0fdc8f31c5c22a5e980102a9e07d4efa33be1caae6173d3",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "worker",
+    "port": 0,
+    "healthPath": "",
+    "uid": 65532
+  },
+  "telemetry": true,
+  "publishes": [
+    "worked"
+  ],
+  "description": "B3 concurrent records-only creation proof",
+  "offers": "ab1f5936500dace8c203a369c8dae7199a62f147",
+  "releaseId": "rel-sha256:d523639ac6676d6d28521a9a23d5343b14c92d09b21afda08340dade6e042c4b"
+}

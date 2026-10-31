@@ -27,6 +27,12 @@ var registryAnswers = map[string]registry.Image{
 		Digest: "sha256:2bd56b2cd701083520983b847b7e26609f55465253b421483a362fafe14115d5", MediaType: kernel.ManifestMediaType},
 	"sha256:ce86ab14ebd634eed091f89858abe212ea0a5dc4cffa8f76ece8f595fb8b8077": {
 		Digest: "sha256:a030c32ccc82f236ec11d3ea552832b361abac03906c91cdfdb8d1e34e6e1403", MediaType: kernel.ManifestMediaType},
+	// demo-orders production: the index v1 selected and the linux/amd64 manifest it names.
+	"sha256:d86ea1df22036a66e520da603372d335a47c2b246f6fb4f500f7f6cfed78a5aa": {
+		Digest: "sha256:6e7fbd5e33b1802fd437f271778089c683b1a448e063d50fb8dc32bb50f315b5", MediaType: kernel.ManifestMediaType},
+	// demo-shop production: the same, for its release.
+	"sha256:e7e516fd6c3897b6d13c5045a9ad97fce094c66bb148e8f95b2ab2cecc0d63ec": {
+		Digest: "sha256:a4b65288fadb751fd130f9c03636313b9ed8dff0983aec529ced081aeab85985", MediaType: kernel.ManifestMediaType},
 	"sha256:33c6e1da2a0530e154e768268b599d1162bf3b4ab591472e3947218cbe740dd1": {
 		Digest: "sha256:3f1587e04100ccac3fcce9c64cd8b71cd332888cfc0322dc2aab71d6b2cabb1f", MediaType: kernel.ManifestMediaType},
 	"sha256:db8b46171217c395abdea6a4060a452e3baa8ada18c72ee92fd046858c44b534": {

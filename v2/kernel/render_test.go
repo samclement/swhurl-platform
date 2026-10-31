@@ -299,6 +299,22 @@ func TestExposedInstanceRendersTheRoute(t *testing.T) {
 	}
 }
 
+// Production is the bare app name: staging is the environment a host is prefixed with, not production.
+func TestProductionRouteUsesTheBareName(t *testing.T) {
+	instance, workload := previewFacts()
+	instance.Environment = "prod"
+	instance.Exposure = "authenticated-web"
+	got, err := RenderInstance(instance, workload, profile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := documentOf(t, got, "ingress.json")
+	host := route["spec"].(map[string]any)["rules"].([]any)[0].(map[string]any)["host"]
+	if host != "hello.homelab.swhurl.com" {
+		t.Fatalf("production host: %v", host)
+	}
+}
+
 // A private instance renders no route, and a profile that states no routing cannot render one: a preview
 // fails rather than inventing a host or a middleware.
 func TestRoutesNeedPlatformRouting(t *testing.T) {

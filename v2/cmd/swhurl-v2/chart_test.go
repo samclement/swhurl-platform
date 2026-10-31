@@ -456,10 +456,11 @@ func claimName(rendered string) string {
 
 // TestClaimConvention ties the claim a migration adopts to the pinned chart. A predecessor's release declares
 // a data volume without naming its claim, so the chart generates one named after the release; that is the
-// claim storage.claimName names, and the chart's convention is what the migration reads it from.
+// claim storage.claimName names, and the chart's convention is what the migration reads it from. The
+// predecessor document is frozen here because the handover deleted it.
 func TestClaimConvention(t *testing.T) {
 	helm := tool(t, "helm")
-	release := yamlDocuments(t, "../../../apps/demo-orders/prod/helmrelease.yaml")[0]
+	release := yamlDocuments(t, "../../testdata/v1-demo-orders-prod-helmrelease.yaml")[0]
 	metadata := release["metadata"].(map[string]any)
 	spec := release["spec"].(map[string]any)
 	chartSpec := spec["chart"].(map[string]any)["spec"].(map[string]any)

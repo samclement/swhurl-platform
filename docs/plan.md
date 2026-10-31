@@ -1928,8 +1928,8 @@ flowchart LR
 | `demo-shopper` | TypeScript `v0.2.5` | worker, no events | `worker` | Template update; gains `asyncapi.yaml` |
 | `demo-notifier` | Kotlin `v0.2.4` | worker, no events | `worker` | Template update; gains `asyncapi.yaml` |
 | `swhurl-try-10` | TypeScript `v0.2.5` | web, sqlite, openapi, asyncapi | `api` | Template update only |
-| `swhurl-try-11` | TypeScript `v0.2.5` | web, no database, openapi, no events | none | Stays on its old answers (decided 18 October 2026): it has production, so becoming an `api` waits for F4, and section 18 keeps it only to show several teams. The template refuses its answers, so it takes no template update; revisit after F4 |
-| `swhurl-try-12` | Kotlin `v0.2.4` | web, no database, openapi, asyncapi | none | As `swhurl-try-11` |
+| `swhurl-try-11` | TypeScript `v0.2.5` | web, no database, openapi, no events | none | Removed 31 October 2026 with its namespace, repository and package. It stayed on its old answers (decided 18 October 2026) because the template refused them; that state is why it never took a template update |
+| `swhurl-try-12` | Kotlin `v0.2.4` | web, no database, openapi, asyncapi | none | Removed 31 October 2026, as `swhurl-try-11` |
 | `swhurl-try-13` | TypeScript `v0.2.5` | worker, no events | `worker` | Template update; gains `asyncapi.yaml` |
 
 A worker that publishes nothing deletes the example `worked` event from its `asyncapi.yaml`, leaving `channels: {}`: both stacks' helpers and tests accept that (checked in F1). Whether the platform's offers reading accepts it is F2's to check.

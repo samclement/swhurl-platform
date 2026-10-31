@@ -36,10 +36,23 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Checked.** `make check` (1029 tests) and `make check-v2` green, including the recompilation of every
   v2-owned instance from Git and the render checks of `platform/egress`, `platform/auth`, `platform/nats` and
   `platform/reloader`.
-- **Not done: the live side.** Nothing has been deleted in the cluster yet: the four namespaces, their volumes and
-  `swhurl-try-12`'s data remain, and so do the two GitHub repositories and packages. The namespaces and volumes go
-  with `make app-remove`'s Flux units on the next reconciliation; the volumes need the documented data removal, and
-  the repositories and packages need the tokens in `secrets/`.
+- **The live side (`e89de851`, pushed 31 October 2026).** `make flux-reconcile` pruned the four Flux units
+  (`app-swhurl-try-11-staging`, `-prod`, `app-swhurl-try-12-staging`, `-prod`) with their namespaces: no
+  `swhurl-try-1[12]` namespace, HelmRelease or PersistentVolume remains, and neither had a database, so no volume was
+  left behind. `make verify-platform` passes — the platform units apply `e89de851`, the image webhooks name exactly
+  the seven v1 apps that still have one (the two throwaways' entries went with their units), the notification checker
+  and the console's own checks are green — and `make check-apps` reports **14 instances** (was 18).
+- **What the running instances show.** `swhurl-try-10` staging runs the digest the v2 Deploy workflow selected
+  (`sha256:8ff7d4a1…`, from `e85373b0`): its policy admits only Traefik, its callers ConfigMap is gone (so is
+  `SWHURL_ALLOWED_CALLERS_FILE`), and `swhurl-auth` keeps the issuer and keys. `swhurl-try-13` staging's deployment
+  names no `SWHURL_SERVICE_*` variable any more, and `demo-notifier` staging is Ready. The rebase brought the two
+  files both sides had touched together: `make app-sync` re-rendered `swhurl-try-13`'s HelmRelease from the merged
+  records and `compile` re-rendered `swhurl-try-10` staging's, so no rendered file is a hand-merged copy.
+- **The repositories and packages are gone.** Deleted with the tokens in the gitignored `secrets/`:
+  `secrets/github-packages.sops.yaml` (a classic token with `delete:packages`) removed both GHCR packages, and
+  `secrets/github-cleanup.sops.yaml` (fine-grained, `administration: write`) removed both repositories. Both
+  repositories and both packages answer 404 now. The `gh` login itself could not: it has no `read:packages`, and
+  the classic token has no `delete_repo`, which is why the cleanup file exists.
 
 ## The tested-PR-image reuse machinery is gone (31 October 2026)
 

@@ -7,7 +7,7 @@
   },
   "artifact": {
     "image": "ghcr.io/samclement/swhurl-try-30",
-    "digest": "sha256:2b48b06160e7129becec3222a88e63863071c44c01c2e2fc6dc050e94853b2e9",
+    "digest": "sha256:9a04956c803a94f883b9ffee730731dbcb1a3d484e79596f084f9f02e5f64ca9",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -23,5 +23,5 @@
   ],
   "description": "A swhurl app",
   "offers": "b32c6a050221273abea58e2381f34f3bb6853801",
-  "releaseId": "rel-sha256:163f735db4419fb4b16e5911bee318d0ce8bd56e4664e7e8d09d6a57681dac17"
+  "releaseId": "rel-sha256:2d04a04a4a8d036b1a8f11db261ecfa6ec3dc1a84b2e93c6badb804dfd3242e0"
 }

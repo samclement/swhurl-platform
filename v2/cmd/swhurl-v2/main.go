@@ -137,10 +137,13 @@ migrate turns one instance out of a pinned snapshot into v2's own records, compi
 and the optional resolution and allocation, and writes both under --out: the record pair at
 v2-records/APPLICATION/ENVIRONMENT/ and the compiled files. The source repository and the full commit
 its image was built from are the operator's, because the records keep only an abbreviation: they are
-checked against it, never expanded from it. The report on stdout says which files it wrote, where every
-recorded fact came from, which of the predecessor's declarations the resolution does not connect, and
-every legacy fact the pair cannot carry. It deletes nothing: removing v1's records, manifests and unit is
-the handover step, and the unit's registration stays a reviewed edit.
+checked against it, never expanded from it. The image's own facts are read from the registry: the digest a
+predecessor's record states is a tag's or an index's, and the record states the linux/amd64 manifest the
+cluster runs, so a registry the migration cannot read fails it before anything is written. The report on
+stdout says which files it wrote, where every recorded fact came from, which of the predecessor's
+declarations the resolution does not connect, and every legacy fact the pair cannot carry. It deletes
+nothing: removing v1's records, manifests and unit is the handover step, and the unit's registration stays
+a reviewed edit.
 
 edit applies one named change to one v2-owned instance's record, compiles the edited record, and writes the
 record and the files it renders under --out in one effect: the settings are replicas, memoryMiB, exposure,

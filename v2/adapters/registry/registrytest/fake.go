@@ -9,8 +9,8 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 )
 
-// Scenario is what the contract runs against both implementations: a repository's tags, what each tag
-// resolves to, and a tag the repository does not hold.
+// Scenario is what the contract runs against both implementations: a repository's tags, what each reference —
+// a tag, or an image digest — resolves to, and a reference the repository does not hold.
 type Scenario struct {
 	Tags    []string
 	Images  map[string]registry.Image
@@ -40,13 +40,14 @@ func (f *Fake) Tags(context.Context) ([]string, error) {
 	return append([]string{}, f.Scenario.Tags...), nil
 }
 
-// Describe answers the scenario's image for a tag, and refuses a tag it does not name.
-func (f *Fake) Describe(_ context.Context, tag string) (registry.Image, error) {
-	f.Described = append(f.Described, tag)
+// Describe answers the scenario's image for a reference, and refuses one it does not name. A digest is a
+// reference like a tag: the map is keyed by whatever the caller asks about.
+func (f *Fake) Describe(_ context.Context, reference string) (registry.Image, error) {
+	f.Described = append(f.Described, reference)
 	if f.Fail != nil {
 		return registry.Image{}, f.Fail
 	}
-	image, found := f.Images[tag]
+	image, found := f.Images[reference]
 	if !found {
 		return registry.Image{}, &registry.Error{Code: registry.Unavailable, Subject: "registry", Reason: "not_found"}
 	}
@@ -54,8 +55,8 @@ func (f *Fake) Describe(_ context.Context, tag string) (registry.Image, error) {
 	return image, nil
 }
 
-// Contract is the behaviour every registry.Reader must have: the repository's tags, the image a tag names,
-// and a tag the repository does not hold as a failed read rather than an empty image.
+// Contract is the behaviour every registry.Reader must have: the repository's tags, the image a reference
+// names, and a reference the repository does not hold as a failed read rather than an empty image.
 func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) registry.Reader) {
 	t.Helper()
 	reader := open(t, scenario)
@@ -82,20 +83,21 @@ func listsTags(t *testing.T, reader registry.Reader, scenario Scenario) {
 	}
 }
 
-// describesTags: each tag resolves to the digest, media type and labels it states.
+// describesTags: each reference resolves to the digest, media type and labels it states. The scenario keys one
+// reference by its image digest, so a reader that answers only tags fails here.
 func describesTags(t *testing.T, reader registry.Reader, scenario Scenario) {
 	t.Helper()
-	for tag, want := range scenario.Images {
-		got, err := reader.Describe(context.Background(), tag)
+	for reference, want := range scenario.Images {
+		got, err := reader.Describe(context.Background(), reference)
 		if err != nil {
-			t.Fatalf("describing %s: %v", tag, err)
+			t.Fatalf("describing %s: %v", reference, err)
 		}
 		if got.Digest != want.Digest || got.MediaType != want.MediaType {
-			t.Fatalf("%s resolved to %+v, want %+v", tag, got, want)
+			t.Fatalf("%s resolved to %+v, want %+v", reference, got, want)
 		}
 		for key, value := range want.Labels {
 			if got.Labels[key] != value {
-				t.Fatalf("%s label %s is %q, want %q", tag, key, got.Labels[key], value)
+				t.Fatalf("%s label %s is %q, want %q", reference, key, got.Labels[key], value)
 			}
 		}
 	}

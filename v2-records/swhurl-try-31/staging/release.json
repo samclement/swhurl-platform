@@ -7,7 +7,7 @@
   },
   "artifact": {
     "image": "ghcr.io/samclement/swhurl-try-31",
-    "digest": "sha256:aef4e59480e0d4d2d0fdc8f31c5c22a5e980102a9e07d4efa33be1caae6173d3",
+    "digest": "sha256:c54029a7d7b846191bf5377fa0fcc292e4352bed0cab08e8ad8e337587707de2",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -23,5 +23,5 @@
   ],
   "description": "B3 concurrent records-only creation proof",
   "offers": "ab1f5936500dace8c203a369c8dae7199a62f147",
-  "releaseId": "rel-sha256:d523639ac6676d6d28521a9a23d5343b14c92d09b21afda08340dade6e042c4b"
+  "releaseId": "rel-sha256:8e6fd375bd0a55d7ddcb71b774033140f760dd8824fb6addd46ddd7f16b56d80"
 }

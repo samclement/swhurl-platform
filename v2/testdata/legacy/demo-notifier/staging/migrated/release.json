@@ -7,7 +7,7 @@
   },
   "artifact": {
     "image": "ghcr.io/samclement/demo-notifier",
-    "digest": "sha256:578f4aa722861ac50fcc67805e9e82bb0cfb67c2503216c276b84e9dd09a09be",
+    "digest": "sha256:2bd56b2cd701083520983b847b7e26609f55465253b421483a362fafe14115d5",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -20,5 +20,5 @@
   "telemetry": true,
   "description": "Demo: receives demo-orders.created and tells the team about big orders",
   "offers": "eab35a3b0a162b5ff839afb8dcbe6bed74807193",
-  "releaseId": "rel-sha256:fa6bc76ae306a7843bae40719cd6d932652530c52887aa9df7147f6591037272"
+  "releaseId": "rel-sha256:26d7675d82a9933bdf11ab8df3a8e1e406738b6a37d11399e28aa39a9b410160"
 }

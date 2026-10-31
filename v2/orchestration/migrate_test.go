@@ -1,16 +1,47 @@
 package orchestration
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/files/filestest"
+	"github.com/samclement/swhurl-platform/v2/adapters/registry"
+	"github.com/samclement/swhurl-platform/v2/adapters/registry/registrytest"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/legacy"
 )
+
+// The image pair each fixture's predecessor states and the platform manifest it resolves to, as the registry
+// published them: the hello fixture is nginx's index and its linux/amd64 entry, the notifier the frozen
+// demo-notifier predecessor.
+const (
+	declaredDigest = "sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0"
+	platformDigest = "sha256:28d91bdce70ad09025ea901458fdd149259d8e05982ade79d4ef2c0d9470eb48"
+	notifierDigest = "sha256:578f4aa722861ac50fcc67805e9e82bb0cfb67c2503216c276b84e9dd09a09be"
+	notifierAmd64  = "sha256:2bd56b2cd701083520983b847b7e26609f55465253b421483a362fafe14115d5"
+)
+
+// resolved answers the fixtures' declared digests with the platform manifests they resolve to, as the registry
+// does, and names itself for no image in particular: what a migration asks for is asserted where it matters.
+func resolved(t *testing.T) func(string) (registry.Reader, error) {
+	t.Helper()
+	reader := registrytest.New(registrytest.Scenario{Images: map[string]registry.Image{
+		declaredDigest: {Digest: platformDigest, MediaType: kernel.ManifestMediaType},
+		notifierDigest: {Digest: notifierAmd64, MediaType: kernel.ManifestMediaType},
+	}})
+	return func(string) (registry.Reader, error) { return reader, nil }
+}
+
+// migrate runs the use case with the fixtures' registry answers.
+func migrate(t *testing.T, inputs MigrationInputs, writer files.Writer) (Migration, error) {
+	t.Helper()
+	return Migrate(context.Background(), inputs, resolved(t), "/checkout", writer)
+}
 
 // predecessor is one instance's legacy documents as the snapshot carries them: JSON objects, not YAML.
 func predecessor(t *testing.T) legacy.Records {
@@ -43,7 +74,7 @@ func migrationInputs(t *testing.T) MigrationInputs {
 func TestMigrateWritesThePairAndTheCompilation(t *testing.T) {
 	inputs := migrationInputs(t)
 	writer := &filestest.Fake{Contents: map[string][]byte{}}
-	migrated, err := Migrate(inputs, "/checkout", writer)
+	migrated, err := migrate(t, inputs, writer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +126,64 @@ func TestMigrateWritesThePairAndTheCompilation(t *testing.T) {
 	}
 }
 
+// The image is the one fact a migration reads outside the records. A predecessor states the digest it selected,
+// which for a multi-platform build is its index's, so the migration asks the registry about that reference —
+// through the reader built for the image the release names — and states the platform manifest it answers with.
+func TestMigrateStatesThePlatformManifestDigest(t *testing.T) {
+	inputs := migrationInputs(t)
+	reader := registrytest.New(registrytest.Scenario{Images: map[string]registry.Image{
+		declaredDigest: {Digest: platformDigest, MediaType: kernel.ManifestMediaType},
+	}})
+	named := []string{}
+	writer := &filestest.Fake{Contents: map[string][]byte{}}
+	migrated, err := Migrate(context.Background(), inputs, func(image string) (registry.Reader, error) {
+		named = append(named, image)
+		return reader, nil
+	}, "/checkout", writer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(named) != 1 || named[0] != "docker.io/nginxinc/nginx-unprivileged" {
+		t.Fatalf("the reader was built for %v, not the image the release names", named)
+	}
+	if asked := reader.Described; len(asked) != 1 || asked[0] != declaredDigest {
+		t.Fatalf("the registry was asked about %v, not the digest the record states", asked)
+	}
+	if migrated.Release.Artifact.Digest != platformDigest ||
+		migrated.Release.Artifact.MediaType != kernel.ManifestMediaType ||
+		migrated.Release.Artifact.Platform != artifactPlatform {
+		t.Fatalf("the release states %+v", migrated.Release.Artifact)
+	}
+	if source := migrated.Facts.Sources["artifact.digest"]; source != "registry" {
+		t.Fatalf("the report says the digest came from %q", source)
+	}
+	written, err := kernel.DecodeRelease(writer.Contents["v2-records/hello/staging/release.json"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written.Artifact.Digest != platformDigest {
+		t.Fatalf("the record states %s, not the platform manifest %s", written.Artifact.Digest, platformDigest)
+	}
+}
+
+// A registry that cannot be read fails the migration before anything is written: the record would otherwise
+// state a digest the migration never checked.
+func TestMigrateRefusesAnUnreadableRegistry(t *testing.T) {
+	inputs := migrationInputs(t)
+	failure := &registry.Error{Code: registry.Unavailable, Subject: "registry", Reason: "forbidden"}
+	reader := registrytest.New(registrytest.Scenario{})
+	reader.Fail = failure
+	writer := &filestest.Fake{Contents: map[string][]byte{}}
+	_, err := Migrate(context.Background(), inputs, func(string) (registry.Reader, error) { return reader, nil },
+		"/checkout", writer)
+	if !errors.Is(err, failure) {
+		t.Fatalf("a failed registry read gave %v", err)
+	}
+	if len(writer.Contents) != 0 {
+		t.Fatalf("a failed read wrote %d files", len(writer.Contents))
+	}
+}
+
 // An instance with a broker identity keeps its seed beside its record, not only beside its manifests, so the
 // record folder alone is what a later compile reads. The migration copies the encrypted file as it found it.
 func TestMigrateWritesTheSeedBesideTheRecord(t *testing.T) {
@@ -120,7 +209,7 @@ func TestMigrateWritesTheSeedBesideTheRecord(t *testing.T) {
 		Offers:       documents,
 	}
 	writer := &filestest.Fake{Contents: map[string][]byte{}}
-	if _, err := Migrate(inputs, "/checkout", writer); err != nil {
+	if _, err := migrate(t, inputs, writer); err != nil {
 		t.Fatal(err)
 	}
 	kept, ok := writer.Contents["v2-records/demo-notifier/staging/events.sops.yaml"]
@@ -158,7 +247,7 @@ func TestMigrateRefusesBeforeWriting(t *testing.T) {
 	inputs := migrationInputs(t)
 	inputs.Supplied.Repository = "nginxinc/other"
 	writer := &filestest.Fake{Contents: map[string][]byte{}}
-	if _, err := Migrate(inputs, "/checkout", writer); err == nil {
+	if _, err := migrate(t, inputs, writer); err == nil {
 		t.Fatal("a source the records contradict was accepted")
 	}
 	if len(writer.Contents) != 0 {
@@ -172,7 +261,7 @@ func TestMigrateRefusesAMalformedResolution(t *testing.T) {
 	inputs := migrationInputs(t)
 	inputs.Calls = []byte(`{"kind":"v2-egress","version":1,"revision":"` + revision + `"}`)
 	writer := &filestest.Fake{Contents: map[string][]byte{}}
-	if _, err := Migrate(inputs, "/checkout", writer); err == nil {
+	if _, err := migrate(t, inputs, writer); err == nil {
 		t.Fatal("a document that is not a resolution was accepted")
 	}
 	if len(writer.Contents) != 0 {
@@ -216,7 +305,7 @@ func workerInputs(t *testing.T) MigrationInputs {
 func TestMigrateAWorker(t *testing.T) {
 	inputs := workerInputs(t)
 	writer := &filestest.Fake{Contents: map[string][]byte{}}
-	migrated, err := Migrate(inputs, "/checkout", writer)
+	migrated, err := migrate(t, inputs, writer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +373,7 @@ func offered(t *testing.T, folder string) []kernel.File {
 func TestMigrateRefusesDocumentsWithoutProvenance(t *testing.T) {
 	withDocuments := migrationInputs(t)
 	withDocuments.Offers = []kernel.File{{Path: "asyncapi.yaml", Document: []byte("events: {}\n")}}
-	if _, err := Migrate(withDocuments, "/checkout", &filestest.Fake{Contents: map[string][]byte{}}); err == nil ||
+	if _, err := migrate(t, withDocuments, &filestest.Fake{Contents: map[string][]byte{}}); err == nil ||
 		!strings.Contains(err.Error(), "documents_without_offers") {
 		t.Fatalf("documents with no provenance: %v", err)
 	}
@@ -293,7 +382,7 @@ func TestMigrateRefusesDocumentsWithoutProvenance(t *testing.T) {
 		document["offers"] = revision[:7]
 	})
 	writer := &filestest.Fake{Contents: map[string][]byte{}}
-	if _, err := Migrate(withoutDocuments, "/checkout", writer); err == nil ||
+	if _, err := migrate(t, withoutDocuments, writer); err == nil ||
 		!strings.Contains(err.Error(), "offers_without_documents") {
 		t.Fatalf("provenance with no documents: %v", err)
 	}

@@ -51,7 +51,8 @@ func label(t *testing.T) string {
 	return document.Config.Labels[kernel.DeclarationLabel]
 }
 
-// answers is the contract's scenario over the recorded repository.
+// answers is the contract's scenario over the recorded repository. The index is keyed by its own digest too,
+// so the contract proves a digest reference resolves to the platform's manifest whichever reader answers.
 func answers(t *testing.T) registrytest.Scenario {
 	t.Helper()
 	declaration := label(t)
@@ -59,6 +60,7 @@ func answers(t *testing.T) registrytest.Scenario {
 		Tags: []string{"9-eeeeeeee", directTag, indexTag},
 		Images: map[string]registry.Image{
 			indexTag:  {Digest: platform, MediaType: kernel.ManifestMediaType, Labels: map[string]string{kernel.DeclarationLabel: declaration}},
+			indexHash: {Digest: platform, MediaType: kernel.ManifestMediaType, Labels: map[string]string{kernel.DeclarationLabel: declaration}},
 			directTag: {Digest: direct, MediaType: kernel.ManifestMediaType, Labels: map[string]string{kernel.DeclarationLabel: declaration}},
 		},
 		Missing: "43-dddddddddddddddddddddddddddddddddddddddd",
@@ -96,6 +98,9 @@ func (s *server) serve(t *testing.T) *httptest.Server {
 		case strings.HasSuffix(r.URL.Path, "/tags/list"):
 			write(w, "application/json", "application/json", recorded(t, "tags.json"))
 		case strings.HasSuffix(r.URL.Path, "/manifests/"+indexTag):
+			write(w, "application/vnd.oci.image.index.v1+json", indexHash, recorded(t, "index.json"))
+		case strings.HasSuffix(r.URL.Path, "/manifests/"+indexHash):
+			// The index is reachable by its own digest, as a record that states one reads it.
 			write(w, "application/vnd.oci.image.index.v1+json", indexHash, recorded(t, "index.json"))
 		case strings.HasSuffix(r.URL.Path, "/manifests/"+directTag):
 			write(w, "application/vnd.oci.image.manifest.v1+json", direct, recorded(t, "manifest.json"))
@@ -154,6 +159,26 @@ func open(t *testing.T, _ registrytest.Scenario) registry.Reader {
 
 func TestContract(t *testing.T) {
 	registrytest.Contract(t, answers(t), open)
+}
+
+// TestDescribeAuthorizesItsOwnRead: a reader asked about a reference without listing tags first — a migration
+// holding the digest a record states — obtains its own token. The ordering deploy happens to have hides this, so
+// the test reads with a fresh reader and asserts the token came first.
+func TestDescribeAuthorizesItsOwnRead(t *testing.T) {
+	s := &server{}
+	reader, err := registry.New("ghcr.io/"+repository, client(t, s.serve(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Describe(context.Background(), indexHash); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.requests) < 2 || s.requests[0].URL.Path != "/token" {
+		t.Fatalf("the first request was not the token: %v", s.requests)
+	}
+	if got := s.requests[1].URL.Path; !strings.HasSuffix(got, "/manifests/"+indexHash) {
+		t.Fatalf("the digest reference was read as %q", got)
+	}
 }
 
 // TestRecordedRequests: the adapter asks the registry's own paths, with the token, and reads the index's

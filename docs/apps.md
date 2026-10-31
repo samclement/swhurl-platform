@@ -789,7 +789,7 @@ instance behind the proxy. Production still changes only through a promotion.
 
 ## Dependency updates in app repositories
 
-Apps from a template update their own dependencies. The Renovate GitHub App is installed for all repositories (a config file required), so a new app's repository is registered on Renovate's next run; its `renovate.json` extends its template's shared `renovate-preset.json` (TypeScript: npm packages, OpenTelemetry grouped; Kotlin: Gradle plugins and libraries, Kotlin and Micronaut grouped). Every pull request runs the app's checks from the template's shared `app.yml`: compilation and type-checking, tests, an image build, and a smoke test that starts the image as the cluster does, from the app's `swhurl.yaml` (details in each template's README). The [compile-once build](#compiling-typescript-once) below removes repeated work; [image reuse of a tested PR](#reusing-a-tested-pr-image-retired-30-october-2026) was retired. A failed compilation or test prevents image publication.
+Apps from a template update their own dependencies. The Renovate GitHub App is installed for all repositories (a config file required), so a new app's repository is registered on Renovate's next run; its `renovate.json` extends its template's shared `renovate-preset.json` (TypeScript: npm packages, OpenTelemetry grouped; Kotlin: Gradle plugins and libraries, Kotlin and Micronaut grouped). Every pull request runs the app's checks from the template's shared `app.yml`: compilation and type-checking, tests, an image build, and a smoke test that starts the image as the cluster does, from the app's `swhurl.yaml` (details in each template's README). The [compile-once build](#compiling-typescript-once) below removes repeated work. A failed compilation or test prevents image publication.
 
 | Situation | What validates an update | What deploys |
 | --- | --- | --- |
@@ -801,7 +801,7 @@ Renovate merges only when it runs, so a passing update can wait hours; tick "run
 
 ### First builds of new apps
 
-A new app's first commit goes directly to `main`, so there is no tested PR image to reuse. Its workflow builds and smoke-tests its own generated code, publishes the image, and the console pins that digest in the staging PR. Deployment pulls the published image; it builds nothing. Both stacks import shared registry caches written by their template's `main` builds, so a new repository can reuse dependency layers without an Actions cache of its own. An unavailable cache takes the ordinary build path. Template cache publication happens before the smoke test finishes; the app workflow still validates its own image before publication.
+A new app's first commit goes directly to `main`. Its workflow builds and smoke-tests its own generated code, publishes the image, and the console pins that digest in the staging PR. Deployment pulls the published image; it builds nothing. Both stacks import shared registry caches written by their template's `main` builds, so a new repository can reuse dependency layers without an Actions cache of its own. An unavailable cache takes the ordinary build path. Template cache publication happens before the smoke test finishes; the app workflow still validates its own image before publication.
 
 **A seed image for every app type** (templates `v0.2.15` on). The template's own CI publishes the image it built and smoke-tested for each [app type](#app-types) in its Template workflow on each `main` commit (`ghcr.io/samclement/swhurl-app-template-<stack>:seed-<commit>-<kind>-<database>-<api>[-<frontend>]`, the frontend for TypeScript only; before TypeScript `v0.2.18` and Kotlin `v0.2.17` the tag also carried the events and flags answers), and deletes seeds older than 30 days. A new app's first run copies the one for its answers and template revision to `<app>:0-<sha>` in its `seed` job, in seconds; the console and `make app-repo` take whichever is published first, that seed or the run's own `1-<sha>`, and open the staging PR with it. The run's own image follows through the Deploy workflow (1 sorts above 0), usually a few minutes later. The seed does not depend on the app's name: the platform gives it its name and description at runtime (`SWHURL_APP`, [`SWHURL_DESCRIPTION`](#swhurlyaml)), and its API description serves them. A template revision more than 30 days old has no seed and wait for the build. If the build then fails, staging keeps running the seed (the template's code) until a push publishes an image.
 
@@ -815,27 +815,7 @@ For example, a demo-orders PR changes an order route. The older build type-check
 
 TypeScript templates from `v0.2.2` provide this build. The Dockerfile's `checked-runtime` target depends on the test stage; tests, development dependencies and fixtures stay in build stages. Dependency installation is cached separately from source changes. Tests therefore need to run inside the build container, using the files copied there rather than tools installed only on the GitHub runner.
 
-Existing TypeScript apps adopt the Dockerfile and caller's `checks-in-image: true` together through a reviewed [template update](#template-updates). A workflow-only version upgrade retains the older runner checks. This optimisation applies whenever an image needs building, including a main run that cannot reuse a PR image.
-
-### Reusing a tested PR image (retired 30 October 2026)
-
-**Retired: an instance v2 owns cannot deploy an image this publishes.** The optimisation let a matching merge publish its already tested image: the main job downloaded and verified that image, then copied it to GHCR, so compilation, tests, image building and the smoke test had all happened on the PR. Staging deployed the published digest through the usual Flux path, and production still used explicit promotion.
-
-It cannot coexist with [what a release states about its image](#deploy-a-new-image). A copied image keeps its config labels, including `org.opencontainers.image.revision`, which names the commit the **PR** built it from — a temporary merge ref, not the merged commit the deployment tag names. v2 requires the tag's suffix to abbreviate that revision, so it refuses the tag (`source.revision: the tag's suffix does not abbreviate the revision`), and the app stops at its previous image while the deploy run fails. That happened to `demo-notifier` staging on 30 October 2026 ([evidence](current-state.md#a-reused-pr-image-could-not-be-deployed-30-october-2026)): the policy picked `41-66520d2`, whose image states `3c25ed7b`, the merge ref of the Renovate PR that produced it. v1 never read the label, which is why nothing noticed while the app was v1's.
-
-Both templates (`typescript` v0.2.22, `kotlin` v0.2.21) and the apps rendered from them therefore no longer pass `reuse-pr-image`, and every app repository, v1's included, stopped on 30 October 2026 ([evidence](current-state.md#tested-pr-image-reuse-retired-in-the-eight-v1-app-repositories-30-october-2026)). Every `main` merge builds and smoke-tests its own image, and every app repository pins a template at or above the release that writes `org.opencontainers.image.revision` (`typescript` v0.2.21, `kotlin` v0.2.20), so the tag and the revision label name the same commit. The shared `app.yml` still accepts the input and the internal `app-build-image` command still exists, for a caller that owns a v1 instance and accepts that trade; nothing in the platform uses them.
-
-| Optimisation | Work saved | Work still needed |
-| --- | --- | --- |
-| Compile TypeScript once | Repeated compilation within an ordinary build | Tests and an image smoke test on each ordinary build |
-
-What it did, for reading an older log: the internal `app-build-image` command in
-[`build_image.py`](../tools/swhurl/apps/build_image.py) retained a smoke-tested OCI image as a GitHub Actions
-artifact for a day, with a proof binding its runtime config to the image that passed the smoke test; a `main` run
-whose source tree, shared workflow, helper, target, platform and resolved base/BuildKit digests matched that proof
-re-downloaded the image and copied it to GHCR unchanged, preserving the PR build's attestations. A `matching tested
-PR image` line in a main log is that path; the trade-offs were extra PR time and artifact storage, conservative
-comparison that any tracked-file edit defeats, and a dependence on both registries.
+Existing TypeScript apps adopt the Dockerfile and caller's `checks-in-image: true` together through a reviewed [template update](#template-updates). A workflow-only version upgrade retains the older runner checks. This optimisation applies whenever an image needs building.
 
 ## Promote to production
 

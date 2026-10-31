@@ -268,8 +268,6 @@ INTERNAL = (
     Command('bot-deploy', "CI (Deploy): bring staging to each app's newest image, check it and push it", run='swhurl.bots:main_deploy', internal=True),
     Command('bot-deploy-v2', 'CI (Deploy v2): bring every v2-owned staging instance to its newest image, check it and push it',
             run='swhurl.bots:main_deploy_v2', internal=True),
-    Command('app-build-image', 'CI: retain a tested PR image and reuse it only for matching main build inputs',
-            run='swhurl.apps.build_image:main', internal=True),
     Command('image-declaration', "CI: print the config label an image build writes from the app's swhurl.yaml",
             run='swhurl.apps.image_declaration:main', internal=True),
     Command('notify-serve', "Serve the notify service: accept messages about apps and deliver them to their team's channels",

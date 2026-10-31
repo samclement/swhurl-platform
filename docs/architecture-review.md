@@ -559,7 +559,7 @@ These are related but not interchangeable:
 - A compiler upgrade can change manifests without changing the release.
 - A tag supports display/discovery but should not be deployment identity.
 
-Current build reuse fingerprints a substantial resolved input set and verifies retained OCI image/config evidence: [`build_image.py`](../tools/swhurl/apps/build_image.py). Preserve the distinction between OCI index/manifest/config identities rather than casually comparing one digest with another.
+At the reviewed commit, build reuse fingerprinted a substantial resolved input set and verified retained OCI image/config evidence (`tools/swhurl/apps/build_image.py`, removed on 31 October 2026 with the reuse itself). Preserve the distinction between OCI index/manifest/config identities rather than casually comparing one digest with another.
 
 ### Proposed provenance chain
 

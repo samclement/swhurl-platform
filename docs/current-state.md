@@ -4,8 +4,8 @@ What has been verified on the live cluster, and when: current facts first, then 
 
 ## The cutover reaches the cluster (31 October 2026)
 
-- **Four staging instances are v2's.** `swhurl-try-30` (`bb7ae079`) and then `swhurl-try-13`, `swhurl-try-31` and
-  `swhurl-try-32` (one change) were migrated with `swhurl-v2 migrate` from a snapshot pinned at HEAD, their v1
+- **The whole staging fleet is v2's: nine instances.** `swhurl-try-30` (`bb7ae079`), then `swhurl-try-13`,
+  `swhurl-try-31`, `swhurl-try-32`, then `demo-shopper`, `demo-shop` and `demo-orders` (with their volume), were migrated with `swhurl-v2 migrate` from a snapshot pinned at HEAD, their v1
   staging records and unit YAMLs deleted in the same commit, and their units switched to
   `clusters/home/app-<app>-staging.json`. Pushed, then `make flux-reconcile`: all four units `Ready`, each on the
   commit that carried its switch.
@@ -19,8 +19,24 @@ What has been verified on the live cluster, and when: current facts first, then 
   `replicas: 1` is stated, v1's `platform.swhurl.com/render` annotation is gone, and the egress proxy variables are
   gone because v2 grants the proxy only to an instance that needs one. Each policy became deny-by-default egress
   with the peers its instance uses (cluster DNS, the collector's node address, NATS). No other object differed.
-- **Not exercised:** the demo graph (`demo-shopper` → `demo-shop` → `demo-orders`, the last with a SQLite volume),
-  which is the next change, and 1b's production instances.
+- **The demo graph works end to end.** `demo-shopper` logs `work done`, `demo-shop` `request handled`, and
+  `demo-notifier` logs `received: demo-orders.created <id>` — the event whose publisher became v2's. `demo-shop`
+  and `demo-orders` kept their PVCs (`demo-shop` → `pvc-f1ac6772…`, `demo-orders` → `pvc-af7da97f…`, both Bound)
+  and their namespaces (created 12 October). Signed out, `https://staging-demo-shop.…` and
+  `https://staging-demo-orders.…` return **302**.
+- **A second defect, found and fixed the same hour:** with `demo-orders` v2-owned, `users` still built the events
+  facts with the old "a v2 instance cannot state its publications" rule while `resolve` connected the pair, so the
+  broker refused `demo-notifier`'s `MSG.NEXT` and `swhurl-try-13`'s `CONSUMER.INFO` (`Permissions Violation` in
+  both logs). `users` now reads `resolve`'s one builder (`8333a842`); after the ConfigMap reached the broker
+  (about a minute), the violations stopped and the notifier logged `received: demo-orders.created` again.
+  `swhurl-try-13`'s retry loop ended at 10:56:07 and its consumer `swhurl-try-10-visited` is `Ready` — the first
+  time its subscription has ever connected.
+- **Open, from the same hour:** `make verify-platform` reports **83 OK, 5 WARN** — each a migrated instance whose
+  record states the **index** digest v1 recorded (`sha256:ce86ab…`) rather than the platform manifest the register
+  names (`sha256:a030c3…`). The deployment is unaffected (an index reference pulls the same image), the hourly
+  Deploy workflow would rewrite the records to the platform digest, and where the migration should resolve it is
+  an open decision.
+- **Not exercised:** 1b's four production instances, and a delivery (`make v2-deploy`) to any migrated instance.
 
 ## The cutover's write primitives, offline (31 October 2026)
 

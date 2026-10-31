@@ -264,6 +264,13 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   reaches Flux at once), and the v1 tests that used migrated staging records as fixtures now use production, a
   frozen copy under `v2/testdata/` or the `tests/fixtures` instance. Nothing else in `tools/` changed: the `app-*`
   commands stay until 1b, because they still write the four production instances.
+- **Where the fleet stands after it:** four `.json` units and five `.json` units' worth of records — all **34 Flux
+  units** `Ready`, **15 managed namespaces** unchanged in age, and **four v1 instances left, all production**
+  (`demo-orders`, `demo-shop`, `swhurl-try-10`, `swhurl-try-30`). `make verify-platform` reports **83 OK, 5 WARN**:
+  each warning is a migrated record stating the **index** digest v1 recorded, where the platform states the image
+  by its linux/amd64 manifest digest. The image is the same bytes and the hourly Deploy workflow would rewrite
+  those records, but `migrate` has no registry read, so the contract cannot state the platform digest it asserts —
+  the open decision below.
 - **Next gate:** 1b — the four production instances (`demo-orders`, `demo-shop`, `swhurl-try-10`, `swhurl-try-30`)
   with the volume path exercised first, then the deletions that make v2 the only writer: the rest of `apps/`, the
   `app-*` commands, `resolve`'s v1 reading and `verify-platform`'s v1 branch.

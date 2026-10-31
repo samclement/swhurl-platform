@@ -23,6 +23,28 @@ What has been verified on the live cluster, and when: current facts first, then 
   export-proof path (`##[error]Process completed with exit code 1`), so the first matrix entry — the API app type,
   the one that exercised the OCI export — was never smoke-tested at those releases. That step is gone, which is why
   the same matrix passes now.
+- **The apps took the new template (31 October 2026, 00:55 to 01:14 UTC).** A reviewed `copier update` to
+  `typescript` v0.2.23 / `kotlin` v0.2.22 landed in nine repositories — `demo-orders`, `demo-shop`,
+  `demo-shopper`, `swhurl-try-10`, `swhurl-try-13`, `swhurl-try-30`, `swhurl-try-31`, `swhurl-try-32` and
+  `demo-notifier` — each a PR whose Container run was green before merge, with no conflict markers in the result.
+  Renovate's own copier branches could not do this: their branches were generated before the retirement commit, so
+  each tried to re-add the line and left copier's markers in `container.yml` — GitHub then refused to load the
+  workflow and reported the run by its path. Those PRs are closed; the apps' answers now name the newest release,
+  which is what Renovate watches.
+- **What the updates brought.** The answers and the workflow pin move together, the unused `actions: read` grant
+  goes (the shared workflow no longer downloads artifacts), and the apps take the template's own changes since the
+  commit they recorded: the call material read from files under `/var/run/swhurl`, so a rotated key or a newly
+  allowed caller takes effect without a restart, and the OpenTelemetry dependency bumps for the TypeScript ones.
+  Each merge published an image whose `org.opencontainers.image.revision` is its tag's commit — `69-be8372e`,
+  `88-b8e4fb3`, `78-7c7da86`, `71-a7e4a5f`, `21-2f237f7`, `23-9f374a5`, `21-2b53284` (TypeScript) and `58-bd44c68`
+  (Kotlin) — and the Deploy workflow pinned the seven v1 staging instances to them (`33dd4adc`, `d775c5fc`).
+  `swhurl-try-10`'s v2 record moved to the new digest (`4f0c02e9…`) in `185c5b3a`; `demo-notifier`'s record still
+  names its previous digest (`962f228e…`), so its next v2 Deploy run is the step that follows.
+- **Two throwaways could not.** `swhurl-try-11` and `swhurl-try-12` record `kind=web database=none`, which no
+  longer names an app type (a web app needs `database=sqlite`), so `copier update` refuses them by design and they
+  keep their current pins — and the unused `actions: read` grant, the only two repositories that still have it.
+  Taking the update would give them a database; they are throwaways, so that is the operator's call, not this
+  change's.
 - **No instance's behaviour changes.** Apps publish images built exactly as they were after 30 October 2026: no
   repository ever set the input the templates no longer offer, and the images in the cluster were built by the
   step-reduced workflow already.

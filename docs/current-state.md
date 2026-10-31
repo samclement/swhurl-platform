@@ -15,12 +15,15 @@ What has been verified on the live cluster, and when: current facts first, then 
   `83-0061677` states `00616775…`, `73-5f446fe` states `5f446fe7…`, `68-370b772` states `370b772f…`, `20-ed0b7f2`
   states `ed0b7f2d…` — each the merged commit the tag names. An untouched tag shows the defect that was retired:
   `62-ea1c8b3` states `7cbb4665…`, its PR's merge ref.
-- **Not yet true.** `swhurl-try-12` (`kotlin` v0.2.18), `swhurl-try-30` and `swhurl-try-32` (`typescript` v0.2.18)
-  pin a template older than the release that writes the label (`kotlin` v0.2.20, `typescript` v0.2.21), so their new
-  tags `73-d1dfe08`, `7-3e2096c` and `6-e27a973` carry no `org.opencontainers.image.revision` at all — v2 would
-  refuse them for naming no revision rather than a wrong one. Each repository has a green Renovate PR that bumps the
-  pin (to `kotlin` v0.2.21, `typescript` v0.2.22); merging it is a reviewed template update, not a reuse decision.
-  v1 reads no label, so nothing is broken meanwhile.
+- **The three that needed a pin, 23:58 UTC.** `swhurl-try-12` (`kotlin` v0.2.18), `swhurl-try-30` and
+  `swhurl-try-32` (`typescript` v0.2.18) pinned a template older than the release that writes the label (`kotlin`
+  v0.2.20, `typescript` v0.2.21), so their first new tags (`73-d1dfe08`, `7-3e2096c`, `6-e27a973`) carried no
+  `org.opencontainers.image.revision` at all — v2 would have refused them for naming no revision rather than a wrong
+  one. Their reviewed Renovate template-update PRs were merged (one line each: PR#24 to `kotlin` v0.2.21, PR#5 and
+  PR#5 to `typescript` v0.2.22) as `581936b`, `eb925a7` and `b1b9fd7`; their Container runs went green at 00:02 and
+  the labels are right: `77-581936b` states `581936b6…`, `12-eb925a7` states `eb925a79…`, `11-b1b9fd7` states
+  `b1b9fd73…`. No app repository now pins a template older than that release, so every tag names the commit its image
+  states.
 
 ## A reused PR image could not be deployed (30 October 2026)
 

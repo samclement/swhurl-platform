@@ -156,7 +156,7 @@ and leave `migrate` asserting an unchecked digest). The read is the use case's o
 claim. `adapters/registry.Describe` was widened to take a *reference* — a tag, or an image digest — because the
 registry's own API accepts both, and it now obtains its own token: until then only a caller that had listed tags
 first could read (`deploy` happened to), which a migration holding a record's digest does not. The nine migrated
-staging records were re-run through the fixed path. What reopens it: a release whose image the registry will not
+staging records were re-run through the fixed path. **Verified live 31 October 2026 at `897675a5`:** every unit `Ready`, the seven re-rendered deployments running the manifest digests their records state, and `make verify-platform` naming all nine staging instances `deployed` with no digest warning ([evidence](current-state.md#a-migrated-record-states-the-platforms-digest-31-october-2026)). What reopens it: a release whose image the registry will not
 answer for, or recording the tag an instance was selected with (a v2 release identity change, [the gap](iteration-2-plan.md#6-deliberately-deferred)).
 
 **31 October 2026 — the cutover's write primitives (worked, offline).** Three choices made once, on the operator's
@@ -283,7 +283,9 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   (`demo-orders`, `demo-shop`, `swhurl-try-10`, `swhurl-try-30`). `make verify-platform` reported **83 OK, 5 WARN**:
   each warning was a migrated record stating the **index** digest v1 recorded, where the platform states the image
   by its linux/amd64 manifest digest — [fixed the same day](#decisions) by teaching `migrate` to resolve the digest
-  through the registry and re-running the nine migrated records through it ([evidence](current-state.md#a-migrated-record-states-the-platforms-digest-31-october-2026)).
+  through the registry and re-running the nine migrated records through it, then verified live: `make
+  verify-platform` names all nine staging instances `deployed` and warns about none of them
+  ([evidence](current-state.md#a-migrated-record-states-the-platforms-digest-31-october-2026)).
 - **Next gate:** 1b — the four production instances (`demo-orders`, `demo-shop`, `swhurl-try-10`, `swhurl-try-30`)
   with the volume path exercised first, then the deletions that make v2 the only writer: the rest of `apps/`, the
   `app-*` commands, `resolve`'s v1 reading and `verify-platform`'s v1 branch.

@@ -2,6 +2,25 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The first live console edit, and the frozen fixture it found (31 October 2026)
+
+- **The console opened the change.** After the image carrying the binary rolled out (`0a814aec`, image
+  `src-e6fafbc902b0f451`), job #40 ran the app page's **Scale** form for `swhurl-try-10/staging` with memory
+  **128 → 192 MiB**. It wrote `v2-records/swhurl-try-10/staging/instance.json`, the compiled HelmRelease, and the
+  revision lines in `v2-records/calls.json` and `platform/egress/allocation.json`, and opened **PR #100** without an
+  `auto-merge` label. The PR was **closed unmerged**: Validate failed.
+- **What CI found was v2's test input, not the edit.** `make check-v2` runs `TestMigrateReproducesCommittedInstances`,
+  whose predecessor snapshot read the **live** `v2-apps/.../helmrelease.json` while its expected records are the
+  frozen migration. The PR's compiled HelmRelease states 192 MiB, so migrating the same frozen v1 records produced
+  192 MiB against the committed 128 MiB. Any instance edit would have failed the test this way. The test now reads
+  only `v2/testdata/legacy/<app>/<env>/helmrelease.json`; the eleven instances that lacked a frozen copy gained one
+  from the compiled set, whose replicas, memory and claim match their migrated records. No record or rendered file
+  changed in the fix.
+- **Verified:** the focused Go test passes, and `make check-v2` passes with `render --check` at **208 files,
+  0 differ**.
+- **Not done:** the memory change is not live, and its revert is not needed. The first live edit is repeated after
+  this fix reaches the console image.
+
 ## The console writes v2's records, offline (31 October 2026)
 
 - **What changed:** the app page's forms run v2's binary. `tools/swhurl/console/v2.py` is the one adapter — the argv,

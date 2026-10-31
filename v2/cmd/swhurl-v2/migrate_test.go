@@ -295,10 +295,12 @@ func predecessor(t *testing.T, application, environment string) map[string]any {
 	t.Helper()
 	documents := map[string]any{}
 	for role, path := range map[string]string{
-		"app":         filepath.Join("..", "..", "testdata", "legacy", application, environment, "app.json"),
-		"instance":    filepath.Join("..", "..", "testdata", "legacy", application, environment, "instance.json"),
-		"release":     filepath.Join("..", "..", "testdata", "legacy", application, environment, "release.json"),
-		"helmrelease": filepath.Join("../../../v2-apps/instances", application, environment, "helmrelease.json"),
+		"app":      filepath.Join("..", "..", "testdata", "legacy", application, environment, "app.json"),
+		"instance": filepath.Join("..", "..", "testdata", "legacy", application, environment, "instance.json"),
+		"release":  filepath.Join("..", "..", "testdata", "legacy", application, environment, "release.json"),
+		// The frozen HelmRelease, not the live compiled one: an edit to the instance record moves
+		// v2-apps/, and a migration of the same predecessor must still be reproduced from frozen input.
+		"helmrelease": filepath.Join("..", "..", "testdata", "legacy", application, environment, "helmrelease.json"),
 	} {
 		var document any
 		if err := json.Unmarshal(readFile(t, path), &document); err != nil {

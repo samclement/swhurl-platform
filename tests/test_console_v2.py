@@ -9,6 +9,9 @@ import unittest
 
 from test_console import WHO, client, fake, release, unit
 
+from swhurl.console import cluster
+from swhurl.run import Result
+
 ORIGIN = {**WHO, 'Origin': 'http://testserver'}
 
 HEAD = 'a' * 40
@@ -50,7 +53,7 @@ def helmrelease():
     return found
 
 
-def cluster():
+def running():
     """A cluster running hello/staging, with its Ingress apart from the HelmRelease as v2 renders it."""
     kind_of = {'kustomization': 'flux-system', 'gitrepository': 'flux-system'}
     answers = {f'kubectl -n {kind_of.get(kind, "hello-staging")} get {kind}': json.dumps(value) for kind, value in
@@ -67,7 +70,7 @@ def cluster():
 
 class PageTests(unittest.TestCase):
     def page(self, **kwargs):
-        return client(cluster(), documents=records(), **kwargs).get('/apps/hello/staging', headers=WHO).text
+        return client(running(), documents=records(), **kwargs).get('/apps/hello/staging', headers=WHO).text
 
     def test_the_page_reads_v2_records_and_offers_no_form_that_writes(self):
         text = self.page(github=None)
@@ -97,14 +100,26 @@ class PageTests(unittest.TestCase):
         self.assertIn('none: v2 does not model secrets', text)
 
     def test_records_that_are_not_there_say_so_instead_of_claiming_none(self):
-        text = client(cluster(), documents={}.get).get('/apps/hello/staging', headers=WHO).text
+        text = client(running(), documents={}.get).get('/apps/hello/staging', headers=WHO).text
         self.assertIn('its records are not in Git, so what it declares is unknown', text)
         self.assertNotIn('Allowed callers', text, 'nothing declares who may call it')
 
 
+class PermissionTests(unittest.TestCase):
+    def test_the_page_renders_when_the_console_may_not_list_configmaps(self):
+        """The console's account reads no ConfigMaps (platform/console/rbac.yaml), so the rendered allow-lists are
+        unknown: every other fact is still shown, and the grants the records declare are still a row each."""
+        runner = running()
+        runner._rules.insert(0, (tuple(cluster.CALLERS[:4]), Result((), 1, '', 'Error from server (Forbidden)')))
+        text = client(runner, documents=records()).get('/apps/hello/staging', headers=WHO).text
+        self.assertIn('href="https://staging-hello.homelab.swhurl.com"', text)
+        self.assertIn('waiting for other to allow it', text)
+        self.assertIn('connected in Git, not yet observed live', text)
+
+
 class WriteRefusalTests(unittest.TestCase):
     def post(self, path, data=None):
-        return client(cluster(), documents=records(), github=GH()).post(path, data=data or {}, headers=ORIGIN,
+        return client(running(), documents=records(), github=GH()).post(path, data=data or {}, headers=ORIGIN,
                                                                            follow_redirects=False)
 
     def test_a_change_names_the_command_that_writes_it(self):
@@ -118,7 +133,7 @@ class WriteRefusalTests(unittest.TestCase):
                 self.assertIn(f'v2 writes hello/staging, and the console cannot write v2 yet: run `{command}`', response.text)
 
     def test_reviewing_a_promotion_names_the_command_too(self):
-        response = client(cluster(), documents=records(), github=GH()).get('/apps/hello/staging/promotion', headers=WHO)
+        response = client(running(), documents=records(), github=GH()).get('/apps/hello/staging/promotion', headers=WHO)
         self.assertEqual(response.status_code, 409)
         self.assertIn('run `swhurl-v2 promote hello`', response.text)
 

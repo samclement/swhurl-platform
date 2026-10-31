@@ -90,6 +90,8 @@ def fake(units=UNITS, releases=RELEASES, **extra):
     runner.on(*cluster.SOURCE[:6], stdout=json.dumps({'status': {'artifact': {'revision': REV}}}))
     runner.on(*cluster.PODS[:4], stdout=json.dumps(pods))
     runner.on(*cluster.WORKLOADS[:4], stdout=json.dumps(workloads))
+    runner.on(*cluster.INGRESSES[:4], stdout=json.dumps({'items': []}))
+    runner.on(*cluster.CALLERS[:4], stdout=json.dumps({'items': []}))
     runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
     return runner
 
@@ -286,13 +288,13 @@ class ConnectionsTests(unittest.TestCase):
         self.assertNotIn('waiting for billing to allow it', lagging)
         del documents['apps/billing/staging/instance.yaml'], documents['apps/billing/staging/release.yaml']
         pending = client(runner, documents=documents.get).get('/apps/reports/staging', headers=WHO).text
-        self.assertIn('waiting for billing/staging to exist', pending)
+        self.assertIn('waiting for billing/staging to declare a release', pending)
         self.assertIn('Allow callers</summary>', text)
         for name in ('team:demo', 'shop'):
             self.assertIn(f'<input type="hidden" name="remove" value="{name}">', text)
         unread = client(runner, documents=lambda path: None).get('/apps/reports/staging', headers=WHO).text
         self.assertNotIn('Allowed callers', unread, 'Git unreadable: only what runs is shown')
-        self.assertIn('Git relation records unavailable', unread)
+        self.assertIn('its records are not in Git, so what it declares is unknown', unread)
 
     def test_an_app_that_describes_its_events_declares_them_in_its_repository(self):
         runner = self.cluster()
@@ -883,7 +885,7 @@ class AppDetailTests(unittest.TestCase):
         self.assertIn('The image declares no minimum', text)
         text = client(answers('12-abc1234'), repo_opener=opener, documents={}.get).get('/apps/web/prod', headers=WHO).text
         self.assertNotIn("image's minimum", text, 'a release Git cannot give says nothing')
-        self.assertIn('Calls, subscriptions and hosts outside the cluster are granted here', text)
+        self.assertIn('Calls and subscriptions are granted here', text)
 
     def test_a_later_read_failure_does_not_show_partial_health(self):
         runner = (FakeRunner().on('kubectl', '-n', 'flux-system', 'get', 'kustomization',
@@ -911,8 +913,9 @@ class AppDetailTests(unittest.TestCase):
         text = client(fake(**answers)).get('/apps/web/prod', headers=WHO).text
         self.assertIn('not yet applied', text)
         self.assertIn('id="replicas" name="replicas" value="" placeholder="1"', text)
-        self.assertEqual(text.count('<form class="wizard"'), 4, 'the app page uses the New app form layout')
-        self.assertIn('action="/apps/web/prod/egress"', text)
+        self.assertEqual(text.count('<form class="wizard"'), 3, 'the app page uses the New app form layout')
+        self.assertNotIn('action="/apps/web/prod/egress"', text,
+                         'v2 records no egress grant and v1 no longer writes one, so the page offers no form for it')
         self.assertEqual(text.count('action="/apps/web/prod/connect"'), 1, 'only subscription and call grants')
         self.assertNotIn('name="publish"', text, 'publications come only from the app document')
         self.assertNotIn('<table class="compact connections">', text, 'nothing to list')
@@ -923,7 +926,7 @@ class AppDetailTests(unittest.TestCase):
         self.assertIn('<h1>web <span class="pill"', text)
         for part in ('use', 'connect', 'operate'):
             self.assertIn(f'<section class="card" id="{part}"', text, 'each part is a card of its own')
-        self.assertEqual(text.count('<details class="act" name="app-form"'), 4, 'each change opens in its card, one at a time')
+        self.assertEqual(text.count('<details class="act" name="app-form"'), 3, 'each change opens in its card, one at a time')
         self.assertIn('<div><span>State</span>', text, 'the summary: one fact per column')
         self.assertIn('hx-post="/units/app-web-prod/reconcile" hx-target="this" hx-select="unset"', text, 'Reconcile answers in place')
         self.assertIn('href="https://github.com/samclement/web"', text)

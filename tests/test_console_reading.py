@@ -250,7 +250,10 @@ class AppFileTests(unittest.TestCase):
                 self.assertIn('connected in Git, not yet observed live', response.text)
                 self.assertIn('memory request 64Mi', response.text)
         self.assertEqual(len(heads), 2)
-        expected = set(documents) | {'apps/web/prod/secret.sops.yaml'}
+        # Every file it reads once: the instance's records, its target's, the v1 Secret, and the v2 probe that
+        # says whether this instance is v2's at all (it is not, in this fixture).
+        expected = set(documents) | {'apps/web/prod/secret.sops.yaml', 'v2-records/web/prod/instance.json',
+                                     'v2-records/other/prod/instance.json'}
         for head in heads:
             self.assertEqual(Counter(p for p, ref in asked if ref == head), Counter(dict.fromkeys(expected, 1)))
         self.assertEqual(len(owned), 2)
@@ -267,12 +270,14 @@ class AppFileTests(unittest.TestCase):
         for _ in range(2):
             response = c.get('/apps/web/prod', headers=WHO)
             self.assertEqual(response.status_code, 200)
-            self.assertIn('Git relation records unavailable; showing live connections only.', response.text)
+            self.assertIn('its records could not be read', response.text)
             self.assertNotIn("The image's minimum", response.text)
         self.assertEqual(asked, ['/repos/x/y/git/ref/heads/main'] * 2)
 
     def test_injected_reader_deduplicates_missing_invalid_and_failed_files(self):
-        for settings in (None, 'version: [', OSError('unavailable')):
+        for settings, expected in ((None, 'v1 holds part of its records but not apps/web/prod/instance.yaml'),
+                                   ('version: [', 'its records could not be read'),
+                                   (OSError('unavailable'), 'its records could not be read')):
             asked = []
 
             def source(path, asked=asked, settings=settings):
@@ -288,8 +293,10 @@ class AppFileTests(unittest.TestCase):
             c = client(app_runner(), documents=source)
             response = c.get('/apps/web/prod', headers=WHO)
             self.assertEqual(response.status_code, 200)
-            self.assertIn('Git relation records unavailable', response.text)
-            self.assertIn('memory request 64Mi', response.text)
+            self.assertIn(expected, response.text)
+            # What Git does say is shown even when one of the three records is not there; a reader that fails
+            # says nothing, so nothing is claimed.
+            self.assertEqual('memory request 64Mi' in response.text, settings is None)
             self.assertTrue(all(count == 1 for count in Counter(asked).values()), asked)
 
     def test_template_reads_use_the_same_scope_and_client_closes_on_template_failure(self):

@@ -1,6 +1,6 @@
 # Deleting v1: the plan for 1b's second half
 
-**Status: in progress (31 October 2026). Phase 0 done, phase 1 next; the four decisions in section 5 were
+**Status: in progress (31 October 2026). Phases 0 and 1 done, phase 2 next; the four decisions in section 5 were
 confirmed 31 October 2026.** The migrations are done: nine staging and four production
 instances are v2-owned, `apps/` holds no instance record, and the live checks in
 [current state](current-state.md#the-production-cutover-four-instances-31-october-2026) pass. What remains is the
@@ -168,26 +168,33 @@ rollout; phase 2's first live edit is confirmed with the operator.
 the test inventory are in §2.3; the decision the inventory changed is in §2.1 and §5. The ratchet test moved to
 phase 3 (§2.3).
 
-**Phase 1 — the console reads v2 (1–2 days).**
-- **The reader speaks v2's vocabulary.** Templates and view models are changed to v2's facts rather than feeding
-  v1's `App`/`Release`/`Settings` shapes from v2 records: v1 compatibility is not required (operator, 31 October
-  2026), and a Python translation layer would be the second model this slice exists to remove. Where v2 has no
-  fact, the page says so instead of showing a v1 field that is always empty. Phase 0's recon found that only three
-  page reads and one Git-target read go to v1 records (`routes/instance.py`'s `instance_settings`, `image_minimum`
-  and `secret_states`, `apps/connections.py`'s `intent`, and `stages.render_targets`); everything else already comes
-  from the live cluster. Four of those live reads parse v1-shaped HelmRelease values that v2 does not render — the
-  image tag, the API annotation, `SWHURL_ALLOWED_CALLERS` and the render annotation — so those are page fixes too.
-- **`app-new` keeps one v1 read path.** A v1-created instance is v1-owned until it is migrated (decision 1b), so the
-  reader reads `apps/<app>/{app,instance,release}.yaml` as well, marked for deletion when v2 gains `create`.
-- Add a small Python reader for `v2-records/<app>/{app,instance,release}.json` and
-  `v2-apps/instances/<app>/<env>/*.json`; do not parse SOPS files.
-- Switch `catalogue`, `context`, `pages`, `cluster`, `checks`, `flagstore` and `stages` reads to it. Keep the
-  templates' view models stable.
-- Disable the change/new/promotion **write** buttons for v2 instances with a clear message until phase 2 — the
-  message names `swhurl-v2 edit`, `remove` and `promote`, so an operator who needs the change now has the command.
-- Tests: a fixture repo with one v2 app/instance; every page renders for all 13 live instances; signed in and
-  signed out.
-- Deploy the console; check `make verify-platform`'s console image check.
+**Phase 1 — the console reads v2. Done 31 October 2026.**
+- **`tools/swhurl/console/records.py`** is the one reader: `Declared` (the instance's declared facts and the
+  `problem` that says which part Git does not hold) from `v2-records/<app>/{app.json,<env>/instance.json,release.json}`,
+  `of(app, env, read)` trying v2 first and v1 second, and `rows(...)` composing the declared connections (with why
+  each does not connect yet) with the live ones. No SOPS file is read, and no v1 shape is translated: the page shows
+  v2's facts, and says so where v2 has none (`minimum` is v1's only; a v2 release states no floor).
+- **Reading the cluster, not Git, is where v2 moved facts.** The recon expected four v1-shaped HelmRelease reads;
+  measured on the live cluster, two of them were not HelmRelease reads at all but objects v2 renders separately:
+  **the Ingress** (so `hosts`, the web address and the API URL were empty for all 13 instances) and **the callers
+  ConfigMap** (`<app>-callers`, so `SWHURL_ALLOWED_CALLERS` and every "called by" was empty). `cluster.apps` now
+  lists both (`INGRESSES`, `CALLERS`) beside the releases, so one seam serves v1 and v2 and no page depends on Git
+  for a live fact. The API annotation, the exposure annotation, the offer commit, the variables and the digest are
+  rendered, so they needed nothing.
+- **The page's write forms are gone for a v2 instance**, replaced by one line naming `swhurl-v2 edit <app>/<env>
+  --set <field>=<value>`, `swhurl-v2 promote <app>` and `swhurl-v2 remove <app>/<env>`; the promotion row and the
+  Uninstall card say the same, and `change_app` and `review_promotion` refuse with the same words (409) rather than
+  relying on a hidden form. `routes/new_app.py` is untouched: it creates a v1 record, which phase 2 replaces.
+- **Two facts v2 does not model lose their forms now, not in phase 3**: **Reach a host outside** (no grant field in
+  the records, so v1's command is inert) and **Schedule** (no `job` kind in v2). The pages still show what is
+  granted and what schedule runs, read from the cluster. [apps.md](apps.md#reaching-outside-the-cluster) and
+  [console.md](console.md) say so.
+- **Tests**: `tests/test_console_v2.py` (6) renders the v2 instance page — records read, Ingress host published,
+  declared rows with their pending reasons, no form, the three commands named by the page and by both POST paths.
+  The v1-shaped console tests keep their fixtures and pass unchanged where they still describe something: they are
+  the `app-new` path of decision 1b.
+- **Not verified live**: the console image deploys from CI with this commit. The 13 live pages are checked next, and
+  the evidence goes in [current state](current-state.md).
 
 **Phase 2 — the console writes v2 (2–3 days).**
 - Build `swhurl-v2` in `images/console/Dockerfile`; add `tools/swhurl/console/v2.py` as the only adapter

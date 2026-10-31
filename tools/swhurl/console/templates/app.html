@@ -13,14 +13,6 @@
 {% for env in ('staging', 'prod') %}{% if summary and env in summary.envs %}<a href="/apps/{{ i.app }}/{{ env }}"{% if env == i.env %} class="here" aria-current="page"{% endif %}>{{ env }}</a>{% endif %}{% endfor %}
 </nav>
 
-{% if not writable %}
-<p class="warn">Its records are v2's (<code>v2-records/{{ i.app }}/{{ i.env }}/</code>), and the console cannot write
-  them yet, so the forms below are gone. In your own terminal:
-  <code>swhurl-v2 edit {{ i.app }}/{{ i.env }} --set &lt;field&gt;=&lt;value&gt;</code>{% if i.env == 'staging' %},
-  <code>swhurl-v2 promote {{ i.app }}</code>{% endif %}, or
-  <code>swhurl-v2 remove {{ i.app }}/{{ i.env }}</code>.</p>
-{% endif %}
-
 {# What this environment is, at a glance: one fact per column. #}
 <section class="card" aria-label="Summary">
   <div class="card-body facts">
@@ -66,8 +58,9 @@
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
         <fieldset>
           {{ ui.exposure_choices(status.exposure, status.exposure, 'now') }}
-          {{ ui.text_field('expose_host', 'Host', name='host', placeholder=status.routes[0] if status.routes else 'derived from the name',
+          {% if not v2 %}{{ ui.text_field('expose_host', 'Host', name='host', placeholder=status.routes[0] if status.routes else 'derived from the name',
                            hint='Leave empty to keep the current host (or, for a signed-in app, derive one). A public app needs a host outside ' ~ domain ~ '. Staging and production may differ.') }}
+          {% else %}<p class="muted hint">v2 derives the address from the app name and the exposure; it does not model a host.</p>{% endif %}
         </fieldset>
         {{ ui.submit('Open access PR', 'Private removes the web address. You review and merge it on GitHub.') }}
       </form>
@@ -103,7 +96,7 @@
         <div class="rows">
           {{ links.choices(connectable[0], connectable[1], [], [], i.env, who=i.app, problem=connectable[2]) }}
         </div>
-        {{ ui.submit('Open connection PR', 'It changes this instance only and merges itself; a call connects once the app called allows it.') }}
+        {{ ui.submit('Open connection PR', 'It changes this instance only; you review and merge it on GitHub, and a call connects once the app called allows it.') }}
       </form>
     </details>{% endif %}
   </div>
@@ -114,7 +107,7 @@
       {% if c.offers %}<dt>Describes itself</dt><dd>Its API and events are read from <a href="https://github.com/{{ owner }}/{{ i.app }}/tree/{{ c.offers }}">its repository at <code>{{ c.offers }}</code></a>, the commit of the image it runs. <span class="muted">To publish a new event, add it to <code>asyncapi.yaml</code> there and push.</span></dd>{% endif %}
       {% if c.address and allows is not none %}<dt>Allowed callers</dt>
       <dd>{% for name in allows %}<span class="pill">{{ name }}</span>
-        <form class="inline" method="post" action="/apps/{{ i.app }}/{{ i.env }}/allow" data-confirm="Open a pull request so that {{ name }} may no longer call {{ i.app }}/{{ i.env }}? It merges itself." data-confirm-label="Open removal PR">
+        <form class="inline" method="post" action="/apps/{{ i.app }}/{{ i.env }}/allow" data-confirm="Open a pull request so that {{ name }} may no longer call {{ i.app }}/{{ i.env }}? You review and merge it on GitHub." data-confirm-label="Open removal PR">
           <input type="hidden" name="remove" value="{{ name }}"><button {{ 'disabled' if not github or not writable }} title="Open a pull request removing this grant">Remove</button></form>
         {% else %}<span class="muted">nobody: no app may call it yet (Allow callers)</span>{% endfor %}</dd>{% endif %}
       {% if c.api %}<dt>API description</dt><dd>{% if c.api.startswith('https://') %}<a href="{{ c.api }}">{{ c.api }}</a>{% else %}<code>{{ c.api }}</code>{% endif %}</dd>{% endif %}
@@ -125,9 +118,12 @@
     {% if c.address %}
     <details class="disclose help" id="how-to-call">
       <summary>{{ st.icon('info') }} <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>
-      <p class="muted">A call needs both sides: your app calls {{ i.app }}, and {{ i.app }} allows your app or its team (<strong>Allow callers</strong> above). Tick {{ i.app }} under <strong>Connections</strong> on the <a href="/new">New app</a> form, or afterwards your app page's <strong>Connect to an app</strong>, or:</p>
-      <pre><code>make app-allows APP={{ i.app }} ENV={{ i.env }} ARGS="--add &lt;your app&gt;"
-make app-calls APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add {{ i.app }}"</code></pre>
+      <p class="muted">A call needs both sides: your app calls {{ i.app }}, and {{ i.app }} allows your app or its team (<strong>Allow callers</strong> above). Use your app page's <strong>Connect to an app</strong>, or:</p>
+      <pre><code>swhurl-v2 edit --records v2-records --app {{ i.app }} --env {{ i.env }} --set allows=&lt;whole list&gt; \
+  --profile v2/testdata/profile.json --out . --calls v2-records/calls.json --egress platform/egress/allocation.json
+swhurl-v2 edit --records v2-records --app &lt;your app&gt; --env {{ i.env }} --set calls=&lt;whole list&gt; \
+  --profile v2/testdata/profile.json --out . --calls v2-records/calls.json --egress platform/egress/allocation.json
+swhurl-v2 render --records v2-records --profile v2/testdata/profile.json --out . --revision &lt;commit&gt;</code></pre>
       <p class="muted">Then, in your code (the stack templates' helper):</p>
       <pre><code>service("{{ i.app }}").fetch("/")        // TypeScript
 platform.call("{{ i.app }}", "/")        // Kotlin</code></pre>
@@ -136,8 +132,10 @@ platform.call("{{ i.app }}", "/")        // Kotlin</code></pre>
     {% if c.publishes %}
     <details class="disclose help" id="how-to-subscribe">
       <summary>{{ st.icon('info') }} <strong>Subscribe to its events</strong> <span class="muted">— what another app adds to receive them</span></summary>
-      <p class="muted">Receiving events is granted on the platform. When you create your app, tick {{ i.app }}.{{ c.publishes[0] }} under <strong>Connections</strong> on the <a href="/new">New app</a> form; afterwards, your app page's <strong>Connect to an app</strong>, or:</p>
-      <pre><code>make app-events APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add-subscribe {{ i.app }}.{{ c.publishes[0] }}"</code></pre>
+      <p class="muted">Receiving events is granted on the platform, from your app page's <strong>Connect to an app</strong>, or:</p>
+      <pre><code>swhurl-v2 edit --records v2-records --app &lt;your app&gt; --env {{ i.env }} --set subscriptions=&lt;whole list&gt; \
+  --profile v2/testdata/profile.json --out . --calls v2-records/calls.json --egress platform/egress/allocation.json
+swhurl-v2 render --records v2-records --profile v2/testdata/profile.json --out . --revision &lt;commit&gt;</code></pre>
       <p class="muted">Then, in your code:</p>
       <pre><code>subscribe("{{ i.app }}.{{ c.publishes[0] }}", async (event) => { ... })        // TypeScript
 events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }            // Kotlin</code></pre>
@@ -214,7 +212,7 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
         <fieldset>
           <div class="pair">{% for field, flag, label in scale_fields if not (status.job and field == 'replicas') %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
-          <span class="muted hint">{{ 'CPU and memory of each run.' if status.job else 'Replicas, CPU and memory.' }} Empty fields keep their current value, shown in grey.
+          <span class="muted hint">{{ 'Replicas and memory (MiB) of each run.' if v2 else ('CPU and memory of each run.' if status.job else 'Replicas, CPU and memory.') }} Empty fields keep their current value, shown in grey.
             {%- if minimum is not none %} {% if minimum %}The image's minimum, from its <code>swhurl.yaml</code>: {% for field, flag, label in scale_fields if field in minimum %}{{ label | lower }} {{ minimum[field] }}{{ ', ' if not loop.last else '.' }}{% endfor %}{% else %}The image declares no minimum in its <code>swhurl.yaml</code>.{% endif %}{% endif %}</span>
         </fieldset>
         {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}

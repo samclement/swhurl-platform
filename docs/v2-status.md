@@ -1,12 +1,20 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: 1b phase 2's console half — the adapter and the routes, with the PR flow as it is and the one open choice of whether a v2 PR may auto-merge — then phases 3–5: v1's commands, modules and readers are deleted so v2 is the only writer (the repository read follows)
+Gate: the first live v2 console edit — the throwaway instance, the change and its revert need the operator's confirmation — then phases 3–5: v1's commands, modules and readers are deleted so v2 is the only writer (the repository read follows)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
 ## Authority
+
+**Worked 31 October 2026: the console writes v2's records, offline.** The app page's forms now run `swhurl-v2 edit`,
+`remove` and `promote`, then `swhurl-v2 render`, in a temporary checkout; the PR carries the records and the rendered
+files. The operator took **option 1** of the one open choice: every v2 PR is held for a person, the console adds no
+`auto-merge` label, and the gate's v1 read/judge/`app-sync` stays untouched until phase 3 deletes it. New app is
+disabled with a pointer to `app-repo` → `app-new` → `migrate`; `make app-new` remains the v1 create path, so an
+interrupted creation can still be finished. Nothing was applied, and the first live edit waits for the operator's
+confirmation. See [evidence](current-state.md#the-console-writes-v2s-records-offline-31-october-2026).
 
 **Approved 31 October 2026: finish the cutover.** The operator wants the quickest route to a v2-only platform and accepts breaking v1 to get there, provided the design decisions are made once rather than discovered per seam. An inventory of the eleven v1 instances found no fact v2 does not already model, so owning the fleet needs no new v2 domain: it needs the three things v1's writer still does — `edit` (one settings primitive), `remove`, and a writer that prunes — and then the deletion. Two slices, both in the same week: **1a** the nine staging instances (two are already v2's) and **1b** the four production ones, with v1's writer deleted in 1b rather than kept alive. Closing seams one at a time and a staging-only cutover were both rejected: the first keeps every dual reader, and the second keeps the pairs that matter, because the live mixed ones are production's. The six rules that keep it from spiralling are in [the decisions](#decisions); the work's contract is [iteration 2's section 8](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026).
 

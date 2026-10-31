@@ -1,10 +1,11 @@
 # Deleting v1: the plan for 1b's second half
 
-**Status: in progress (31 October 2026). Phases 0 and 1 done, phase 2 next; the four decisions in section 5 were
-confirmed 31 October 2026.** The migrations are done: nine staging and four production
-instances are v2-owned, `apps/` holds no instance record, and the live checks in
-[current state](current-state.md#the-production-cutover-four-instances-31-october-2026) pass. What remains is the
-operator's write surface, the console's reader, and the v1-only branches in `verify-platform` and `resolve`.
+**Status: in progress (31 October 2026). Phases 0 and 1 and phase 2's offline console port are done; the first
+live console edit is next, then phase 3. The four decisions in section 5 were confirmed 31 October 2026.** The
+migrations are done: nine staging and four production instances are v2-owned, `apps/` holds no instance record, and
+the live checks in [current state](current-state.md#the-production-cutover-four-instances-31-october-2026) pass. What
+remains is the live check of the console's writer, then the deletions and the v1-only branches in `verify-platform`
+and `resolve`.
 
 This page is the working plan, not a status page. The contract stays in
 [iteration 2, section 8](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026);
@@ -228,11 +229,19 @@ phase 3 (§2.3).
   now builds the binary from a pinned `golang:1.26.0-bookworm` stage, and `v2/` is in the console's content hash
   (`platform.CONSOLE_IMAGE_INPUTS` and `validate.yml`, which `v2/coexistence_test.go` now holds in step — the
   assertion that the image must *not* consume v2 was the contract decision 2 replaces).
-- **Next, and the one open choice:** the console half (adapter, `merge`/`proposal`/`promotion`/routes, tests). The
-  PR flow stays a temp checkout + the binary + the diff, but whether a v2 PR may auto-merge is the operator's call:
-  hold every v2 PR for a person (smallest; the gate's v1 read/judge/`app-sync` stays untouched until phase 3
-  deletes it), or re-express the gate's before/after rule on v2's records and replace its merge-time `app-sync`
-  with `render`.
+- **Done 31 October 2026, offline: the console's write surface.** `tools/swhurl/console/v2.py` is the only adapter
+  (argv, binary, records root, profile, the `@base` revision filled at the PR head, and v2's refusal verbatim).
+  `merge.py` gained the seven v2 actions (scale, expose, connect, disconnect, allow, remove, promote), each one
+  `edit`/`remove`/`promote` followed by `render`, each `gated=False`; `proposal.py` runs them on the PR head and
+  never auto-merges one; `routes/instance.py` builds them from the forms (replicas and memory only, whole-list
+  connections and allowed callers, no host), and `review_promotion` shows the v2 review. The app page offers those
+  forms again; the banner that said the records were v1's is gone. `routes/new_app.py` is disabled with the four-step
+  pointer (`app-repo` → `app-new` → `migrate` → delete the v1 records), while its resume route still finishes a job
+  an earlier creation started. A console image without the binary refuses with the command to run, rather than
+  failing a job. **The one open choice was the operator's, and option 1 was taken:** every v2 PR is held and the
+  gate's v1 read/judge/`app-sync` stays untouched until phase 3 deletes it. Nothing was applied.
+- **Next: the first live edit**, with the operator's explicit confirmation of the throwaway instance, the change and
+  its revert. Then a promotion of a staging release that already exists in production, if the operator asks for it.
 
 **Phase 3 — delete the v1 writer commands and modules (1–2 days).**
 - Remove the **delete** rows from `commands.py`, the Makefile `COMMANDS`, [commands](commands.md), their tests

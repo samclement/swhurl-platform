@@ -6,7 +6,7 @@ An app's life, and where each step is described. Every app comes from a stack te
 
 | Stage | Console | Command | Section |
 | --- | --- | --- | --- |
-| Start a new app: code, repository and staging | **New app** | `make app-repo`, then `make app-new` | [Start a new app](#start-a-new-app) |
+| Start a new app: code, repository and staging | **New app** (it points here) | `make app-repo`, then `make app-new`, then `swhurl-v2 migrate` | [Start a new app](#start-a-new-app) |
 | Ship a new version | — | push to the app's repository | [Deploy a new image](#deploy-a-new-image) |
 | Promote to production | **Promote to production** | `make app-promote` | [Promote to production](#promote-to-production) |
 | Choose who can reach it | **Change access** | `make app-expose` | [Who can reach it](#who-can-reach-it) |
@@ -52,54 +52,49 @@ All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com
 
 **The traffic.** `demo-shopper` visits the shop every half minute (`POST /api/buy`, then `GET /api/shop`): about four requests a minute through `demo-shop` and `demo-orders` and two events, with quantities of one to three so nobody is notified. `demo-orders` keeps the latest 1000 orders. To pause it: `make app-scale APP=demo-shopper ENV=staging ARGS="--replicas 0"`, commit and push.
 
-**Use them as a pattern.** To call `demo-orders` or receive its event from your own app, use the Catalogue's **Add an app**; to start an app like one of them, choose the same type and stack in **New app** and copy what its README points at.
+**Use them as a pattern.** To call `demo-orders` or receive its event from your own app, use the Catalogue's **Add an app**; to start an app like one of them, choose the same type and stack with `make app-repo` and copy what its README points at.
 
 ## Start a new app
 
-From nothing to a running staging app in a few minutes (about two for TypeScript; a little longer for Kotlin, whose build also compiles and tests): the platform creates the app's GitHub repository from a template, waits for its first image and adds it to staging. Every push to the app's `main` then deploys to staging on its own.
+From nothing to a running staging app in a few minutes (about two for TypeScript; a little longer for Kotlin, whose build also compiles and tests): `make app-repo` creates the app's GitHub repository from a template and waits for its first image, `make app-new` adds it to staging, and `swhurl-v2 migrate` makes v2 own the instance. Every push to the app's `main` then deploys to staging on its own.
 
-**In the console:** **New app** → **Start a new app** (the default). Pick what you are building ([app types](#app-types)), give a name, pick a stack, choose its team, who can reach it and what it connects to (apps to call and events to receive), and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
+**In the console:** `/new` no longer creates anything. It names this route — `make app-repo`, `make app-new`, `swhurl-v2 migrate`, then delete the v1 records and unit — and a first production is still `make app-promote` while v1 owns the app ([console](console.md#new-apps-disabled)).
 
 ### What happens, and when
 
-For example, starting `weather-api` from the TypeScript template creates `samclement/weather-api`, waits for its first published image, and proposes `weather-api/staging` in this platform repository. The timeline is:
+For example, starting `weather-api` from the TypeScript template creates `samclement/weather-api`, waits for its first published image, and adds `weather-api/staging` to this platform repository. The timeline is:
 
 ```mermaid
 sequenceDiagram
   actor Operator
-  participant Console
   participant AppRepo as App GitHub repo
   participant Actions as App Container workflow
   participant Platform as swhurl-platform
-  participant Validate as Validate workflow
   participant Flux
   participant Cluster
   participant CM as cert-manager
   participant Dash as dashboard sync
 
-  Operator->>Console: Submit Start a new app
-  Console->>AppRepo: Create public repo from selected stack
-  Console->>AppRepo: Push rendered files to main
+  Operator->>AppRepo: make app-repo (create public repo from selected stack)
   AppRepo->>Actions: Push event starts first checks build smoke and publish run
-  Actions-->>Console: Run succeeds and console reads published image digest
-  Console->>Platform: Create console/new-weather-api-staging-<sha> branch and PR
-  Platform->>Validate: PR event runs Validate
-  Validate-->>Platform: Checks pass
-  Platform->>Platform: Auto-merge gate merges records on latest main and renders
-  Platform->>Flux: GitHub push webhook for main (otherwise 1-minute source poll)
+  Actions-->>Operator: make app-repo prints the published image digest
+  Operator->>Platform: make app-new writes apps/weather-api/staging and its unit
+  Operator->>Platform: Commit and push
+  Platform->>Flux: GitHub push webhook (otherwise 1-minute source poll)
   Flux->>Cluster: Apply app unit and its manifests
   Cluster->>CM: Ingress appears with issuer annotation and TLS Secret name
   CM->>Cluster: HTTP-01 challenge, then certificate and TLS Secret
   Dash->>Cluster: Every minute list HelmRelease records created by app Flux units
   Dash->>Dash: Group matching records by app and environment
   Dash->>Dash: Create or update the App weather-api dashboard in HyperDX
+  Operator->>Platform: swhurl-v2 migrate writes the v2 records and compiled files
 ```
 
-The console job creates a **public** app repository because the cluster pulls its image without registry credentials. Its first commit starts the app repository's normal push workflow; this is a GitHub Actions push trigger, not a platform webhook. The console waits up to ten minutes for that workflow to finish, then reads the image digest and uses it in the platform change. If this first build fails or times out, the app repository remains and no platform PR is opened; fix and push the app, and once its workflow has published an image press **Finish creating this app** on the job's page ([jobs and restarts](console.md#jobs-and-restarts)), or add it yourself with the `make app-new … --from-repo` line shown [below](#start-a-new-app). The same button finishes a job that a console restart cut short.
+The command creates a **public** app repository because the cluster pulls its image without registry credentials. Its first commit starts the app repository's normal push workflow; this is a GitHub Actions push trigger, not a platform webhook. `make app-repo` waits for that workflow to finish and prints the image digest to use. If the first build fails it stops with the run's link: the repository stays; fix the app, push, and run the same `make app-new` line with the image that run publishes.
 
-The platform PR is opened only after that image exists. It runs the platform `Validate` pull-request workflow. A generated app PR carries only its App, Release and Settings records (without an egress port), offers documents and encrypted events key. After validation, the trusted merge gate merges those inputs onto the newest `main`, renders, checks and pushes the result; it does not run `app-new` again or fetch source declarations. Each concurrent creation gets a free egress port and unit registration on the `main` it merges into ([console creation and merge rules](console.md#new-apps)). If it changes another app's settings (because the new app calls or subscribes to it), it requires a manual merge; the PR and Activity page state the merge plan. GitHub's Merge button puts the records on `main`, then the Render workflow allocates and writes the rendered files before Flux can create the instance. Secret names are recorded without values, so the app starts with them shown as value missing: set each with `make app-secret` once it is merged ([secrets](#secrets)). Until merge, neither the namespace nor any app resources are created on the cluster. Platform PR branch pushes are filtered out by the Flux Receiver; the merge push to `main` is what invokes it. Without a successful webhook delivery, Flux's `GitRepository` still polls `main` every minute.
+`make app-new` writes the app's v1 staging records and unit only after the image exists. Commit and push them, and Flux deploys the instance. Then `swhurl-v2 migrate` translates those records into `v2-records/` and `swhurl-v2 render` writes the compiled files and unit v2 owns; commit those, delete the v1 records and unit, and move the unit registration in the same change as [the cutover](v2-status.md#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three). From then on the console's app page writes v2's records (every v2 pull request is held for you) and `make v2-deploy` follows the app's images. Production is not created by this flow: a first production is a v1-only promotion (`make app-promote`) while v1 owns the app, followed by migrating production as well ([promote to production](#promote-to-production)). Secret names are recorded without values, so the app starts with them shown as value missing: set each with `make app-secret` once it is merged ([secrets](#secrets)). Platform PR branch pushes are filtered out by the Flux Receiver; the push to `main` is what invokes it. Without a successful webhook delivery, Flux's `GitRepository` still polls `main` every minute.
 
-After the merge, Flux creates the app's dedicated `app-<name>-staging` unit from the newly registered unit file. It waits for `infra-base`, and also `platform-oauth2-proxy` for authenticated web exposure. The unit applies the namespace, HelmRelease and optional encrypted Secret. The chart creates the Deployment and Service for a web app; authenticated or public web exposure also creates an Ingress. Worker apps have no Service or Ingress. SQLite/database answers add a retained PVC and mount; secret answers add the SOPS Secret, and a namespace that reads one is watched by Reloader ([whose list v2 renders](services.md#reloader)). With automatic deploy enabled, the staging unit also creates this app's Flux `ImageRepository` and `ImagePolicy` in `flux-system`, whose report starts the Deploy workflow, so later published images can update the staging image pin in platform Git. These resources are app-scoped; the shared cluster services already exist.
+After the commit, Flux creates the app's dedicated `app-<name>-staging` unit from the newly registered unit file. It waits for `infra-base`, and also `platform-oauth2-proxy` for authenticated web exposure. The unit applies the namespace, HelmRelease and optional encrypted Secret. The chart creates the Deployment and Service for a web app; authenticated or public web exposure also creates an Ingress. Worker apps have no Service or Ingress. SQLite/database answers add a retained PVC and mount; secret answers add the SOPS Secret, and a namespace that reads one is watched by Reloader ([whose list v2 renders](services.md#reloader)). With automatic deploy enabled, the staging unit also creates this app's Flux `ImageRepository` and `ImagePolicy` in `flux-system`, whose report starts the Deploy workflow, so later published images can update the staging image pin in platform Git. These resources are app-scoped; the shared cluster services already exist.
 
 **Certificates are requested only for a web app with a route** (`authenticated-web` or `public`). The generated Ingress names a TLS Secret and carries the selected ClusterIssuer annotation. The default is `letsencrypt-prod`, even for the staging environment; `letsencrypt-staging` and `selfsigned` can be selected. Once Flux/Helm has created the Ingress, cert-manager notices it and asynchronously performs the issuer's flow. For Let's Encrypt that is HTTP-01 through Traefik; on success cert-manager stores the certificate in the named Secret, which Traefik uses for HTTPS. The app Helm readiness does not wait for certificate issuance, so the app can become Ready while TLS is still pending. Private web apps and workers have no route and therefore request no certificate.
 
@@ -119,13 +114,13 @@ git add apps/weather-api clusters/home && git commit -m "apps: add weather-api/s
 make app-status APP=weather-api ENV=staging    # expect "running: matches desired"
 ```
 
-`make app-repo` refuses a name that already exists on GitHub. Console setup stops before creating a repository in that case; choose another name and retry from **New app**. For a free name, `make app-repo` creates the repository **public** (the cluster pulls images without credentials), adds the [image webhook](services.md#image-webhook), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run the same `make app-new` line with the image that run publishes (the console's job prints the line too).
+`make app-repo` refuses a name that already exists on GitHub. For a free name, it creates the repository **public** (the cluster pulls images without credentials), adds the [image webhook](services.md#image-webhook), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will, printing the `make app-new` line to run. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run the same `make app-new` line with the image that run publishes.
 
 **Only apps made this way are supported.** In this repository `make app-new` refuses anything else: `--from-repo` must be `samclement/<name>`, and the image must be `ghcr.io/samclement/<name>` (what that repository's workflow publishes); staging always follows its new images. There is no route for an image built elsewhere or a public image such as nginx: `make check-apps` (and so CI and the console's merge gate) fails an instance committed by hand that is not such an app ([the app policy](#the-app-policy)). Tests are the one exception: the throwaway live tests (`make live-test-*`) deploy nginx and BusyBox images from fixture manifests into labelled test namespaces and remove them afterwards.
 
 ### App types
 
-A new app is created by **type**: what a team is building. The type sets every answer of the stack's template (below) and the access staging starts with; nobody picks features one by one, and the templates accept no other set of answers (each template's last question has a validator listing the types). [`APP_TYPES`](../tools/swhurl/apps/contract.py) is the one list, read by the console's New app form and `make app-repo TYPE=`; `make check-templates` fails when a type no longer renders or fits the platform, or when a template accepts answers no type has.
+A new app is created by **type**: what a team is building. The type sets every answer of the stack's template (below) and the access staging starts with; nobody picks features one by one, and the templates accept no other set of answers (each template's last question has a validator listing the types). [`APP_TYPES`](../tools/swhurl/apps/contract.py) is the one list, read by `make app-repo TYPE=` and each template's validator; `make check-templates` fails when a type no longer renders or fits the platform, or when a template accepts answers no type has.
 
 | Type | For | Stacks | `kind` | `frontend` | `database` | `api` | Access at first |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -177,11 +172,11 @@ Representative warm GitHub template jobs took 42–75 s for TypeScript and 28–
 
 ### Add production
 
-Production is created by the first [promotion](#promote-to-production) from reviewed staging settings. The console and `make app-new` create staging only; `app-new --env prod` is refused.
+Production is created by the first [promotion](#promote-to-production) from reviewed staging settings. `make app-new` creates staging only (`--env prod` is refused); once v2 owns the app, the console's **Promote to production** writes production's v2 records and a person merges them. While v1 still owns a new app, the first production is `make app-promote`, then production is migrated to v2 as well.
 
 ### What the generator writes
 
-`make app-new` ([`new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists every option) writes `apps/<app>/staging/` and `clusters/home/app-<app>-staging.yaml`, registers the unit in `clusters/home/kustomization.yaml` (files under `apps` deploy nothing until then), and checks the result against [the app policy](#the-app-policy) before exiting (a missing tool or failed render makes the command fail; `--no-policy-check` explicitly skips validation). The output is plain YAML; edit it like any manifest afterwards. The console's New app pull requests run this same command in a copy of `main`.
+`make app-new` ([`new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists every option) writes `apps/<app>/staging/` and `clusters/home/app-<app>-staging.yaml`, registers the unit in `clusters/home/kustomization.yaml` (files under `apps` deploy nothing until then), and checks the result against [the app policy](#the-app-policy) before exiting (a missing tool or failed render makes the command fail; `--no-policy-check` explicitly skips validation). The output is plain YAML; edit it like any manifest afterwards, then run `swhurl-v2 migrate` to make v2 own the instance.
 
 | Option | Rules |
 | --- | --- |
@@ -262,7 +257,7 @@ Each field is one of four kinds ([glossary](../GLOSSARY.md)), and the templates 
 - **Identity**: what the app is. `version`, `stack`, `kind`, `description`.
 - **Need**: what the image needs to run. `port`, `healthPath`, `uid`, `telemetry`, `resources` (the image's minimum), `database`, `databaseSize`, `secrets` (variable names, never values).
 - **Offer**: what other apps can use. `provides`, `flags`. AsyncAPI send operations define the published events; there is no second publishing list.
-- **Grant**: what the platform allows the app: who owns it, who can reach it, what it may call and receive. `team`, `exposure`, `alerts`, `calls`, `events.subscribe`. A grant belongs to this repository and changes only through a `make app-*` command or the console; choose it on the console's **New app** form or as an `app-new` flag. The file may not hold one: wherever it is read (`app-new`, `make app-offers`, the console), a grant field is refused with the command that sets it, so a push to the app's repository cannot widen what the app may do.
+- **Grant**: what the platform allows the app: who owns it, who can reach it, what it may call and receive. `team`, `exposure`, `alerts`, `calls`, `events.subscribe`. A grant belongs to this repository and changes only through a `make app-*` command or the console; choose it as an `app-new` flag at creation. The file may not hold one: wherever it is read (`app-new`, `make app-offers`, the console), a grant field is refused with the command that sets it, so a push to the app's repository cannot widen what the app may do.
 
 **The rule.** Supported fields are read again: every new staging image brings the declaration and documents from the commit it was built from, written into its release in the same commit as the image ([deploy a new image](#deploy-a-new-image)). A removed field clears the value or restores its documented default; it never means "keep the previous image's value". Required fields cannot be removed. A change that would lose database data or break another app's declared subscription is held with a reason; nothing is written. A declared document that is missing, invalid or cannot be fetched is a failure, not an empty declaration.
 
@@ -289,7 +284,7 @@ provides: {api: /openapi.json}   # optional, web only: where its API description
 flags:                  # optional: feature flags, typed, with a value per environment (see Feature flags)
   new-checkout: {type: boolean, default: false, staging: true}
 # Grants (team, exposure, alerts, calls, events.subscribe) are refused here. Set them on the platform: the
-# New app form or app-new flags, then make app-team, app-expose, app-alerts, app-calls, app-events or the app page.
+# app-new flags, then make app-team, app-expose, app-alerts, app-calls, app-events or the app page.
 ```
 
 | Field | Kind | Read | After creation |
@@ -308,11 +303,11 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `secrets` | need | read again | With every new staging image: a new name deploys without its value, shown as **value missing** until `make app-secret` sets it; a dropped name keeps its value, shown as unused ([secrets](#secrets)) |
 | `provides` | offer | read again | `make app-offers` reads it at the commit of every new staging image (the Deploy workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)). `apiFile` offers the API to other apps (the Catalogue lists it); `api` only gives the console a link to the served description. Removing either removes what it gave |
 | `flags` | offer | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
-| `team` | grant | refused | `make app-team`, or `--team` and the New app form at creation |
+| `team` | grant | refused | `make app-team`, or `--team` at creation |
 | `exposure` | grant | refused | `make app-expose`, or `--exposure` at creation (default: web apps signed-in, workers private) |
 | `alerts` | grant | refused | `make app-alerts`, or `--alerts` at creation |
-| `calls` | grant | refused | `make app-calls`, or `--calls` and the New app form's **Connections** at creation |
-| `events.subscribe` | grant | refused | `make app-events`, or `--subscribe` and the New app form's **Connections** at creation |
+| `calls` | grant | refused | `make app-calls`, or `--calls` at creation |
+| `events.subscribe` | grant | refused | `make app-events`, or `--subscribe` at creation |
 | `autoDeploy` | dropped | ignored | Nothing: staging always follows new images; the templates no longer write it |
 
 | Configuration | If removed | Who reads the generated result |
@@ -381,7 +376,7 @@ Team changes validate all affected instances and plan their records, manifests a
 
 Logs and traces already stored keep the team name they were written with; only new data carries a new name.
 
-A team can name one [notification channel](services.md#notification-channels) (`make team-edit NAME=payments ARGS="--notify payments-phone"`): it gets a copy of the deployment and health messages of every app the team owns. Choosing a team for a new app is therefore also choosing where its messages go; the console's New app form names each team's channel.
+A team can name one [notification channel](services.md#notification-channels) (`make team-edit NAME=payments ARGS="--notify payments-phone"`): it gets a copy of the deployment and health messages of every app the team owns. Choosing a team for a new app is therefore also choosing where its messages go; the chosen team's channel receives them.
 
 Each instance carries two generated files beside its HelmRelease:
 
@@ -398,7 +393,7 @@ A call needs both sides: the caller says which apps it calls (`calls`), and the 
 
 ```
 make app-allows APP=demo-orders ENV=staging ARGS="--add team:demo"    # any demo app in staging may call it
-make app-calls APP=demo-shop ENV=staging ARGS="--add demo-orders"     # or the app page's Connect to an app; at creation, --calls or the New app form
+make app-calls APP=demo-shop ENV=staging ARGS="--add demo-orders"     # or the app page's Connect to an app; at creation, --calls
 ```
 
 Both are kept in each instance's `instance.yaml`:
@@ -471,7 +466,7 @@ An app can publish events and receive other apps' events without knowing who is 
 make app-events APP=demo-notifier ENV=staging ARGS="--add-subscribe demo-orders.created"   # or the Catalogue's Add an app
 ```
 
-or, when the subscriber is created, `--subscribe demo-orders.created` or the New app form's **Connections**. Receiving an event is a [grant](#swhurlyaml): it is set on the platform, not in the app's repository.
+or, when the subscriber is created, `--subscribe demo-orders.created`. Receiving an event is a [grant](#swhurlyaml): it is set on the platform, not in the app's repository.
 
 What `demo-orders` publishes has one source: the send operations in its `asyncapi.yaml`, named by `provides.eventsFile` in `swhurl.yaml`. The platform reads it at the image's commit and derives the publishing list, runtime variables, stream and NATS permissions. There is no publishing form or `--publish` command; `events.publish` in `swhurl.yaml` is refused with directions to the document.
 
@@ -580,7 +575,7 @@ flowchart LR
 
 **What is refused.** A document that is not OpenAPI 3 or AsyncAPI 3, a file `swhurl.yaml` names but the commit lacks, an event name that is not a lowercase name, and a document that no longer sends an event another app of that environment still receives: the workflow fails for that app, which keeps its image and what it had (the others still deploy), and a promotion is refused. Remove the subscription first, or keep the event. `make check-apps` fails when what an instance publishes is not what its kept document describes (rule `offers`). Production is refused offers that were read for another image than staging runs.
 
-**Where it shows.** The console's [Catalogue](console.md#use-it) lists what every app offers, described or not, and the Connect picker on an app page and in New app says what each choice is.
+**Where it shows.** The console's [Catalogue](console.md#use-it) lists what every app offers, described or not, and the Connect picker on an app page says what each choice is.
 
 **A v2-owned instance.** An instance v2 owns ([v2 status](v2-status.md)) keeps its documents in
 `v2-records/<app>/<env>/offers/`, beside its records, and v2 copies them into
@@ -805,7 +800,7 @@ A new app's first commit goes directly to `main`. Its workflow builds and smoke-
 
 Kotlin templates from `v0.2.5` keep the trimmed Java runtime (`jlink`) in an independent Docker stage, so changed app source does not rebuild it. Shared dependency cache tags distinguish the actual kind, database and API inputs in `gradle.properties`; events change source but share dependency layers. Older kind/database tags remain importable while those tags warm up. Compilation and tests still run when the app's inputs differ. Both stacks observe container liveness every second for four seconds after a web app answers or a worker starts, and again after a SQLite restart. This catches early crashes immediately but does not cover failures after that window; live staging health checks remain necessary.
 
-The platform PR's [merge gate](console.md#auto-merge) validates its merge result with manifest/schema and app-policy checks, without rerunning unrelated tooling, template or collector checks for an eligible app-only diff. Repository creation, runner queues, image publication, platform validation, Flux/Helm rollout, application startup and certificate issuance still contribute to the time from submission to a working HTTPS route. [Measured creation timings](current-state.md#new-app-creation-speed-14-october-2026) distinguish those stages; single samples are not speed guarantees.
+The platform PR's [merge gate](console.md#auto-merge) validates its merge result with manifest/schema and app-policy checks, without rerunning unrelated tooling, template or collector checks for an eligible app-only diff. That path is now v1's only remaining creation (the console no longer creates apps): a creation `make app-new` started. Repository creation, runner queues, image publication, platform validation, Flux/Helm rollout, application startup and certificate issuance still contribute to the time from submission to a working HTTPS route. [Measured creation timings](current-state.md#new-app-creation-speed-14-october-2026) distinguish those stages; single samples are not speed guarantees.
 
 ### Compiling TypeScript once
 

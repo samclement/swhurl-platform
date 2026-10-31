@@ -17,12 +17,14 @@ from swhurl.apps import promotion as gate
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.apps.state import verdict
-from swhurl.console import actions, cluster, flagstore, merge, promotion, proposal, stages
+from swhurl.console import actions, cluster, flagstore, merge, promotion, proposal, stages, v2
 from swhurl.console import github as gh
 from swhurl.console import records as declared_records
 from swhurl.console.context import STACK_NAMES, Context, dashboard_urls, logs_url
 from swhurl.console.reading import Files
 from swhurl.run import CommandError
+
+V2_SCALE_FIELDS = (('replicas', 'replicas', 'Replicas'), ('memory', 'memoryMiB', 'Memory (MiB)'))
 
 
 def _in_git(root, found: Instance) -> bool:
@@ -65,26 +67,59 @@ def routes(ctx: Context) -> list[Route]:
                                                                 together=files.together), declared.problem
         shown = replace(shown, rows=relation_rows)
         return page(request, 'app.html', status=status, secret_states=secrets, flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
-                    writable=declared.source != declared_records.V2, v2=declared.source == declared_records.V2,
+                    writable=True, v2=declared.source == declared_records.V2,
                     flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
                     connections=shown, relation_problem=relation_problem, allows=declared.allows if declared.declared else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
-                    scale_fields=merge.SCALE_FIELDS, minimum=declared.minimum, declared=declared, github=github,
+                    scale_fields=V2_SCALE_FIELDS if declared.source == declared_records.V2 else merge.SCALE_FIELDS,
+                    minimum=declared.minimum, declared=declared, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=proposal.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
 
-    def v2_writes(request: Request, found: Instance, declared: declared_records.Declared, change: str) -> Response | None:
-        """Why the console will not change this instance, or None when it may: the console writes a v1 record and
-        nothing else, so a v2 instance is named with the command that does write it (deletion plan, phase 1).
-        Any other instance goes on to the command, whose own precondition refuses what Git does not hold."""
-        if declared.source != declared_records.V2:
+    def v2_read_only(request: Request, app: str, env: str, change: str) -> Response | None:
+        """The phase-1 refusal, kept for a console image without the binary: it cannot write v2 at all."""
+        if v2.available(runner):
             return None
-        label = f'{found.app}/{found.env}'
-        command = {'remove': f'swhurl-v2 remove {label}', 'promote': f'swhurl-v2 promote {found.app}'}.get(
+        label = f'{app}/{env}'
+        command = {'remove': f'swhurl-v2 remove {label}', 'promote': f'swhurl-v2 promote {app}'}.get(
             change, f'swhurl-v2 edit {label} --set <field>=<value>')
         return page(request, 'error.html', status_code=409,
-                    error=f'v2 writes {label}, and the console cannot write v2 yet: run `{command}` in your own terminal.')
+                    error=f'v2 writes {label}, and this console has no swhurl-v2 binary: run `{command}` in your own terminal.')
+
+    def v2_commands(change: str, app: str, env: str, form: dict,
+                    declared: declared_records.Declared) -> tuple[merge.Command, ...]:
+        """The v2 commands for one console change, with the whole declaration a v2 edit names."""
+        action = merge.V2_ACTION[change]
+        if change == 'connect':
+            chosen = merge.Connections.from_form(form)
+            form = {**form, 'calls': ','.join(dict.fromkeys([*declared.calls, *chosen.calls])),
+                    'subscriptions': ','.join(dict.fromkeys([*declared.subscriptions, *chosen.subscribe]))}
+        elif change == 'disconnect':
+            role, other, event = (form.get(key, '').strip() for key in ('role', 'app', 'event'))
+            if role == 'calls' and merge.records.NAME_RE.fullmatch(other):
+                form = {**form, 'calls': ','.join(name for name in declared.calls if name != other)}
+            elif role == 'subscribes' and merge.records.SUBSCRIPTION_RE.fullmatch(f'{other}.{event}'):
+                form = {**form, 'subscriptions': ','.join(
+                    name for name in declared.subscriptions if name != f'{other}.{event}')}
+            elif role == 'publishes':
+                raise actions.ActionError('publications come from the release: v2 does not remove one on the platform')
+            elif role == 'reaches':
+                raise actions.ActionError('v2 records no egress grant, so this cannot be removed here')
+            else:
+                raise actions.ActionError('no such connection to remove')
+        elif change == 'allow':
+            add = merge.v2_names(form.get('add', ''), merge.ALLOW_RE, 'an allowed caller is an app name or team:<team>')
+            remove = set(merge.v2_names(form.get('remove', ''), merge.ALLOW_RE,
+                                        'an allowed caller is an app name or team:<team>'))
+            allows = ','.join(dict.fromkeys([*(name for name in declared.allows if name not in remove), *add]))
+            if allows == ','.join(declared.allows):
+                raise actions.ActionError('that changes nothing: name an app or team:<team> to allow or stop allowing')
+            form = {**form, 'allows': allows}
+        elif change == 'promote':
+            if form.get('image') != declared.image_reference:
+                raise actions.ActionError('staging changed since this page was loaded; refresh and review it again')
+        return merge.ACTIONS[action].commands(app, env, form)
 
     def secret_states(found: Instance, status: ops.InstanceStatus, declared: declared_records.Declared) -> dict[str, str] | None:
         """Each secret name and whether Git has its value (ops.secret_states); None when Git cannot be read.
@@ -179,13 +214,24 @@ def routes(ctx: Context) -> list[Route]:
         found = Instance.named(app, 'staging')
         if found is None or github is None:
             return page(request, 'error.html', status_code=409, error='Staging and a GitHub token are required.')
-        refused = v2_writes(request, found, declared_records.of(app, 'staging', document_source), 'promote')
-        if refused:
-            return refused
         try:
             existing = [pr for pr in gh.console_prs(runner, github) if promotion.matching(pr, app)]
             if existing:
                 return page(request, 'promotion.html', review={'app': app}, prs=existing)
+            declared = declared_records.of(app, 'staging', document_source)
+            if declared.source == declared_records.V2:
+                if refused := v2_read_only(request, app, 'staging', 'promote'):
+                    return refused
+                production = declared_records.of(app, 'prod', document_source)
+                if not production.declared:
+                    raise actions.ActionError('v2 has no first promotion: production has no records yet')
+                review = {'app': app, 'v2': True,
+                          'outcome': 'same' if declared.image_reference == production.image_reference else 'update',
+                          'image': declared.image_reference, 'previous': production.image_reference,
+                          'address': '', 'diff': '', 'diff_files': 0, 'diff_problem': '', 'held': 'needs manual review',
+                          'rollback': False, 'secrets': [], 'storage': None, 'needs_host': False, 'admits': [],
+                          'setup': False}
+                return page(request, 'promotion.html', review=review, prs=existing)
             status = promotion.staging_status(runner, github, found)
             if status is None:
                 raise actions.ActionError('staging is missing; deploy staging before promoting')
@@ -197,25 +243,34 @@ def routes(ctx: Context) -> list[Route]:
             return page(request, 'error.html', status_code=502, error=str(error))
 
     async def change_app(request: Request) -> Response:
-        """Promote, scale, change access to, change the connections of or remove an instance: a PR made by the clone's app-* commands."""
+        """Promote, scale, change access to, change the connections of or remove an instance: a PR made by v2's binary
+        for a v2 instance, or by the clone's app-* commands for a v1 one still to be migrated."""
         app, env, change = (request.path_params[k] for k in ('app', 'env', 'change'))
         found = Instance.named(app, env)
-        if found is None or change != 'promote' and change not in (*merge.INSTANCE_KINDS, 'remove'):
+        if found is None or change != 'promote' and change not in (*merge.INSTANCE_KINDS, 'remove', *merge.V2_ACTION):
             return page(request, 'error.html', status_code=404, error='No such app instance or change.')
         if github is None:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
-        refused = v2_writes(request, found, declared_records.of(app, env, document_source), change)
-        if refused:
-            return refused
         fields = parse_qs((await request.body()).decode(), keep_blank_values=True)
         form = {k: v[0] for k, v in fields.items()}
+        declared = declared_records.of(app, env, document_source)
+        v2_instance = declared.source == declared_records.V2
+        if v2_instance:
+            if refused := v2_read_only(request, app, env, change):
+                return refused
+        action = merge.V2_ACTION.get(change, change) if v2_instance else change
         try:
-            if env not in merge.ACTIONS[change].envs:
-                raise actions.ActionError(f'{change} from the {" or ".join(merge.ACTIONS[change].envs)} instance')
+            if env not in merge.ACTIONS[action].envs:
+                raise actions.ActionError(f'{change} from the {" or ".join(merge.ACTIONS[action].envs)} instance')
             if change == 'connect':
                 for ticked in ('calls', 'subscribe'):  # one checkbox per app or event
                     form[ticked] = ','.join(value for value in fields.get(ticked, []) if value)
-            commands = merge.ACTIONS[change].commands(app, env, form)  # malformed: refused before reading the cluster
+            if v2_instance:
+                if change in ('egress', 'schedule'):
+                    raise actions.ActionError(f'v2 does not model {change}: the form is not offered for this instance')
+                commands = v2_commands(change, app, env, form, declared)
+            else:
+                commands = merge.ACTIONS[change].commands(app, env, form)
             if change == 'connect':  # only what the form offered: the environment's web apps and events
                 callable_apps, offered_events, problem = connectable(env, app)
                 if problem:
@@ -226,7 +281,7 @@ def routes(ctx: Context) -> list[Route]:
             return page(request, 'error.html', status_code=400, error=str(error))
         except CommandError as error:
             return page(request, 'error.html', status_code=502, error=str(error))
-        return propose(request, change, app, env, commands, auto_merge=form.get('hold') != 'on')
+        return propose(request, action, app, env, commands, auto_merge=not v2_instance and form.get('hold') != 'on')
 
     async def use_offer(request: Request) -> Response:
         """The catalogue's Use: the app chosen there connects, as its own Connect to an app would."""

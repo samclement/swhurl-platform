@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}New app{% endblock %}
+{% block main %}
+<p class="crumbs"><a href="/apps">Deployments</a> › New app</p>
+<h1>Start a new app</h1>
+<p class="lead">The console does not create apps any more: it writes v2 records, and v2 has no create path yet.
+Make the app outside the console, then migrate its staging instance to v2.</p>
+<section class="card">
+  <div class="card-body">
+    <ol class="plain">
+      <li><code>make app-repo NAME=&lt;app&gt; TYPE=&lt;type&gt; STACK=&lt;stack&gt;</code> creates the public repository and prints the <code>app-new</code> line for its first image.</li>
+      <li><code>make app-new NAME=&lt;app&gt; ARGS="--from-repo samclement/&lt;app&gt; --env staging --team &lt;team&gt; --image &lt;image&gt;"</code> writes v1's staging records.</li>
+      <li><code>swhurl-v2 migrate --snapshot &lt;snapshot&gt; --app &lt;app&gt; --env staging --profile v2/testdata/profile.json --source-repository samclement/&lt;app&gt; --source-commit &lt;full commit&gt; --out .</code> writes v2's records and compiled files.</li>
+      <li>Delete the v1 records and unit, commit and push. Flux switches the unit when the v2 unit is registered.</li>
+    </ol>
+    <p class="muted">{{ pointer }}</p>
+    <p class="muted">A first production is still a v1-only promotion: promote it with <code>make app-promote</code> while it is v1's, then migrate production as well.</p>
+  </div>
+</section>
+{% endblock %}

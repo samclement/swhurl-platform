@@ -26,7 +26,7 @@ from swhurl.apps import repo
 from swhurl.apps.contract import APP_OWNER, APP_TYPES, STACKS, TEAMS_FILE, type_answers
 from swhurl.apps.model import records, store
 from swhurl.apps.model.records import SETTINGS_FILE, Release, Settings
-from swhurl.console import merge
+from swhurl.console import merge, v2
 from swhurl.console.actions import ActionError, Job
 from swhurl.console.github import AUTO_MERGE_LABEL, BASE, GitHub, GitHubAPI
 from swhurl.console.merge import ACTIONS
@@ -110,10 +110,17 @@ def publish(api: GitHubAPI, job: Job, tree: Path, before: dict, after: dict, cha
     return url
 
 
-def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str], input: str | None = None) -> None:
-    """The clone's own tooling (``app-new``, ``app-promote``, ...): its rules, policy check and SOPS recipients.
-    ``input`` is its standard input: the one way a secret reaches it (never an argument, never in the job's lines).
-    It writes no bytecode: every file it leaves in the clone becomes part of the commit."""
+def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str], input: str | None = None,
+             tool: str = 'python') -> None:
+    """The clone's own tooling (``app-new``, ``app-promote``, ...) or v2's binary. ``input`` is a secret's
+    one way in (never an argument, never in the job's lines). A python tool leaves no bytecode: every file it
+    writes in the clone becomes part of the commit. A v2 refusal is shown in v2's own words."""
+    if tool == 'v2':
+        result = runner.run([v2.BINARY, *argv], cwd=clone, check=False)
+        job.lines += (result.stdout + result.stderr).splitlines()
+        if result.returncode:
+            raise ActionError(v2.refusal(result))
+        return
     result = runner.run([sys.executable, '-m', 'swhurl', command, *argv], cwd=clone, check=False, input=input,
                         env={'PYTHONPATH': str(clone / 'tools'), 'PYTHONDONTWRITEBYTECODE': '1'})
     job.lines += (result.stdout + result.stderr).splitlines()
@@ -145,7 +152,12 @@ def open_action(runner: Runner, github: GitHub, job: Job, action: str, name: str
         promoting = review.proposal(tree, name, commands) if review else None
         previous = entry.read(tree, name, env)
         for command in commands:
-            run_tool(runner, job, tree, command.name, list(command.argv), input=command.input)
+            argv = list(command.argv)
+            if command.tool == 'v2':  # the commit and the reviewed revision come from the tree just downloaded
+                expect = (v2.instance_revision(runner, tree, name, entry.target_env or env)
+                          if command.name == 'promote' else '')
+                argv = v2.resolve(argv, revision=head, expect=expect)
+            run_tool(runner, job, tree, command.name, argv, input=command.input, tool=command.tool)
         if entry.kind == 'new-app':
             # A new app's PR carries no egress port: app-new renders one for CLI use; the gate allocates it on newest main.
             path = tree / 'apps' / name / 'staging' / SETTINGS_FILE
@@ -162,7 +174,7 @@ def open_action(runner: Runner, github: GitHub, job: Job, action: str, name: str
         reason = merge.judge(action, name, env, changed, previous, proposed,
                              *([promoting.staged(api, head)] if promoting else []))
         encrypted = merge.encrypted_reason(action, name, env, {p: statuses[p] for p in changed}, tree)
-        auto_merge = auto_merge and not (reason or encrypted)
+        auto_merge = auto_merge and entry.gated and not (reason or encrypted)
         plan = ''
         for path in changed:
             job.lines.append(f'{statuses[path]} {path}')

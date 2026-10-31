@@ -4,5 +4,6 @@
 !pyproject.toml
 !uv.lock
 !tools/
+!v2/
 !clusters/home/flux-system/sources/configmap-platform-settings.yaml
 **/__pycache__

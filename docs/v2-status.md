@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: 1b phases 2–5: the console writes v2 (its image runs `swhurl-v2`), then v1's commands, modules and readers are deleted so v2 is the only writer (the repository read follows)
+Gate: 1b phase 2's console half — the adapter and the routes, with the PR flow as it is and the one open choice of whether a v2 PR may auto-merge — then phases 3–5: v1's commands, modules and readers are deleted so v2 is the only writer (the repository read follows)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -96,6 +96,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Done live 30 October 2026**: `swhurl-try-11` production was migrated to v2 and promoted from its v1 digest to its staging's release; `make app-status` and `observe` agree, and a repeat promotion is a no-op. A first promotion (creating production) is still not modelled, a rollback's direction is stated rather than decided, and v1 callees no longer admit the migrated caller. Both instances were removed on 31 October 2026; the record of what they proved stands | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
 | What an app offers | A release states its own description, API path and the commit its documents were read at; an instance renders them and carries the documents | **Done and live 30 October 2026**: the three facts are release identity, all four v2-owned HelmReleases then carried the variable and the two annotations in the cluster (the two described instances restarted onto it; the other two did not, an annotation being metadata; two remain), and the documents travel as declared inputs from `v2-records/` to `v2-apps/`, where the console reads them | [slice](#slice-record-what-an-app-offers-30-october-2026), [evidence](current-state.md#what-an-app-offers-carried-and-rendered-30-october-2026) |
 | Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **1a done, and 1b's migrations done 31 October 2026**: the nine staging instances are v2's — records, compiled files and units, one writer per instance — and a migrated record states the platform's manifest digest, read from the registry rather than copied from the predecessor; all four production instances are v2's too, `demo-orders` and `demo-shop` moved together because one calls the other, with their retained claims adopted by name and production's bare host restored in `kernel.routeHost`; v1's writer is deleted next — [record](#slice-record-the-cutover-reaches-production-four-instances-31-october-2026), [1a record](#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
+| Derived files | One render from v2's own records: the resolution, every compiled instance folder and unit, and the platform's documents, comparable with Git | **Done, offline 31 October 2026**: `swhurl-v2 render` composes the existing resolvers, renderers and compiler, so a record change cannot leave the tree half-rendered; `make check-v2` now compares 208 files — `v2-apps/` and the instance units were unchecked before — and a one-field record change names the file it moves. The console writes through it next — [record](#slice-record-one-render-from-the-records-offline-31-october-2026) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **One live** (`swhurl-try-10` staging, stateful on its own volume; the other, `swhurl-try-11`, was removed on 31 October 2026), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
 | Always-on instance surface | Telemetry (the endpoint and the way out to it), the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: the env, tokens and team labels rolled to both v2-owned instances, and a reporting image's policy admits the collector the env names (the export was found blocked the same day; [evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)) |
@@ -111,7 +112,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 **Not yet true, and what would make it true:** v2 copies an instance's offered documents and never fetches them, so a
 v2-owned instance that follows a new image still shows the documents of the commit they were read at, and a v2-owned
 instance that no migration created has none until the operator supplies them — a repository read, with its adapter and
-credential, would make them travel; delivery is manual (compile, commit, push) for everything except a v2-owned staging instance's images, which the v2 Deploy workflow delivers; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, and `resolve` still needs the v1-shaped record copies the handover leaves behind; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*. A v2 caller of a v1-owned callee now loses its grant: after `swhurl-try-11` production left v1, `swhurl-try-10` and `swhurl-try-12` production stopped admitting it, until those callees migrate or v1 reads v2's records.
+credential, would make them travel; delivery is manual (compile, commit, push) for everything except a v2-owned staging instance's images, which the v2 Deploy workflow delivers; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, which `render` now derives from v2's own records (`resolve` still reads a v1-shaped snapshot, for `shadow`); observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*. A v2 caller of a v1-owned callee now loses its grant: after `swhurl-try-11` production left v1, `swhurl-try-10` and `swhurl-try-12` production stopped admitting it, until those callees migrate or v1 reads v2's records.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); the egress cutover, which changes live outbound traffic and needs the grants recorded before it can refuse the rest; and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -202,6 +203,42 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
 
+## Slice record: one render from the records (offline, 31 October 2026)
+
+- **Outcome:** `swhurl-v2 render` is the whole-tree render: from `--records DIR` and the profile it writes the
+  resolution (`calls.json`), every instance's compiled folder and unit (`v2-apps/`, `clusters/home/app-*.json`),
+  the egress allocation and the proxy's two files, `platform/auth/`, `platform/nats/users.json` and
+  `platform/reloader/values.json`; `--check` compares all of them with what `--out` holds and writes nothing.
+  It is command-level composition of what already existed — `calls.Resolve`, `events.Resolve`, the renderers
+  `auth`/`users`/`reloader`/`egress`/`proxy` already used, and `orchestration.CompileInto` — so no pure package
+  gained an effect, no new package appeared, and no existing command's output or exit code changed (the five
+  factored functions have the same steps and errors; their tests are unmodified).
+- **Why it was needed:** the resolution was produced only by `resolve --snapshot`, and the snapshot is v1's YAML
+  records. With the migrations done, nothing could derive `v2-records/calls.json` from v2's own records, so the
+  console could not complete a `calls`/`allows`/`subscriptions` change — the gap that blocked the deletion plan's
+  phase 2 ([the finding](v2-deletion-plan.md#3-phases)).
+- **Contract:** exit 0 written or unchanged; 2 a refused record (named `<app>/<env>: …`), a malformed or missing
+  `--revision` for a write, or `--out` inside `apps/`; 1 an I/O failure or a `--check` difference. A write states
+  the commit it rendered in `calls.json` and the allocation; `--check` compares those two documents without it, so
+  only content counts, and it never touches the writer.
+- **Evidence, offline:** `make check-v2` (gofmt, vet, 20 packages, then `check-rendered.sh`) is green, and on this
+  tree `render --check` reports **208 files checked, 0 differ** with `git status` unchanged, both with and without
+  `--revision`. A negative control — one field changed in `v2-records/demo-shopper/staging/instance.json` — exits 1
+  naming `v2-apps/instances/demo-shopper/staging/helmrelease.json`, and writes nothing. `render_test.go` (6 tests)
+  pins the written set, the check, the difference it names, the refusals in both modes, the ignored revision and a
+  database's backup grant.
+- **What changed for the checks:** `v2/check-rendered.sh` is now one `render --check`, so `make check-v2` and CI also
+  compare `v2-apps/` and the instance units — neither was checked before — and `platform/` is compared by the same
+  code that writes it. `images/console/Dockerfile` builds `swhurl-v2` from a pinned `golang:1.26.0-bookworm` stage
+  and installs it; `v2/` joined `CONSOLE_IMAGE_INPUTS` and `validate.yml`'s copy of the list, and
+  `v2/coexistence_test.go`'s "the console image must not consume v2" assertion became "it builds exactly the binary
+  and nothing else of v2", which is the contract the deletion plan's decision 2 replaces.
+- **Not exercised:** the doc/assets a write would prune are invisible to `--check`; a render that fails part-way
+  through (an I/O error or a refused symlink) can leave earlier files written; an instance whose records were
+  deleted keeps its compiled folder and unit; and nothing live was touched — the console image will rebuild once on
+  merge (same behaviour, new binary inside) and no manifest changes.
+- **Next gate:** the console half of phase 2, `console/v2.py` and the routes through it.
+
 ## Slice record: the cutover reaches production (four instances, 31 October 2026)
 
 - **Outcome:** `demo-orders` and `demo-shop` production are v2's. `swhurl-v2 migrate` read their v1 records from a
@@ -255,7 +292,7 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   difference); the frozen predecessors under `v2/testdata/legacy/{demo-orders,demo-shop,swhurl-try-10,
   swhurl-try-30}/prod/` make `TestMigrateReproducesCommittedInstances` replay all four. Live evidence is in
   [current state](current-state.md#the-production-cutover-four-instances-31-october-2026).
-- **Next gate:** [the deletions](v2-deletion-plan.md) that make v2 the only writer.
+- **Next gate:** the console half of [the deletion plan's phase 2](v2-deletion-plan.md#3-phases) — `console/v2.py`, `merge`/`proposal`/`promotion`/routes through it, and its tests — now that `render` lets a console PR carry a consistent tree; the one open decision is whether a v2 PR may auto-merge, or is held for a person.
 
 ## Slice record: the cutover reaches the cluster (a staging instance, then three, then three)
 

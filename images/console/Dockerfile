@@ -7,6 +7,13 @@
 
 FROM ghcr.io/astral-sh/uv:0.10.9@sha256:10902f58a1606787602f303954cea099626a4adb02acbac4c69920fe9d278f82 AS uv
 
+# v2 is one static binary: the console writes v2's records by running it, never by modelling them in Python
+# (docs/v2-deletion-plan.md section 5, decision 2). The pinned toolchain is the one images/backup/Dockerfile uses.
+FROM docker.io/library/golang:1.26.0-bookworm@sha256:2a0ba12e116687098780d3ce700f9ce3cb340783779646aafbabed748fa6677c AS v2
+WORKDIR /src
+COPY v2/ ./
+RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/swhurl-v2 ./cmd/swhurl-v2
+
 FROM docker.io/library/python:3.12-slim-bookworm@sha256:1aaa65a85fda306ffb8b910824d4e93bdce61e212c7e87168123ea3073b41a1a AS tools
 ARG KUBECTL_VERSION=v1.34.4
 ARG KUBECTL_SHA256=d50c359d95e0841eaad08ddc27c7be37cba8fdccfba5c8e2ded65e121ff112db
@@ -37,6 +44,7 @@ FROM docker.io/library/python:3.12-alpine@sha256:4c47124a8391cb7a9f571164147d154
 # The base image's ca-certificates serve kubectl, helm and git.
 RUN apk add --no-cache git
 COPY --from=tools /out/ /usr/local/bin/
+COPY --from=v2 /out/swhurl-v2 /usr/local/bin/swhurl-v2
 COPY --from=deps /app/.venv /app/.venv
 COPY tools/ /app/tools/
 # The tooling reads BASE_DOMAIN from here when it is imported.

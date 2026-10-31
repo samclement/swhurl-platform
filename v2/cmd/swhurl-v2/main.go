@@ -31,6 +31,8 @@ const usage = `usage:
   swhurl-v2 reloader --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
   swhurl-v2 mint --instance INSTANCE.json --profile PROFILE.json --out DIR [--rotate]
   swhurl-v2 resolve --snapshot SNAPSHOT.json
+  swhurl-v2 render --records DIR --profile PROFILE.json --out DIR [--revision REVISION] [--previous EGRESS.json] \
+      [--check]
   swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
   swhurl-v2 deploy --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json \
@@ -129,6 +131,16 @@ resolve reads one snapshot's declarations and writes the resolved connections as
 which pairs are connected, which wait for the other side and why, and which are refused. compile takes
 that document with --calls and renders only the pairs it names for the instance being compiled.
 
+render renders every file v2 derives from its records in one run: the resolution at DIR/calls.json, every instance's
+compiled files and unit, the egress allocation (keeping the ports --previous gives, else the ones the allocation under
+--out holds) with the proxy's configuration and policy, the auth folder, NATS's user list and Reloader's watch list.
+Every DIR/<app>/<env> folder holding an instance record is read, production as well as staging, with its seed copied as
+bytes and its offers folder. Everything is decided before anything is written, so a record the compiler or a decoder
+refuses writes nothing. A write needs --revision, the commit the records are read at, which the resolution and the
+allocation record. It never touches the cluster, and DIR must be under --out. --check writes nothing at all: it compares
+every file it renders with the one under --out, names each that differs, and exits 1 if any do; the revision the
+resolution and the allocation record is provenance, not content, so it is not compared.
+
 preview renders one predecessor instance from its records and compares the result with the HelmRelease
 that predecessor committed, writing a v2-preview document to stdout. It reads only the five named JSON
 files and applies nothing: the legacy records are given as JSON, so no legacy YAML is read here.
@@ -174,7 +186,7 @@ carries what each step did, the job's log as evidence, and the app's own state; 
 
 Exit 0: success/no-op (for observe: a report was produced, whatever its verdict; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
-started but did not complete, or file and output I/O failure.
+started but did not complete, a render --check that found a difference, or file and output I/O failure.
 `
 
 func main() {
@@ -294,6 +306,7 @@ var commands = map[string]func(cli, request) int{
 	"preview":           cli.preview,
 	"shadow":            cli.shadow,
 	"resolve":           cli.resolve,
+	"render":            cli.render,
 	"egress":            cli.egress,
 	"proxy":             cli.proxy,
 	"auth":              cli.auth,
@@ -319,7 +332,7 @@ type request struct {
 	previous, egressFile, allocation                   string
 	records                                            string
 	eventsSecret, offers, change                       string
-	rotate                                             bool
+	rotate, check                                      bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
@@ -494,6 +507,13 @@ func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON (enables the live ownership check)")
 	case "resolve":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+	case "render":
+		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.revision}, "revision", "the commit the records are read at (required to write)")
+		flags.Var(&once{value: &r.previous}, "previous", "a previous allocation to keep ports from (optional)")
+		flags.Var(&onceBool{value: &r.check}, "check", "compare with the files under --out and write nothing")
+		r.registerOut(flags)
 	case "egress":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
@@ -634,6 +654,8 @@ func (r *request) platformNamed() ([]string, bool) {
 	switch r.command {
 	case "resolve":
 		return []string{r.snapshot}, true
+	case "render":
+		return []string{r.records, r.profile, r.out}, true
 	case "proxy":
 		return []string{r.allocation, r.profile}, true
 	case "egress", "auth", "shadow":

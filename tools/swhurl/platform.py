@@ -39,7 +39,8 @@ CONSOLE_TOKEN_KEY = 'GITHUB_TOKEN'
 # The second token in the same Secret: creates new app repositories (all repositories; console/repos.py).
 APP_REPOS_TOKEN_KEY = 'APP_REPOS_TOKEN'
 # What the console image is built from (images/console/Dockerfile); validate.yml's console-image job hashes the same paths.
-CONSOLE_IMAGE_INPUTS = ('images/console', '.dockerignore', 'pyproject.toml', 'uv.lock', 'tools', str(SETTINGS))
+# v2 is a build input since the deletion plan's phase 2 (decision 2): the image runs swhurl-v2 to write v2's records.
+CONSOLE_IMAGE_INPUTS = ('images/console', '.dockerignore', 'pyproject.toml', 'uv.lock', 'tools', 'v2', str(SETTINGS))
 def base_domain(root: Path = ROOT) -> str:
     """``BASE_DOMAIN`` from platform-settings: parent of platform hosts and the sign-in cookie."""
     data = yamlio.load((root / SETTINGS).read_text()).get('data') or {}

@@ -36,14 +36,7 @@ func (c cli) users(r request) int {
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	instances, err := usersFactOf(pinned)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	// The two service identities are the platform's own, so they come from the profile with the broker's
-	// address and the Secret that decrypts an instance's seed.
-	rendered, err := kernel.RenderUsers(kernel.NATSUsers{ControllerKey: profile.NATS.ControllerKey,
-		ConsoleKey: profile.NATS.ConsoleKey, Instances: instances})
+	instances, rendered, err := renderUsers(pinned, profile)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -62,6 +55,19 @@ func (c cli) users(r request) int {
 		return c.writeFiles(r.out, rendered.Files)
 	}
 	return emit(c.out, c.diagnostic, encoded)
+}
+
+// renderUsers is the server's user list for one snapshot, and the instances it lists.
+func renderUsers(pinned snapshot, profile kernel.PlatformProfile) ([]kernel.NATSUser, kernel.ResourceSet, error) {
+	instances, err := usersFactOf(pinned)
+	if err != nil {
+		return nil, kernel.ResourceSet{}, err
+	}
+	// The two service identities are the platform's own, so they come from the profile with the broker's
+	// address and the Secret that decrypts an instance's seed.
+	rendered, err := kernel.RenderUsers(kernel.NATSUsers{ControllerKey: profile.NATS.ControllerKey,
+		ConsoleKey: profile.NATS.ConsoleKey, Instances: instances})
+	return instances, rendered, err
 }
 
 // usersFactOf is every instance that signs in, with what it may do. An instance that declares events and has no

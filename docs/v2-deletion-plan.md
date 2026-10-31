@@ -211,6 +211,28 @@ phase 3 (§2.3).
   refusal; the console cannot write a v1 record.
 - Live: one change to a throwaway staging instance, then revert; a promotion of a staging release that already
   exists in production (no new image), then confirm `observe`.
+- **Found before the port, 31 October 2026: the three commands are not enough.** `v2-records/calls.json` (the
+  call and event resolution) came only from `resolve --snapshot`, and the snapshot is v1's YAML records: nothing
+  derived it from `v2-records/`, so a `calls`/`allows`/`subscriptions` edit could not be completed — `edit` says so
+  itself — and `remove` reports the platform documents it will not write. The per-instance files, the units and the
+  platform documents were a mix of `make` targets, hand-pasted snapshots and `v2/check-rendered.sh` (which checked
+  neither `v2-apps/` nor the units). A console that ran only `edit`/`remove`/`promote` would therefore commit a tree
+  whose change does not take effect, or re-implement that pipeline in Python — the second model decision 2 refuses.
+- **Done 31 October 2026, offline: `swhurl-v2 render`.** One command renders the whole tree from the records —
+  `calls.json`, every instance's compiled folder and unit, the egress allocation and the proxy's two files, the
+  auth folder, NATS's users and Reloader's values — and `--check` compares all of it instead of writing. It reuses
+  the existing resolvers, renderers and `orchestration.CompileInto` (no new semantics, no new package), and it is
+  what phase 4's check needs: `v2/check-rendered.sh` is now one `render --check`, and `make check-v2` compares 208
+  files, of which `v2-apps/` and `clusters/home/app-*.json` were previously unchecked. Verified on this tree: 208
+  checked, 0 differ, nothing written; a one-field drift in a record names the file it moves. `images/console/Dockerfile`
+  now builds the binary from a pinned `golang:1.26.0-bookworm` stage, and `v2/` is in the console's content hash
+  (`platform.CONSOLE_IMAGE_INPUTS` and `validate.yml`, which `v2/coexistence_test.go` now holds in step — the
+  assertion that the image must *not* consume v2 was the contract decision 2 replaces).
+- **Next, and the one open choice:** the console half (adapter, `merge`/`proposal`/`promotion`/routes, tests). The
+  PR flow stays a temp checkout + the binary + the diff, but whether a v2 PR may auto-merge is the operator's call:
+  hold every v2 PR for a person (smallest; the gate's v1 read/judge/`app-sync` stays untouched until phase 3
+  deletes it), or re-express the gate's before/after rule on v2's records and replace its merge-time `app-sync`
+  with `render`.
 
 **Phase 3 — delete the v1 writer commands and modules (1–2 days).**
 - Remove the **delete** rows from `commands.py`, the Makefile `COMMANDS`, [commands](commands.md), their tests

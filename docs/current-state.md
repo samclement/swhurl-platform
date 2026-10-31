@@ -2,6 +2,26 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The derived tree comes from v2's own records (31 October 2026)
+
+- **What changed:** `swhurl-v2 render` (commit `404b0bdd`) derives the resolution, every instance's compiled folder
+  and unit, the egress allocation and the proxy's files, and the auth/users/reloader documents from `v2-records/`
+  alone, and `--check` compares all of it with what Git holds. `v2/check-rendered.sh` is that one call, so
+  `make check-v2` and CI now compare `v2-apps/` and the `clusters/home/app-*.json` units too. The console image
+  builds the binary from a pinned Go stage and hashes `v2/` (`e9ad42de`).
+- **Nothing live changed, and nothing was applied.** The only live effect is the console image rebuilding with the
+  binary inside when this reaches `main`; Validate's deploy job pins it as usual. No cluster read was made for this
+  change and no manifest differs.
+- **Verified offline, on this tree at `9616bf06`:** `render --check` reports **208 files checked, 0 differ** with
+  `git status` unchanged, with and without `--revision`; a one-field change to
+  `v2-records/demo-shopper/staging/instance.json` exits 1 naming
+  `v2-apps/instances/demo-shopper/staging/helmrelease.json`, writes nothing, and was reverted; `make check-v2`
+  (gofmt, vet, 20 packages, `check-rendered.sh`) and `make check` (1031 tests, `K` unset) are green.
+- **Not exercised:** the image build itself (no container build was run here) and the live console rollout of an
+  image carrying the binary; `render`'s write path against this repository (only `--check` ran); the doc/assets a
+  write would prune, which `--check` cannot see; and a render interrupted part-way, which can leave earlier files
+  written.
+
 ## The console reads v2 and writes nothing (31 October 2026)
 
 - **What changed:** the console's one Git reader reads `v2-records/<app>/{app.json,<env>/instance.json,release.json}`

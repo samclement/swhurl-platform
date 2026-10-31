@@ -35,11 +35,7 @@ func (c cli) reloader(r request) int {
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	namespaces, err := reloaderFacts(pinned, profile.Reloader.Namespaces).Namespaces()
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	rendered, err := kernel.RenderReloader(namespaces)
+	namespaces, rendered, err := renderReloader(pinned, profile)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -58,6 +54,16 @@ func (c cli) reloader(r request) int {
 		return c.writeFiles(r.out, rendered.Files)
 	}
 	return emit(c.out, c.diagnostic, encoded)
+}
+
+// renderReloader is Reloader's values for one snapshot, and the namespaces they watch.
+func renderReloader(pinned snapshot, profile kernel.PlatformProfile) ([]string, kernel.ResourceSet, error) {
+	namespaces, err := reloaderFacts(pinned, profile.Reloader.Namespaces).Namespaces()
+	if err != nil {
+		return nil, kernel.ResourceSet{}, err
+	}
+	rendered, err := kernel.RenderReloader(namespaces)
+	return namespaces, rendered, err
 }
 
 // reloaderFacts is every instance's declaration about its own Secrets: the public key it signs in with and the

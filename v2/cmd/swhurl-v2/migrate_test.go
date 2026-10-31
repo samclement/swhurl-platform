@@ -33,6 +33,12 @@ var registryAnswers = map[string]registry.Image{
 	// demo-shop production: the same, for its release.
 	"sha256:e7e516fd6c3897b6d13c5045a9ad97fce094c66bb148e8f95b2ab2cecc0d63ec": {
 		Digest: "sha256:a4b65288fadb751fd130f9c03636313b9ed8dff0983aec529ced081aeab85985", MediaType: kernel.ManifestMediaType},
+	// swhurl-try-10 production: a database instance's index, and the manifest the registry names.
+	"sha256:47c6f4c7a0103ddf5ec4ba83900e9b135b09dcddb46fbcad8c4908797495302a": {
+		Digest: "sha256:b0b406cd418b26008f1603d4394495d1c00b434a5a14c1b8680cf3bcfafaccc2", MediaType: kernel.ManifestMediaType},
+	// swhurl-try-30 production: a worker's index, and the manifest the registry names.
+	"sha256:b9dc9318d8f8ce5e2b7e9758fe257fa26f4e666e3494fd8f242e61c426bab981": {
+		Digest: "sha256:d6b10b8ae439bc2085a60ded73288dba57528257d1218d64572333f758699b94", MediaType: kernel.ManifestMediaType},
 	"sha256:33c6e1da2a0530e154e768268b599d1162bf3b4ab591472e3947218cbe740dd1": {
 		Digest: "sha256:3f1587e04100ccac3fcce9c64cd8b71cd332888cfc0322dc2aab71d6b2cabb1f", MediaType: kernel.ManifestMediaType},
 	"sha256:db8b46171217c395abdea6a4060a452e3baa8ada18c72ee92fd046858c44b534": {

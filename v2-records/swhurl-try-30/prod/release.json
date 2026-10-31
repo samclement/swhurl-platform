@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "application": "swhurl-try-30",
+  "source": {
+    "repository": "samclement/swhurl-try-30",
+    "commit": "3cbe7bb78693c40094e50b3246ab46b909ffa84b"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/swhurl-try-30",
+    "digest": "sha256:d6b10b8ae439bc2085a60ded73288dba57528257d1218d64572333f758699b94",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "worker",
+    "port": 0,
+    "healthPath": "",
+    "uid": 65532
+  },
+  "telemetry": true,
+  "publishes": [
+    "worked"
+  ],
+  "description": "A swhurl app",
+  "offers": "3cbe7bb78693c40094e50b3246ab46b909ffa84b",
+  "releaseId": "rel-sha256:a2c56b3bbbb48a18f36450f4d3736336e911dce8e958e9ef59b82d276914eae9"
+}

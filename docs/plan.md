@@ -8,7 +8,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 
 ### Open work
 
-**Where each workstream stands, and what finishes it: [workstreams](workstreams.md).** The two offline workstreams keep their status, contracts and handoff on their own pages; the numbered items below are the live platform's detail.
+**Where each workstream stands, and what finishes it: [workstreams](workstreams.md).** The two offline workstreams keep their status, contracts and handoff on their own pages; the numbered items below are the live platform's detail. **Approved 31 October 2026: the v2 cutover** — v2 gains `edit`, `remove` and a writer that prunes, then owns every instance and v1's writer is deleted ([decisions](v2-status.md#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026)).
 
 1. **PR06 — private app repositories and images** ([section 4](#private-app-repositories-and-images--planned-9-october-2026-not-started)). **On hold while the incident reviewer is rolled back.** No private-repository or image change was implemented. The 9 October design in section 4 remains a record for reconsideration, not the next execution task.
 2. **PR08a gate** (section 5; drill plan in [section 13](#13-recovery-drill-pr08a-gate-and-fresh-bootstrap--designed-3-october-2026-not-started)): restore on a separate machine from S3 using only the docs. Follow-ups: replace the backup use of IAM user `sam` with scoped credentials; the per-database CronJobs in [section 25](#25-per-database-backups--designed-18-october-2026-started-18-october-2026), deferred until after section 24's cutover. A public pinned backup image does not depend on the deferred private-image work in PR06.

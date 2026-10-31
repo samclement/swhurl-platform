@@ -192,18 +192,24 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
         except ReadError:  # an account that may not list namespaces still gets the rest
             return []
 
+    def allow_lists() -> list[dict]:
+        try:
+            return items(runner, CALLERS)
+        except ReadError:  # an account without ConfigMaps still gets every other fact (see platform/console/rbac.yaml)
+            return []
+
     def git_source() -> dict:
         try:
             return runner.json(SOURCE) or {}
         except CommandError as error:
             raise ReadError(str(error)) from None
     listed = [functools.partial(items, runner, RELEASES), namespaces, functools.partial(items, runner, UNITS),
-              functools.partial(items, runner, CALLERS), functools.partial(items, runner, INGRESSES)]
+              allow_lists, functools.partial(items, runner, INGRESSES)]
     judged = [git_source, functools.partial(items, runner, PODS), functools.partial(items, runner, WORKLOADS)]
     read = runner.together(*listed, *(judged if states else ()))
     releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in read[0]}
     teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(interface.TEAM, '') for n in read[1]}
-    allow_lists, ingresses = read[3], read[4]
+    rendered_callers, ingresses = read[3], read[4]
     found = [(instance, unit, releases.get((instance.namespace, instance.app)))
              for unit in read[2] if (instance := Instance.of_unit(unit['metadata']['name']))]
     # A unit may disappear before Helm finishes uninstalling its release. Keep it visible until both are gone.
@@ -228,7 +234,7 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
         annotations = ((release or {}).get('metadata') or {}).get('annotations') or {}
         path = str(annotations.get(interface.API_ANNOTATION, '')) if address else ''
         calls = calling.declared_calls(variables)
-        callers = calling.allowed_callers(variables) or calling.allowed_callers(allow_list(allow_lists, instance))
+        callers = calling.allowed_callers(variables) or calling.allowed_callers(allow_list(rendered_callers, instance))
         publishes, subscribes = events.published(variables), events.subscribed(variables)
         subscribers = [(event, subscriber) for env, publisher, event, subscriber in subscribed
                        if (env, publisher) == (instance.env, instance.app)]
@@ -267,7 +273,9 @@ def release_ready(release: dict | None) -> bool:
 def allow_list(configmaps: list[dict], instance: Instance) -> dict:
     """An instance's rendered allow-list, as its app reads it: v2 writes it to a ConfigMap of its own
     (``<app>-callers``) and mounts it as a file, so the app's variables no longer carry it; v1 put it in a
-    variable (which ``calling.allowed_callers`` finds first, so a v1 instance keeps what it declared)."""
+    variable (which ``calling.allowed_callers`` finds first, so a v1 instance keeps what it declared).
+    Empty when the console may not read ConfigMaps, which is why the caller asks nothing of this page: what
+    the records declare is still shown as a row per grant."""
     for item in configmaps:
         metadata = item.get('metadata') or {}
         if (metadata.get('namespace'), metadata.get('name')) == (instance.namespace, f'{instance.app}-callers'):

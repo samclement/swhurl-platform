@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "application": "demo-orders",
+  "environment": "prod",
+  "release": "rel-sha256:cc0f1ddc7812262366fb228b5f37749ef5742cf81001b1b44716b61c7e01c97f",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "authenticated-web"
+  },
+  "bindings": {},
+  "storage": {
+    "claimName": "demo-orders"
+  },
+  "allows": [
+    "team:demo"
+  ],
+  "events": {
+    "key": "UDFZTKCTUPLTYYXTE66IHVRDCRYTS5MVGF7JTMDSBHQ3GH6ETX4WMIAV"
+  }
+}

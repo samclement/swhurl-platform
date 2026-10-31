@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: 1b: the four production instances migrated, then v1's records, `app-*` commands and readers deleted so v2 is the only writer (the repository read follows)
+Gate: 1b: `swhurl-try-10` and `swhurl-try-30` production, then v1's records, `app-*` commands and readers deleted so v2 is the only writer (the repository read follows)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -95,7 +95,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Done live 30 October 2026**: `swhurl-try-11` production was migrated to v2 and promoted from its v1 digest to its staging's release; `make app-status` and `observe` agree, and a repeat promotion is a no-op. A first promotion (creating production) is still not modelled, a rollback's direction is stated rather than decided, and v1 callees no longer admit the migrated caller. Both instances were removed on 31 October 2026; the record of what they proved stands | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
 | What an app offers | A release states its own description, API path and the commit its documents were read at; an instance renders them and carries the documents | **Done and live 30 October 2026**: the three facts are release identity, all four v2-owned HelmReleases then carried the variable and the two annotations in the cluster (the two described instances restarted onto it; the other two did not, an annotation being metadata; two remain), and the documents travel as declared inputs from `v2-records/` to `v2-apps/`, where the console reads them | [slice](#slice-record-what-an-app-offers-30-october-2026), [evidence](current-state.md#what-an-app-offers-carried-and-rendered-30-october-2026) |
-| Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **1a done, live 31 October 2026**: the nine staging instances are v2's — records, compiled files and units, one writer per instance — and a migrated record states the platform's manifest digest, read from the registry rather than copied from the predecessor; 1b (four production) is next — [record](#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
+| Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **1a done, and 1b started 31 October 2026**: the nine staging instances are v2's — records, compiled files and units, one writer per instance — and a migrated record states the platform's manifest digest, read from the registry rather than copied from the predecessor; `demo-orders` and `demo-shop` production are v2's too, moved together because one calls the other, with their retained claims adopted by name and production's bare host restored in `kernel.routeHost`; `swhurl-try-10` and `swhurl-try-30` production follow, then v1's writer is deleted — [record](#slice-record-the-cutover-reaches-production-two-instances-31-october-2026), [1a record](#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **One live** (`swhurl-try-10` staging, stateful on its own volume; the other, `swhurl-try-11`, was removed on 31 October 2026), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
 | Always-on instance surface | Telemetry (the endpoint and the way out to it), the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: the env, tokens and team labels rolled to both v2-owned instances, and a reporting image's policy admits the collector the env names (the export was found blocked the same day; [evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)) |
@@ -201,6 +201,48 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 **25 October 2026 — the backup job: six decisions, all as proposed ("go").** A database instance renders its own backup — the Secret holding two *references* to the upload key, the nightly CronJob, and a policy for the pod that reaches S3 — from a new `PlatformProfile.backup` block (image and digest, S3 prefix, age recipient, writer Secret, `suspended`); Flux substitution stays the credential mechanism, with a rule that no other `${…}` may appear in a substituted instance's documents; the backup pod is the instance's second workload, so it gets the platform's narrow policy and the quota counts it; the schedule keeps v1's derivation, so a migration keeps its slot; restore and freshness are not modelled. [The slice](iteration-2-plan.md#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026). What reopens it: v2 owning secret material, or a second workload with different needs.
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
+
+## Slice record: the cutover reaches production (two instances, 31 October 2026)
+
+- **Outcome:** `demo-orders` and `demo-shop` production are v2's. `swhurl-v2 migrate` read their v1 records from a
+  snapshot at `ff467306`, resolved each record's index digest to the platform manifest through the registry, and
+  wrote the pairs, their seeds and offered documents under `v2-records/<app>/prod/`, the compiled files under
+  `v2-apps/instances/<app>/prod/`, and the units as `clusters/home/app-<app>-prod.json`; v1's prod half and unit
+  YAMLs are deleted in the same commit, so each instance keeps one writer. The two move together because
+  `demo-shop` calls `demo-orders`: v1 cannot render a caller's call variables from a callee it no longer owns, so
+  moving either alone leaves `make check-apps` red and the caller's behaviour half-rendered.
+- **The volume path first:** both are SQLite instances with retained claims, so the migration adopts each claim by
+  name (`storage.claimName`) and the compiled chart mounts `existingClaim`; the Pod keeps its Recreate strategy.
+  The acceptance is checked after the rollout: the same PVC (creation timestamp and volume name) and the data the
+  app already held read back through its own API, not a fresh database.
+- **A defect the first production migration found, fixed here:** `kernel.routeHost` derived
+  `<environment>-<app>.<domain>` for every environment, so production would have moved
+  `demo-orders.homelab.swhurl.com` to `prod-demo-orders.homelab.swhurl.com`. Production is now the bare app name,
+  which is v1's own rule; staging is unchanged and a kernel test pins production's host.
+- **What the operator will see, field by field** (the `kubectl kustomize` comparison of each v1 folder with v2's,
+  before the commit): the chart's Ingress becomes its own object with the same host, TLS secret and sign-in
+  middleware; the callers ConfigMap and auth mount are added (`demo-orders` is a callee, so only it mounts them);
+  the image is pinned by digest with no tag and moves from the index to the linux/amd64 manifest; the memory request
+  rises 32Mi to 128Mi; v1's render annotation is gone; the policy becomes deny-by-default egress with DNS, the
+  proxy port, the collector and NATS; the data volume becomes `existingClaim`; and the backup job's image loses its
+  tag. The app's own facts — team, allows, calls, events, egress grant, offers, API path and description — are the
+  migrated records' and are unchanged.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1's live behaviour changes
+  deliberately, listed above; no other instance, manifest or record changed. 2. No pure package gained an effect;
+  `routeHost` reads only the instance and the routing profile. 3. No identity moved that the migration did not
+  state: the release and instance hashes are the migration's own, the namespace, host, stream, NATS identity and
+  claim are the ones the cluster already ran, and the artifact digest changes only to the manifest the index names.
+  4. The migration's four gaps (image provenance, the tag, the stack answer, the predecessor's egress list) are in
+  its report; no refusal moved. 5. Failure paths are the `migrate` suite's, including a registry that cannot be read
+  writing nothing; the frozen predecessors now include both production instances. 6. Scope: the two remaining
+  production instances and v1's deletion are not done; the report says so. 7. Offline checks are not live
+  readiness; the rollout and data check follow the push. 8. This page, the registry, the plan and the gap list
+  change together.
+- **Evidence, offline:** `make check-v2` (all packages; `check-rendered.sh` finds `platform/` unchanged) and
+  `REQUIRE_HELM=1 make check-v2`; `make check` after the change; the frozen predecessors under
+  `v2/testdata/legacy/{demo-orders,demo-shop}/prod/` make `TestMigrateReproducesCommittedInstances` replay both.
+  Live evidence is in [current state](current-state.md#the-production-cutover-begins-two-instances-31-october-2026).
+- **Next gate:** `swhurl-try-10` and `swhurl-try-30` production, then the deletions that make v2 the only writer.
 
 ## Slice record: the cutover reaches the cluster (a staging instance, then three, then three)
 

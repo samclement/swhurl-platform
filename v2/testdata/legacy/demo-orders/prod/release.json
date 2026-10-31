@@ -1,0 +1,20 @@
+{
+  "apiPath": "/openapi.json",
+  "database": "sqlite",
+  "healthPath": "/healthz",
+  "image": {
+    "digest": "sha256:d86ea1df22036a66e520da603372d335a47c2b246f6fb4f500f7f6cfed78a5aa",
+    "repository": "ghcr.io/samclement/demo-orders",
+    "tag": "3-868c731"
+  },
+  "kind": "web",
+  "offers": "868c731",
+  "port": 8080,
+  "publishes": [
+    "created"
+  ],
+  "stack": "typescript",
+  "telemetry": true,
+  "uid": 65532,
+  "version": 1
+}

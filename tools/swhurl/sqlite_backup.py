@@ -6,6 +6,7 @@ Each instance's backup CronJob (``apps/model/backup.py``, ``backup_job``) publis
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 from collections.abc import Mapping
 from pathlib import Path
@@ -30,11 +31,23 @@ def uri(namespace: str, env: Mapping[str, str] | None = None) -> str:
 
 
 def expected(root: Path = ROOT) -> list[Instance]:
-    """The instances whose release declares a SQLite database: each must have backups."""
+    """The instances whose release declares a SQLite database: each must have backups.
+
+    Both record shapes are read while v1 still owns instances: a v2-owned instance's release is under
+    ``v2-records/<app>/<env>/release.json``, and the rest are v1's records under ``apps/``.
+    """
     world, errors = store.world(root)
     if errors:
         raise ValueError('; '.join(errors))
-    return [each for each, entry in world.items() if entry.release.database == 'sqlite']
+    found = {each for each, entry in world.items() if entry.release.database == 'sqlite'}
+    for record in sorted((root / 'v2-records').glob('*/*/release.json')):
+        try:
+            database = json.loads(record.read_text()).get('database')
+        except (OSError, ValueError) as error:
+            raise ValueError(f'{record.relative_to(root)}: cannot read it: {error}') from error
+        if database == 'sqlite':
+            found.add(Instance(record.parent.parent.name, record.parent.name))
+    return sorted(found, key=str)
 
 
 def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,

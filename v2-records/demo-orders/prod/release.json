@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "application": "demo-orders",
+  "source": {
+    "repository": "samclement/demo-orders",
+    "commit": "868c731552afcf75b26f9322f5ac5d51cb9392ee"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/demo-orders",
+    "digest": "sha256:6e7fbd5e33b1802fd437f271778089c683b1a448e063d50fb8dc32bb50f315b5",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "web",
+    "port": 8080,
+    "healthPath": "/healthz",
+    "uid": 65532
+  },
+  "database": "sqlite",
+  "telemetry": true,
+  "publishes": [
+    "created"
+  ],
+  "apiPath": "/openapi.json",
+  "offers": "868c731552afcf75b26f9322f5ac5d51cb9392ee",
+  "releaseId": "rel-sha256:cc0f1ddc7812262366fb228b5f37749ef5742cf81001b1b44716b61c7e01c97f"
+}

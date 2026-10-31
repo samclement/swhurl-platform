@@ -2,6 +2,25 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The production cutover begins: two instances (31 October 2026)
+
+- **What changed:** `demo-orders` and `demo-shop` production are v2's. `swhurl-v2 migrate` read their v1 records
+  from a snapshot at `ff467306`, resolved each record's index digest to the platform manifest through the registry
+  (`demo-orders` `sha256:d86ea1…` → `sha256:6e7fbd…`, `demo-shop` `sha256:e7e516…` → `sha256:a4b652…`), and wrote
+  the pairs, seeds and offered documents under `v2-records/<app>/prod/`, the compiled files under
+  `v2-apps/instances/<app>/prod/`, and the units as `clusters/home/app-<app>-prod.json`; v1's prod records and
+  unit YAMLs are deleted, so each instance keeps one writer. The two move together because `demo-shop` calls
+  `demo-orders`, and v1 cannot render a caller's call variables from a callee it no longer owns.
+- **The first production migration found a defect, fixed in the same change:** v2 derived every route host as
+  `<environment>-<app>.<domain>`, which would have moved production from `demo-orders.homelab.swhurl.com` to
+  `prod-demo-orders.homelab.swhurl.com`. Production now renders the bare app name, as v1 did; staging is unchanged
+  and a kernel test pins both.
+- **Checked offline:** `make check-v2` (all packages; `check-rendered.sh` finds `platform/` unchanged),
+  `REQUIRE_HELM=1 make check-v2`, and `make check` after the change. The two frozen predecessors
+  (`v2/testdata/legacy/{demo-orders,demo-shop}/prod/`) make `TestMigrateReproducesCommittedInstances` replay both.
+- **Not yet applied:** the push, the rollout, the live claim and data check, `make verify-platform` and the graph
+  checks. This section is completed after them.
+
 ## A migrated record states the platform's digest (31 October 2026)
 
 - **What was wrong:** five `make verify-platform` warnings after the staging cutover, one per migrated instance whose

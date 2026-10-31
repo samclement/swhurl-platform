@@ -232,8 +232,8 @@ class RenderedJobTests(unittest.TestCase):
         cls.render = staticmethod(lambda app, env: render.instance(Instance(app, env), cls.world, cls.platform))
 
     def test_a_sqlite_instance_gets_a_nightly_job_as_its_app_with_the_key_substituted(self):
-        files = self.render('demo-orders', 'prod')
-        secret, job = files[Path('apps/demo-orders/prod') / contract.BACKUP_FILE]
+        files = self.render('swhurl-try-10', 'prod')
+        secret, job = files[Path('apps/swhurl-try-10/prod') / contract.BACKUP_FILE]
         self.assertEqual(set(secret['stringData'].values()),
                          {'${BACKUP_AWS_ACCESS_KEY_ID}', '${BACKUP_AWS_SECRET_ACCESS_KEY}'})
         self.assertTrue(validate.substituted(secret))
@@ -241,13 +241,13 @@ class RenderedJobTests(unittest.TestCase):
         spec = job['spec']
         self.assertEqual((spec['suspend'], spec['concurrencyPolicy'], spec['timeZone']), (False, 'Forbid', 'Etc/UTC'))
         pod = spec['jobTemplate']['spec']['template']['spec']
-        uid = self.world[Instance('demo-orders', 'prod')].release.uid
+        uid = self.world[Instance('swhurl-try-10', 'prod')].release.uid
         self.assertEqual((pod['securityContext']['runAsUser'], pod['automountServiceAccountToken']), (uid, False))
-        self.assertEqual(pod['volumes'][0], {'name': 'data', 'persistentVolumeClaim': {'claimName': 'demo-orders'}})
+        self.assertEqual(pod['volumes'][0], {'name': 'data', 'persistentVolumeClaim': {'claimName': 'swhurl-try-10'}})
         env = {var['name']: var.get('value') for var in pod['containers'][0]['env']}
-        self.assertEqual(env['BACKUP_S3_URI'], platform.SQLITE_S3_URI + 'demo-orders-prod/')
+        self.assertEqual(env['BACKUP_S3_URI'], platform.SQLITE_S3_URI + 'swhurl-try-10-prod/')
         self.assertTrue(env['HTTPS_PROXY'].startswith('http://egress.'), 'S3 is reached through the egress proxy')
-        unit = files[Path('clusters/home/app-demo-orders-prod.yaml')][0]['spec']
+        unit = files[Path('clusters/home/app-swhurl-try-10-prod.yaml')][0]['spec']
         self.assertIn({'name': contract.BACKUP_UNIT}, unit['dependsOn'])
         self.assertEqual(unit['postBuild']['substituteFrom'], [{'kind': 'Secret', 'name': contract.BACKUP_WRITER, 'optional': False}])
         plain = self.render('swhurl-try-30', 'prod')  # a worker states no database
@@ -255,20 +255,20 @@ class RenderedJobTests(unittest.TestCase):
         self.assertNotIn('postBuild', plain[Path('clusters/home/app-swhurl-try-30-prod.yaml')][0]['spec'])
 
     def test_schedules_are_stable_and_after_mongodb(self):
-        times = {namespace: backup.schedule(namespace) for namespace in ('a-prod', 'b-staging', 'demo-orders-prod')}
+        times = {namespace: backup.schedule(namespace) for namespace in ('a-prod', 'b-staging', 'swhurl-try-10-prod')}
         self.assertEqual(times, {namespace: backup.schedule(namespace) for namespace in times})
         for line in times.values():
             minute, hour = map(int, line.split()[:2])
             self.assertTrue((3, 35) <= (hour, minute) <= (4, 24), line)
 
     def test_a_backup_job_must_carry_no_token(self):
-        files = self.render('demo-orders', 'prod')
+        files = self.render('swhurl-try-10', 'prod')
         docs = [doc for documents in files.values() for doc in documents if doc.get('kind') in ('HelmRelease', 'CronJob')]
         job = next(doc for doc in docs if doc['kind'] == 'CronJob')
         self.assertEqual([v for v in policy.check_identity(docs, {interface.ENVIRONMENT: 'prod'}, '') if v[0] == 'call-tokens'], [])
         job['spec']['jobTemplate']['spec']['template']['spec']['volumes'].append(
             {'name': 'tokens', 'projected': {'sources': [{'serviceAccountToken': {'audience': 'x', 'path': 'x/token'}}]}})
-        self.assertIn(('call-tokens', 'CronJob/demo-orders-backup is a backup job and carries no service-account token'),
+        self.assertIn(('call-tokens', 'CronJob/swhurl-try-10-backup is a backup job and carries no service-account token'),
                       policy.check_identity(docs, {interface.ENVIRONMENT: 'prod'}, ''))
 
     def test_the_mongodb_job_and_the_constants_agree_with_the_repository(self):
@@ -311,10 +311,10 @@ class SuspendSwitchTests(unittest.TestCase):
 
         from swhurl.apps.model import render, write
         world, inputs = write.read(ROOT)
-        each = Instance('demo-orders', 'prod')
+        each = Instance('swhurl-try-10', 'prod')
         for value in (True, False):
             files = render.instance(each, world, replace(inputs, backups_suspended=value))
-            _, job = files[Path('apps/demo-orders/prod') / contract.BACKUP_FILE]
+            _, job = files[Path('apps/swhurl-try-10/prod') / contract.BACKUP_FILE]
             self.assertIs(job['spec']['suspend'], value)
 
     def test_a_suspended_switch_makes_the_committed_sqlite_jobs_disagree(self):
@@ -326,7 +326,7 @@ class SuspendSwitchTests(unittest.TestCase):
             shutil.copytree(ROOT / rel, root / rel)
         path = root / backup.MONGODB_JOB
         path.write_text(path.read_text().replace('  suspend: false\n', '  suspend: true\n'))
-        found = generated.problems(root, only=frozenset({Instance('demo-orders', 'prod')}))
+        found = generated.problems(root, only=frozenset({Instance('swhurl-try-10', 'prod')}))
         self.assertTrue(any(contract.BACKUP_FILE in line for line in found), found)
         path.write_text(path.read_text().replace('  suspend: true\n', '  suspend: maybe\n'))
         self.assertIn('platform inputs:', ' '.join(generated.problems(root)))

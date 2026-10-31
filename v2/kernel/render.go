@@ -530,9 +530,12 @@ func imageMetadata(name, application string) manifest {
 	return meta
 }
 
-// routeHost derives the host name the way the platform states it: the environment, the app and the base
-// domain. No instance stores a host, so two instances cannot disagree about one name's shape.
+// routeHost derives the host name the way the platform states it: production is the bare app name, every other
+// environment prefixes it. No instance stores a host, so two instances cannot disagree about one name's shape.
 func routeHost(spec InstanceFacts, routing Routing) string {
+	if spec.Environment == "prod" {
+		return spec.Application + "." + routing.BaseDomain
+	}
 	return spec.Environment + "-" + spec.Application + "." + routing.BaseDomain
 }
 

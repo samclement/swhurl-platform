@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "application": "demo-shop",
+  "source": {
+    "repository": "samclement/demo-shop",
+    "commit": "a244f82f6246663ff40489df0700dfe16701b1ad"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/demo-shop",
+    "digest": "sha256:a4b65288fadb751fd130f9c03636313b9ed8dff0983aec529ced081aeab85985",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "web",
+    "port": 8080,
+    "healthPath": "/healthz",
+    "uid": 65532
+  },
+  "database": "sqlite",
+  "telemetry": true,
+  "publishes": [
+    "visited"
+  ],
+  "description": "Demo: the shop people open; a page that places orders in demo-orders and keeps its own purchase log",
+  "offers": "a244f82f6246663ff40489df0700dfe16701b1ad",
+  "releaseId": "rel-sha256:b3cd5e54cdc50b51a73ef6963f067e931dcd53ebe457921df8a121c1ee3dc07c"
+}

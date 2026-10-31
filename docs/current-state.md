@@ -48,6 +48,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   `swhurl-try-30` runs `sha256:d6b10b8a…` and logs `work done` every minute. `observe` says `running` for both
   (try-10's backup `current`, try-30's `not_applicable`), and `verify-platform` passes with no warning. Its count
   is one lower because v1's branch now sees no v1 instance; that branch is the deletion's job.
+- **The facts that branch no longer checks, checked directly:** all four production namespaces carry their team
+  label (`demo` twice, `payments`, `insights`), a ResourceQuota and their policy (`<app>`, plus `<app>-backup`
+  where the instance has a database); each port is in the allocation (`demo-orders` 30111, `demo-shop` 30112,
+  `swhurl-try-10` 30113, `swhurl-try-30` 30110).
 - **Not exercised:** `verify-platform`'s v1 branch, the `app-*` commands and v1's readers still exist (and check
   nothing for an app now), and v1's repository writer is still present. The deletion is the next gate.
 - **Not exercised:** `swhurl-try-10` and `swhurl-try-30` production, and the v1 deletion.

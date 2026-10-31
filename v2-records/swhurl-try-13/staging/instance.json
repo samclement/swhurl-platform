@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "application": "swhurl-try-13",
+  "environment": "staging",
+  "release": "rel-sha256:620c905dfc24179cb7c98f5812ce63c04f789c443bbb31051a91646d7633228f",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "private"
+  },
+  "bindings": {},
+  "storage": {},
+  "events": {
+    "key": "UD2OPEOUJ7C3V2TCCLNQBNGYT67UJUPQQU7D3HWQG6MU5XVVGAWQEXI5",
+    "subscriptions": [
+      "swhurl-try-10.visited"
+    ]
+  }
+}

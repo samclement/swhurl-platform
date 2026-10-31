@@ -1,7 +1,7 @@
 {
   "kind": "v2-calls",
   "version": 1,
-  "revision": "8ae21b491dcbbe7306bc56073460fff24d61a7f2",
+  "revision": "5714bbc5ffcd065dcf4306e0f52faa345f06c5a1",
   "pairs": [
     {
       "caller": "demo-shop",

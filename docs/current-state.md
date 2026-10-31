@@ -2,6 +2,26 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The cutover reaches the cluster (31 October 2026)
+
+- **Four staging instances are v2's.** `swhurl-try-30` (`bb7ae079`) and then `swhurl-try-13`, `swhurl-try-31` and
+  `swhurl-try-32` (one change) were migrated with `swhurl-v2 migrate` from a snapshot pinned at HEAD, their v1
+  staging records and unit YAMLs deleted in the same commit, and their units switched to
+  `clusters/home/app-<app>-staging.json`. Pushed, then `make flux-reconcile`: all four units `Ready`, each on the
+  commit that carried its switch.
+- **Identity held.** Every migrated namespace kept its own creation timestamp (no namespace was recreated), the
+  streams kept their names (`staging-swhurl-try-30`, …) and `Ready`, the NATS users kept their keys (the pinned
+  `platform/nats/users.json` and `platform/reloader/values.json` re-rendered byte-identical), and the deployments
+  kept their digests. `swhurl-try-30`'s pod logs `worker started`, then `WORK DONE`, with no permission or proxy
+  error.
+- **What changed, as predicted before the commit** (the `kubectl kustomize` comparison of each v1 folder against
+  v2's, run first): the image is pinned by digest with no tag, the memory request rises from 32Mi to 128Mi,
+  `replicas: 1` is stated, v1's `platform.swhurl.com/render` annotation is gone, and the egress proxy variables are
+  gone because v2 grants the proxy only to an instance that needs one. Each policy became deny-by-default egress
+  with the peers its instance uses (cluster DNS, the collector's node address, NATS). No other object differed.
+- **Not exercised:** the demo graph (`demo-shopper` → `demo-shop` → `demo-orders`, the last with a SQLite volume),
+  which is the next change, and 1b's production instances.
+
 ## The cutover's write primitives, offline (31 October 2026)
 
 - **What changed.** `v2/` gained the operator's write surface: `swhurl-v2 edit` (one named change to one instance's

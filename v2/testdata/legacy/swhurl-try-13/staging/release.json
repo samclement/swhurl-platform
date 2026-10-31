@@ -1,0 +1,17 @@
+{
+  "description": "throwaway: team platform T4 subscriber (notifier), delete me",
+  "image": {
+    "digest": "sha256:124b834e9df60ac02d49de8a488105c24d95746dbb3295129d171f5cfcd997d8",
+    "repository": "ghcr.io/samclement/swhurl-try-13",
+    "tag": "73-900f5e5"
+  },
+  "kind": "worker",
+  "offers": "900f5e5",
+  "publishes": [
+    "worked"
+  ],
+  "stack": "typescript",
+  "telemetry": true,
+  "uid": 65532,
+  "version": 1
+}

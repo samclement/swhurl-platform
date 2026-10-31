@@ -1,0 +1,39 @@
+# The events swhurl-try-13 publishes, as an AsyncAPI document (https://www.asyncapi.com/docs).
+# This file is the declaration: the platform reads it to show other apps what they can subscribe
+# to, and src/events.ts refuses to publish an event that is not here or a payload that does not
+# fit its schema. To add an event: a channel (its address is the event's name), a message with a
+# payload schema and an example, and a send operation. An app that publishes nothing keeps this file
+# with its channels, operations and components removed, or as `channels: {}`.
+asyncapi: 3.0.0
+info:
+  title: swhurl-try-13
+  version: 0.1.0
+  description: "throwaway: team platform T4 subscriber (notifier), delete me"
+channels:
+  worked:
+    address: worked
+    description: swhurl-try-13 finished one unit of work.
+    messages:
+      worked:
+        $ref: '#/components/messages/worked'
+operations:
+  publishWorked:
+    action: send
+    channel:
+      $ref: '#/channels/worked'
+components:
+  messages:
+    worked:
+      summary: One finished unit of work
+      payload:
+        type: object
+        required: [at]
+        additionalProperties: false
+        properties:
+          at:
+            type: string
+            format: date-time
+            description: When the work finished
+      examples:
+        - payload:
+            at: '2026-01-01T00:00:00.000Z'

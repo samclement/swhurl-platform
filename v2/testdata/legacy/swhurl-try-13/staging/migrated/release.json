@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "application": "swhurl-try-13",
+  "source": {
+    "repository": "samclement/swhurl-try-13",
+    "commit": "900f5e5b10eaa1e84a0ff19bf61ad02f2d54fca7"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/swhurl-try-13",
+    "digest": "sha256:124b834e9df60ac02d49de8a488105c24d95746dbb3295129d171f5cfcd997d8",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "worker",
+    "port": 0,
+    "healthPath": "",
+    "uid": 65532
+  },
+  "telemetry": true,
+  "publishes": [
+    "worked"
+  ],
+  "description": "throwaway: team platform T4 subscriber (notifier), delete me",
+  "offers": "900f5e5b10eaa1e84a0ff19bf61ad02f2d54fca7",
+  "releaseId": "rel-sha256:620c905dfc24179cb7c98f5812ce63c04f789c443bbb31051a91646d7633228f"
+}

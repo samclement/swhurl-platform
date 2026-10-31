@@ -1,0 +1,17 @@
+{
+  "description": "B3 concurrent records-only creation proof",
+  "image": {
+    "digest": "sha256:aef4e59480e0d4d2d0fdc8f31c5c22a5e980102a9e07d4efa33be1caae6173d3",
+    "repository": "ghcr.io/samclement/swhurl-try-31",
+    "tag": "26-ab1f593"
+  },
+  "kind": "worker",
+  "offers": "ab1f593",
+  "publishes": [
+    "worked"
+  ],
+  "stack": "typescript",
+  "telemetry": true,
+  "uid": 65532,
+  "version": 1
+}

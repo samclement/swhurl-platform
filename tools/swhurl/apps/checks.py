@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from swhurl import ROOT, interface
-from swhurl.apps import calling, contract, egress, events, hooks
+from swhurl.apps import calling, contract, egress, events, hooks, images
 from swhurl.apps.instance import INSTANCE_ROOTS, Instance
 from swhurl.apps.model import generated, store
 from swhurl.apps.model.draft import RenderError
@@ -21,7 +21,61 @@ def app_of(policy: dict) -> str:
     return (policy['metadata'].get('labels') or {}).get(interface.APP, '')
 
 
-def check_image_automation(runner: Runner, report: Report, root: Path = ROOT) -> None:
+V2_RECORDS = Path('v2-records')
+
+
+def judge_staging(report: Report, root: Path, world, app: str, name: str, latest: str,
+                  opener: images.Opener = images._open) -> None:
+    """Does staging run the image its ImagePolicy picked, read from the record that owns the instance?
+
+    v1 owns an instance that has ``apps/<app>/staging/release.yaml``: its record states the tag.
+    v2 owns one that has ``v2-records/<app>/staging/release.json``: its record states the digest, so the
+    digest of the tag the policy picked is read from the record's own image (a public package, no credential).
+    """
+    v1_record = root / INSTANCE_ROOTS[0] / app / contract.AUTO_DEPLOY_ENV / 'release.yaml'
+    entry = world.get(Instance.named(app, contract.AUTO_DEPLOY_ENV))
+    if entry is not None:
+        running = entry.release.image.tag
+        if running == latest:
+            report.ok(f'{name}: newest image {latest}, deployed')
+            return
+        report.warn(f'{name}: newest image {latest} is not deployed; staging in Git runs {running}. The Deploy '
+                    'workflow deploys it within the hour (git pull: it may already have); to deploy it now, or see '
+                    f'why it is held: make app-deploy APP={app}, commit and push')
+        return
+    record = root / V2_RECORDS / app / contract.AUTO_DEPLOY_ENV / 'release.json'
+    stated = record.relative_to(root)
+    try:
+        artifact = json.loads(record.read_text())['artifact']
+        digest, image = artifact['digest'], artifact.get('image') or ''
+    except FileNotFoundError:
+        report.warn(f'{name}: newest image {latest}, but this checkout has neither {v1_record.relative_to(root)} '
+                    f'nor {stated} (git pull if it is behind main)')
+        return
+    except (OSError, ValueError, AttributeError, KeyError, TypeError) as error:
+        report.bad(f'{stated} cannot be read ({error}), so whether staging runs {latest} is unchecked')
+        return
+    repository = image.removeprefix(f'{images.REGISTRY}/')
+    if not repository:
+        report.bad(f'{stated} states no image, so whether staging runs {latest} is unchecked')
+        return
+    platform = str(artifact.get('platform') or 'linux/amd64')
+    try:
+        found = images.platform_digest(repository, latest, platform, opener=opener)
+    except (images.ImageError, OSError) as error:
+        report.warn(f'{name}: cannot read the digest of {repository}:{latest} from the registry ({error}), so whether '
+                    f'{stated} is deployed is unchecked')
+        return
+    if found == digest:
+        report.ok(f'{name}: newest image {latest}, deployed')
+        return
+    report.warn(f'{name}: newest image {latest} is not what v2 records state: {stated} names {digest}, the registry '
+                f'says {found}. The Deploy v2 workflow deploys it within the hour (git pull: it may already have); '
+                'to deploy it now: make v2-deploy, commit and push')
+
+
+def check_image_automation(runner: Runner, report: Report, root: Path = ROOT,
+                          opener: images.Opener = images._open) -> None:
     """Automatic staging deploys: every app ImagePolicy is Ready, and staging runs the image it picked
     (the Deploy workflow writes it: docs/apps.md#deploy-a-new-image)."""
     report.section('Image Automation')
@@ -45,19 +99,7 @@ def check_image_automation(runner: Runner, report: Report, root: Path = ROOT) ->
                        f'(kubectl -n flux-system describe imagerepository {app_of(policy)}; make reconcile UNIT=app-{name})')
             continue
         latest = ((policy.get('status') or {}).get('latestRef') or {}).get('tag', '')
-        app = app_of(policy)
-        release = root / INSTANCE_ROOTS[0] / app / contract.AUTO_DEPLOY_ENV / 'release.yaml'
-        entry = world.get(Instance.named(app, contract.AUTO_DEPLOY_ENV))
-        running = entry.release.image.tag if entry else ''
-        if running == latest:
-            report.ok(f'{name}: newest image {latest}, deployed')
-        elif not running:
-            report.warn(f'{name}: newest image {latest}, but this checkout has no {release.relative_to(root)} '
-                        '(git pull if it is behind main)')
-        else:
-            report.warn(f'{name}: newest image {latest} is not deployed; staging in Git runs {running}. The Deploy '
-                        'workflow deploys it within the hour (git pull: it may already have); to deploy it now, or see '
-                        f'why it is held: make app-deploy APP={app}, commit and push')
+        judge_staging(report, root, world, app_of(policy), name, latest, opener)
 
 
 def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:

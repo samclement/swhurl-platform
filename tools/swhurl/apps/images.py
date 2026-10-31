@@ -53,11 +53,47 @@ def _get(opener: Opener, url: str, headers: dict[str, str], what: str) -> bytes:
         raise ImageError(f'could not reach {REGISTRY} for {what}: {error.reason}') from None
 
 
+def _pull_token(repository: str, opener: Opener) -> dict[str, str]:
+    scope = urllib.parse.quote(f'repository:{repository}:pull')
+    token = json.loads(_get(opener, f'https://{REGISTRY}/token?scope={scope}', {}, f'a pull token for {repository}'))['token']
+    return {'Authorization': f'Bearer {token}'}
+
+
+def _body(opener: Opener, repository: str, tag: str, auth: dict[str, str]) -> bytes:
+    return _get(opener, f'https://{REGISTRY}/v2/{repository}/manifests/{tag}', {**auth, 'Accept': MANIFESTS},
+                f'{repository}:{tag}')
+
+
+def _digest(body: bytes) -> str:
+    return 'sha256:' + hashlib.sha256(body).hexdigest()
+
+
+def platform_digest(repository: str, tag: str, platform: str = 'linux/amd64', *, opener: Opener = _open) -> str:
+    """The digest of the manifest ``tag`` names for one platform.
+
+    A tag naming one manifest is that manifest's digest. A tag naming an index lists a manifest per
+    platform, and the platform's own entry is the digest a build declares as its artifact: v2's records
+    state it as ``artifact.digest``, so this is what a v2-owned instance is compared with. An index
+    without the platform is refused, not guessed.
+    """
+    body = _body(opener, repository, tag, _pull_token(repository, opener))
+    try:
+        document = json.loads(body)
+    except ValueError:
+        return _digest(body)
+    if not isinstance(document, dict) or not document.get('manifests'):
+        return _digest(body)
+    os_name, architecture = platform.split('/', 1)
+    for entry in document['manifests']:
+        stated = (entry.get('platform') or {}) if isinstance(entry, dict) else {}
+        if (stated.get('os'), stated.get('architecture')) == (os_name, architecture):
+            return entry['digest']
+    raise ImageError(f'{repository}:{tag} has no {platform} manifest, so its digest cannot be stated')
+
+
 def newest(chosen: Policy, *, opener: Opener = _open) -> Image:
     """The tag the policy picks from the registry now, and its digest."""
-    scope = urllib.parse.quote(f'repository:{chosen.repository}:pull')
-    token = json.loads(_get(opener, f'https://{REGISTRY}/token?scope={scope}', {}, f'a pull token for {chosen.repository}'))['token']
-    auth = {'Authorization': f'Bearer {token}'}
+    auth = _pull_token(chosen.repository, opener)
     tags: list[str] = []
     while True:  # the registry pages its tag list; ?last= continues after the last one seen
         after = f'&last={urllib.parse.quote(tags[-1])}' if tags else ''
@@ -70,6 +106,4 @@ def newest(chosen: Policy, *, opener: Opener = _open) -> Image:
     if not ranked:
         raise ImageError(f'{chosen.repository} has no tag matching {chosen.pattern.pattern} ({chosen.name})')
     tag = max(ranked)[1]
-    body = _get(opener, f'https://{REGISTRY}/v2/{chosen.repository}/manifests/{tag}', {**auth, 'Accept': MANIFESTS},
-                f'{chosen.repository}:{tag}')
-    return Image(tag, 'sha256:' + hashlib.sha256(body).hexdigest())
+    return Image(tag, _digest(_body(opener, chosen.repository, tag, auth)))

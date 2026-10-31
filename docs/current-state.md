@@ -2,6 +2,45 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Two throwaway apps removed, and Node.js 26 (31 October 2026)
+
+- **Node.js 26 in all eight TypeScript apps.** Each built on `node:24-bookworm-slim` with `@types/node ^25.8.0`.
+  A reviewed PR per repository (branch `node-26`) moved the image to `node:26-bookworm-slim`, `@types/node` to
+  `^26.0.0`, regenerated the lockfile, and merged once its Container run was green: `demo-orders` `b8d5223`,
+  `demo-shop` `bf6a217`, `demo-shopper` `51519ea`, `swhurl-try-10` `364c0f9`, `swhurl-try-13` `900f5e5`,
+  `swhurl-try-30` `b32c6a0`, `swhurl-try-31` `ab1f593`, `swhurl-try-32` `545c2c7`. `swhurl-try-32`'s older
+  Renovate PR for the same bump was closed as superseded. No app repository has an open pull request.
+- **Why `swhurl-try-11` and `swhurl-try-12` went.** Both record `kind=web database=none`, which the templates no
+  longer accept, so neither could take a template update and they were the only two repositories left granting
+  `actions: read`. They are throwaways, so the operator had them removed rather than given a database.
+- **The relationships came out first.** `make app-events APP=swhurl-try-13 ENV=staging
+  --remove-subscribe=swhurl-try-12.visited`, `make app-allows APP=swhurl-try-10 ENV=prod
+  --remove=swhurl-try-11,swhurl-try-12`, and the same for the v2 record's `allows` (`swhurl-try-10` staging), then
+  `make app-sync`. `swhurl-try-13` still subscribes to `swhurl-try-10.visited`, which that release does not publish:
+  the resolution reports it as waiting, as before.
+- **Then the instances.** `make app-remove APP=swhurl-try-12 ENV=staging` and `ENV=prod` (v1: 15 files, the
+  kustomization, the app record, its offers and its release); `swhurl-try-11` was v2-owned, so its leaves were
+  `v2-records/swhurl-try-11/`, `v2-apps/instances/swhurl-try-11/` and the four `clusters/home` units. Neither app
+  appears in `apps/`, `clusters/home/kustomization.yaml`, `platform/auth/kustomization.yaml` or `v2-records/` now.
+- **The documents v2 renders were re-rendered from the records, not hand-edited.** `swhurl-v2 resolve` (9 connected
+  pairs → 3, 2 subscriptions → 1, and the resolution no longer names either app), `compile` for `swhurl-try-10`
+  staging (its `allows` is empty, so the HelmRelease's call variables and token audience and the policy's caller
+  rules are gone), `auth` (`platform/auth` lost four files, `kustomization.yaml` re-rendered), `users` (15 users),
+  `reloader` (16 namespaces) and `egress`. The allocation **keeps** the removed instances' ports with no grants,
+  which is `Allocate`'s stated behaviour (a port is not taken from an instance the platform still owns), so
+  `platform/egress/{configmap,networkpolicy}.json` did not change and only the allocation's `revision` did.
+- **One test witness moved.** `v2/kernel`'s `TestEventPolicyMatchesTheCommittedManifest` compared the consumer
+  policy constants with `apps/swhurl-try-13/staging/events.yaml`; with `swhurl-try-12` gone no v1 instance has a
+  consumer, so the consumer v1 rendered there was captured to `v2/testdata/v1-consumer.yaml` and the stream half
+  still reads `apps/demo-orders/staging/events.yaml`.
+- **Checked.** `make check` (1029 tests) and `make check-v2` green, including the recompilation of every
+  v2-owned instance from Git and the render checks of `platform/egress`, `platform/auth`, `platform/nats` and
+  `platform/reloader`.
+- **Not done: the live side.** Nothing has been deleted in the cluster yet: the four namespaces, their volumes and
+  `swhurl-try-12`'s data remain, and so do the two GitHub repositories and packages. The namespaces and volumes go
+  with `make app-remove`'s Flux units on the next reconciliation; the volumes need the documented data removal, and
+  the repositories and packages need the tokens in `secrets/`.
+
 ## The tested-PR-image reuse machinery is gone (31 October 2026)
 
 - **Templates.** `typescript` **v0.2.23** (`e69a67d`) and `kotlin` **v0.2.22** (`d0a29bf`) drop the
@@ -44,7 +83,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   longer names an app type (a web app needs `database=sqlite`), so `copier update` refuses them by design and they
   keep their current pins — and the unused `actions: read` grant, the only two repositories that still have it.
   Taking the update would give them a database; they are throwaways, so that is the operator's call, not this
-  change's.
+  change's — the operator had both removed on 31 October 2026 (above).
 - **No instance's behaviour changes.** Apps publish images built exactly as they were after 30 October 2026: no
   repository ever set the input the templates no longer offer, and the images in the cluster were built by the
   step-reduced workflow already.

@@ -204,13 +204,14 @@ func containsDependency(dependsOn []any, name string) bool {
 // The stream and consumer policy are the ones the platform's own manifests state, so an adopted instance's
 // stream is not redefined when v2 takes it over.
 func TestEventPolicyMatchesTheCommittedManifest(t *testing.T) {
-	// apps/demo-orders/staging/events.yaml is v1's stream and consumers for one instance.
+	// apps/demo-orders/staging/events.yaml is v1's stream for one instance, and testdata/v1-consumer.yaml
+	// is the consumer v1's renderer wrote for a subscriber before that instance was removed.
 	// A publisher's manifest holds the stream; a subscriber's holds its consumer.
 	for path, wants := range map[string][]string{
 		"../../apps/demo-orders/staging/events.yaml": {"maxAge: " + streamRetention,
 			"maxBytes: " + strconv.Itoa(streamMaxBytes), "preventDelete: true", "retention: limits", "discard: old",
 			"storage: file", "replicas: 1"},
-		"../../apps/swhurl-try-13/staging/events.yaml": {"ackWait: " + consumerAckWait,
+		"../../v2/testdata/v1-consumer.yaml": {"ackWait: " + consumerAckWait,
 			"maxDeliver: " + strconv.Itoa(consumerMaxRetry), "ackPolicy: explicit", "deliverPolicy: all"},
 	} {
 		committed, err := os.ReadFile(path)

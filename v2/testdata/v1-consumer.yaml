@@ -1,0 +1,18 @@
+# v1's Consumer document for one subscription, as `make app-events` rendered it for swhurl-try-13 staging
+# (consumer of swhurl-try-12.visited), captured from 006f72c0 before that instance was removed on 31 October 2026.
+# No v1 instance subscribes to a published event any more, so this is the frozen witness that v2's
+# consumer policy still matches what v1's renderer wrote: TestEventPolicyMatchesTheCommittedManifest.
+---
+apiVersion: jetstream.nats.io/v1beta2
+kind: Consumer
+metadata:
+  name: swhurl-try-12-visited
+  namespace: swhurl-try-13-staging
+spec:
+  streamName: staging-swhurl-try-12
+  durableName: swhurl-try-13_visited
+  filterSubject: staging.swhurl-try-12.visited
+  ackPolicy: explicit
+  deliverPolicy: all
+  ackWait: 30s
+  maxDeliver: 5

@@ -5,7 +5,6 @@ resources:
   - platform.yaml
   - platform-notify.yaml
   - app-swhurl-try-10-staging.json
-  - app-swhurl-try-12-staging.yaml
   - app-swhurl-try-13-staging.yaml
   - app-swhurl-try-10-prod.yaml
   - app-demo-orders-staging.yaml
@@ -13,11 +12,8 @@ resources:
   - app-demo-shopper-staging.yaml
   - app-demo-notifier-staging.json
   - app-demo-orders-prod.yaml
-  - app-swhurl-try-12-prod.yaml
-  - app-swhurl-try-11-prod.json
   - app-demo-shop-prod.yaml
   - app-swhurl-try-30-staging.yaml
   - app-swhurl-try-30-prod.yaml
   - app-swhurl-try-32-staging.yaml
   - app-swhurl-try-31-staging.yaml
-  - app-swhurl-try-11-staging.json

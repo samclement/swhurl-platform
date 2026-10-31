@@ -3,7 +3,6 @@ version: 1
 exposure: private
 subscriptions:
 - swhurl-try-10.visited
-- swhurl-try-12.visited
 allocations:
   egressPort: 30108
   eventsKey: UD2OPEOUJ7C3V2TCCLNQBNGYT67UJUPQQU7D3HWQG6MU5XVVGAWQEXI5

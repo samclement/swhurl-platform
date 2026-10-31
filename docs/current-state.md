@@ -37,7 +37,8 @@ What has been verified on the live cluster, and when: current facts first, then 
   `-32` log `WORK DONE`, `demo-shopper` `work done`, `demo-shop` and `demo-orders` `request handled`, `demo-notifier`
   `event received: demo-orders.created …`, and `swhurl-try-13` logs no `Permissions Violation`;
   `https://staging-demo-shop.…` and `https://staging-demo-orders.…` return 302 signed out; and `make app-status
-  APP=demo-orders ENV=staging` says `Healthy` with the image desired and running equal.
+  APP=demo-orders ENV=staging` says `Healthy` with the image desired and running equal. `make v2-deploy` then
+  reports all nine `unchanged`, so the hourly Deploy workflow has no digest to rewrite.
 - **Not exercised:** the four production instances (1b), and a delivery through the hourly Deploy workflow to a record
   this migration wrote.
 

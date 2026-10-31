@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "application": "demo-shopper",
+  "source": {
+    "repository": "samclement/demo-shopper",
+    "commit": "51519ea2dfb6cf6a50da38fca8681dd10e7eadbb"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/demo-shopper",
+    "digest": "sha256:db8b46171217c395abdea6a4060a452e3baa8ada18c72ee92fd046858c44b534",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "worker",
+    "port": 0,
+    "healthPath": "",
+    "uid": 65532
+  },
+  "telemetry": true,
+  "description": "Demo: a worker that buys something from demo-shop every half minute, so there is always some traffic",
+  "offers": "51519ea2dfb6cf6a50da38fca8681dd10e7eadbb",
+  "releaseId": "rel-sha256:0f158133968de511f07146295788a1b0420cff61be42cbbe4ec987612d109605"
+}

@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: 1a's live half: `swhurl-try-30` staging is migrated (31 October 2026); the other six staging instances, then v1's staging records and writers deleted (the repository read follows 1b)
+Gate: 1b: the four production instances migrated, then v1's records, `app-*` commands and readers deleted so v2 is the only writer (the repository read follows)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -188,7 +188,7 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
 
-## Slice record: the cutover reaches the cluster (staging, part one)
+## Slice record: the cutover reaches the cluster (a staging instance, then three, then three)
 
 - **Outcome:** `swhurl-try-30` staging is v2's: `swhurl-v2 migrate` read its v1 records from a pinned snapshot and
   wrote the pair at `v2-records/swhurl-try-30/staging/` (with its encrypted seed and the documents it offers beside
@@ -240,9 +240,28 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   resolution is re-rendered from the merged tree (`v2-records/calls.json`, whose only change is its `revision`), and
   each migrated instance is recompiled from its own record folder, so the files Git holds are what that folder
   renders.
-- **Next gate:** the demo graph — `demo-shopper`, `demo-shop` (a caller and its callee) and `demo-orders` (the
-  callee, with a SQLite volume), moved in one change so no pair is left half-rendered; then v1's staging records
-  are gone and 1b starts.
+- **Then the demo graph in one change**, so no pair is left half-rendered: `demo-shopper` → `demo-shop` →
+  `demo-orders`, the last with a SQLite volume and an `allows` grant. Here v2's render adds what v1 rendered inside
+  the chart: a separate `Ingress` (same host, class, annotations and TLS secret as v1's chart values), the
+  `<app>-callers` ConfigMap, the auth ConfigMap mount, and a backup policy for the job — while the CronJob differs
+  by one thing only, the backup image pinned by digest instead of tag-and-digest. The claim is **adopted** by name
+  (`existingClaim`) rather than created, so the volume is the same bytes; the containers read the mounted files
+  because every app's template is TypeScript `v0.2.23`, past the file-reading release.
+- **`PublicationsKnown` corrected, as the contract said this slice would.** `resolve` treated a v2 instance's
+  publications as unknown, so every subscription to a v2 publisher waited rather than connecting. A v2 release
+  states its `publishes` — the stream and the publish variable are rendered from them, and an absent list is none —
+  so both record shapes are now read as complete. Two subscriptions connected that had been waiting: `demo-notifier`
+  ← `demo-orders.created` (whose publisher v2 now owns) and `swhurl-try-13` ← `swhurl-try-10.visited`, which v2
+  renders on **both** sides for the first time — the consumer object, the subscribe variable and the NATS
+  permissions. `swhurl-try-13` therefore starts receiving an event it was built for and had never been given.
+- **v1's tooling reads v2's records where it must, and nowhere else.** `make app-hooks` now takes each v2-owned
+  staging instance's repository from its release record as well as v1's world (its webhook is how a published image
+  reaches Flux at once), and the v1 tests that used migrated staging records as fixtures now use production, a
+  frozen copy under `v2/testdata/` or the `tests/fixtures` instance. Nothing else in `tools/` changed: the `app-*`
+  commands stay until 1b, because they still write the four production instances.
+- **Next gate:** 1b — the four production instances (`demo-orders`, `demo-shop`, `swhurl-try-10`, `swhurl-try-30`)
+  with the volume path exercised first, then the deletions that make v2 the only writer: the rest of `apps/`, the
+  `app-*` commands, `resolve`'s v1 reading and `verify-platform`'s v1 branch.
 
 ## Slice record: the cutover's write primitives (offline, 31 October 2026)
 

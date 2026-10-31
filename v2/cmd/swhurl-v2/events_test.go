@@ -12,8 +12,8 @@ import (
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// eventSnapshot is a snapshot with a publisher, a subscriber, and a v2-owned instance whose records cannot state
-// publications yet: the resolver connects the first two and leaves the third waiting.
+// eventSnapshot is a snapshot with a publisher, a subscriber, a v2 publisher that publishes nothing, and a name no
+// instance answers to: the resolver connects the first two, refuses the third's event and leaves the fourth waiting.
 func eventSnapshot(t *testing.T) map[string]any {
 	t.Helper()
 	instance := func(application, format string, settings, release map[string]any) map[string]any {
@@ -26,7 +26,7 @@ func eventSnapshot(t *testing.T) map[string]any {
 			instance("orders", "v1", map[string]any{"allocations": map[string]any{
 				"eventsKey": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"}},
 				map[string]any{"publishes": []any{"created"}}),
-			instance("notifier", "v1", map[string]any{"subscriptions": []any{"orders.created", "quiet.created"},
+			instance("notifier", "v1", map[string]any{"subscriptions": []any{"orders.created", "absent.created"},
 				"allocations": map[string]any{"eventsKey": "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI"}},
 				map[string]any{}),
 			instance("quiet", "v2", map[string]any{}, map[string]any{}),
@@ -34,7 +34,7 @@ func eventSnapshot(t *testing.T) map[string]any {
 }
 
 // resolve records the connected subscription with every name a consumer, a stream and a permission need, and
-// reports the one that waits as waiting rather than refused.
+// reports the one whose publisher no instance answers to as waiting rather than refused.
 func TestResolveRecordsSubscriptions(t *testing.T) {
 	snapshot := writeSnapshot(t, eventSnapshot(t))
 	var out, diagnostic bytes.Buffer
@@ -62,12 +62,26 @@ func TestResolveRecordsSubscriptions(t *testing.T) {
 	if document.Subscriptions[0] != want {
 		t.Fatalf("the subscription: %+v", document.Subscriptions[0])
 	}
-	if len(document.EventWaiting) != 1 || document.EventWaiting[0].Callee != "quiet" ||
+	if len(document.EventWaiting) != 1 || document.EventWaiting[0].Callee != "absent" ||
 		document.EventWaiting[0].Reason != "publisher_not_ready" {
 		t.Fatalf("waiting: %+v", document.EventWaiting)
 	}
 	if !strings.Contains(diagnostic.String(), "1 event subscription(s), 1 waiting") {
 		t.Errorf("the summary: %s", diagnostic.String())
+	}
+}
+
+// A v2 instance's release states what it publishes — an absent list is none — so a subscription to an event it does
+// not publish is refused rather than left waiting for something that can never arrive.
+func TestResolveRefusesAnEventItsV2PublisherDoesNotPublish(t *testing.T) {
+	snapshot := eventSnapshot(t)
+	instances := snapshot["instances"].([]any)
+	notifier := instances[1].(map[string]any)["records"].(map[string]any)["instance"].(map[string]any)
+	notifier["subscriptions"] = []any{"quiet.created"}
+	var out, diagnostic bytes.Buffer
+	status := run([]string{"resolve", "--snapshot", writeSnapshot(t, snapshot)}, &out, &diagnostic, os.ReadFile, files.New())
+	if status != 2 || !strings.Contains(diagnostic.String(), "not_published") {
+		t.Fatalf("exit %d: %s", status, diagnostic.String())
 	}
 }
 

@@ -459,7 +459,7 @@ func claimName(rendered string) string {
 // claim storage.claimName names, and the chart's convention is what the migration reads it from.
 func TestClaimConvention(t *testing.T) {
 	helm := tool(t, "helm")
-	release := yamlDocuments(t, "../../../apps/demo-orders/staging/helmrelease.yaml")[0]
+	release := yamlDocuments(t, "../../../apps/demo-orders/prod/helmrelease.yaml")[0]
 	metadata := release["metadata"].(map[string]any)
 	spec := release["spec"].(map[string]any)
 	chartSpec := spec["chart"].(map[string]any)["spec"].(map[string]any)

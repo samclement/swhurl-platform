@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: demo-shop-events
+    namespace: demo-shop-staging
+type: Opaque
+stringData:
+    SWHURL_EVENTS_SEED: ENC[AES256_GCM,data:ahVRNRwSDTxh/nQHyg2nMrPG7Vkf5XgC57AI/nIHtpYFQelS1kD+dpZ0ErWOm+W2jQl0sCKIRW7cSw==,iv:OVvsR+muVn5mOo0LfeRlcGi2tzZVUZjWV9m6B0Mfjx4=,tag:bAfP3+Lry67SM438ESTmUA==,type:str]
+sops:
+    age:
+        - recipient: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBOSm9WSk1yNW5OemVqSWIr
+            K2R4WGlOVDIzV2t5MEJRT2Y1cHVoeEVvNFQ0CjRtb0duYW1SZGx0ZytJaEllQXFZ
+            bE1UQWQzdXgvM01UNERCWUJLTVNZNzgKLS0tIEh1WS9GbWRKZytBSU9qTGt1RFhO
+            Yis0SmZ0MlRhSjdpdmJCSWZmZDRHVlUKLlA0Tym1F//7fgArhnlhCim4WM+9Kqc6
+            /SKITgKntj6M64+SBuNlVAYDTIU8PHgWB5B4iCNkEpO36JT7bAnUrQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-14T20:23:29Z"
+    mac: ENC[AES256_GCM,data:ld/96yCGPDkKMYx6iFBcxOnxMtyFNmC5eWKRty8C3rXmtOYSXI5MyqB9swLOsj3DIBnjBEtqi5wVhC0CT35L5hHUBx4oIxdesr+9872sr4+lTG22Rb9YXoM6Gq4r0WEn5iexO4cy759z0ldonScvnrJVB7ub5a6eXsCpjmp0rz0=,iv:mVQjwUZ9jt0jLNguJEy6J9W56HxtKnsEGmM+3FInraU=,tag:6CD2evbIisGlz4U/l+JRBw==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

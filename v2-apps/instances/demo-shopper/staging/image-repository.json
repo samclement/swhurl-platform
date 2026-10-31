@@ -1,0 +1,1 @@
+{"apiVersion":"image.toolkit.fluxcd.io/v1","kind":"ImageRepository","metadata":{"labels":{"platform.swhurl.com/app":"demo-shopper","platform.swhurl.com/managed":"true"},"name":"demo-shopper","namespace":"flux-system"},"spec":{"image":"ghcr.io/samclement/demo-shopper","interval":"1h"}}

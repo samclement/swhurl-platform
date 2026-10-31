@@ -1,7 +1,7 @@
 {
   "kind": "v2-calls",
   "version": 1,
-  "revision": "5714bbc5ffcd065dcf4306e0f52faa345f06c5a1",
+  "revision": "7b23e47fa68ea785f86a15b4328b8504560270df",
   "pairs": [
     {
       "caller": "demo-shop",
@@ -34,15 +34,18 @@
       "consumer": "demo-notifier_created",
       "subject": "staging.demo-orders.created",
       "object": "demo-orders-created"
-    }
-  ],
-  "eventWaiting": [
+    },
     {
-      "caller": "swhurl-try-13",
-      "callee": "swhurl-try-10",
+      "subscriber": "swhurl-try-13",
+      "publisher": "swhurl-try-10",
+      "event": "visited",
       "environment": "staging",
-      "reason": "publisher_not_ready"
+      "stream": "staging-swhurl-try-10",
+      "consumer": "swhurl-try-13_visited",
+      "subject": "staging.swhurl-try-10.visited",
+      "object": "swhurl-try-10-visited"
     }
   ],
+  "eventWaiting": [],
   "eventRefused": null
 }

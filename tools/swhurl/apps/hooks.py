@@ -92,12 +92,33 @@ def ensure(runner: Runner, repository: str, token: str, host: str) -> str:
 
 
 def auto_deploy_repositories(root: Path = ROOT) -> dict[str, str]:
-    """``app: OWNER/REPO`` for each platform app's staging Release (automatic deploys)."""
+    """``app: OWNER/REPO`` for each platform app's staging Release (automatic deploys).
+
+    v1 states a staging instance in ``apps/``; a v2-owned one states the same repository in its own release
+    record, which is the truth for it, so both trees are read here.
+    """
     world, errors = store.world(root)
     if errors:
         raise HookError('; '.join(errors))
-    return {each.app: entry.release.image.repository.removeprefix(REGISTRY) for each, entry in world.items()
-            if each.env == 'staging' and entry.release.image.repository == workload.platform_image(each.app)}
+    found = {each.app: entry.release.image.repository.removeprefix(REGISTRY) for each, entry in world.items()
+             if each.env == 'staging' and entry.release.image.repository == workload.platform_image(each.app)}
+    found.update(v2_staging_repositories(root))
+    return found
+
+
+def v2_staging_repositories(root: Path) -> dict[str, str]:
+    """The repository each v2-owned staging instance's image is built from, read from its release record."""
+    found = {}
+    for record in sorted((root / 'v2-records').glob('*/staging/release.json')):
+        try:
+            release = json.loads(record.read_text())
+            image, repository = release['artifact']['image'], release['source']['repository']
+        except (OSError, ValueError, KeyError, TypeError):
+            continue  # a record that cannot state them adds no webhook; verify-platform reports it
+        app = record.parent.parent.name
+        if image.removeprefix(REGISTRY) == workload.platform_image(app).removeprefix(REGISTRY):
+            found[app] = repository
+    return found
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:

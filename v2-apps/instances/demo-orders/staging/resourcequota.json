@@ -1,0 +1,1 @@
+{"apiVersion":"v1","kind":"ResourceQuota","metadata":{"name":"demo-orders","namespace":"demo-orders-staging"},"spec":{"hard":{"limits.memory":"4Gi","pods":"14","requests.cpu":"2","requests.memory":"2Gi"}}}

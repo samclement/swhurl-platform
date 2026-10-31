@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "application": "demo-shopper",
+  "environment": "staging",
+  "release": "rel-sha256:0f158133968de511f07146295788a1b0420cff61be42cbbe4ec987612d109605",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "private"
+  },
+  "bindings": {},
+  "storage": {},
+  "calls": [
+    "demo-shop"
+  ],
+  "events": {
+    "key": "UBTEFDHXMWLBQALKXYVDS3WWMVTEAEATHTX36DHE5ENJAFUTGYBCX62N"
+  }
+}

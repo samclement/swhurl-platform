@@ -1,0 +1,20 @@
+{
+  "database": "sqlite",
+  "description": "Demo: the shop people open; a page that places orders in demo-orders and keeps its own purchase log",
+  "healthPath": "/healthz",
+  "image": {
+    "digest": "sha256:33c6e1da2a0530e154e768268b599d1162bf3b4ab591472e3947218cbe740dd1",
+    "repository": "ghcr.io/samclement/demo-shop",
+    "tag": "90-bf6a217"
+  },
+  "kind": "web",
+  "offers": "bf6a217",
+  "port": 8080,
+  "publishes": [
+    "visited"
+  ],
+  "stack": "typescript",
+  "telemetry": true,
+  "uid": 65532,
+  "version": 1
+}

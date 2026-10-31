@@ -67,9 +67,11 @@ class AppHooksTests(unittest.TestCase):
         self.assertNotIn(TOKEN, '\n'.join(repo.runner.echoed))
 
     def test_repositories_come_from_the_scanned_images(self):
-        # Read from this repository's own apps/: demo-shop is one of the demo apps, which stay.
+        # Staging is v2's, so the repository comes from the instance's own release record; a v1 instance states
+        # the same fact in apps/.
         found = hooks.auto_deploy_repositories()
         self.assertEqual(found.get('demo-shop'), 'samclement/demo-shop')
+        self.assertEqual(found.get('swhurl-try-30'), 'samclement/swhurl-try-30')
 
     def test_command_output_distinguishes_existing_live_and_planned_webhooks(self):
         for dry_run in (False, True):

@@ -2,6 +2,36 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console reads v2 and writes nothing (31 October 2026)
+
+- **What changed:** the console's one Git reader reads `v2-records/<app>/{app.json,<env>/instance.json,release.json}`
+  and composes the declared connections with what runs; a v2 instance's page offers no change form and names
+  `swhurl-v2 edit`, `promote` and `remove` instead, and the two POST paths refuse in the same words (deletion plan,
+  phase 1). The egress and schedule forms went with the two facts v2 does not model.
+- **Two live reads were wrong, and the fix is what the pages now show.** A v2 instance's Ingress and its
+  `<app>-callers` allow-list are objects of their own, so the live reader had been seeing neither: every app page
+  and the Deployments list had no web address, no API URL and no "called by". The console lists ingresses now; the
+  allow-list is derived from the callers' own rendered `SWHURL_SERVICE_<APP>_URL`, which v2 writes for a *resolved*
+  pair. Checked against the live ConfigMaps: `demo-shop/staging` is called by `demo-shopper`, `demo-orders` by
+  `demo-shop`; the catalogue names `demo-shopper` as `demo-orders`' consumer.
+- **The first deploy broke every instance page, and the second fixed it.** The console image deployed at
+  `f3271a02` listed ConfigMaps cluster-wide, which `platform/console/rbac.yaml` does not allow: `/apps`, `/catalogue`,
+  `/egress` and every app page answered `502` with `configmaps is forbidden`. The read was reverted (`e2555e7c`) and
+  replaced by the derivation (`1942e141`), so the console's RBAC is unchanged and it still reads no ConfigMap outside
+  its own namespace.
+- **Applied live (`77b283ba`, image `src-ef5da49e447a3c90`):** the console rolled out, and through a port-forward with
+  the identity header these answer `200`: `/`, `/apps`, `/catalogue?env=staging`, `/egress`, `/platform`, and the
+  pages of `demo-shop/staging`, `demo-orders/staging`, `demo-shopper/staging`, `demo-notifier/staging`,
+  `swhurl-try-10/staging`, `swhurl-try-13/staging`, `swhurl-try-30/staging`, `swhurl-try-31/staging` and
+  `swhurl-try-32/staging`. `demo-shop/staging` renders its host, its `team:demo` grant, its three declared
+  connections, the v2 banner naming the three commands, and **no** `<form class="wizard">`; `demo-orders/staging` and
+  `swhurl-try-13/staging` likewise.
+- **Checks:** `make check` (1023 tests) and `make check-v2` after each commit; `make verify-platform` reports the
+  console image built from the current tooling, **94 OK, 0 WARN**, and the GitHub tokens accepted.
+- **Not exercised:** a signed-in browser behind the real oauth2-proxy (the header was set by hand); the promotion
+  review page's refusal for a v2 instance (unit-tested only, and its page is now unreachable from the app page); a
+  v1-owned instance's page (there is none — the `app-new` path is unit-tested with fixtures).
+
 ## The production cutover: four instances (31 October 2026)
 
 - **What changed:** `demo-orders` and `demo-shop` production are v2's. `swhurl-v2 migrate` read their v1 records

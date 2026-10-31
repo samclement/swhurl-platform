@@ -138,9 +138,9 @@ rollout; phase 2's first live edit is confirmed with the operator.
 **Phase 3 — delete the v1 writer commands and modules (1–2 days).**
 - Remove the **delete** rows from `commands.py`, the Makefile `COMMANDS`, [commands](commands.md), their tests
   and fixtures, and the functions/modules only they use.
-- Delete `verify-platform`'s v1 branch and `resolve`'s v1-shaped reading; `swhurl-v2 resolve` reads v2 records
-  only.
-- Replace `check-apps` (phase 4) before deleting `apps/checks.py`.
+- Delete `resolve`'s v1-shaped reading; `swhurl-v2 resolve` reads v2 records only. `verify-platform`'s v1
+  branch is phase 4, not this phase.
+- Keep `apps/checks.py` until phase 4 replaces `check-apps`.
 - Keep the v1-only modules used by the **keep** rows: `new.py`, `repo.py`, `hooks.py`, `teams.py`, `offers.py`
   (only if `app-offers` is kept, which this plan does not), `keys.py` (only if `platform-signing-keys` is kept,
   which this plan does not), and the `model`/`store`/`render` paths those commands need. Mark each kept path in
@@ -153,7 +153,7 @@ rollout; phase 2's first live edit is confirmed with the operator.
   compares it with `v2-apps`, checks `apps/teams.yaml`, and validates the platform documents. The Makefile's
   `check` keeps the same shape.
 - `make verify-platform` reads v2 records for the namespace/team/quota/port checks; delete the v1 branch and
-  its `0 instance(s)` path.
+  its `0 instance(s)` path. Then delete `apps/checks.py` if the new `check-apps` no longer uses it.
 - `swhurl-v2 resolve` test: one record shape, no v1 fallback.
 
 **Phase 5 — external repositories (separate confirmation).**

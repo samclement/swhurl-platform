@@ -22,15 +22,15 @@ func eventInstances(t *testing.T) map[string]any {
 	}
 	key := func(letter string) string { return "U" + strings.Repeat(letter, 55) }
 	publisher := map[string]any{"publishes": []any{"created"}}
-	// notifier reads orders' event, and one from the v2-owned app whose publications this slice cannot state.
-	subscriber := map[string]any{"subscriptions": []any{"orders.created", "quiet.something"},
+	// notifier reads orders' event, and one from no instance at all: that one waits, and grants nothing.
+	subscriber := map[string]any{"subscriptions": []any{"orders.created", "absent.something"},
 		"allocations": map[string]any{"eventsKey": key("B")}}
 	return map[string]any{"version": 1, "revision": strings.Repeat("a", 40), "residual": []any{},
 		"instances": []any{
 			instance("orders", "v1", map[string]any{"allocations": map[string]any{"eventsKey": key("A")}}, publisher),
 			instance("notifier", "v1", subscriber, map[string]any{}),
-			// A v2-owned instance publishes nothing this model can state, so notifier's second subscription to it
-			// would wait rather than being refused.
+			// A v2-owned instance states its publications: this one publishes nothing, so a subscription to its
+			// event would be refused rather than left waiting.
 			instance("quiet", "v2", map[string]any{}, map[string]any{}),
 		}}
 }
@@ -82,8 +82,8 @@ func TestUsersRendersTheServerList(t *testing.T) {
 			t.Errorf("the user list lacks %s:\n%s", want, values)
 		}
 	}
-	// A subscription whose publisher's publications cannot be stated yet waits: it has no consumer calls.
-	for _, unwanted := range []string{"notifier_something", "staging-quiet", "quiet.something"} {
+	// A subscription whose publisher no instance answers to waits: it has no consumer calls.
+	for _, unwanted := range []string{"notifier_something", "staging-absent", "absent.something"} {
 		if strings.Contains(values, unwanted) {
 			t.Errorf("a waiting subscription was granted %q:\n%s", unwanted, values)
 		}
@@ -123,6 +123,11 @@ func TestUsersRefusals(t *testing.T) {
 		{"a subscription to a publisher that states its events and has none",
 			[]string{"users", "--snapshot", withRecords(0, func(records map[string]any) {
 				records["release"] = map[string]any{"publishes": []any{}}
+			}), "--profile", profilePath(t)}, 2, "not_published"},
+		{"a subscription to a v2-owned publisher that publishes nothing", []string{"users", "--snapshot",
+			withRecords(1, func(records map[string]any) {
+				records["instance"] = map[string]any{"subscriptions": []any{"quiet.something"},
+					"allocations": map[string]any{"eventsKey": "U" + strings.Repeat("B", 55)}}
 			}), "--profile", profilePath(t)}, 2, "not_published"},
 		{"an instance that declares events and has no key",
 			[]string{"users", "--snapshot", withRecords(1, func(records map[string]any) {

@@ -72,20 +72,10 @@ func (c cli) resolve(r request) int {
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	declarations, err := declarationsOf(pinned)
+	document, err := resolutionOf(pinned)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	resolution, err := calls.Resolve(declarations)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	eventResolution, err := events.Resolve(eventDeclarationsOf(pinned))
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	document := resolutionFrom(pinned.Revision, resolution)
-	document.Subscriptions, document.EventWaiting = subscriptionsFrom(pinned, eventResolution)
 	encoded, err := encodeResolution(document)
 	if err != nil {
 		return fail(c.diagnostic, err)
@@ -94,6 +84,26 @@ func (c cli) resolve(r request) int {
 		len(document.Pairs), len(document.Waiting), len(document.Refused), len(document.Subscriptions),
 		len(document.EventWaiting))
 	return emit(c.out, c.diagnostic, encoded)
+}
+
+// resolutionOf is one snapshot's relationships as the document states them: the calls' pairs, waits and refusals,
+// and the event subscriptions that connected or wait.
+func resolutionOf(pinned snapshot) (resolutionDocument, error) {
+	declarations, err := declarationsOf(pinned)
+	if err != nil {
+		return resolutionDocument{}, err
+	}
+	resolution, err := calls.Resolve(declarations)
+	if err != nil {
+		return resolutionDocument{}, err
+	}
+	eventResolution, err := events.Resolve(eventDeclarationsOf(pinned))
+	if err != nil {
+		return resolutionDocument{}, err
+	}
+	document := resolutionFrom(pinned.Revision, resolution)
+	document.Subscriptions, document.EventWaiting = subscriptionsFrom(pinned, eventResolution)
+	return document, nil
 }
 
 // declarationsOf is every instance's side of the pairs it takes part in, read from the records the

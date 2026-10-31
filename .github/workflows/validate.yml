@@ -350,7 +350,7 @@ jobs:
         id: source
         run: |
           set -Eeuo pipefail
-          paths=(images/console .dockerignore pyproject.toml uv.lock tools
+          paths=(images/console .dockerignore pyproject.toml uv.lock tools v2
                  clusters/home/flux-system/sources/configmap-platform-settings.yaml)
           content=$(for p in "${paths[@]}"; do git rev-parse "HEAD:$p"; done | sha256sum | cut -c1-16)
           echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

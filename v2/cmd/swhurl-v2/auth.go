@@ -49,11 +49,7 @@ func (c cli) auth(r request) int {
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	namespaces := make([]string, 0, len(pinned.Instances))
-	for _, instance := range pinned.Instances {
-		namespaces = append(namespaces, kernel.NamespaceOf(instance.Application, instance.Environment))
-	}
-	rendered, err := kernel.RenderAuth(namespaces, profile)
+	namespaces, rendered, err := renderAuth(pinned, profile)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -73,4 +69,14 @@ func (c cli) auth(r request) int {
 		return c.writeFiles(r.out, rendered.Files)
 	}
 	return emit(c.out, c.diagnostic, encoded)
+}
+
+// renderAuth is the auth objects for every instance's namespace in one snapshot, and the namespaces they are for.
+func renderAuth(pinned snapshot, profile kernel.PlatformProfile) ([]string, kernel.ResourceSet, error) {
+	namespaces := make([]string, 0, len(pinned.Instances))
+	for _, instance := range pinned.Instances {
+		namespaces = append(namespaces, kernel.NamespaceOf(instance.Application, instance.Environment))
+	}
+	rendered, err := kernel.RenderAuth(namespaces, profile)
+	return namespaces, rendered, err
 }

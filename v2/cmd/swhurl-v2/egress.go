@@ -33,17 +33,25 @@ func (c cli) egress(r request) int {
 			return fail(c.diagnostic, err)
 		}
 	}
-	allocations, err := kernel.Allocate(egressFacts(pinned), previous.Instances, profile.Backup.Host())
+	document, err := allocationAt(pinned, previous, profile)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	document := kernel.EgressDocument{Kind: "v2-egress", Version: 1, Revision: pinned.Revision, Instances: allocations}
 	encoded, err := kernel.EncodeEgressDocument(document)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
 	fmt.Fprintf(c.diagnostic, "egress: %d instance(s) allocated\n", len(document.Instances))
 	return emit(c.out, c.diagnostic, encoded)
+}
+
+// allocationAt is one snapshot's allocation at its revision, keeping every port the previous document gave.
+func allocationAt(pinned snapshot, previous kernel.EgressDocument, profile kernel.PlatformProfile) (kernel.EgressDocument, error) {
+	allocations, err := kernel.Allocate(egressFacts(pinned), previous.Instances, profile.Backup.Host())
+	if err != nil {
+		return kernel.EgressDocument{}, err
+	}
+	return kernel.EgressDocument{Kind: "v2-egress", Version: 1, Revision: pinned.Revision, Instances: allocations}, nil
 }
 
 // egressFacts is what the snapshot says about each instance's way out: the port it already holds, the hosts

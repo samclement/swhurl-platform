@@ -1,19 +1,24 @@
+adapters/files/filestest: func (*Fake) Prune(dir, folder string, rendered []string) ([]files.Outcome, error)
+adapters/files/filestest: func (*Fake) Remove(dir, path string) ([]files.Outcome, error)
 adapters/files/filestest: func (*Fake) Write(dir string, docs []kernel.File) ([]files.Outcome, error)
 adapters/files/filestest: func Contract(t *testing.T, open func(*testing.T) (files.Writer, string), docs []kernel.File)
 adapters/files/filestest: func New() *Fake
-adapters/files/filestest: type Fake struct {Contents map[string][]byte Writes int Files []kernel.File Fail error}
+adapters/files/filestest: type Fake struct {Contents map[string][]byte Writes int Files []kernel.File Prunes int Removals int PruneResult []files.Outcome RemoveResult []files.Outcome Fail error}
 adapters/files: const IO = "io"
 adapters/files: const RefusedDestination = "refused_destination"
+adapters/files: const Removed = "removed"
 adapters/files: const Unchanged = "unchanged"
 adapters/files: const Written = "written"
 adapters/files: func (*Error) Error() string
+adapters/files: func (Disk) Prune(dir, folder string, rendered []string) ([]Outcome, error)
+adapters/files: func (Disk) Remove(dir, path string) ([]Outcome, error)
 adapters/files: func (Disk) Write(dir string, docs []kernel.File) ([]Outcome, error)
 adapters/files: func New() Writer
 adapters/files: func Target(base, relative string) (string, error)
 adapters/files: type Disk struct {}
 adapters/files: type Error struct {Code string Path string Reason string}
 adapters/files: type Outcome struct {Path string `json:"path"` State string `json:"state"`}
-adapters/files: type Writer interface {Write(dir string, files []kernel.File) ([]Outcome, error)}
+adapters/files: type Writer interface {Write(dir string, files []kernel.File) ([]Outcome, error) Prune(dir, folder string, rendered []string) ([]Outcome, error) Remove(dir, path string) ([]Outcome, error)}
 adapters/kube/kubetest: func (*Fake) Create(_ context.Context, ref observe.Ref, _ []byte) error
 adapters/kube/kubetest: func (*Fake) Delete(_ context.Context, ref observe.Ref) error
 adapters/kube/kubetest: func (*Fake) List(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
@@ -161,6 +166,7 @@ kernel: func (Reloader) Namespaces() ([]string, error)
 kernel: func (Telemetry) CollectorPort() (int32, bool)
 kernel: func AcceptDeclaration(declaration Declaration, spec InstanceSpec, current ReleaseBundle) error
 kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation, backupHost string) ([]EgressAllocation, error)
+kernel: func AuthFileName(namespace string) string
 kernel: func CheckEncryptedSeed(document []byte, seed string) error
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
 kernel: func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error)
@@ -182,6 +188,7 @@ kernel: func ImageParts(image string) (host, repository string, err error)
 kernel: func ImagePolicyName(application string) string
 kernel: func ImageRepository(image string) string
 kernel: func ImageRepositoryName(application string) string
+kernel: func InstanceFolder(application, environment string, profile PlatformProfile) string
 kernel: func NamespaceOf(application, environment string) string
 kernel: func NewUserKey(seed [32]byte) UserKey
 kernel: func NewestTag(tags []string) (ImageTag, bool)
@@ -192,11 +199,23 @@ kernel: func RenderProxy(allocations []EgressAllocation, profile PlatformProfile
 kernel: func RenderReloader(namespaces []string) (ResourceSet, error)
 kernel: func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, egress *Egress, job RestoreJob) (RestoreObjects, error)
 kernel: func RenderUsers(users NATSUsers) (ResourceSet, error)
+kernel: func Rendered(name string) bool
 kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func RevisionOf(tag ImageTag, revision string) (string, error)
 kernel: func SelectPromotion(staging, target InstanceSpec, current, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
+kernel: func SubscribersOf(data []byte, application, environment string) ([]string, error)
+kernel: func UnitPath(application, environment string, profile PlatformProfile) string
+kernel: func WithAllows(spec InstanceSpec, allows []string) (InstanceSpec, error)
 kernel: func WithBrokerKey(spec InstanceSpec, pair UserKey, rotate bool) (InstanceSpec, error)
+kernel: func WithCalls(spec InstanceSpec, calls []string) (InstanceSpec, error)
+kernel: func WithExposure(spec InstanceSpec, release ReleaseBundle, exposure string) (InstanceSpec, error)
+kernel: func WithMemory(spec InstanceSpec, memoryMiB int32) (InstanceSpec, error)
+kernel: func WithReplicas(spec InstanceSpec, replicas int32) (InstanceSpec, error)
+kernel: func WithSubscriptions(spec InstanceSpec, subscriptions []string) (InstanceSpec, error)
+kernel: func WithTeam(app AppSpec, team string) (AppSpec, error)
+kernel: func WithoutEntry(document []byte, entry string) ([]byte, bool, error)
+kernel: func WithoutResource(document []byte, name string) ([]byte, bool, error)
 kernel: type AppID string
 kernel: type AppSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Team string `json:"team"` AppID AppID `json:"appId,omitempty"`}
 kernel: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"` MediaType string `json:"mediaType"` Platform string `json:"platform"`}
@@ -415,16 +434,22 @@ orchestration: func (*Refusal) Error() string
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
 orchestration: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
+orchestration: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
 orchestration: func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (Migration, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
+orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
+orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
 orchestration: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
+orchestration: type Editable struct {InstanceInputs Change string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}
+orchestration: type Edition struct {Application, Environment, Change string Before, After kernel.InstanceSpec Compilation kernel.Compilation ResolutionStale bool Written []files.Outcome}
 orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
+orchestration: type InstanceInputs struct {Inputs InstancePath string}
 orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}
 orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
@@ -432,12 +457,17 @@ orchestration: type MintOutcome struct {Application, Environment string Public, 
 orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
 orchestration: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
 orchestration: type Refusal struct {Subject, Reason string}
+orchestration: type Registration struct {Path string Document []byte}
+orchestration: type Removal struct {Application, Environment string Written []files.Outcome Removed []files.Outcome Notes []string}
+orchestration: type RemovalInputs struct {Instance, Release []byte Calls [][]byte Records, Compiled, Unit string AppRecord string LastEnvironment bool AuthFile string UnitRegistration Registration AuthRegistration Registration}
 orchestration: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}
 orchestration: type RestoreInputs struct {Instance, Release, Profile, Egress []byte Plan observe.RestorePlan Target observe.Target AgeIdentity, ReadURL string Cluster Cluster Sleep func(time.Duration) Now func() time.Time}
 orchestration: type RestoreJobOutcome struct {Name string State string Log string LogReason string}
 orchestration: type RestoreOutcome struct {State string Reason string Steps []RestoreStep Job RestoreJobOutcome App RestoreApp BackupSuspended bool Started time.Time Finished time.Time}
 orchestration: type RestoreStep struct {Name string Outcome string Detail string}
 orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
+orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
+orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
 shadow: func (*Error) Error() string
 shadow: func CompareHTTP(before, after []byte, choices ResourceChoices) (HTTPComparison, error)
 shadow: type Error struct {Field, Reason string}

@@ -99,7 +99,7 @@ func Migrate(inputs MigrationInputs, destination string, writer files.Writer) (M
 		UnmetCallers: unmet(facts.Allows, rendered.Callers)}
 	written := append(recordFiles(facts.Application, facts.Environment, appDocument, releaseDocument, instanceDocument,
 		inputs.EventsSecret), files...)
-	result.Written, err = writer.Write(destination, written)
+	result.Written, err = writeCompiled(destination, compiled, written, writer)
 	return result, err
 }
 

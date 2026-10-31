@@ -39,6 +39,10 @@ const usage = `usage:
   swhurl-v2 promote --records DIR --app APPLICATION --env prod --profile PROFILE.json --expect REVISION \
       --out DIR [--calls CALLS.json] [--egress EGRESS.json]
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
+  swhurl-v2 edit --records DIR --app APPLICATION [--env ENVIRONMENT] --set NAME=VALUE --profile PROFILE.json \
+      --out DIR [--calls CALLS.json] [--egress EGRESS.json]
+  swhurl-v2 remove --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
+      --calls CALLS.json --out DIR
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
       [--max-age DURATION] [--archive [--region REGION]]
@@ -137,6 +141,22 @@ checked against it, never expanded from it. The report on stdout says which file
 recorded fact came from, which of the predecessor's declarations the resolution does not connect, and
 every legacy fact the pair cannot carry. It deletes nothing: removing v1's records, manifests and unit is
 the handover step, and the unit's registration stays a reviewed edit.
+
+edit applies one named change to one v2-owned instance's record, compiles the edited record, and writes the
+record and the files it renders under --out in one effect: the settings are replicas, memoryMiB, exposure,
+calls, allows and subscriptions, each the whole new value (an empty list clears it), and team, which is the app
+record's fact and so names no environment and re-renders every one of the app's. A change the record or its
+release does not permit is refused by name, and so is one that leaves the record as it was. egress and alerts are
+named settings v2 does not model yet: they are refused rather than accepted as another fact. A change to calls,
+allows or subscriptions writes the record the resolution predates: the report says so (resolutionStale) and the
+operator regenerates v2-records/calls.json from the edited tree.
+
+remove deletes one v2-owned instance: its record pair with its seed and the documents it publishes, the files
+compiled from them, its unit, the namespace's auth object, and the app record when this was the app's last
+environment. It writes the two kustomizations without the entries that named them in the same effect, so a commit
+never lists a file it deleted. It refuses an instance the resolution still connects as a caller or a subscriber,
+and it reports the platform documents that still name the instance instead of writing them: each is rendered from
+a pinned revision of the whole tree, so they are regenerated after the removal is committed.
 
 restore writes a v2-restore plan for one instance: the archive it would be restored from (the newest, or
 --from KEY), what the bucket records beside it (both checksums, table count, source instance), the
@@ -278,6 +298,8 @@ var commands = map[string]func(cli, request) int{
 	"reloader":          cli.reloader,
 	"mint":              cli.mint,
 	"migrate":           cli.migrate,
+	"edit":              cli.edit,
+	"remove":            cli.remove,
 	"restore":           cli.restore,
 }
 
@@ -293,7 +315,7 @@ type request struct {
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
 	records                                            string
-	eventsSecret, offers                               string
+	eventsSecret, offers, change                       string
 	rotate                                             bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
@@ -361,6 +383,56 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 // registerRecordFlags adds the flags of the commands that work from one instance's records, and reports
 // whether it handled the command.
 func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool {
+	if r.registerChangeFlags(flags, command) {
+		return true
+	}
+	if r.registerDeliveryFlags(flags, command) {
+		return true
+	}
+	return r.registerInstanceFlags(flags, command)
+}
+
+// registerChangeFlags is the flags of the commands that change or compile one instance's records.
+func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool {
+	switch command {
+	case "edit":
+		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
+		flags.Var(&once{value: &r.app}, "app", "application")
+		flags.Var(&once{value: &r.env}, "env", "environment (omit for an app-level change)")
+		flags.Var(&once{value: &r.change}, "set", "one named change, name=value")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
+		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		r.registerOut(flags)
+	case "remove":
+		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
+		flags.Var(&once{value: &r.app}, "app", "application")
+		flags.Var(&once{value: &r.env}, "env", "environment")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document")
+		r.registerOut(flags)
+	case "compile":
+		r.registerRecords(flags)
+		flags.Var(&once{value: &r.app}, "app", "app record (its team)")
+		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
+		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		flags.Var(&once{value: &r.eventsSecret}, "events-secret", "the instance's encrypted events Secret (optional)")
+		flags.Var(&once{value: &r.offers}, "offers", "the folder holding the documents the instance publishes (optional)")
+		r.registerOut(flags)
+	case "preview":
+		flags.Var(&once{value: &r.app}, "app", "legacy app record")
+		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")
+		flags.Var(&once{value: &r.committed}, "committed", "the HelmRelease the predecessor committed")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+	default:
+		return false
+	}
+	return true
+}
+
+// registerDeliveryFlags is the flags of the commands that deliver a release: one instance, every staging instance, or
+// a promotion into production.
+func (r *request) registerDeliveryFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
 	case "select-release":
 		flags.Var(&once{value: &r.expected}, "expect", "reviewed instance revision")
@@ -381,14 +453,15 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
 		r.registerOut(flags)
-	case "compile":
-		r.registerRecords(flags)
-		flags.Var(&once{value: &r.app}, "app", "app record (its team)")
-		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
-		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
-		flags.Var(&once{value: &r.eventsSecret}, "events-secret", "the instance's encrypted events Secret (optional)")
-		flags.Var(&once{value: &r.offers}, "offers", "the folder holding the documents the instance publishes (optional)")
-		r.registerOut(flags)
+	default:
+		return false
+	}
+	return true
+}
+
+// registerInstanceFlags is the flags of the live commands and of minting a broker identity.
+func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) bool {
+	switch command {
 	case "observe":
 		r.registerLive(flags)
 		flags.Var(&onceBool{value: &r.archive}, "archive", "also read the newest archive from the object store (needs AWS credentials)")
@@ -403,11 +476,6 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		flags.Var(&onceBool{value: &r.rotate}, "rotate", "replace an existing broker identity")
 		r.registerOut(flags)
-	case "preview":
-		flags.Var(&once{value: &r.app}, "app", "legacy app record")
-		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")
-		flags.Var(&once{value: &r.committed}, "committed", "the HelmRelease the predecessor committed")
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 	default:
 		return false
 	}
@@ -503,26 +571,27 @@ func (r *request) named() []string {
 	if named, found := r.platformNamed(); found {
 		return named
 	}
-	switch r.command {
-	case "release-id", "instance-revision":
-		return nil
-	case "migrate", "promote":
-		return r.appNamed()
-	case "deploy":
-		return r.deployNamed()
-	case "compile":
-		return []string{r.instance, r.release, r.app, r.profile}
-	case "preview":
-		return []string{r.app, r.settings, r.release, r.committed, r.profile}
-	case "select-release":
-		return []string{r.instance, r.release, r.expected}
-	case "mint":
-		return []string{r.instance, r.profile, r.out}
-	case "observe", "restore":
-		// A live read needs the instance, its release, the profile, the revision to expect and a credential.
-		return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig}
+	if required, found := requiredFlags[r.command]; found {
+		return required(r)
 	}
-	return []string{r.instance, r.release, r.profile}
+	return nil
+}
+
+// requiredFlags is what each command that names its inputs requires. A command that is not listed takes one file
+// argument instead, which is why the table is also the list of the two commands that do.
+var requiredFlags = map[string]func(*request) []string{
+	"compile":        func(r *request) []string { return []string{r.instance, r.release, r.app, r.profile} },
+	"preview":        func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
+	"select-release": func(r *request) []string { return []string{r.instance, r.release, r.expected} },
+	"mint":           func(r *request) []string { return []string{r.instance, r.profile, r.out} },
+	"remove":         func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
+	// A live read needs the instance, its release, the profile, the revision to expect and a credential.
+	"observe": func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
+	"restore": func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
+	"migrate": (*request).appNamed,
+	"promote": (*request).appNamed,
+	"deploy":  (*request).deployNamed,
+	"edit":    (*request).editNamed,
 }
 
 // appNamed is what a command that works on one app needs: migrate reads a snapshot, promote the records tree; both
@@ -532,6 +601,16 @@ func (r *request) appNamed() []string {
 		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}
 	}
 	return []string{r.records, r.app, r.env, r.profile, r.expected, r.out}
+}
+
+// editNamed is what an edit requires: one named change, and the environment it applies to. A team is the app's fact,
+// so that one change names no environment and every environment of the app is rewritten.
+func (r *request) editNamed() []string {
+	name, _, _ := strings.Cut(r.change, "=")
+	if name == "team" {
+		return []string{r.records, r.app, r.change, r.profile, r.out}
+	}
+	return []string{r.records, r.app, r.env, r.change, r.profile, r.out}
 }
 
 // deployNamed is the two forms the deploy command has: one instance's records named on the line, or the tree every

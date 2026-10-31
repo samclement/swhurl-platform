@@ -76,16 +76,63 @@ func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result
 	if err != nil {
 		return Result{}, err
 	}
+	files, err := instanceFiles(compiled, inputs)
+	if err != nil {
+		return Result{Compilation: compiled}, err
+	}
+	outcomes, err := writeCompiled(destination, compiled, files, writer)
+	return Result{Compilation: compiled, Written: outcomes}, err
+}
+
+// compileComplete compiles one instance and adds the two declared inputs its folder holds: its seed and the documents
+// it publishes. Every use case that writes an instance's folder calls it, so a folder is either complete or refused —
+// the compiler lists the seed and never writes it, and the documents are copied, never produced.
+func compileComplete(inputs Inputs) (kernel.Compilation, []kernel.File, error) {
+	compiled, err := Compile(inputs)
+	if err != nil {
+		return kernel.Compilation{}, nil, err
+	}
+	files, err := instanceFiles(compiled, inputs)
+	return compiled, files, err
+}
+
+// instanceFiles is the compilation's files plus the declared inputs the caller supplied.
+func instanceFiles(compiled kernel.Compilation, inputs Inputs) ([]kernel.File, error) {
 	documents, err := WithEventsSecret(compiled, inputs.EventsSecret)
 	if err != nil {
-		return Result{Compilation: compiled}, err
+		return nil, err
 	}
-	with, err := WithOffers(documents, inputs.Offers)
+	return WithOffers(documents, inputs.Offers)
+}
+
+// writeCompiled writes a use case's files and then prunes the instance's compiled folder, so a file the records no
+// longer render cannot outlive the change that removed it. Pruning names only the files the renderer produces and this
+// compilation did not: a folder's declared inputs are not its to remove.
+func writeCompiled(destination string, compiled kernel.Compilation, written []kernel.File,
+	writer files.Writer) ([]files.Outcome, error) {
+	outcomes, err := writer.Write(destination, written)
 	if err != nil {
-		return Result{Compilation: compiled}, err
+		return outcomes, err
 	}
-	outcomes, err := writer.Write(destination, with)
-	return Result{Compilation: compiled, Written: outcomes}, err
+	pruned, err := prune(writer, destination, compiled)
+	return append(outcomes, pruned...), err
+}
+
+// prune removes the rendered names one compilation stopped producing from the instance's own folder.
+func prune(writer files.Writer, destination string, compiled kernel.Compilation) ([]files.Outcome, error) {
+	folder := instanceFolder(compiled.Files)
+	if folder == "" {
+		return nil, nil
+	}
+	rendered := make([]string, 0, len(compiled.Files))
+	for _, file := range compiled.Files {
+		name := strings.TrimPrefix(file.Path, folder+"/")
+		if name == file.Path || strings.Contains(name, "/") {
+			continue // the unit and anything in a subfolder are not this folder's names
+		}
+		rendered = append(rendered, name)
+	}
+	return writer.Prune(destination, folder, rendered)
 }
 
 // WithEventsSecret adds an instance's seed to the files a use case writes beside its manifests. The compiler

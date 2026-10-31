@@ -126,21 +126,13 @@ type ConnectionsRefusal struct {
 	Reason      string `json:"reason"`
 }
 
-// ConnectionsOf reads a resolution and reduces it to one instance's own edges in its own environment. A pair
-// in another environment is ignored, never cross-applied.
 // ConnectionsOf reads the resolution document the resolver wrote and keeps what one instance takes part in: the
 // pairs it calls or is called in, and the subscriptions that connected. The document carries every name a
 // rendered consumer needs, so a compilation cannot derive one the resolver did not agree with.
 func ConnectionsOf(data []byte, application, environment string) (Connections, error) {
-	var document ConnectionsDocument
-	if err := json.Unmarshal(data, &document); err != nil {
-		return Connections{}, fmt.Errorf("invalid: calls: single_json_object_required")
-	}
-	if document.Version != 1 || document.Kind != "v2-calls" {
-		return Connections{}, fmt.Errorf("unsupported: calls: only v2-calls version 1")
-	}
-	if !commitPattern.MatchString(document.Revision) {
-		return Connections{}, fmt.Errorf("invalid: calls: revision_required")
+	document, err := resolution(data)
+	if err != nil {
+		return Connections{}, err
 	}
 	connections := Connections{}
 	for _, pair := range document.Pairs {
@@ -163,6 +155,38 @@ func ConnectionsOf(data []byte, application, environment string) (Connections, e
 	slices.Sort(connections.Callers)
 	connections.Subscriptions = subscriptionsOf(document.Subscriptions, application, environment)
 	return connections, nil
+}
+
+// SubscribersOf is the apps that receive one instance's events: every connected subscription in which it is the
+// publisher, in the resolver's order. A removal refuses while one remains, because the subscriber's Consumer names a
+// Stream the removed instance's own folder would take with it.
+func SubscribersOf(data []byte, application, environment string) ([]string, error) {
+	document, err := resolution(data)
+	if err != nil {
+		return nil, err
+	}
+	subscribers := []string{}
+	for _, subscription := range document.Subscriptions {
+		if subscription.Publisher == application && subscription.Environment == environment {
+			subscribers = append(subscribers, subscription.Subscriber)
+		}
+	}
+	return subscribers, nil
+}
+
+// resolution reads a resolution document and checks the facts every reader of it depends on.
+func resolution(data []byte) (ConnectionsDocument, error) {
+	var document ConnectionsDocument
+	if err := json.Unmarshal(data, &document); err != nil {
+		return ConnectionsDocument{}, fmt.Errorf("invalid: calls: single_json_object_required")
+	}
+	if document.Version != 1 || document.Kind != "v2-calls" {
+		return ConnectionsDocument{}, fmt.Errorf("unsupported: calls: only v2-calls version 1")
+	}
+	if !commitPattern.MatchString(document.Revision) {
+		return ConnectionsDocument{}, fmt.Errorf("invalid: calls: revision_required")
+	}
+	return document, nil
 }
 
 // subscriptionsOf is one instance's connected subscriptions, in the document's order, which is the resolver's.

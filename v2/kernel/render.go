@@ -95,8 +95,8 @@ func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProf
 		return ResourceSet{}, err
 	}
 	// Instances under the instance root; units under the profile's unit root, which kustomize can list.
-	folder := profile.Delivery.OutputRoot + "/instances/" + spec.Application + "/" + spec.Environment
-	unitPath := profile.Delivery.UnitsRoot + "/" + unitName(spec) + ".json"
+	folder := InstanceFolder(spec.Application, spec.Environment, profile)
+	unitPath := UnitPath(spec.Application, spec.Environment, profile)
 	automation := imageAutomation(spec, http)
 	resources := resourcesOf(spec, http, profile, exposure, automation)
 	var files []File
@@ -129,7 +129,6 @@ func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProf
 func NamespaceOf(application, environment string) string { return application + "-" + environment }
 
 func namespaceName(spec InstanceFacts) string { return NamespaceOf(spec.Application, spec.Environment) }
-func unitName(spec InstanceFacts) string      { return "app-" + namespaceName(spec) }
 func owner(spec InstanceFacts) string         { return spec.Application + "/" + spec.Environment }
 
 func metadata(name, namespace string) manifest {
@@ -571,7 +570,7 @@ func unit(spec InstanceFacts, profile PlatformProfile, folder string, automation
 			"kind": backupSubstitutionKind, "name": profile.Backup.WriterName, "optional": false}}}
 	}
 	return manifest{"apiVersion": "kustomize.toolkit.fluxcd.io/v1", "kind": "Kustomization",
-		"metadata": metadata(unitName(spec), "flux-system"), "spec": specification}
+		"metadata": metadata(unitFileName(spec.Application, spec.Environment), "flux-system"), "spec": specification}
 }
 
 // validate runs every check the renderer makes, in a fixed order, and returns the exposure the files are
@@ -1055,7 +1054,7 @@ func inventory(spec InstanceFacts, http WorkloadFacts) []Claim {
 			Claim{Object{"batch", "CronJob", namespace, name}, by},
 			Claim{Object{"networking.k8s.io", "NetworkPolicy", namespace, name}, by})
 	}
-	return append(claims, Claim{Object{"kustomize.toolkit.fluxcd.io", "Kustomization", "flux-system", unitName(spec)}, by})
+	return append(claims, Claim{Object{"kustomize.toolkit.fluxcd.io", "Kustomization", "flux-system", unitFileName(spec.Application, spec.Environment)}, by})
 }
 
 // encodeManifest is a document's canonical bytes: compact, keys sorted, no HTML escaping.

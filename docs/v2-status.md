@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: 1a's slice record: `edit`, `remove` and prune, then the staging fleet migrated and v1's staging writer deleted (the repository read follows 1b)
+Gate: 1a's live half: the nine staging instances migrated, their units switched to `.json`, and v1's staging records and writers deleted (the repository read follows 1b)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -9,6 +9,15 @@ Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md
 ## Authority
 
 **Approved 31 October 2026: finish the cutover.** The operator wants the quickest route to a v2-only platform and accepts breaking v1 to get there, provided the design decisions are made once rather than discovered per seam. An inventory of the eleven v1 instances found no fact v2 does not already model, so owning the fleet needs no new v2 domain: it needs the three things v1's writer still does — `edit` (one settings primitive), `remove`, and a writer that prunes — and then the deletion. Two slices, both in the same week: **1a** the nine staging instances (two are already v2's) and **1b** the four production ones, with v1's writer deleted in 1b rather than kept alive. Closing seams one at a time and a staging-only cutover were both rejected: the first keeps every dual reader, and the second keeps the pairs that matter, because the live mixed ones are production's. The six rules that keep it from spiralling are in [the decisions](#decisions); the work's contract is [iteration 2's section 8](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026).
+
+**Worked 31 October 2026: the cutover's write primitives, offline (1a's code half).** The operator took the gate, and
+v2 now has the operator's write surface: `edit` (one named change to one instance's record, compiled and written once),
+`remove` (an instance's records, files and unit deleted, with the platform registrations that named them edited in the
+same effect), and a writer that prunes a compiled folder. Nothing was applied: the fleet, the unit switches and v1's
+deletion are 1a's live half. The deviations from the plan's table are stated, not hidden: `edit` refuses `egress` and
+`alerts` by name because v2 does not model them, and `remove` reports the platform documents to regenerate instead of
+re-rendering them, because each is rendered from a pinned revision of the whole tree. See
+[the record](#slice-record-the-cutovers-write-primitives-offline-31-october-2026).
 
 **Approved:** the operator said yes to the concrete phase-1 proposal: root-level `v2/`, Go 1.26.0, JSON-only descriptors, positional canonical encoding, manifest-only `linux/amd64` artifact claims, empty-only bindings and the narrow policy exception. Phase 2's compiler and its review decisions are approved and implemented. The operator's [design principles](iteration-2-plan.md#design-principles) and the revised [phase-3 brief](iteration-2-plan.md#phase-3-shadow-not-synchronise) are approved as direction; only the [first pure HTTP slice](iteration-2-plan.md#first-slice-proposal-pure-http-preview-and-comparison) is additionally approved for implementation: v2 is not bound to v1 contracts, responsibilities and data have explicit owners, and transition may have incomplete semantics. **Order approved 25 October 2026:** retire risk, not phase numbers — one disposable instance through delivery, observation and removal (phases 4–6) comes before the rest of the bridge, which is still required before any existing app is migrated ([why](iteration-2-plan.md#5-incremental-delivery)).
 
@@ -86,7 +95,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Done live 30 October 2026**: `swhurl-try-11` production was migrated to v2 and promoted from its v1 digest to its staging's release; `make app-status` and `observe` agree, and a repeat promotion is a no-op. A first promotion (creating production) is still not modelled, a rollback's direction is stated rather than decided, and v1 callees no longer admit the migrated caller. Both instances were removed on 31 October 2026; the record of what they proved stands | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
 | What an app offers | A release states its own description, API path and the commit its documents were read at; an instance renders them and carries the documents | **Done and live 30 October 2026**: the three facts are release identity, all four v2-owned HelmReleases then carried the variable and the two annotations in the cluster (the two described instances restarted onto it; the other two did not, an annotation being metadata; two remain), and the documents travel as declared inputs from `v2-records/` to `v2-apps/`, where the console reads them | [slice](#slice-record-what-an-app-offers-30-october-2026), [evidence](current-state.md#what-an-app-offers-carried-and-rendered-30-october-2026) |
-| Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **Approved 31 October 2026, not started**: `edit`, `remove`, prune, then 1a (nine staging) and 1b (four production) — [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
+| Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **Approved 31 October 2026; the write primitives are in, offline**: `edit`, `remove` and a pruning writer, with their tests; 1a's live half (nine staging instances, their units switched, v1's staging records and writers deleted) is next, then 1b (four production) — [record](#slice-record-the-cutovers-write-primitives-offline-31-october-2026), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **One live** (`swhurl-try-10` staging, stateful on its own volume; the other, `swhurl-try-11`, was removed on 31 October 2026), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
 | Always-on instance surface | Telemetry (the endpoint and the way out to it), the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: the env, tokens and team labels rolled to both v2-owned instances, and a reporting image's policy admits the collector the env names (the export was found blocked the same day; [evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)) |
@@ -129,11 +138,27 @@ credential, would make them travel; delivery is manual (compile, commit, push) f
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | What an app offers | **done and live 30 October 2026**: a release's `description`, `apiPath` and `offers` commit render the variable and the two annotations, which all four v2-owned instances now carry; `migrate` carries them and the documents; v2 generates and fetches nothing | [slice](#slice-record-what-an-app-offers-30-october-2026) |
 | 7. Selective replacement | two live: `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging (`swhurl-try-11` staging was a third until 31 October 2026); the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
+| Cutover's write primitives | done, offline 31 October 2026: `swhurl-v2 edit` applies one named change and writes the record with the files it renders in one effect; `swhurl-v2 remove` deletes an instance's records, files, unit and auth object and edits both registrations; every write of a compiled folder prunes what the records no longer render and keeps the folder's declared inputs | [record](#slice-record-the-cutovers-write-primitives-offline-31-october-2026), [evidence](current-state.md#the-cutovers-write-primitives-offline-31-october-2026) |
 | Promotion | done and live 30 October 2026: `swhurl-try-11` production is v2's and runs the release its staging selects; the handover orphaned v1's unit, adopted the same namespace and release, and then moved one release reference | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
 
 ## Decisions
+
+**31 October 2026 — the cutover's write primitives (worked, offline).** Three choices made once, on the operator's
+instruction to take the gate rather than discover them at the fleet. (1) **A change is named, not a mini-language**:
+`--set name=value` names one setting, and the value is that setting's whole new value (an empty list clears it); a
+second change in one call is a usage error, and a setting v2 does not model (`egress`, `alerts`) is refused by name
+rather than parsed as another fact. (2) **A prune removes by the renderer's own vocabulary**: `kernel.Rendered` names
+the files the compiler produces, so a prune can only remove what a render once wrote — a folder's declared inputs (its
+seed, its offered documents) are not rendered names and are never touched. This is why a deploy and a promotion prune
+too, without having to carry the folder's inputs. (3) **A removal reports what the platform renders, and re-renders
+nothing**: the allocation, the resolution, the broker's user list, the Reloader's list and the auth fan-out each read a
+pinned revision of the whole tree, and the removal is not in that revision; the report names the five commands, and
+`make check-v2` fails until they are run after the removal is committed. The app record is the one exception, because
+it is the instance's own tree: it goes with the app's last environment in the same effect. What reopens (1): a setting
+whose new value is not one whole value, or a v2 record field for egress grants. (2): a file the compiler writes but
+that is not a resource. (3): a removal command that reads the tree it is about to write.
 
 **31 October 2026 — the cutover: one writer, no compat layers (approved).** Six rules, taken with the operator when approving option 1 of the brief. (1) **One writer per fact**: after the cutover v1 renders nothing, and every v1 renderer is deleted rather than adapted. (2) **No compat layer**: a mixed-ownership rule is refused outright, so the dual `verify-platform` branch and `resolve`'s two record shapes are removed instead of maintained. (3) **Records are v2 JSON only**: the v1-shaped copies die at the cutover and the resolution is regenerated from one shape. (4) **Unused features stay on the backlog, as future work** (the operator's amendment to the brief, which proposed deleting them): `job`, `public` exposure, host overrides, schedules, bindings and secrets are not modelled now and not struck from the roadmap; v1's way of declaring them goes with v1, and re-modelling one is a decision with a live need. (5) **Promotion is one-way**: a rollback is a promotion of an older release, and creating production is a compile of staging's release into a fresh production record — which answers the two open promotion questions in one rule. (6) **Settings are one primitive**: `edit` applies a named change to an instance's record, compiles and writes, and nine `app-*` commands collapse into it. The events stub (`PublicationsKnown: instance.Format != "v2"`, `5bdbedb4`, whose premise `283d0689` removed) is corrected inside 1a and not before: flipping it alone would advertise a connected pair whose `Consumer` v1 does not render, and once `swhurl-try-13` is v2's, v2 renders both ends. What reopens each: (1) and (3) a fact that must be written twice for a while — which these rules then forbid; (2) a mixed-ownership rule that carries its own removal commit; (4) an app that needs the feature; (5) a rollback that must happen without a person; (6) a setting whose change is not a record edit.
 
@@ -162,6 +187,73 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 **25 October 2026 — the backup job: six decisions, all as proposed ("go").** A database instance renders its own backup — the Secret holding two *references* to the upload key, the nightly CronJob, and a policy for the pod that reaches S3 — from a new `PlatformProfile.backup` block (image and digest, S3 prefix, age recipient, writer Secret, `suspended`); Flux substitution stays the credential mechanism, with a rule that no other `${…}` may appear in a substituted instance's documents; the backup pod is the instance's second workload, so it gets the platform's narrow policy and the quota counts it; the schedule keeps v1's derivation, so a migration keeps its slot; restore and freshness are not modelled. [The slice](iteration-2-plan.md#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026). What reopens it: v2 owning secret material, or a second workload with different needs.
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
+
+## Slice record: the cutover's write primitives (offline, 31 October 2026)
+
+- **Outcome:** v2 has the operator's write surface, and it is the only writer of a v2-owned instance's files.
+  `swhurl-v2 edit --records v2-records --app X [--env E] --set NAME=VALUE --profile P --out DIR [--calls F]` applies
+  **one named change** to one instance's record — `replicas`, `memoryMiB`, `exposure`, `calls`, `allows`,
+  `subscriptions`, or the app-level `team` — compiles the edited pair and writes the record and the files it renders
+  in **one effect**. It refuses a change the record or its release does not permit, naming the rule the compiler's
+  own: a worker has no route (`exposure`), an instance cannot call or admit itself (`calls`, `allows`), a database
+  admits one writer (`replicas`), a subscription needs an events key, and a value that changes nothing is refused as
+  `already_set`. `--set team=T` names no environment: it rewrites `v2-records/<app>/app.json` and re-renders every
+  environment of the app, and refuses an app with no instance.
+- **`remove`** deletes the instance's record folder (pair, seed, `offers/`), its compiled folder, its unit and the
+  namespace's auth object, writes the unit root's kustomization and `platform/auth/kustomization.yaml` without the
+  entries that named them, and drops `app.json` with the app's last environment. It refuses an instance the committed
+  resolution still connects as a caller (`called_by`) or a subscriber (`subscribed_by`), because deleting it would
+  leave a caller's token and a stream nobody reads.
+- **Every write of a compiled folder prunes.** `files.Writer` gained `Prune(dir, folder, rendered)`: it removes the
+  files the renderer produces that this compilation did not, and reports each as `removed`. `kernel.Rendered` is that
+  vocabulary, so a prune can never touch a folder's declared inputs (a seed, the offered documents) — which is why
+  `deploy`, `promote` and `migrate` prune too, without carrying them. The stale `callers.json` of 31 October 2026
+  cannot recur, and `compile --out` into a fresh directory stays the truth-teller: a re-render and a pruned write
+  produce the same folder.
+- **The boundaries that moved:** the kernel gained the named changes (`WithReplicas`, `WithMemory`, `WithExposure`,
+  `WithCalls`, `WithAllows`, `WithSubscriptions`, `WithTeam`), one convention for an instance's places
+  (`InstanceFolder`, `UnitPath`), the renderer's name vocabulary and the two registration edits (`WithoutEntry` for the
+  hand-written YAML list, `WithoutResource` for v2's JSON one). Orchestration gained `Edit`, `SetTeam` and `Remove`
+  (layers unchanged: two use cases, one effect each through an adapter); the commands are one file each in
+  `cmd/swhurl-v2/`, and `CompileInto`, `Migrate`, `DeployImage` and `Promote` now write through the pruning path.
+- **What it does not do, and why.** `edit --set egress=…` and `--set alerts=…` are refused **by name**
+  (`refused: egress: not_modelled`): a per-instance egress grant is a record field v2 does not have (an identity
+  change, [gap](iteration-2-plan.md#6-deliberately-deferred)), and alerts are a platform document v2 does not render
+  (phase 7). `remove` does **not** re-render the platform documents: the allocation, the resolution, the broker's
+  user list, the Reloader's list and the auth fan-out each read a *pinned revision of the whole tree*, and the removal
+  is not in that revision. It reports the five commands (`egress` and `proxy`, `resolve`, `make v2-users`,
+  `make v2-reloader`, `auth`) and `make check-v2` fails until they are run from the committed removal.
+- **A relationship change says what it left older.** `calls`, `allows` and `subscriptions` are inputs of the committed
+  resolution; a change to one makes it stale, so the report carries `resolutionStale` and the command says what to
+  run. It is a report rather than a refusal because the resolution is generated *from* the edited record — the
+  operator edits, then resolves, then commits one tree.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):**
+  1. **v1 unchanged** — no v1 file, command, record or manifest changed; `make check` and `make check-apps` pass.
+  2. **Pure where it must be** — the kernel's rules and the orchestration's decisions are pure; no package prints,
+     and the commands are the only place that writes to a terminal.
+  3. **No identity changed** — no record schema field, profile field or renderer golden moved; the compiled output of
+     every v2-owned instance is byte-identical (`check-rendered.sh` compares the platform documents).
+  4. **Refusals tested** — each named change's refusal, `already_set`, a connected removal, and a doubled
+     registration, with the wording the operator sees.
+  5. **Failure paths** — a prune that would touch a declared input is tested against a folder holding a seed and an
+     `offers/` folder; a removal of a folder that is already gone is a no-op; a registration that does not name the
+     entry writes nothing.
+  6. **Scope** — offline only: nothing applied, no unit switched, v1's writer intact.
+  7. **Live** — nothing; the fleet is 1a's live half.
+  8. **Recorded in the same change** — this page, the plan's [contract table](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026)
+     and its gap rows, the registry, and [current state](current-state.md#the-cutovers-write-primitives-offline-31-october-2026).
+- **Evidence:** `make check-v2` (gofmt, vet, `go test ./...` — kernel, both adapter packages against their shared
+  contract, orchestration and the CLI — and `check-rendered.sh`), with the `api.txt` baseline updated for the
+  intended exports and the diff explained. Exercised against a **copy** of the real tree (records, `clusters/` and
+  `platform/auth/` in a temp directory, nothing in the checkout touched): `edit --set memoryMiB=192` on
+  `swhurl-try-10` staging wrote its record and files and left its seed and offers; `replicas=2` on that sqlite
+  instance was refused (`a database admits one writer`); `exposure=authenticated-web` on worker `demo-notifier`
+  staging was refused; `team=payments` rewrote `demo-notifier/app.json` and re-rendered every environment; `remove` of
+  `demo-notifier` staging deleted 18 files, dropped both registration entries and the app record, and left
+  `swhurl-try-10` untouched.
+- **Next gate:** 1a's live half — the nine staging instances migrated, each unit switched from `.yaml` to `.json` in a
+  commit that leaves the old one `Orphan` or suspended, `PublicationsKnown` corrected, then v1's staging records and
+  the `app-*` commands that wrote them deleted.
 
 ## Slice record: the delivery slice, offline half
 

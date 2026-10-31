@@ -38,7 +38,7 @@ func RenderAuth(namespaces []string, profile PlatformProfile) (ResourceSet, erro
 	listed := make([]any, 0, len(managed))
 	claims := make([]Claim, 0, len(managed))
 	for _, namespace := range managed {
-		name := authFileName(namespace)
+		name := AuthFileName(namespace)
 		files = append(files, File{authFolder + "/" + name, encodeManifest(authConfigMapFor(namespace, profile.Auth))})
 		listed = append(listed, name)
 		claims = append(claims, Claim{Object{"", "ConfigMap", namespace, authObjectName}, authOwner})
@@ -56,6 +56,7 @@ func authConfigMapFor(namespace string, auth Auth) manifest {
 		"data":     manifest{"SWHURL_AUTH_ISSUER": auth.Issuer, "SWHURL_AUTH_KEYS": auth.Keys}}
 }
 
-// authFileName is one namespace's file in the folder: the objects share a name, so the file carries the
-// namespace that tells them apart.
-func authFileName(namespace string) string { return authObjectName + "-" + namespace + ".json" }
+// AuthFileName is one namespace's file in the platform's auth folder: the objects share a name, so the file carries
+// the namespace that tells them apart. A removal deletes the file and the registration that lists it, so the name is
+// stated once here rather than derived in a second place.
+func AuthFileName(namespace string) string { return authObjectName + "-" + namespace + ".json" }

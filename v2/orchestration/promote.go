@@ -95,6 +95,6 @@ func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Pro
 		return result, err
 	}
 	result.Compilation, result.Release, result.Changed = compiled, request.candidate, true
-	result.Written, err = writer.Write(destination, documents)
+	result.Written, err = writeCompiled(destination, compiled, documents, writer)
 	return result, err
 }

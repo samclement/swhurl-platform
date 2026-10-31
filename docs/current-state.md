@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The cutover's write primitives, offline (31 October 2026)
+
+- **What changed.** `v2/` gained the operator's write surface: `swhurl-v2 edit` (one named change to one instance's
+  record, compiled and written with its files in one effect), `swhurl-v2 remove` (an instance's records, compiled
+  folder, unit and auth object deleted, with both registrations edited and the app record dropped with its last
+  environment), and a `files.Writer.Prune` that removes the files a compilation no longer renders. **Nothing was
+  applied**: no record, unit, namespace or cluster object changed, and v1's staging writer is intact.
+- **Checked locally:** `make check-v2` — gofmt, `go vet`, `go test ./...` in `v2/` (kernel, `adapters/files` and its
+  fake against their shared contract, orchestration with fakes, the CLI's own tests, and the archtest layering and
+  public-API rules) and `check-rendered.sh`, which recompiles the records in the working tree and finds `platform/`
+  unchanged. The `api.txt` baseline carries the new exports (`kernel.WithReplicas`…`WithTeam`, `InstanceFolder`,
+  `UnitPath`, `Rendered`, `WithoutEntry`, `WithoutResource`, `AuthFileName`, `files.Prune`/`Remove`/`Removed`,
+  `orchestration.Edit`/`SetTeam`/`Remove`), and the diff is only those.
+- **Exercised on a copy of the tree** (`v2-records/`, `clusters/` and `platform/auth/` copied into a temp directory;
+  the checkout was not written to): `edit --set memoryMiB=192` on `swhurl-try-10` staging wrote its record, its
+  compiled files and nothing else, keeping its seed and `offers/`; `--set replicas=2` on that sqlite instance was
+  refused (`a database admits one writer`); `--set exposure=authenticated-web` on worker `demo-notifier` staging was
+  refused; `--set team=payments` rewrote `v2-records/demo-notifier/app.json` and re-rendered both of its
+  environments; `remove` of `demo-notifier` staging deleted 18 files (`v2-records/demo-notifier/`, the compiled
+  folder, `clusters/home/app-demo-notifier-staging.yaml`, the app record), dropped its entries from
+  `clusters/home/kustomization.yaml` and `platform/auth/kustomization.yaml` and deleted
+  `platform/auth/swhurl-auth-demo-notifier-staging.json`, while `swhurl-try-10` staging stayed as it was.
+- **Not exercised:** a removal on a connected pair (covered by tests, both refusals), the live fleet migration, and
+  any Flux apply — all of that is 1a's live half.
+
 ## Image Automation reads a v2-owned instance's record (31 October 2026)
 
 - **What was wrong.** `make verify-platform`'s Image Automation check compared the tag an app's `ImagePolicy` picked with

@@ -51,12 +51,19 @@ class Declared:
     allows: tuple[str, ...] = ()
     subscriptions: tuple[str, ...] = ()
     publishes: tuple[str, ...] = ()
+    image: str = ''
+    digest: str = ''
     minimum: dict | None = None
     """v1's record of the least the image needs; v2's release states no such thing, so it is None there."""
 
     @property
     def declared(self) -> bool:
         return self.source != ABSENT
+
+    @property
+    def image_reference(self) -> str:
+        """The image pinned by digest, as the page and a promotion review name it."""
+        return f'{self.image}@{self.digest}' if self.image and self.digest else self.image
 
 
 def of(app: str, env: str, read: Reader | None) -> Declared:
@@ -161,7 +168,9 @@ def _v2(app: str, env: str, read: Reader) -> Declared | None:
         team=str(application.get('team', '')), kind=str(runtime.get('kind', '')), port=runtime.get('port'),
         calls=tuple(instance.get('calls') or ()), allows=tuple(instance.get('allows') or ()),
         subscriptions=tuple(events.get('subscriptions') or ()),
-        publishes=tuple(release.get('publishes') or ()))
+        publishes=tuple(release.get('publishes') or ()),
+        image=str((release.get('artifact') or {}).get('image', '')),
+        digest=str((release.get('artifact') or {}).get('digest', '')))
 
 
 def _v1(app: str, env: str, read: Reader) -> Declared:
@@ -187,6 +196,8 @@ def _v1(app: str, env: str, read: Reader) -> Declared:
         calls=grants.calls if grants else (), allows=grants.allows if grants else (),
         subscriptions=grants.subscriptions if grants else (),
         publishes=release.publishes if release is not None else (),
+        image=release.image.repository if release is not None else '',
+        digest=release.image.digest if release is not None else '',
         minimum={name: value for name, value in (('cpu', needs.cpu), ('memory', needs.memory),
                                                  ('memory_limit', needs.memory_limit)) if value}
         if needs is not None else None)

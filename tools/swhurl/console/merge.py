@@ -36,6 +36,7 @@ from swhurl.apps.model.records import (
     Release,
     Settings,
 )
+from swhurl.console import v2
 from swhurl.console.actions import ActionError
 from swhurl.run import CommandError, Runner
 
@@ -170,9 +171,12 @@ class Command:
     name: str
     argv: tuple[str, ...]
     input: str | None = dataclass_field(default=None, repr=False)
+    tool: str = 'python'  # 'v2' runs swhurl-v2's binary; 'python' runs the clone's own swhurl command
 
     def as_make(self) -> str:
         """The change as the operator would type it, never including a credential."""
+        if self.tool == 'v2':
+            return ' '.join((v2.BINARY, *self.argv))
         name, *args = self.argv
         if self.name == 'app-new':
             return f'make app-new NAME={name} ARGS="{" ".join(args)}"'
@@ -349,6 +353,102 @@ def promote_commands(app: str, _env: str, form: Mapping[str, str]) -> tuple[Comm
     host = checked_host(form.get('host', ''))
     return (Command('app-promote', (app, f'--expect-image={form["image"]}', '--prepare-only',
                                    *([f'--host={host}'] if host else []))),)
+
+
+def v2_commands(app: str, env: str, settings: tuple[str, ...]) -> tuple[Command, ...]:
+    """One edit per named change, then the whole-tree render that writes what the records derive."""
+    return (*[Command('edit', tuple(v2.edit_argv(app, env, setting)), tool='v2') for setting in settings],
+            Command('render', tuple(v2.render_argv()), tool='v2'))
+
+
+def v2_scale_settings(form: Mapping[str, str]) -> tuple[str, ...]:
+    """v2's scale fields: replicas and memory in MiB. CPU requests and limits are not modelled."""
+    settings = []
+    replicas = form.get('replicas', '').strip()
+    if replicas:
+        if not re.fullmatch(r'[0-9]+', replicas):
+            raise ActionError(f'Replicas {replicas!r} is not a whole number')
+        settings.append(f'replicas={int(replicas)}')
+    memory = form.get('memory', '').strip()
+    if memory:
+        found = re.fullmatch(r'([0-9]+)(?:Mi)?', memory)
+        if not found:
+            raise ActionError(f'Memory {memory!r} is not a whole number of MiB, such as 256 or 256Mi')
+        settings.append(f'memoryMiB={int(found[1])}')
+    if form.get('cpu', '').strip() or form.get('memory_limit', '').strip():
+        raise ActionError('v2 does not model CPU requests or memory limits: change replicas and memory only')
+    if not settings:
+        raise ActionError('change replicas or memory')
+    return tuple(settings)
+
+
+def v2_exposure_settings(form: Mapping[str, str]) -> tuple[str, ...]:
+    exposure = form.get('exposure', '').strip()
+    if exposure not in records.EXPOSURES:
+        raise ActionError(f'exposure must be one of {", ".join(records.EXPOSURES)}')
+    if form.get('host', '').strip():
+        raise ActionError('v2 derives the address from the app name and the exposure: it does not model a host')
+    return (f'exposure={exposure}',)
+
+
+def v2_names(value: str, pattern: re.Pattern, label: str) -> tuple[str, ...]:
+    names = [name.strip() for name in value.split(',') if name.strip()]
+    if bad := [name for name in names if not pattern.fullmatch(name)]:
+        raise ActionError(f'{", ".join(bad)}: {label}')
+    return tuple(names)
+
+
+def v2_connection_settings(form: Mapping[str, str]) -> tuple[str, ...]:
+    """The whole calls and subscriptions lists a connect or disconnect write: v2 states a declaration whole."""
+    calls = v2_names(form.get('calls', ''), records.NAME_RE, 'a call names an app')
+    subscriptions = v2_names(form.get('subscriptions', ''), records.SUBSCRIPTION_RE,
+                             'a subscription names <app>.<event>')
+    settings = []
+    if calls or 'calls' in form:
+        settings.append(f'calls={",".join(calls)}')
+    if subscriptions or 'subscriptions' in form:
+        settings.append(f'subscriptions={",".join(subscriptions)}')
+    if not settings:
+        raise ActionError('choose an app to call or an event to receive')
+    return tuple(settings)
+
+
+def v2_allow_settings(form: Mapping[str, str]) -> tuple[str, ...]:
+    allows = v2_names(form.get('allows', ''), ALLOW_RE, 'an allowed caller is an app name or team:<team>')
+    return (f'allows={",".join(allows)}',)
+
+
+def v2_remove_commands(app: str, env: str, _form: Mapping[str, str]) -> tuple[Command, ...]:
+    return (Command('remove', tuple(v2.remove_argv(app, env)), tool='v2'),
+            Command('render', tuple(v2.render_argv()), tool='v2'))
+
+
+def v2_promote_commands(app: str, _env: str, form: Mapping[str, str]) -> tuple[Command, ...]:
+    if not form.get('image'):
+        raise ActionError('refresh the staging app page and review the image before promotion')
+    return (Command('promote', tuple(v2.promote_argv(app)), tool='v2'),
+            Command('render', tuple(v2.render_argv()), tool='v2'))
+
+
+V2_PLATFORM_OUTPUTS = frozenset({
+    'v2-records/calls.json', 'platform/egress/allocation.json', 'platform/egress/configmap.json',
+    'platform/egress/networkpolicy.json', 'platform/nats/users.json', 'platform/reloader/values.json',
+    'clusters/home/kustomization.yaml', 'platform/auth/kustomization.yaml',
+})
+
+
+def v2_owns(app: str, env: str, path: str, *, envs: tuple[str, ...] | None = None) -> bool:
+    """The files a v2 action may carry: its records and what render writes from them, never ``apps/``."""
+    if path in V2_PLATFORM_OUTPUTS or path.startswith('platform/auth/'):
+        return True
+    if path == f'{v2.RECORDS}/{app}/app.json':
+        return True
+    environments = envs if envs is not None else ((env,) if env else ('staging', 'prod'))
+    if any(path.startswith(f'{v2.RECORDS}/{app}/{one}/') for one in environments):
+        return True
+    if any(path.startswith(f'v2-apps/instances/{app}/{one}/') for one in environments):
+        return True
+    return any(path == f'clusters/home/app-{app}-{one}.json' for one in environments)
 
 
 @dataclass(frozen=True)
@@ -530,10 +630,45 @@ ACTIONS: dict[str, Action] = {
                                       job=f'channel {action}', gated=False)
        for action in ('set', 'remove')},
 }
+
+# The v2 actions are separate entries, not a branch inside the v1 ones: every v2 PR is held for a person, while
+# the v1 read/judge/app-sync gate stays as it is until phase 3 deletes it. A v2 action carries its records and
+# what `render` writes from them, and reads no policy: a v2 PR has no automatic rule.
+ACTIONS.update({
+    'v2-scale': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
+                       lambda app, env, form: v2_commands(app, env, v2_scale_settings(form)),
+                       manual_inputs, manual_held, 'apps: scale {name}/{env}', kind='instance',
+                       gated=False, keeps='AMD'),
+    'v2-expose': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
+                        lambda app, env, form: v2_commands(app, env, v2_exposure_settings(form)),
+                        manual_inputs, manual_held, 'apps: change access to {name}/{env}', kind='instance',
+                        gated=False, keeps='AMD'),
+    'v2-connect': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
+                         lambda app, env, form: v2_commands(app, env, v2_connection_settings(form)),
+                         manual_inputs, manual_held, 'apps: change the connections of {name}/{env}', kind='instance',
+                         gated=False, keeps='AMD'),
+    'v2-disconnect': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
+                            lambda app, env, form: v2_commands(app, env, v2_connection_settings(form)),
+                            manual_inputs, manual_held, 'apps: change the connections of {name}/{env}', kind='instance',
+                            gated=False, keeps='AMD'),
+    'v2-allow': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
+                       lambda app, env, form: v2_commands(app, env, v2_allow_settings(form)),
+                       manual_inputs, manual_held, 'apps: change who may call {name}/{env}', kind='instance',
+                       gated=False, keeps='AMD'),
+    'v2-remove': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
+                        v2_remove_commands, manual_inputs, manual_held, 'apps: remove {name}/{env}',
+                        kind='instance', gated=False, keeps='AMD'),
+    'v2-promote': Action(('staging',), lambda app, env, path: v2_owns(app, env, path, envs=('staging', 'prod')),
+                         v2_promote_commands, manual_inputs, manual_held,
+                         'apps: promote {name}/staging to {name}/prod', kind='instance', again='promote again',
+                         target_env='prod', gated=False, keeps='AMD'),
+})
 """Every console Git change: branch/target, command builder, input ownership and semantic merge rule.
 Readers return only the facts the rule needs. Console preparation and each newest-main gate retry read
 before and after, then judge the same facts; read failures propagate, never authorize a merge."""
-INSTANCE_KINDS = tuple(name for name, entry in ACTIONS.items() if entry.kind == 'instance')
+INSTANCE_KINDS = tuple(name for name, entry in ACTIONS.items() if entry.kind == 'instance' and not name.startswith('v2-'))
+V2_KINDS = tuple(name for name in ACTIONS if name.startswith('v2-') and name != 'v2-promote')
+V2_ACTION = {name.removeprefix('v2-'): name for name in (*V2_KINDS, 'v2-promote')}
 
 
 def judge(action: str, name: str, env: str, files: list[str], before: object, after: object,

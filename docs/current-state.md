@@ -2,6 +2,42 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console writes v2's records, offline (31 October 2026)
+
+- **What changed:** the app page's forms run v2's binary. `tools/swhurl/console/v2.py` is the one adapter — the argv,
+  `v2-records`, the profile, the `@base` revision filled at the PR head and v2's refusal verbatim — and
+  `merge.py` gained seven actions, each `edit`/`remove`/`promote` followed by `render`: **v2-scale** (replicas and
+  memory MiB), **v2-expose**, **v2-connect**, **v2-disconnect**, **v2-allow**, **v2-remove** and **v2-promote**.
+  `proposal.py` runs them in the temporary checkout and never auto-merges one; `routes/instance.py` builds them from
+  the forms (whole-list connections and allowed callers, no host), and `review_promotion` shows the v2 review.
+  The banner that said a v2 instance's records were not writable is gone. `routes/new_app.py` is disabled: `/new` names
+  `make app-repo`, `make app-new`, `swhurl-v2 migrate` and deleting the v1 records/unit, and `POST /new/repo`
+  answers **409** with the same pointer. Its resume route remains, because `make app-new` is the kept v1 create path.
+- **The operator's option 1:** every v2 PR is held. None of the seven v2 actions has an automatic rule; the gate's
+  v1 read, judge and merge-time `app-sync` are untouched until phase 3 deletes them. A console image without the
+  binary answers the phase-1 fallback (**409**, naming the command to run in your own terminal) instead of failing a
+  job. The console parses no v2 record and writes no `apps/` v1 record for a v2 instance.
+- **Verified offline, on this tree:** `PYTHONPATH=$PWD/tools uv run --frozen python tests/run.py -k console` —
+  **257 tests OK**, including `test_console_v2` (**16**): the v2 page's forms, all six change routes, the argv, the
+  refusal and the no-binary fallback, the PR carrying only `v2-*` paths and **no** `apps/` record, and a review page
+  that says the PR needs manual review. `make check` — **1028 tests OK**; `make check-v2` — every Go package and
+  `render --check` **208 files, 0 differ**; `make check-docs` — 0 errors, 0 warnings; `uvx ruff@0.16.9 check tools
+  tests devtools bin/agent-cli` — all checks passed.
+- **Tests changed, and why:** `NewRepoRouteTests` was deleted because the form it tested is gone; `NewAppRouteTests`
+  became three assertions (the disabled page names the route, `POST /new/repo` is **409**, a cross-site POST is
+  **403**); `WriteRefusalTests` now exercises the no-binary fallback; `ActionTableTests` includes every v2 kind and
+  checks a v2 action owns its records and rendered files but never a v1 record. `NewAppRouteTests`' old form
+  expectations could not describe a page that no longer creates an app.
+- **Nothing live changed.** No cluster read or write was made for this change, no pull request was opened, and no
+  branch or image was pushed. The only effect reaching the cluster is the normal console image rebuild when this
+  reaches `main`; it now carries the built `swhurl-v2`.
+- **Not exercised:** the first live edit (a throwaway instance, its change and revert, waiting for the operator's
+  confirmation); a real console PR opened, validated and merged by hand; a signed-in browser clicking a v2 form;
+  the resume route against a real interrupted creation; a deployed console image actually running the binary; and
+  **Activity's progress after a v2 PR merges** — `stages.render_targets` still reads v1's `apps/` records and render
+  annotations, which a v2 instance does not have, so a v2 change's row is not a claim about its rollout. Porting
+  that reader belongs with phase 3's deletion of v1's render, not this adapter.
+
 ## The derived tree comes from v2's own records (31 October 2026)
 
 - **What changed:** `swhurl-v2 render` (commit `404b0bdd`) derives the resolution, every instance's compiled folder

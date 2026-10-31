@@ -193,8 +193,8 @@ def merge_mode(pr: gh.PullRequest) -> str:
 
 
 def matching(pr: gh.PullRequest, app: str) -> bool:
-    """Whether ``pr`` promotes ``app``'s staging to production (merge.parse)."""
-    return merge.parse(pr.branch) == ('promote', app, 'staging')
+    """Whether ``pr`` promotes ``app``'s staging to production (merge.parse), in either writer."""
+    return merge.parse(pr.branch) in (('promote', app, 'staging'), ('v2-promote', app, 'staging'))
 
 
 def promoted_image(body: str) -> str:

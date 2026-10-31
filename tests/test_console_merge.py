@@ -1024,9 +1024,10 @@ class ActionTableTests(unittest.TestCase):
     NAMES = {'new': ('fresh', 'staging'), 'promote': ('fresh', 'staging'), 'remove': ('fresh', 'prod'),
              'team-add': ('payments', ''), 'team-edit': ('payments', ''), 'team-remove': ('payments', ''),
              'team-channel-set': ('payments', ''), 'team-channel-remove': ('payments', ''),
-             **{kind: ('fresh', 'prod') for kind in merge.INSTANCE_KINDS}}
+             'v2-promote': ('fresh', 'staging'),
+             **{kind: ('fresh', 'prod') for kind in (*merge.INSTANCE_KINDS, *merge.V2_KINDS)}}
     TARGETS = {'new': 'fresh/staging', 'promote': 'fresh/prod', 'remove': 'fresh/prod',
-               **{kind: 'fresh/prod' for kind in merge.INSTANCE_KINDS}}
+               **{kind: 'fresh/prod' for kind in (*merge.INSTANCE_KINDS, *merge.V2_KINDS, 'v2-promote')}}
 
     def test_every_action_branch_round_trips_and_names_its_target(self):
         self.assertEqual(set(self.NAMES), set(merge.ACTIONS))
@@ -1080,6 +1081,22 @@ class ActionTableTests(unittest.TestCase):
                     self.assertFalse(entry.owns('fresh', env, f'apps/other/{env}/instance.yaml'))
         self.assertEqual(merge.ACTIONS['remove'].keeps, 'D', 'a removal carries deletions alone')
 
+    def test_a_v2_action_owns_records_and_rendered_files_but_never_a_v1_record(self):
+        records = ('v2-records/fresh/app.json', 'v2-records/fresh/staging/instance.json',
+                   'v2-apps/instances/fresh/staging/helmrelease.yaml', 'clusters/home/app-fresh-staging.json',
+                   'v2-records/calls.json', 'platform/egress/allocation.json', 'platform/auth/kustomization.yaml')
+        v1 = ('apps/fresh/app.yaml', 'apps/fresh/prod/instance.yaml', 'apps/fresh/prod/release.yaml',
+              'apps/teams.yaml', 'clusters/home/app-fresh-prod.yaml')
+        for action in (*merge.V2_KINDS, 'v2-promote'):
+            entry = merge.ACTIONS[action]
+            for path in records:
+                with self.subTest(action=action, path=path):
+                    self.assertTrue(entry.owns('fresh', 'staging', path))
+            for path in v1:
+                with self.subTest(action=action, path=path):
+                    self.assertFalse(entry.owns('fresh', 'staging', path), 'v2 carries no v1 record')
+            self.assertFalse(entry.gated, 'every v2 pull request waits for a person')
+
     def test_promotion_and_creation_commands_come_from_the_table(self):
         self.assertEqual(merge.ACTIONS['new'].commands('fresh', 'staging', {
             'repo': 'example/fresh', 'image': IMAGE, 'flags': ('--team=demo',)}),
@@ -1089,7 +1106,8 @@ class ActionTableTests(unittest.TestCase):
             (merge.Command('app-promote', ('fresh', f'--expect-image={IMAGE}', '--prepare-only', '--host=prod.example.com')),))
 
     def test_held_operations_are_never_merged_by_the_gate(self):
-        for action in ('remove', 'team-add', 'team-edit', 'team-remove', 'team-channel-set', 'team-channel-remove'):
+        for action in ('remove', 'team-add', 'team-edit', 'team-remove', 'team-channel-set', 'team-channel-remove',
+                       *merge.V2_KINDS, 'v2-promote'):
             name, env = self.NAMES[action]
             ref = merge.branch(action, name, env, 'abc1234')
             pr = {'state': 'open', 'head': {'ref': ref, 'sha': HEAD, 'repo': {'full_name': REPO}}, 'base': {'ref': 'main'},

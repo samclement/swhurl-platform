@@ -21,7 +21,7 @@ from ci_changes import records_only
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import calling, channels, egress, new, ops, promotion, repo, teams
+from swhurl.apps import calling, channels, egress, new, ops, promotion, teams
 from swhurl.apps import edit as app_edit
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import write as model_sync
@@ -114,6 +114,14 @@ class FakeGitHub:
                             'head': {'ref': 'renovate/x'}, 'created_at': '2026-10-01T07:00:00Z'}],
         }
         answers.update(self.also)
+        if key.startswith('GET /contents/') and key not in answers:
+            # The Git reader for a page: main's file, exactly as the tarball holds it. Raw bytes, because
+            # the console asks for the raw media type and uses the response text.
+            data = MAIN.get(key.removeprefix('GET /contents/'))
+            if data is not None:
+                if 'raw' in request.headers.get('accept', ''):
+                    return httpx.Response(200, content=data)
+                return httpx.Response(200, json={'content': base64.b64encode(data).decode(), 'encoding': 'base64'})
         if key == f'GET /tarball/{HEAD}' and key not in answers:  # built only when asked: compressing is the cost
             answers[key] = self.tarball()
         if key not in answers:
@@ -1094,169 +1102,35 @@ class NewAppRouteTests(unittest.TestCase):
         github = self.api.github if github else None
         return TestClient(app_under_test(runner, jobs=jobs, github=github)), jobs
 
-    def test_the_page_only_starts_a_new_app(self):
+    def test_the_page_says_a_new_app_is_made_outside_the_console(self):
         runner = tree_fake()
         c, jobs = self.client(runner)
         for url in ('/new', '/new?preset=swhurl-web'):
             with self.subTest(url=url):
                 page = c.get(url, headers=WHO).text
-                self.assertIn('action="/new/repo"', page)
-                self.assertIn('Create repository and open pull request', page)
-                self.assertNotIn('Deploy an existing image', page)
-                self.assertNotIn('name="image"', page)
-        self.assertEqual(c.post('/new', data={'name': 'weather-api', 'image': 'ghcr.io/me/weather:1.0'},
-                                headers=WHO).status_code, 405)
+                self.assertIn('The console does not create apps any more', page)
+                self.assertIn('make app-repo NAME=&lt;app&gt; TYPE=&lt;type&gt; STACK=&lt;stack&gt;', page)
+                self.assertIn('make app-new NAME=&lt;app&gt; ARGS=', page)
+                self.assertIn('swhurl-v2 migrate', page)
+                self.assertNotIn('action="/new/repo"', page, 'the disabled page has no form')
         self.assertIsNone(jobs.get(1))
-        self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in runner.calls),
-                        'it reads the apps it could connect to and changes nothing')
-        self.assertEqual({(r.method, r.url.path.rsplit('/', 1)[-1]) for r in self.api.requests}, {('GET', 'teams.yaml'), ('GET', 'routes.yaml')},
-                         'the page reads the team registry and each team\'s channel, and nothing else')
-        self.assertEqual(len(self.api.requests), 2, 'and keeps both for five minutes')
+        self.assertEqual(runner.calls, [], 'the disabled page reads no cluster')
+        self.assertEqual(self.api.requests, [], 'and GitHub')
 
-    def test_the_team_is_chosen_from_the_registry_on_main(self):
-        c, _ = self.client(tree_fake())
-        page = c.get('/new', headers=WHO).text
-        self.assertIn('name="team" value="platform" required >', page)
-        self.assertNotIn('checked>\n            <span><strong>platform', page)
-        self.assertEqual(page.count('name="team" value="platform" required checked'), 0, 'no team is preselected: there is no default')
-        self.assertIn('<span class="muted">The platform itself</span>', page)
-        self.assertIn('name="team" value="payments" required >', page)
-        self.assertLess(page.index('name="team" value="payments"'), page.index('name="team" value="platform"'), 'alphabetical')
-        self.assertEqual((page.count('>notification channel</span>'), page.count('>no notification channel</span>')), (1, 1),
-                         'each team is marked with whether it has a channel')
-        teams = gh.platform_teams(FakeRunner(), self.api.github)
-        self.assertEqual(teams, {'platform': 'The platform itself', 'payments': ''})
-        web = [repo.Question('kind', '', ('web', 'worker'), 'web')]
-        self.assertEqual(proposal.NewApp.from_form({**NEW, 'team': 'payments'}, web, teams).flags,
-                         ('--team=payments', '--exposure=authenticated-web'))
-        self.assertEqual(proposal.NewApp.from_form({**NEW, 'team': 'payments', 'type': 'worker'}, web, teams).flags,
-                         ('--team=payments',), 'a worker has a team too')
-        for form, registered, message in (({**NEW, 'team': ''}, teams, 'choose the team that owns the app: one of platform, payments'),
-                                          ({**NEW, 'team': 'nobody'}, teams, 'choose the team that owns the app'),
-                                          (NEW, {}, 'no team is registered')):
-            with self.subTest(message=message), self.assertRaisesRegex(actions.ActionError, message):
-                proposal.NewApp.from_form(form, web, registered)
-        unreadable = FakeGitHub(fail={'GET /contents/apps/teams.yaml': (404, 'Not Found')})
-        page = TestClient(app_under_test(tree_fake(), github=unreadable.github)).get('/new', headers=WHO).text
-        self.assertIn('No team is registered yet', page)
-        self.assertNotIn('name="team" value=', page)
-
-    def test_the_form_offers_what_staging_has_to_connect_to_and_says_what_a_team_is(self):
-        staging = (staging_app('orders', {'SWHURL_EVENTS_PUBLISH': 'created,paid'}), staging_app('job', port=None),
-                   staging_app('billing'))
-        c, _ = self.client(tree_fake(staging=staging))
-        page = c.get('/new', headers=WHO).text
-        self.assertIn('name="calls" value="orders"', page)
-        self.assertIn('name="calls" value="billing"', page)
-        self.assertNotIn('name="calls" value="job"', page, 'a worker cannot be called')
-        self.assertIn('name="subscribe" value="orders.created"', page)
-        self.assertIn('name="subscribe" value="orders.paid"', page)
-        self.assertIn('It does not grant or restrict anyone\'s access', page)
-        empty = self.client(tree_fake())[0].get('/new', headers=WHO).text
-        self.assertIn('No web app is in staging yet.', empty)
-        self.assertIn('No app in staging publishes an event yet.', empty)
-
-    def test_connections_become_app_new_arguments_and_only_offered_ones_are_accepted(self):
-        offered = ({'orders', 'billing'}, {'orders.created'})
-        teams = {'platform': ''}
-        chosen = proposal.NewApp.from_form({**NEW, 'calls': 'orders,billing', 'subscribe': 'orders.created'}, [], teams, *offered)
-        self.assertEqual(chosen.flags, ('--team=platform', '--exposure=authenticated-web', '--calls=orders,billing',
-                                        '--subscribe=orders.created'))
-        with self.assertRaisesRegex(actions.ActionError, 'edit asyncapi.yaml'):
-            proposal.NewApp.from_form({**NEW, 'publish': 'sent'}, [], teams, *offered)
-        self.assertEqual(proposal.NewApp.from_record(chosen.record), chosen, 'saved connections keep their flags')
-        for obsolete in ('--publish=sent', '--publish='):
-            stale = {**chosen.record, 'extra': [*chosen.flags, obsolete]}
-            with self.subTest(obsolete=obsolete), self.assertRaises(actions.ActionError) as refused:
-                proposal.NewApp.from_record(stale)
-            self.assertEqual(str(refused.exception), 'publishing choices are no longer supported: edit asyncapi.yaml '
-                             'named by provides.eventsFile, then start a new job')
-        self.assertEqual(proposal.NewApp.from_form(NEW, [], teams, *offered).flags[2:], (), 'nothing chosen adds nothing')
-        cases = (({'calls': 'stranger'}, 'not a web app, or an event, that staging has now'),
-                 ({'subscribe': 'orders.cancelled'}, 'not a web app, or an event, that staging has now'),
-                 ({'calls': '--root=/'}, 'a call names an app'), ({'publish': 'Sent'}, 'edit asyncapi.yaml'),
-                 ({'subscribe': 'created'}, 'a subscription <app>.<event>'))
-        for form, message in cases:
-            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
-                proposal.NewApp.from_form({**NEW, **form}, [], teams, *offered)
-
-    def test_new_app_keeps_resumable_choices_and_the_table_builds_its_commands(self):
-        teams, offered = {'platform': ''}, ({'orders'}, set())
-        chosen = proposal.NewApp.from_form({**NEW, 'description': ' Says  the weather '}, [], teams, *offered)
-        self.assertEqual(proposal.NewApp.from_record(json.loads(json.dumps(chosen.record))), chosen, 'what a job keeps reads back')
-        self.assertEqual(chosen.record['kind'], proposal.NEW_APP)
-        self.assertEqual(proposal.NewApp.from_record({**chosen.record, 'touches_others': True}), chosen,
-                         'obsolete review metadata in saved jobs is ignored')
-        self.assertNotIn('touches_others', chosen.record)
-        commands = merge.ACTIONS['new'].commands(chosen.name, 'staging',
-                                                 {'repo': chosen.request.repo, 'image': IMAGE, 'flags': chosen.flags})
-        self.assertEqual(commands, (merge.Command('app-new', (
-            'weather-api', f'--from-repo={chosen.request.repo}', '--env=staging', f'--image={IMAGE}', '--team=platform',
-            '--exposure=authenticated-web')),))
-        self.assertEqual((merge.ACTIONS['new'].job, chosen.target, merge.ACTIONS['new'].title.format(name=chosen.name)),
-                         ('new app and repository', 'weather-api/staging', 'apps: add weather-api/staging'))
-        for record in ({}, {**chosen.record, 'name': '../x'}, {**chosen.record, 'stack': 'cobol'},
-                       {**chosen.record, 'extra': ['weather-api; rm']}, {**chosen.record, 'extra': None}):
-            with self.subTest(record=record), self.assertRaises((KeyError, TypeError, ValueError)):
-                proposal.NewApp.from_record(record)
-
-    def test_open_console_prs_are_listed_and_others_ignored(self):
-        c, _ = self.client(tree_fake())
-        text = c.get('/activity', headers=WHO).text
-        self.assertIn('#7 apps: add weather-api staging</a>', text, 'every pull request here is a console one: the prefix is left out')
-        self.assertIn('Manual merge required', text)
-        self.assertIn('<span class="state suspended">Waiting for you</span>', text)
-        self.assertIn('Waiting for you: merge #7 on GitHub', text, 'a pull request no remembered job opened still shows its path')
-        self.assertIn('Live in staging', text)
-        self.assertNotIn('pull/8', text)
-        self.assertEqual(gh.console_prs(FakeRunner(), self.api.github)[0].opened, '2026-10-01')
-        c, _ = self.client(tree_fake(), github=False)
-        self.assertIn('No GitHub token is configured, so open pull requests are not listed', c.get('/activity', headers=WHO).text)
-        api = FakeGitHub(fail={'GET /pulls': (401, 'Bad credentials')})
-        page = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), inline=True), github=api.github))
-        self.assertIn('Could not list open pull requests', page.get('/activity', headers=WHO).text)
-
-    def test_a_new_app_not_yet_applied_waits_for_its_pr(self):
-        runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout='')
-        c, _ = self.client(runner)
-        response = c.get('/apps/weather-api/staging', headers=WHO)
-        self.assertEqual(response.status_code, 200, 'the open PR on its console/new-weather-api-staging-* branch')
-        self.assertIn('Not created yet', response.text)
-        self.assertIn('href="https://github.com/x/pull/7"', response.text)
-        self.assertEqual(c.get('/apps/weather/staging', headers=WHO).status_code, 404, 'another app\'s PR does not count')
-        c, _ = self.client(runner, github=False)
-        self.assertEqual(c.get('/apps/weather-api/staging', headers=WHO).status_code, 404, 'neither a PR nor a job')
-        self.assertEqual(stages.target_of('console/new-a-staging-staging-abc1234'), ('new', 'a-staging/staging'))
-
-    def test_a_new_app_job_without_a_token_still_shows_on_its_page(self):
-        runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout='')
-        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
-        jobs.submit('new app', 'weather-api/staging', 'sam@swhurl.com', lambda job: None)
-        text = TestClient(app_under_test(runner, jobs=jobs)).get('/apps/weather-api/staging', headers=WHO).text
-        self.assertIn('Not created yet', text)
-        self.assertIn('href="/jobs/1"', text)
-
-    def test_invalid_form_or_missing_token_runs_nothing(self):
+    def test_the_old_form_is_refused_and_creates_nothing(self):
         runner = tree_fake()
-        app_api = FakeAppGitHub()
-        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
-        c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github, app_repos=app_api.config))
-        response = c.post('/new/repo', data={**NEW, 'name': 'Bad'}, headers=WHO)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('value="Bad"', response.text)
-        c = TestClient(app_under_test(runner, jobs=jobs, app_repos=app_api.config))
-        self.assertIn('No GitHub token is configured', c.get('/new', headers=WHO).text)
-        self.assertEqual(c.post('/new/repo', data=NEW, headers=WHO).status_code, 409)
-        self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in runner.calls), 'only the form\'s reads')
-        self.assertEqual(app_api.requests, [])
+        c, jobs = self.client(runner)
+        response = c.post('/new/repo', data=NEW, headers=WHO)
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('The console no longer creates apps.', response.text)
+        self.assertIn('swhurl-v2 migrate', response.text)
+        self.assertIsNone(jobs.get(1))
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(self.api.requests, [])
 
-    def test_cross_site_post_is_refused(self):
-        runner = tree_fake()
-        app_api = FakeAppGitHub()
-        c = TestClient(app_under_test(runner, jobs=actions.Jobs(runner, audit=lambda line: None, inline=True),
-                                      github=FakeGitHub().github, app_repos=app_api.config))
+    def test_cross_site_post_is_refused_before_the_route(self):
+        c, _ = self.client(tree_fake())
         self.assertEqual(c.post('/new/repo', data=NEW, headers={**WHO, 'Origin': 'https://evil.example'}).status_code, 403)
-        self.assertEqual((runner.calls, app_api.requests), ([], []))
 
 
 def staging_reads(runner):
@@ -2050,9 +1924,6 @@ class TeamsPageTests(unittest.TestCase):
         unreadable = FakeGitHub(fail={'GET /contents/platform/notify/routes.yaml': (404, 'Not Found')})
         page = TestClient(app_under_test(self.runner, jobs=self.jobs, github=unreadable.github)).get('/teams', headers=WHO).text
         self.assertEqual(page.count('No notification channel'), 2, 'unreadable routes: no channel is claimed')
-        page = self.client().get('/new', headers=WHO).text
-        self.assertEqual(page.count('>notification channel</span>'), 1, 'payments, on New app')
-        self.assertIn('>no notification channel</span>', page)
 
     def test_a_channels_address_reaches_only_the_commands_standard_input(self):
         address = 'https://ntfy.sh/swhurl-0123456789abcdef01234567'
@@ -2125,129 +1996,3 @@ class TeamsPageTests(unittest.TestCase):
         self.assertNotIn('Apps without a registered team', page)
         self.assertIn('<section class="card" id="payments">', page, 'the teams apps name are still shown')
         self.assertIn('<section class="card" id="retired">', page)
-
-
-class NewRepoRouteTests(unittest.TestCase):
-    def test_the_form_creates_the_repository_then_opens_the_platform_pr(self):
-        runner = repo_runner(tree_fake())
-        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
-        platform_api, app_api = FakeGitHub(), FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}])
-        c = TestClient(app_under_test(runner, jobs=jobs, github=platform_api.github, app_repos=app_api.config))
-        page = c.get('/new', headers=WHO).text
-        self.assertIn('What happens', page)
-        self.assertNotIn('Deploy an existing image', page)
-        self.assertIn('action="/new/repo"', page)
-        self.assertIn('name="stack" value="typescript" checked', page)
-        self.assertIn('name="type" value="web-app" data-exposure="authenticated-web" data-kind="web" checked', page)
-        self.assertIn('name="type" value="api" data-exposure="private" data-kind="web" >', page)
-        self.assertIn('<span class="pill ok">SQLite</span>', page, 'what each type includes')
-        self.assertIn('data-types="web-app api worker scheduled-job"><input type="radio" name="stack" value="typescript"', page)
-        self.assertIn('data-types="api worker scheduled-job"><input type="radio" name="stack" value="kotlin"', page, 'no Kotlin web app')
-        response = c.post('/new/repo', data={'name': 'notes', 'type': 'web-app', 'stack': 'typescript', 'team': 'platform', 'description': 'Take notes',
-                                             'exposure': 'authenticated-web', 'host': ''}, headers=WHO,
-                          follow_redirects=False)
-        self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
-        job = jobs.get(1)
-        self.assertEqual((job.state, job.link, job.unit), ('succeeded', 'https://github.com/x/pull/7', 'notes/staging'),
-                         '\n'.join(job.lines))
-        app_new = next(c for c in runner.calls if c[3:4] == ('app-new',))
-        self.assertEqual(app_new[4:], ('notes', '--from-repo=samclement/notes', '--env=staging',
-                                       f'--image=ghcr.io/samclement/notes:1-9f8e7d6@{DIGEST}',
-                                       '--team=platform', '--exposure=authenticated-web'))
-        copy = next(c for c in runner.calls if 'copy' in c)
-        for answer in ('kind=web', 'database=sqlite', 'api=openapi', 'frontend=vite'):
-            self.assertIn(answer, copy, 'the type sets every answer')
-        self.assertEqual(platform_api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}], 'a new staging app')
-        self.assertIn('https://github.com/x/pull/7', c.get('/jobs/1', headers=WHO).text)
-        body = platform_api.sent('POST /pulls')[0]['body']
-        self.assertIn('created https://github.com/samclement/notes from', body)
-
-    def test_a_new_app_that_connects_passes_its_choices_and_waits_for_review(self):
-        staging = (staging_app('orders', {'SWHURL_EVENTS_PUBLISH': 'created'}), staging_app('billing'))
-        runner = repo_runner(tree_fake(staging=staging))
-        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
-        platform_api, app_api = FakeGitHub(), FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}])
-        c = TestClient(app_under_test(runner, jobs=jobs, github=platform_api.github, app_repos=app_api.config))
-        form = 'name=notes&type=worker&stack=typescript&team=payments&calls=orders&calls=billing&subscribe=orders.created'
-        response = c.post('/new/repo', content=form, headers={**WHO, 'content-type': 'application/x-www-form-urlencoded'},
-                          follow_redirects=False)
-        self.assertEqual(response.status_code, 303, response.text)
-        self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
-        app_new = next(c for c in runner.calls if c[3:4] == ('app-new',))
-        self.assertEqual(app_new[7:], ('--image=ghcr.io/samclement/notes:1-9f8e7d6@' + DIGEST, '--team=payments',
-                                       '--calls=orders,billing', '--subscribe=orders.created'))
-        self.assertEqual(platform_api.sent('POST /issues/7/labels'), [],
-                         'it changes other apps, so it is not labelled to merge itself')
-        refused = c.post('/new/repo', content='name=notes2&type=worker&stack=typescript&team=platform&calls=stranger',
-                         headers={**WHO, 'content-type': 'application/x-www-form-urlencoded'})
-        self.assertEqual(refused.status_code, 400)
-        self.assertIn('stranger: not a web app, or an event, that staging has now', refused.text)
-        self.assertEqual(len(app_api.writes()), len([w for w in app_api.writes() if 'notes2' not in w[1]]),
-                         'no repository is created for a refused form')
-
-    def test_a_worker_gets_no_route_and_its_types_answers(self):
-        runner = repo_runner(tree_fake())
-        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
-        c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github, app_repos=FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}]).config))
-        c.post('/new/repo', data={'name': 'notes', 'type': 'worker', 'stack': 'typescript', 'team': 'platform',
-                                  'exposure': 'authenticated-web', 'host': ''}, headers=WHO)
-        self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
-        app_new = next(c for c in runner.calls if c[3:4] == ('app-new',))
-        self.assertFalse([a for a in app_new if a.startswith(('--exposure', '--host'))], 'swhurl.yaml makes a worker private')
-        copy = next(c for c in runner.calls if 'copy' in c)
-        self.assertIn('kind=worker', copy)
-        self.assertIn('database=none', copy)
-        self.assertIn('Rendering samclement/swhurl-app-template-typescript (typescript) for notes with api=none, database=none, '
-                      'kind=worker', jobs.get(1).lines)
-        for form, message in (({'type': 'cron'}, 'type must be one of web-app, api, worker'),
-                              ({}, 'type must be one of web-app, api, worker'),
-                              ({'type': 'web-app', 'stack': 'kotlin'}, 'a Web app is built with typescript, not kotlin'),
-                              ({'type': 'worker', 'host': 'notes.homelab.swhurl.com'}, 'a worker has no web address')):
-            with self.subTest(message=message):
-                response = c.post('/new/repo', data={'name': 'notes2', 'stack': 'typescript', 'team': 'platform', **form}, headers=WHO)
-                self.assertEqual(response.status_code, 400)
-                self.assertIn(message, response.text)
-
-    def test_kotlin_is_a_stack_with_its_own_template(self):
-        runner = repo_runner(tree_fake())
-        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
-        c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github,
-                                      app_repos=FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}]).config))
-        page = c.get('/new', headers=WHO).text
-        self.assertIn('name="stack" value="kotlin"', page)
-        self.assertIn('Kotlin on Micronaut', page)
-        c.post('/new/repo', data={'name': 'notes', 'type': 'api', 'stack': 'kotlin', 'team': 'platform'}, headers=WHO)
-        self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
-        copy = next(c for c in runner.calls if 'copy' in c)
-        self.assertIn('https://github.com/samclement/swhurl-app-template-kotlin.git', copy)
-        app_new = next(c for c in runner.calls if c[3:4] == ('app-new',))
-        self.assertIn('--exposure=private', app_new, 'an API starts private')
-
-    def test_template_questions_are_read_on_first_use_whatever_the_clock(self):
-        from unittest import mock
-        runner = repo_runner(tree_fake())
-        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
-        with mock.patch('swhurl.console.routes.new_app.time.monotonic', return_value=5.0):  # a host booted 5 s ago
-            c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github,
-                                          app_repos=FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}]).config))
-            response = c.post('/new/repo', data={'name': 'notes', 'type': 'api', 'stack': 'typescript', 'team': 'platform'},
-                              headers=WHO, follow_redirects=False)
-        self.assertEqual(response.status_code, 303, response.text)
-
-    def test_bad_input_or_a_missing_token_creates_nothing(self):
-        runner = repo_runner(tree_fake())
-        app_api = FakeAppGitHub()
-        c = TestClient(app_under_test(runner, jobs=actions.Jobs(runner, inline=True), github=FakeGitHub().github,
-                                         app_repos=app_api.config))
-        for form, message in (({'name': 'Notes', 'stack': 'typescript', 'team': 'platform'}, 'DNS label'),
-                              ({'name': 'notes', 'stack': 'cobol'}, 'stack must be one of'),
-                              ({'name': 'notes', 'type': 'web-app', 'stack': 'typescript', 'team': 'platform', 'host': 'bad host'}, 'not a DNS name')):
-            with self.subTest(message=message):
-                response = c.post('/new/repo', data=form, headers=WHO)
-                self.assertEqual(response.status_code, 400)
-                self.assertIn(message, response.text)
-        c = TestClient(app_under_test(runner, jobs=actions.Jobs(runner, inline=True), github=FakeGitHub().github))
-        self.assertIn('No token for creating repositories', c.get('/new', headers=WHO).text)
-        self.assertEqual(c.post('/new/repo', data={'name': 'notes', 'stack': 'typescript', 'team': 'platform'}, headers=WHO).status_code, 409)
-        self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in runner.calls), 'only the form\'s reads')
-        self.assertEqual(app_api.requests, [])

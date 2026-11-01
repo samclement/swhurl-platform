@@ -2,7 +2,7 @@
 
 Status: in progress
 Gate: the §10 slice's live half: the nine app repositories at a template tag that writes a version 2 label, then one reviewed promotion for each of the four apps with production (offline half landed 1 November 2026)
-Uncommitted: `v2`, `v2-apps`, `v2-records`
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 

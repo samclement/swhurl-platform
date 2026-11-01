@@ -3,11 +3,11 @@
   "application": "swhurl-try-13",
   "source": {
     "repository": "samclement/swhurl-try-13",
-    "commit": "900f5e5b10eaa1e84a0ff19bf61ad02f2d54fca7"
+    "commit": "4ac74dfd5012b034881771695dca552feb4be30b"
   },
   "artifact": {
     "image": "ghcr.io/samclement/swhurl-try-13",
-    "digest": "sha256:5e9de9390433a6848a8dccc3467c4f6499cb704c828a809dfc8e6ecc634ce74d",
+    "digest": "sha256:d859c757fa58c60e52ac5ad37f8d4b4a26375a04e47bc1c340950bb469939f90",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -23,5 +23,5 @@
   ],
   "description": "throwaway: team platform T4 subscriber (notifier), delete me",
   "offers": "900f5e5b10eaa1e84a0ff19bf61ad02f2d54fca7",
-  "releaseId": "rel-sha256:7f66bdc9cbdcdff49932a743c46f84f9ab61798e6036c6ff6950244148dc36d7"
+  "releaseId": "rel-sha256:8b006ecd80b37116af87dd2855587712ca7184ec28b1111d9efc9c7053bfb255"
 }

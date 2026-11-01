@@ -28,13 +28,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
-
-from swhurl import interface, yamlio
-from swhurl.apps import calling, egress, events, helmrelease
-from swhurl.apps.model import backup, render, store
-from swhurl.apps.model.draft import Platform
-from swhurl.apps.model.records import Settings
 from swhurl.console import merge
 from swhurl.console.actions import ActionError, Job
 from swhurl.console.github import GitHub, GitHubAPI
@@ -116,29 +109,36 @@ class Pull:
 @dataclass(frozen=True)
 class Target:
     """An instance in one Git tree, as facts. No records (the default) is proven absence once the tree was read."""
-    records: str = ''  # a hash of its own app.yaml, release.yaml and instance.yaml: the requested change
+    records: str = ''  # a hash of its records and committed HelmRelease: the requested change, render included
     settings: str = ''  # a hash of its instance.yaml and app.yaml: what the platform, not the image, decides
     digest: str = ''  # the image digest its release.yaml requests
     hash: str | None = None  # its HelmRelease's render hash; None: no HelmRelease; '': one from before render hashes
     rendered: str = ''  # the image digest its HelmRelease runs
     expected: str = ''  # render hash from this tree's complete inputs; '' before an allocation is made
+    v2: bool = False  # a v2-owned instance: no separate Render workflow, so its records and HelmRelease land together
 
     @property
     def pending(self) -> bool:
-        """Records main has not rendered yet: a records-only merge before the Render workflow's commit. A held
-        promotion or Settings-only edit can leave a healthy old HelmRelease with the same image digest."""
+        """Records main has not rendered yet. v1 waits for the Render workflow's commit; v2 renders in the
+        same commit, so only a missing or stale HelmRelease is unrendered."""
+        if self.v2:
+            return bool(self.records) and (self.hash is None or self.rendered != self.digest)
         return bool(self.records) and (self.hash is None or self.rendered != self.digest
                                        or (bool(self.hash) and self.hash != self.expected))
 
     def same(self, other: Target) -> bool:
-        """The same render: the same records while either is unrendered, else the same render hash."""
+        """The same render: the same records while either is unrendered, else the same render hash. v2 has no
+        render hash, so its records are the identity."""
+        if self.v2 or other.v2:
+            return self.records == other.records
         return self.records == other.records if self.pending or other.pending else self.hash == other.hash
 
 
 def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, Target]:
-    """Immutable Git evidence, not a verdict. Re-render the complete public inputs to identify the
-    intended output, including Settings and other instances' relationships. Encrypted files contribute
-    only their presence, never their contents. No records means absent even beside stale output."""
+    """Immutable Git evidence, not a verdict: every v2-owned instance in one revision. The records are
+    the change; the committed HelmRelease states the image it runs. v2 renders records and manifests in
+    one commit, so a release whose image differs from its records is unrendered, not merely lagging a
+    separate Render workflow. No records means absent even beside stale output."""
     api = GitHubAPI(runner, github)
     started = time.monotonic()
     downloaded = extracted = None
@@ -151,60 +151,65 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
         phase = 'extract'
         with tempfile.TemporaryDirectory(prefix='console-targets-') as tmp:
             root = Path(tmp)
-            public = {calling.SIGNING_KEYS_FILE, events.CONTROLLER_KEY_FILE, events.CONSOLE_KEY_FILE, backup.MONGODB_JOB}
-            proxy = False
             with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
                 for member in archive.getmembers():
                     path = Path(*Path(member.name).parts[1:])
                     if path.is_absolute() or '..' in path.parts:
                         raise ValueError('invalid archive path')
-                    proxy |= egress.DIRECTORY in path.parents
-                    if path == backup.MONGODB_JOB.parent or backup.MONGODB_JOB.parent in path.parents:
-                        (root / backup.MONGODB_JOB.parent).mkdir(parents=True, exist_ok=True)  # present: its file must be read
-                    if not member.isfile():
+                    wanted = (
+                        (len(path.parts) == 3 and path.parts[:2] == ('v2-records',) and path.name == 'app.json') or
+                        (len(path.parts) == 4 and path.parts[0] == 'v2-records'
+                         and path.name in ('instance.json', 'release.json')) or
+                        (len(path.parts) == 5 and path.parts[:2] == ('v2-apps', 'instances')
+                         and path.name == 'helmrelease.json'))
+                    if not wanted or not member.isfile():
                         continue
-                    instance = len(path.parts) == 4 and path.parts[0] == 'apps'
-                    encrypted = instance and path.name in ('events.sops.yaml', 'secret.sops.yaml')
-                    if (path in public or encrypted or
-                            (len(path.parts) == 3 and path.parts[0] == 'apps' and path.name == 'app.yaml') or
-                            (instance and path.name in ('instance.yaml', 'release.yaml', 'helmrelease.yaml'))):
-                        target = root / path
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        target.write_bytes(b'' if encrypted else archive.extractfile(member).read())
+                    target = root / path
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(archive.extractfile(member).read())
             extracted = time.monotonic()
-            phase = 'render'
-            world, problems = store.world(root)
-            if problems:
-                raise ValueError('; '.join(problems))
-            def text(path: Path) -> str:
-                return (root / path).read_text().strip() if (root / path).is_file() else ''
-            keys = text(calling.SIGNING_KEYS_FILE)
-            # Do not use store.platform here: its scratch-root signing-key fallback is not a Git fact.
-            platform_inputs = Platform(json.dumps(json.loads(keys), sort_keys=True, separators=(',', ':')) if keys else '',
-                                       proxy, backups_suspended=backup.suspended(root))
+            phase = 'records'
             def digest(*parts: bytes) -> str:
                 return hashlib.sha256(b'\0'.join(parts)).hexdigest()[:16]
             found = {}
-            for each, entry in world.items():
-                folder = each.folder(root)
-                app, record = (folder.parent / 'app.yaml').read_bytes(), (folder / 'release.yaml').read_bytes()
-                mine = creation_inputs(entry.settings)
-                path = folder / 'helmrelease.yaml'
-                release = yamlio.load(path.read_text()) if path.is_file() else None
-                if path.is_file() and not isinstance(release, dict):
-                    raise ValueError(f'{each}: malformed HelmRelease')
-                expected = ''
-                if not proxy or entry.settings.allocations.egress_port is not None:
-                    output = render.instance(each, world, platform_inputs)[path.relative_to(root)][0]
-                    expected = output['metadata']['annotations'][interface.RENDER_ANNOTATION]
-                found[str(each)] = Target(
-                    digest(app, record, mine), digest(app, mine), entry.release.image.digest,
-                    (release.get('metadata', {}).get('annotations') or {}).get(interface.RENDER_ANNOTATION, '') if release else None,
-                    helmrelease.image(release).get('digest', '') if release else '', expected)
-            instances = len(found)
+            for app in (root / 'v2-records').iterdir() if (root / 'v2-records').is_dir() else ():
+                app_record = app / 'app.json'
+                if not app.is_dir() or not app_record.is_file():
+                    continue
+                for folder in app.iterdir():
+                    instance_path, release_path = folder / 'instance.json', folder / 'release.json'
+                    if not folder.is_dir() or not instance_path.is_file() or not release_path.is_file():
+                        continue
+                    instance, release = instance_path.read_bytes(), release_path.read_bytes()
+                    try:
+                        settings = json.loads(instance)
+                        artifact = json.loads(release).get('artifact', {}).get('digest', '')
+                    except (json.JSONDecodeError, AttributeError) as error:
+                        raise ValueError(f'{app.name}/{folder.name}: malformed record: {error}') from None
+                    if isinstance(settings, dict):
+                        settings.pop('release', None)
+                    mine = json.dumps(settings, sort_keys=True, separators=(',', ':')).encode()
+                    app_bytes = app_record.read_bytes()
+                    helm = root / 'v2-apps/instances' / app.name / folder.name / 'helmrelease.json'
+                    release_obj, helm_bytes = None, b''
+                    if helm.is_file():
+                        helm_bytes = helm.read_bytes()
+                        try:
+                            release_obj = json.loads(helm_bytes)
+                        except json.JSONDecodeError as error:
+                            raise ValueError(f'{app.name}/{folder.name}: malformed HelmRelease: {error}') from None
+                    image = ((release_obj or {}).get('spec', {}).get('values', {}).get('controllers', {})
+                              .get('main', {}).get('containers', {}).get('main', {}).get('image', {}))
+                    render_hash = ((release_obj or {}).get('metadata', {}).get('annotations', {})
+                                   .get('platform.swhurl.com/render', ''))
+                    found[f'{app.name}/{folder.name}'] = Target(
+                        digest(app_bytes, instance, release, helm_bytes), digest(app_bytes, mine), artifact or '',
+                        None if release_obj is None else render_hash, image.get('digest', '') if isinstance(image, dict) else '',
+                        '', v2=True)
+                    instances += 1
         phase = 'done'
         return found
-    except (tarfile.TarError, OSError, ValueError, AttributeError, TypeError, KeyError, yaml.YAMLError) as error:
+    except (tarfile.TarError, OSError, ValueError, AttributeError, TypeError, KeyError) as error:
         raise ActionError(f'cannot read render targets: {error}') from None
     finally:
         finished = time.monotonic()
@@ -215,11 +220,6 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
             ((extracted or finished) - downloaded) * 1000 if downloaded is not None else 0,
             (finished - extracted) * 1000 if extracted is not None else 0, (finished - started) * 1000)
         api.client.close()
-
-def creation_inputs(settings: Settings) -> bytes:
-    """What identifies a change: every Settings field but the allocated port, which completes creation, not a choice."""
-    return yamlio.dump(replace(settings, allocations=replace(settings.allocations, egress_port=None)).document()).encode()
-
 
 
 @dataclass(frozen=True)
@@ -256,11 +256,11 @@ def progress(action: str, merged: Target | None, main: Target | None, live: AppR
         return Progress('historical', 'its merge commit has no records for this instance')
     if main is not None and merged.records and merged.records == main.records:
         merged = main
-    if merged.hash == '' and not merged.pending:
+    if not merged.v2 and merged.hash == '' and not merged.pending:
         return Progress('historical', 'this change predates render hashes')
     if main is None:
         return Progress('unread', 'the target or current render could not be read')
-    if main.hash == '' and not main.pending:
+    if not main.v2 and main.hash == '' and not main.pending:
         return Progress('unread', 'the current render has no hash')
     newer = ''
     if not merged.same(main):
@@ -280,7 +280,8 @@ def landing(action: str, live: AppRow | str | None, target: Target) -> Progress:
     """
     action = action_kind(action)How far the cluster has got to ``target``, main's render of the change."""
     if target.pending:
-        return Progress('rendering', 'main has not rendered it yet')
+        return Progress('applying' if target.v2 else 'rendering',
+                        'the HelmRelease does not match the records yet' if target.v2 else 'main has not rendered it yet')
     if live is None:
         return Progress('unread', 'the cluster could not be read')
     if action == 'remove':

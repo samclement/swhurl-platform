@@ -120,10 +120,14 @@ func declarationsOf(pinned snapshot) ([]calls.Declaration, error) {
 	return declarations, nil
 }
 
-// declarationOf is one instance's side of every pair it takes part in, from whichever record shape the export
-// read: v2's own pair states the declarations and nests the runtime facts, a predecessor's records state them
-// at the top level.
+// declarationOf is one v2-owned instance's side of every pair it takes part in: its own record states the
+// declarations and nests the runtime facts. A predecessor's records are refused, so a resolution cannot keep
+// describing a shape v1 no longer writes.
 func declarationOf(instance snapshotInstance) (calls.Declaration, error) {
+	if instance.Format != "v2" {
+		return calls.Declaration{}, fmt.Errorf("unsupported: snapshot: instance %s/%s is not v2-owned",
+			instance.Application, instance.Environment)
+	}
 	declaration := calls.Declaration{Application: instance.Application, Environment: instance.Environment}
 	var settings struct {
 		Calls, Allows []string
@@ -147,10 +151,7 @@ func declarationOf(instance snapshotInstance) (calls.Declaration, error) {
 		}
 	}
 	if err := json.Unmarshal(instance.Records["release"], &release); err == nil {
-		declaration.Kind, declaration.Port = release.Kind, release.Port
-		if instance.Format == "v2" {
-			declaration.Kind, declaration.Port = release.Runtime.Kind, release.Runtime.Port
-		}
+		declaration.Kind, declaration.Port = release.Runtime.Kind, release.Runtime.Port
 	}
 	return declaration, nil
 }

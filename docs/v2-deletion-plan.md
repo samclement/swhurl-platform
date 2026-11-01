@@ -1,8 +1,9 @@
 # Deleting v1: the plan for 1b's second half
 
-**Status: in progress (31 October 2026). Phases 0, 1 and 2 are done — the console reads v2's records and writes
-them through the `swhurl-v2` binary, live-tested by a memory change and its revert; phase 3 is next. The four
-decisions in section 5 were confirmed 31 October 2026.** The migrations are done: nine staging and four production
+**Status: in progress (31 October 2026). Phases 0, 1, 2 and 3 are done — the console reads v2's records and writes
+them through the `swhurl-v2` binary, live-tested by a memory change and its revert; v1's writer commands and modules
+are deleted, `resolve` reads one record shape, and Activity reads v2's tree. Phase 4 (the v2-only checks) is next. The
+four decisions in section 5 were confirmed 31 October 2026.** The migrations are done: nine staging and four production
 instances are v2-owned, `apps/` holds no instance record, and the live checks in
 [current state](current-state.md#the-production-cutover-four-instances-31-october-2026) pass. What remains is the
 deletions and the v1-only branches in `verify-platform` and `resolve`.
@@ -249,17 +250,18 @@ phase 3 (§2.3).
   [Current state](current-state.md#the-first-live-console-edit-and-the-frozen-fixture-it-found-31-october-2026) has
   the evidence.
 
-**Phase 3 — delete the v1 writer commands and modules (1–2 days).**
-- Remove the **delete** rows from `commands.py`, the Makefile `COMMANDS`, [commands](commands.md), their tests
-  and fixtures, and the functions/modules only they use.
-- Delete `resolve`'s v1-shaped reading; `swhurl-v2 resolve` reads v2 records only. `verify-platform`'s v1
+**Phase 3 — delete the v1 writer commands and modules (done 31 October 2026).**
+- Removed the **delete** rows from `commands.py`, the Makefile `COMMANDS`, [commands](commands.md), their tests
+  and fixtures, and the functions/modules only they used, with the ratchet test in the same commit.
+- `swhurl-v2 resolve` reads v2 records only: a snapshot instance still in a predecessor's shape is refused.
+  Activity's `render_targets` reads `v2-records/` and `v2-apps/`, not v1's `apps/`. `verify-platform`'s v1
   branch is phase 4, not this phase.
 - Keep `apps/checks.py` until phase 4 replaces `check-apps`.
 - Keep the v1-only modules used by the **keep** rows: `new.py`, `repo.py`, `hooks.py`, `teams.py`, `offers.py`
   (only if `app-offers` is kept, which this plan does not), `keys.py` (only if `platform-signing-keys` is kept,
   which this plan does not), and the `model`/`store`/`render` paths those commands need. Mark each kept path in
   the plan's table.
-- Acceptance: `rg "from swhurl\.apps" tools/swhurl/console` has no read/write hit for a deleted feature;
+- Acceptance (met): `rg "from swhurl\.apps" tools/swhurl/console` has no read/write hit for a deleted feature;
   `make check`, `make check-v2`, `make check-apps` (or its replacement), `make check-repo`.
 
 **Phase 4 — the v2 checks (1 day).**
@@ -268,7 +270,7 @@ phase 3 (§2.3).
   `check` keeps the same shape.
 - `make verify-platform` reads v2 records for the namespace/team/quota/port checks; delete the v1 branch and
   its `0 instance(s)` path. Then delete `apps/checks.py` if the new `check-apps` no longer uses it.
-- `swhurl-v2 resolve` test: one record shape, no v1 fallback.
+- `swhurl-v2 resolve` test (done in phase 3): one record shape, a predecessor's refused.
 
 **Phase 5 — external repositories (separate confirmation).**
 - The eight app repositories' v1 `deploy.yml` is a change **outside this repository**. It needs the operator's

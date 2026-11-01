@@ -12,8 +12,8 @@ import (
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// twoInstances is a snapshot with a caller and its callee, in the exporter's shape: the caller declares the
-// call, the callee consents by team, and the callee's release states the port the caller must reach.
+// twoInstances is a snapshot with a caller and its callee in v2's record shape: the caller declares the call,
+// the callee consents by team, and the callee's release states the runtime port the caller must reach.
 func twoInstances(t *testing.T) map[string]any {
 	t.Helper()
 	record := func(role string) map[string]any {
@@ -27,21 +27,20 @@ func twoInstances(t *testing.T) map[string]any {
 		}
 		return document.(map[string]any)
 	}
-	instance := func(application string, settings, release map[string]any) map[string]any {
+	instance := func(application string, calls, allows []any) map[string]any {
 		return map[string]any{
-			"application": application, "environment": "staging", "missing": []any{}, "objects": []any{},
-			"records": map[string]any{"app": record("app"), "instance": settings, "release": release,
-				"helmrelease": record("helmrelease")},
+			"application": application, "environment": "staging", "format": "v2", "missing": []any{},
+			"objects": []any{},
+			"records": map[string]any{"app": record("app"), "instance": map[string]any{
+				"schemaVersion": 1, "application": application, "environment": "staging", "calls": calls, "allows": allows,
+				"egress": []any{"api.example.com:443"}},
+				"release": map[string]any{"schemaVersion": 1, "publishes": []any{},
+					"runtime": map[string]any{"kind": "web", "port": 8080}}},
 		}
 	}
-	callerSettings := map[string]any{"version": 1, "exposure": "private", "replicas": 1, "calls": []any{"orders"},
-		"egress": []any{"api.example.com:443"}}
-	calleeSettings := map[string]any{"version": 1, "exposure": "private", "replicas": 1, "allows": []any{"team:demo"},
-		"egress": []any{"api.example.com:443"}}
-	release := record("release")
-	release["port"] = 8080
 	return map[string]any{"version": 1, "revision": strings.Repeat("a", 40), "residual": []any{},
-		"instances": []any{instance("shop", callerSettings, release), instance("orders", calleeSettings, release)}}
+		"instances": []any{instance("shop", []any{"orders"}, []any{}),
+			instance("orders", []any{}, []any{"team:demo"})}}
 }
 
 // resolve writes the connected pair; compile --calls renders only the instance's side of it.
@@ -108,40 +107,16 @@ func TestResolveThenCompileACalledInstance(t *testing.T) {
 	}
 }
 
-// A v2-owned instance's declarations come from its own pair, and its runtime facts from the nested runtime
-// object: the resolution must be the same one a predecessor's records give, or a migrated pair would silently
-// lose or invent a relationship.
-func TestResolveReadsAV2OwnedPair(t *testing.T) {
-	snapshotPath := writeSnapshot(t, twoInstances(t))
-	var fromRecords bytes.Buffer
-	if status := run([]string{"resolve", "--snapshot", snapshotPath}, &fromRecords, &bytes.Buffer{}, os.ReadFile,
-		files.New()); status != 0 {
-		t.Fatalf("resolve over v1 records: exit %d", status)
-	}
-
-	// The same two instances as v2 owns them: the declarations in the instance record, the runtime nested.
+// A snapshot still holding a predecessor's records is refused: resolve describes one shape, and v1 no longer
+// writes one.
+func TestResolveRefusesAPredecessorSnapshot(t *testing.T) {
 	document := twoInstances(t)
-	for _, raw := range document["instances"].([]any) {
-		instance := raw.(map[string]any)
-		instance["format"] = "v2"
-		instance["records"].(map[string]any)["instance"] = map[string]any{
-			"schemaVersion": 1, "application": instance["application"], "environment": "staging",
-			"calls":  instance["records"].(map[string]any)["instance"].(map[string]any)["calls"],
-			"allows": instance["records"].(map[string]any)["instance"].(map[string]any)["allows"],
-		}
-		instance["records"].(map[string]any)["release"] = map[string]any{
-			"schemaVersion": 1, "runtime": map[string]any{"kind": "web", "port": 8080},
-		}
-	}
-	snapshotPath = writeSnapshot(t, document)
-	var fromPair bytes.Buffer
-	if status := run([]string{"resolve", "--snapshot", snapshotPath}, &fromPair, &bytes.Buffer{}, os.ReadFile,
-		files.New()); status != 0 {
-		t.Fatalf("resolve over v2 pairs: exit %d", status)
-	}
-	if fromPair.String() != fromRecords.String() {
-		t.Fatalf("a v2 pair resolves differently from the records it replaced:\n%s\n%s", fromPair.String(),
-			fromRecords.String())
+	document["instances"].([]any)[0].(map[string]any)["format"] = "v1"
+	var out, diagnostic bytes.Buffer
+	status := run([]string{"resolve", "--snapshot", writeSnapshot(t, document)}, &out, &diagnostic, os.ReadFile,
+		files.New())
+	if status != 2 || !strings.Contains(diagnostic.String(), "is not v2-owned") {
+		t.Fatalf("exit %d: %s", status, diagnostic.String())
 	}
 }
 

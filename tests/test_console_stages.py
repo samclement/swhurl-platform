@@ -162,6 +162,26 @@ class RenderProgressTests(unittest.TestCase):
         self.assertEqual(self.progress(live=row(State('suspended'))).state, 'held')
         self.assertEqual(self.progress(live=row(State('unknown'))).state, 'unread')
 
+    def test_v2_records_are_the_render_and_the_image_is_the_rollout(self):
+        """v2 renders records and manifests together: no render hash is needed to tell the change apart."""
+        def owned(records='records-1', settings='settings-1', digest='sha256:a', rendered='sha256:a'):
+            return stages.Target(records, settings, digest, None if rendered is None else '', rendered, '', v2=True)
+        mine = owned()
+        self.assertFalse(mine.pending)
+        self.assertEqual(self.progress(merged=mine, main=mine, applied='', digest='sha256:a').state, 'live')
+        self.assertEqual(self.progress(action='scale', merged=mine, main=owned('records-2', digest='sha256:b', rendered='sha256:b'),
+                                       applied='', digest='sha256:b').state, 'live', 'a newer image carries a scale')
+        self.assertEqual(self.progress(merged=mine, main=owned('records-3', settings='settings-2')).state, 'superseded',
+                         'changed settings replace a scale')
+        for main in (owned('records-1', rendered=None), owned('records-1', rendered='sha256:old')):
+            with self.subTest(main=main):
+                self.assertEqual(self.progress(merged=main, main=main).state, 'applying',
+                                 'a missing or stale HelmRelease does not claim to be applied')
+        first = stages.Target(records='r', settings='s', digest='sha256:a', rendered='sha256:a', v2=True)
+        self.assertTrue(first.same(stages.Target(records='r', settings='s', digest='sha256:b', rendered='sha256:b', v2=True)))
+        self.assertFalse(first.same(stages.Target(records='r2', settings='s', digest='sha256:a', rendered='sha256:a', v2=True)),
+                         'only the records identify a v2 render')
+
     def test_remove_requires_git_absence_and_live_absence(self):
         self.assertEqual(self.progress(action='remove', merged=ABSENT, main=ABSENT).state, 'removing', 'Flux is still uninstalling')
         self.assertEqual(self.progress(stages.ABSENT, action='remove', merged=ABSENT, main=ABSENT).state, 'removed')

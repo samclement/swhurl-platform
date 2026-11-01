@@ -22,6 +22,9 @@
     "worked"
   ],
   "description": "throwaway: team platform T4 subscriber (notifier), delete me",
-  "offers": "900f5e5b10eaa1e84a0ff19bf61ad02f2d54fca7",
-  "releaseId": "rel-sha256:7f66bdc9cbdcdff49932a743c46f84f9ab61798e6036c6ff6950244148dc36d7"
+  "documents": [
+    "events",
+    "flags"
+  ],
+  "releaseId": "rel-sha256:2d7fec9beb3bdd43fe0faa9fdafc91743363b9989fff29c767245cf8a9de9238"
 }

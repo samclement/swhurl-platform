@@ -21,6 +21,7 @@ const (
 	releaseFile  = "release.json"
 	appFile      = "app.json"
 	stagingDir   = "staging"
+	offersFolder = "offers"
 )
 
 // Every delivery's outcome: what the report states and how the exit status reads it.

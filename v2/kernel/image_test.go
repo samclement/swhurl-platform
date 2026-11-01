@@ -7,11 +7,13 @@ import (
 	"testing"
 )
 
-// declaration is one image's statement about itself, as the build writes it into its config labels.
+// declaration is one image's statement about itself, as the build writes it into its config labels: a web image
+// that publishes one event, states the memory it runs in, and carries its events document.
 func declaration(change func(*Declaration)) Declaration {
-	d := Declaration{SchemaVersion: 1,
+	d := Declaration{SchemaVersion: 2,
 		Runtime:   Runtime{Kind: "web", Port: 8080, HealthPath: "/healthz", UID: 65532},
-		Telemetry: true, Publishes: []string{"created"}}
+		Telemetry: true, Publishes: []string{"created"}, MemoryMiB: 128,
+		Documents: map[string][]byte{"events": []byte(`{"asyncapi":"3.0.0"}`)}}
 	if change != nil {
 		change(&d)
 	}
@@ -76,19 +78,14 @@ func TestDecodeDeclaration(t *testing.T) {
 		want       Code
 		field      string
 	}{
-		{"unknown field", strings.Replace(valid, `"telemetry":true`, `"telemetry":true,"description":"x"`, 1), Unsupported, "declaration"},
-		{"unknown runtime field", strings.Replace(valid, `"port":8080`, `"port":8080,"command":["x"]`, 1), Unsupported, "runtime"},
+		{"unknown field", strings.Replace(valid, `"telemetry":true`, `"telemetry":true,"extra":1`, 1), Unsupported, "declaration"},
+		{"unknown runtime field", strings.Replace(valid, `"uid":65532`, `"uid":65532,"command":["x"]`, 1), Unsupported, "runtime"},
 		{"null", strings.Replace(valid, `"telemetry":true`, `"telemetry":null`, 1), Invalid, "declaration.telemetry"},
-		{"missing schema", strings.Replace(valid, `"schemaVersion":1,`, ``, 1), Invalid, "declaration.schemaVersion"},
+		{"missing schema", strings.Replace(valid, `"schemaVersion":2,`, ``, 1), Invalid, "declaration.schemaVersion"},
 		{"missing runtime", strings.Replace(valid, `"runtime":{"kind":"web","port":8080,"healthPath":"/healthz","uid":65532},`, ``, 1), Invalid, "declaration.runtime"},
 		{"missing uid", strings.Replace(valid, `,"uid":65532`, ``, 1), Invalid, "runtime.uid"},
-		{"unsupported version", strings.Replace(valid, `"schemaVersion":1`, `"schemaVersion":2`, 1), Unsupported, "schemaVersion"},
-		{"worker with a port", strings.Replace(valid, `"kind":"web"`, `"kind":"worker"`, 1), Invalid, "runtime.port"},
-		{"web without a port", strings.Replace(valid, `"port":8080,`, ``, 1), Invalid, "runtime.port"},
-		{"unknown kind", strings.Replace(valid, `"kind":"web"`, `"kind":"job"`, 1), Unsupported, "runtime.kind"},
-		{"repeated event", strings.Replace(valid, `"publishes":["created"]`, `"publishes":["created","created"]`, 1), Invalid, "publishes"},
-		{"bad event", strings.Replace(valid, `"publishes":["created"]`, `"publishes":["Created"]`, 1), Invalid, "publishes"},
-		{"negative memory", strings.Replace(valid, `"telemetry":true`, `"telemetry":true,"memoryMiB":-1`, 1), Invalid, "declaration.memoryMiB"},
+		{"missing memory", strings.Replace(valid, `"memoryMiB":128,`, ``, 1), Invalid, "declaration.memoryMiB"},
+		{"version 1 is refused", strings.Replace(valid, `"schemaVersion":2`, `"schemaVersion":1`, 1), Unsupported, "schemaVersion"},
 		{"wrong type", strings.Replace(valid, `"port":8080`, `"port":"8080"`, 1), Invalid, "declaration"},
 		{"fraction", strings.Replace(valid, `"port":8080`, `"port":8080.5`, 1), Invalid, "declaration"},
 	} {
@@ -100,14 +97,45 @@ func TestDecodeDeclaration(t *testing.T) {
 			}
 		})
 	}
-	// The needs v2 does not model are read, not defaulted: an image that declares them gets them back.
-	withNeeds := declaration(func(d *Declaration) {
-		d.Secrets = []string{"TOKEN"}
-		d.MemoryMiB = 128
+	for _, tt := range []struct {
+		name   string
+		change func(*Declaration)
+		want   Code
+		field  string
+	}{
+		{"worker with a port", func(d *Declaration) { d.Runtime = Runtime{Kind: "worker", Port: 8080, UID: 65532} }, Invalid, "runtime.port"},
+		{"web without a port", func(d *Declaration) { d.Runtime.Port = 0 }, Invalid, "runtime.port"},
+		{"unknown kind", func(d *Declaration) { d.Runtime.Kind = "job" }, Unsupported, "runtime.kind"},
+		{"repeated event", func(d *Declaration) { d.Publishes = []string{"created", "created"} }, Invalid, "publishes"},
+		{"bad event", func(d *Declaration) { d.Publishes = []string{"Created"} }, Invalid, "publishes"},
+		{"zero memory", func(d *Declaration) { d.MemoryMiB = 0 }, Invalid, "declaration.memoryMiB"},
+		{"secrets are not modelled", func(d *Declaration) { d.Secrets = []string{"TOKEN"} }, Unsupported, "declaration.secrets"},
+		{"api path without its document", func(d *Declaration) { d.APIPath = "/openapi.json" }, Invalid, "declaration.apiPath"},
+		{"api document without its path", func(d *Declaration) { d.Documents["api"] = []byte(`{}`) }, Invalid, "declaration.documents.api"},
+		{"publishes without its events document", func(d *Declaration) { delete(d.Documents, "events") }, Invalid, "declaration.documents.events"},
+		{"database without a volume", func(d *Declaration) { d.Database = "sqlite" }, Invalid, "declaration.databaseSizeMiB"},
+		{"volume without a database", func(d *Declaration) { d.DatabaseSizeMiB = 1024 }, Invalid, "declaration.databaseSizeMiB"},
+		{"unknown document role", func(d *Declaration) { d.Documents["source"] = []byte(`{}`) }, Invalid, "declaration.documents"},
+		{"empty document", func(d *Declaration) { d.Documents["flags"] = []byte{} }, Invalid, "declaration.documents.flags"},
+		{"description with a newline", func(d *Declaration) { d.Description = "two\nlines" }, Invalid, "declaration.description"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			change := declaration(tt.change)
+			_, err := DecodeDeclaration(declarationJSON(t, change))
+			refusal(t, err, tt.want, tt.field)
+		})
+	}
+	// The documents are the file's bytes: the label's base64 decodes to exactly what the build read.
+	withDocuments := declaration(func(d *Declaration) {
+		d.Documents["api"] = []byte("{\n  \"openapi\": \"3.1.0\"\n}\n")
+		d.APIPath = "/openapi.json"
 	})
-	decoded, err := DecodeDeclaration(declarationJSON(t, withNeeds))
-	if err != nil || len(decoded.Secrets) != 1 || decoded.MemoryMiB != 128 {
-		t.Fatalf("needs %+v %v", decoded, err)
+	decoded, err := DecodeDeclaration(declarationJSON(t, withDocuments))
+	if err != nil || string(decoded.Documents["api"]) != "{\n  \"openapi\": \"3.1.0\"\n}\n" || decoded.APIPath != "/openapi.json" {
+		t.Fatalf("documents %q %v", decoded.Documents, err)
+	}
+	if files := decoded.OfferedFiles(); len(files) != 2 || files[0].Path != "openapi.json" || files[1].Path != "asyncapi.yaml" {
+		t.Fatalf("offered files %+v", files)
 	}
 }
 
@@ -265,7 +293,7 @@ func TestImageAutomationRendersOnlyAStagingAppsOwnImage(t *testing.T) {
 	// A worker publishes an image too: only its HTTP surface is absent.
 	worker := releaseFile(t, "r42.json")
 	worker.Runtime, worker.ReleaseID = Runtime{Kind: "worker", UID: 65532}, ""
-	worker.APIPath = ""
+	worker.APIPath, worker.Documents = "", nil
 	id, err = worker.ID()
 	if err != nil {
 		t.Fatal(err)

@@ -134,18 +134,57 @@ func ImageRepository(image string) string {
 }
 
 // Declaration is what an image states about itself, read from its config labels: the runtime facts the
-// platform applies and the needs it cannot apply yet. It is the image's own claim, so the platform validates
-// it strictly rather than filling a missing fact with a default.
+// platform applies, the needs it cannot apply yet, and the documents the app offers. It is the image's own
+// claim, so the platform validates it strictly rather than filling a missing fact with a default: an image
+// either states its whole declaration or is not this platform's.
 type Declaration struct {
 	SchemaVersion int32    `json:"schemaVersion"`
 	Runtime       Runtime  `json:"runtime"`
 	Telemetry     bool     `json:"telemetry,omitempty"`
 	Database      string   `json:"database,omitempty"`
 	Publishes     []string `json:"publishes,omitempty"`
-	// Secrets and MemoryMiB are needs v2 does not model yet. They are read so an image that adds one is held
-	// rather than silently run without it; an empty list and zero mean the image needs neither.
-	Secrets   []string `json:"secrets,omitempty"`
-	MemoryMiB int32    `json:"memoryMiB,omitempty"`
+	// Secrets is a need v2 does not model yet. It is read so an image that adds one is held rather than
+	// silently run without it; a non-empty list is refused.
+	Secrets []string `json:"secrets,omitempty"`
+	// MemoryMiB is the memory the image runs in: required, because an instance has to run it somewhere, and it
+	// is what a later image may hold an instance under.
+	MemoryMiB int32 `json:"memoryMiB"`
+	// DatabaseSizeMiB is the volume a new database is created with: required with a database, and refused
+	// without one, because a volume with nothing to hold is not a decision an image can make.
+	DatabaseSizeMiB int32 `json:"databaseSizeMiB,omitempty"`
+	// Description is the one line the app says about itself, served to it as SWHURL_DESCRIPTION.
+	Description string `json:"description,omitempty"`
+	// APIPath is where a web image serves its API description. It is required with the api document and
+	// refused without it, so an app that describes itself and one that serves that description cannot disagree.
+	APIPath string `json:"apiPath,omitempty"`
+	// Documents are the bytes the app offers other apps, by role, base64-encoded in the label so the record's
+	// copy is byte-identical to the file the build read.
+	Documents map[string][]byte `json:"documents,omitempty"`
+}
+
+// DocumentRoles names the fixed file an offered document's role takes in an instance's offers folder: a role the
+// label states is a file named here, so no index file says which name is which.
+var DocumentRoles = map[string]string{"api": "openapi.json", "events": "asyncapi.yaml", "flags": "flags.json"}
+
+// OfferedFiles is the documents the label states, as the files an instance's offers folder holds: the role's own
+// name and the bytes the producer encoded, unchanged. The order is the roles', so a report of them is stable.
+func (d Declaration) OfferedFiles() []File {
+	files := make([]File, 0, len(d.Documents))
+	for _, role := range documentRoles(d) {
+		files = append(files, File{Path: DocumentRoles[role], Document: d.Documents[role]})
+	}
+	return files
+}
+
+// documentRoles are the roles a declaration states, in the order the platform names them.
+func documentRoles(d Declaration) []string {
+	roles := make([]string, 0, len(d.Documents))
+	for _, role := range []string{"api", "events", "flags"} {
+		if _, stated := d.Documents[role]; stated {
+			roles = append(roles, role)
+		}
+	}
+	return roles
 }
 
 // DecodeDeclaration reads and validates one image declaration. The document is strict: unknown fields and
@@ -155,8 +194,8 @@ func DecodeDeclaration(data []byte) (Declaration, error) {
 	if err := document(data); err != nil {
 		return Declaration{}, err
 	}
-	root, err := fields(data, "declaration", []string{"schemaVersion", "runtime"},
-		"telemetry", "database", "publishes", "secrets", "memoryMiB")
+	root, err := fields(data, "declaration", []string{"schemaVersion", "runtime", "memoryMiB"},
+		"telemetry", "database", "publishes", "secrets", "databaseSizeMiB", "description", "apiPath", "documents")
 	if err != nil {
 		return Declaration{}, err
 	}
@@ -167,19 +206,97 @@ func DecodeDeclaration(data []byte) (Declaration, error) {
 	if err := json.Unmarshal(data, &declaration); err != nil {
 		return Declaration{}, refuse(Invalid, "declaration", "a field has the wrong type")
 	}
-	if declaration.SchemaVersion != 1 {
-		return Declaration{}, refuse(Unsupported, "schemaVersion", "only version 1 is supported")
+	if declaration.SchemaVersion != 2 {
+		return Declaration{}, refuse(Unsupported, "schemaVersion", "only version 2 is supported")
 	}
-	if err := declaration.Runtime.validate(); err != nil {
+	if err := declaration.validate(); err != nil {
 		return Declaration{}, err
-	}
-	if err := validateEventNames("publishes", declaration.Publishes); err != nil {
-		return Declaration{}, err
-	}
-	if declaration.MemoryMiB < 0 {
-		return Declaration{}, refuse(Invalid, "declaration.memoryMiB", "expected a nonnegative signed-32-bit integer")
 	}
 	return declaration, nil
+}
+
+// validate applies the label's own rules in the field table's order, so the first broken fact decides: what the
+// image needs, what it may not add, and what its offered documents have to agree with.
+func (d Declaration) validate() error {
+	if err := d.Runtime.validate(); err != nil {
+		return err
+	}
+	if len(d.Secrets) > 0 {
+		return refuse(Unsupported, "declaration.secrets", "bindings_are_not_modelled")
+	}
+	if d.MemoryMiB < 1 {
+		return refuse(Invalid, "declaration.memoryMiB", "expected the memory the image runs in, at least 1 MiB")
+	}
+	if err := d.validateDocuments(); err != nil {
+		return err
+	}
+	if err := validateEventNames("publishes", d.Publishes); err != nil {
+		return err
+	}
+	if len(d.Publishes) > 0 && d.Documents["events"] == nil {
+		return refuse(Invalid, "declaration.documents.events", "an image that publishes states its events document")
+	}
+	return d.validateDatabase()
+}
+
+// validateDocuments checks what the label states about the app's offered documents: the roles it may name, the one
+// line it says about itself, and the path that has to agree with the api document.
+func (d Declaration) validateDocuments() error {
+	if err := d.validateDocumentRoles(); err != nil {
+		return err
+	}
+	if d.Description != "" && !descriptionPattern.MatchString(d.Description) {
+		return refuse(Invalid, "declaration.description", "expected one line of at most 200 printable characters")
+	}
+	return d.validateDocumentPath()
+}
+
+// validateDocumentRoles refuses a role the platform has no fixed name for, and a document that is a name rather
+// than the bytes it offers.
+func (d Declaration) validateDocumentRoles() error {
+	for role, document := range d.Documents {
+		if _, known := DocumentRoles[role]; !known {
+			return refuse(Invalid, "declaration.documents", "expected api, events and flags only")
+		}
+		if len(document) == 0 {
+			return refuse(Invalid, "declaration.documents."+role, "expected the document's bytes")
+		}
+	}
+	return nil
+}
+
+// validateDocumentPath ties the api document to the path it is served on: one without the other describes nothing,
+// and only a web image serves a path.
+func (d Declaration) validateDocumentPath() error {
+	switch {
+	case d.APIPath != "" && d.Documents["api"] == nil:
+		return refuse(Invalid, "declaration.apiPath", "a path is served only with the api document it describes")
+	case d.Documents["api"] != nil && d.APIPath == "":
+		return refuse(Invalid, "declaration.documents.api", "the api document needs the path it is served on")
+	case d.APIPath == "":
+		return nil
+	}
+	if d.Runtime.Kind != "web" {
+		return refuse(Invalid, "declaration.apiPath", "a worker serves no API description")
+	}
+	if !apiPathPattern.MatchString(d.APIPath) {
+		return refuse(Invalid, "declaration.apiPath", "expected an absolute path")
+	}
+	return nil
+}
+
+// validateDatabase checks the database and the volume it states together: one without the other is a record that
+// cannot be run, and only sqlite is modelled.
+func (d Declaration) validateDatabase() error {
+	switch {
+	case d.Database == "" && d.DatabaseSizeMiB > 0:
+		return refuse(Invalid, "declaration.databaseSizeMiB", "an image that keeps no database has nothing to put in a volume")
+	case d.Database != "" && d.Database != "sqlite":
+		return refuse(Unsupported, "declaration.database", "only sqlite is supported")
+	case d.Database != "" && d.DatabaseSizeMiB < 1:
+		return refuse(Invalid, "declaration.databaseSizeMiB", "a database needs the volume it is created with")
+	}
+	return nil
 }
 
 // Release turns one declaration into the release an image publishes. The artifact's digest and media type are
@@ -195,6 +312,11 @@ func (d Declaration) Release(application, repository, commit, image, digest, med
 		Database:      d.Database,
 		Telemetry:     d.Telemetry,
 		Publishes:     slices.Clone(d.Publishes),
+		Description:   d.Description,
+		APIPath:       d.APIPath,
+		// The documents travel with the image, so the release states which roles it carries; the commit they are
+		// named by is the source's.
+		Documents: documentRoles(d),
 	}
 	id, err := release.ID()
 	if err != nil {

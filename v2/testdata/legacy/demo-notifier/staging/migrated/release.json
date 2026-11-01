@@ -19,6 +19,8 @@
   },
   "telemetry": true,
   "description": "Demo: receives demo-orders.created and tells the team about big orders",
-  "offers": "eab35a3b0a162b5ff839afb8dcbe6bed74807193",
-  "releaseId": "rel-sha256:26d7675d82a9933bdf11ab8df3a8e1e406738b6a37d11399e28aa39a9b410160"
+  "documents": [
+    "events"
+  ],
+  "releaseId": "rel-sha256:e91e16d3f1a3b9a0fb8906e9828fee1035e576e39882b264465c2a5cc27572fe"
 }

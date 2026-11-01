@@ -1,1 +1,1 @@
-{"architecture":"amd64","os":"linux","config":{"Labels":{"platform.swhurl.com/declaration":"{\"schemaVersion\":1,\"runtime\":{\"kind\":\"web\",\"port\":8080,\"healthPath\":\"/healthz\",\"uid\":65532},\"telemetry\":true,\"publishes\":[\"created\"]}"}}}
+{"architecture":"amd64","os":"linux","config":{"Labels":{"platform.swhurl.com/declaration":"{\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"port\":8080,\"healthPath\":\"/healthz\",\"uid\":65532},\"telemetry\":true,\"publishes\":[\"created\"],\"memoryMiB\":128,\"documents\":{\"events\":\"e30=\"}}"}}}

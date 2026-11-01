@@ -213,7 +213,7 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
         <fieldset>
           <div class="pair">{% for field, flag, label in scale_fields if not (status.job and field == 'replicas') %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
           <span class="muted hint">{{ 'Replicas and memory (MiB) of each run.' if v2 else ('CPU and memory of each run.' if status.job else 'Replicas, CPU and memory.') }} Empty fields keep their current value, shown in grey.
-            {%- if minimum is not none %} {% if minimum %}The image's minimum, from its <code>swhurl.yaml</code>: {% for field, flag, label in scale_fields if field in minimum %}{{ label | lower }} {{ minimum[field] }}{{ ', ' if not loop.last else '.' }}{% endfor %}{% else %}The image declares no minimum in its <code>swhurl.yaml</code>.{% endif %}{% endif %}</span>
+            </span>
         </fieldset>
         {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
       </form>

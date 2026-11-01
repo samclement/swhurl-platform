@@ -79,7 +79,7 @@ func Migrate(ctx context.Context, inputs MigrationInputs, images func(image stri
 // the platform's answer about the image are already decided when it runs.
 func writeMigration(facts legacy.Migration, artifact kernel.Artifact, inputs MigrationInputs, destination string,
 	writer files.Writer) (Migration, error) {
-	release, spec, app, err := recordsOf(facts, artifact)
+	release, spec, app, err := recordsOf(facts, artifact, inputs.Offers)
 	if err != nil {
 		return Migration{}, err
 	}
@@ -124,10 +124,27 @@ func writeMigration(facts legacy.Migration, artifact kernel.Artifact, inputs Mig
 	return result, err
 }
 
-// offered are the documents a migration writes beside the manifests, checked against the provenance the release
-// states: a console reads a document by the commit its release names and shows nothing without it, so a record that
-// states one of the two without the other would be a link to nothing. The check is this use case's because the
-// compiler renders the annotation and the documents as they are given.
+// documentRoles names the roles a predecessor's document files fill, by the names the platform gives them. The
+// release states which documents its image carries, so a file whose name is not one of them cannot be carried: no
+// record would say what it is.
+func documentRoles(documents []kernel.File) []string {
+	roles := make([]string, 0, len(documents))
+	for _, role := range []string{"api", "events", "flags"} {
+		for _, document := range documents {
+			name := document.Path
+			if role == "api" && strings.HasPrefix(name, "openapi.") || role != "api" && name == kernel.DocumentRoles[role] {
+				roles = append(roles, role)
+				break
+			}
+		}
+	}
+	return roles
+}
+
+// offered are the documents a migration writes beside the manifests, checked against what the predecessor stated:
+// a release that named the commit its documents were read at must have them, and one that named none must not, so a
+// record never claims documents it has not got. The check is this use case's because the compiler renders the
+// annotation and the documents as they are given.
 func withOffers(manifests []kernel.File, facts legacy.Migration, documents []kernel.File) ([]kernel.File, error) {
 	switch {
 	case facts.Offered.Commit != "" && len(documents) == 0:
@@ -141,7 +158,8 @@ func withOffers(manifests []kernel.File, facts legacy.Migration, documents []ker
 // recordsOf turns one predecessor's translated facts and the platform's answer about its image into v2's
 // record pair. It maps fields and lets the kernel decide what a record may say: identity, validation and
 // encoding stay there.
-func recordsOf(facts legacy.Migration, artifact kernel.Artifact) (kernel.ReleaseBundle, kernel.InstanceSpec, kernel.AppSpec, error) {
+func recordsOf(facts legacy.Migration, artifact kernel.Artifact,
+	documents []kernel.File) (kernel.ReleaseBundle, kernel.InstanceSpec, kernel.AppSpec, error) {
 	// Consent by team travels as the record states it: the grant names a team, the resolution matches it against
 	// each caller's own team, and the migration neither widens nor narrows what the instance accepts.
 	if facts.Instance.Team == "" {
@@ -154,17 +172,13 @@ func recordsOf(facts legacy.Migration, artifact kernel.Artifact) (kernel.Release
 		Publishes:     facts.Workload.Publishes,
 		Description:   facts.Offered.Description,
 		APIPath:       facts.Offered.APIPath,
+		Documents:     documentRoles(documents),
 		Source:        kernel.Source{Repository: facts.Source.Repository, Commit: facts.Source.Commit},
 		Artifact:      artifact,
 		Runtime: kernel.Runtime{Kind: facts.Workload.Kind, Port: facts.Workload.Port,
 			HealthPath: facts.Workload.HealthPath, UID: facts.Workload.UID},
 		Database:  facts.Database,
 		Telemetry: facts.Workload.Telemetry,
-	}
-	if facts.Offered.Commit != "" {
-		// The documents were read at the commit the predecessor's image was built from: its record keeps only an
-		// abbreviation, and sourceOf checked that against the commit the operator supplied. One fact, checked once.
-		release.Offers = facts.Source.Commit
 	}
 	identity, err := release.ID()
 	if err != nil {

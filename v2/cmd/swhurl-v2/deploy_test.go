@@ -23,7 +23,8 @@ const (
 // deployedImage is one image a test's registry answers: the declaration its build wrote, and the commit its tag
 // abbreviates.
 func deployedImage(digest, commit string) registry.Image {
-	label := `{"schemaVersion":1,"runtime":{"kind":"web","port":8080,"healthPath":"/healthz","uid":65532},"telemetry":true}`
+	label := `{"schemaVersion":2,"runtime":{"kind":"web","port":8080,"healthPath":"/healthz","uid":65532},` +
+		`"telemetry":true,"memoryMiB":128}`
 	return registry.Image{Digest: digest, MediaType: kernel.ManifestMediaType,
 		Labels: map[string]string{kernel.DeclarationLabel: label, kernel.RevisionLabel: commit}}
 }

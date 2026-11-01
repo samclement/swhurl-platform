@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the §10 slice: the declaration travels with the image — label version 2, `create` and `deploy` reading it, `app-new` retired (approved 1 November 2026)
-Uncommitted: none
+Gate: the §10 slice's live half: the nine app repositories at a template tag that writes a version 2 label, then one reviewed promotion for each of the four apps with production (offline half landed 1 November 2026)
+Uncommitted: `v2`, `v2-apps`, `v2-records`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -15,12 +15,13 @@ repository read, no Git-host adapter, no credential, and the document bytes are 
 release. The four decisions: labels rather than OCI referrer artifacts (GHCR answers `404` to the referrers
 endpoint, leaving only a mutable tag); `memoryMiB` required, so a create has no size flags; the offers folder keeps
 fixed names by role and loses its `source.yaml` index, with the console reading the commit from the release;
-and a clean break rather than two label versions. `make app-new` and the console's last v1 record branch retire with
-it, because the label is JSON and the producer prints it from a rendered template. The nine apps are re-derived by a
-scripted template update, and each of the four with production by one reviewed promotion. The contract, the
-migration and the acceptance are [§10](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026).
-Nothing is implemented yet: every image running today carries label version 1, so the pieces below still describe the
-platform as it is.
+and a clean break rather than two label versions. The console's last v1 record branch retires with it, because the
+label is JSON and the producer prints it from a rendered template; `make app-new` stays until the console's New app
+form moves to `create`, which §10 leaves out of scope. The nine apps are re-derived by a scripted template update, and
+each of the four with production by one reviewed promotion. The contract, the migration and the acceptance are
+[§10](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026).
+**The offline half is in the working tree** (below); every image running today still carries label version 1, so
+nothing live has changed.
 
 **Worked 1 November 2026: `create`, offline.** `swhurl-v2 create` writes a new app's staging records from the image
 its repository publishes, so a v2 instance no longer has to begin as a v1 record and be migrated. The image is read
@@ -29,7 +30,8 @@ and the `linux/amd64` manifest's digest — and the pair is the kernel's creatio
 identity whose seed is written encrypted before the record that names its key. It writes records only: the
 allocation, the compiled files and the unit are the whole tree's, so `make v2-render` writes them next. `make app-new`
 and the console's New app are unchanged and still v1's; retiring them is the next gate, and the blocker is named
-there ([record](#slice-record-create-offline-1-november-2026)).
+there ([record](#slice-record-create-offline-1-november-2026)). The label version 2 and the documents that travel in
+it are [the offline half of §10](#slice-record-the-declaration-travels-with-the-image-offline-half-1-november-2026).
 
 **Closed 1 November 2026: phase 5 is void.** No app repository has a v1 `.github/workflows/deploy.yml`, and none
 ever had one on `main`: the nine repositories with records, `hello-ts`, `swhurl-try-19`, `swhurl-try-20`, and both
@@ -152,10 +154,10 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
 | Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Done live 30 October 2026**: `swhurl-try-11` production was migrated to v2 and promoted from its v1 digest to its staging's release; `make app-status` and `observe` agree, and a repeat promotion is a no-op. A first promotion (creating production) is still not modelled, a rollback's direction is stated rather than decided, and v1 callees no longer admit the migrated caller. Both instances were removed on 31 October 2026; the record of what they proved stands | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
-| What an app offers | A release states its own description, API path and the commit its documents were read at; an instance renders them and carries the documents | **Done and live 30 October 2026**: the three facts are release identity, all four v2-owned HelmReleases then carried the variable and the two annotations in the cluster (the two described instances restarted onto it; the other two did not, an annotation being metadata; two remain), and the documents travel as declared inputs from `v2-records/` to `v2-apps/`, where the console reads them | [slice](#slice-record-what-an-app-offers-30-october-2026), [evidence](current-state.md#what-an-app-offers-carried-and-rendered-30-october-2026) |
+| What an app offers | A release states its own description, API path and which document roles it carries; an instance renders them and carries the documents | **Done offline 1 November 2026** (§10's first step): the documents travel in the image's declaration label at version 2, a release's `documents` are the roles it carries, the commit is always the image's `source.commit`, and the console reads a role by its fixed name with no `source.yaml` and no v1 record branch. The live half — the nine app repositories at the new template tag, then one promotion each for the four with production — is the gate | [slice](#slice-record-the-declaration-travels-with-the-image-offline-half-1-november-2026) |
 | Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **1a done, and 1b's migrations done 31 October 2026**: the nine staging instances are v2's — records, compiled files and units, one writer per instance — and a migrated record states the platform's manifest digest, read from the registry rather than copied from the predecessor; all four production instances are v2's too, `demo-orders` and `demo-shop` moved together because one calls the other, with their retained claims adopted by name and production's bare host restored in `kernel.routeHost`; v1's writer is **deleted** (phase 3, 31 October 2026): its instance commands, modules and tests are gone, `resolve` reads one record shape, and Activity reads v2's tree — [record](#slice-record-the-cutover-reaches-production-four-instances-31-october-2026), [1a record](#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
 | The v2-only checks | `make check` and `verify-platform` read v2's tree, so no check keeps a v1 record alive | **Done 31 October 2026** (phase 4): `check-apps` is v2's render check plus the team registry, the notify routes and the template fixtures' policy; `verify-platform` reads `v2-apps/` and the egress allocation and its v1 branch is deleted; `apps/signing-keys.json` is gone, so the profile's `auth` block is the one source of the signing keys — [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026), [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
-| Create | A new app's first instance is v2's from the first commit: the records come from the image's own declaration, not from a v1 record migrated afterwards | **Done, offline 1 November 2026**: `swhurl-v2 create` resolves the image through the registry, states its declaration, revision, digest and publications, mints the broker identity, and writes records only — `make app-new` and the console's New app stay v1's until the template check has a path that needs no image — [record](#slice-record-create-offline-1-november-2026) |
+| Create | A new app's first instance is v2's from the first commit: the records come from the image's own declaration, not from a v1 record migrated afterwards | **Done, offline 1 November 2026**: `swhurl-v2 create` resolves the image through the registry, states its declaration (now including the documents it offers), revision, digest and publications, mints the broker identity, and writes records only; `make check-templates` proves a rendered app's label through `swhurl-v2 declaration`, so the platform half of a template's contract needs no image — `make app-new` and the console's New app stay v1's until that form moves to `create` — [record](#slice-record-create-offline-1-november-2026) |
 | Derived files | One render from v2's own records: the resolution, every compiled instance folder and unit, and the platform's documents, comparable with Git | **Done, offline then live 31 October 2026**: `swhurl-v2 render` composes the existing resolvers, renderers and compiler, so a record change cannot leave the tree half-rendered; `make check-v2` now compares 208 files — `v2-apps/` and the instance units were unchecked before — and a one-field record change names the file it moves. The console writes through it: PR #101 moved `swhurl-try-10/staging` to 192 MiB and #102 returned it to 128, both verified on the cluster — [record](#slice-record-one-render-from-the-records-offline-31-october-2026) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **All 13 live** (nine staging and four production; `swhurl-try-11` was removed on 31 October 2026), and every migration's records are **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
@@ -169,10 +171,10 @@ The goal is a v2 that can own instances without breaking the running platform. T
 
 **Retired so far:** the release/instance identity boundary; resource generation that does not need provenance; delivery and pruning; the semantics of "running" (readiness is not the artifact, and a failed read is not absence); the first promotion between two v2-owned instances; consent by team as a rule the callee states rather than a member list it copies; and, offline, the bridge's translation and comparison for HTTP workload facts — 135 declared objects inventoried over this repository's own 17 instances, 10 compared with **no field differences** and no cross-instance ownership conflict.
 
-**Not yet true, and what would make it true:** v2 copies an instance's offered documents and never fetches them, so a
-v2-owned instance that follows a new image still shows the documents of the commit they were read at, and a v2-owned
-instance that no migration created has none until the operator supplies them — a repository read, with its adapter and
-credential, would make them travel; delivery is manual (compile, commit, push) for everything except a v2-owned staging instance's images, which the v2 Deploy workflow delivers; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, which `render` derives from v2's own records; `resolve` reads only v2-owned instances and refuses a predecessor's record shape; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*. Every instance is v2-owned now, so the mixed-ownership grant loss that `swhurl-try-11` exposed has no v1 callee left to apply to.
+**Not yet true, and what would make it true:** the declaration label's version 2 is read by `create` and `deploy`
+(the offline half of §10), but no image carries it yet: the nine app repositories still build version 1 labels, so the
+live half is the gate above — and until it lands, a v2-owned instance that follows a new image keeps the documents its
+record states. The console, which reads them by fixed name, no longer has a v1 branch; delivery is manual (compile, commit, push) for everything except a v2-owned staging instance's images, which the v2 Deploy workflow delivers; v2 has performed one restore live, but a restore whose content changes by design, another instance's archive and every failure path live are unexercised; v2 renders no job kind, no secrets, no alarms and no offers, so a migration reports those as gaps and refuses one whose release declares secrets; a migrated instance's relationships come from the committed resolution, which `render` derives from v2's own records; `resolve` reads only v2-owned instances and refuses a predecessor's record shape; observation needs a kubeconfig in its JSON form; and the bridge still exports its snapshot with a separate command and cannot yet state ownership for output that no record explains *live*. Every instance is v2-owned now, so the mixed-ownership grant loss that `swhurl-try-11` exposed has no v1 callee left to apply to.
 
 **Risks still open:** a first migration of a stateful app (backup/restore, retention, rollback); publication automation and its credentials; whether the pinned chart's conventions hold across a chart upgrade (now pinned by tests, not by memory); the egress cutover, which changes live outbound traffic and needs the grants recorded before it can refuse the rest; and the console image's coupling to `tools/`, which any exporter change re-deploys.
 
@@ -325,6 +327,51 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   to read a declaration from, so it either needs a `create` that takes a declaration without a registry (`--declaration
   FILE`, the brief's original shape), a v2 repository read (option 2, with its adapter and credential), or a frozen
   fixture. Then the console's New app runs `app-repo` → `swhurl-v2 create` and `records.py`'s v1 reader goes.
+
+## Slice record: the declaration travels with the image, offline half (1 November 2026)
+
+- **Outcome:** the label an image build writes now carries the app's documents, at **version 2**, and the records
+  say which roles a release offers. `kernel.Declaration` states `memoryMiB` (required), `databaseSizeMiB`,
+  `description`, `apiPath` and `documents` (role → bytes, base64); the roles are fixed (`api` → `openapi.json`,
+  `events` → `asyncapi.yaml`, `flags` → `flags.json`) and are checked against the rest of the declaration: an
+  `apiPath` needs an `api` document and vice versa, `publishes` needs an `events` document, and a database needs
+  `databaseSizeMiB`. Version 1 is refused by name. `create` and `deploy` take every one of those facts from the image
+  and write the bytes into `offers/` under their fixed names; `deploy` replaces the description, the API path and the
+  documents in the same commit. The template check runs the producer over each rendered app and hands the label to
+  the new `swhurl-v2 declaration`, which applies the creation rules with no image, no registry and no write — a
+  `job` label is reported as a gap v2 still has, not a template failure. `make app-new` no longer participates.
+- **The record change, and what it buys.** `release.offers` — a commit, always `source.commit` for an image-built
+  release and sometimes a different commit for a migrated one (`demo-notifier` reads its source at one commit and its
+  documents at another) —
+  becomes `documents`, the sorted roles the release carries, hashed in the same position of the release identity.
+  Presence is now a release fact, which is what rendering needs: `kernel.CompileWith` sees records, never the offers
+  folder, so an annotation that "exists only when the instance has documents" must be decided from the record. The
+  `platform.swhurl.com/offers` annotation still renders `source.commit`'s first seven characters, and `migrate` takes
+  the roles from a predecessor's offers folder instead of recording a separate commit.
+- **Records and files re-derived once.** Every committed release was re-derived from the roles in its offers folder:
+  13 release records, their instances' `release` fields, `calls.json`, the egress allocation's revision, the compiled
+  files and the instance units under `v2-apps/`, plus the kernel's goldens (`v2/testdata/*.json`, the compiled and
+  legacy fixtures) and `archtest/api.txt`. Identities change once, in this commit; no live object changed.
+- **Python side.** `apps/declaration.py` writes label version 2 and always states `memoryMiB` (128 unless the app
+  states one); `apps/image_declaration.py` reads the api and events files, renders the flags JSON, caps the encoded
+  label at 120 KiB and refuses a byte-changing `reads_bytes`; `console/catalogue.py` reads a role by its fixed name
+  and keeps by commit; `console/records.py` and `console/routes/instance.py` lost their v1 branch and the v1 minimum.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. No live state changed: the tree's own
+  files were re-rendered and compared with `render --check`, and no cluster was touched. 2. Pure packages take no
+  effects: the label is bytes in, a declaration out, and the producer is the build's, not v2's. 3. Golden bytes and
+  identities changed **deliberately and once**, re-derived by the commands (`-update` for the archtest and
+  compilations, `migrate` for the legacy fixtures), not hand-edited. 4. Refusals: `unsupported` for an unknown role
+  or version, `invalid` for the ties above and for an empty document, and the creation rules' existing codes.
+  5. Failure paths are tested: an over-cap label, a document missing its `apiPath`, an image at version 1 and a
+  database with no volume are each refused by name. 6. Offline only. 7. No live readiness is claimed. 8. This page,
+  the registry, the plan, the deletion plan and current state change together.
+- **Evidence, 1 November 2026:** `cd v2 && go test ./...` — every package; `make check-v2` — 208 files, 0 differ;
+  `make check-templates` with the built binary — 7 app types, 0 problems, 2 warnings (the job kind); `make check` —
+  green after the console and template tests were updated; `make check-docs`. No live check was run.
+- **What the gate still owes:** the nine app repositories are not at a template tag that writes a version 2 label,
+  so no running image carries one yet. §10's steps 2–5 remain: update each repository, `deploy` over `v2-records`,
+  one promotion for each of the four apps with production, then the live verification. `make app-new` also stays: the
+  console's New app form still points at it, and moving that form to `create` is out of this slice's scope.
 
 ## Slice record: phase 5 is void (1 November 2026)
 

@@ -8,19 +8,18 @@ import (
 // A create states a staging instance from what an image says about itself, and every refusal it earns is the
 // record's own rule.
 
-// created is a creation of the fixture release that an operator could make: a web image with a database, a floor of
-// 128 MiB it is given, a one-gigabyte volume, private exposure and a fresh broker identity.
+// created is a creation of the fixture release that an operator could make: a web image with a database, the 128 MiB
+// it says it runs in, the one-gigabyte volume it states, private exposure and a fresh broker identity.
 func created(t *testing.T, declaration Declaration) Creation {
 	t.Helper()
 	release := release(t)
 	return Creation{Application: "demo-orders", Team: "demo", Release: release,
-		Declaration: declaration, MemoryMiB: 128, StorageMiB: 1024, Exposure: "private",
-		Key: NewUserKey([32]byte{7}).Public}
+		Declaration: declaration, Exposure: "private", Key: NewUserKey([32]byte{7}).Public}
 }
 
 func webDeclaration(release ReleaseBundle) Declaration {
-	return Declaration{SchemaVersion: 1, Runtime: release.Runtime, Telemetry: true, Database: "sqlite",
-		MemoryMiB: 128}
+	return Declaration{SchemaVersion: 2, Runtime: release.Runtime, Telemetry: true, Database: "sqlite",
+		DatabaseSizeMiB: 1024, MemoryMiB: 128}
 }
 
 func TestCreationIsTheStagingInstanceAnImageStates(t *testing.T) {
@@ -51,17 +50,18 @@ func TestCreationIsTheStagingInstanceAnImageStates(t *testing.T) {
 	}
 }
 
-// A create that states no memory takes the floor the image states, which is what the image is known to run in.
-func TestCreationTakesTheImagesMemoryFloor(t *testing.T) {
+// The memory and the volume are the image's facts: the instance runs in the memory the image says it runs in, and a
+// database is created with the size the image states.
+func TestCreationTakesTheImagesSizes(t *testing.T) {
 	release := release(t)
-	creation := created(t, webDeclaration(release))
-	creation.MemoryMiB = 0
-	spec, _, err := creation.Instance()
+	declaration := webDeclaration(release)
+	declaration.MemoryMiB, declaration.DatabaseSizeMiB = 192, 2048
+	spec, _, err := created(t, declaration).Instance()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spec.Configuration.MemoryMiB != 128 {
-		t.Errorf("memory = %d, want the image's floor, 128", spec.Configuration.MemoryMiB)
+	if spec.Configuration.MemoryMiB != 192 || spec.Storage.SizeMiB != 2048 {
+		t.Errorf("sizes: memory %d, volume %d", spec.Configuration.MemoryMiB, spec.Storage.SizeMiB)
 	}
 }
 
@@ -77,22 +77,20 @@ func TestCreationRefusals(t *testing.T) {
 		want      Code
 		expectErr string
 	}{
-		{"a memory below the image's floor", func(c *Creation) { c.MemoryMiB = 64 }, declaration,
-			Unsupported, "memory"},
-		{"no memory anywhere", func(c *Creation) { c.MemoryMiB = 0 }, Declaration{SchemaVersion: 1,
-			Runtime: release.Runtime, Database: "sqlite"}, Invalid, "memory size"},
-		{"a database with no volume", func(c *Creation) { c.StorageMiB = 0 }, declaration,
-			Invalid, "volume size"},
-		{"a volume with nothing to keep", func(c *Creation) { c.StorageMiB = 1024 }, Declaration{
-			SchemaVersion: 1, Runtime: release.Runtime}, Invalid, "volume would hold nothing"},
+		{"no memory", func(c *Creation) {}, Declaration{SchemaVersion: 2,
+			Runtime: release.Runtime, Database: "sqlite", DatabaseSizeMiB: 1024}, Invalid, "declaration.memoryMiB"},
+		{"a database with no volume", func(c *Creation) {}, Declaration{SchemaVersion: 2,
+			Runtime: release.Runtime, Database: "sqlite", MemoryMiB: 128}, Invalid, "volume size"},
+		{"a volume with nothing to keep", func(c *Creation) {}, Declaration{SchemaVersion: 2,
+			Runtime: release.Runtime, DatabaseSizeMiB: 1024, MemoryMiB: 128}, Invalid, "volume would hold nothing"},
 		{"an exposure v2 does not model", func(c *Creation) { c.Exposure = "public" }, declaration,
 			Unsupported, "grants.exposure"},
 		{"no team", func(c *Creation) { c.Team = "" }, declaration, Invalid, "team"},
 		{"another app's release", func(c *Creation) { c.Release = other }, declaration,
 			WrongApplication, "application"},
-		{"an image that needs secrets", func(c *Creation) {}, Declaration{SchemaVersion: 1,
-			Runtime: release.Runtime, Database: "sqlite", Secrets: []string{"API_KEY"}}, Unsupported,
-			"bindings_are_not_modelled"},
+		{"an image that needs secrets", func(c *Creation) {}, Declaration{SchemaVersion: 2,
+			Runtime: release.Runtime, Database: "sqlite", DatabaseSizeMiB: 1024, MemoryMiB: 128,
+			Secrets: []string{"API_KEY"}}, Unsupported, "bindings_are_not_modelled"},
 		{"a key that is not a public nkey", func(c *Creation) { c.Key = "not-a-key" }, declaration,
 			Invalid, "events.key"},
 	} {

@@ -1,15 +1,11 @@
 """What Git declares about an instance: v2's own records.
 
 A page reads two kinds of fact. What the cluster runs comes from kubectl (``cluster.py``, ``ops.py``);
-what Git says comes from here. Since 31 October 2026 every instance is v2-owned, so the declaration is
+what Git says comes from here. Every instance is v2-owned, so the declaration is
 ``v2-records/<app>/app.json`` beside ``v2-records/<app>/<env>/{instance,release}.json``; what v2 compiled
 from them is in the cluster, and ``cluster.py`` reads it there like any other fact.
 
 No SOPS file is read: a record's encrypted seed is a file v2 copies, not a fact this console shows.
-
-One instance may still be v1's — the one ``make app-new`` created and nobody migrated yet (deletion plan,
-decision 1b). Its declaration is read from ``apps/<app>/`` through v1's record grammar, the one place this
-module imports ``swhurl.apps.model.records``. That branch goes when v2 gains ``create``.
 """
 from __future__ import annotations
 
@@ -17,19 +13,17 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from swhurl import yamlio
 from swhurl.apps.connections import Connection
-from swhurl.apps.model import records as legacy
+from swhurl.apps.model import records as legacy  # TEAM_GRANT only: the grant's spelling, not its records
 
 Reader = Callable[[str], str | None]
 """A file of the platform repository's main branch by path; None when it is not there."""
 
 V2_RECORDS = 'v2-records'
-V1_RECORDS = 'apps'
 TEAM_GRANT = legacy.TEAM_GRANT
 
-V2, V1, ABSENT = 'v2', 'v1', ''
-"""Which record shape declared the instance: v2's JSON, v1's YAML, or neither (nothing in Git)."""
+V2, ABSENT = 'v2', ''
+"""Which record shape declared the instance: v2's JSON, or neither (nothing in Git)."""
 
 
 @dataclass(frozen=True)
@@ -53,8 +47,6 @@ class Declared:
     publishes: tuple[str, ...] = ()
     image: str = ''
     digest: str = ''
-    minimum: dict | None = None
-    """v1's record of the least the image needs; v2's release states no such thing, so it is None there."""
 
     @property
     def declared(self) -> bool:
@@ -76,7 +68,8 @@ def of(app: str, env: str, read: Reader | None) -> Declared:
         return Declared(app=app, env=env, problem='this console has no Git reader (no GitHub token)')
     try:
         found = _v2(app, env, read)
-        found = found if found is not None else _v1(app, env, read)
+        if found is None:
+            return Declared(app=app, env=env, problem='its records are not in Git, so what it declares is unknown')
     except Exception as error:  # noqa: BLE001 (GitHub unavailable or an unreadable record: the page says so)
         return Declared(app=app, env=env, problem=f'its records could not be read: {error}')
     return replace(found, app=app, env=env)
@@ -171,33 +164,3 @@ def _v2(app: str, env: str, read: Reader) -> Declared | None:
         publishes=tuple(release.get('publishes') or ()),
         image=str((release.get('artifact') or {}).get('image', '')),
         digest=str((release.get('artifact') or {}).get('digest', '')))
-
-
-def _v1(app: str, env: str, read: Reader) -> Declared:
-    """v1's three YAML records, through v1's grammar: the branch decision 1b keeps until v2 has ``create``."""
-    folder = f'{V1_RECORDS}/{app}/{env}'
-    release_text = read(f'{folder}/{legacy.RELEASE_FILE}')
-    settings_text = read(f'{folder}/{legacy.SETTINGS_FILE}')
-    app_text = read(f'{V1_RECORDS}/{app}/{legacy.APP_FILE}')
-    if release_text is None and settings_text is None and app_text is None:
-        return Declared(problem='its records are not in Git, so what it declares is unknown')
-    missing = [f'{folder}/{name}' for name, text in ((legacy.RELEASE_FILE, release_text),
-                                                    (legacy.SETTINGS_FILE, settings_text)) if text is None]
-    if app_text is None:
-        missing.append(f'{V1_RECORDS}/{app}/{legacy.APP_FILE}')
-    release = legacy.Release.parse(yamlio.load(release_text)) if release_text is not None else None
-    settings = legacy.Settings.parse(yamlio.load(settings_text)) if settings_text is not None else None
-    application = legacy.App.parse(yamlio.load(app_text)) if app_text is not None else None
-    needs, grants = (release.resources if release is not None else None), (settings.grants if settings else None)
-    return Declared(
-        source=V1, problem=f'v1 holds part of its records but not {", ".join(missing)}' if missing else '',
-        team=application.team if application is not None else '',
-        kind=release.kind if release is not None else '', port=release.port if release is not None else None,
-        calls=grants.calls if grants else (), allows=grants.allows if grants else (),
-        subscriptions=grants.subscriptions if grants else (),
-        publishes=release.publishes if release is not None else (),
-        image=release.image.repository if release is not None else '',
-        digest=release.image.digest if release is not None else '',
-        minimum={name: value for name, value in (('cpu', needs.cpu), ('memory', needs.memory),
-                                                 ('memory_limit', needs.memory_limit)) if value}
-        if needs is not None else None)

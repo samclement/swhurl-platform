@@ -9,21 +9,19 @@ import (
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// CreateInputs is what a create takes: the app and its team, the image reference the operator named, the offered facts
-// the image does not state, the documents it publishes, the platform profile, the records root the pair is written
-// under, the instance's own choices, and the seed the caller obtained for its broker identity.
+// CreateInputs is what a create takes: the app and its team, the image reference the operator named, the platform
+// profile, the records root the pair is written under, the instance's exposure, and the seed the caller obtained for
+// its broker identity. Every other fact the instance starts with is the image's own declaration: what it needs and
+// what it offers, documents included.
 type CreateInputs struct {
-	Application, Team    string
-	Image                string // REPO:<run>-<commit>, as the app's repository publishes it
-	Description, APIPath string
-	Offers               []kernel.File
-	Profile              []byte
+	Application, Team string
+	Image             string // REPO:<run>-<commit>, as the app's repository publishes it
+	Profile           []byte
 	// RecordsRoot is the tree the records are written under, as the destination addresses it. A create states its own
 	// records; the compiled files and the unit are the whole tree's, which the next render decides.
-	RecordsRoot           string
-	MemoryMiB, StorageMiB int32
-	Exposure              string
-	Seed                  [32]byte
+	RecordsRoot string
+	Exposure    string
+	Seed        [32]byte
 }
 
 // Created is what a create produced: the release its image publishes, the pair it wrote, the public half of the broker
@@ -52,8 +50,7 @@ func Create(ctx context.Context, inputs CreateInputs, images func(image string) 
 	}
 	pair := kernel.NewUserKey(inputs.Seed)
 	creation := kernel.Creation{Application: inputs.Application, Team: inputs.Team, Release: published.release,
-		Declaration: published.declaration, MemoryMiB: inputs.MemoryMiB, StorageMiB: inputs.StorageMiB,
-		Exposure: inputs.Exposure, Key: pair.Public}
+		Declaration: published.declaration, Exposure: inputs.Exposure, Key: pair.Public}
 	spec, app, err := creation.Instance()
 	if err != nil {
 		return Created{}, err
@@ -62,7 +59,7 @@ func Create(ctx context.Context, inputs CreateInputs, images func(image string) 
 	if err != nil {
 		return Created{}, err
 	}
-	records, err := createdRecords(inputs, spec, app, published.release, secret)
+	records, err := createdRecords(inputs, spec, app, published.release, published.declaration, secret)
 	if err != nil {
 		return Created{}, err
 	}
@@ -80,8 +77,8 @@ type publishedImage struct {
 }
 
 // publishedFor resolves one image reference into the release it publishes. The source repository is the image's own
-// path, which is the platform's convention for an app image, so nothing else names it; the documents' provenance is the
-// commit the image was built from, because that is the commit they were read at.
+// path, which is the platform's convention for an app image, so nothing else names it; what the app offers is part of
+// the declaration, so the release states it and the documents travel with the digest.
 func publishedFor(ctx context.Context, inputs CreateInputs,
 	images func(image string) (registry.Reader, error)) (publishedImage, error) {
 	image, tag, err := kernel.SplitImage(inputs.Image)
@@ -113,18 +110,13 @@ func publishedFor(ctx context.Context, inputs CreateInputs,
 	if err != nil {
 		return publishedImage{}, err
 	}
-	offers := ""
-	if len(inputs.Offers) > 0 {
-		offers = commit
-	}
-	release, err = release.WithOffered(inputs.Description, inputs.APIPath, offers)
-	return publishedImage{tag: tag, release: release, declaration: declaration}, err
+	return publishedImage{tag: tag, release: release, declaration: declaration}, nil
 }
 
 // createdRecords is the files a create writes: the app record and the environment's pair, the encrypted seed its
-// instance signs in with, and the documents it publishes.
+// instance signs in with, and the documents the image states.
 func createdRecords(inputs CreateInputs, spec kernel.InstanceSpec, app kernel.AppSpec, release kernel.ReleaseBundle,
-	secret []byte) ([]kernel.File, error) {
+	declaration kernel.Declaration, secret []byte) ([]kernel.File, error) {
 	appDocument, err := kernel.EncodeApp(app)
 	if err != nil {
 		return nil, err
@@ -138,5 +130,5 @@ func createdRecords(inputs CreateInputs, spec kernel.InstanceSpec, app kernel.Ap
 		return nil, err
 	}
 	return recordFiles(inputs.RecordsRoot, spec.Application, spec.Environment, appDocument, releaseDocument,
-		instanceDocument, secret, inputs.Offers), nil
+		instanceDocument, secret, declaration.OfferedFiles()), nil
 }

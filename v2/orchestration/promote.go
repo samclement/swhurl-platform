@@ -6,12 +6,13 @@ import (
 )
 
 // PromoteInputs is one promotion's documents: the two instances v2 owns — staging, whose release moves, and
-// production, whose own facts stay — the app record, the platform profile, the two optional documents, and the
-// revision of production the caller reviewed.
+// production, whose own facts stay — the app record, the platform profile, the two optional documents, the documents
+// staging offers (which production inherits with the release), and the revision of production the caller reviewed.
 type PromoteInputs struct {
 	StagingInstance, StagingRelease []byte
 	Instance, Release, App, Profile []byte
 	Calls, Egress                   []byte
+	Offers                          []kernel.File
 	Expected                        kernel.InstanceRevision
 }
 
@@ -90,7 +91,7 @@ func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Pro
 	if err != nil {
 		return result, err
 	}
-	documents, err := instanceDocuments(selected, request.candidate, compiled)
+	documents, err := instanceDocuments(selected, request.candidate, compiled, inputs.Offers)
 	if err != nil {
 		return result, err
 	}

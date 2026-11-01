@@ -22,6 +22,9 @@
     "worked"
   ],
   "description": "A swhurl app",
-  "offers": "3cbe7bb78693c40094e50b3246ab46b909ffa84b",
-  "releaseId": "rel-sha256:a2c56b3bbbb48a18f36450f4d3736336e911dce8e958e9ef59b82d276914eae9"
+  "documents": [
+    "events",
+    "flags"
+  ],
+  "releaseId": "rel-sha256:7bfbc56f1775eed2db6a37f2d825e69d0294f8a4039f91498454dbaf957fcc72"
 }

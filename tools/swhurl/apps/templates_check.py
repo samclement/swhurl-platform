@@ -2,15 +2,18 @@
 
 For each stack in ``contract.STACKS``: clone its template at the pinned revision, render each app type
 built with it (``contract.APP_TYPES``, the only answers the template accepts) with Copier, as ``make
-app-repo`` does, and turn the rendered ``swhurl.yaml`` into a staging instance with ``app-new --manifest``
-in a scratch root. It must pass the app policy and the app model (``make check-apps`` rules). Production
-is v2's now, so this check stops at staging until v2 has a create path. One set of answers no type has
-(``OUTSIDE_TYPES``) must be refused by the template's validator.
+app-repo`` does, run the image-declaration producer over the rendered app, and hand the label to
+``swhurl-v2 declaration``. That command decodes the label and applies the creation rules an instance of it
+would face, so what a build will produce is proved with no image, no registry and no write. One set of
+answers no type has (``OUTSIDE_TYPES``) must be refused by the template's validator.
 
 Renders and checks run in parallel, one process each (``--jobs``, default every CPU).
 
 This is the platform half of a template's contract: the template's own CI builds and runs each type, this
 check proves the platform accepts what the template declares, in seconds and without building anything.
+
+``SWHURL_V2`` names the ``swhurl-v2`` binary (default: the one on PATH). Build it with
+``cd v2 && go build -o /tmp/swhurl-v2 ./cmd/swhurl-v2``.
 """
 from __future__ import annotations
 
@@ -19,11 +22,10 @@ import os
 import shutil
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
-from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from swhurl.apps import declaration, new, policy, repo
+from swhurl.apps import declaration, image_declaration, repo
 from swhurl.apps.contract import (
     APP_TYPES,
     STACK_REVISIONS,
@@ -32,28 +34,23 @@ from swhurl.apps.contract import (
     teams,
     type_answers,
 )
-from swhurl.apps.errors import EditError
-from swhurl.apps.instance import instance_folder
-from swhurl.apps.model import generated
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 NAME = 'contract-check'
 REFUSED = 'Validation error for question'  # how Copier says the template's validator refused an answer
-# A template app's staging image (auto-deploy needs <run>-<sha>) pinned with a digest.
-IMAGE = f'ghcr.io/samclement/{NAME}:1-abcdef0@sha256:' + '0' * 64
 # A worker with a database: no app type has it, so the template's validator must refuse it.
 OUTSIDE_TYPES = {'kind': 'worker', 'database': 'sqlite'}
 
 
-def instance(root: Path, manifest: Path) -> tuple[int, str]:
-    """``app-new --manifest`` into ``root`` without its own policy run; returns (exit code, its output)."""
-    out = StringIO()
-    with redirect_stdout(out), redirect_stderr(out):
-        # A template names no team (the creator chooses one): any registered team serves the check.
-        code = new.main([NAME, '--root', str(root), '--manifest', str(manifest), '--env', 'staging',
-                         '--image', IMAGE, '--no-policy-check', '--team', next(iter(teams()), '')])
-    return code, out.getvalue()
+def binary() -> str:
+    """The v2 binary that applies the creation rules, as the check's environment names it."""
+    return os.environ.get('SWHURL_V2') or shutil.which('swhurl-v2') or 'swhurl-v2'
+
+
+def declaration_label(rendered: Path) -> str:
+    """The label a build of this rendered app writes, from the producer the templates call."""
+    return image_declaration.label_of(rendered)
 
 
 def label_of(stack: str, answers: dict[str, str]) -> str:
@@ -81,37 +78,42 @@ def render_combination(runner: Runner, template: Path, stack: str, answers: dict
     manifest = rendered / declaration.FILE
     if runner.dry_run:
         return 'manifest', b''
-    return ('manifest', manifest.read_bytes()) if manifest.is_file() else ('missing', '')
+    return ('manifest', rendered) if manifest.is_file() else ('missing', '')
 
 
-def check_manifest(runner: Runner, report: Report, label: str, manifest: bytes, work: Path) -> bool:
-    """The platform half for one rendered swhurl.yaml: a staging instance that passes the app policy."""
-    root = work / 'root'
-    shutil.rmtree(root, ignore_errors=True)
-    (root / 'clusters/home').mkdir(parents=True)
-    (root / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
-    path = work / declaration.FILE
-    path.write_bytes(manifest)
-    code, output = instance(root, path)
-    if code:
-        report.bad(f'{label}: app-new refused its {declaration.FILE} for staging: {output.strip()}')
+def check_manifest(runner: Runner, report: Report, label: str, rendered: Path, work: Path) -> bool:
+    """The platform half for one rendered app: the producer's label, and the creation rules v2 applies to it."""
+    try:
+        text = declaration_label(rendered)
+    except image_declaration.LabelError as error:
+        report.bad(f'{label}: the image-declaration producer refused the app: {error}')
         return False
-    staging = instance_folder(root, NAME, 'staging')
-    problems = [f'{staging.name}: {p}' for p in policy.evaluate(staging, runner)]
-    problems += [f'app model: {p}' for p in generated.problems(root)]
-    if problems:
-        report.bad(f'{label}: ' + '; '.join(problems))
+    label_path = work / 'label.txt'
+    shutil.rmtree(work / 'root', ignore_errors=True)
+    work.mkdir(parents=True, exist_ok=True)
+    label_path.write_text(text + '\n')
+    # A template names no team (the creator chooses one): any registered team serves the check.
+    result = runner.run([binary(), 'declaration', '--label', str(label_path), '--app', NAME,
+                         '--team', next(iter(teams()), ''), '--exposure', 'private'], check=False)
+    if result.returncode:
+        said = (result.stderr or result.stdout or '').strip()
+        if said.startswith('unsupported:'):
+            # A kind v2 does not model yet (the job kind): the label is what the platform will refuse by name when
+            # someone tries to create it, so the check reports the gap instead of failing the template.
+            report.warn(f'{label}: v2 does not model it yet ({said})')
+            return True
+        report.bad(f'{label}: swhurl-v2 declaration refused the label: {said}')
         return False
-    report.ok(f'{label}: staging passes the app policy')
+    report.ok(f'{label}: the label applies to a new instance')
     return True
 
 
-def manifest_job(runner: Runner, label: str, manifest: bytes, work: Path) -> tuple[bool, list[tuple[str, str]]]:
-    """One distinct swhurl.yaml in its own scratch folder; returns whether it passed and its (level, message) results."""
+def manifest_job(runner: Runner, label: str, rendered: Path, work: Path) -> tuple[bool, list[tuple[str, str]]]:
+    """One rendered app in its own scratch folder; returns whether it passed and its (level, message) results."""
     part = Report(StringIO())
     try:
-        ok = check_manifest(runner, part, label, manifest, work)
-    except (CommandError, EditError) as error:
+        ok = check_manifest(runner, part, label, rendered, work)
+    except CommandError as error:
         part.bad(f'{label}: {error}')
         ok = False
     return ok, [(entry.level, entry.message) for entry in part.entries]

@@ -24,6 +24,10 @@
   ],
   "description": "throwaway: team platform T2 callee (orders), delete me",
   "apiPath": "/openapi.json",
-  "offers": "af4d55cc4ea4e5bcfb28c4b69774fd9742d87d4c",
-  "releaseId": "rel-sha256:c2fed40bc785b127d675af9db890e71ecfa76e6925a59c5a17f35e98af2fe0db"
+  "documents": [
+    "api",
+    "events",
+    "flags"
+  ],
+  "releaseId": "rel-sha256:eb69acf92ea2d4231e6c6166a8c8a4aa6d54244b883f60b5daae1a36b3c42fba"
 }

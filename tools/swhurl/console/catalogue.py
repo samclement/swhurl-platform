@@ -60,39 +60,29 @@ class Documents:
             self.failed[key] = (self.clock(), found)
         return found
 
-    def offered(self, app: str, env: str) -> tuple[str, str | None]:
-        """The folder holding one instance's documents and its source file: a v1 instance keeps them beside its
-        records, a v2-owned one beside the manifests v2 compiled (see docs/apps.md#what-an-app-offers). Git may hold
-        neither, which is the last folder and no source."""
-        folders = offer_folders(app, env)
-        for folder in folders:
-            text = self.reader(f'{folder}/{offers.SOURCE_FILE}')
-            if text is not None:
-                return folder, text
-        return folders[-1], None
+    def offered(self, app: str, env: str) -> str:
+        """The folder holding one instance's documents: v2 copies them beside the manifests it compiles, under the
+        fixed names its roles give them (see docs/apps.md#what-an-app-offers)."""
+        return offer_folders(app, env)[-1]
 
     def read(self, app: str, env: str, commit: str) -> tuple[Described, bool]:
-        """``(what was read, whether it can be kept)``: not kept when Git holds another commit's documents
-        than the cluster runs (a change on its way in), or when reading failed."""
+        """``(what was read, whether it can be kept)``: each document by the fixed name its role gives it. The
+        commit is the cluster's annotation, so a commit's documents are read once and kept."""
         if self.reader is None:
             return Described(problem='the documents are in Git, which this console cannot read (no GitHub token)'), False
+        folder = self.offered(app, env)
         try:
-            folder, source_text = self.offered(app, env)
-            if source_text is None:
-                return Described(problem=f'{folder}/ is not in Git yet'), False
-            source = offers.Source.parse(source_text)
-            api_name, events_name = source.api, source.events
-            api_text = self.reader(f'{folder}/{api_name}') if api_name else None
-            events_text = self.reader(f'{folder}/{events_name}') if events_name else None
-            flags_text = self.reader(f'{folder}/{source.flags}') if source.flags else None
-            found = Described(offers.api(api_text, api_name) if api_text else None,
-                              tuple(offers.events(events_text, events_name)) if events_text else (),
-                              flags=offers.flags(flags_text, source.flags) if flags_text else None)
+            api_text = self.reader(f'{folder}/{offers.API_NAME}')
+            events_text = self.reader(f'{folder}/{offers.EVENTS_NAME}')
+            flags_text = self.reader(f'{folder}/{offers.FLAGS_NAME}')
+            found = Described(offers.api(api_text, offers.API_NAME) if api_text else None,
+                              tuple(offers.events(events_text, offers.EVENTS_NAME)) if events_text else (),
+                              flags=offers.flags(flags_text, offers.FLAGS_NAME) if flags_text else None)
         except offers.OfferError as error:
             return Described(problem=str(error)), False
         except Exception as error:  # noqa: BLE001 (the page renders without descriptions whatever the reader raised)
             return Described(problem=f'could not be read from Git: {type(error).__name__}'), False
-        return found, source.commit == commit
+        return found, True
 
 
 @dataclass(frozen=True)

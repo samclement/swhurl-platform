@@ -20,5 +20,7 @@
   "telemetry": true,
   "description": "Demo orders service",
   "apiPath": "/openapi.json",
-  "offers": "cccccccccccccccccccccccccccccccccccccccc"
+  "documents": [
+    "api"
+  ]
 }

@@ -178,7 +178,8 @@ func TestEventsRecordsCarryOnlyThePublicHalf(t *testing.T) {
 		Source: Source{Repository: "owner/orders", Commit: strings.Repeat("a", 40)},
 		Artifact: Artifact{Image: "ghcr.io/owner/orders", Digest: "sha256:" + strings.Repeat("b", 64),
 			MediaType: ManifestMediaType, Platform: "linux/amd64"},
-		Runtime: Runtime{Kind: "web", Port: 8080, HealthPath: "/", UID: 101}, Publishes: []string{"created"}})
+		Runtime: Runtime{Kind: "web", Port: 8080, HealthPath: "/", UID: 101}, Publishes: []string{"created"},
+		Documents: []string{"events"}})
 	if err != nil || !strings.Contains(string(release), "\"publishes\": [") {
 		t.Fatalf("the release does not state what it publishes: %v\n%s", err, release)
 	}

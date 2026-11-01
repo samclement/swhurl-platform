@@ -21,6 +21,7 @@ The name, environment, image and host belong to each instance and are never in t
 """
 from __future__ import annotations
 
+import base64
 import dataclasses
 import math
 import re
@@ -32,7 +33,13 @@ from dataclasses import dataclass
 import yaml
 
 from swhurl import yamlio
-from swhurl.apps.defaults import DEFAULT_DATABASE_SIZE, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
+from swhurl.apps.defaults import (
+    DEFAULT_DATABASE_SIZE,
+    DEFAULT_MEMORY_MIB,
+    TEMPLATE_PORT,
+    TEMPLATE_UID,
+    secret_key_problem,
+)
 from swhurl.apps.instance import ENVIRONMENTS
 from swhurl.apps.model import records
 
@@ -45,8 +52,9 @@ MAX_DESCRIPTION = 200
 IMAGE_LABEL = 'platform.swhurl.com/declaration'
 """Where an image states what it needs: one JSON document in its config labels, the key v2's kernel reads.
 The build passes `<key>=<document>` to the image build; the document's shape is v2's contract, not this file's."""
-IMAGE_LABEL_VERSION = 1
-"""The document's version: v2 reads this one and refuses another."""
+IMAGE_LABEL_VERSION = 2
+"""The document's version: v2 reads this one and refuses another. Version 2 carries the documents themselves, so a
+digest determines a release; an image that states version 1 is not this platform's."""
 LIVE, IGNORED, REFUSED = 'live', 'ignored', 'refused'
 IDENTITY, NEED, OFFER, GRANT, DROPPED = 'identity', 'need', 'offer', 'grant', 'dropped'
 WITH_IMAGE = 'with every new staging image (the Deploy workflow)'
@@ -133,13 +141,15 @@ class Declaration:
                      seed.get('database_size') or (DEFAULT_DATABASE_SIZE if seed.get('database') else ''),
                      tuple(seed.get('secret_keys') or ()))
 
-    def image_label(self, publishes: tuple[str, ...] = ()) -> dict:
+    def image_label(self, publishes: tuple[str, ...] = (), documents: dict[str, bytes] | None = None) -> dict:
         """What this image states about itself: the declaration v2 reads from the image's config labels.
 
-        The needs are this file's and the publications its events document's. A fact the image does not
-        have is left out (v2 refuses nulls and unknown fields); `secrets` and `memoryMiB` are stated
-        because v2 holds an image that adds one rather than running it without. A job's kind is stated
-        as it is: v2 refuses a kind it does not model instead of being told the image is a worker.
+        The needs are this file's, the publications its events document's, and the documents are the
+        files it offers, by role, base64-encoded so the record's copy is byte-identical. A fact the image
+        does not have is left out (v2 refuses nulls and unknown fields); `memoryMiB` is always stated,
+        because a create takes the memory it runs in from the image, and `secrets` is stated so v2 holds
+        an image that adds one rather than running it without. A job's kind is stated as it is: v2 refuses
+        a kind it does not model instead of being told the image is a worker.
         """
         needs = self.needs
         runtime = {'kind': needs.kind, 'uid': needs.uid}
@@ -150,12 +160,20 @@ class Declaration:
             label['telemetry'] = True
         if needs.database:
             label['database'] = needs.database
+            label['databaseSizeMiB'] = mebibytes(needs.database_size)
         if publishes:
             label['publishes'] = list(publishes)
         if needs.secrets:
             label['secrets'] = list(needs.secrets)
-        if memory := needs.minimum.get('memory'):
-            label['memoryMiB'] = mebibytes(memory)
+        label['memoryMiB'] = mebibytes(needs.minimum['memory']) if needs.minimum.get('memory') else DEFAULT_MEMORY_MIB
+        if self.description:
+            label['description'] = self.description
+        documents = documents or {}
+        if documents:
+            # v2 refuses apiPath without the api document and the document without the path, so both or neither.
+            if 'api' in documents and self.api_path:
+                label['apiPath'] = self.api_path
+            label['documents'] = {role: base64.b64encode(data).decode('ascii') for role, data in documents.items()}
         return label
 
 

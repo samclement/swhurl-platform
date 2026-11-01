@@ -22,6 +22,9 @@
     "worked"
   ],
   "description": "B3 concurrent records-only creation proof",
-  "offers": "545c2c708506af3eb2ceca8e33b0fbcf670a43b0",
-  "releaseId": "rel-sha256:84e2f93732a45e406785a9b688b2b4ffa2c7f45c1ce3cc06634e110f585fbe3a"
+  "documents": [
+    "events",
+    "flags"
+  ],
+  "releaseId": "rel-sha256:500b1fcd01c84963620bac57039ec2dbc65a50b8ab6cc08193a658863d9cec18"
 }

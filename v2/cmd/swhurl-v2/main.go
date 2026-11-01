@@ -44,8 +44,8 @@ const usage = `usage:
   swhurl-v2 edit --records DIR --app APPLICATION [--env ENVIRONMENT] --set NAME=VALUE --profile PROFILE.json \
       --out DIR [--calls CALLS.json] [--egress EGRESS.json]
   swhurl-v2 create --records DIR --app APPLICATION --team TEAM --image REPO:<run>-<commit> --profile PROFILE.json \
-      --out DIR [--description TEXT] [--api-path PATH] [--exposure GRANT] [--memory-mib N] [--storage-mib N] \
-      [--offers DIR]
+      --out DIR [--exposure GRANT]
+  swhurl-v2 declaration --label FILE --app APPLICATION --team TEAM [--exposure GRANT]
   swhurl-v2 remove --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
       --calls CALLS.json --out DIR
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
@@ -172,13 +172,17 @@ operator regenerates v2-records/calls.json from the edited tree.
 
 create states a new app's first instance from the image its repository published: the image resolves through the
 registry, states its own declaration and the commit it was built from, and its records are written under --records.
-The instance is staging's, with one replica, the memory the image states unless --memory-mib gives more, the exposure
---exposure names (private by default: that grant is what edit changes), a volume of --storage-mib when the image keeps
-a database, and a freshly minted broker identity whose encrypted seed is written before the record that states its
-public key. --description and --api-path are what the image cannot state; --offers is the folder holding the documents
-it publishes, whose provenance is the image's commit. It writes records only: the compiled files, the unit and the
-instance's proxy port are the whole tree's, so the next render decides them, and the unit's one line in
+The instance is staging's, with one replica, the memory the image says it runs in, a volume the image states when it
+keeps a database, the exposure --exposure names (private by default: that grant is what edit changes), what the image
+says about itself and the documents it offers, and a freshly minted broker identity whose encrypted seed is written
+before the record that states its public key. The documents are written into the instance's offers folder under their
+roles' fixed names, byte for byte: no index file names them. It writes records only: the compiled files, the unit and
+the instance's proxy port are the whole tree's, so the next render decides them, and the unit's one line in
 clusters/home/kustomization.yaml is a reviewed edit. It refuses an app that already has records.
+
+declaration decodes the declaration label an image build printed, applies the creation rules an instance of it would
+face, and reports what the image states. It reads no image, no registry and no cluster, and writes nothing: the stack
+templates' check uses it to prove a rendered app declares what the platform can create.
 
 remove deletes one v2-owned instance: its record pair with its seed and the documents it publishes, the files
 compiled from them, its unit, the namespace's auth object, and the app record when this was the app's last
@@ -308,6 +312,7 @@ var commands = map[string]func(cli, request) int{
 	"reloader":          cli.reloader,
 	"mint":              cli.mint,
 	"create":            cli.create,
+	"declaration":       cli.declaration,
 	"migrate":           cli.migrate,
 	"edit":              cli.edit,
 	"remove":            cli.remove,
@@ -326,9 +331,8 @@ type request struct {
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
 	records                                            string
-	eventsSecret, offers, change                       string
-	team, image, description, apiPath, exposure        string
-	memoryMiB, storageMiB                              string
+	eventsSecret, offers, change, label                string
+	team, image, exposure                              string
 	rotate, check                                      bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
@@ -420,6 +424,11 @@ func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool 
 	case "create":
 		r.registerCreateFlags(flags)
 		r.registerOut(flags)
+	case "declaration":
+		flags.Var(&once{value: &r.label}, "label", "a file holding the declaration label an image build printed")
+		flags.Var(&once{value: &r.app}, "app", "the application the label would create")
+		flags.Var(&once{value: &r.team}, "team", "the owning team")
+		flags.Var(&once{value: &r.exposure}, "exposure", "private (default), or authenticated-web")
 	case "remove":
 		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
 		flags.Var(&once{value: &r.app}, "app", "application")
@@ -550,20 +559,16 @@ func (r *request) registerRecords(flags *flag.FlagSet) {
 	flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 }
 
-// registerCreateFlags adds what a create states about the app it makes: its team, the image it starts from, and the
-// facts the image itself does not carry.
+// registerCreateFlags adds what a create states about the app it makes: its team, the image it starts from and the
+// one choice an image cannot make. Everything else the instance starts with is the image's declaration — what it needs,
+// the memory it runs in, the volume its database is created with, what it says about itself and what it offers.
 func (r *request) registerCreateFlags(flags *flag.FlagSet) {
 	flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
 	flags.Var(&once{value: &r.app}, "app", "the application to create")
 	flags.Var(&once{value: &r.team}, "team", "the owning team")
 	flags.Var(&once{value: &r.image}, "image", "the image its repository published, REPO:<run>-<commit>")
 	flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-	flags.Var(&once{value: &r.description}, "description", "the one line the app says about itself (optional)")
-	flags.Var(&once{value: &r.apiPath}, "api-path", "where a web app serves its API description (optional)")
 	flags.Var(&once{value: &r.exposure}, "exposure", "private (default), or authenticated-web")
-	flags.Var(&once{value: &r.memoryMiB}, "memory-mib", "memory in MiB (default: what the image states)")
-	flags.Var(&once{value: &r.storageMiB}, "storage-mib", "the volume a database is created with, in MiB")
-	flags.Var(&once{value: &r.offers}, "offers", "the folder holding the documents the app publishes (optional)")
 }
 
 // registerOut adds the destination a command writes its files under.
@@ -624,6 +629,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"select-release": func(r *request) []string { return []string{r.instance, r.release, r.expected} },
 	"mint":           func(r *request) []string { return []string{r.instance, r.profile, r.out} },
 	"create":         func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
+	"declaration":    func(r *request) []string { return []string{r.label, r.app, r.team} },
 	"remove":         func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
 	// A live read needs the instance, its release, the profile, the revision to expect and a credential.
 	"observe": func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },

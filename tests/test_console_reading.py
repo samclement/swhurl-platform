@@ -18,7 +18,7 @@ from swhurl.console.routes import instance
 from swhurl.run import FakeRunner
 
 HEAD = 'a' * 40
-RELEASE = ('version: 1\nimage: {repository: ghcr.io/samclement/web}\nkind: web\nuid: 1000\n'
+('version: 1\nimage: {repository: ghcr.io/samclement/web}\nkind: web\nuid: 1000\n'
            'port: 8080\nhealthPath: /\nresources: {memory: 64Mi}\n')
 
 
@@ -211,15 +211,19 @@ class FileTests(unittest.TestCase):
         self.assertEqual(len(asked), 2)
 
 
+OWNED_RELEASE = ('{"schemaVersion": 1, "application": "web", "runtime": {"kind": "web", "port": 8080}, '
+                 '"publishes": [], "artifact": {"image": "docker.io/x/web", "digest": "sha256:' + '0' * 64 + '"}}')
+
+
 class AppFileTests(unittest.TestCase):
     def test_page_and_related_apps_fetch_each_file_once_at_one_commit(self):
         documents = {
-            'apps/web/app.yaml': 'version: 1\nteam: demo\n',
-            'apps/web/prod/instance.yaml': 'version: 1\ncalls: [other]\n',
-            'apps/web/prod/release.yaml': RELEASE,
-            'apps/other/app.yaml': 'version: 1\nteam: demo\n',
-            'apps/other/prod/instance.yaml': 'version: 1\nallows: [web]\n',
-            'apps/other/prod/release.yaml': RELEASE,
+            'v2-records/web/app.json': '{"schemaVersion": 1, "application": "web", "team": "demo"}',
+            'v2-records/web/prod/instance.json': '{"schemaVersion": 1, "application": "web", "environment": "prod", "calls": ["other"], "allows": []}',
+            'v2-records/web/prod/release.json': OWNED_RELEASE,
+            'v2-records/other/app.json': '{"schemaVersion": 1, "application": "other", "team": "demo"}',
+            'v2-records/other/prod/instance.json': '{"schemaVersion": 1, "application": "other", "environment": "prod", "allows": ["web"]}',
+            'v2-records/other/prod/release.json': OWNED_RELEASE,
         }
         asked = []
         heads = []
@@ -249,10 +253,7 @@ class AppFileTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('connected in Git, not yet observed live', response.text)
         self.assertEqual(len(heads), 2)
-        # Every file it reads once: the instance's records, its target's, the v1 Secret, and the v2 probe that
-        # says whether this instance is v2's at all (it is not, in this fixture).
-        expected = set(documents) | {'apps/web/prod/secret.sops.yaml', 'v2-records/web/prod/instance.json',
-                                     'v2-records/other/prod/instance.json'}
+        expected = set(documents)
         for head in heads:
             self.assertEqual(Counter(p for p, ref in asked if ref == head), Counter(dict.fromkeys(expected, 1)))
         self.assertEqual(len(owned), 2)
@@ -274,19 +275,19 @@ class AppFileTests(unittest.TestCase):
         self.assertEqual(asked, ['/repos/x/y/git/ref/heads/main'] * 2)
 
     def test_injected_reader_deduplicates_missing_invalid_and_failed_files(self):
-        for settings, expected in ((None, 'v1 holds part of its records but not apps/web/prod/instance.yaml'),
+        for settings, expected in ((None, 'its records are not in Git'),
                                    ('version: [', 'its records could not be read'),
                                    (OSError('unavailable'), 'its records could not be read')):
             asked = []
 
             def source(path, asked=asked, settings=settings):
                 asked.append(path)
-                if path.endswith('instance.yaml'):
+                if path.endswith('instance.json'):
                     if isinstance(settings, Exception):
                         raise settings
                     return settings
-                if path.endswith('release.yaml'):
-                    return RELEASE
+                if path.endswith('release.json'):
+                    return OWNED_RELEASE
                 return None
 
             c = client(app_runner(), documents=source)
@@ -310,8 +311,7 @@ class AppFileTests(unittest.TestCase):
         row = cluster.AppRow(Instance('other', 'prod'), State('healthy'), False, '',
                              connections=cluster.Connections(offers=HEAD))
         documents = {
-            'apps/other/prod/offers/source.yaml': f'repository: samclement/other\ncommit: {HEAD}\napi: openapi.json\n',
-            'apps/other/prod/offers/openapi.json': '{"openapi":"3.1.0","info":{"title":"Other","description":"Template description"},"paths":{}}',
+            'v2-apps/instances/other/prod/offers/openapi.json': '{"openapi":"3.1.0","info":{"title":"Other","description":"Template description"},"paths":{}}',
         }
         asked = []
 

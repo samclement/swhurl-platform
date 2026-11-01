@@ -896,8 +896,8 @@ func TestOffersRenderFromTheRelease(t *testing.T) {
 	if annotations["platform.swhurl.com/api-description"] != "/openapi.json" {
 		t.Fatalf("the API description annotation: %v", annotations)
 	}
-	if annotations["platform.swhurl.com/offers"] != "ccccccc" {
-		t.Fatalf("the offered documents are named by their commit's abbreviation: %v", annotations)
+	if annotations["platform.swhurl.com/offers"] != "bbbbbbb" {
+		t.Fatalf("the offered documents are named by the source commit's abbreviation: %v", annotations)
 	}
 	env := release["spec"].(map[string]any)["values"].(map[string]any)["controllers"].(map[string]any)["main"].(map[string]any)["containers"].(map[string]any)["main"].(map[string]any)["env"].(map[string]any)
 	if env["SWHURL_DESCRIPTION"] != "Demo orders service" {

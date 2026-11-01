@@ -30,6 +30,7 @@ from swhurl.apps.model import records
 
 OFFERS_DIR = 'offers'
 SOURCE_FILE = 'source.yaml'
+API_NAME = 'openapi.json'  # the API description, under the fixed name v2's offers folder gives it
 EVENTS_NAME = 'asyncapi.yaml'
 FLAGS_NAME = 'flags.json'  # the feature flags swhurl.yaml declares, as JSON (docs/apps.md#feature-flags)
 IMAGE_COMMIT = re.compile(r'^[0-9]+-([0-9a-f]{7,40})$')

@@ -63,15 +63,7 @@ func (c cli) create(r request) int {
 	if status != 0 {
 		return status
 	}
-	documents, status := c.offersAt(r.offers)
-	if status != 0 {
-		return status
-	}
 	root, err := underOut(r.out, r.records)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	memory, storage, err := createSizes(r)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -81,8 +73,7 @@ func (c cli) create(r request) int {
 		return 1
 	}
 	result, err := orchestration.Create(context.Background(), orchestration.CreateInputs{
-		Application: r.app, Team: r.team, Image: r.image, Description: r.description, APIPath: r.apiPath,
-		Offers: documents, Profile: profile, RecordsRoot: root, MemoryMiB: memory, StorageMiB: storage,
+		Application: r.app, Team: r.team, Image: r.image, Profile: profile, RecordsRoot: root,
 		Exposure: r.exposure, Seed: seed}, c.registries, r.out, c.writer, c.encrypter)
 	if err != nil {
 		return c.wrote(result.Written, err)
@@ -111,25 +102,6 @@ func (c cli) appAbsent(records, application string) int {
 		return 0
 	}
 	return c.failure(&orchestration.Refusal{Subject: "app", Reason: "the_app_already_has_records"})
-}
-
-// createSizes reads the two optional sizes. A size the operator did not state is zero, which is the kernel's to read as
-// the image's own floor or to refuse.
-func createSizes(r request) (int32, int32, error) {
-	memory, err := createSize("memory-mib", r.memoryMiB)
-	if err != nil {
-		return 0, 0, err
-	}
-	storage, err := createSize("storage-mib", r.storageMiB)
-	return memory, storage, err
-}
-
-// createSize is one size as the record states it, or zero when the flag was not given.
-func createSize(name, value string) (int32, error) {
-	if value == "" {
-		return 0, nil
-	}
-	return editInteger(name, value)
 }
 
 // encodeCreate is the report of one creation.

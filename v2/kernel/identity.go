@@ -15,7 +15,7 @@ func releaseCanonical(r ReleaseBundle) []byte {
 		r.Source.Repository, r.Source.Commit, r.Artifact.Image, r.Artifact.Digest,
 		r.Artifact.MediaType, r.Artifact.Platform, r.Runtime.Kind, r.Runtime.Port,
 		r.Runtime.HealthPath, r.Runtime.UID, r.Database, r.Telemetry, sortedNames(r.Publishes),
-		r.Description, r.APIPath, r.Offers})
+		r.Description, r.APIPath, sortedNames(r.Documents)})
 }
 
 func instanceCanonical(s InstanceSpec) []byte {

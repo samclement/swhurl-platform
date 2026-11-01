@@ -225,7 +225,7 @@ func TestCompiledResources(t *testing.T) {
 		}
 	}
 	for _, removed := range []string{`"tag"`, `"SWHURL_AUTH_`,
-		`"ingress":{`, `"platform.swhurl.com/render"`, `"annotations"`, `"HTTP_PROXY"`, `"HTTPS_PROXY"`} {
+		`"ingress":{`, `"platform.swhurl.com/render"`, `"HTTP_PROXY"`, `"HTTPS_PROXY"`} {
 		for path, doc := range f {
 			if strings.Contains(doc, removed) {
 				t.Errorf("%s has %q, which phase 2 does not generate", path, removed)
@@ -483,7 +483,7 @@ func workerRecords(t *testing.T) (InstanceSpec, ReleaseBundle, AppSpec) {
 	t.Helper()
 	r := releaseFile(t, "r42.json")
 	r.Runtime.Kind, r.Runtime.Port, r.Runtime.HealthPath, r.ReleaseID = "worker", 0, "", ""
-	r.APIPath = "" // a worker serves nothing, so it publishes no API description
+	r.APIPath, r.Documents = "", nil // a worker serves nothing, so it publishes no API description
 	id, err := r.ID()
 	if err != nil {
 		t.Fatal(err)

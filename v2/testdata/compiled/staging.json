@@ -1,11 +1,11 @@
 {
   "kind": "v2-compilation",
   "version": 1,
-  "id": "comp-sha256:aed9a80f85a4d8f5d418fa029da6f966c1fd5616963f1a93e11e3c081a03c537",
+  "id": "comp-sha256:844153ca9d64d3203ae862c39495ccc99fec0b9ba4c57757ebfe4f05b9d118f0",
   "inputs": {
     "app": "app-sha256:50aa37430360ade5a48ce7d5c968b521b57e91bf8a1c4501fb14fc10d2672e0f",
-    "release": "rel-sha256:1ebebe8b24ace9543aefe4978b91136333df5f466d1f6c5eb1504571374f845b",
-    "instance": "inst-sha256:2f55424423d2f4d6291e7c41c0ffcc17133fd6c0095c5ae3b883194d993d5b05",
+    "release": "rel-sha256:760d0a77db10fe257ba80d01bc5e4d351e4c1d590eafad31569ad7aeebc28ce5",
+    "instance": "inst-sha256:e4d0575879108d11a53fcd81304bd7223711337973c980301394d6810fd05069",
     "profile": "prof-sha256:20ea752df2122d3938202e9ab7569daad7690786e145f19f4e2714f3cdf18356",
     "calls": ""
   },
@@ -35,7 +35,7 @@
         "metadata": {
           "annotations": {
             "platform.swhurl.com/api-description": "/openapi.json",
-            "platform.swhurl.com/offers": "ccccccc"
+            "platform.swhurl.com/offers": "bbbbbbb"
           },
           "name": "demo-orders",
           "namespace": "demo-orders-staging"

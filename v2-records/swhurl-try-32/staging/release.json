@@ -3,11 +3,11 @@
   "application": "swhurl-try-32",
   "source": {
     "repository": "samclement/swhurl-try-32",
-    "commit": "545c2c708506af3eb2ceca8e33b0fbcf670a43b0"
+    "commit": "2f4d4d19138eb30e07ac17b170bc704c60d82089"
   },
   "artifact": {
     "image": "ghcr.io/samclement/swhurl-try-32",
-    "digest": "sha256:2b6990c2ce1c46bc2fe8eb68eb8b997c20562afec33a5ad414cb949baf97fd42",
+    "digest": "sha256:25c7146852668f7f4d2e5be3fb0308bed4f7ec433a7e357c5080e0bde00cb8fe",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -23,5 +23,5 @@
   ],
   "description": "B3 concurrent records-only creation proof",
   "offers": "545c2c708506af3eb2ceca8e33b0fbcf670a43b0",
-  "releaseId": "rel-sha256:84e2f93732a45e406785a9b688b2b4ffa2c7f45c1ce3cc06634e110f585fbe3a"
+  "releaseId": "rel-sha256:621a194907ee022873d15d2450d704c84d8f2a9637e6257b734f7a171eaf2834"
 }

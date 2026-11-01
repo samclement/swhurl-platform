@@ -98,7 +98,7 @@ def publish(api: GitHubAPI, job: Job, tree: Path, before: dict, after: dict, cha
 
 def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str], input: str | None = None,
              tool: str = 'python') -> None:
-    """The clone's own tooling (``app-new``, ``app-promote``, ...) or v2's binary. ``input`` is a secret's
+    """The clone's own tooling (``app-new``, ``team-add``, ...) or v2's binary. ``input`` is a secret's
     one way in (never an argument, never in the job's lines). A python tool leaves no bytecode: every file it
     writes in the clone becomes part of the commit. A v2 refusal is shown in v2's own words."""
     if tool == 'v2':

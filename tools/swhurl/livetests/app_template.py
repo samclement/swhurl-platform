@@ -63,7 +63,7 @@ def body(t: LiveTest) -> None:
     t.check(not exposed, 'worker has no Service or Ingress', 'worker exposes a Service or Ingress')
 
     ns = 'smoke-web-staging'
-    # Staging declares GREETING without a value (make app-secret sets one): the app runs without it.
+    # Staging declares GREETING without a value (set by hand): the app runs without it.
     absent = t.runner.run(['kubectl', '-n', ns, 'exec', 'deploy/smoke-web', '--', 'printenv', 'GREETING'], check=False)
     t.check(absent.returncode != 0 and not absent.stdout.strip(), 'a declared secret without a value: the app runs without it',
             f'GREETING reached the container without a value: {absent.stdout.strip()!r}')

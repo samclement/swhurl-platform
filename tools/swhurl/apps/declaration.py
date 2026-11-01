@@ -49,7 +49,7 @@ IMAGE_LABEL_VERSION = 1
 """The document's version: v2 reads this one and refuses another."""
 LIVE, IGNORED, REFUSED = 'live', 'ignored', 'refused'
 IDENTITY, NEED, OFFER, GRANT, DROPPED = 'identity', 'need', 'offer', 'grant', 'dropped'
-WITH_IMAGE = 'with every new staging image (make app-deploy, the Deploy workflow)'
+WITH_IMAGE = 'with every new staging image (the Deploy workflow)'
 Opener = Callable[[urllib.request.Request], bytes]
 
 
@@ -71,17 +71,17 @@ FIELDS = (
     Field('healthPath', NEED, LIVE, WITH_IMAGE),
     Field('uid', NEED, LIVE, WITH_IMAGE),
     Field('telemetry', NEED, LIVE, WITH_IMAGE),
-    Field('resources', NEED, LIVE, WITH_IMAGE + ', as the minimum: make app-scale may set more, never less'),
+    Field('resources', NEED, LIVE, WITH_IMAGE + ', as the minimum: the record may set more, never less'),
     Field('database', NEED, LIVE, WITH_IMAGE + ': a new one creates its volume; removing one is refused while it exists'),
     Field('databaseSize', NEED, LIVE, WITH_IMAGE + ', for a new database: a volume keeps the size it was created with'),
-    Field('secrets', NEED, LIVE, WITH_IMAGE + ': a new name deploys without its value until make app-secret sets it'),
-    Field('provides', OFFER, LIVE, "by make app-offers, at the commit of every new staging image (the Deploy workflow)"),
+    Field('secrets', NEED, LIVE, WITH_IMAGE + ': a new name deploys without its value until one is set'),
+    Field('provides', OFFER, LIVE, 'by the v2 Deploy workflow, at the commit of every new staging image'),
     Field('flags', OFFER, LIVE, "by the app's own build, which generates a typed accessor for each flag"),
-    Field('team', GRANT, REFUSED, 'make app-team'),
-    Field('exposure', GRANT, REFUSED, 'make app-expose'),
-    Field('alerts', GRANT, REFUSED, 'make app-alerts'),
-    Field('calls', GRANT, REFUSED, 'make app-calls'),
-    Field('events.subscribe', GRANT, REFUSED, 'make app-events'),
+    Field('team', GRANT, REFUSED, 'swhurl-v2 edit --set team=…'),
+    Field('exposure', GRANT, REFUSED, 'swhurl-v2 edit --set exposure=…'),
+    Field('alerts', GRANT, REFUSED, 'nothing: v2 has no alert setting'),
+    Field('calls', GRANT, REFUSED, 'swhurl-v2 edit --set calls=…'),
+    Field('events.subscribe', GRANT, REFUSED, 'swhurl-v2 edit --set subscriptions=…'),
     Field('autoDeploy', DROPPED, IGNORED, 'nothing: staging always follows new images'),
 )
 FLAG_NAME = re.compile(r'[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*')
@@ -107,7 +107,7 @@ class Needs:
     health_path: str
     uid: int
     otlp: bool
-    minimum: dict  # resources the image needs at least, by app-scale option: cpu, memory, memory_limit
+    minimum: dict  # resources the image needs at least, by Scale option: cpu, memory, memory_limit
     database: str = ''  # sqlite, or '' for none
     database_size: str = ''  # the volume a new database is created with
     secrets: tuple[str, ...] = ()  # the secret variable names it reads
@@ -171,7 +171,7 @@ def mebibytes(quantity: str) -> int:
 
 
 RESOURCES = {'cpu': 'cpu', 'memory': 'memory', 'memory_limit': 'memoryLimit'}
-"""The image's minimum resources: app-scale option -> swhurl.yaml key."""
+"""The image's minimum resources: Scale option -> swhurl.yaml key."""
 QUANTITY = {'cpu': re.compile(r'\d+(\.\d+)?m?'), 'memory': re.compile(r'\d+(Ki|Mi|Gi)'), 'memory_limit': re.compile(r'\d+(Ki|Mi|Gi)')}
 
 
@@ -206,7 +206,7 @@ def _provides_defaults(provides: dict, kind: str, fail: Callable[[str], Declarat
         if path is not None and (not isinstance(path, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*', path)):
             raise fail(f'provides.{key} is a file in the repository, such as {"openapi.json" if key == "apiFile" else "asyncapi.yaml"}')
     if provides.get('apiFile') or provides.get('eventsFile'):
-        defaults['offers'] = True  # app-new reads them from the repository (make app-offers)
+        defaults['offers'] = True  # app-new reads them from the repository (the Deploy workflow)
     if provides.get('apiFile') and kind != 'web':
         raise fail('provides.apiFile applies to kind web only')
     if provides.get('api'):
@@ -336,7 +336,7 @@ def of(doc: object, source: str = FILE) -> Declaration:
         if problem := flag_problem(name, flag):
             raise fail(problem)
     if flags:
-        defaults['offers'] = True  # app-new keeps them beside the instance from the start (make app-offers)
+        defaults['offers'] = True  # app-new keeps them beside the instance from the start (the Deploy workflow)
     if description:
         defaults['description'] = description
     return Declaration(defaults, field('stack', str) or '', description, provides.get('api') or '',

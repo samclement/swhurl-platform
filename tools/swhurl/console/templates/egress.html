@@ -4,7 +4,7 @@
 {% block main %}
 <p class="crumbs"><a href="/platform">Platform</a> › Egress</p>
 <h1>Egress</h1>
-{% call st.about() %}Every request an app sends outside the cluster goes through the egress proxy, on a port of the app's own, so the proxy knows which app is asking. A grant is a host the app may reach, set on its own page (<strong>Connect</strong> › <strong>Reach a host outside</strong>) or with <code>make app-egress</code>, per environment. Nothing is refused yet: the proxy logs each request with whether a grant covers it, and the last column opens that app's requests without one, the hosts it will need granted before ungranted hosts are refused.{% endcall %}
+{% call st.about() %}Every request an app sends outside the cluster goes through the egress proxy, on a port of the app's own, so the proxy knows which app is asking. A grant is a host the app may reach, per environment, held in the platform's records: v2 models no egress-grant setting yet, so nothing here or in a record adds one. A host without a grant is refused: the proxy answers 403 and logs <code>granted=-</code>. The last column opens that app's refused requests, the hosts it will need granted.{% endcall %}
 <p class="verdict">{{ granted }} of {{ instances }} instance{{ 's' if instances != 1 }} {{ 'is' if granted == 1 else 'are' }} granted a host outside the cluster{% if hosts %} <span class="muted">· {{ hosts }} host{{ 's' if hosts != 1 }} in all</span>{% endif %}</p>
 {% for env, found in by_env %}
 <h2>{{ env }}</h2>
@@ -23,5 +23,5 @@
 {% else %}
 <p class="muted">No app instances.</p>
 {% endfor %}
-<p class="muted">The proxy's generated configuration is <code>platform/egress/proxy.yaml</code>; how it works: <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/services.md#egress-proxy">egress proxy</a>.</p>
+<p class="muted">The proxy's generated configuration is <code>platform/egress/</code> (<code>allocation.json</code>, <code>configmap.json</code>, <code>networkpolicy.json</code>, written by <code>swhurl-v2 egress</code> and <code>proxy</code>); how it works: <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/services.md#egress-proxy">egress proxy</a>.</p>
 {% endblock %}

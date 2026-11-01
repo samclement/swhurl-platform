@@ -3,7 +3,7 @@
 instance is asking without trusting anything the app sends.
 
 The port is kept in instance.yaml as Settings.allocations.egressPort, so regenerating never
-moves it: make app-sync (apps/model/write.py) gives an instance without one the lowest free port.
+moves it: the v1 record writer (apps/model/write.py) gives an instance without one the lowest free port.
 This module owns the instance's side — the variables that point its clients at that port, and its
 grants. The proxy's own configuration is v2's (v2/kernel/proxy.go): it renders the module's ports and
 grants from the allocation, with grants enforced, and this module no longer writes it.

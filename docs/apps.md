@@ -8,12 +8,12 @@ An app's life, and where each step is described. Every app comes from a stack te
 | --- | --- | --- | --- |
 | Start a new app: code, repository and staging | **New app** (it points here) | `make app-repo`, then `make app-new`, then `swhurl-v2 migrate` | [Start a new app](#start-a-new-app) |
 | Ship a new version | — | push to the app's repository | [Deploy a new image](#deploy-a-new-image) |
-| Promote to production | **Promote to production** | `make app-promote` | [Promote to production](#promote-to-production) |
-| Choose who can reach it | **Change access** | `make app-expose` | [Who can reach it](#who-can-reach-it) |
-| Give it secrets | — | `sops apps/<app>/<env>/secret.sops.yaml` | [Secrets](#secrets) |
+| Promote to production | **Promote to production** | `swhurl-v2 promote` (the console runs it) | [Promote to production](#promote-to-production) |
+| Choose who can reach it | **Change access** | `swhurl-v2 edit --set exposure=…` | [Who can reach it](#who-can-reach-it) |
+| Give it secrets | — | not modelled by v2 ([secrets](#secrets)) | [Secrets](#secrets) |
 | Keep dependencies current | — | Renovate pull requests in the app's repository | [Dependency updates](#dependency-updates-in-app-repositories) |
-| Watch, resize, fix | the app page, **Scale**, **Reconcile** | `make app-status`, `app-logs`, `app-scale`, `app-reconcile` | [Operate an instance](#operate-an-instance) |
-| Remove | **Uninstall** | `make app-remove` | [Remove an app](#remove-an-app) |
+| Watch, resize, fix | the app page, **Scale**, **Reconcile** | `make app-status`, `app-logs`, `app-reconcile`; `swhurl-v2 edit --set replicas=…` | [Operate an instance](#operate-an-instance) |
+| Remove | **Uninstall** | `swhurl-v2 remove` | [Remove an app](#remove-an-app) |
 
 ## The demo apps
 
@@ -50,7 +50,7 @@ All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com
 | A team notification | On the shop's page, buy 12 of something: ten or more makes `demo-notifier` tell the team's channel |
 | A promotion | Console → `demo-shop/staging` → **Review promotion** (it needs `demo-orders` in production, which it has) |
 
-**The traffic.** `demo-shopper` visits the shop every half minute (`POST /api/buy`, then `GET /api/shop`): about four requests a minute through `demo-shop` and `demo-orders` and two events, with quantities of one to three so nobody is notified. `demo-orders` keeps the latest 1000 orders. To pause it: `make app-scale APP=demo-shopper ENV=staging ARGS="--replicas 0"`, commit and push.
+**The traffic.** `demo-shopper` visits the shop every half minute (`POST /api/buy`, then `GET /api/shop`): about four requests a minute through `demo-shop` and `demo-orders` and two events, with quantities of one to three so nobody is notified. `demo-orders` keeps the latest 1000 orders. To pause it, Scale `demo-shopper/staging` to zero in the console (or `swhurl-v2 edit --records v2-records --app demo-shopper --env staging --set replicas=0 --profile v2/testdata/profile.json --out .`), commit and push.
 
 **Use them as a pattern.** To call `demo-orders` or receive its event from your own app, use the Catalogue's **Add an app**; to start an app like one of them, choose the same type and stack with `make app-repo` and copy what its README points at.
 
@@ -58,7 +58,7 @@ All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com
 
 From nothing to a running staging app in a few minutes (about two for TypeScript; a little longer for Kotlin, whose build also compiles and tests): `make app-repo` creates the app's GitHub repository from a template and waits for its first image, `make app-new` adds it to staging, and `swhurl-v2 migrate` makes v2 own the instance. Every push to the app's `main` then deploys to staging on its own.
 
-**In the console:** `/new` no longer creates anything. It names this route — `make app-repo`, `make app-new`, `swhurl-v2 migrate`, then delete the v1 records and unit — and a first production is still `make app-promote` while v1 owns the app ([console](console.md#new-apps-disabled)).
+**In the console:** `/new` no longer creates anything. It names this route — `make app-repo`, `make app-new`, `swhurl-v2 migrate`, then delete the v1 records and unit ([console](console.md#new-apps-disabled)). A new app has no production path today: v2 promotes into an environment that already exists and does not create one, so a first production waits for that capability ([not yet modelled](v2-status.md#progress-towards-the-goals)).
 
 ### What happens, and when
 
@@ -92,7 +92,7 @@ sequenceDiagram
 
 The command creates a **public** app repository because the cluster pulls its image without registry credentials. Its first commit starts the app repository's normal push workflow; this is a GitHub Actions push trigger, not a platform webhook. `make app-repo` waits for that workflow to finish and prints the image digest to use. If the first build fails it stops with the run's link: the repository stays; fix the app, push, and run the same `make app-new` line with the image that run publishes.
 
-`make app-new` writes the app's v1 staging records and unit only after the image exists. Commit and push them, and Flux deploys the instance. Then `swhurl-v2 migrate` translates those records into `v2-records/` and `swhurl-v2 render` writes the compiled files and unit v2 owns; commit those, delete the v1 records and unit, and move the unit registration in the same change as [the cutover](v2-status.md#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three). From then on the console's app page writes v2's records (every v2 pull request is held for you) and `make v2-deploy` follows the app's images. Production is not created by this flow: a first production is a v1-only promotion (`make app-promote`) while v1 owns the app, followed by migrating production as well ([promote to production](#promote-to-production)). Secret names are recorded without values, so the app starts with them shown as value missing: set each with `make app-secret` once it is merged ([secrets](#secrets)). Platform PR branch pushes are filtered out by the Flux Receiver; the push to `main` is what invokes it. Without a successful webhook delivery, Flux's `GitRepository` still polls `main` every minute.
+`make app-new` writes the app's v1 staging records and unit only after the image exists. Commit and push them, and Flux deploys the instance. Then `swhurl-v2 migrate` translates those records into `v2-records/` and `swhurl-v2 render` writes the compiled files and unit v2 owns; commit those, delete the v1 records and unit, and move the unit registration in the same change as [the cutover](v2-status.md#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three). From then on the console's app page writes v2's records (every v2 pull request is held for you) and `make v2-deploy` follows the app's images. Production is not created by this flow: v2 promotes into an environment that already exists, and creating one is not modelled yet ([promote to production](#promote-to-production)). An app that declares secret names cannot be migrated: v2 records no secret names yet and refuses such a release, so leave `--secret-keys` off until it does ([secrets](#secrets)). Platform PR branch pushes are filtered out by the Flux Receiver; the push to `main` is what invokes it. Without a successful webhook delivery, Flux's `GitRepository` still polls `main` every minute.
 
 After the commit, Flux creates the app's dedicated `app-<name>-staging` unit from the newly registered unit file. It waits for `infra-base`, and also `platform-oauth2-proxy` for authenticated web exposure. The unit applies the namespace, HelmRelease and optional encrypted Secret. The chart creates the Deployment and Service for a web app; authenticated or public web exposure also creates an Ingress. Worker apps have no Service or Ingress. SQLite/database answers add a retained PVC and mount; secret answers add the SOPS Secret, and a namespace that reads one is watched by Reloader ([whose list v2 renders](services.md#reloader)). With automatic deploy enabled, the staging unit also creates this app's Flux `ImageRepository` and `ImagePolicy` in `flux-system`, whose report starts the Deploy workflow, so later published images can update the staging image pin in platform Git. These resources are app-scoped; the shared cluster services already exist.
 
@@ -131,7 +131,7 @@ A new app is created by **type**: what a team is building. The type sets every a
 
 Every type also has an events document and an example feature flag ([below](#stacks-and-features)). Only a web app or an API keeps a database: `app-new` and a `swhurl.yaml` refuse one for a worker or a job, which keep what they need in an API they call. A web app without a database (made before the types) still runs.
 
-Data shared between apps belongs in an API; a web app's own SQLite keeps what only it uses. A browser reaches an API through a web app, which calls it for the signed-in person ([a browser calling an API](#calling-another-app)). Access changes later with **Change access** or `make app-expose`, and calls, events and scale as for any app. A type is not recorded on the app: its `.copier-answers.yml` keeps the answers it was made with. Changing a type adds its new answers to `APP_TYPES` and to each template's validator, and keeps the old answers in the validator until no app records them; an app whose answers are no type's cannot take a template update. A web app's page is served at `/` and its own API under `/api/*`, which the Catalogue does not list (`frontend`, below). A scheduled job runs as a CronJob ([scheduled jobs](#scheduled-jobs)) ([plan](plan.md#23-app-types-for-new-apps--decided-17-october-2026)).
+Data shared between apps belongs in an API; a web app's own SQLite keeps what only it uses. A browser reaches an API through a web app, which calls it for the signed-in person ([a browser calling an API](#calling-another-app)). Access changes later with **Change access** (`swhurl-v2 edit --set exposure=…`), and calls, events and scale as for any app. A type is not recorded on the app: its `.copier-answers.yml` keeps the answers it was made with. Changing a type adds its new answers to `APP_TYPES` and to each template's validator, and keeps the old answers in the validator until no app records them; an app whose answers are no type's cannot take a template update. A web app's page is served at `/` and its own API under `/api/*`, which the Catalogue does not list (`frontend`, below). A scheduled job runs as a CronJob ([scheduled jobs](#scheduled-jobs)) ([plan](plan.md#23-app-types-for-new-apps--decided-17-october-2026)).
 
 ### Stacks and features
 
@@ -172,7 +172,7 @@ Representative warm GitHub template jobs took 42–75 s for TypeScript and 28–
 
 ### Add production
 
-Production is created by the first [promotion](#promote-to-production) from reviewed staging settings. `make app-new` creates staging only (`--env prod` is refused); once v2 owns the app, the console's **Promote to production** writes production's v2 records and a person merges them. While v1 still owns a new app, the first production is `make app-promote`, then production is migrated to v2 as well.
+Production is created by the first [promotion](#promote-to-production) from reviewed staging settings, and that is a capability v2 does not have yet: `swhurl-v2 promote` moves a production whose records already exist, and nothing creates one. `make app-new` creates staging only (`--env prod` is refused).
 
 ### What the generator writes
 
@@ -186,7 +186,7 @@ Production is created by the first [promotion](#promote-to-production) from revi
 | `--image` | `ghcr.io/samclement/<name>:<run>-<sha>@sha256:…`, as `make app-repo` and the app's workflow print it |
 | `--exposure`, `--host` | Who can reach it ([below](#who-can-reach-it)); default `private` |
 | `--team` | Required: the owning team, a name in `apps/teams.yaml` ([teams and isolation](#teams-and-isolation)) |
-| `--secret-keys A,B` | The secret names the app reads, without values; `make app-secret` sets each ([secrets](#secrets)) |
+| `--secret-keys A,B` | The secret names the app reads, without values. v2 records no secret names yet and refuses a release that declares them, so an app created with these cannot be migrated ([secrets](#secrets)) |
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--database sqlite` | A retained volume (`--database-size`, default 1Gi) at `/data` on `local-path-retain`, with the database file `/data/app.db` passed to the app as `DATABASE_PATH`; backed up daily. The claim is kept on Helm uninstall and the namespace is never pruned ([remove an app](#remove-an-app)); the instance runs one replica and stops the old pod before starting the new one (policy rule `single-writer`) |
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
@@ -257,7 +257,7 @@ Each field is one of four kinds ([glossary](../GLOSSARY.md)), and the templates 
 - **Identity**: what the app is. `version`, `stack`, `kind`, `description`.
 - **Need**: what the image needs to run. `port`, `healthPath`, `uid`, `telemetry`, `resources` (the image's minimum), `database`, `databaseSize`, `secrets` (variable names, never values).
 - **Offer**: what other apps can use. `provides`, `flags`. AsyncAPI send operations define the published events; there is no second publishing list.
-- **Grant**: what the platform allows the app: who owns it, who can reach it, what it may call and receive. `team`, `exposure`, `alerts`, `calls`, `events.subscribe`. A grant belongs to this repository and changes only through a `make app-*` command or the console; choose it as an `app-new` flag at creation. The file may not hold one: wherever it is read (`app-new`, `make app-offers`, the console), a grant field is refused with the command that sets it, so a push to the app's repository cannot widen what the app may do.
+- **Grant**: what the platform allows the app: who owns it, who can reach it, what it may call and receive. `team`, `exposure`, `alerts`, `calls`, `events.subscribe`. A grant belongs to this repository and changes only through `swhurl-v2 edit` or the console; choose it as an `app-new` flag at creation. The file may not hold one: wherever it is read (`app-new`, the v2 Deploy workflow, the console), a grant field is refused with the setting that changes it, so a push to the app's repository cannot widen what the app may do.
 
 **The rule.** Supported fields are read again: every new staging image brings the declaration and documents from the commit it was built from, written into its release in the same commit as the image ([deploy a new image](#deploy-a-new-image)). A removed field clears the value or restores its documented default; it never means "keep the previous image's value". Required fields cannot be removed. A change that would lose database data or break another app's declared subscription is held with a reason; nothing is written. A declared document that is missing, invalid or cannot be fetched is a failure, not an empty declaration.
 
@@ -283,8 +283,8 @@ provides: {api: /openapi.json}   # optional, web only: where its API description
 #   also apiFile: openapi.json and eventsFile: asyncapi.yaml: where the repository keeps its OpenAPI and AsyncAPI documents (what an app offers)
 flags:                  # optional: feature flags, typed, with a value per environment (see Feature flags)
   new-checkout: {type: boolean, default: false, staging: true}
-# Grants (team, exposure, alerts, calls, events.subscribe) are refused here. Set them on the platform: the
-# app-new flags, then make app-team, app-expose, app-alerts, app-calls, app-events or the app page.
+# Grants (team, exposure, calls, events.subscribe) are refused here. Set them on the platform: the app-new
+# flags, then the app page or swhurl-v2 edit --set (team, exposure, calls, allows, subscriptions).
 ```
 
 | Field | Kind | Read | After creation |
@@ -297,17 +297,17 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `healthPath` | need | read again | With every new staging image: the readiness, liveness and startup probes |
 | `uid` | need | read again | With every new staging image: the pod's user, group and `fsGroup`; held while the instance keeps a volume, whose files belong to the old user |
 | `telemetry` | need | read again | With every new staging image: `otlp` adds the `OTEL_*` variables, `none` removes them |
-| `resources` | need | read again | With every new staging image, as the minimum: each request and limit is the larger of it and what `make app-scale` set (the platform's default, 10m, 32Mi and 128Mi, where neither says). `make app-scale` may set more, never less; the app page's **Scale** form shows it. A minimum above the [quota](#teams-and-isolation) holds the image |
+| `resources` | need | read again | With every new staging image, as the minimum: each request and limit is the larger of it and what the instance's record sets (the platform's default, 10m, 32Mi and 128Mi, where neither says). The **Scale** form may set more, never less, and shows it. A minimum above the [quota](#teams-and-isolation) holds the image |
 | `database` | need | read again | With every new staging image: a new database gets its retained volume, `DATABASE_PATH`, one replica and stop-first updates. Removing it is refused while the volume exists: a push never deletes data (`make destroy-data` does) |
 | `databaseSize` | need | read again | The size a new database's volume is created with; a different size for an existing volume is refused |
-| `secrets` | need | read again | With every new staging image: a new name deploys without its value, shown as **value missing** until `make app-secret` sets it; a dropped name keeps its value, shown as unused ([secrets](#secrets)) |
-| `provides` | offer | read again | `make app-offers` reads it at the commit of every new staging image (the Deploy workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)). `apiFile` offers the API to other apps (the Catalogue lists it); `api` only gives the console a link to the served description. Removing either removes what it gave |
+| `secrets` | need | read again | With every new staging image: a new name deploys without its value, shown as **value missing** until it is set; a dropped name keeps its value, shown as unused ([secrets](#secrets)) |
+| `provides` | offer | read again | The v2 Deploy workflow reads it at the commit of every new staging image, and a promotion carries the result to production ([what an app offers](#what-an-app-offers)). `apiFile` offers the API to other apps (the Catalogue lists it); `api` only gives the console a link to the served description. Removing either removes what it gave |
 | `flags` | offer | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
-| `team` | grant | refused | `make app-team`, or `--team` at creation |
-| `exposure` | grant | refused | `make app-expose`, or `--exposure` at creation (default: web apps signed-in, workers private) |
-| `alerts` | grant | refused | `make app-alerts`, or `--alerts` at creation |
-| `calls` | grant | refused | `make app-calls`, or `--calls` at creation |
-| `events.subscribe` | grant | refused | `make app-events`, or `--subscribe` at creation |
+| `team` | grant | refused | `swhurl-v2 edit --set team=…` (one change for every environment), or `--team` at creation |
+| `exposure` | grant | refused | `swhurl-v2 edit --set exposure=…`, or `--exposure` at creation (default: web apps signed-in, workers private) |
+| `alerts` | grant | refused | Nothing: v2 has no alert setting, and `edit --set alerts` refuses it by name |
+| `calls` | grant | refused | `swhurl-v2 edit --set calls=…`, or `--calls` at creation |
+| `events.subscribe` | grant | refused | `swhurl-v2 edit --set subscriptions=…`, or `--subscribe` at creation |
 | `autoDeploy` | dropped | ignored | Nothing: staging always follows new images; the templates no longer write it |
 
 | Configuration | If removed | Who reads the generated result |
@@ -327,27 +327,29 @@ The independent API fields are intentional: `provides.api` links a running descr
 
 ## Scheduled jobs
 
+**v2 does not render the job kind yet.** An app of this type can be created by `make app-new` and runs as v1 rendered it, but `swhurl-v2 migrate` refuses it, and it has no v2 record, no edit and no promotion until v2 gains the kind. The rest of this section describes that v1 rendering.
+
 A job (`kind: job`, the **Scheduled job** type) has no web address and no running pod between runs: Kubernetes starts one pod per run, on the schedule, from a CronJob the chart makes (`controllers.main.type: cronjob`). The run calls the app's `work()` once and ends: status 0 is a successful run, anything else a failed one. For example, a job that runs every ten minutes in staging:
 
 ```bash
-make app-schedule APP=nightly-report ENV=staging ARGS="--schedule '*/10 * * * *'"   # five cron fields, Etc/UTC
-git add apps/nightly-report && git commit -m "apps: nightly-report/staging every ten minutes" && git push
+# five cron fields, Etc/UTC: set at creation with --schedule; there is no v2 edit for it
+make app-new NAME=nightly-report ARGS="--from-repo samclement/nightly-report --kind job --schedule '*/10 * * * *'" 
 ```
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `schedule` | `17 3 * * *` (daily, 03:17 UTC) at creation, or `--schedule` | Changed per environment with `make app-schedule`; the first promotion starts production with staging's. Five fields within minute 0–59, hour 0–23, day 1–31, month 1–12 and weekday 0–6 (ranges low to high, steps of at least 1), or `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`; anything else is refused before a file is written |
+| `schedule` | `17 3 * * *` (daily, 03:17 UTC) at creation, or `--schedule` | Per environment; there is no v2 setting for it yet, and the first promotion starts production with staging's. Five fields within minute 0–59, hour 0–23, day 1–31, month 1–12 and weekday 0–6 (ranges low to high, steps of at least 1), or `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`; anything else is refused before a file is written |
 | `concurrencyPolicy` | `Forbid` | A run never starts while the last one is still going |
 | `backoffLimit` | 0 | A failed run is not retried: the next scheduled run is the retry |
 | `activeDeadlineSeconds` | 3600 | A run still going after an hour is stopped, and counts as failed |
 | `startingDeadlineSeconds` | 300 | A run that cannot start within five minutes of its time is skipped |
 | History | the last successful and the last failed Job | Their pods' logs stay readable with `kubectl logs`; everything else is in ClickStack |
 
-The workload renderer applies the same schedule validation to records, not just command arguments: an empty job schedule means the default above; any explicit schedule on a non-job is refused. A manually merged invalid record makes `app-sync` (and the Render workflow) stop before writing any rendered files.
+The v1 workload renderer applies the same schedule validation to records, not just command arguments: an empty job schedule means the default above; any explicit schedule on a non-job is refused. v2 has no schedule field, so a v2 record states none.
 
-A job keeps no database (`database` is refused in its `swhurl.yaml` and by its template: the SQLite backup runs in the app's running pod, and a job has none). It is private, takes no calls (it has no Service) and has no replicas: `make app-scale` changes only its resources. It can call other apps, publish events and read its feature flags like any app; its template waits up to 5 s for the flag overrides before the run.
+A job keeps no database (`database` is refused in its `swhurl.yaml` and by its template: the SQLite backup runs in the app's running pod, and a job has none). It is private, takes no calls (it has no Service) and has no replicas: an edit changes only its resources. It can call other apps, publish events and read its feature flags like any app; its template waits up to 5 s for the flag overrides before the run.
 
-**Its state** comes from its CronJob's record of its runs, not from pods (it has none between runs): **Healthy** once a run has succeeded (or while it waits for its first run), **Updating** while a run is going, **Failing** when the newest run ended without succeeding, until a later run succeeds, and **Suspended** when its schedule is. `make app-status` and the app page show the schedule, the last run and the last success; the app page's **Schedule** opens the pull request `make app-schedule` would, and its **Scale** changes only CPU and memory. The image it runs is the newest successful run's, so a promotion takes an image that has run successfully in staging. A failed run sends `<app>/<env> run failed` to the team's [notification channel](#notifications) at once, and `recovered` after the next successful run ([notification expectations](services.md#notification-expectations)). The templates' example declares a second flag, `fail-run`, off everywhere: turning it on for an environment on the app page makes the next run fail on purpose, to see how a failed run is reported.
+**Its state** comes from its CronJob's record of its runs, not from pods (it has none between runs): **Healthy** once a run has succeeded (or while it waits for its first run), **Updating** while a run is going, **Failing** when the newest run ended without succeeding, until a later run succeeds, and **Suspended** when its schedule is. `make app-status` and the app page show the schedule, the last run and the last success; the app page's **Schedule** opens the pull request that setting would make, and its **Scale** changes only CPU and memory. The image it runs is the newest successful run's, so a promotion takes an image that has run successfully in staging. A failed run sends `<app>/<env> run failed` to the team's [notification channel](#notifications) at once, and `recovered` after the next successful run ([notification expectations](services.md#notification-expectations)). The templates' example declares a second flag, `fail-run`, off everywhere: turning it on for an environment on the app page makes the next run fail on purpose, to see how a failed run is reported.
 
 ## Who can reach it
 
@@ -357,11 +359,11 @@ A job keeps no database (`database` is refused in its `swhurl.yaml` and by its t
 | `authenticated-web` (the default for a web app made from a stack) | Behind Google sign-in (the shared oauth2-proxy middleware) | Under `homelab.swhurl.com`; derived as `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) unless given |
 | `public` | No sign-in | `--host` **outside** `homelab.swhurl.com`, so the shared sign-in cookie never reaches it |
 
-Set it with `--exposure` at creation, and change it later with `make app-expose APP=demo-shop ENV=staging ARGS="--exposure public --host demo-shop.example.com"` or the app page's **Change access** form. `app-expose` rewrites the route, the Namespace's exposure label and the unit's dependencies together, keeps a signed-in host (or derives one), and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` and the app page show the exposure read from the live routes.
+Set it with `--exposure` at creation, and change it later with the app page's **Change access** form or `swhurl-v2 edit --records v2-records --app demo-shop --env staging --set exposure=public --profile v2/testdata/profile.json --out .`. The change rewrites the route, the namespace's exposure label and the unit's dependencies together, derives the host from the app and environment, and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` and the app page show the exposure read from the live routes.
 
 ## Teams and isolation
 
-Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, or the console's team choice, where none is preselected), or `make app-new` refuses and change it for every environment at once with `make app-team APP=demo-shop ARGS="--team <team>"`. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
+Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, or the console's team choice, where none is preselected), or `make app-new` refuses; change it for every environment at once with `swhurl-v2 edit --set team=<team>` (it names no environment). A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
 
 Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`. The registry and the apps that name a team change together, so no app is left naming a team that is gone (`make check-apps` rule `team` would fail):
 
@@ -369,8 +371,8 @@ Manage teams on the console's **Teams** page or with `make team-add`, `make team
 | --- | --- |
 | Rename a team | The same change relabels every app that belongs to it and rewrites every `team:<old>` [grant](#calling-another-app) |
 | Remove a team that owns apps | Refused, unless the same change moves them to another team (`--move-apps-to`) |
-| Remove a team an `allows` names | Refused, listing the instances; remove those grants first (`make app-allows`) |
-| An app already naming an unregistered team | Listed first on the Teams page; register the team or move the app with `make app-team` |
+| Remove a team an `allows` names | Refused, listing the instances; remove those grants first (`swhurl-v2 edit --set allows=…`) |
+| An app already naming an unregistered team | Listed first on the Teams page; register the team or move the app with `swhurl-v2 edit --set team=…` |
 
 Team changes validate all affected instances and plan their records, manifests and [notification routes](services.md#notification-channels) together before writing. Console PRs carry the registry and affected App/Settings records, not the generated labels or routes ([PR contents](console.md#removals-teams-and-channels)).
 
@@ -382,8 +384,8 @@ Each instance carries two generated files beside its HelmRelease:
 
 | File | What it does |
 | --- | --- |
-| `resourcequota.yaml` | Caps the namespace at 14 pods, 2 CPU and 2Gi of memory requested, and 4Gi of memory limits: the same for every instance. `make app-scale` refuses replicas or sizes that would not fit beside a backup pod and a certificate solver (rule `quota`) |
-| `networkpolicy.yaml` | Decides who may connect to the app's pods: the Traefik pods on the app's port when the instance has a route, plus the apps [connected to call it](#calling-another-app). Any other pod, in another namespace or the same one, is refused. `make app-expose`, `make app-calls` and `make app-allows` rewrite it |
+| `resourcequota.yaml` | Caps the namespace at 14 pods, 2 CPU and 2Gi of memory requested, and 4Gi of memory limits: the same for every instance. The compiler refuses replicas or sizes that would not fit beside a backup pod and a certificate solver (its `quota` refusal) |
+| `networkpolicy.yaml` | Decides who may connect to the app's pods: the Traefik pods on the app's port when the instance has a route, plus the apps [connected to call it](#calling-another-app). Any other pod, in another namespace or the same one, is refused. A change to the exposure or to either side of a call renders it again |
 
 The policy selects the app's own pods (`app.kubernetes.io/instance: <app>`), never every pod in the namespace: cert-manager's HTTP-01 solver runs there on port 8089 and must stay reachable, as must the SQLite backup pod. Outbound connections are not restricted yet: each instance is pointed at the [egress proxy](services.md#egress-proxy), which logs which hosts it reaches and whether a [grant](#reaching-outside-the-cluster) covers each. Health probes come from the node and are not affected.
 
@@ -392,28 +394,33 @@ The policy selects the app's own pods (`app.kubernetes.io/instance: <app>`), nev
 A call needs both sides: the caller says which apps it calls (`calls`), and the callee says who may call it (`allows`, an app's name or `team:<team>`). When both agree, the pair is **connected**: the platform gives the caller the callee's address and a credential, and tells the callee who may call it. For example, `demo-shop` (team `demo`) calling `demo-orders`:
 
 ```
-make app-allows APP=demo-orders ENV=staging ARGS="--add team:demo"    # any demo app in staging may call it
-make app-calls APP=demo-shop ENV=staging ARGS="--add demo-orders"     # or the app page's Connect to an app; at creation, --calls
+# the callee's grant: any demo app in staging may call it (the console's Allow card, or)
+swhurl-v2 edit --records v2-records --app demo-orders --env staging --set allows=team:demo \
+  --profile v2/testdata/profile.json --out .
+# the caller's declaration (the console's Connect to an app, or)
+swhurl-v2 edit --records v2-records --app demo-shop --env staging --set calls=demo-orders \
+  --profile v2/testdata/profile.json --out .
 ```
 
-Both are kept in each instance's `instance.yaml`:
+Both are kept in each instance's record:
 
-```yaml
-# apps/demo-orders/staging/instance.yaml   (callee)
-allows:
-- team:demo          # every demo app in staging; an app's own team is never implicit
-# apps/demo-shop/staging/instance.yaml     (caller; its app.yaml says team: demo)
-calls: [demo-orders]
+```json
+// v2-records/demo-orders/staging/instance.json   (callee)
+"allows": ["team:demo"]
+// v2-records/demo-shop/staging/instance.json     (caller; v2-records/demo-shop/app.json says "team": "demo")
+"calls": ["demo-orders"]
 ```
+
+An app's own team is never implicit; a `team:` entry must name a team registered in `apps/teams.yaml`.
 
 | State | What renders |
 | --- | --- |
 | Connected: the caller calls the callee, and the callee allows the caller or its current team | Everything in the table below |
-| A call to an existing web app without consent | Pending: nothing for the pair; `make app-calls` says it waits for the callee to allow it |
+| A call to an existing web app without consent | Pending: nothing for the pair; the caller's record keeps the call, and the console says it waits for the callee to allow it |
 | A grant without a call | Nothing; the grant is unused |
 | A call to an app with no instance in that environment | Pending: nothing for the pair; it waits for that instance to exist |
 
-None of these is an error. A call to a present worker or job, a self-call or a malformed declaration is an error, even without consent. A team grant follows the caller's current team: moving an app to another team (`make app-team`) connects or disconnects it accordingly.
+None of these is an error. A call to a present worker or job, a self-call or a malformed declaration is an error, even without consent. A team grant follows the caller's current team: moving an app to another team (`swhurl-v2 edit --set team=…`) connects or disconnects it accordingly.
 
 ```mermaid
 flowchart LR
@@ -435,7 +442,7 @@ For a connected pair, rendering writes both instances:
 | Callee | `SWHURL_ALLOWED_CALLERS=demo-shop` | Who it accepts |
 | Callee | Its NetworkPolicy admits `demo-shop`' pods | Anything undeclared is blocked before it reaches the app |
 
-The keys are one platform object, `swhurl-auth`, rendered for every managed namespace by `swhurl-v2 auth` (a ConfigMap cannot cross namespaces, so it is one identical object per namespace); the allow-list is the instance's own (`<app>-callers`). A v2-rendered callee gets both **only as files**, under `/var/run/swhurl/auth` and `/var/run/swhurl/callers`, which the kubelet refreshes in place, so a rotated key or a new caller takes effect in about a minute **without a restart** and changes no pod template. Its image must read the file variables (templates TypeScript `v0.2.19`, Kotlin `v0.2.18` on, through a [template update](#template-updates)); an older image finds no keys and refuses every token. v1 renders the env forms only, so a v1 callee restarts when either changes. For a v2-owned instance the declarations themselves are fields of its own record (`calls`, `allows`); a v1 app keeps them in `apps/<app>/<env>/instance.yaml`.
+The keys are one platform object, `swhurl-auth`, rendered for every managed namespace by `swhurl-v2 auth` (a ConfigMap cannot cross namespaces, so it is one identical object per namespace); the allow-list is the instance's own (`<app>-callers`). A v2-rendered callee gets both **only as files**, under `/var/run/swhurl/auth` and `/var/run/swhurl/callers`, which the kubelet refreshes in place, so a rotated key or a new caller takes effect in about a minute **without a restart** and changes no pod template. Its image must read the file variables (templates TypeScript `v0.2.19`, Kotlin `v0.2.18` on, through a [template update](#template-updates)); an older image finds no keys and refuses every token. The declarations themselves are fields of the instances' own records (`calls`, `allows`), and both sides of a call are rendered from them; no instance gets the values as environment variables, so no pod restarts when a caller or a key changes.
 
 Every instance is also told who it is (`SWHURL_APP`, `SWHURL_ENV`), and every web app gets what it needs to check a token: `SWHURL_AUTH_ISSUER` and `SWHURL_AUTH_KEYS`, the cluster's public signing keys. Apps cannot fetch those keys themselves (the API server refuses anonymous requests and apps carry no API token), so they live in the profile's `auth` block, from which v2 renders `platform/auth` into every managed namespace; `make verify-platform` fails if the profile differs from the cluster's key set ([operations](operations.md#signing-keys)).
 
@@ -456,14 +463,16 @@ browser ─fetch('/api/orders')─▶ Traefik + oauth2-proxy ─x-auth-request-e
 
 **Finding what exists.** The console's **Catalogue** lists every API and event of an environment with what its app says about it (its routes, or its payload's fields and an example), who uses it and what each app uses in turn, and a choice of app to use it from. The **Deployments** list shows every app with its team and connections, its **Map** view draws who calls whom, and each app page has a **Connect** part: its address, its connections one per row (the same columns for a call, an event and a [host outside the cluster](#reaching-outside-the-cluster), whichever app declared it), **Connect to an app** to pick from the web apps and events its environment has, **Allow callers** and its allowed callers (a web app), [pending Git declarations and unapplied connections](console.md#instance-changes), what another app adds to call it, and a link to its API description if it declares one (`provides: {api: /openapi.json}`; shown, not checked). A refused change reads the same in the console as from `make`, because the console runs the same commands.
 
-**Rules.** `make app-calls` and `make app-new --calls` accept a valid absent callee as pending; a present callee must be a web app. The same pure record evaluator (`model/relations.py`) supplies rendering, shared NATS permissions, console intent and promotion consent; removal queries all declarations, not only connected pairs. Calls and grants are per environment, like replicas: no grant crosses environments. A first promotion copies staging's calls and its `allows` into production (the `allows` as a proposal: the first promotion is merged by a person); an absent production callee stays pending, and a production callee that allows it gains it as a caller when `main` renders the merge. A `team:` entry must name a registered team (`make check-apps` rule `team`); an app name may name an app that does not exist yet. `make app-remove` refuses an instance while any other app in the same environment names it in `instance.yaml`'s `calls`, including calls still waiting for a grant. The variables above are the platform's: `make app-sync` rewrites them, and `make check-apps` fails when rendered output differs from those records, including variables, tokens and network access (the app model, plus rules `identity` and `call-tokens`).
+**Rules.** An edit and `make app-new --calls` accept a valid absent callee as pending; a present callee must be a web app. v2's resolver decides the pairs from each caller's and callee's own record (the same facts supply the tokens, the caller lists and the NetworkPolicy); removal queries all declarations, not only connected pairs. Calls and grants are per environment, like replicas: no grant crosses environments. A first promotion copies staging's calls and its `allows` into production (the `allows` as a proposal: the first promotion is merged by a person); an absent production callee stays pending, and a production callee that allows it gains it as a caller when `main` renders the merge. A `team:` entry must name a registered team (`make check-apps` fails an app record whose team is unregistered); an app name may name an app that does not exist yet. `swhurl-v2 remove` refuses an instance while any other app in the same environment names it in its `calls`, including calls still waiting for a grant. The variables above are the platform's: v2 renders them from the records, and `make check-apps` fails when the committed files differ from what they render, templates, tokens and network access included.
 
 ## Events
 
 An app can publish events and receive other apps' events without knowing who is on the other side. The broker is NATS JetStream ([services](services.md#nats)). For example, `demo-orders` publishing `created` and `demo-notifier` receiving it:
 
 ```
-make app-events APP=demo-notifier ENV=staging ARGS="--add-subscribe demo-orders.created"   # or the Catalogue's Add an app
+# the Catalogue's Add an app, or:
+swhurl-v2 edit --records v2-records --app demo-notifier --env staging \
+  --set subscriptions=demo-orders.created --profile v2/testdata/profile.json --out .
 ```
 
 or, when the subscriber is created, `--subscribe demo-orders.created`. Receiving an event is a [grant](#swhurlyaml): it is set on the platform, not in the app's repository.
@@ -473,7 +482,7 @@ What `demo-orders` publishes has one source: the send operations in its `asyncap
 | As a developer, I want to… | What I change | What the platform does |
 | --- | --- | --- |
 | Publish `demo-orders.cancelled` | Add its send operation, payload and example to `asyncapi.yaml`, implement the publisher, test and push | Deploy the new staging release and list the event in the Catalogue; no second list to edit |
-| Receive `demo-orders.cancelled` | Implement a handler, then request the subscription through the Catalogue or `app-events` | Grant only that environment's subscription; the app repository cannot grant itself access |
+| Receive `demo-orders.cancelled` | Implement a handler, then request the subscription through the Catalogue or an edit's `subscriptions` | Grant only that environment's subscription; the app repository cannot grant itself access |
 | Replace an old event | Add the replacement, migrate consumers and remove old subscriptions, then remove the old send operation | Refuse removal while any same-environment app still subscribes; leave the existing release unchanged |
 | Publish nothing | Keep a valid document without send operations (`channels: {}` is valid), or remove `provides.eventsFile` | Clear publications, subject to subscriber checks; subscriptions and the app's flags identity remain |
 | Fix a typo or a missing document | Correct the declared file and push again | A failed read never clears the old configuration; the image is held |
@@ -487,13 +496,13 @@ flowchart LR
   stream -- "consumer demo-notifier_created" --> notifier["demo-notifier<br/>subscribe demo-orders.created"]
 ```
 
-An event is named `<app>.<event>`: only its app may publish it. `app-events --subscribe` replaces the subscription list (`""` clears it); `--add-subscribe` and `--remove-subscribe` change names and keep the rest, as `make app-calls` does and as the console's Connect card runs them. Document intake and subscription commands keep these generated files in step:
+An event is named `<app>.<event>`: only its app may publish it. An edit's `subscriptions` replaces the list (an empty value clears it); the console's Connect card adds and removes names and keeps the rest. Rendering keeps these files in step:
 
 | Where | What | Why |
 | --- | --- | --- |
 | The instance's HelmRelease | `SWHURL_EVENTS_PUBLISH`, `SWHURL_EVENTS_SUBSCRIBE`, `SWHURL_EVENTS_URL` and `SWHURL_EVENTS_NKEY` (the instance's public key) | What it declared, where NATS is, and who it is there |
 | `events.sops.yaml` | `SWHURL_EVENTS_SEED`, the private half of that key | Created and encrypted with every instance (its [feature flag](#feature-flags) overrides use the same key); never printed. Reloader restarts the app if it changes |
-| `events.yaml` | A stream for a publisher; a durable consumer for each connected subscription | The stream controller creates them in NATS when the commit is applied |
+| The compiled folder's `stream.json` and `consumer-*.json` | A stream for a publisher; a durable consumer for each connected subscription | The stream controller creates them in NATS when the commit is applied |
 | `platform/nats/users.json` | The instance's NATS user | A publisher may publish anything under its own name (`<env>.<app>.>`), so a new image can send a new event before the platform has read its description; it may fetch and acknowledge exactly its connected subscriptions, and read the description of the streams they are in (the Java client asks for it) |
 | The instance's Flux unit | Waits for `platform-nats` | The manifests need the controller's resource types |
 
@@ -503,21 +512,23 @@ An event is named `<app>.<event>`: only its app may publish it. `app-events --su
 
 **Rules.** A valid subscription to an absent same-environment app is pending: it emits no subscription variable, Consumer or NATS subscription permissions. Its allocated identity, flag permissions and unrelated publications may remain. When the publisher exists, the requested event must be published; a missing event is an error, not pending. Self-subscriptions and malformed declarations are errors. Removing a referenced event, its document reference or its app is refused while someone declares a subscription, including pending declarations; a publisher arriving without the requested event also refuses before writes.
 
-Consumer object names remain `<publisher>-<event>` in the subscriber's namespace; durable identities remain `<subscriber>_<event>` on `<env>-<publisher>`. The platform refuses ambiguous object names, for example `a-b.c` and `a.b-c` in one subscriber, even if either publisher is absent. Different subscriber namespaces may reuse those names. No renaming or retention migration is performed. Production has its own key and cannot read staging's events; subscriptions are granted with `make app-events ENV=prod` after promotion, while publications travel with the release. Checks protect declared subscriptions, not undeclared external consumers. Streams are not a system of record: keep anything you must not lose in a database ([retention and lifecycle](services.md#nats)). `make check-apps` fails when files disagree with the records (the app model and rules `offers` and `events`), or a required NATS identity or users file is missing; `make app-sync` rewrites generated resources, not the release's publishing declaration.
+Consumer object names remain `<publisher>-<event>` in the subscriber's namespace; durable identities remain `<subscriber>_<event>` on `<env>-<publisher>`. The platform refuses ambiguous object names, for example `a-b.c` and `a.b-c` in one subscriber, even if either publisher is absent. Different subscriber namespaces may reuse those names. No renaming or retention migration is performed. Production has its own key and cannot read staging's events; subscriptions are granted in production after promotion (an edit there), while publications travel with the release. Checks protect declared subscriptions, not undeclared external consumers. Streams are not a system of record: keep anything you must not lose in a database ([retention and lifecycle](services.md#nats)). `make check-apps` fails when the committed files differ from what the records render, the broker's user list included; a record's publishing list comes from the image's document, never from an edit.
 
 ### NATS identity and rotation
 
-Each instance's identity is a pair: the public `allocations.eventsKey` in `instance.yaml` and the encrypted seed in `events.sops.yaml`. A complete pair stays unchanged on sync, release updates and settings changes. One rule decides who has one: every instance when NATS exists (its NATS user carries its feature-flag permissions, and `make check-apps` fails an instance without one), and wherever an instance publishes or subscribes. Every command applies it, so a command that finds an instance with neither half (in a healthy tree there is none) gives it its identity in the same change, which needs `sops`.
+Each instance's identity is a pair: the public key in its `instance.json`'s `events.key` and the encrypted seed beside it in `events.sops.yaml`. A complete pair stays unchanged on a render, a release update and a settings change. One rule decides who has one: every instance when NATS exists (its NATS user carries its feature-flag permissions), and wherever an instance publishes or subscribes. A render of an instance with neither half (in a healthy tree there is none) refuses rather than inventing one; `swhurl-v2 mint` creates it.
 
-Exactly one half present is **inconsistent**, not a request to generate a new key. Sync refuses without changing files: restore the missing half from Git rather than deleting the public allocation to rotate it. With both halves absent, bootstrap is legitimate. Fully supplied records-only PRs need no SOPS when the gate, Render or Validate prepares their output; a missing identity that needs creation fails without writing if SOPS is unavailable.
+Exactly one half present is **inconsistent**, not a request to generate a new key. The render refuses without changing files: restore the missing half from Git rather than deleting the public key to rotate it. With both halves absent, `swhurl-v2 mint` is the way to create one.
 
 After separately confirming a real credential rotation, **run in your own terminal**:
 
 ```bash
-make app-sync ARGS="--rotate-nkey demo-orders/staging"
+swhurl-v2 mint --instance v2-records/demo-orders/staging/instance.json \
+  --profile v2/testdata/profile.json --out . --rotate
+make -s v2-render     # the compiled files and the broker's user list follow
 ```
 
-This prepares one replacement pair and the derived runtime configuration/NATS user list together, leaving every other complete identity unchanged. The target must exist, already have both halves, still need an identity, and its files must be what its records render (like any command, rotation refuses an instance edited by hand). There is no bulk or console rotation. Only ciphertext reaches the planned files: seed generation and SOPS encryption happen in memory, with the destination's `.sops.yaml` rule selected by filename. Encryption, rendering or shared-file planning refusals leave the whole checkout byte-identical, including an existing seed. The filesystem writes themselves are not a crash-atomic transaction. Review the diff and follow the normal validation/commit/reconcile loop; this command alone changes no live credential.
+This prepares one replacement pair, leaving every other complete identity unchanged. The instance must exist and already have both halves; a record whose files are not what it renders is refused. There is no bulk or console rotation. Only ciphertext reaches the planned files: seed generation and SOPS encryption happen in memory, with the destination's `.sops.yaml` rule selected by filename. Encryption, rendering or shared-file planning refusals leave the whole checkout byte-identical, including an existing seed. The filesystem writes themselves are not a crash-atomic transaction. Review the diff and follow the normal validation/commit/reconcile loop; this command alone changes no live credential.
 
 Rotation is **one-step replacement**, not a dual-key handover: the old user leaves the generated list and Reloader restarts the app with the new seed. There may be a reconnect gap while the NATS mounted config refreshes (one to two minutes) and the app restarts. Neither zero downtime nor immediate revocation of existing connections is guaranteed. Streams, consumers, permissions, subscriptions and stored feature-flag overrides do not change.
 
@@ -555,25 +566,25 @@ The platform reads them for the image an instance runs, so staging and productio
 ```mermaid
 flowchart LR
   push["push to the app's main"] --> image["image 8-b2c3d4e"]
-  image -->|"Deploy workflow:<br/>make app-deploy"| read["reads swhurl.yaml and both documents<br/>from the repository at b2c3d4e"]
-  read -->|"one commit with the new tag"| staging["apps/demo-orders/staging<br/>helmrelease.yaml"]
-  read --> kept["apps/demo-orders/staging/offers/<br/>source.yaml, openapi.json, asyncapi.yaml"]
+  image -->|"v2 Deploy workflow:<br/>swhurl-v2 deploy"| read["reads swhurl.yaml and both documents<br/>from the repository at b2c3d4e"]
+  read -->|"one commit with the new tag and digest"| staging["v2-records/demo-orders/staging/release.json"]
+  read --> kept["v2-records/demo-orders/staging/offers/<br/>the documents, byte for byte"]
   read --> publishes["SWHURL_EVENTS_PUBLISH<br/>from asyncapi.yaml"]
-  kept -->|"make app-promote"| prod["apps/demo-orders/prod/offers/"]
+  kept -->|"swhurl-v2 promote"| prod["v2-records/demo-orders/prod/offers/"]
 ```
 
 | What | Where | Why |
 | --- | --- | --- |
-| The documents, as the repository has them, and where they came from | `apps/<app>/<env>/offers/` (`source.yaml`: repository, commit, file names; `flags.json`: the [feature flags](#feature-flags) its `swhurl.yaml` declares, for the console's form), or `v2-apps/instances/<app>/<env>/offers/` for an instance [v2 owns](#what-an-app-offers). Not Kubernetes resources: nothing is applied | The offline checks and the console read them without building or calling the app |
+| The documents, as the repository has them, and where they came from | `v2-records/<app>/<env>/offers/`, beside the records, copied byte for byte into `v2-apps/instances/<app>/<env>/offers/` by the render; the release states the repository, the commit they were read at, the API path and the description. `flags.json` is the [feature flags](#feature-flags) its `swhurl.yaml` declares, for the console's form. Not Kubernetes resources: nothing is applied | The offline checks and the console read them without building or calling the app |
 | Where the running app serves its API description | The annotation `platform.swhurl.com/api-description` on the instance's HelmRelease, from `provides.api` (no app reads it, so it is not a variable) | The console links it; it goes when `provides.api` goes |
 | The commit they were read at | The annotation `platform.swhurl.com/offers` on the instance's HelmRelease | The console sees that the app describes itself; an annotation does not restart the app |
 | The events the app publishes | `SWHURL_EVENTS_PUBLISH`, set from the channels `asyncapi.yaml` sends to (a channel's `address` is the event's name) | The AsyncAPI document is the declaration: nobody lists the events a second time. Everything that follows from the list is [as for any event](#events) |
 
-**When it happens.** At creation (`make app-new --from-repo` reads them when `swhurl.yaml` names either file). With every new staging image: the [Deploy workflow](../.github/workflows/deploy.yml) reads them at the new image's commit, checks the app policy and commits them to `main` with the tag ([deploy a new image](#deploy-a-new-image)). Offers already read at an image's commit are not read again; `make app-offers --all staging` reads them anyway. At promotion: `make app-promote` copies staging's documents to production and sets what production publishes, creating production's NATS key the first time; a promotion that changes only the documents, the commit and where the API description is served still merges itself, one that changes what the app publishes waits for review. By hand: `make app-offers APP=demo-orders ENV=staging`.
+**When it happens.** At creation (`make app-new --from-repo` reads them when `swhurl.yaml` names either file, and `swhurl-v2 migrate` carries them). With every new staging image: the [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) runs `swhurl-v2 deploy`, which reads them at the new image's commit and commits them with the tag ([deploy a new image](#deploy-a-new-image)). Offers already read at an image's commit are not read again. At promotion: `swhurl-v2 promote` copies staging's documents to production and sets what production publishes; a promotion that changes what the app publishes waits for review. There is no offers command: a document reaches Git through the workflow or a migration, never by hand.
 
 **A new event works at once.** The new image starts in the same commit that keeps its document. NATS already lets the app publish anything under its own name and its stream keeps everything under that name, so the event is stored from the first publish; the helper in the app refuses anything its own `asyncapi.yaml` does not describe. Other apps can subscribe once the workflow's commit is applied. The exception is an app's first event ever (it has no key or stream yet): the templates' `events` feature ships an example event, so an app created with the feature has both from the start.
 
-**What is refused.** A document that is not OpenAPI 3 or AsyncAPI 3, a file `swhurl.yaml` names but the commit lacks, an event name that is not a lowercase name, and a document that no longer sends an event another app of that environment still receives: the workflow fails for that app, which keeps its image and what it had (the others still deploy), and a promotion is refused. Remove the subscription first, or keep the event. `make check-apps` fails when what an instance publishes is not what its kept document describes (rule `offers`). Production is refused offers that were read for another image than staging runs.
+**What is refused.** A document that is not OpenAPI 3 or AsyncAPI 3, a file `swhurl.yaml` names but the commit lacks, an event name that is not a lowercase name, and a document that no longer sends an event another app of that environment still receives: the workflow fails for that app, which keeps its image and what it had (the others still deploy), and a promotion is refused. Remove the subscription first, or keep the event. The render refuses a publication its kept document does not describe, and `make check-apps` fails when the committed documents differ from the records. Production is refused offers that were read for another image than staging runs.
 
 **Where it shows.** The console's [Catalogue](console.md#use-it) lists what every app offers, described or not, and the Connect picker on an app page says what each choice is.
 
@@ -617,7 +628,7 @@ flowchart LR
 | Also sent for you | [Default alerts](#alerts) on error logs and failed requests, with no code |
 | Not for | The operator's platform topic, which gets the [deployment and health messages](services.md#notification-expectations) by itself, or an app's own end users |
 
-The [request contract](services.md#notify-service) is the same one the platform's own messages use. The address and the token are the platform's: `make app-sync` rewrites them and `make check-apps` fails when they are missing (rules `identity`, `call-tokens`). `notify` cannot be an app's name.
+The [request contract](services.md#notify-service) is the same one the platform's own messages use. The address and the token are the platform's: v2 renders them into every instance, and `make check-apps` fails when the committed files differ from what the records render. `notify` cannot be an app's name.
 
 ## Feature flags
 
@@ -653,7 +664,7 @@ if (Flags.newCheckout) { … }                         // Kotlin: generated by .
 
 The generated file is not committed (`src/flags.ts` is ignored; Kotlin writes it under `build/`), so `swhurl.yaml` is the only place a flag is written. A changed declared value travels with the image: staging runs it after the next build, production after a [promotion](#promote-to-production).
 
-**Overrides.** A value can be changed without a new image: on the app page's **Feature flags** card, which lists the flags the image running in that environment declares (kept by `make app-offers` as `offers/flags.json` and carried by a promotion). An override is for one environment, stored on the platform's NATS in the bucket `flags-<env>` under `<env>.<app>.<flag>` as JSON (`true`, `42`, `"sale"`). The app watches its own keys over its NATS connection (every instance has a NATS key), and the next read of the flag returns the override, without a restart:
+**Overrides.** A value can be changed without a new image: on the app page's **Feature flags** card, which lists the flags the image running in that environment declares (kept with the release's offers as `flags.json` and carried by a promotion). An override is for one environment, stored on the platform's NATS in the bucket `flags-<env>` under `<env>.<app>.<flag>` as JSON (`true`, `42`, `"sale"`). The app watches its own keys over its NATS connection (every instance has a NATS key), and the next read of the flag returns the override, without a restart:
 
 ```mermaid
 flowchart LR
@@ -678,20 +689,11 @@ Overrides are not in Git and not backed up: if NATS loses them, every app return
 
 ## Secrets
 
-**Names come from the image, values from you.** An app lists the secret variables it reads in `swhurl.yaml` (`secrets: [API_TOKEN]`, or `--secret-keys` and the console's **Secret environment variables** at creation). The release notes the names (annotation `platform.swhurl.com/secrets`) and takes every key of the Secret `<app>-secret` as a variable (`envFrom`, `optional: true`), so the app starts before a value exists: a name without one is **value missing** on the console's app page, in `make app-status` and as a warning in `make verify-platform`. A value no name asks for any more is shown as unused.
+**v2 does not model secrets yet.** An app lists the secret variables it reads in `swhurl.yaml` (`secrets: [API_TOKEN]`, or `--secret-keys` at creation), and an image that adds a name is what the release would state — but v2 refuses a release that declares secret names, so no v2 instance has one: `swhurl-v2 migrate` stops on such an app, and `make app-new --secret-keys` produces an instance that cannot be migrated. The platform still applies the image's declared names as `envFrom` (`optional: true`) for an instance v1 renders, and a name without a value shows as **value missing** on the app page and in `make app-status`.
 
-**Set a value** in your own terminal (it needs the age key, and asks for the value without echo):
+**A v1 instance's value** was set with `make app-secret` — a command phase 3 deleted, so today the encrypted `apps/<app>/<env>/secret.sops.yaml` file is only restorable from Git, and nothing new writes one. Until v2 gains the capability, an app that needs a secret cannot be v2's.
 
-```bash
-make app-secret APP=demo-shop ENV=staging NAME=API_TOKEN     # or pipe it in: printf %s "$TOKEN" | make app-secret ...
-git add apps/demo-shop/staging && git commit -m "demo-shop: API_TOKEN" && git push
-```
-
-The value goes to `sops` on standard input, never on a command line or unencrypted to disk, and lands in `apps/<app>/<env>/secret.sops.yaml`; the first value also adds that file to the instance's kustomization and decryption to its unit, and `make v2-reloader` (which the Render workflow runs) adds its namespace to Reloader's watch list, so a changed value restarts the app. A name the image does not declare yet is accepted: set the value before the push that starts using it, and nothing is ever missing. Example: the developer adds `secrets: [API_TOKEN]` and code reading it; set the value first, push, and the new image starts with it. Pushed first, the image starts without it and the template's helper fails the request that needs it, naming the command.
-
-**Production** gets a placeholder (`REPLACE_ME`) for every name at its first promotion, so `make check-secrets` fails until each is set with `make app-secret ... ENV=prod` on the promotion's branch: production never runs without a value.
-
-**Reserved names.** The platform sets some variables itself (`HOST_IP` and `OTEL_*` for telemetry, `DATABASE_PATH` for SQLite, `SWHURL_*` for [identity and calls](#calling-another-app)), and a container's own `env` silently wins over `envFrom`, so a secret with one of those names would never reach the app. `app-new`, `swhurl.yaml`, `make app-secret` and the console therefore refuse `HOST_IP`, `DATABASE_PATH` and any name starting `OTEL_`, `SWHURL_` (kept for future platform variables) or `KUBERNETES_` (the API server address in-cluster clients read). Record rendering enforces the same name restrictions, including malformed or repeated names, before adding the Secret reference. Each app's Secret lives in its own namespace, so two apps may use the same key names. Rules and rotation: [operations](operations.md#secrets).
+**Reserved names** still hold, and the compiler enforces them: the platform sets `HOST_IP` and `OTEL_*` for telemetry, `DATABASE_PATH` for SQLite and `SWHURL_*` for [identity and calls](#calling-another-app), and a container's own `env` silently wins over `envFrom`. `app-new`, `swhurl.yaml`, the console and the compiler refuse `HOST_IP`, `DATABASE_PATH` and any name starting `OTEL_`, `SWHURL_` or `KUBERNETES_`. Each app's Secret lives in its own namespace, so two apps may use the same key names. Rules and rotation: [operations](operations.md#secrets).
 
 ## Telemetry
 
@@ -742,21 +744,21 @@ An instance runs the image named by `repository`, `tag` and `digest` in its Helm
 ```text
 app push → its workflow checks, builds and publishes ghcr.io/<owner>/<app>:<run>-<sha>
   → image webhook → image-reflector-controller scans the registry at once
-  → ImagePolicy <app>-staging picks the highest <run>; the image-dispatch Alert starts the Deploy workflow here
-  → make app-deploy: the newest tag and digest from GHCR (the policy's filter); at <sha>, what swhurl.yaml needs and offers
-  → one commit to apps/<app>/staging as github-actions[bot] → push webhook → Flux applies → the Deployment rolls
+  → ImagePolicy <app>-staging picks the highest <run>; the image-dispatch Alert starts the v2 Deploy workflow here
+  → swhurl-v2 deploy: the newest tag and digest from GHCR (the policy's filter); at <sha>, what swhurl.yaml needs
+  → one commit to v2-records/<app>/staging with its rendered files as github-actions[bot] → push webhook → Flux applies
 ```
 
-The [Deploy workflow](../.github/workflows/deploy.yml) also runs hourly and by hand (`gh workflow run deploy.yml`), which catches a lost webhook or dispatch, and `make app-deploy [APP=<app>]` does the same locally. A policy reports its newest image at every reconcile, so most dispatches end at the run's first step ("Staging already runs it"), before any setup. The Alert's token is in `platform/image-automation/dispatch-secret.sops.yaml` ([rotate it](operations.md#secrets)). `make verify-platform` shows, under Image Automation, each app's newest image and whether staging runs it — from `apps/<app>/<env>/release.yaml`, or for a [v2-owned instance](v2-status.md) the digest in `v2-records/<app>/<env>/release.json` — and its webhook under Image Webhooks (`make app-hooks` adds a missing one; until then new images wait for the hourly run).
+The [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) also runs hourly and by hand (`gh workflow run deploy-v2.yml`), which catches a lost webhook or dispatch, and `make v2-deploy` does the same locally. A policy reports its newest image at every reconcile, so most dispatches end at the run's first step ("Staging already runs it"), before any setup. The Alert's token is in `platform/image-automation/dispatch-secret.sops.yaml` ([rotate it](operations.md#secrets)). `make verify-platform` shows, under Image Automation, each app's newest image and whether staging runs it — the digest in `v2-records/<app>/<env>/release.json` — and its webhook under Image Webhooks (`make app-hooks` adds a missing one; until then new images wait for the hourly run).
 
 **A v2-owned staging instance** follows the same trigger: its unit carries the same `ImageRepository` and
 `ImagePolicy`, and the image states what it needs in a declaration its build writes into the image's config
 labels. Its producer is the internal `image-declaration` command
 ([`image_declaration.py`](../tools/swhurl/apps/image_declaration.py)), which prints one line from the app's
 `swhurl.yaml` and the events document it names, holding the runtime, telemetry, database, publications, secret
-names and minimum memory, with every absent fact left out. It states that contract and nothing else —
-`description`, offers and flags stay v1's until v2 models them — and it states `secrets` and `memoryMiB` so v2
-holds an image that adds one rather than running it without. Beside it the build states the commit it built from,
+names and minimum memory, with every absent fact left out. It states that contract and nothing else — `description`, offers and flags travel through the
+release — and it states `secrets` and `memoryMiB` so v2 holds an image that adds one rather than running it
+without. Beside it the build states the commit it built from,
 in the standard `org.opencontainers.image.revision` label: the tag carries an abbreviation and a release states a
 full commit, so v2 refuses an image whose tag does not abbreviate the revision it states. Both labels come from the
 templates' shared build (TypeScript `v0.2.21`, Kotlin `v0.2.20`), and the seed a new app copies carries them too.
@@ -772,7 +774,7 @@ others still deploy, and the run fails after they are pushed — and the commit 
 only when the allocation records a grant for it, so a retained port with nothing behind it does not put the
 instance behind the proxy. Production still changes only through a promotion.
 
-**What the image needs comes with it.** The run reads `swhurl.yaml` at the image's commit and writes its [needs](#swhurlyaml) into the release with the tag. Example: the developer changes the code and `port: 9090` in one commit; staging's next release has the new image, Service port 9090, probes on 9090, and its callers' `SWHURL_SERVICE_*_URL` and its NetworkPolicy on 9090. An image already deployed is not read again; after a change to how the platform applies a need, `make app-deploy ARGS=--refresh` (or `gh workflow run deploy.yml -f refresh=true`) reads every staging image again.
+**What the image needs comes with it.** The run reads `swhurl.yaml` at the image's commit and writes its [needs](#swhurlyaml) into the release with the tag. Example: the developer changes the code and `port: 9090` in one commit; staging's next release has the new image, Service port 9090, probes on 9090, and its callers' `SWHURL_SERVICE_*_URL` and its NetworkPolicy on 9090. An image already deployed is not read again; after a change to how v2 applies a need, `make v2-deploy ARGS=--refresh` (or `gh workflow run deploy-v2.yml -f refresh=true`) reads every staging image again.
 
 **A refused image is held.** An image whose needs or offers the instance cannot take fails the run naming the problem; that app keeps its image and the others still deploy. Needs are refused when the kind changes, the minimum resources exceed the quota or the memory limit, the uid changes on an instance with a volume, or a database is removed or resized. Everything else deploys to staging and reaches production with the image's promotion; a promotion that changes production's port, database or secret names waits for a person to merge it ([promote](#promote-to-production)).
 
@@ -815,40 +817,29 @@ Existing TypeScript apps adopt the Dockerfile and caller's `checks-in-image: tru
 Try staging, then run **in your own terminal**:
 
 ```bash
-make app-promote APP=<app>
+swhurl-v2 promote --records v2-records --app <app> --env prod \
+  --profile v2/testdata/profile.json --expect "$(git rev-parse HEAD)" --out .
 make check
-git add apps/<app> clusters/home
-git commit -m "apps: promote <app> to prod"
-git push
+git add v2-records v2-apps clusters/home && git commit -m "apps: promote <app> to prod" && git push
 make flux-reconcile
 make app-status APP=<app> ENV=prod
 ```
 
-`app-promote` always means staging → production. The CLI checks live staging readiness and that it runs the digest in this checkout. Production runs staging's release: the image and what it declares (its needs, description, API path and offered documents). A first promotion creates production's records from staging's; a later one keeps production's own settings and capacity and renders the files again, so only what the release changes differs. Resources rise to the image's minimum where it is above production's capacity; a minimum production's quota cannot hold at its replicas is refused. Equal digests are the same image regardless of tag: no files change. Different repositories require a reviewed Git edit. An older known build is labelled a rollback; database migrations are not reversed.
+or **Review promotion** in the console, which runs the same command and opens a held pull request. Promotion always means staging → production, and v2 needs production's records to exist already. The command refuses a release staging does not select, a stale expectation, a user change on an instance with a volume, and anything the compiler refuses. Production runs staging's release: the image and what it declares (its needs, description, API path and offered documents). A first promotion creates production's records from staging's; a later one keeps production's own settings and capacity and renders the files again, so only what the release changes differs. Resources rise to the image's minimum where it is above production's capacity; a minimum production's quota cannot hold at its replicas is refused. Equal digests are the same image regardless of tag: no files change. Different repositories require a reviewed Git edit. An older known build is labelled a rollback; database migrations are not reversed.
 
-First production takes staging's team, alerts, exposure, certificate issuer, calls, allows (as a reviewed proposal), capacity, replicas, schedule and reviewed policy exceptions; it gets its own address, egress port, NATS key and empty database, and none of staging's subscriptions, egress grants or credential values. Staging must be exactly what its records render: a hand edit the model cannot express (an extra controller, route or volume) is refused, naming each difference.
+v2 copies nothing but the release: production's replicas, exposure, calls, subscriptions, memory and volume stay its own, it has its own address, its own egress port and its own empty database, and staging must be what its records render (the command refuses a stale expectation).
 
-Production gets independent, initially empty storage. Startup applies database migrations normally. Staging data, PV bindings and credential values are never copied. App Secret names create new encrypted `REPLACE_ME` placeholders; set production values with `make app-secret APP=<app> ENV=prod NAME=<name>` and review the Reloader registration before merging. A public app needs a distinct production host (`ARGS="--host=app.example.com"`); signed-in apps use the generated production address. Runtime configuration changes use the environment's records and render through `make app-sync`; the [app policy](#the-app-policy) checks them.
+Production gets independent, initially empty storage. Startup applies database migrations normally. Staging data, PV bindings and credential values are never copied. A public app needs a distinct production host; signed-in apps use the generated production address (`<app>.homelab.swhurl.com`). Runtime configuration changes are edits on production's own records, and the render writes what they decide.
 
-To guard the exact image reviewed, use:
+To guard the exact image reviewed, pin the revision you reviewed: `--expect` takes the commit the command read staging at, and a tree that moved is refused rather than promoted.
 
-```bash
-make app-promote APP=<app> ARGS="--expect-image=ghcr.io/<owner>/<app>:<tag>@sha256:<digest>"
-```
+It takes the release staging selects into production's record pair and files, and nothing else: production's replicas, exposure, calls, subscriptions and volume stay its own. It refuses a release staging does not select, a user change on an instance with a volume, a stale expectation, and anything the compiler refuses. v2 has no promotion gate: check staging first (`make app-status`, `swhurl-v2 observe`).
 
-**A v2-owned production.** `swhurl-v2 promote --records v2-records --app <app> --env prod --profile
-v2/testdata/profile.json --expect <production's revision> --out .` takes the release staging selects into
-production's record pair and files, and nothing else: production's replicas, exposure, calls, subscriptions,
-grants and volume stay its own. It refuses a release staging does not select, a user change on an instance with a
-volume, a stale expectation, and anything the compiler refuses (a database on an instance without a volume). Check
-staging first (`make app-status`, `swhurl-v2 observe`) — v2 has no promotion gate. A first promotion is not
-modelled: production must already be v2's.
-
-In the CLI, a mismatch or unhealthy staging refuses before production edits. In the console, **Review promotion** on Deployments or staging shows the exact image, destination and first-production changes and, for a later promotion, what `main` renders differently, then **Promote to production** creates the PR. The PR carries only production's records; eligible promotions merge automatically unless **Hold for manual review** is selected. Existing promotion PRs are recovered from GitHub after a restart and reused (the PR's first line names its image); a replacement image requires explicitly closing the old PR. See [promotions](console.md#promotions).
+In the console, **Review promotion** shows the exact image destination and, for a later promotion, what `main` renders differently; **Promote to production** then opens a pull request that carries production's records and the files they rendered, held for you to merge. Existing promotion PRs are recovered from GitHub after a restart and reused (the PR's first line names its image); a replacement image requires explicitly closing the old PR. See [promotions](console.md#promotions).
 
 ### A commit elsewhere does not hold a promotion
 
-Every commit to `main` leaves every app's Flux unit one revision behind for a few seconds, and "Updating" on the console meanwhile. A promotion is held only by a commit that changes staging's own files (`apps/<app>/staging/` or its unit file `clusters/home/app-<app>-staging.yaml`) and is not applied yet:
+Every commit to `main` leaves every app's Flux unit one revision behind for a few seconds, and "Updating" on the console meanwhile. A promotion is held only by a commit that changes staging's own files (`v2-records/<app>/staging/`, its compiled folder or its unit file `clusters/home/app-<app>-staging.json`) and is not applied yet:
 
 | Staging's unit is | The commits it has not applied change | Promotion |
 | --- | --- | --- |
@@ -857,11 +848,11 @@ Every commit to `main` leaves every app's Flux unit one revision behind for a fe
 | behind | staging's own files | refused: "a change to staging is in Git and Flux has not applied it yet" |
 | behind | unknown (see below) | refused: "Flux is still applying the latest commit on main to staging" |
 
-The console asks GitHub to compare the two commits (one request, only when the unit is behind); `make app-promote` asks the checkout's own history (`git diff --name-only`). The answer is unknown, and the promotion waits as before, when GitHub cannot be read, the comparison lists 300 files or more, or the checkout does not have both commits (`git fetch`). The console owns this live check for its job, after scratch preparation; the scratch `app-promote` skips it rather than repeating it in a tree without history. Direct `make app-promote` still performs the check. What was reviewed is pinned by the image, not by the revision, so a commit elsewhere while the review page is open does not refuse it either.
+The console asks GitHub to compare the two commits (one request, only when the unit is behind); the CLI asks the checkout's own history. The answer is unknown, and the promotion waits as before, when GitHub cannot be read, the comparison lists 300 files or more, or the checkout does not have both commits (`git fetch`). What was reviewed is pinned by the image, not by the revision, so a commit elsewhere while the review page is open does not refuse it either.
 
 ### Console promotion: what happens, and when
 
-For example, promoting `weather-api/staging` selects its current healthy, digest-pinned image and proposes that image for `weather-api/prod`. The console's **Review promotion** page reads live staging health and runs the promotion in a copy of GitHub `main` to show what it renders differently. Submitting **Promote to production** starts a job: it runs `main`'s own `app-promote` command in a fresh scratch copy of `main`, then checks live staging once before any GitHub write, and opens a PR with the records it changed (the rendered files are left out: `main` renders them when it is merged). The job finishing means the PR exists; it does not mean production has deployed.
+For example, promoting `weather-api/staging` selects its current healthy, digest-pinned image and proposes that image for `weather-api/prod`. The console's **Review promotion** page reads live staging health and runs the promotion in a copy of GitHub `main` to show what it renders differently. Submitting **Promote to production** starts a job: it runs `main`'s own `swhurl-v2 promote` in a fresh scratch copy of `main`, then checks live staging once before any GitHub write, and opens a PR with the records and the files they rendered. The job finishing means the PR exists; it does not mean production has deployed.
 
 ```mermaid
 sequenceDiagram
@@ -880,12 +871,12 @@ sequenceDiagram
   Console->>Platform: Read main and render the promotion there
   Console-->>Operator: Show exact image, destination and rendered diff
   Operator->>Console: Promote to production
-  Console->>Platform: Read main and run scratch app-promote (no live check)
+  Console->>Platform: Read main and run scratch swhurl-v2 promote (no live check)
   Console->>Cluster: One fresh readiness check after preparation
   Console->>Platform: Open console/promote PR of its records (only if check passed)
   Platform->>Validate: PR event runs Validate (it renders the records first)
   Validate-->>Platform: Checks pass
-  Platform->>Platform: Merge gate merges the records onto newest main, applies the rule, renders, checks, pushes
+  Operator->>Platform: Merge the PR on GitHub (the gate merges no v2 kind)
   Note over Operator,Platform: A held PR waits for the operator to merge it on GitHub, then the Render workflow renders main
   Platform->>Flux: Merge push to main invokes Receiver (or source poll)
   Flux->>Prod: First promotion creates prod unit and later promotion updates only image pin
@@ -900,15 +891,15 @@ sequenceDiagram
 
 The review captures the staging image, but its health check is advisory. A new promotion job checks readiness once after preparing the change and before writing any blob, commit, branch or PR to GitHub; it fails without publication if staging stopped being healthy and current, runs another image, or cannot be read. Failed preparation never reaches that check or writes to GitHub. Reusing an existing PR does not prepare or check again. It also refuses the same digest (tags may differ while the digest is the same) and refuses a changed image repository. A known older `<run>-<sha>` image is called out as a rollback; database migrations are not rolled back. After the PR is open, a newer staging build or another app/tooling change on `main` does not refuse it: the PR carries records, and `main` renders them when it is merged.
 
-On **first promotion**, `app-promote` derives a production environment from the supported staging settings. The PR carries production's records: `apps/<app>/prod/release.yaml`, `instance.yaml`, `offers/` and its encrypted files. When it is merged, `main` renders the rest: the production folder's manifests, `clusters/home/app-<app>-prod.yaml` and its unit registration (an instance with records and no unit file is added by `make app-sync`), and, for a secret-bearing app, the production namespace in Reloader's watch list (the Render workflow's `make v2-reloader`, from the new record). If the app has secret names, the PR has a separate encrypted production Secret with a `REPLACE_ME` value for each; SQLite/persistent storage gets a separate retained claim that starts empty. Staging data and credential values are never copied. A public app must have a distinct production hostname; signed-in apps get the generated production host. The staging environment and production environment are separate namespaces, so the same Secret/PVC names resolve to independent resources.
+**Creating a production is not modelled by v2.** `swhurl-v2 promote` moves a production whose records already exist (its `v2-records/<app>/prod/` pair and compiled folder), and the console's **Promote to production** runs it; nothing creates the first one. A first production is still made the way all thirteen existing instances were: create it while v1 owns the app, then `swhurl-v2 migrate` it, and promote afterwards ([the cutover](v2-status.md#slice-record-the-cutover-reaches-production-four-instances-31-october-2026)). A first promotion creates production's address, credentials and settings, which a person reviews, so it is never automatic.
 
-A first promotion is never auto-merged: it creates production's address, credentials and settings, which a person reviews, and you merge it on GitHub (the [Render workflow](console.md#promotions) then renders `main`). For a Secret, set the production values on the PR branch with `make app-secret APP=<app> ENV=prod NAME=<name>` (in your own terminal; on that branch it writes the encrypted file alone), then merge. For a public app, review the chosen distinct host. An app that publishes or receives [events](#events) gets its production events key (`events.sops.yaml`), generated and already encrypted, so nothing is left to set. An app that [calls another app](#calling-another-app) already in production also changes that app's allowed callers and network policy once `main` renders it; the review page, the job log and the PR name the apps.
+A promotion is always merged by a person (no v2 pull request is auto-merged). For a public app, review the chosen distinct host. An app that publishes or receives [events](#events) gets its production events key (`events.sops.yaml`), generated and already encrypted, so nothing is left to set. An app that [calls another app](#calling-another-app) already in production also changes that app's allowed callers and network policy once `main` renders it; the review page, the job log and the PR name the apps.
 
 After merge, the platform push webhook starts Flux's fetch/reconcile chain (the `GitRepository` polls every minute if the webhook is missed). For first production, Flux creates the new `app-<app>-prod` unit, which waits for `infra-base` and `platform-oauth2-proxy` when the app is signed in. It applies the production Namespace and HelmRelease, then Helm creates the production Deployment and, for web apps, Service; routed apps also get an Ingress. The storage claim is provisioned independently when configured. A routed first production Ingress causes cert-manager to request a certificate asynchronously: the issuer is copied from staging (default `letsencrypt-prod`), HTTP-01 uses Traefik for Let's Encrypt, and the resulting TLS Secret is used by Traefik. Certificate issuance does not hold the app Helm readiness check open. Private apps/workers have no Ingress and request no certificate.
 
 The dashboard CronJob runs each minute. It sees the production HelmRelease once the production Flux unit has created it, then creates or updates the same `App: <app>` dashboard to include production as another environment line; it does not create a second dashboard or add dashboard files to the PR. It does not wait for production pods to become Ready and is independent of the app rollout. Details are in [Dashboards](#dashboards).
 
-On **later promotions**, production already exists, so the reviewed PR changes its image and what moves with it: the port, health path, user, telemetry, resource minimum, description, database, secret names, API path and offered documents in `apps/<app>/prod/offers/`. A new database gives production its own empty retained volume, nightly backups, one replica and stop-first updates, as staging got; a rollback (staging running an older image than production) that would change the database or the user is refused. Production's runtime settings, host, Secret values, existing storage, unit and Reloader registration remain as they were. No new certificate or other infrastructure is requested. The PR carries production's `release.yaml` and `offers/`; it auto-merges after `Validate` and the trusted merge gate unless held for review (the gate merges it onto the newest `main`, renders and checks there, and pushes). [Promotion's rule](console.md#promotions) leaves to a person a promotion that changes what the app publishes, or production's port, database or secret names, or production's `instance.yaml` (a new database's volume), or whose complete Release (repository, tag, digest and declarations) was never selected on `main`'s first-parent staging history: for a new secret name, set its production value first (`make app-secret APP=<app> ENV=prod NAME=<name>`, in your own terminal; the job log names it), then merge on GitHub; Flux then rolls out the pinned image. A rollback is always merged by a person: the console opens it without `auto-merge` and the gate holds it, because database migrations are not reversed. A newer staging build, another app's change or a tooling commit since the PR opened does not hold it. Promotion does not run the app repository's build workflow and does not invoke the app's image automation. The image has already been built and deployed to staging before it is selected.
+On **later promotions**, production already exists, so the reviewed PR changes its image and what moves with it: the port, health path, user, telemetry, resource minimum, description, database, API path and offered documents in `v2-records/<app>/prod/offers/`. A new database gives production its own empty retained volume, nightly backups, one replica and stop-first updates, as staging got; a rollback (staging running an older image than production) that would change the database or the user is refused. Production's runtime settings, host, Secret values, existing storage, unit and Reloader registration remain as they were. No new certificate or other infrastructure is requested. The PR carries production's `release.json` and its offered documents and is held for a person. [Promotion's rule](console.md#promotions) leaves to a person a promotion that changes what the app publishes, production's port or database, or whose complete Release (repository, tag, digest and declarations) was never selected on `main`'s first-parent staging history; Flux then rolls out the pinned image. A rollback is always merged by a person: the console opens it without `auto-merge` and the gate holds it, because database migrations are not reversed. A newer staging build, another app's change or a tooling commit since the PR opened does not hold it. Promotion does not run the app repository's build workflow and does not invoke the app's image automation. The image has already been built and deployed to staging before it is selected.
 
 ## Operate an instance
 
@@ -916,27 +907,27 @@ On **later promotions**, production already exists, so the reviewed PR changes i
 make app-status APP=demo-orders ENV=prod     # state, Git revision applied?, running image matches?, replicas, who can reach it, route, TLS, failures
 make app-logs APP=demo-orders ENV=prod       # FOLLOW=true, TAIL=N, PREVIOUS=true (last crashed container)
 make app-reconcile APP=demo-orders ENV=prod  # fetch Git and reconcile this instance's unit now
-make app-check APP=demo-orders ENV=prod      # the app policy, offline
-make app-scale APP=demo-shopper ENV=staging ARGS="--replicas 2 --memory-limit 256Mi"   # Git edit: commit and push
+make check-apps                              # v2's records render to the files Git holds; the app policy, offline
+swhurl-v2 edit --records v2-records --app demo-shopper --env staging --set replicas=2 \
+  --profile v2/testdata/profile.json --out .   # a Git edit: commit and push
 ```
 
-Every instance is rendered from three records, which only the platform's commands write ([design](plan.md#24-code-simplification--design-contracts-18-october-2026)); Flux never applies them:
+Every instance is rendered from three records and one compiled folder, which only v2 writes; Flux never applies a record:
 
 | File | Holds | Written by |
 | --- | --- | --- |
-| `apps/<app>/app.yaml` | team and alerts, the same in every environment | `app-team`, `app-alerts`, creation |
-| `apps/<app>/<env>/release.yaml` | the image and what it declares: kind, port, health path, uid, telemetry, resource minimum, database, secret names, description, API path, published events, the commit its offers were read at | the Deploy workflow (`app-deploy`), `app-offers`, promotion, creation |
-| `apps/<app>/<env>/instance.yaml` | grants (exposure, calls, allows, subscriptions, egress, reviewed exceptions), choices (host, issuer, replicas, capacity, schedule), and allocations (egress port, NATS public key, database size and class) | the other `app-*` commands, promotion, creation |
+| `v2-records/<app>/app.json` | the app's identity hash and its team, the same in every environment | creation (`swhurl-v2 migrate`), `edit --set team=…` |
+| `v2-records/<app>/<env>/release.json` | the image and what it declares: kind, port, health path, uid, telemetry, resource minimum, database, description, API path, published events, the commit its offers were read at | the v2 Deploy workflow (`swhurl-v2 deploy`), promotion, creation |
+| `v2-records/<app>/<env>/instance.json` | grants (exposure, calls, allows, subscriptions), the settings the record owns (replicas, memory MiB) and allocations (NATS public key, database claim) | `swhurl-v2 edit` and `remove`, promotion, creation |
+| `v2-apps/instances/<app>/<env>/` | the compiled folder: HelmRelease, quota, NetworkPolicy, route, stream and consumers, the offered documents | v2's render, from those records; never by hand |
 
-The console's app page shows what `make app-status` shows and offers **Reconcile** and **Scale** (as a pull request). `app-deploy`, `app-offers`, `app-secret`, `app-promote`, `app-scale`, `app-schedule`, `app-expose`, `app-team`, `app-alerts`, `app-calls`, `app-egress` and `app-events` change the records an instance is rendered from and write every file that then renders differently, as `make app-sync` does; a file whose content is unchanged keeps its bytes. They refuse, without writing, an instance whose files are not what its records render (a hand edit such as an extra route, label or Flux dependency), naming each difference; `make check-apps` reports the same differences. The commands' record/render guard also treats unreadable committed instance YAML as a handled refusal, not an uncaught parser error. Resources render as the larger of what `app-scale` set and the image's minimum (or the platform's default when the image states none), so `app-scale` refuses a value below either. `app-scale` changes only `instance.yaml`: it reads the image's minimum from `release.yaml`, written with each image, and needs no network; the app page's **Scale** form shows the same record.
+The console's app page shows what `make app-status` shows and offers **Reconcile** and **Scale**. Its forms run `swhurl-v2 edit` (one named change) or `swhurl-v2 remove`/`promote`, then `swhurl-v2 render`, in a scratch checkout; the pull request carries the records and the files they render, and every v2 pull request is held for a person. An edit refuses, without writing, a change v2 does not model — `egress` and `alerts` by name — and an instance whose committed files are not what its records render; `make check-apps` reports the same difference. Resources render as the larger of the record's value and the image's minimum (or the platform's default when the image states none), so a scale edit refuses a value below either, and the **Scale** form shows what the record states.
 
-Settings parses into Grants, Choices and Allocations internally; the flat version-1 YAML format is unchanged. Preparation is the only allocation owner; rendering only consumes values. Existing egress ports stay assigned, and missing ports take the lowest free value in app-name order, staging before production. New database size is an explicit operation input (`--database-size`, the image declaration, or staging's allocated size for promotion), not a Release field. Preparation creates the retained allocation; an existing volume keeps its size and class, and release transitions retain the UID, resize and data-removal guards. New database transitions default to a single writer; first production gets independent same-sized storage, preserving its copied replica choice (including scaled zero). See [NATS identity and rotation](#nats-identity-and-rotation) for credential allocation and failure contracts.
+Each instance's egress port is kept in [`platform/egress/allocation.json`](../platform/egress/allocation.json), carried from the previous allocation, so a re-render never moves it and a new instance takes the lowest free one; the database claim's name is in the record, so an existing volume keeps its data. One render writes every instance's compiled folder and unit, the resolution, the allocation and the proxy's configuration, `platform/auth`, the broker's user list and Reloader's watch list ([v2 status](v2-status.md#slice-record-one-render-from-the-records-offline-31-october-2026)); there are no separate egress, auth, users or Reloader commands left to run.
 
-The same plan reconciles the complete app-unit registry, egress proxy and notification routes before any output is written. Existing non-app registry resources keep their order and formatting; missing app entries are added and stale ones removed. The NATS user list and Reloader's watch list are v2's own documents ([`platform/nats/users.json`](../platform/nats/users.json), [`platform/reloader/values.json`](../platform/reloader/values.json)), regenerated by the Render workflow's `make v2-users` and `make v2-reloader`, so v1 neither writes nor checks them. Scratch roots without the registry keep existing unit files but do not invent missing ones during sync; creating an instance still emits its unit.
+`swhurl-v2 promote` renders production from the records the same way ([promote to production](#promote-to-production)); `swhurl-v2 remove` deletes and unregisters the instance, and does not rewrite its record.
 
-`app-promote` renders production from the records in the same way ([promote to production](#promote-to-production)). `app-remove` deletes and unregisters the instance; it does not rewrite its YAML.
-
-Generation and scale/expose/promotion validate the resulting files against the app policy. A policy violation, missing tool or failed render returns nonzero. Files already written remain locally for review; fix the failure and run `make check-apps` before committing. The console uses the same commands and opens no PR when they fail. Only generation offers the explicit `--no-policy-check` opt-out.
+The compiler and the resolver validate a change as they render it: a record they cannot render, a policy violation or an unresolvable call returns nonzero and writes nothing, and `make check-apps` fails when a committed file differs from what its records render. Files already written remain locally for review; fix the failure and run `make check` before committing. The console opens no pull request when a command fails.
 
 The [notification expectations](services.md#notification-expectations) define deployment, rollback, uninstall and prolonged-health messages for each app/environment; the [current filters](services.md#current-notification-behavior) describe what is live today. When a pod fails, `make app-status` and the app page name the usual cause and the fix: out of memory (raise `--memory-limit`), an image the node cannot pull (missing tag, or a private GHCR package), a missing Secret value, a crash loop (`make app-logs APP= ENV= PREVIOUS=true` shows the crashed container's output; usually the wrong port or a write outside `/tmp`), or a failing readiness check (the app must answer its health path on its port).
 
@@ -977,22 +968,13 @@ A firing alert reaches the app's team's [notification channel](services.md#notif
 
 The rules are in [`app_alerts.py`](../tools/swhurl/app_alerts.py). Each alert is tagged `swhurl-app` and with its app's name, so the HyperDX alerts page filters to one app by that tag. Each run of the dashboard job creates the missing ones, updates in place any that differ (an edit made in the HyperDX UI is lost, as for dashboards) and deletes those of apps that are gone; alerts not named `swhurl:...` are never touched, so add your own beside them. The same job first creates or repairs the `swhurl notify` webhook ([platform-owned destinations](services.md#clickstack-and-otel)), then uses its resolved ID for alerts in that run; no separate webhook setup command is needed. This repairs the two reserved webhook definitions even when no app is discovered, while empty cluster discovery still does not prune dashboards or alerts. Failures make the scheduled run fail and retry next minute; `make clickstack-dashboards` runs the same reconciliation by hand.
 
-**An app's own settings.** An app that is noisier or quieter than the defaults says so once, for every environment:
-
-```
-make app-alerts APP=orders ARGS="--error-logs 20"      # fire at 20 error logs in 5 minutes instead of 5
-make app-alerts APP=orders ARGS="--errors none"        # no alert on failed requests; error logs stay
-make app-alerts APP=orders ARGS="--none"               # no default alerts at all
-make app-alerts APP=orders ARGS="--default"            # back to the platform's
-```
-
-or at creation with `app-new --alerts` (`--alerts error-logs=20,errors=none`, or `--alerts none`). It is the `platform.swhurl.com/alerts` annotation on the app's namespaces, so it follows a promotion; `make check-apps` (rule `alerts`) refuses a value it cannot read. The word is `none`, not `off`, which YAML would read as false.
+**An app's own settings are v1's.** They were written with `make app-alerts` (a command phase 3 deleted) as the `platform.swhurl.com/alerts` annotation on the app's namespaces, or at creation with `app-new --alerts` (`--alerts error-logs=20,errors=none`, or `--alerts none`; the word is `none`, not `off`, which YAML would read as false). v2 models no alert setting — `edit --set alerts` refuses it by name — so a v2 instance's namespaces carry no such annotation and the platform's defaults above apply. The dashboard job still reads the annotation wherever one exists.
 
 ## Remove an app
 
-Removal refuses, before writing anything, while **any other instance in the same environment** names the target in `Settings.grants.calls` (`instance.yaml`), whether connected or pending on an absent app or consent, or subscribes to one of its events in `Settings.grants.subscriptions`. Remove those calls or subscriptions first. These checks read records, not generated variables: a waiting caller or a caller whose manifests have not rendered yet still blocks removal. Self-references and relationships in another environment do not block it; an unreadable record fails the command rather than being treated as no relationships. The same relationship check runs before `app-sync` cleans up stale managed manifests or a unit whose records were removed, so a caller added after an Uninstall PR was opened still holds its cleanup. A waiting call to an arbitrary absent app, with no stale managed files or unit, is not itself evidence of a removal.
+Removal refuses, before writing anything, while **any other instance in the same environment** names the target in its record's `calls`, whether connected or pending on an absent app or consent, or subscribes to one of its events in `subscriptions`. Remove those calls or subscriptions first. These checks read records, not generated variables: a waiting caller or a caller whose files have not rendered yet still blocks removal. Self-references and relationships in another environment do not block it; an unreadable record fails the command rather than being treated as no relationships.
 
-`make app-remove APP=<app> ENV=<env>` plans the removal from the records before writing: it deletes the instance's records, managed manifests, offers and encrypted inputs, its unit file and registration; the Render workflow's `make v2-reloader` then leaves its namespace out of Reloader's watch list. The shared `app.yaml` goes only with the last environment. Unrelated files and local data in those folders are kept. **Uninstall** in the console proposes only the input-file deletions; after you merge, the Render workflow performs the same cleanup with `app-sync`. Both `release.yaml` and `instance.yaml` absent means removed, even while old generated files remain; just one missing, or a malformed record, stops sync without writes. Once the rendered removal is pushed, Flux uninstalls it, and within about a minute of the last environment's HelmRelease going the dashboard job deletes `App: <app>` ([dashboards](#dashboards); after removing the only app on the cluster, run `make clickstack-dashboards`). The app's telemetry stays in ClickStack until retention, searchable by namespace. An instance with a database keeps its namespace and claim on the cluster: deleting that data is a separate, explicit `make destroy-data` ([lifecycle](operations.md#lifecycle)). Removing staging also removes its automatic deploys; the app repository and its images are untouched.
+`swhurl-v2 remove --records v2-records --app <app> --env <env> --profile v2/testdata/profile.json --calls v2-records/calls.json --out .` plans the removal from the records before writing: it deletes the instance's records and compiled folder, its unit file and registration, and the auth object it had; the same effect re-renders the broker's user list and Reloader's watch list, so its namespace leaves both. The app's `app.json` goes only with the last environment. Unrelated files and local data in those folders are kept. **Uninstall** in the console runs it in a scratch checkout and opens a pull request; after you merge, Flux applies the deletion. A compiled folder whose records are gone is pruned, so an instance is removed when its record is, even if old files remain. Once the rendered removal is pushed, Flux uninstalls it, and within about a minute of the last environment's HelmRelease going the dashboard job deletes `App: <app>` ([dashboards](#dashboards); after removing the only app on the cluster, run `make clickstack-dashboards`). The app's telemetry stays in ClickStack until retention, searchable by namespace. An instance with a database keeps its namespace and claim on the cluster: deleting that data is a separate, explicit `make destroy-data` ([lifecycle](operations.md#lifecycle)). Removing staging also removes its automatic deploys; the app repository and its images are untouched.
 
 ## The app policy
 
@@ -1000,7 +982,7 @@ The platform's instances are v2's, so `make check-apps` checks v2's own tree fir
 
 The policy below renders an instance folder with Helm and checks its Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), `HOST_IP` defined before an OTLP endpoint uses it, a registered team, the platform quota with room for the app's replicas, the platform NetworkPolicy on the app's pods only ([teams and isolation](#teams-and-isolation)), its identity, declared calls and their tokens ([calling another app](#calling-another-app)), and the stream, consumers and NATS user that follow from its declared [events](#events). It runs on the instances under `apps/` — the one `make app-new` creates and nobody has migrated yet — and on the template fixtures under `tests/fixtures/apps`, which `check-templates` builds every app type into, so an app type is held to this contract before v2 compiles anything. A v2 instance's objects are v2's to check: its compiler renders them, `make check-v2` (and so `make check-apps`) compares them with the files Git holds, and `make verify-platform` compares them with the cluster. Where an earlier section says `make check-apps` enforces a rule on an instance, that is what enforces it for a v2 instance; the Helm policy below is what the fixture and `apps/` paths still get. Every instance under `apps/` must also be an app made from a stack template (rule `platform-image`, no exceptions): its image is `ghcr.io/samclement/<app>` and its staging has `image-automation.yaml` with its ImagePolicy. The rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py); an explicit `check-apps <instance-path> ...` checks the selected instances' manifests too.
 
-A reviewed exception goes in the instance's `instance.yaml`, with a reason, and `make app-sync` renders it as the HelmRelease's `platform.swhurl.com/policy-exceptions` annotation:
+A reviewed exception goes in the instance's record, with a reason, and the render turns it into the HelmRelease's `platform.swhurl.com/policy-exceptions` annotation:
 
 ```yaml
 exceptions: no-escalation=needs raw sockets for ICMP

@@ -12,12 +12,12 @@ local swhurl.yaml instead, for make check-templates and tests, which write to an
 Writes apps/NAME/ENV/ and clusters/home/app-NAME-ENV.yaml, and registers
 the unit in clusters/home/kustomization.yaml. Refuses to overwrite, to expose a
 worker, to put a public app inside the shared sign-in cookie domain, and to
-create production directly (use app-promote). Secret names are recorded without
-values (make app-secret sets them); a first production's placeholders are
-SOPS-encrypted before this script returns, so plaintext never reaches Git.
+create production directly (v2 promotes into an existing production, so a first
+production has no records yet). Secret names are recorded without values; set each
+value by hand in the instance's secret.sops.yaml.
 
-Change it afterwards with the make app-* commands: `make check-apps` checks the rendered
-result, and refuses a hand edit the app model cannot express (apps/model, docs/plan.md section 24).
+`make check-apps` checks the rendered result; a v2-owned instance changes with
+`swhurl-v2 edit`, `promote` or `remove` (apps/model, docs/plan.md section 24).
 """
 from __future__ import annotations
 
@@ -224,12 +224,12 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
                         help=f"the app's repository: defaults from its {declaration.FILE} on GitHub, at the commit the --image tag names")
     source.add_argument('--manifest', type=Path, metavar='PATH',
                         help=f'defaults from a local {declaration.FILE} (check-templates and tests)')
-    p.add_argument('--env', default='staging', choices=ENVIRONMENTS, help='staging only; production is created by app-promote')
+    p.add_argument('--env', default='staging', choices=ENVIRONMENTS, help='staging only; v2 has no first-production path')
     p.add_argument('--image', required=True, help=f'ghcr.io/{APP_OWNER}/<name>:<run>-<sha>@sha256:... as the app repository publishes it '
                                                         '(any REPO:TAG or digest form under another --root)')
     p.add_argument('--kind', choices=list(app_records.KINDS), default='web')
     p.add_argument('--schedule', default=JOB_SCHEDULE,
-                   help=f'job only: when it runs, five cron fields in {JOB_TIME_ZONE} (default "{JOB_SCHEDULE}"; make app-schedule later)')
+                   help=f'job only: when it runs, five cron fields in {JOB_TIME_ZONE} (default "{JOB_SCHEDULE}")')
     p.add_argument('--alerts', default='', metavar='SPEC',
                    help='the app\'s own default-alert settings: none, or error-logs=20,errors=none (default: the platform\'s)')
     p.add_argument('--team', help='the owning team, a name in apps/teams.yaml (required, here or as team: in swhurl.yaml)')
@@ -256,12 +256,12 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--calls', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated apps this one calls: absent apps or consent wait without access')
     p.add_argument('--secret-keys', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
-                   help='comma-separated secret variable names the app reads; values set later with make app-secret')
+                   help='comma-separated secret variable names the app reads; values set by hand, never here')
     p.add_argument('--otlp', action=argparse.BooleanOptionalAction, default=False,
                    help='the app has an OpenTelemetry SDK: point it at the cluster collector (OTEL_* env)')
     p.add_argument('--auto-deploy', action=argparse.BooleanOptionalAction, default=False,
                    help='staging only: Flux deploys each newer image the app publishes (tags <run>-<sha>); '
-                        'production still changes through app-promote')
+                        'production still changes through a promotion')
     p.add_argument('--issuer', default='letsencrypt-prod', choices=['letsencrypt-prod', 'letsencrypt-staging', 'selfsigned'])
     p.add_argument('--root', type=Path, default=ROOT)
     p.add_argument('--no-policy-check', dest='policy_check', action='store_false',
@@ -318,7 +318,8 @@ def main(argv=None, opener: declaration.Opener = declaration._open) -> int:
         return 2
     try:
         if args.env != 'staging':
-            raise GenerationError('app-new creates staging only; create production with make app-promote APP=' + args.name)
+            raise GenerationError('app-new creates staging only: a first production is not possible yet, because a '
+                                  'promotion only moves an existing production')
         problem = platform_origin_problem(args) if args.root.resolve() == ROOT else None
         if problem:
             raise GenerationError(problem)
@@ -329,8 +330,8 @@ def main(argv=None, opener: declaration.Opener = declaration._open) -> int:
     for path in written:
         print(f'[OK] wrote {path.relative_to(args.root.resolve())}')
     if args.secret_keys:
-        print(f'[INFO] Values missing for {", ".join(args.secret_keys)}: in your own terminal, make app-secret '
-              f'APP={args.name} ENV={args.env} NAME=<name> for each (the app starts without them)')
+        print(f'[INFO] Values missing for {", ".join(args.secret_keys)}: set each one by hand in '
+              f'apps/{args.name}/{args.env}/secret.sops.yaml (the app starts without them)')
     if args.policy_check:
         return check_generated(instance_folder(args.root.resolve(), args.name, args.env))
     print('[INFO] Next: make check-apps, then commit, push and make flux-reconcile')

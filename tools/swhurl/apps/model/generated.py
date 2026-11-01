@@ -1,9 +1,9 @@
 """Generated means generated (docs/plan.md section 24): render every instance's records and compare the
-result with what is committed, byte for byte (``same``, which make app-sync's writer also uses). Where they
+result with what is committed, byte for byte (``same``, which the v1 record writer also uses). Where they
 differ, the parsed documents show where.
 
 A difference is a hand edit, or a record changed without rendering: make check-apps fails on it, and
-make app-sync writes what the records render.
+the v1 record writer writes what the records render.
 """
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def file_problems(name: Path, path: Path, text: str) -> list[str]:
     except (OSError, UnicodeError, yaml.YAMLError) as error:
         return [f'{name}: cannot read committed YAML: {error}']
     return [f'{name}: {line}' for line in differences(committed, _documents(text))] or \
-        [f'{name}: formatted differently from the render; make app-sync rewrites it']
+        [f'{name}: formatted differently from the render; a command that writes it again reformats it']
 
 
 def _committed(root: Path, folder: Path, unit: Path) -> dict[Path, Path]:
@@ -109,7 +109,7 @@ def nats_problems(root: Path, world: World, keyed: bool) -> list[str]:
     make check-v2; this checks only what v1 still owns: that every instance it renders has its key pair."""
     found = []
     if keyed:
-        found += [f'{each}: has no NATS key; make app-sync creates it' for each, entry in world.items()
+        found += [f'{each}: has no NATS key; a render creates it' for each, entry in world.items()
                   if not entry.settings.allocations.events_key or EVENTS_SECRET not in entry.encrypted]
     return found
 

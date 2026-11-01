@@ -205,10 +205,10 @@ class HintTests(unittest.TestCase):
     def test_each_common_failure_names_its_fix(self):
         cases = {
             'oom': (self.problem({'waiting': {'reason': 'CrashLoopBackOff'}}, last='OOMKilled'),
-                    'ran out of memory (limit 128Mi)', 'make app-scale APP=web ENV=prod'),
+                    'ran out of memory (limit 128Mi)', 'swhurl-v2 edit --set memoryMiB=256'),
             'pull': (self.problem({'waiting': {'reason': 'ImagePullBackOff'}}), 'cannot pull the image', 'public'),
             'secret': (self.problem({'waiting': {'reason': 'CreateContainerConfigError'}}),
-                       'make app-secret APP=web ENV=prod', 'check-secrets'),
+                       'set the value by hand', 'check-secrets'),
             'crash': (self.problem({'waiting': {'reason': 'CrashLoopBackOff'}}, last='Error'),
                       'PREVIOUS=true', 'port other than 8080'),
             'probe': (self.problem({'running': {}}), '/healthz on port 8080', '--health-path'),

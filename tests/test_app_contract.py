@@ -184,7 +184,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("--alerts: 'latency' is not an alert: choose from error-logs, errors", err.getvalue())
         self.assertFalse((self.tmp / 'apps/api').exists())
         base = {'version': 1, 'kind': 'worker'}
-        with self.assertRaisesRegex(declaration.DeclarationError, r'alerts: a grant, set on the platform, not in this file \(make app-alerts'):
+        with self.assertRaisesRegex(declaration.DeclarationError, r'alerts: a grant, set on the platform, not in this file \(nothing: v2 has no alert setting'):
             declaration.of(base | {'alerts': 'none'})
         self.assertNotIn('alerts', declaration.of(base).seed)
 

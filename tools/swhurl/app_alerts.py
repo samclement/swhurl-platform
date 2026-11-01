@@ -3,7 +3,8 @@
 Each alert watches one tile of the app's ``App: <app>`` dashboard and calls the notify service's
 webhook, which sends it to the channel of the app's team. They are created, repaired and removed by
 the same job that keeps the dashboards (dashboards.py). Nothing has to be declared per app; an app
-that wants other thresholds, or none, says so in ``interface.ALERTS_ANNOTATION`` on its namespaces (make app-alerts).
+that wants other thresholds, or none, said so in ``interface.ALERTS_ANNOTATION`` on its namespaces; v2 models no
+alert setting, so a v2 instance carries none and the defaults below apply.
 
 An alert is named ``swhurl:<app>:<preset>``. The name is how the notify service knows which app an
 alert is about, and how this module knows which alerts are its own: any other alert is left alone.

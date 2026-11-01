@@ -14,7 +14,7 @@ Make the app outside the console, then migrate its staging instance to v2.</p>
       <li>Delete the v1 records and unit, commit and push. Flux switches the unit when the v2 unit is registered.</li>
     </ol>
     <p class="muted">{{ pointer }}</p>
-    <p class="muted">A first production is still a v1-only promotion: promote it with <code>make app-promote</code> while it is v1's, then migrate production as well.</p>
+    <p class="muted">A first production waits on v2: <code>app-new</code> creates staging only, v1's promotion command went with v1's edit commands, and <code>swhurl-v2 promote</code> reads production's records, so a first production has none to change.</p>
   </div>
 </section>
 {% endblock %}

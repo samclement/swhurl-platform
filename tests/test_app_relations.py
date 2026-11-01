@@ -214,10 +214,10 @@ class RelationTests(unittest.TestCase):
         world[each] = entry()
         self.save(world)
         (each.folder(self.root) / events.SECRET_FILE).unlink()
-        self.assertIn(f'{each}: has no NATS key; make app-sync creates it', generated.problems(self.root))
+        self.assertIn(f'{each}: has no NATS key; a render creates it', generated.problems(self.root))
         world[each] = entry(key='')
         self.save(world)
-        self.assertIn(f'{each}: has no NATS key; make app-sync creates it', generated.problems(self.root))
+        self.assertIn(f'{each}: has no NATS key; a render creates it', generated.problems(self.root))
 
     def test_creation_accepts_an_absent_call_target(self):
         with redirect_stdout(io.StringIO()):

@@ -20,12 +20,12 @@ The [repository blueprint](repository-blueprint.html) is a navigable map of the 
 | Cluster composition | Which units run, their dependencies, sources and settings | `clusters/home/` |
 | Foundation | Cluster primitives with no user-facing endpoint: namespaces, storage classes, cert-manager, issuers, Traefik settings | `infra/` |
 | Shared service | A service with its own lifecycle that apps use or people visit: sign-in, observability, Reloader | `platform/` |
-| App instance | One app in one environment, with its namespace, release, route, Secret and data | `apps/<app>/<env>/` |
+| App instance | One app in one environment, with its namespace, release, route, Secret and data | `v2-records/<app>/<env>/` (what it is) and `v2-apps/instances/<app>/<env>/` (what it compiles to) |
 | Environment | Deployment settings and promotion policy (`staging`, `prod`); not a namespace or trust boundary by itself | Instance values |
 
 App instances are separated by namespace, and each namespace carries a team label, a quota and a NetworkPolicy that admits Traefik or nobody to the app's pods ([teams and isolation](apps.md#teams-and-isolation)). A team is a label, not an access boundary: there is no per-team RBAC.
 
-**Names.** A Flux unit is named `<area>-<component>` after its directory (`platform/oauth2-proxy` is `platform-oauth2-proxy`; an app instance `apps/<app>/<env>` is `app-<app>-<env>`), with one directory per unit. Namespaces are named by function (`ingress`, `observability`, `logging`, `platform-system`, `<app>-<env>`) and HelmReleases by product. `swhurl` names the project: the repository, its `GitRepository` source (`swhurl-platform`), the `tools/swhurl` package and the `platform.swhurl.com/*` label domain. `home` is the cluster (`clusters/home`), and `homelab.swhurl.com` is the parent DNS domain.
+**Names.** A Flux unit is named `<area>-<component>` after its directory (`platform/oauth2-proxy` is `platform-oauth2-proxy`; an app instance `v2-records/<app>/<env>` is `app-<app>-<env>`), with one directory per unit. Namespaces are named by function (`ingress`, `observability`, `logging`, `platform-system`, `<app>-<env>`) and HelmReleases by product. `swhurl` names the project: the repository, its `GitRepository` source (`swhurl-platform`), the `tools/swhurl` package and the `platform.swhurl.com/*` label domain. `home` is the cluster (`clusters/home`), and `homelab.swhurl.com` is the parent DNS domain.
 
 ## How apps work together
 
@@ -113,7 +113,7 @@ flowchart LR
 | `platform-egress` | The [egress proxy](services.md#egress-proxy) app instances reach outside the cluster through, its generated ports, configuration and NetworkPolicy, in `egress` (`platform/egress`) | infra-base | — |
 | `platform-flags` | The two NATS key-value buckets of [feature flag](apps.md#feature-flags) overrides, `flags-staging` and `flags-prod`, in `messaging` (`platform/flags`) | platform-nats | — |
 | `platform-console` | The web console, dashboard sync and [notification checker](services.md#alerts), dedicated RBAC, state and Secrets, and the console NetworkPolicy (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
-| `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in; platform-image-automation if staging; platform-nats (its NATS key); platform-backup if it has a SQLite database | SOPS (its NATS key); the upload key substituted from `backup-writer` if it has a SQLite database |
+| `app-<app>-<env>` | One app instance (`v2-records/<app>/<env>`) | infra-base; oauth2-proxy if signed-in; platform-image-automation if staging; platform-nats (its NATS key); platform-backup if it has a SQLite database | SOPS (its NATS key); the upload key substituted from `backup-writer` if it has a SQLite database |
 
 Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infra.yaml`](../clusters/home/infra.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
 
@@ -131,7 +131,7 @@ Almost every change is a commit on `main` that Flux applies. They differ in who 
 
 | Change | Who writes it | Path to `main` | Reviewed before it deploys | Details |
 | --- | --- | --- | --- | --- |
-| Anything in the repo: manifests, app values, Secrets (SOPS), settings | You, by hand or with a `make` target that only edits files (for example `app-new`, `app-promote`, `app-scale`, `team-add`, `console-image`; the full list is in [commands](commands.md)) | Direct push | `make check` locally; CI runs after the push, it does not gate Flux | [README](../README.md#make-a-change), [commands](commands.md) |
+| Anything in the repo: manifests, app values, Secrets (SOPS), settings | You, by hand or with a `make` target that only edits files (for example `app-new`, `team-add`, `console-image`; the full list is in [commands](commands.md); v2's records change with `swhurl-v2 edit`, `promote` or `remove` instead) | Direct push | `make check` locally; CI runs after the push, it does not gate Flux | [README](../README.md#make-a-change), [commands](commands.md) |
 | New app, promote, scale, access, connections, events, uninstall, teams and channels from the browser | The console (its GitHub token) | Pull request from a `console/*` branch | Validate; review follows the [console policy](console.md#auto-merge) | [console](console.md#use-it) |
 | Chart version bumps (platform charts and every app's app-template) | Renovate | Pull request | Yes: you merge | [chart updates](operations.md#chart-updates) |
 | The console's own image pin | Validate's "Deploy the console" job (`github-actions[bot]`) | Direct push, after every check in that Validate run passed on the commit that changed the image's inputs, and `make check-repo check-apps` on the newest `main` with the pin | No | [deploy a new console](console.md#deploy-a-new-console) |

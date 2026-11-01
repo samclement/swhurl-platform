@@ -1,4 +1,4 @@
-"""Prepare, plan and write what the platform derives from records (app-sync and every edit command).
+"""Prepare, plan and write what the platform derives from v1 records (app-new and the team and channel edits).
 
 Reads every instance's records (store.py), allocates ports, storage and identities during preparation
 (never rendering), and plans ciphertext and rendered files before any write. Writes the records and
@@ -104,11 +104,11 @@ def check_removal(each: Instance, world: World) -> None:
     callers = sorted(name for name, entry in others if any(r.role == 'calls' and r.target == each.app for r in entry))
     if callers:
         raise EditError(f'{each} is called by {", ".join(callers)}: remove those calls first '
-                        f'(make app-calls APP=<caller> ENV={each.env} ARGS="--remove {each.app}")')
+                        f'(swhurl-v2 edit --set calls=… in {each.env})')
     subscribers = sorted(name for name, entry in others if any(r.role == 'subscribes' and r.target == each.app for r in entry))
     if subscribers:
         raise EditError(f'{each} publishes events that {", ".join(subscribers)} subscribe to: '
-                        f'remove those subscriptions first (make app-events APP=<subscriber> ENV={each.env})')
+                        f'remove those subscriptions first (swhurl-v2 edit --set subscriptions=… in {each.env})')
 
 
 def removals(root: Path, world: World, platform: Platform) -> frozenset[Instance]:

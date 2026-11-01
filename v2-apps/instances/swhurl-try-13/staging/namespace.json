@@ -1,1 +1,0 @@
-{"apiVersion":"v1","kind":"Namespace","metadata":{"labels":{"platform.swhurl.com/app":"swhurl-try-13","platform.swhurl.com/environment":"staging","platform.swhurl.com/exposure":"private","platform.swhurl.com/managed":"true","platform.swhurl.com/team":"payments"},"name":"swhurl-try-13-staging"}}

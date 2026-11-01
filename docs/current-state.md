@@ -2,6 +2,37 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The declaration travels with the image, offline half (1 November 2026)
+
+- **What changed:** the label an image build writes is **version 2** and carries the app's documents — its OpenAPI,
+  AsyncAPI and flags — beside the facts version 1 already stated; `memoryMiB` is required, the documents' roles are
+  fixed (`api` → `openapi.json`, `events` → `asyncapi.yaml`, `flags` → `flags.json`), and version 1 is refused by
+  name. A release states `documents` (the roles it carries) where it used to state the commit its documents were read
+  at, so rendering decides whether to write the offers annotation from the record alone; the annotation renders the
+  image's own `source.commit`. `create` and `deploy` write the image's documents into `offers/` byte for byte;
+  `migrate` takes the roles from a predecessor's folder; the console reads a role by its fixed name with no
+  `source.yaml` and no v1 record branch; and `check-templates` runs the producer and `swhurl-v2 declaration` instead
+  of `app-new`. [Record](v2-status.md#slice-record-the-declaration-travels-with-the-image-offline-half-1-november-2026),
+  [contract](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026).
+- **Checked offline:** `cd v2 && go test ./...` (every package), `make check-v2` (208 files compared, 0 differ),
+  `make check` (764 tests, 0 failures; `check-docs` 0 errors), and `make check-templates` with the built binary —
+  **7 app types, 0 problems, 2 warnings**, the warnings being the `job` kind v2 does not model yet. A version 1
+  label run through `swhurl-v2 declaration` is refused by name: `unsupported: schemaVersion: only version 2 is
+  supported`.
+- **Identities re-derived once, deliberately:** 13 release records (new `documents` roles and `releaseId`), their
+  instances' `release` fields, `v2-records/calls.json`, the egress allocation's revision and every compiled file and
+  instance unit under `v2-apps/` were re-rendered; the kernel's goldens, the legacy fixtures and `archtest/api.txt`
+  were updated by their own `-update` paths, not by hand.
+- **After the push, `7b2f0cd8`:** Validate, Render and the pages build passed (4 runs, 0 failed). `make
+  flux-reconcile` applied the re-rendered HelmReleases, and `make verify-platform` reported **93 OK, 0 warnings**;
+  the live annotation now names each release's own source commit — `demo-notifier` staging `bd44c68` (it had
+  rendered the documents' separate commit before) and `demo-orders` production `868c731`. Nothing restarted: the
+  annotation is metadata, and the only other changed field is a release identity no pod reads.
+- **Not exercised:** no image carries a version 2 label yet, so nothing has been created or deployed from one on the
+  cluster. The nine app repositories are still at template pins that write version 1, and §10's live half — the
+  repositories at a new tag, `deploy` over `v2-records`, one promotion for each of the four apps with production,
+  then `observe` on a running instance — is the gate. `make app-new` and the console's New app form are unchanged.
+
 ## `create`: a new app's records come from its image (1 November 2026)
 
 - **What changed:** `swhurl-v2 create` states a new app's staging records from the image its repository publishes —

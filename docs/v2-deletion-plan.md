@@ -1,6 +1,7 @@
 # Deleting v1: the plan for 1b's second half
 
-**Status: phases 0 to 4 done (31 October 2026); phase 5 is outside this repository and awaits the operator.** The
+**Status: phases 0 to 5 done (1 November 2026); phase 5 was closed as void — no app repository has or had a v1
+`deploy.yml`.** The
 console reads v2's records and writes them through the `swhurl-v2` binary, live-tested by a memory change and its
 revert; v1's writer commands and modules are deleted, `resolve` reads one record shape, Activity reads v2's tree, and
 the platform's checks read v2's too — `check-apps` is v2's render check and `verify-platform` reads `v2-apps/`
@@ -281,13 +282,18 @@ phase 3 (§2.3).
   Python reader of the records would be a second compiler; `check-apps` proves the records render to those files.
 - `swhurl-v2 resolve` test (done in phase 3): one record shape, a predecessor's refused.
 
-**Phase 5 — external repositories (separate confirmation).**
-- The eight app repositories' v1 `deploy.yml` is a change **outside this repository**. It needs the operator's
-  explicit confirmation and the GitHub tokens; it is not part of phases 1–4.
-- Until then, an app repository's v1 Deploy workflow can still write a v1 release for an app whose instance is
-  v2-owned. The plan is to remove that workflow in phase 5, or to make it call the v2 Deploy workflow. This is
-  the only remaining second writer after phase 3, and it is external.
-- **This repository's v1 Deploy workflow is gone** (`deploy.yml`, deleted 31 October 2026): its one step,
+**Phase 5 — external repositories: closed 1 November 2026, nothing to change.**
+- **The premise was wrong.** No app repository has `.github/workflows/deploy.yml`, and none ever had one on
+  `main`: the nine repositories with records, `hello-ts`, `swhurl-try-19` and `swhurl-try-20`, and both stack
+  templates at their pinned revisions carry `container.yml` → `app.yml` (a template has `app.yml` and
+  `template.yml`). No app repository could write a v1 release, so no external confirmation, token or edit is
+  needed. The "eight" was a census from 30 October; the fleet has nine apps today.
+- **The only v1 Deploy workflow was this repository's**, started by Flux's image dispatch rather than by an app
+  repository; it was deleted on 1 November (the next bullet). The plan's "only remaining second writer" was
+  therefore internal and is already gone.
+- **What is left is a new app's create**: `make app-new` writes `apps/<app>/<env>/` and its unit, and `swhurl-v2`
+  has no create command. That is the next gate (a decision brief on [v2 status](v2-status.md)), not phase 5.
+- **This repository's v1 Deploy workflow is gone** (`deploy.yml`, deleted 1 November 2026): its one step,
   `swhurl bot-deploy`, was deleted with phase 4, so the hourly run failed on `unknown command: bot-deploy`.
   Every instance is v2's, so it had nothing left to deploy; the [v2 Deploy workflow](../.github/workflows/deploy-v2.yml)
   takes the same `repository_dispatch`, schedule and manual run.
@@ -328,8 +334,9 @@ what is refused is a design chosen because the answer was not known yet.
    `promote` through one `console/v2.py`; a Python port of v2's edit is refused because it is a second model. A
    read-only console stays the fallback if the binary cannot ship. The image's CI content hash gains `v2/`, so a v2
    change rebuilds the console.
-3. **The eight app repositories' `deploy.yml` waits for phase 5**, with its own confirmation and the GitHub tokens.
-   Until then it is the only second writer left, and it is external.
+3. **The eight app repositories' `deploy.yml` was phase 5 — closed 1 November 2026 with nothing to change.** No
+   app repository has or had one on `main`, so there was never an external second writer; the only v1 Deploy
+   workflow was this repository's, deleted the same day. The last v1 writer is a new app's create (`app-new`).
 4. **The freeze is a pin, not a file.** The snapshot is regenerated from `dfe4dafa`, so §2.3 records the command,
    the revision and the hash rather than a 49 KB copy the next phase invalidates.
 
@@ -356,12 +363,11 @@ inherit it as a mystery.
 
 Paste this prompt:
 
-> Read `docs/v2-deletion-plan.md` and `docs/iteration-2-plan.md` §8. The migrations are done; this is the deletion
-> slice. The decisions in §5 are confirmed; do not reopen them. Start at the next phase the status line names. Do
-> not delete v1 modules or commands before phase 3. Run `make check` after each commit (commit first, then check on
-> the clean tree) and `make check-v2` for every v2 change. Do not touch `flux-system` or the eight app
-> repositories; the external `deploy.yml` is phase 5 and needs separate confirmation. Keep one implementation writer
-> at a time.
+> Read `docs/v2-deletion-plan.md` and `docs/iteration-2-plan.md` §8. The migrations and phases 0–5 are done; the
+> next gate is a decision brief for v2's create. The decisions in §5 are confirmed; do not reopen them. Run
+> `make check` after each commit (commit first, then check on the clean tree) and `make check-v2` for every v2
+> change. Do not touch `flux-system` or the app repositories; phase 5 was closed on 1 November 2026 (no app
+> repository has or had a v1 `deploy.yml`). Keep one implementation writer at a time.
 
 The first commands to run in that session:
 

@@ -1,5 +1,5 @@
 # The console's NATS seed: it writes feature flag overrides (docs/apps.md#feature-flags). The public
-# key is platform/nats/console-nkey.pub, listed in platform/nats/users.yaml by make app-sync.
+# key is platform/nats/console-nkey.pub, listed in platform/nats/users.json by make v2-users.
 apiVersion: v1
 kind: Secret
 metadata:

@@ -253,6 +253,13 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   the isolation, events and notify-channel checks, and `apps/signing-keys.json`. The three remaining v1-record
   readers — the Image Automation check's staging releases, the backup's expected releases, and notify's team
   ownership — read `v2-records/` now; they were the last places a check would have gone stale silently.
+- **What the bot paths called.** The first Validate run after this change failed in its console-deploy job,
+  before the checks: `console-image`'s pin ran `make app-sync`, which phase 3 deleted, and so did the Render
+  workflow's plan step and `bots.render`. They now run one new target, `make v2-render`, the whole-tree
+  `swhurl-v2 render` that writes only when the tree disagrees with the records (the check ignores the commit the
+  two documents record, so an every-push Render run does not bump that line forever). `bots.deploy` and
+  `main_deploy`, the retired v1 Deploy workflow's functions, went with their command. The `validate` job, the
+  `repo` job, the `apps` job and the console-deploy job install Go, which `check-apps` now needs.
 - **A key has one source.** `apps/signing-keys.json` was v1's copy of keys v2 already renders into
   `platform/auth/` from the profile, and `make platform-signing-keys` — the only thing that wrote it — was deleted in
   phase 3, so a rotation would have produced a permanent failure with no fix command. The file is gone;

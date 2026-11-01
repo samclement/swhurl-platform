@@ -9,7 +9,6 @@ newer main; anything ``change``, the checks or ``ready`` raise ends it with noth
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 import tempfile
@@ -95,31 +94,13 @@ def apps_in(paths: list[str]) -> str:
 
 
 def render(runner: Runner, work: Path, _base: str) -> Commit | None:
-    """Render main from its records: make app-sync, then the platform's NATS user list, which v2 renders."""
-    swhurl(runner, work, 'app-sync')
-    runner.output(['make', '-s', 'v2-users'], cwd=work)
+    """Render main from its records: v2's one render, which also writes the platform's NATS and Reloader documents.
+    It writes nothing when the tree already is what the records render, so ``changed`` finds nothing to commit."""
+    runner.output(['make', '-s', 'v2-render'], cwd=work)
     paths = changed(runner, work)
     if not paths:
         return None
     return Commit(f'render: {apps_in(paths) or "shared files"} (render workflow)\n\n' + '\n'.join(paths))
-
-
-DEPLOYED = re.compile(r'^\[OK\] ([a-z0-9-]+)/staging: image ', re.M)
-REPORTED = re.compile(r'^\[OK\] [a-z0-9-]+/staging(: image | needs: ).*$', re.M)
-
-
-def deploy(runner: Runner, work: Path, refresh: bool, failed: list[bool]) -> Commit | None:
-    """Bring staging to each app's newest image (make app-deploy). An app that fails keeps what it had and
-    is reported through ``failed``; the others are still committed."""
-    result = swhurl(runner, work, 'app-deploy', *(['--refresh'] if refresh else []), check=False)
-    log = runner.redact(result.stdout + result.stderr)
-    print(log, end='', flush=True)
-    failed[:] = [bool(result.returncode)]
-    if not changed(runner, work):
-        return None
-    moved = ', '.join(DEPLOYED.findall(log))
-    lines = '\n'.join(match.group(0) for match in REPORTED.finditer(log))
-    return Commit(f'deploy: {moved or "what the staging apps need and offer"} (deploy workflow)\n\n{lines}'.rstrip() + '\n')
 
 
 def deploy_v2(runner: Runner, work: Path, failed: list[bool]) -> Commit | None:
@@ -166,16 +147,4 @@ def main_deploy_v2(argv: list[str] | None = None, runner: Runner | None = None) 
     failed = [False]
     code = _publish(runner, args.root, lambda work, _base: deploy_v2(runner, work, failed), 'Nothing changed.',
                     checks=CHECKS_V2)
-    return code or int(failed[0])
-
-
-def main_deploy(argv: list[str] | None = None, runner: Runner | None = None) -> int:
-    p = argparse.ArgumentParser(prog='swhurl bot-deploy', description="Bring staging to each app's newest image and push it")
-    p.add_argument('--refresh', action='store_true', help='read swhurl.yaml again for images staging already runs')
-    p.add_argument('--root', type=Path, default=ROOT)
-    args = p.parse_args(argv)
-    runner = runner or Runner()
-    runner.add_secret(os.environ.get('GITHUB_TOKEN'))
-    failed = [False]
-    code = _publish(runner, args.root, lambda work, _base: deploy(runner, work, args.refresh, failed), 'Nothing changed.')
     return code or int(failed[0])

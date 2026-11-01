@@ -65,6 +65,14 @@ check-v2:
 v2-users:
 	@set -Eeuo pipefail; 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 	revision=$$(git stash create); 	$(MAKE) -s v2-snapshot REVISION="$${revision:-HEAD}" OUT="$$work/snapshot.json" >/dev/null; 	(cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2); 	"$$work/swhurl-v2" users --snapshot "$$work/snapshot.json" --profile v2/testdata/profile.json --out platform
 
+# Render the whole tree from v2's records: the resolution, every compiled folder and unit, the egress allocation and
+# the proxy's objects, platform/auth, NATS's user list and Reloader's watch list. It writes only when the tree
+# disagrees with them -- the check ignores the commit the two documents record -- so the Render workflow, which runs
+# this on every push, does not bump that line on every push. Needs Go 1.26.0.
+.PHONY: v2-render
+v2-render:
+	@set -Eeuo pipefail; 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 	(cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2); 	if "$$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --check >/dev/null; then echo "the tree is what the records render; nothing written"; else "$$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --revision "$$(git rev-parse HEAD)"; fi
+
 # Render Reloader's watch list, platform/reloader/values.json, from the records: v2 owns the file (docs/services.md#reloader).
 # It reads a snapshot of the working tree, so an uncommitted record change counts, and writes that one file.
 .PHONY: v2-reloader

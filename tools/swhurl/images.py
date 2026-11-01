@@ -136,7 +136,7 @@ def pinned(runner: Runner, image: Image, expect: str | None, *, render: bool = T
             return None
         print(f'{"  would pin" if runner.dry_run else "[OK] pinned"} {", ".join(map(str, changed))} to {tag}@{digest}')
         if render:
-            bots.swhurl(runner, work, 'app-sync')
+            runner.output(['make', '-s', 'v2-render'], cwd=work)
         return bots.Commit(f'deploy: {image.name} image {tag} (Validate)')
     return change
 

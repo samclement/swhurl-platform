@@ -50,8 +50,8 @@ jobs:
       - name: Install validation dependencies
         run: python3 -m pip install --group check
 
-      # The NATS user list and Reloader's watch list are v2's output (make v2-users, make v2-reloader): the
-      # render step regenerates them from the records.
+      # v2's render writes the resolution, every compiled folder and unit, the egress allocation and the proxy's
+      # objects, platform/auth, the NATS user list and Reloader's watch list from the records.
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
@@ -62,14 +62,12 @@ jobs:
         id: plan
         run: |
           set -Eeuo pipefail
-          PYTHONPATH=tools python3 -m swhurl app-sync
-          make -s v2-users
-          make -s v2-reloader
-          if [ -z "$(git status --porcelain -- apps platform clusters)" ]; then
+          make -s v2-render
+          if [ -z "$(git status --porcelain -- apps platform clusters v2-apps v2-records)" ]; then
             echo "main is rendered; nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
             echo render=false >> "$GITHUB_OUTPUT"
           else
-            git status --short -- apps platform clusters
+            git status --short -- apps platform clusters v2-apps v2-records
             echo render=true >> "$GITHUB_OUTPUT"
           fi
 
@@ -103,7 +101,7 @@ jobs:
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-        # tools/swhurl/bots.py: a fresh worktree of the newest main, app-sync, checks, one commit, a
+        # tools/swhurl/bots.py: a fresh worktree of the newest main, v2's render, checks, one commit, a
         # non-forced push; a push lost to another writer renders again on the newer main.
         run: |
           set -Eeuo pipefail

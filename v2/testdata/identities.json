@@ -1,6 +1,6 @@
 {
-  "ReleaseCanonical": "[\"swhurl.release.v1\",1,\"demo-orders\",\"samclement/demo-orders\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"ghcr.io/samclement/demo-orders\",\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"application/vnd.oci.image.manifest.v1+json\",\"linux/amd64\",\"web\",8080,\"/healthz\",65532,\"\",true,[],\"Demo orders service\",\"/openapi.json\",\"cccccccccccccccccccccccccccccccccccccccc\"]",
-  "ReleaseID": "rel-sha256:1ebebe8b24ace9543aefe4978b91136333df5f466d1f6c5eb1504571374f845b",
-  "InstanceCanonical": "[\"swhurl.instance.v1\",1,\"demo-orders\",\"prod\",\"rel-sha256:bddcaadb0e4d4c13aad4b388d13986ae7460775e521d42b3700dbfc91bc4c471\",1,256,\"private\",{},0,\"\",[],[],\"\",[]]",
-  "InstanceRevision": "inst-sha256:f081c8e8fa3de870cec6a87cd40fc653b6891e602cf165e6b3727802f9e28dc4"
+  "ReleaseCanonical": "[\"swhurl.release.v1\",1,\"demo-orders\",\"samclement/demo-orders\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"ghcr.io/samclement/demo-orders\",\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"application/vnd.oci.image.manifest.v1+json\",\"linux/amd64\",\"web\",8080,\"/healthz\",65532,\"\",true,[],\"Demo orders service\",\"/openapi.json\",[\"api\"]]",
+  "ReleaseID": "rel-sha256:760d0a77db10fe257ba80d01bc5e4d351e4c1d590eafad31569ad7aeebc28ce5",
+  "InstanceCanonical": "[\"swhurl.instance.v1\",1,\"demo-orders\",\"prod\",\"rel-sha256:01af1db393a38d6f6f776e1c81332be64147bb7689be9512c232e64eee8808ba\",1,256,\"private\",{},0,\"\",[],[],\"\",[]]",
+  "InstanceRevision": "inst-sha256:3df1beaf856bcca58f7b97ecd08a6730cf1639c6ba72dfd0504e96f1f316c5fd"
 }

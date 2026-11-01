@@ -14,6 +14,10 @@ from swhurl import interface
 DEFAULT_DATABASE_SIZE = '1Gi'
 """A new database's volume, unless app-new is given another."""
 
+DEFAULT_MEMORY_MIB = 128
+"""The memory an image that states no `resources.memory` runs in: the platform's default limit, so every image's
+declaration states the memory a new instance is created with (docs/apps.md)."""
+
 # What the stack templates (samclement/swhurl-app-template-*) use; swhurl.yaml's defaults.
 TEMPLATE_PORT = 8080
 TEMPLATE_UID = 65532

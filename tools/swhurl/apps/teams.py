@@ -31,14 +31,13 @@ from pathlib import Path
 
 from ruamel.yaml.comments import CommentedMap
 
-from swhurl import ROOT
+from swhurl import ROOT, yamlio
 from swhurl.apps import channels
 from swhurl.apps.contract import TEAMS_FILE
 from swhurl.apps.errors import EditError
 from swhurl.apps.model import records, write
 from swhurl.apps.model.draft import Entry
 from swhurl.apps.model.records import TEAM_GRANT
-from swhurl.apps.new import dump
 from swhurl.apps.yaml_file import YamlFile, mapping
 from swhurl.run import CommandError, Runner
 
@@ -217,7 +216,7 @@ def channel_add(root: Path, name: str, address: str, transport: str = 'ntfy', re
         prepared.writes[document.path] = document.render()
     set_decryption(root, prepared, True)
     # Encrypt from stdin: neither the address nor an incomplete multi-file operation reaches disk.
-    text = dump([{'apiVersion': 'v1', 'kind': 'Secret',
+    text = yamlio.dump_all([{'apiVersion': 'v1', 'kind': 'Secret',
                   'metadata': {'name': f'{channels.SECRET_PREFIX}{name}', 'namespace': channels.NAMESPACE,
                                'labels': {channels.TRANSPORT: transport}},
                   'type': 'Opaque', 'stringData': {channels.ADDRESS_KEY: address}}])

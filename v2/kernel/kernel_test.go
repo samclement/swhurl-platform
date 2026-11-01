@@ -216,7 +216,7 @@ func TestIdentityAssertionsAndEscaping(t *testing.T) {
 	r.Runtime.HealthPath = "/ready&ok"
 	r.ReleaseID = ""
 	id, err := r.ID()
-	if err != nil || id != "rel-sha256:0ed7b0cdf79b60597145218dbcc8f2d7048bb285e5402b126f6b3d279fc4fb97" {
+	if err != nil || id != "rel-sha256:24b7b2e191beec2dfcc64dd77ba8b7d22f8918c35aa57118eba33f6b763290b4" {
 		t.Fatalf("independent ASCII escaping vector: %s %v", id, err)
 	}
 	if !bytes.Contains(releaseCanonical(r), []byte(`"/ready&ok"`)) {
@@ -438,7 +438,10 @@ func TestDomainValidation(t *testing.T) {
 		{func(r *ReleaseBundle) {
 			r.Runtime.Kind, r.Runtime.Port, r.Runtime.HealthPath, r.APIPath = "worker", 0, "", "/openapi.json"
 		}, Invalid},
-		{func(r *ReleaseBundle) { r.Offers = "d771828" }, Invalid},
+		{func(r *ReleaseBundle) { r.Documents = []string{"images"} }, Unsupported},
+		{func(r *ReleaseBundle) { r.Documents = []string{"api", "api"} }, Invalid},
+		{func(r *ReleaseBundle) { r.Documents = nil }, Invalid},
+		{func(r *ReleaseBundle) { r.Publishes = []string{"created"} }, Invalid},
 	} {
 		r := release(t)
 		r.ReleaseID = ""
@@ -463,7 +466,7 @@ func TestDomainValidation(t *testing.T) {
 	worker := release(t)
 	worker.ReleaseID = ""
 	worker.Runtime.Kind, worker.Runtime.Port, worker.Runtime.HealthPath = "worker", 0, ""
-	worker.APIPath = ""
+	worker.APIPath, worker.Documents = "", nil
 	workerID, err := worker.ID()
 	if err != nil {
 		t.Fatal(err)
@@ -536,7 +539,7 @@ func TestRecordsAreValues(t *testing.T) {
 	// an instance receives are slices because the resolver and the renderer read them as such, and each is
 	// canonicalised by sorting. A record carrying one is therefore not comparable, and every seam that returns a
 	// record clones those lists (TestSelectionDoesNotAliasDeclarations).
-	declarations := map[string]bool{"Calls": true, "Allows": true, "Publishes": true, "Subscriptions": true}
+	declarations := map[string]bool{"Calls": true, "Allows": true, "Publishes": true, "Subscriptions": true, "Documents": true}
 	var check func(typ reflect.Type, owner string)
 	check = func(typ reflect.Type, owner string) {
 		switch typ.Kind() {
@@ -591,7 +594,7 @@ func TestSelectionDoesNotAliasDeclarations(t *testing.T) {
 // is worth exactly as much as the record that states it.
 func TestOfferedFactsRoundTripAndMoveTheIdentity(t *testing.T) {
 	base := release(t)
-	base.Description, base.APIPath, base.Offers, base.ReleaseID = "", "", "", ""
+	base.Description, base.APIPath, base.Documents, base.ReleaseID = "", "", nil, ""
 	plain, err := base.ID()
 	if err != nil {
 		t.Fatal(err)
@@ -601,8 +604,10 @@ func TestOfferedFactsRoundTripAndMoveTheIdentity(t *testing.T) {
 		change func(*ReleaseBundle)
 	}{
 		{"description", func(r *ReleaseBundle) { r.Description = "Demo orders service" }},
-		{"API path", func(r *ReleaseBundle) { r.APIPath = "/openapi.json" }},
-		{"offers commit", func(r *ReleaseBundle) { r.Offers = strings.Repeat("a", 40) }},
+		{"API path and document", func(r *ReleaseBundle) {
+			r.APIPath, r.Documents = "/openapi.json", []string{"api"}
+		}},
+		{"events document", func(r *ReleaseBundle) { r.Documents = []string{"events"} }},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			r := base

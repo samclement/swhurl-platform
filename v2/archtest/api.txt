@@ -157,13 +157,13 @@ kernel: func (AppSpec) ID() (AppID, error)
 kernel: func (Backup) Host() string
 kernel: func (Connections) ID() ConnectionsID
 kernel: func (Creation) Instance() (InstanceSpec, AppSpec, error)
+kernel: func (Declaration) OfferedFiles() []File
 kernel: func (Declaration) Release(application, repository, commit, image, digest, mediaType string) (ReleaseBundle, error)
 kernel: func (EgressDocument) EgressOf(application, environment string) (*Egress, error)
 kernel: func (EgressFacts) NeedsEgress() bool
 kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
 kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
-kernel: func (ReleaseBundle) WithOffered(description, apiPath, offers string) (ReleaseBundle, error)
 kernel: func (Reloader) Namespaces() ([]string, error)
 kernel: func (Telemetry) CollectorPort() (int32, bool)
 kernel: func AcceptDeclaration(declaration Declaration, spec InstanceSpec, current ReleaseBundle) error
@@ -241,9 +241,9 @@ kernel: type ConnectionsPair struct {Caller string `json:"caller"` Callee string
 kernel: type ConnectionsRefusal struct {Application string `json:"application"` Callee string `json:"callee"` Environment string `json:"environment"` Reason string `json:"reason"`}
 kernel: type ConnectionsSubscription struct {Subscriber string `json:"subscriber"` Publisher string `json:"publisher"` Event string `json:"event"` Environment string `json:"environment"` Stream string `json:"stream"` Consumer string `json:"consumer"` Subject string `json:"subject"` Object string `json:"object"`}
 kernel: type ConnectionsWaiting struct {Caller string `json:"caller"` Callee string `json:"callee"` Environment string `json:"environment"` Reason string `json:"reason"`}
-kernel: type Creation struct {Application, Team string Release ReleaseBundle Declaration Declaration MemoryMiB int32 StorageMiB int32 Exposure string Key string}
+kernel: type Creation struct {Application, Team string Release ReleaseBundle Declaration Declaration Exposure string Key string}
 kernel: type DNS struct {Namespace string `json:"namespace"` Labels map[string]string `json:"labels"`}
-kernel: type Declaration struct {SchemaVersion int32 `json:"schemaVersion"` Runtime Runtime `json:"runtime"` Telemetry bool `json:"telemetry,omitempty"` Database string `json:"database,omitempty"` Publishes []string `json:"publishes,omitempty"` Secrets []string `json:"secrets,omitempty"` MemoryMiB int32 `json:"memoryMiB,omitempty"`}
+kernel: type Declaration struct {SchemaVersion int32 `json:"schemaVersion"` Runtime Runtime `json:"runtime"` Telemetry bool `json:"telemetry,omitempty"` Database string `json:"database,omitempty"` Publishes []string `json:"publishes,omitempty"` Secrets []string `json:"secrets,omitempty"` MemoryMiB int32 `json:"memoryMiB"` DatabaseSizeMiB int32 `json:"databaseSizeMiB,omitempty"` Description string `json:"description,omitempty"` APIPath string `json:"apiPath,omitempty"` Documents map[string][]byte `json:"documents,omitempty"`}
 kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `json:"outputRoot"` UnitsRoot string `json:"unitsRoot"` DependsOn []string `json:"dependsOn"`}
 kernel: type Egress struct {Port int32 Grants []string}
 kernel: type EgressAllocation struct {Application string `json:"application"` Environment string `json:"environment"` Port int32 `json:"port"` Grants []string `json:"grants"`}
@@ -271,7 +271,7 @@ kernel: type PlatformProfile struct {SchemaVersion int32 `json:"schemaVersion"` 
 kernel: type PlatformStorage struct {Class string `json:"class"`}
 kernel: type ProfileID string
 kernel: type Quota struct {Pods int32 `json:"pods"` RequestsCPUMilli int32 `json:"requestsCpuMilli"` RequestsMemoryMiB int32 `json:"requestsMemoryMiB"` LimitsMemoryMiB int32 `json:"limitsMemoryMiB"`}
-kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` Database string `json:"database,omitempty"` Telemetry bool `json:"telemetry,omitempty"` Publishes []string `json:"publishes,omitempty"` Description string `json:"description,omitempty"` APIPath string `json:"apiPath,omitempty"` Offers string `json:"offers,omitempty"` ReleaseID ReleaseID `json:"releaseId"`}
+kernel: type ReleaseBundle struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Source Source `json:"source"` Artifact Artifact `json:"artifact"` Runtime Runtime `json:"runtime"` Database string `json:"database,omitempty"` Telemetry bool `json:"telemetry,omitempty"` Publishes []string `json:"publishes,omitempty"` Description string `json:"description,omitempty"` APIPath string `json:"apiPath,omitempty"` Documents []string `json:"documents,omitempty"` ReleaseID ReleaseID `json:"releaseId"`}
 kernel: type ReleaseID string
 kernel: type Reloader struct {Platform []string Instances []ReloaderInstance}
 kernel: type ReloaderInstance struct {Application, Environment string BrokerKey string Secrets []string}
@@ -289,6 +289,7 @@ kernel: type Telemetry struct {Endpoint string `json:"endpoint"` Protocol string
 kernel: type UserKey struct {Seed string Public string}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
 kernel: type WorkloadFacts struct {Kind string Image, Digest string Source string Port int32 HealthPath string UID int32 Telemetry bool Publishes []string}
+kernel: var DocumentRoles = map[string]string{"api": "openapi.json", "events": "asyncapi.yaml", "flags": "flags.json"}
 legacy: const Invalid = "invalid"
 legacy: const Missing = "missing"
 legacy: const Unsupported = "unsupported"
@@ -449,7 +450,7 @@ orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
-orchestration: type CreateInputs struct {Application, Team string Image string Description, APIPath string Offers []kernel.File Profile []byte RecordsRoot string MemoryMiB, StorageMiB int32 Exposure string Seed [32]byte}
+orchestration: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}
 orchestration: type Created struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Public string Written []files.Outcome}
 orchestration: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
 orchestration: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
@@ -461,7 +462,7 @@ orchestration: type Migration struct {Facts legacy.Migration Release kernel.Rele
 orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
-orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
+orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}
 orchestration: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
 orchestration: type Refusal struct {Subject, Reason string}
 orchestration: type Registration struct {Path string Document []byte}

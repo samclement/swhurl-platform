@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -20,10 +21,27 @@ const (
 	createImage  = "ghcr.io/samclement/demo-orders"
 )
 
-// createDeclaration is the label a web image with a database and one published event writes: the facts a create
-// takes from the image and nowhere else.
-const createDeclaration = `{"schemaVersion":1,"runtime":{"kind":"web","port":8080,"healthPath":"/healthz",` +
-	`"uid":65532},"telemetry":true,"database":"sqlite","publishes":["created"],"memoryMiB":128}`
+// createLabel is the declaration a web image with a database and one published event writes: the facts a create takes
+// from the image and nowhere else, the documents it offers among them.
+func createLabel(t *testing.T, change func(*kernel.Declaration)) string {
+	t.Helper()
+	declaration := kernel.Declaration{SchemaVersion: 2,
+		Runtime:   kernel.Runtime{Kind: "web", Port: 8080, HealthPath: "/healthz", UID: 65532},
+		Telemetry: true, Database: "sqlite", DatabaseSizeMiB: 1024, Publishes: []string{"created"},
+		MemoryMiB: 128, Description: "Takes orders, keeps them in SQLite", APIPath: "/openapi.json",
+		Documents: map[string][]byte{
+			"api":    []byte(`{"openapi":"3.1.0"}`),
+			"events": []byte(`{"asyncapi":"3.0.0"}`),
+		}}
+	if change != nil {
+		change(&declaration)
+	}
+	document, err := json.Marshal(declaration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(document)
+}
 
 func createSeed() [32]byte {
 	var seed [32]byte
@@ -47,9 +65,7 @@ func createInputs(t *testing.T) CreateInputs {
 		t.Fatal(err)
 	}
 	return CreateInputs{Application: "demo-orders", Team: "demo", Image: createImage + ":" + createTag,
-		Description: "Takes orders, keeps them in SQLite", APIPath: "/openapi.json",
-		Offers:  []kernel.File{{Path: "openapi.json", Document: []byte(`{"openapi":"3.1.0"}`)}},
-		Profile: profile, RecordsRoot: "v2-records", StorageMiB: 1024, Seed: createSeed()}
+		Profile: profile, RecordsRoot: "v2-records", Seed: createSeed()}
 }
 
 // create runs the use case against a scripted registry and a destination that writes nothing to disk.
@@ -65,10 +81,10 @@ func create(t *testing.T, label string, change func(*CreateInputs)) (Created, *f
 	return created, writer, encrypter, err
 }
 
-// A create states the release its image publishes, the records an instance is, and the encrypted seed before the
-// record that names its public key.
+// A create states the release its image publishes, the records an instance is, the documents the label carries byte
+// for byte, and the encrypted seed before the record that names its public key.
 func TestCreateWritesTheRecordsAnImageStates(t *testing.T) {
-	created, writer, encrypter, err := create(t, createDeclaration, nil)
+	created, writer, encrypter, err := create(t, createLabel(t, nil), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +93,7 @@ func TestCreateWritesTheRecordsAnImageStates(t *testing.T) {
 	}
 	want := []string{"v2-records/demo-orders/app.json", "v2-records/demo-orders/staging/release.json",
 		"v2-records/demo-orders/staging/events.sops.yaml", "v2-records/demo-orders/staging/instance.json",
-		"v2-records/demo-orders/staging/offers/openapi.json"}
+		"v2-records/demo-orders/staging/offers/openapi.json", "v2-records/demo-orders/staging/offers/asyncapi.yaml"}
 	if len(created.Written) != len(want) {
 		t.Fatalf("written %+v", created.Written)
 	}
@@ -85,6 +101,9 @@ func TestCreateWritesTheRecordsAnImageStates(t *testing.T) {
 		if created.Written[index].Path != path {
 			t.Errorf("file %d is %s, want %s", index, created.Written[index].Path, path)
 		}
+	}
+	if got := string(writer.Contents["v2-records/demo-orders/staging/offers/openapi.json"]); got != `{"openapi":"3.1.0"}` {
+		t.Errorf("the api document is %q, not the label's bytes", got)
 	}
 	release := created.Release
 	if release.Source.Repository != "samclement/demo-orders" || release.Source.Commit != createCommit {
@@ -97,8 +116,7 @@ func TestCreateWritesTheRecordsAnImageStates(t *testing.T) {
 	if release.Database != "sqlite" || !release.Telemetry || strings.Join(release.Publishes, ",") != "created" {
 		t.Errorf("what the image states: %+v", release)
 	}
-	if release.Description != "Takes orders, keeps them in SQLite" || release.APIPath != "/openapi.json" ||
-		release.Offers != createCommit {
+	if release.Description != "Takes orders, keeps them in SQLite" || release.APIPath != "/openapi.json" {
 		t.Errorf("what it offers: %+v", release)
 	}
 	instance, err := kernel.DecodeInstance(writer.Contents["v2-records/demo-orders/staging/instance.json"])
@@ -126,26 +144,27 @@ func TestCreateWritesTheRecordsAnImageStates(t *testing.T) {
 func TestCreateRefusesBeforeItWrites(t *testing.T) {
 	for _, tt := range []struct {
 		name, label, image string
-		change             func(*CreateInputs)
 		reason             string
 	}{
 		{name: "an image that states no declaration", label: `{}`, reason: "declaration"},
-		{name: "an image v2 cannot take", label: strings.Replace(createDeclaration, `"database":"sqlite"`,
-			`"database":"sqlite","secrets":["API_KEY"]`, 1), reason: "bindings_are_not_modelled"},
-		{name: "an image with no volume for its database", label: createDeclaration,
-			change: func(i *CreateInputs) { i.StorageMiB = 0 }, reason: "volume size"},
-		{name: "a memory below the image's floor", label: createDeclaration,
-			change: func(i *CreateInputs) { i.MemoryMiB = 64 }, reason: "memory"},
-		{name: "a reference outside the platform's tag contract", label: createDeclaration,
+		{name: "an image at label version 1", label: strings.Replace(createLabel(t, nil), `"schemaVersion":2`,
+			`"schemaVersion":1`, 1), reason: "schemaVersion"},
+		{name: "an image that needs secrets", label: createLabel(t, func(d *kernel.Declaration) {
+			d.Secrets = []string{"API_KEY"}
+		}), reason: "bindings_are_not_modelled"},
+		{name: "an image with no volume for its database", label: createLabel(t, func(d *kernel.Declaration) {
+			d.DatabaseSizeMiB = 0
+		}), reason: "databaseSizeMiB"},
+		{name: "a publication without its events document", label: createLabel(t, func(d *kernel.Declaration) {
+			delete(d.Documents, "events")
+		}), reason: "documents.events"},
+		{name: "a reference outside the platform's tag contract", label: createLabel(t, nil),
 			image: createImage + ":latest", reason: "artifact.image"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			created, writer, _, err := create(t, tt.label, func(i *CreateInputs) {
 				if tt.image != "" {
 					i.Image = tt.image
-				}
-				if tt.change != nil {
-					tt.change(i)
 				}
 			})
 			if err == nil || !strings.Contains(err.Error(), tt.reason) {

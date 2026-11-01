@@ -498,7 +498,7 @@ func workerCompilation(t *testing.T) (kernel.Compilation, kernel.PlatformProfile
 		t.Fatal(err)
 	}
 	release.Runtime.Kind, release.Runtime.Port, release.Runtime.HealthPath, release.ReleaseID = "worker", 0, "", ""
-	release.APIPath = "" // a worker serves nothing, so it publishes no API description
+	release.APIPath, release.Documents = "", nil // a worker serves nothing, so it publishes no API description
 	id, err := release.ID()
 	if err != nil {
 		t.Fatal(err)

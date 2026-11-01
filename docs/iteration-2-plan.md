@@ -2026,8 +2026,9 @@ Status, decisions, evidence and the fresh-context handoff live in [v2 status](v2
 alone. The build that already writes the declaration label writes the app's documents into it too, and `create`,
 `deploy` and the template check read that one label. **No repository read is built**: no Git-host adapter, no
 credential, no rate limit, and the documents are pinned by the digest that names the release. The gap list's owed
-"what an app offers" read is retired rather than paid for, and `make app-new` retires with it, because the label is
-JSON and the producer prints it from a rendered template with no image and no registry.
+"what an app offers" read is retired rather than paid for. `make check-templates` stops running `app-new` in this
+slice; the command itself stays, because the console's New app form still points at it (below), and its deletion
+follows that form's move to `create`.
 
 **Why not the repository read.** Every fact group but the documents is already in the label; only the bytes are not.
 
@@ -2091,13 +2092,17 @@ assumed). The adapter's 1 MiB body cap is the hard ceiling and is not approached
   `console/catalogue.py` loses `source.yaml` and `console/records.py` loses its v1 record branch — the branch its own
   docstring says goes when v2 has `create`.
 
-**Records that change.** `release.offers` — the commit the documents were read at — is removed: it is always
-`source.commit`, because the documents travel with the image built from that commit. One element leaves the release's
-identity array, so every release ID and every compiled file's identity changes once, in the re-derive commit. An
-instance's `platform.swhurl.com/offers` annotation renders `source.commit`'s first seven characters and exists only
-when the instance has documents; the `api-description` annotation follows `apiPath`. `migrate` no longer sets the
-documents' commit — it is always `source.commit` — and keeps `--offers`, which copies a predecessor's documents; and
-`promote` carries production's documents from staging as it already does.
+**Records that change.** `release.offers` — the commit the documents were read at — becomes `documents`, the roles
+the release carries: it is always the image's own commit, because the documents travel with the image built from that
+commit, so the commit was a second, sometimes-different answer to the same question (`demo-notifier` reads its source
+at `bd44c68` and its documents at `eab35a3`). The release's identity array hashes the sorted roles in that element's
+place, so every release ID and every compiled file's identity changes once, in the re-derive commit. The roles also
+tie the records together: an `apiPath` needs an `api` document, and a `publishes` list needs an `events` one, both
+refused otherwise. An instance's `platform.swhurl.com/offers` annotation renders `source.commit`'s first seven
+characters and exists only when the release states a document; the `api-description` annotation follows `apiPath`.
+`migrate` takes the roles from the predecessor's offers folder — it no longer records a separate documents commit —
+and keeps `--offers`, which copies those documents; and `promote` carries production's documents from staging as it
+already does.
 
 **A create, as it becomes.**
 
@@ -2124,8 +2129,9 @@ instance's grants and choices, which no image states.
 **The migration.** Nine apps, four of them with production. Ordered, each step checked before the next:
 
 1. Land the producer's version 2, v2's decoder and creation rules, the console's fixed-name reader and v1 branch
-   deletion, `check-templates` on the producer, and `app-new`'s deletion, in one commit; tag both templates with the
-   pinned platform revision.
+   deletion, and `check-templates` on the producer, in one commit; tag both templates with the pinned platform
+   revision. `app-new` stays: its deletion needs the console's New app form to call `create`, which this slice leaves
+   out of scope (below).
 2. Copier-update each app repository to the new tag, then commit and push. This is the only step that writes to your
    repositories, so the list and the diffs come to you for approval first. Until an app's build lands a version 2
    image its Deploy run refuses the label and keeps the running image, so nothing goes down in between.
@@ -2142,7 +2148,8 @@ confirm-first action and not part of this slice.
 **The documentation this changes when it lands.** `docs/apps.md`'s "what an app offers" table and the deploy
 paragraph that says the declaration label cannot carry the description and that no later read would recover the
 documents; the `Offer` entry in the glossary if it names where the documents travel; the gap-list rows above, which
-move from *decided* to *done*; and the `app-new` row in the [deletion plan](v2-deletion-plan.md).
+move from *decided* to *done*. The `app-new` row in the [deletion plan](v2-deletion-plan.md) stays open until the
+console's New app form moves to `create`.
 
 **Acceptance.**
 

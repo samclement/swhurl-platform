@@ -35,9 +35,10 @@ func fixture(t *testing.T, name string) []byte {
 // declarationLabel is an image's declaration, as the build writes it into its config labels.
 func declarationLabel(change func(map[string]any)) string {
 	document := map[string]any{
-		"schemaVersion": 1,
+		"schemaVersion": 2,
 		"runtime":       map[string]any{"kind": "web", "port": 8080, "healthPath": "/healthz", "uid": 65532},
 		"telemetry":     true,
+		"memoryMiB":     128,
 	}
 	if change != nil {
 		change(document)
@@ -173,7 +174,7 @@ func TestDeployRefusals(t *testing.T) {
 		{"no tag matches", registrytest.New(registrytest.Scenario{Tags: []string{"latest"}}), nil,
 			"", "", "image"},
 		{"the declaration is absent", images(""), nil, "", "", "declaration"},
-		{"an unsupported version", images(declarationLabel(func(d map[string]any) { d["schemaVersion"] = 2 })),
+		{"an unsupported version", images(declarationLabel(func(d map[string]any) { d["schemaVersion"] = 3 })),
 			nil, kernel.Unsupported, "schemaVersion", ""},
 		{"a new secret", images(declarationLabel(func(d map[string]any) { d["secrets"] = []any{"TOKEN"} })),
 			nil, kernel.Unsupported, "declaration.secrets", ""},
@@ -182,7 +183,9 @@ func TestDeployRefusals(t *testing.T) {
 		{"another kind", images(declarationLabel(func(d map[string]any) {
 			d["runtime"] = map[string]any{"kind": "worker", "uid": 65532}
 		})), nil, kernel.Unsupported, "runtime.kind", ""},
-		{"an added database", images(declarationLabel(func(d map[string]any) { d["database"] = "sqlite" })),
+		{"an added database", images(declarationLabel(func(d map[string]any) {
+			d["database"], d["databaseSizeMiB"] = "sqlite", 1024
+		})),
 			nil, kernel.Unsupported, "declaration.database", ""},
 		{"an image with no revision", registrytest.New(registrytest.Scenario{
 			Tags:   []string{"43-" + strings.Repeat("d", 7)},
@@ -291,17 +294,17 @@ func TestDeployRefusesARevisionTheTagDoesNotAbbreviate(t *testing.T) {
 	}
 }
 
-// The declaration label names the runtime's needs, never what the app offers. A deploy therefore keeps the
-// description, the API path and the commit the documents were read at, and recomputes the identity it carries:
-// dropping them would un-describe a working app and forget where its documents came from.
-func TestDeployKeepsWhatTheImageCannotRestate(t *testing.T) {
+// The declaration states what the app offers, so a deploy replaces the record's description and API path with the
+// image's and writes the documents the label carries: an instance that follows its image changes what it offers in
+// the same commit.
+func TestDeployTakesWhatTheImageStatesAboutItself(t *testing.T) {
 	inputs := stagingInputs(t)
 	offered, err := kernel.DecodeRelease(fixture(t, "r42.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	offered.Description, offered.APIPath, offered.Offers = "Demo orders service", "/openapi.json",
-		strings.Repeat("c", 40)
+	offered.Description, offered.APIPath, offered.Documents = "An older description", "", nil
+	offered.ReleaseID = ""
 	if offered.ReleaseID, err = offered.ID(); err != nil {
 		t.Fatal(err)
 	}
@@ -309,16 +312,24 @@ func TestDeployKeepsWhatTheImageCannotRestate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := DeployImage(context.Background(), inputs, images(declarationLabel(nil)), t.TempDir(), filestest.New())
+	writer := filestest.New()
+	label := declarationLabel(func(document map[string]any) {
+		document["description"] = "Demo orders service"
+		document["apiPath"] = "/openapi.json"
+		document["documents"] = map[string]any{"api": "e30="} // {}
+	})
+	result, err := DeployImage(context.Background(), inputs, images(label), t.TempDir(), writer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Release.Description != "Demo orders service" || result.Release.APIPath != "/openapi.json" ||
-		result.Release.Offers != strings.Repeat("c", 40) {
-		t.Fatalf("the new release forgot what the app offers: %+v", result.Release)
+	if result.Release.Description != "Demo orders service" || result.Release.APIPath != "/openapi.json" {
+		t.Fatalf("the new release forgot what the image says: %+v", result.Release)
 	}
 	if result.Release.ReleaseID == offered.ReleaseID && result.Release.Source.Commit == offered.Source.Commit {
 		t.Fatal("the new release is the old one")
+	}
+	if got := string(writer.Contents["v2-records/demo-orders/staging/offers/openapi.json"]); got != "{}" {
+		t.Errorf("the document is %q, not the label's bytes", got)
 	}
 	id, err := result.Release.ID()
 	if err != nil {

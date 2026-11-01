@@ -23,6 +23,9 @@
     "visited"
   ],
   "description": "Demo: the shop people open; a page that places orders in demo-orders and keeps its own purchase log",
-  "offers": "a244f82f6246663ff40489df0700dfe16701b1ad",
-  "releaseId": "rel-sha256:b3cd5e54cdc50b51a73ef6963f067e931dcd53ebe457921df8a121c1ee3dc07c"
+  "documents": [
+    "events",
+    "flags"
+  ],
+  "releaseId": "rel-sha256:ed28053a31c5b8c12771ca7ac44241b45d5d58e1ae12386bcc53b6be639bc2d2"
 }

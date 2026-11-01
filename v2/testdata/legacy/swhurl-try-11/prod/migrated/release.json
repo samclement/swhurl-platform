@@ -19,6 +19,8 @@
   },
   "telemetry": true,
   "apiPath": "/openapi.json",
-  "offers": "4390f2534c2d2004dff7ed261ac954907719722d",
-  "releaseId": "rel-sha256:555061cfe8f197c61842dee822eac24e5a87793c46e228de8d6af867ec33b8e1"
+  "documents": [
+    "api"
+  ],
+  "releaseId": "rel-sha256:d05170c4b050c1663887ebffb8ddf2ad4b10d9716a90b6b9603d6da34233c426"
 }

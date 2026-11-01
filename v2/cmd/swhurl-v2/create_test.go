@@ -21,19 +21,29 @@ const (
 	createRepo   = "ghcr.io/samclement/example"
 )
 
-// createLabel is the declaration an image build writes: a web app with a database and a floor of 128 MiB.
-const createLabel = `{"schemaVersion":1,"runtime":{"kind":"web","port":8080,"healthPath":"/healthz",` +
-	`"uid":65532},"database":"sqlite","memoryMiB":128}`
+// createLabel is the declaration an image build writes: a web app with a database, the volume it is created with, a
+// floor of 128 MiB it runs in, and the documents it offers.
+const createLabel = `{"schemaVersion":2,"runtime":{"kind":"web","port":8080,"healthPath":"/healthz",` +
+	`"uid":65532},"database":"sqlite","databaseSizeMiB":1024,"memoryMiB":128,` +
+	`"description":"An example","apiPath":"/openapi.json",` +
+	`"documents":{"api":"e30=","events":"e30="}}`
 
 // createCommand runs the create command, with the registry, the encrypter and the seed a test supplies, in a fresh
 // destination: --records is the tree under it, as every writing command names it.
 func createCommand(t *testing.T, arguments []string) (int, string, string, *filestest.Fake, *sopstest.Fake) {
 	t.Helper()
+	return createCommandLabel(t, createLabel, arguments)
+}
+
+// createCommandLabel is createCommand with the declaration label the image states, so a refusal about the label itself
+// is exercised as well.
+func createCommandLabel(t *testing.T, label string, arguments []string) (int, string, string, *filestest.Fake, *sopstest.Fake) {
+	t.Helper()
 	out := t.TempDir()
 	writer, encrypter := filestest.New(), sopstest.New()
 	images := registrytest.New(registrytest.Scenario{Tags: []string{createTag},
 		Images: map[string]registry.Image{createTag: {Digest: createDigest, MediaType: "application/vnd.oci.image.manifest.v1+json",
-			Labels: map[string]string{"platform.swhurl.com/declaration": createLabel,
+			Labels: map[string]string{"platform.swhurl.com/declaration": label,
 				"org.opencontainers.image.revision": createCommit}}}})
 	args := append([]string{"create", "--records", filepath.Join(out, "v2-records"), "--out", out}, arguments...)
 	var stdout, diagnostic bytes.Buffer
@@ -45,8 +55,7 @@ func createCommand(t *testing.T, arguments []string) (int, string, string, *file
 
 func createArguments(extra ...string) []string {
 	return append([]string{"--app", "example", "--team", "demo", "--image", createRepo + ":" + createTag,
-		"--profile", "../../testdata/profile.json", "--storage-mib", "1024", "--description", "An example",
-		"--api-path", "/openapi.json"}, extra...)
+		"--profile", "../../testdata/profile.json"}, extra...)
 }
 
 func TestCreateCommandWritesTheRecords(t *testing.T) {
@@ -71,11 +80,11 @@ func TestCreateCommandWritesTheRecords(t *testing.T) {
 	if !strings.Contains(document["note"].(string), "make v2-render") {
 		t.Errorf("the report does not say what runs next: %v", document["note"])
 	}
-	if !strings.Contains(diagnostic, "create: example/staging wrote 4 file(s)") {
+	if !strings.Contains(diagnostic, "create: example/staging wrote 6 file(s)") {
 		t.Fatalf("diagnostic %q", diagnostic)
 	}
 	for _, name := range []string{"app.json", "staging/release.json", "staging/instance.json",
-		"staging/events.sops.yaml"} {
+		"staging/events.sops.yaml", "staging/offers/openapi.json", "staging/offers/asyncapi.yaml"} {
 		if _, found := writer.Contents["v2-records/example/"+name]; !found {
 			t.Errorf("the create did not write v2-records/example/%s", name)
 		}
@@ -102,23 +111,26 @@ func TestCreateCommandWritesNoCompiledFiles(t *testing.T) {
 func TestCreateCommandRefusals(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
+		label     string
 		arguments []string
 		status    int
 		reason    string
 	}{
-		{"no team", []string{"--app", "example", "--image", createRepo + ":" + createTag, "--profile",
-			"../../testdata/profile.json", "--storage-mib", "1024"}, 2, "usage"},
-		{"a tag the platform does not publish", []string{"--app", "example", "--team", "demo", "--image",
-			createRepo + ":latest", "--profile", "../../testdata/profile.json", "--storage-mib", "1024"}, 2,
-			"artifact.image"},
-		{"a database with no volume", []string{"--app", "example", "--team", "demo", "--image",
-			createRepo + ":" + createTag, "--profile", "../../testdata/profile.json"}, 2, "volume size"},
-		{"a memory that is not a number", []string{"--app", "example", "--team", "demo", "--image",
-			createRepo + ":" + createTag, "--profile", "../../testdata/profile.json", "--storage-mib", "1024",
-			"--memory-mib", "lots"}, 2, "invalid: memory-mib"},
+		{"no team", "", []string{"--app", "example", "--image", createRepo + ":" + createTag, "--profile",
+			"../../testdata/profile.json"}, 2, "usage"},
+		{"a tag the platform does not publish", "", []string{"--app", "example", "--team", "demo", "--image",
+			createRepo + ":latest", "--profile", "../../testdata/profile.json"}, 2, "artifact.image"},
+		{"an image at label version 1", strings.Replace(createLabel, `"schemaVersion":2`, `"schemaVersion":1`, 1),
+			createArguments(), 2, "schemaVersion"},
+		{"a database with no volume", strings.Replace(createLabel, `,"databaseSizeMiB":1024`, ``, 1),
+			createArguments(), 2, "databaseSizeMiB"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			status, out, diagnostic, writer, _ := createCommand(t, tt.arguments)
+			label := tt.label
+			if label == "" {
+				label = createLabel
+			}
+			status, out, diagnostic, writer, _ := createCommandLabel(t, label, tt.arguments)
 			if status != tt.status {
 				t.Fatalf("exit %d, want %d: %s", status, tt.status, diagnostic)
 			}

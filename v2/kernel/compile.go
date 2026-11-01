@@ -161,13 +161,14 @@ func instanceOf(spec InstanceSpec, release ReleaseBundle, app AppSpec, connectio
 		Description: release.Description, Offers: offersOf(release)}
 }
 
-// offersOf is what a release states about its published documents, or nil when it states nothing: an absent fact
-// renders no annotation and no variable, rather than one saying nothing.
+// offersOf is what a release states about its published documents, or nil when it states none: an absent fact
+// renders no annotation and no variable, rather than one saying nothing. The documents travel in the image, so the
+// commit they are named by is the source's.
 func offersOf(r ReleaseBundle) *Offers {
-	if r.APIPath == "" && r.Offers == "" {
+	if len(r.Documents) == 0 {
 		return nil
 	}
-	return &Offers{APIPath: r.APIPath, Commit: r.Offers}
+	return &Offers{APIPath: r.APIPath, Commit: r.Source.Commit}
 }
 
 // workloadOf is the runtime facts a release states: what the chart runs, as whom, and what it serves.

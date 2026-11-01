@@ -76,10 +76,10 @@ type ReleaseBundle struct {
 	// APIPath is where a web image serves its API description, such as /openapi.json. A worker serves nothing, so
 	// it states none.
 	APIPath string `json:"apiPath,omitempty"`
-	// Offers is the commit at which the app's offered documents — the OpenAPI and AsyncAPI documents and the flags
-	// file kept beside the instance — were read. It is not source.commit: the image moves with every deploy, and
-	// the documents are refreshed separately, so one commit would be a claim about the other.
-	Offers    string    `json:"offers,omitempty"`
+	// Documents are the roles the image states documents for — api, events and flags — so a release says whether
+	// it offers anything at all. The bytes are files beside the record; the commit they came from is the source's,
+	// because they travel in the image built from it.
+	Documents []string  `json:"documents,omitempty"`
 	ReleaseID ReleaseID `json:"releaseId"`
 }
 
@@ -193,25 +193,35 @@ func (r ReleaseBundle) validateOffered() error {
 	if r.APIPath != "" && !apiPathPattern.MatchString(r.APIPath) {
 		return refuse(Invalid, "apiPath", "expected an absolute path")
 	}
-	if r.Offers != "" && !commitPattern.MatchString(r.Offers) {
-		return refuse(Invalid, "offers", "expected a 40-character commit")
+	if err := r.validateDocuments(); err != nil {
+		return err
 	}
 	return nil
 }
 
-// WithOffered is the release with what the app offers: the one line it says about itself, the path it serves its
-// API description on, and the commit its offered documents were read at. None of them is the image's fact — an image
-// states what it needs, never what it publishes — so a caller supplies them when it writes a release, and the
-// identity is computed again for them. Setting none of them is the release the image alone states.
-func (r ReleaseBundle) WithOffered(description, apiPath, offers string) (ReleaseBundle, error) {
-	r.Description, r.APIPath, r.Offers = description, apiPath, offers
-	r.ReleaseID = "" // the identity the caller may have asserted is the one without them
-	id, err := r.ID()
-	if err != nil {
-		return ReleaseBundle{}, err
+// validateDocuments checks that every role is one the platform names a file for, that no role repeats, and that the
+// API path and the documents agree: an app either serves a description it carries, or neither.
+func (r ReleaseBundle) validateDocuments() error {
+	seen := map[string]bool{}
+	for _, role := range r.Documents {
+		if _, known := DocumentRoles[role]; !known {
+			return refuse(Unsupported, "documents", "only the api, events and flags roles are supported")
+		}
+		if seen[role] {
+			return refuse(Invalid, "documents", "a role may be stated once")
+		}
+		seen[role] = true
 	}
-	r.ReleaseID = id
-	return r, nil
+	if r.APIPath != "" && !seen["api"] {
+		return refuse(Invalid, "apiPath", "the api document is required with the path it is served on")
+	}
+	if seen["api"] && r.APIPath == "" {
+		return refuse(Invalid, "apiPath", "an api document needs the path it is served on")
+	}
+	if len(r.Publishes) > 0 && !seen["events"] {
+		return refuse(Invalid, "documents", "a publication needs the events document")
+	}
+	return nil
 }
 
 func (s Source) validate() error {

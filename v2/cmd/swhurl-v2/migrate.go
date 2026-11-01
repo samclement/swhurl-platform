@@ -92,8 +92,21 @@ func (c cli) migrateInputs(r request) (snapshot, orchestration.MigrationInputs, 
 	if status != 0 {
 		return snapshot{}, orchestration.MigrationInputs{}, status
 	}
-	inputs.Offers = documents
+	// A predecessor's offers folder also holds its source.yaml index. v2 names each document by the role the release
+	// states and keeps no index, so the index is not copied.
+	inputs.Offers = withoutSource(documents)
 	return pinned, inputs, 0
+}
+
+// withoutSource drops a predecessor's offers index: it names files, and v2's folder names each role itself.
+func withoutSource(documents []kernel.File) []kernel.File {
+	kept := make([]kernel.File, 0, len(documents))
+	for _, document := range documents {
+		if document.Path != "source.yaml" {
+			kept = append(kept, document)
+		}
+	}
+	return kept
 }
 
 // pinnedInstance is the one instance a migration is about, or a refusal naming what the snapshot lacks.

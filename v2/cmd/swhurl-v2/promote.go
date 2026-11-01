@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
@@ -98,16 +99,13 @@ func (c cli) promoteInputs(r request) (orchestration.PromoteInputs, int) {
 	if status != 0 {
 		return orchestration.PromoteInputs{}, status
 	}
-	var calls, egress []byte
-	if r.callFile != "" {
-		if calls, status = c.read(r.callFile, "calls"); status != 0 {
-			return orchestration.PromoteInputs{}, status
-		}
+	calls, status := c.optional(r.callFile, "calls")
+	if status != 0 {
+		return orchestration.PromoteInputs{}, status
 	}
-	if r.egressFile != "" {
-		if egress, status = c.read(r.egressFile, "egress"); status != 0 {
-			return orchestration.PromoteInputs{}, status
-		}
+	egress, status := c.optional(r.egressFile, "egress")
+	if status != 0 {
+		return orchestration.PromoteInputs{}, status
 	}
 	apps := map[string][]byte{}
 	staging, status := c.readInstance(r.records, r.app, "staging", apps)
@@ -124,7 +122,31 @@ func (c cli) promoteInputs(r request) (orchestration.PromoteInputs, int) {
 			return orchestration.PromoteInputs{}, status
 		}
 	}
+	offers, status := c.stagingOffers(r.records, r.app)
+	if status != 0 {
+		return orchestration.PromoteInputs{}, status
+	}
 	return orchestration.PromoteInputs{StagingInstance: staging.instance, StagingRelease: staging.release,
 		Instance: target.instance, Release: target.release, App: app, Profile: profile, Calls: calls,
-		Egress: egress, Expected: kernel.InstanceRevision(r.expected)}, 0
+		Egress: egress, Offers: offers, Expected: kernel.InstanceRevision(r.expected)}, 0
+}
+
+// optional reads a document a command may be given, if it names one: an absent name is no document rather than a
+// failure, and the use case's own decoder refuses what it needs.
+func (c cli) optional(path, what string) ([]byte, int) {
+	if path == "" {
+		return nil, 0
+	}
+	return c.read(path, what)
+}
+
+// stagingOffers reads the documents staging's release carries, if it carries any: production inherits them with the
+// release, written beside its records and compiled files as the delivery that produced staging wrote them. A
+// staging instance that publishes nothing has no folder to carry.
+func (c cli) stagingOffers(records, app string) ([]kernel.File, int) {
+	folder := filepath.Join(records, app, "staging", offersFolder)
+	if _, err := os.Stat(folder); err != nil {
+		return nil, 0
+	}
+	return c.offersAt(folder)
 }

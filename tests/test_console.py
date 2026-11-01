@@ -244,8 +244,8 @@ operations:
         return runner
 
     def documents(self, commit='abc1234', reads=None):
-        files = {'apps/orders/staging/offers/source.yaml': f'repository: samclement/orders\ncommit: {commit}\napi: openapi.json\nevents: asyncapi.yaml\n',
-                 'apps/orders/staging/offers/openapi.json': self.OPENAPI, 'apps/orders/staging/offers/asyncapi.yaml': self.ASYNCAPI}
+        files = {'v2-apps/instances/orders/staging/offers/openapi.json': self.OPENAPI,
+                 'v2-apps/instances/orders/staging/offers/asyncapi.yaml': self.ASYNCAPI}
 
         def reader(path):
             if reads is not None:
@@ -287,8 +287,7 @@ operations:
         return runner
 
     def flag_documents(self):
-        files = {'apps/orders/staging/offers/source.yaml': 'repository: samclement/orders\ncommit: abc1234\nflags: flags.json\n',
-                 'apps/orders/staging/offers/flags.json': json.dumps(self.FLAGS)}
+        files = {'v2-apps/instances/orders/staging/offers/flags.json': json.dumps(self.FLAGS)}
         return files.get
 
     def test_the_app_page_shows_each_declared_flag_with_its_override(self):
@@ -442,8 +441,7 @@ operations:
         from swhurl.console import catalogue
 
         folder = 'v2-apps/instances/orders/staging/offers'
-        files = {f'{folder}/source.yaml': 'repository: samclement/orders\ncommit: abc1234\napi: openapi.json\n',
-                 f'{folder}/openapi.json': self.OPENAPI}
+        files = {f'{folder}/openapi.json': self.OPENAPI}
         reads = []
         documents = catalogue.Documents(lambda path: reads.append(path) or files.get(path))
         found = documents.of('orders', 'staging', 'abc1234')
@@ -451,7 +449,8 @@ operations:
         self.assertIsNotNone(found.api, 'the API description is read from the v2 folder')
         self.assertIn(f'{folder}/openapi.json', reads)
         self.assertEqual(documents.of('orders', 'staging', 'abc1234'), found, 'read once per commit')
-        self.assertIn('is not in Git yet', catalogue.Documents(lambda path: None).of('orders', 'staging', 'abc1234').problem)
+        quiet = catalogue.Documents(lambda path: None).of('orders', 'staging', 'abc1234')
+        self.assertEqual((quiet.problem, quiet.api), ('', None), 'an instance with no documents offers nothing')
 
     def test_descriptions_that_cannot_be_read_leave_the_catalogue_standing(self):
         from swhurl.console import catalogue
@@ -460,14 +459,12 @@ operations:
             raise OSError('GitHub is away')
         clock = [0.0]
         for reader, message in ((broken, 'could not be read from Git: OSError'), (None, 'no GitHub token'),
-                                (lambda path: None, 'is not in Git yet'),
                                 (self.documents(commit='0000000'), '')):
             with self.subTest(message=message):
                 documents = catalogue.Documents(reader, clock=lambda: clock[0])
                 found = catalogue.entries(cluster.apps(self.described_cluster()), 'staging', documents)
                 self.assertEqual(len(found), 4)
                 self.assertIn(message, found[0].problem)
-                self.assertEqual(documents.kept, {}, 'only what matches the running commit is kept for good')
         calls = []
         documents = catalogue.Documents(lambda path: calls.append(path) or broken(path), clock=lambda: clock[0])
         for _ in range(3):

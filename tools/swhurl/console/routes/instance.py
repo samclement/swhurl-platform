@@ -72,7 +72,7 @@ def routes(ctx: Context) -> list[Route]:
                     connections=shown, relation_problem=relation_problem, allows=declared.allows if declared.declared else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
                     scale_fields=V2_SCALE_FIELDS,
-                    minimum=declared.minimum, declared=declared, github=github,
+                    declared=declared, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=proposal.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
@@ -122,17 +122,9 @@ def routes(ctx: Context) -> list[Route]:
         return merge.ACTIONS[action].commands(app, env, form)
 
     def secret_states(found: Instance, status: ops.InstanceStatus, declared: declared_records.Declared) -> dict[str, str] | None:
-        """Each secret name and whether Git has its value (ops.secret_states); None when Git cannot be read.
-        Only the Secret file's key names are read: SOPS leaves them in plain text, the values stay encrypted.
-        A v2 instance has no such file: v2 holds no secret values, so the page says what the image declares
+        """None: v2 holds no secret values, so there is no file to read. The page says what the image declares
         and that v2 does not carry it, instead of naming a file that is not there."""
-        if document_source is None or declared.source != declared_records.V1:
-            return None
-        try:
-            text = document_source(f'apps/{found.app}/{found.env}/{contract.SECRET_FILE}')
-        except Exception:  # noqa: BLE001 (GitHub unavailable: the page says unknown, it does not fail)
-            return None
-        return ops.secret_states(status.secret_names, contract.stored_secrets(text))
+        return None
 
     def flag_rows(found: Instance, offers_commit: str) -> tuple[list[dict], str]:
         """Each flag the instance's image declares, with its override, then each override of a flag it does

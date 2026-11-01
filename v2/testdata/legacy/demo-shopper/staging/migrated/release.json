@@ -19,6 +19,8 @@
   },
   "telemetry": true,
   "description": "Demo: a worker that buys something from demo-shop every half minute, so there is always some traffic",
-  "offers": "51519ea2dfb6cf6a50da38fca8681dd10e7eadbb",
-  "releaseId": "rel-sha256:005d354fab709064edc7ab84d4c6ea1639e57921067ab8b5a2b9475546292f85"
+  "documents": [
+    "events"
+  ],
+  "releaseId": "rel-sha256:783e64d74fcb10f62ef7341b966a194ebb3e39ab29aa53142f8d8c0bdb4ad236"
 }

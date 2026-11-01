@@ -155,8 +155,9 @@ func (m *Migration) declared(instance, release *record, committed effective) err
 }
 
 // offered reads what the release says the app publishes: one line about itself, the path a web image serves its
-// API description on, and the commit its offered documents were read at. The documents themselves are files beside
-// the record, which the migration is given rather than reads.
+// API description on, and whether it named the commit its offered documents were read at. That commit is not carried
+// over — v2 states the image's own commit — so it is presence only: a release that named one must have documents
+// beside its record, which the migration is given rather than reads.
 func (m *Migration) offered(release *record) error {
 	for _, field := range []struct {
 		name string

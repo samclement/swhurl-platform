@@ -24,6 +24,9 @@
   ],
   "description": "Demo: takes orders, keeps them in SQLite, describes its API and publishes an event for each",
   "apiPath": "/openapi.json",
-  "offers": "b8d522387c728298a597b312c375376efbbc268e",
-  "releaseId": "rel-sha256:5c8823345c23695edfa1f5e2bddfee8e654046cefaa2941f706d240a90e1c9d1"
+  "documents": [
+    "api",
+    "events"
+  ],
+  "releaseId": "rel-sha256:5ba79d3a2e109a23fe346ba8381bb6f226a47015ab38598697f78cf141d758ba"
 }

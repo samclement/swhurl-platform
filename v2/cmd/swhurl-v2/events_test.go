@@ -95,7 +95,7 @@ func TestCompileWritesTheEventsSecret(t *testing.T) {
 		Artifact: kernel.Artifact{Image: "ghcr.io/samclement/orders", Digest: "sha256:" + strings.Repeat("c", 64),
 			MediaType: kernel.ManifestMediaType, Platform: "linux/amd64"},
 		Runtime:   kernel.Runtime{Kind: "web", Port: 8080, HealthPath: "/", UID: 65532},
-		Publishes: []string{"created"}}
+		Publishes: []string{"created"}, Documents: []string{"events"}}
 	releaseID, err := release.ID()
 	if err != nil {
 		t.Fatal(err)

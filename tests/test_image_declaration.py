@@ -3,6 +3,7 @@
 The document is v2's contract (`kernel.Declaration`), so these tests assert the whole document per app
 type, the fields it must leave out, and every way the files can fail to produce one.
 """
+import base64
 import io
 import json
 import os
@@ -123,9 +124,19 @@ channels:
 """
 
 
+API = '{"openapi":"3.0.0"}\n'
+
+
 def checkout(swhurl: str, events: str | None = None, name: str = 'asyncapi.yaml') -> tempfile.TemporaryDirectory:
+    """A checkout of one swhurl.yaml, the events document it names, and the API document it names: every
+    document the declaration offers, since the producer carries their bytes."""
     directory = tempfile.TemporaryDirectory()
     Path(directory.name, 'swhurl.yaml').write_text(swhurl)
+    for line in swhurl.splitlines():
+        if line.strip().startswith('apiFile:'):
+            api = line.split(':', 1)[1].strip()
+            Path(directory.name, api).parent.mkdir(parents=True, exist_ok=True)
+            Path(directory.name, api).write_text(API)
     if events is not None:
         Path(directory.name, name).parent.mkdir(parents=True, exist_ok=True)
         Path(directory.name, name).write_text(events)
@@ -150,49 +161,67 @@ def label(swhurl: str, events: str | None = None, name: str = 'asyncapi.yaml') -
 
 
 def document(swhurl: str, events: str | None = None, name: str = 'asyncapi.yaml') -> dict:
+    """The label's document, with each offered document's bytes decoded for comparison: the bytes themselves are
+    asserted base64 in their own test."""
     key, value = label(swhurl, events, name)
     assert key == LABEL
-    return json.loads(value)
+    found = json.loads(value)
+    if 'documents' in found:
+        found['documents'] = {role: base64.b64decode(encoded).decode() for role, encoded in found['documents'].items()}
+    return found
 
 
 class DocumentTests(unittest.TestCase):
     """One document per app type, and the facts an image does not have left out."""
 
-    def test_a_web_image_states_its_runtime_telemetry_database_and_publications(self):
+    def test_a_web_image_states_its_runtime_telemetry_database_publications_and_documents(self):
         self.assertEqual(document(WEB, EVENTS), {
-            'schemaVersion': 1,
+            'schemaVersion': 2,
             'runtime': {'kind': 'web', 'uid': 65532, 'port': 8080, 'healthPath': '/healthz'},
             'telemetry': True,
             'database': 'sqlite',
+            'databaseSizeMiB': 1024,
             'publishes': ['visited'],
+            'memoryMiB': 128,
+            'description': 'an app',
+            'apiPath': '/openapi.json',
+            'documents': {'api': API, 'events': EVENTS, 'flags': '{\n  "shout": {\n    "type": "boolean",\n'
+                                                                  '    "default": false\n  }\n}\n'},
         })
 
     def test_a_worker_image_states_no_port_and_its_minimum_memory(self):
         self.assertEqual(document(WORKER, EVENTS, 'src/main/resources/asyncapi.yaml'), {
-            'schemaVersion': 1,
+            'schemaVersion': 2,
             'runtime': {'kind': 'worker', 'uid': 65532},
             'telemetry': True,
             'publishes': ['visited'],
             'memoryMiB': 192,
+            'documents': {'events': EVENTS},
         })
 
     def test_a_job_image_states_its_own_kind_rather_than_a_kind_v2_models(self):
         # v2 refuses `runtime.kind` it does not model; the image must not pretend to be a worker.
         self.assertEqual(document(JOB, EVENTS), {
-            'schemaVersion': 1,
+            'schemaVersion': 2,
             'runtime': {'kind': 'job', 'uid': 65532},
             'telemetry': True,
             'publishes': ['visited'],
+            'memoryMiB': 128,
+            'documents': {'events': EVENTS},
         })
 
     def test_an_image_that_reports_nowhere_and_publishes_nothing_states_neither(self):
-        self.assertEqual(document(QUIET), {'schemaVersion': 1, 'runtime': {'kind': 'worker', 'uid': 1000}})
+        self.assertEqual(document(QUIET), {'schemaVersion': 2, 'runtime': {'kind': 'worker', 'uid': 1000},
+                                           'memoryMiB': 128})
 
     def test_a_file_with_no_events_document_states_no_publications(self):
         self.assertEqual(document(NO_EVENTS), {
-            'schemaVersion': 1,
+            'schemaVersion': 2,
             'runtime': {'kind': 'web', 'uid': 65532, 'port': 8080, 'healthPath': '/healthz'},
             'telemetry': True,
+            'memoryMiB': 128,
+            'apiPath': '/openapi.json',
+            'documents': {'api': API},
         })
 
     def test_an_events_document_with_no_send_operation_states_no_publications(self):
@@ -215,15 +244,21 @@ class DocumentTests(unittest.TestCase):
 
 
 class MemoryTests(unittest.TestCase):
-    """`memoryMiB` is the image's minimum, in whole MiB, never understated and never invented."""
+    """`memoryMiB` is the memory the image runs in, in whole MiB, never understated and always stated: a create
+    takes its instance's memory from it, and the volume of a database from `databaseSizeMiB`."""
 
     def test_units_are_whole_mebibytes_rounded_up(self):
         self.assertEqual([declaration.mebibytes(q) for q in ('192Mi', '1536Ki', '512Ki', '2Gi')],
                          [192, 2, 1, 2048])
 
-    def test_a_limit_without_a_minimum_states_no_memory(self):
+    def test_an_image_that_states_no_minimum_states_the_platform_default(self):
         text = WORKER.replace('  memory: 192Mi\n  memoryLimit', '  memoryLimit')
-        self.assertNotIn('memoryMiB', document(text, EVENTS, 'src/main/resources/asyncapi.yaml'))
+        self.assertEqual(document(text, EVENTS, 'src/main/resources/asyncapi.yaml')['memoryMiB'],
+                         declaration.DEFAULT_MEMORY_MIB
+                         if hasattr(declaration, 'DEFAULT_MEMORY_MIB') else 128)
+
+    def test_a_database_states_the_volume_it_is_created_with(self):
+        self.assertEqual(document(WEB, EVENTS)['databaseSizeMiB'], 1024)
 
 
 class LineTests(unittest.TestCase):
@@ -241,6 +276,40 @@ class LineTests(unittest.TestCase):
     def test_the_same_checkout_states_the_same_line(self):
         with checkout(WEB, EVENTS) as directory:
             self.assertEqual(run(directory)[1], run(directory)[1])
+
+
+class DocumentBytesTests(unittest.TestCase):
+    """The label's documents are the files' bytes, base64-encoded: no encoding step can change one, and an
+    oversized label names the documents and their sizes."""
+
+    def test_documents_are_the_file_bytes_base64_encoded(self):
+        key, value = label(WEB, EVENTS)
+        found = json.loads(value)['documents']
+        self.assertEqual(base64.b64decode(found['api']), API.encode())
+        self.assertEqual(base64.b64decode(found['events']), EVENTS.encode())
+        self.assertEqual(base64.b64decode(found['flags']),
+                         (json.dumps(declaration.parse(WEB).flags, indent=2) + '\n').encode())
+
+    def test_a_label_over_the_cap_names_the_documents_and_their_sizes(self):
+        big = EVENTS + '# ' + 'x' * (image_declaration.MAX_LABEL_BYTES) + '\n'
+        with checkout(WEB, big) as directory:
+            code, out, err = run(directory)
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('over the', err)
+        self.assertIn(f'events ({len(big)} bytes)', err)
+
+    def test_an_api_path_without_its_document_is_refused(self):
+        self.assertRaises(image_declaration.LabelError, image_declaration.label_of, Path(tempfile.mkdtemp()))
+        with checkout(WEB.replace('  apiFile: openapi.json\n', ''), EVENTS) as directory:
+            code, out, err = run(directory)
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('stated together or not at all', err)
+
+    def test_an_api_document_without_its_path_is_refused(self):
+        with checkout(WEB.replace('  api: /openapi.json\n', ''), EVENTS) as directory:
+            code, out, err = run(directory)
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('stated together or not at all', err)
 
 
 class RefusalTests(unittest.TestCase):

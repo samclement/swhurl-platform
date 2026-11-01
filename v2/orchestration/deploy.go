@@ -86,7 +86,7 @@ func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reade
 	if published.Digest == request.current.Artifact.Digest {
 		return request.unchanged(tag.Name)
 	}
-	candidate, err := request.candidate(tag, published)
+	candidate, declaration, err := request.candidate(tag, published)
 	if err != nil {
 		return Deploy{}, err
 	}
@@ -98,7 +98,7 @@ func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reade
 	if err != nil {
 		return Deploy{}, err
 	}
-	documents, err := instanceDocuments(selected, candidate, compiled)
+	documents, err := instanceDocuments(selected, candidate, compiled, declaration.OfferedFiles())
 	if err != nil {
 		return Deploy{}, err
 	}
@@ -120,34 +120,27 @@ func (r deployRequest) unchanged(tag string) (Deploy, error) {
 }
 
 // candidate is the release the newest image states, after the instance refuses what it cannot take. The release
-// states the commit the image says it was built from, checked against the tag that published it, and keeps what the
-// image cannot restate: a declaration label names the runtime's needs, never what the app offers, so the description,
-// the API path and the commit its documents were read at are the record's until a repository read refreshes them.
-func (r deployRequest) candidate(tag kernel.ImageTag, published registry.Image) (kernel.ReleaseBundle, error) {
+// states the commit the image says it was built from, checked against the tag that published it, and what the app
+// offers: the declaration carries the description, the API path and the documents, so a new image changes what its
+// app says about itself in the same commit as what it needs.
+func (r deployRequest) candidate(tag kernel.ImageTag, published registry.Image) (kernel.ReleaseBundle, kernel.Declaration, error) {
 	declaration, err := declarationOf(published)
 	if err != nil {
-		return kernel.ReleaseBundle{}, err
+		return kernel.ReleaseBundle{}, kernel.Declaration{}, err
 	}
 	commit, err := revisionOf(tag, published)
 	if err != nil {
-		return kernel.ReleaseBundle{}, err
+		return kernel.ReleaseBundle{}, kernel.Declaration{}, err
 	}
 	if err := kernel.AcceptDeclaration(declaration, r.instance, r.current); err != nil {
-		return kernel.ReleaseBundle{}, err
+		return kernel.ReleaseBundle{}, kernel.Declaration{}, err
 	}
 	release, err := declaration.Release(r.instance.Application, r.current.Source.Repository, commit,
 		r.current.Artifact.Image, published.Digest, published.MediaType)
 	if err != nil {
-		return kernel.ReleaseBundle{}, err
+		return kernel.ReleaseBundle{}, kernel.Declaration{}, err
 	}
-	return carryingOffered(release, r.current)
-}
-
-// carryingOffered is the candidate with the three offered facts the image does not state, and its identity
-// recomputed for them: a deploy that dropped them would un-describe a working app and forget which commit its
-// documents came from, which no later read could recover from Git.
-func carryingOffered(candidate, current kernel.ReleaseBundle) (kernel.ReleaseBundle, error) {
-	return candidate.WithOffered(current.Description, current.APIPath, current.Offers)
+	return release, declaration, nil
 }
 
 // revisionOf reads the commit an image states it was built from. A tag alone never supplies it: the platform's tag
@@ -183,9 +176,10 @@ func declarationOf(published registry.Image) (kernel.Declaration, error) {
 }
 
 // instanceDocuments is what a delivery or a promotion writes: the release first, then the instance that selects it,
-// then the compiled files. A failure leaves at worst a release nothing selects.
+// then the compiled files, each with the documents the release's image states. A failure leaves at worst a release
+// nothing selects.
 func instanceDocuments(spec kernel.InstanceSpec, release kernel.ReleaseBundle,
-	compiled kernel.Compilation) ([]kernel.File, error) {
+	compiled kernel.Compilation, offers []kernel.File) ([]kernel.File, error) {
 	releaseDocument, err := kernel.EncodeRelease(release)
 	if err != nil {
 		return nil, err
@@ -195,8 +189,16 @@ func instanceDocuments(spec kernel.InstanceSpec, release kernel.ReleaseBundle,
 		return nil, err
 	}
 	folder := recordsRoot + "/" + spec.Application + "/" + spec.Environment
-	return append([]kernel.File{
+	records, err := WithOffers([]kernel.File{
 		{Path: folder + "/release.json", Document: releaseDocument},
 		{Path: folder + "/instance.json", Document: instanceDocument},
-	}, compiled.Files...), nil
+	}, offers)
+	if err != nil {
+		return nil, err
+	}
+	compiledDocuments, err := WithOffers(compiled.Files, offers)
+	if err != nil {
+		return nil, err
+	}
+	return append(records, compiledDocuments...), nil
 }

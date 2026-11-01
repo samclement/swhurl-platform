@@ -109,7 +109,7 @@ class DocTests(unittest.TestCase):
 class MakeTests(unittest.TestCase):
     def test_a_missing_variable_is_refused_with_the_usage_line(self):
         for target, env, usage in (
-                ('app-scale', {'APP': 'web', 'ENV': 'prod'}, 'Usage: make app-scale APP=<app> ENV=<env> ARGS="--replicas N'),
+                ('app-new', {}, 'Usage: make app-new NAME=<app>'),
                 ('reconcile', {'UNIT': ''}, 'Usage: make reconcile UNIT=<name>'),
                 ('team-remove', {}, 'Usage: make team-remove NAME=<team> [ARGS="--move-apps-to OTHER"]')):
             with self.subTest(target=target):
@@ -118,9 +118,9 @@ class MakeTests(unittest.TestCase):
                 self.assertIn(usage, err)
 
     def test_dry_run_is_refused_where_the_command_has_no_dry_run(self):
-        code, out, err, executed = run_make('app-remove', {'APP': 'web', 'ENV': 'staging', 'DRY_RUN': 'true'})
+        code, out, err, executed = run_make('app-new', {'NAME': 'web', 'DRY_RUN': 'true'})
         self.assertEqual((code, out, executed), (2, '', []))
-        self.assertIn('make app-remove has no dry run', err)
+        self.assertIn('make app-new has no dry run', err)
         code, _, _, executed = run_make('notifications-check', {'DRY_RUN': 'false'})
         self.assertEqual(len(executed), 1, 'DRY_RUN=false runs it')
 
@@ -131,13 +131,10 @@ class MakeTests(unittest.TestCase):
 
     def test_variables_become_arguments(self):
         for target, env, expected in (
-                ('app-scale', {'APP': 'web', 'ENV': 'prod', 'ARGS': '--replicas 2 --cpu 100m'}, ['web', 'prod', '--replicas', '2', '--cpu', '100m']),
+                ('app-new', {'NAME': 'web', 'ARGS': '--env staging --image image@sha256:abc'}, ['web', '--env', 'staging', '--image', 'image@sha256:abc']),
                 ('team-edit', {'NAME': 'a', 'ARGS': '--notify ""'}, ['a', '--notify', '']),
                 ('team-add', {'NAME': 'a', 'DESCRIPTION': 'what it owns'}, ['a', '--description', 'what it owns']),
                 ('team-add', {'NAME': 'a'}, ['a']),
-                ('app-offers', {'ARGS': '--all staging'}, ['--all', 'staging']),
-                ('app-sync', {}, []),
-                ('app-sync', {'ARGS': '--rotate-nkey demo-orders/staging'}, ['--rotate-nkey', 'demo-orders/staging']),
                 ('verify-logs', {}, ['--minutes', '15']),
                 ('verify-logs', {'MINUTES': '60'}, ['--minutes', '60']),
                 ('notifications-check', {}, ['--dry-run']),

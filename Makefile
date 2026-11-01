@@ -12,9 +12,8 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help reconcile verify-platform notifications-check notifications-heartbeat verify-logs flux-install \
 	clickstack-bootstrap clickstack-dashboards \
-	app-repo app-hooks app-new app-expose team-add team-edit team-remove team-channel channel-add channel-remove \
-	app-team app-alerts platform-signing-keys app-calls app-allows app-egress app-events app-offers app-deploy app-secret app-sync app-promote \
-	app-status app-logs app-reconcile app-check app-scale app-schedule app-remove console-image console-dev \
+	app-repo app-hooks app-new team-add team-edit team-remove team-channel channel-add channel-remove \
+	app-status app-logs app-reconcile console-image console-dev \
 	platform-certs-staging platform-certs-prod suspend resume destroy-data backup-mongodb backup-sqlite restore-sqlite \
 	check-repo check-apps check-templates check-otel check-secrets check-docs v2-snapshot \
 	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb live-test-restore-sqlite \
@@ -85,7 +84,7 @@ v2-report:
 
 .PHONY: check-lint
 check-lint:
-	uvx ruff@0.16.9 check tools tests devtools
+	uvx ruff@0.16.9 check tools tests devtools bin/agent-cli
 	uvx --from shellcheck-py==0.11.0.1 shellcheck -x $$(git ls-files --cached --others --exclude-standard '*.sh')
 
 # Host timers (host/install-timer.sh) -------------------------------------------

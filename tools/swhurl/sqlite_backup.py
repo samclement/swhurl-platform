@@ -13,7 +13,6 @@ from pathlib import Path
 
 from swhurl import ROOT, backupset, interface, platform
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import store
 from swhurl.backupset import BackupSet
 from swhurl.report import Report
 from swhurl.run import Runner
@@ -31,15 +30,8 @@ def uri(namespace: str, env: Mapping[str, str] | None = None) -> str:
 
 
 def expected(root: Path = ROOT) -> list[Instance]:
-    """The instances whose release declares a SQLite database: each must have backups.
-
-    Both record shapes are read while v1 still owns instances: a v2-owned instance's release is under
-    ``v2-records/<app>/<env>/release.json``, and the rest are v1's records under ``apps/``.
-    """
-    world, errors = store.world(root)
-    if errors:
-        raise ValueError('; '.join(errors))
-    found = {each for each, entry in world.items() if entry.release.database == 'sqlite'}
+    """The instances whose release declares a SQLite database (v2's records): each must have backups."""
+    found: set[Instance] = set()
     for record in sorted((root / 'v2-records').glob('*/*/release.json')):
         try:
             database = json.loads(record.read_text()).get('database')

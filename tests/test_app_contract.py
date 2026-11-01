@@ -2,6 +2,7 @@
 import argparse
 import copy
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -136,7 +137,9 @@ class GeneratorTests(unittest.TestCase):
 
     def test_every_instance_is_told_who_it_is_and_a_web_app_gets_the_issuer_and_keys(self):
         (self.tmp / 'apps').mkdir()
-        (self.tmp / 'apps/signing-keys.json').write_text('{"keys": [{"kid": "k1"}]}')
+        (self.tmp / 'v2/testdata').mkdir(parents=True)
+        (self.tmp / 'v2/testdata/profile.json').write_text(json.dumps(
+            {'auth': {'issuer': 'https://kubernetes.default.svc.cluster.local', 'keys': '{"keys": [{"kid": "k1"}]}'}}))
         manifest = self.tmp / 'swhurl.yaml'  # where it serves its API description comes only from provides.api
         manifest.write_text('version: 1\nkind: web\nhealthPath: /h\ntelemetry: otlp\nprovides: {api: /openapi.json}\n')
         self.assertEqual(self.gen('web', '--image', 'r/web:1', '--manifest', str(manifest), '--no-auto-deploy'), 0)

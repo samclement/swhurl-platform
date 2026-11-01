@@ -2,6 +2,34 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The checks read v2's tree (31 October 2026)
+
+- **What changed:** `make check-apps` no longer renders the `apps/` instances: it runs v2's own
+  `render --check` — every `v2-records` instance compiled and compared with the files Git holds, the same
+  comparison `make check-v2` makes — then checks that each app record states a team registered in
+  `apps/teams.yaml`, that the notify routes are that registry's, and that the three template fixtures still pass
+  the Helm policy. `make verify-platform` reads `v2-apps/instances/`: the isolation check compares the namespace
+  labels, quota and NetworkPolicy each instance declares with the live objects (only the labels Git states), the
+  events check the declared streams and consumers with NATS, and the egress check
+  `platform/egress/allocation.json`. Its v1 branch, its "0 instance(s)" path, `check_secrets` and v1's
+  `egress.problems` are deleted. The Image Automation check, the backup's expected releases and notify's channel
+  ownership read `v2-records/` now, and `apps/signing-keys.json` is deleted: `verify` compares the profile's
+  `auth.keys` and `auth.issuer` with the cluster, and `platform/auth/` is rendered from the same block.
+- **Checked, offline:** `make check` (759 tests, 35 render entrypoints, 0 errors, 0 warnings), `make check-apps`
+  (3 fixture instances, the render check, every record's team), `make check-v2` and `REQUIRE_HELM=1 make check-v2`
+  (208 files, 0 differ), `make check-repo`, `make check-lint`. `check-apps` needs Go now — Validate's `apps` job
+  and Deploy install it — and still renders the fixtures with Helm, so the chart cache stays.
+- **Checked, live (`make verify-platform`, exit 0, 92 OK, 1 WARN):** the warning is the console image, older than
+  the checkout until Validate deploys it. The app checks named **13 instances from v2's tree**: "13 app
+  namespace(s) have a registered team, the platform quota and a NetworkPolicy", "13 declared stream(s) and
+  consumer(s) exist in NATS", "13 instance(s) each have a port of their own", and "v2/testdata/profile.json states
+  the cluster's 1 signing key(s)". The first two runs reported all 13 namespaces as differing, because the cluster
+  adds `kubernetes.io/metadata.name` and Flux's two labels to the namespace it applies; the check now compares only
+  the labels Git states.
+- **Not exercised:** `check-apps` on a tree whose records and compiled files disagree (the render check owns that
+  and its output is passed through), a live namespace whose label Git also states with another value (only the
+  positive path ran), and the `app-new` create path's v1 rendering, which still needs Helm — phase 5's templates.
+
 ## The first live console edit, and the frozen fixture it found (31 October 2026)
 
 - **The console opened the change.** After the image carrying the binary rolled out (`0a814aec`, image

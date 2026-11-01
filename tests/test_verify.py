@@ -16,9 +16,8 @@ from urllib.parse import urlparse
 from fakecluster import CONSOLE_TAG, KEY, TOKEN, b64, fresh_backup, healthy
 
 from swhurl import ROOT, clickstack, dashboards, images, interface, platform, recovery, validate, verify
-from swhurl.apps import calling, channels, contract
+from swhurl.apps import calling, channels
 from swhurl.apps import checks as app_checks
-from swhurl.apps.model import store
 from swhurl.notifications import checks as notification_checks
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
@@ -52,7 +51,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== App secrets ==', '\n== Events ==', '\n== Egress proxy ==', '\n== Alerts ==', '\n== Notification channels ==', '\n== Notify service ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Egress proxy ==', '\n== Alerts ==', '\n== Notification channels ==', '\n== Notify service ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
                       '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== App dashboards and alerts ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
                       '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
@@ -206,14 +205,13 @@ class V2ImageAutomationTests(unittest.TestCase):
         self.assertEqual(app_checks.images.platform_digest(self.repository, self.tag, opener=opener),
                          'sha256:' + hashlib.sha256(body).hexdigest())
 
-    def test_an_instance_with_no_record_of_either_kind_warns_about_both(self):
+    def test_an_instance_with_no_record_warns_about_it(self):
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root)
-        (root / 'apps').symlink_to(ROOT / 'apps')
         opener, _ = self.registry(self.digest)
         (line,) = self.lines(opener, root=root)
         self.assertTrue(line.startswith(
-            f'[WARN] demo-notifier-staging: newest image {self.tag}, but this checkout has neither'), line)
+            f'[WARN] demo-notifier-staging: newest image {self.tag}, but this checkout has no'), line)
         self.assertIn('v2-records/demo-notifier/staging/release.json', line)
 
 
@@ -281,75 +279,83 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn('[BAD] cannot read flux-system/kustomize-controller (kubectl -n flux-system get deploy kustomize-controller)', report.lines)
 
     def test_image_automation_problems(self):
-        # A v1 instance's record states the tag, so this needs no registry: the fixture is the only v1 staging
-        # instance in the tree today (the fleet is v2's, and a v2 record states a digest instead).
         from fakecluster import policy
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root)
-        shutil.copytree(ROOT / 'tests/fixtures/instance/apps/hello', root / 'apps/hello')
-        tag = '1.27-alpine'
-        cases = {
-            'policy': ([policy('hello', tag, {'conditions': [
-                {'type': 'Ready', 'status': 'False', 'message': 'no tags match'}]})],
-                       '[BAD] ImagePolicy hello-staging is not Ready, so staging gets no new images: no tags match'),
-            'behind': ([policy('hello', '999-abcdef0')],
-                       f'[WARN] hello-staging: newest image 999-abcdef0 is not deployed; staging in Git runs {tag}'),
-        }
+        items = [policy('hello', '1.27-alpine', {'conditions': [
+            {'type': 'Ready', 'status': 'False', 'message': 'no tags match'}]})]
+        report = Report(io.StringIO())
+        app_checks.check_image_automation(healthy(policies={'items': items}), report, root)
+        self.assertTrue(any(line.startswith(
+            '[BAD] ImagePolicy hello-staging is not Ready, so staging gets no new images: no tags match')
+            for line in report.lines), report.lines)
 
-        def lines(items):
-            report = Report(io.StringIO())
-            app_checks.check_image_automation(healthy(policies={'items': items}), report, root)
-            return [line for line in report.lines if 'hello' in line]
-
-        for name, (items, expected) in cases.items():
-            with self.subTest(name=name):
-                found = lines(items)
-                self.assertTrue(any(line.startswith(expected) for line in found), found)
-        self.assertIn(f'[OK] hello-staging: newest image {tag}, deployed', lines([policy('hello', tag)]))
+    def make_compiled(self, root, team='demo'):
+        """One instance as v2 compiles it: its Namespace, ResourceQuota and NetworkPolicy under ``root``."""
+        folder = root / 'v2-apps/instances/w/staging'
+        shutil.copytree(ROOT / 'v2-apps/instances/demo-shopper/staging', folder)
+        namespace = json.loads((folder / 'namespace.json').read_text())
+        namespace['metadata'] = {'name': 'w-staging', 'labels': {**namespace['metadata']['labels'],
+                                                                 interface.TEAM: team}}
+        (folder / 'namespace.json').write_text(json.dumps(namespace))
+        for name in ('resourcequota.json', 'networkpolicy.json'):
+            document = json.loads((folder / name).read_text())
+            document['metadata'] = {**document['metadata'], 'name': 'w', 'namespace': 'w-staging'}
+            (folder / name).write_text(json.dumps(document))
+        (root / 'apps').mkdir(parents=True, exist_ok=True)
+        (root / 'apps/teams.yaml').write_text(f'teams:\n  {team}:\n    description: ours\n')
+        return folder
 
     def test_isolation_problems(self):
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root)
-        (root / 'apps/w/staging').mkdir(parents=True)
-        source = ROOT / 'tests/fixtures/instance/apps/hello'
-        shutil.copy(source / 'app.yaml', root / 'apps/w/app.yaml')
-        for name in ('release.yaml', 'instance.yaml'):
-            shutil.copy(source / 'staging' / name, root / 'apps/w/staging' / name)
+        folder = self.make_compiled(root)
+        owned = {'app-namespaces': {'items': [json.loads((folder / 'namespace.json').read_text())]},
+                 'quotas': {'items': [json.loads((folder / 'resourcequota.json').read_text())]},
+                 'network-policies': {'items': [json.loads((folder / 'networkpolicy.json').read_text())]}}
 
         def isolation(**overrides):
             report = Report(io.StringIO())
-            app_checks.check_isolation(healthy(**overrides), report, root)
+            app_checks.check_isolation(healthy(**{**owned, **overrides}), report, root)
             return report.lines
-        present = {'items': [{'metadata': {'name': 'w-staging', 'labels': {
-            'platform.swhurl.com/app': 'w', interface.TEAM: 'demo'}}}]}
-        good = {'app-namespaces': present,
-                'quotas': {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {'hard': contract.QUOTA}}]},
-                'network-policies': {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {
-                    'podSelector': {'matchLabels': {'app.kubernetes.io/instance': 'w'}}}}]}}
         self.assertIn('[OK] 1 app namespace(s) have a registered team, the platform quota and a NetworkPolicy',
-                      isolation(**good))
-        namespace = {'items': [{'metadata': {'name': 'w-staging', 'labels': {'platform.swhurl.com/app': 'w'}}},
-                               # kept for its data after its app was removed: not an instance, not checked
-                               {'metadata': {'name': 'gone-prod', 'labels': {'platform.swhurl.com/app': 'gone'}}}]}
-        every_pod = {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {'podSelector': {}}}]}
-        lines = isolation(**{'app-namespaces': namespace, 'quotas': {'items': []}, 'network-policies': every_pod})
-        self.assertEqual(lines[1:], ["[BAD] w-staging: team None is not in apps/teams.yaml (make app-team APP=w ARGS=\"--team <team>\"); "
-                                     "no platform ResourceQuota; no NetworkPolicy on the app's pods "
-                                     "(make check-apps, then make app-reconcile APP=w ENV=staging)"])
+                      isolation())
+        # a namespace kept for its data after its app was removed is not an instance and is not checked
+        gone = {'items': [*owned['app-namespaces']['items'],
+                          {'metadata': {'name': 'gone-prod', 'labels': {interface.APP: 'gone'}}}]}
+        self.assertIn('[OK] 1 app namespace(s) have a registered team, the platform quota and a NetworkPolicy',
+                      isolation(**{'app-namespaces': gone}))
+        lines = isolation(**{'app-namespaces': {'items': []}})
         self.assertTrue(any(line.startswith('[BAD] w-staging: the namespace does not exist, so the instance is not running')
-                            for line in isolation(**{'app-namespaces': {'items': []}})))
+                            for line in lines), lines)
+        (root / 'apps/teams.yaml').write_text('teams: {}\n')
+        moved = isolation(**{'network-policies': {'items': []}, 'quotas': {'items': []}})
+        self.assertTrue(any(line.startswith("[BAD] w-staging: team 'demo' is not in apps/teams.yaml")
+                            and 'no ResourceQuota as Git declares it' in line
+                            and "no NetworkPolicy on the app's pods" in line
+                            and 'make check-apps, then make app-reconcile APP=w ENV=staging' in line for line in moved),
+                        moved)
+        (root / 'apps/teams.yaml').write_text('teams:\n  demo:\n    description: ours\n')
+        labels = isolation(**{'app-namespaces': {'items': [{'metadata': {'name': 'w-staging', 'labels': {
+            interface.APP: 'w'}}}]}})
+        self.assertTrue(any(line.startswith('[BAD] w-staging: the namespace labels differ from Git') for line in labels),
+                        labels)
+        (root / 'v2-apps/instances/w/staging/namespace.json').unlink()
+        broken = isolation()
+        self.assertTrue(any(line.startswith('[BAD] v2-apps/instances/w/staging: its compiled objects cannot be read')
+                            for line in broken), broken)
         self.assertIn('[BAD] cannot read app namespaces, ResourceQuotas or NetworkPolicies, so app isolation is unchecked '
                       '(kubectl get namespaces -l platform.swhurl.com/app)',
-                      isolation(**{**good, 'quotas': Result((), 1, '', 'forbidden')}))
+                      isolation(**{'quotas': Result((), 1, '', 'forbidden')}))
 
     def test_signing_key_problems(self):
         _, report, text = run(healthy())
-        self.assertIn("[OK] apps/signing-keys.json holds the cluster's 1 signing key(s)", report.lines, text)
+        self.assertIn("[OK] v2/testdata/profile.json states the cluster's 1 signing key(s)", report.lines, text)
         self.assertIn(f'[OK] token issuer is {calling.ISSUER}', report.lines, text)
         code, report, text = run(healthy(jwks={'keys': [{'kid': 'rotated'}]}))
         self.assertEqual(code, 1, text)
-        self.assertTrue(any(line.startswith("[BAD] apps/signing-keys.json is not the cluster's signing key set")
-                            and 'make platform-signing-keys' in line for line in report.lines), text)
+        self.assertTrue(any(line.startswith("[BAD] v2/testdata/profile.json does not state the cluster's signing key set")
+                            and 'docs/operations.md#signing-keys' in line for line in report.lines), text)
         code, report, text = run(healthy(openid={'issuer': 'https://elsewhere'}))
         self.assertEqual(code, 1, text)
         self.assertTrue(any(line.startswith('[BAD] token issuer is https://elsewhere') for line in report.lines), text)
@@ -357,18 +363,28 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn("[BAD] cannot read the cluster's token issuer or signing keys (kubectl get --raw /openid/v1/jwks)", report.lines, text)
 
     def test_event_problems(self):
+        from fakecluster import declared_events
+        declared = declared_events()
         _, report, text = run(healthy())
         self.assertIn('[OK] NATS is running', report.lines, text)
-        self.assertIn('[OK] 1 declared stream(s) and consumer(s) exist in NATS', report.lines, text)
+        self.assertIn(f'[OK] {len(declared)} declared stream(s) and consumer(s) exist in NATS', report.lines, text)
         code, report, text = run(healthy(nats={'status': {}}))
         self.assertEqual(code, 1, text)
         self.assertTrue(any(line.startswith('[BAD] NATS is not running') for line in report.lines), text)
-        pending = {'items': [{'kind': 'Consumer', 'metadata': {'namespace': 'w-staging', 'name': 'orders-created'},
-                              'status': {'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'stream not found'}]}}]}
+        consumer = next(doc for doc in declared if doc['kind'] == 'Consumer')
+        where = f"{consumer['metadata']['namespace']}/{consumer['metadata']['name']}"
+        code, report, text = run(healthy(streams={'items': []}))
+        self.assertEqual(code, 1, text)
+        self.assertIn(f'[BAD] Consumer {where} is what Git declares, but NATS has no such consumer', ' '.join(report.lines))
+        pending = {'items': [dict(doc, status={'conditions': [
+            {'type': 'Ready', 'status': 'False', 'message': 'stream not found'}]}) if doc['kind'] == 'Consumer'
+            else doc | {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}
+            for doc in declared]}
         code, report, text = run(healthy(streams=pending))
         self.assertEqual(code, 1, text)
-        self.assertIn('[BAD] Consumer w-staging/orders-created is not Ready, so its events are not kept or delivered: stream not found '
-                      '(kubectl -n w-staging describe consumer orders-created)', report.lines, text)
+        self.assertIn(f'[BAD] Consumer {where} is not Ready, so its events are not kept or delivered: stream not found '
+                      f'(kubectl -n {consumer["metadata"]["namespace"]} describe consumer {consumer["metadata"]["name"]})',
+                      report.lines, text)
         _, report, text = run(healthy(streams=Result((), 1, '', 'no such resource')))
         self.assertIn('[BAD] cannot read NATS, its controller, or the streams and consumers (make reconcile UNIT=platform-nats)', report.lines, text)
 
@@ -401,10 +417,8 @@ class ConsoleTokenTests(unittest.TestCase):
     def test_a_team_that_owns_apps_and_has_no_channel_is_named(self):
         _, report, text = run(healthy())
         owned = {}
-        world, errors = store.world(ROOT)
-        self.assertEqual(errors, [])
-        for each, entry in world.items():
-            owned.setdefault(entry.app.team, set()).add(each.app)
+        for record in sorted((ROOT / 'v2-records').glob('*/app.json')):
+            owned.setdefault(json.loads(record.read_text())['team'], set()).add(record.parent.name)
         routes = channels.team_channels(ROOT)
         for team, apps in owned.items():
             line = (f'[WARN] team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '
@@ -486,7 +500,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Alerts', 'Notify service'] + ['App dashboards and alerts', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, image-automation, isolation, signing-keys, secrets, events, egress, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, image-automation, isolation, signing-keys, events, egress, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

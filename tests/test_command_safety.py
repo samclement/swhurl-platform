@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from swhurl import ROOT, commands, flux, platform
-from swhurl.apps import calling, channels, contract
+from swhurl.apps import calling, channels
 
 KEY = 'fixture-private-ingestion-token'
 OTHER_KEY = 'fixture-other-private-token'
@@ -38,9 +38,6 @@ class CommandSafetyTests(unittest.TestCase):
         # The console image tag is this checkout's commit, so the real git diff finds no change.
         self.env['CONSOLE_TAG'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True,
                                                  text=True, check=True).stdout.strip()
-        self.env['INSTANCES'] = json.dumps([(p.parent.parent.name, p.parent.name)
-                                            for p in (ROOT / 'apps').glob('*/*/helmrelease.yaml')])
-        self.env['QUOTA'] = json.dumps(contract.QUOTA)
         self.env['ROUTES'] = json.dumps(channels.routes(ROOT))
         self.env['CHANNEL_SECRETS'] = '\n'.join(f'secret/channel-{name}' for name in channels.channels(ROOT))
         self.env['REPO'], self.env['ISSUER'] = str(ROOT), calling.ISSUER
@@ -79,22 +76,24 @@ elif argv[:3] == ['-n', 'messaging', 'get']:
 elif argv[:3] == ['-n', 'egress', 'get']:
     emit({'spec': {'replicas': 2}, 'status': {'readyReplicas': 2}})
 elif len(argv) > 1 and argv[0] == 'get' and argv[1].startswith('streams.jetstream'):
-    emit({'items': []})
+    # every stream and consumer v2 rendered for this checkout's instances, Ready in NATS
+    folders = Path(os.environ['REPO']).glob('v2-apps/instances/*/*')
+    docs = [json.loads(p.read_text()) for f in folders for p in
+            [*sorted(f.glob('stream.json')), *sorted(f.glob('consumer-*.json'))]]
+    emit({'items': [d | {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}} for d in docs]})
 elif argv[:3] == ['get', '--raw', '/openid/v1/jwks']:
-    print((Path(os.environ['REPO']) / 'apps/signing-keys.json').read_text())
+    print(json.loads((Path(os.environ['REPO']) / 'v2/testdata/profile.json').read_text())['auth']['keys'])
 elif argv[:3] == ['get', '--raw', '/.well-known/openid-configuration']:
     emit({'issuer': os.environ['ISSUER']})
-elif argv[:2] == ['get', 'namespaces']:  # isolation check: every instance in this checkout is in order
-    emit({'items': [{'metadata': {'name': a + '-' + e, 'labels': {'platform.swhurl.com/app': a,
-                                                                  'platform.swhurl.com/team': 'demo'}}}
-                    for a, e in json.loads(os.environ['INSTANCES'])]})
+elif argv[:2] == ['get', 'namespaces']:  # isolation: a healthy cluster has what Git declares
+    folders = Path(os.environ['REPO']).glob('v2-apps/instances/*/*')
+    emit({'items': [json.loads((f / 'namespace.json').read_text()) for f in folders]})
 elif argv[:2] == ['get', 'resourcequotas']:
-    emit({'items': [{'metadata': {'namespace': a + '-' + e}, 'spec': {'hard': json.loads(os.environ['QUOTA'])}}
-                    for a, e in json.loads(os.environ['INSTANCES'])]})
+    folders = Path(os.environ['REPO']).glob('v2-apps/instances/*/*')
+    emit({'items': [json.loads((f / 'resourcequota.json').read_text()) for f in folders]})
 elif any(a.startswith('networkpolicies') for a in argv):
-    emit({'items': [{'metadata': {'namespace': a + '-' + e},
-                     'spec': {'podSelector': {'matchLabels': {'app.kubernetes.io/instance': a}}}}
-                    for a, e in json.loads(os.environ['INSTANCES'])]})
+    folders = Path(os.environ['REPO']).glob('v2-apps/instances/*/*')
+    emit({'items': [json.loads((f / 'networkpolicy.json').read_text()) for f in folders]})
 elif argv[:2] == ['get', 'deployments']:  # backup-sqlite discovery: no app has a SQLite database
     emit({'items': []})
 elif argv[:3] == ['-n', 'notify', 'get']:

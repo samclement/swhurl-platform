@@ -6,17 +6,16 @@ changes one answer with ``healthy(<key>=...)``.
 """
 import base64
 import datetime as dt
-import functools
 import json
 
-from swhurl import ROOT, clickstack, flux, interface, platform, yamlio
-from swhurl.apps import calling, channels, contract
+from swhurl import ROOT, clickstack, flux, platform
+from swhurl.apps import calling, channels
 from swhurl.run import FakeRunner, Result
 
 KEY = 'fixture-team-ingestion-key-0001'
 CONSOLE_TAG = 'b63d2aff9dfd4cf9df0307e382038dcbd15e29ed'
 TOKEN = 'github_pat_fixture_token_0001'
-INSTANCES = [(p.parent.parent.name, p.parent.name) for p in sorted((ROOT / 'apps').glob('*/*/helmrelease.yaml'))]
+COMPILED = ROOT / 'v2-apps/instances'
 READY = {'conditions': [{'type': 'Ready', 'status': 'True'}]}
 
 
@@ -102,34 +101,42 @@ def ingress_rules(runner, answer):
     runner.on('kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', handler=answer('traefik'))
 
 
-@functools.cache  # the checkout does not change during a run; every verifier test asks again
-def staging_tag(app):
-    return yamlio.load((ROOT / 'apps' / app / 'staging/helmrelease.yaml').read_text())[
-        'spec']['values']['controllers']['main']['containers']['main']['image']['tag']
-
-
 def policy(app, tag, ready=READY):
     """An app's ImagePolicy as Flux reports it: ``tag`` is the newest image it picked."""
     return {'metadata': {'name': f'{app}-staging', 'labels': {'platform.swhurl.com/app': app}},
             'status': ready | {'latestRef': {'tag': tag}}}
 
 
+def compiled():
+    """Every instance v2 compiled from the records: ``(app, env, folder)``, the objects Git declares."""
+    return [(folder.parent.name, folder.name, folder) for folder in sorted(COMPILED.glob('*/*')) if folder.is_dir()]
+
+
+def declared(folder, name):
+    return json.loads((folder / name).read_text())
+
+
+def declared_events():
+    """Every stream and consumer v2 rendered: the events the instances publish and subscribe to."""
+    return [declared(folder, path.name) for _app, _env, folder in compiled()
+            for path in sorted(folder.glob('stream.json')) + sorted(folder.glob('consumer-*.json'))]
+
+
 def apps_answers():
-    """The isolation check walks the instances in this checkout: answer for each of them."""
+    """The isolation and event checks walk the instances v2 compiled: a healthy cluster has exactly them."""
+    folders = [folder for _app, _env, folder in compiled()]
     return {
-        'policies': {'items': [policy(app, staging_tag(app)) for app, env in INSTANCES
-                               if env == 'staging' and (ROOT / 'apps' / app / env / contract.IMAGE_AUTOMATION_FILE).is_file()]},
-        'app-namespaces': {'items': [{'metadata': {'name': f'{app}-{env}', 'labels': {
-            'platform.swhurl.com/app': app, interface.TEAM: 'demo'}}} for app, env in INSTANCES]},
-        'quotas': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {'hard': contract.QUOTA}}
-                             for app, env in INSTANCES]},
-        'network-policies': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {
-            'podSelector': {'matchLabels': {'app.kubernetes.io/instance': app}}}} for app, env in INSTANCES]},
+        # Image automation resolves a tag in the registry, so the healthy cluster has no ImagePolicy to judge;
+        # V2ImageAutomationTests adds one with a fake registry.
+        'policies': {'items': []},
+        'app-namespaces': {'items': [declared(folder, 'namespace.json') for folder in folders]},
+        'quotas': {'items': [declared(folder, 'resourcequota.json') for folder in folders]},
+        'network-policies': {'items': [declared(folder, 'networkpolicy.json') for folder in folders]},
         'nats': {'status': {'readyReplicas': 1}},
         'nats-controller': {'status': {'readyReplicas': 1}},
         'egress': {'spec': {'replicas': 2}, 'status': {'readyReplicas': 2}},
-        'streams': {'items': [{'kind': 'Stream', 'metadata': {'namespace': 'w-staging', 'name': 'staging-w'}, 'status': READY}]},
-        'jwks': json.loads((ROOT / calling.SIGNING_KEYS_FILE).read_text()),
+        'streams': {'items': [doc | {'status': READY} for doc in declared_events()]},
+        'jwks': json.loads(json.loads((ROOT / calling.SIGNING_KEYS_FILE).read_text())['auth']['keys']),
         'openid': {'issuer': calling.ISSUER},
         'deployments': {'items': []},  # where app SQLite databases are looked for
     }

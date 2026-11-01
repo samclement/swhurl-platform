@@ -1,12 +1,14 @@
 # Deleting v1: the plan for 1b's second half
 
-**Status: in progress (31 October 2026). Phases 0, 1, 2 and 3 are done — the console reads v2's records and writes
-them through the `swhurl-v2` binary, live-tested by a memory change and its revert; v1's writer commands and modules
-are deleted, `resolve` reads one record shape, and Activity reads v2's tree. Phase 4 (the v2-only checks) is next. The
-four decisions in section 5 were confirmed 31 October 2026.** The migrations are done: nine staging and four production
-instances are v2-owned, `apps/` holds no instance record, and the live checks in
-[current state](current-state.md#the-production-cutover-four-instances-31-october-2026) pass. What remains is the
-deletions and the v1-only branches in `verify-platform` and `resolve`.
+**Status: phases 0 to 4 done (31 October 2026); phase 5 is outside this repository and awaits the operator.** The
+console reads v2's records and writes them through the `swhurl-v2` binary, live-tested by a memory change and its
+revert; v1's writer commands and modules are deleted, `resolve` reads one record shape, Activity reads v2's tree, and
+the platform's checks read v2's too — `check-apps` is v2's render check and `verify-platform` reads `v2-apps/`
+([record](v2-status.md#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026),
+[evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026)). The four decisions in section 5 were confirmed
+31 October 2026. The migrations are done: nine staging and four production instances are v2-owned, `apps/` holds no
+instance record, and the live checks in
+[current state](current-state.md#the-production-cutover-four-instances-31-october-2026) pass.
 
 This page is the working plan, not a status page. The contract stays in
 [iteration 2, section 8](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026);
@@ -70,9 +72,10 @@ The create flow after phase 3 is `app-repo` → `app-new` → `swhurl-v2 migrate
 unit, the sequence all 13 migrations took: a v1-created instance is a staging post, not a state the platform stays
 in.
 
-`platform-signing-keys` stays a **delete** row, but `apps/signing-keys.json` outlives it until phase 4: `verify`'s
-`signing-keys` check and `check-apps`' policy still read the file, whose keys now reach the instances as
-`platform/auth/` objects — a v1 copy waiting for its last two readers.
+`platform-signing-keys` is a **delete** row, and `apps/signing-keys.json` went with it in phase 4: `verify`'s
+`signing-keys` check compares the profile's `auth.keys` and `auth.issuer` with the cluster, the policy reads the same
+block, and `platform/auth/` is rendered from it, so a rotated key has one source and one recipe
+([operations](../docs/operations.md#signing-keys)).
 
 **Dependencies that move with the table:**
 
@@ -264,12 +267,18 @@ phase 3 (§2.3).
 - Acceptance (met): `rg "from swhurl\.apps" tools/swhurl/console` has no read/write hit for a deleted feature;
   `make check`, `make check-v2`, `make check-apps` (or its replacement), `make check-repo`.
 
-**Phase 4 — the v2 checks (1 day).**
-- Add a `make check-apps` replacement (or extend `check-v2`) that compiles every `v2-records` instance and
-  compares it with `v2-apps`, checks `apps/teams.yaml`, and validates the platform documents. The Makefile's
-  `check` keeps the same shape.
-- `make verify-platform` reads v2 records for the namespace/team/quota/port checks; delete the v1 branch and
-  its `0 instance(s)` path. Then delete `apps/checks.py` if the new `check-apps` no longer uses it.
+**Phase 4 — the v2 checks (done 31 October 2026).**
+- `make check-apps` is v2's render check — the `render --check` of [`v2/check-rendered.sh`](../v2/check-rendered.sh),
+  which compiles every `v2-records` instance and compares it with `v2-apps` and the platform documents — plus the
+  rules no compiler can decide: each app record's team is in `apps/teams.yaml`, the notify routes are that
+  registry's, and the template fixtures pass the Helm policy. It delegates rather than re-deriving the comparison in
+  Python, so the target now needs Go (Validate's `apps` job and Deploy install it). The Makefile's `check` keeps its
+  shape.
+- `make verify-platform` reads `v2-apps/instances/` (and `platform/egress/allocation.json` for the ports); the v1
+  branch, the `0 instance(s)` path and `check_secrets` are deleted. `apps/checks.py` is kept, v1-free: it holds the
+  live checks, and its only v1 input left is the template fixtures' Helm policy.
+- The deviation: the isolation and events checks read the **compiled** files, not the records, because a second
+  Python reader of the records would be a second compiler; `check-apps` proves the records render to those files.
 - `swhurl-v2 resolve` test (done in phase 3): one record shape, a predecessor's refused.
 
 **Phase 5 — external repositories (separate confirmation).**
@@ -287,13 +296,14 @@ phase 3 (§2.3).
   listed in §2.2/§3.
 - `rg "app-(scale|expose|calls|allows|events|team|remove|deploy|promote|sync|check|offers|egress|alerts|schedule|secret)"
   Makefile tools/swhurl tests docs` has no live command entry (only historical records).
-- `verify-platform` has no v1 branch and still checks the four production namespaces' team, quota, policy and
-  port from v2 records.
+- `verify-platform` has no v1 branch and still checks every instance's team, quota, policy and port from v2's
+  tree (met 31 October 2026: the live pass names all 13 instances).
 - `swhurl-v2 resolve` reads one record shape.
 - The console, signed in and out, renders the catalogue, every instance page and the platform page; a change to
   a throwaway v2 instance succeeds; a promotion is proposed and applied; a v1-only fact (egress, alerts,
   schedule, secret) is named on the page as not modelled by v2, with no command left that pretends to set it.
-- No `clusters/home/*.yaml` app unit; `apps/` has no instance record.
+- No `clusters/home/*.yaml` app unit; `apps/` has no instance record (met 31 October 2026: `apps/` holds the
+  template's README, `teams.yaml` and two empty folders).
 - Live evidence goes in [current state](current-state.md), with the same "what changed / checked / not
   exercised" shape as the cutover section.
 

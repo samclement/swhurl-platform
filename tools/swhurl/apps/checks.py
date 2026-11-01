@@ -1,5 +1,10 @@
 """Live checks of the apps: what Git declares for the instances is what the cluster has.
 
+Every instance is v2's, so what Git declares is v2's compiled tree: ``v2-apps/instances/<app>/<env>/`` holds the
+objects v2 rendered from the records — the Namespace, the ResourceQuota, the NetworkPolicy, each stream and
+consumer — and ``make check-apps`` (v2's own ``render --check``) keeps that equal to the records. The checks read
+no v1 record: there is none to read, and re-deriving v2's namespace names and labels here would be a second model.
+
 Each takes a Runner and a Report and only reads; ``verify.CHECKS`` lists them (make verify-platform).
 """
 from __future__ import annotations
@@ -9,48 +14,50 @@ from pathlib import Path
 
 from swhurl import ROOT, interface
 from swhurl.apps import calling, contract, egress, events, hooks, images
-from swhurl.apps.instance import INSTANCE_ROOTS, Instance
-from swhurl.apps.model import generated, store
-from swhurl.apps.model.draft import RenderError
 from swhurl.kube import ready_condition
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
+
+V2_RECORDS = Path('v2-records')
+COMPILED = Path('v2-apps/instances')
+ALLOCATION = Path('platform/egress/allocation.json')
 
 
 def app_of(policy: dict) -> str:
     return (policy['metadata'].get('labels') or {}).get(interface.APP, '')
 
 
-V2_RECORDS = Path('v2-records')
+def compiled(root: Path = ROOT) -> list[tuple[str, str, Path]]:
+    """Every instance v2 compiled from its records — ``(app, env, folder)`` — in order.
+
+    The folder is what Git declares to the cluster for that instance, so a check compares live objects with it
+    rather than deriving v2's names and labels again; an empty tree (a checkout that has never rendered) is []
+    and every instance is then simply not checked here.
+    """
+    base = root / COMPILED
+    return [(folder.parent.name, folder.name, folder) for folder in sorted(base.glob('*/*')) if folder.is_dir()]
 
 
-def judge_staging(report: Report, root: Path, world, app: str, name: str, latest: str,
+def declared(folder: Path, name: str) -> dict:
+    """One object v2 rendered into an instance's folder (``namespace.json``, ``stream.json``, ...)."""
+    return json.loads((folder / name).read_text())
+
+
+def judge_staging(report: Report, root: Path, app: str, name: str, latest: str,
                   opener: images.Opener = images._open) -> None:
     """Does staging run the image its ImagePolicy picked, read from the record that owns the instance?
 
-    v1 owns an instance that has ``apps/<app>/staging/release.yaml``: its record states the tag.
-    v2 owns one that has ``v2-records/<app>/staging/release.json``: its record states the digest, so the
-    digest of the tag the policy picked is read from the record's own image (a public package, no credential).
+    The instance is v2's: ``v2-records/<app>/staging/release.json`` states the digest of the image's
+    ``linux/amd64`` manifest, so the tag the policy picked is resolved through the record's own image (a public
+    package, no credential) and that entry compared with what the record states.
     """
-    v1_record = root / INSTANCE_ROOTS[0] / app / contract.AUTO_DEPLOY_ENV / 'release.yaml'
-    entry = world.get(Instance.named(app, contract.AUTO_DEPLOY_ENV))
-    if entry is not None:
-        running = entry.release.image.tag
-        if running == latest:
-            report.ok(f'{name}: newest image {latest}, deployed')
-            return
-        report.warn(f'{name}: newest image {latest} is not deployed; staging in Git runs {running}. The Deploy '
-                    'workflow deploys it within the hour (git pull: it may already have); to deploy it now, or see '
-                    f'why it is held: make app-deploy APP={app}, commit and push')
-        return
     record = root / V2_RECORDS / app / contract.AUTO_DEPLOY_ENV / 'release.json'
     stated = record.relative_to(root)
     try:
         artifact = json.loads(record.read_text())['artifact']
         digest, image = artifact['digest'], artifact.get('image') or ''
     except FileNotFoundError:
-        report.warn(f'{name}: newest image {latest}, but this checkout has neither {v1_record.relative_to(root)} '
-                    f'nor {stated} (git pull if it is behind main)')
+        report.warn(f'{name}: newest image {latest}, but this checkout has no {stated} (git pull if it is behind main)')
         return
     except (OSError, ValueError, AttributeError, KeyError, TypeError) as error:
         report.bad(f'{stated} cannot be read ({error}), so whether staging runs {latest} is unchecked')
@@ -86,11 +93,6 @@ def check_image_automation(runner: Runner, report: Report, root: Path = ROOT,
         report.bad("cannot read the apps' ImagePolicies, so no staging deploy can be checked "
                    '(kubectl -n flux-system get imagepolicies; is image-reflector-controller running? make flux-install)')
         return
-    world, errors = store.world(root)
-    if errors:
-        for error in errors:
-            report.bad(error)
-        return
     for policy in sorted(policies, key=lambda p: p['metadata']['name']):
         name = policy['metadata']['name']
         status, message = ready_condition(policy)
@@ -99,13 +101,15 @@ def check_image_automation(runner: Runner, report: Report, root: Path = ROOT,
                        f'(kubectl -n flux-system describe imagerepository {app_of(policy)}; make reconcile UNIT=app-{name})')
             continue
         latest = ((policy.get('status') or {}).get('latestRef') or {}).get('tag', '')
-        judge_staging(report, root, world, app_of(policy), name, latest, opener)
+        judge_staging(report, root, app_of(policy), name, latest, opener)
 
 
 def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """Every instance in Git has, live, a registered team, the platform quota and a NetworkPolicy on the app's pods.
+    """Every instance v2 compiled has, live, its namespace, its team, the platform quota and a NetworkPolicy.
 
-    Namespaces kept for their data after an app was removed are not instances and are not checked.
+    What Git declares is v2's compiled folder: the namespace with its labels, the ResourceQuota and the
+    NetworkPolicy, compared field by field with the cluster. Namespaces kept for their data after an app was
+    removed are not instances and are not checked.
     """
     report.section('App isolation')
     try:
@@ -119,33 +123,42 @@ def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
         return
     known = contract.teams(root)
     live = {n['metadata']['name']: n['metadata'].get('labels') or {} for n in namespaces}
-    world, errors = store.world(root)
-    if errors:
-        for error in errors:
-            report.bad(error)
-        return
     complete = 0
-    for instance in world:
-        app, name = instance.app, instance.namespace
+    for app, env, folder in compiled(root):
+        try:
+            namespace = declared(folder, 'namespace.json')
+            quota = declared(folder, 'resourcequota.json')
+            policy = declared(folder, 'networkpolicy.json')
+        except (OSError, ValueError) as error:
+            report.bad(f'{COMPILED}/{app}/{env}: its compiled objects cannot be read ({error}), so whether the '
+                       'cluster has them is unchecked (make check-apps recompiles them)')
+            continue
+        name = namespace['metadata']['name']
         if name not in live:
             report.bad(f'{name}: the namespace does not exist, so the instance is not running '
-                       f'(make app-reconcile APP={app} ENV={instance.env}; make flux-reconcile shows why it fails)')
+                       f'(make app-reconcile APP={app} ENV={env}; make flux-reconcile shows why it fails)')
             continue
-        labels = live[name]
         problems = []
-        team = labels.get(interface.TEAM)
+        found, wanted = live[name], namespace['metadata'].get('labels') or {}
+        # The cluster adds its own labels to what Flux applies (kubernetes.io/metadata.name on every namespace,
+        # kustomize.toolkit.fluxcd.io/name and .../namespace on the objects it owns): only Git's are compared.
+        moved = sorted(key for key, value in wanted.items() if found.get(key) != value)
+        if moved:
+            problems.append('the namespace labels differ from Git (' + ', '.join(moved) + ')')
+        team = wanted.get(interface.TEAM)
         if team not in known:
-            problems.append(f'team {team!r} is not in {contract.TEAMS_FILE} (make app-team APP={app} ARGS="--team <team>"'
-                            + (f', or make team-add NAME={team})' if team else ')'))
-        if not any(q['metadata']['namespace'] == name and (q.get('spec') or {}).get('hard') == contract.QUOTA
+            problems.append(f'team {team!r} is not in {contract.TEAMS_FILE} '
+                            f'(make team-add NAME={team} DESCRIPTION="...")')
+        if not any(q['metadata']['namespace'] == name and (q.get('spec') or {}).get('hard') == quota['spec']['hard']
                    for q in quotas):
-            problems.append('no platform ResourceQuota')
-        selector = {'matchLabels': {'app.kubernetes.io/instance': app}}
+            problems.append('no ResourceQuota as Git declares it')
+        selector = policy['spec']['podSelector']
         if not any(p['metadata']['namespace'] == name and (p.get('spec') or {}).get('podSelector') == selector
                    for p in policies):
             problems.append("no NetworkPolicy on the app's pods")
         if problems:
-            report.bad(f'{name}: ' + '; '.join(problems) + f' (make check-apps, then make app-reconcile APP={app} ENV={instance.env})')
+            report.bad(f'{name}: ' + '; '.join(problems)
+                       + f' (make check-apps, then make app-reconcile APP={app} ENV={env})')
         else:
             complete += 1
     if complete:
@@ -162,19 +175,31 @@ def check_signing_keys(runner: Runner, report: Report, root: Path = ROOT) -> Non
         report.bad('cannot read the cluster\'s token issuer or signing keys (kubectl get --raw /openid/v1/jwks)')
         return
     path = root / calling.SIGNING_KEYS_FILE
-    if not path.is_file():
-        report.bad(f'{calling.SIGNING_KEYS_FILE} is missing, so apps refuse every call between them: '
-                   'make platform-signing-keys, commit and push')
-    elif json.loads(path.read_text()) != live:
-        report.bad(f'{calling.SIGNING_KEYS_FILE} is not the cluster\'s signing key set: apps refuse every call between '
-                   'them until you run make platform-signing-keys, commit and push')
+    try:
+        auth = json.loads(path.read_text())['auth']
+        stated = json.loads(auth['keys'])
+    except (OSError, ValueError, KeyError, TypeError):
+        report.bad(f'{calling.SIGNING_KEYS_FILE} states no signing keys, so apps refuse every call between them: '
+                   'put the cluster\'s key set in its auth block and render platform/auth from it')
+        return
+    if stated != live:
+        report.bad(f'{calling.SIGNING_KEYS_FILE} does not state the cluster\'s signing key set, so apps refuse every '
+                   'call between them: put the cluster\'s key set in its auth block and render platform/auth from it '
+                   '(docs/operations.md#signing-keys)')
     else:
-        report.ok(f'{calling.SIGNING_KEYS_FILE} holds the cluster\'s {len(live.get("keys") or [])} signing key(s)')
-    if issuer == calling.ISSUER:
+        report.ok(f'{calling.SIGNING_KEYS_FILE} states the cluster\'s {len(live.get("keys") or [])} signing key(s)')
+    if auth.get('issuer') == issuer:
         report.ok(f'token issuer is {issuer}')
     else:
-        report.bad(f'token issuer is {issuer}, but apps are told {calling.ISSUER}, so they refuse every call between '
-                   'them: set ISSUER in tools/swhurl/apps/calling.py, make app-sync, commit and push')
+        report.bad(f'token issuer is {issuer}, but the profile states {auth.get("issuer")}, so apps refuse every call '
+                   'between them: fix its auth.issuer and render platform/auth from it (docs/operations.md#signing-keys)')
+
+
+def declared_objects(folder: Path) -> list[dict]:
+    """The stream and consumers v2 rendered for one instance: the events it publishes or subscribes to."""
+    names = sorted([path.name for path in folder.glob('stream.json')]
+                   + [path.name for path in folder.glob('consumer-*.json')])
+    return [declared(folder, name) for name in names]
 
 
 def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
@@ -192,29 +217,48 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
         ready = ((workload or {}).get('status') or {}).get('readyReplicas', 0)
         (report.ok if ready else report.bad)(f'{name} is running' if ready else f'{name} is not running: no events are '
                                              'published or delivered (make reconcile UNIT=platform-nats)')
-    waiting = []
-    for item in declared:
-        status, message = ready_condition(item)
+    found = {(item['kind'], item['metadata']['namespace'], item['metadata']['name']): item for item in declared}
+    wanted = [doc for _app, _env, folder in compiled(root) for doc in declared_objects(folder)]
+    missing, waiting = [], 0
+    for doc in wanted:
+        key = (doc['kind'], doc['metadata']['namespace'], doc['metadata']['name'])
+        live = found.get(key)
+        where = f'{key[0]} {key[1]}/{key[2]}'
+        if live is None:
+            missing.append(where)
+            report.bad(f'{where} is what Git declares, but NATS has no such {key[0].lower()} (make reconcile '
+                       'UNIT=platform-nats; make check-apps says whether Git holds the declaration)')
+            continue
+        status, message = ready_condition(live)
         if status != 'True':
-            waiting.append(f"{item['kind']} {item['metadata']['namespace']}/{item['metadata']['name']} is not Ready, so its "
-                           f"events are not kept or delivered: {message or 'no message'} (kubectl -n {item['metadata']['namespace']} "
-                           f"describe {item['kind'].lower()} {item['metadata']['name']})")
-    for line in waiting:
-        report.bad(line)
-    if declared and not waiting:
-        report.ok(f'{len(declared)} declared stream(s) and consumer(s) exist in NATS')
-    world, problems = store.world(root)
-    if not problems:
-        try:
-            problems = generated.nats_problems(root, world, events.has_nats(root))
-        except RenderError as error:
-            problems = [str(error)]
-    for problem in problems:
-        report.bad(problem + ', commit and push')
+            waiting += 1
+            report.bad(f'{where} is not Ready, so its events are not kept or delivered: {message or "no message"} '
+                       f'(kubectl -n {key[1]} describe {key[0].lower()} {key[2]})')
+    if wanted and not missing and not waiting:
+        report.ok(f'{len(wanted)} declared stream(s) and consumer(s) exist in NATS')
+
+
+def port_problems(root: Path = ROOT) -> list[str]:
+    """Every instance v2 compiled has a port of its own on the egress proxy, from v2's allocation."""
+    try:
+        allocation = json.loads((root / ALLOCATION).read_text())
+        ports = {(each['application'], each['environment']): each['port'] for each in allocation['instances']}
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return [f'{ALLOCATION} cannot be read ({error}), so the proxy\'s ports are unchecked']
+    found, owners = [], {}
+    for app, env, _folder in compiled(root):
+        port = ports.get((app, env))
+        if port is None:
+            found.append(f'{app}/{env} has no port on the egress proxy: its records render the allocation '
+                         '(docs/services.md#egress-proxy)')
+        else:
+            owners.setdefault(port, []).append(f'{app}/{env}')
+    found += [f"port {port} is shared by {', '.join(held)}" for port, held in sorted(owners.items()) if len(held) > 1]
+    return found
 
 
 def check_egress(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """The egress proxy runs every replica, with a port for each instance (its file is what they generate)."""
+    """The egress proxy runs every replica, with a port for each instance v2 compiled."""
     report.section('Egress proxy')
     try:
         deployment = runner.json(['kubectl', '-n', egress.NAMESPACE, 'get', 'deployment', egress.NAME, '-o', 'json'])
@@ -228,47 +272,14 @@ def check_egress(runner: Runner, report: Report, root: Path = ROOT) -> None:
                    f'(kubectl -n {egress.NAMESPACE} get pods; make reconcile UNIT=platform-egress)')
     elif ready < wanted:
         report.warn(f'the egress proxy runs {ready} of {wanted} replicas: a restart would stop outbound traffic meanwhile '
-                    f'(kubectl -n {egress.NAMESPACE} get pods)')
+                   '(kubectl -n egress get pods)')
     else:
         report.ok(f'the egress proxy runs {ready} replicas')
-    found = egress.problems(root)
+    found = port_problems(root)
     for problem in found:
-        report.bad(problem.removeprefix('egress-ports: ') + ', commit and push')
+        report.bad(problem)
     if not found:
-        report.ok(f'{len(store.recorded(root / INSTANCE_ROOTS[0]))} instance(s) each have a port of their own')
-
-
-def check_secrets(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """Every secret name an instance's image needs has a value in Git (warns otherwise: the app runs without it);
-    a value no name asks for is reported. Reads Git only: names from the release, keys from the Secret file."""
-    from swhurl.apps.ops import MISSING, UNUSED, secret_states
-    report.section('App secrets')
-    world, errors = store.world(root)
-    if errors:
-        for error in errors:
-            report.bad(error)
-        return
-    found = False
-    for instance, entry in world.items():
-        folder = instance.folder(root)
-        declared = entry.release.secrets
-        path = folder / contract.SECRET_FILE
-        states = secret_states(declared, contract.stored_secrets(path.read_text()) if path.is_file() else [])
-        if not states:
-            continue
-        found = True
-        missing = [name for name, state in states.items() if state == MISSING]
-        unused = [name for name, state in states.items() if state == UNUSED]
-        label = f'{instance.app}/{instance.env}'
-        if missing:
-            report.warn(f'{label}: value missing for {", ".join(missing)}, so the app runs without it; set it in your own '
-                        f'terminal: make app-secret APP={instance.app} ENV={instance.env} NAME={missing[0]}')
-        else:
-            report.ok(f'{label}: every secret its image needs has a value')
-        if unused:
-            report.info(f'{label}: {", ".join(unused)} set, but its image no longer asks for it')
-    if not found:
-        report.ok('no app declares secrets')
+        report.ok(f'{len(compiled(root))} instance(s) each have a port of their own')
 
 
 def check_image_webhooks(runner: Runner, report: Report, root: Path = ROOT) -> None:

@@ -226,6 +226,13 @@ jobs:
         with:
           version: 'v3.19.0'
 
+      # check-apps compiles every v2 record and compares it with v2-apps (v2/check-rendered.sh).
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: v2/go.mod
+          cache: false # no go.sum: v2 has no dependencies
+
       - name: Install validation dependencies
         run: python3 -m pip install --group check
 

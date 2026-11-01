@@ -2,6 +2,37 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Every page and message names a command that exists (1 November 2026)
+
+- **What changed:** the v1 edit commands went in phase 3, but the pages, the console's pages and the strings the
+  tooling prints still named them. `docs/apps.md`, `console.md`, `services.md`, `architecture.md`,
+  `contributing.md`, `operations.md`, `README.md`, `GLOSSARY.md` and `apps/README.md` now name what v2 does
+  (`swhurl-v2 edit --set …`, `promote`, `remove`, `make -s v2-render`) or say that nothing does it yet (a Secret's
+  value, an alert setting, a first production, an egress grant). So do `app-new`'s help and refusals, `app-status`'s
+  hints, `policy.py`'s rules, notify's BAD line, `declaration.py`'s refusal for a grant field, and the console's
+  `/new`, `/teams`, egress and catalogue pages. Record paths follow the cutover: an instance is
+  `v2-records/<app>/<env>/` and what it compiles to in `v2-apps/instances/<app>/<env>/`. `609f40d5`.
+- **Checked, offline:** `make check` (758 tests, 0 failures), `make check-lint`, `make check-repo`,
+  `make check-apps`. Validate run `41291867891` passed every job and Render `41291867807` passed.
+- **Found: the v1 Deploy workflow was failing hourly.** Its one step was `swhurl bot-deploy`, deleted with phase
+  4's command sweep, so run `41292067360` (09:12) ended on `unknown command: bot-deploy`. Every instance is v2's, so
+  it had nothing left to deploy: `f6ba34a8` deletes `.github/workflows/deploy.yml`; `deploy-v2.yml` already takes
+  the same `repository_dispatch`, hourly schedule and manual run. The comments that named it follow (the
+  image-dispatch Alert, Render's header, `bots.py`, the architecture/services/README pages, the deletion plan).
+  Validate `41293851156` and Render `41293851236` passed; Validate pinned console image
+  `src-314d91fa8c3b13f6` (`e18a3f38`).
+- **Live:** `make flux-reconcile` applied `f6ba34a8`; `make verify-platform` **93 OK, no BAD or WARN** — every one
+  of the 13 Flux units Ready, `13 instance(s) each have a port of their own`, `13 declared stream(s) and
+  consumer(s)`, the profile's one signing key, and the console running `src-314d91fa8c3b13f6`, built from the
+  current tooling. A manual [Deploy v2 run](https://github.com/samclement/swhurl-platform/actions/runs/41294180019)
+  after the deletion succeeded with `0 changed, 9 unchanged, 0 refused, 0 failed` and `Nothing changed.`, so the
+  dispatch, schedule and manual paths all reach the workflow that remains.
+- **Not exercised:** the console's changed page text in a signed-in browser (the image carries it; the pages are
+  unit-tested). Two generated files still say the old names inside their own header —
+  `platform/notify/routes.yaml` ("make app-sync") and `v2-records/<app>/<env>/offers/source.yaml` ("make
+  app-offers") — because their bytes are written by writers this change did not re-run; changing the header means
+  regenerating them. The eight app repositories' v1 `deploy.yml` remains phase 5, outside this repository.
+
 ## The checks read v2's tree (31 October 2026)
 
 - **What changed:** `make check-apps` no longer renders the `apps/` instances: it runs v2's own

@@ -1,12 +1,26 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: a decision on retiring `make app-new` (how `check-templates` validates a template's `swhurl.yaml` with no image), then the console's New app on `create`
+Gate: the §10 slice: the declaration travels with the image — label version 2, `create` and `deploy` reading it, `app-new` retired (approved 1 November 2026)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
 ## Authority
+
+**Approved 1 November 2026: the declaration travels with the image.** The next slice states a new app's offered
+documents — its OpenAPI, AsyncAPI and flags — in the same image config label the build already writes, at **version
+2**, and version 1 is refused. So `create`, `deploy` and `check-templates` read the image and nothing else: no
+repository read, no Git-host adapter, no credential, and the document bytes are pinned by the digest that names the
+release. The four decisions: labels rather than OCI referrer artifacts (GHCR answers `404` to the referrers
+endpoint, leaving only a mutable tag); `memoryMiB` required, so a create has no size flags; the offers folder keeps
+fixed names by role and loses its `source.yaml` index, with the console reading the commit from the release;
+and a clean break rather than two label versions. `make app-new` and the console's last v1 record branch retire with
+it, because the label is JSON and the producer prints it from a rendered template. The nine apps are re-derived by a
+scripted template update, and each of the four with production by one reviewed promotion. The contract, the
+migration and the acceptance are [§10](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026).
+Nothing is implemented yet: every image running today carries label version 1, so the pieces below still describe the
+platform as it is.
 
 **Worked 1 November 2026: `create`, offline.** `swhurl-v2 create` writes a new app's staging records from the image
 its repository publishes, so a v2 instance no longer has to begin as a v1 record and be migrated. The image is read

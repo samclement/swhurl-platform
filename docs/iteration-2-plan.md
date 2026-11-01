@@ -200,6 +200,11 @@ runtime is validated by the release's own rule. It is the delivery contract, not
 catalogue's offers remain [deliberately deferred](#6-deliberately-deferred). `secrets` and `memoryMiB` are present
 only so an image that adds one is held rather than run without it.
 
+**Approved 1 November 2026:** the label becomes the whole machine-readable declaration — the offered facts and the
+documents themselves, at version 2, version 1 refused — so a release is a function of its image and no repository is
+read ([§10](#10-the-declaration-travels-with-the-image-approved-1-november-2026)). The table above is version 1, which
+is what every image running today carries; it is the contract until §10 is implemented, and then §10 is.
+
 `adapters/registry` is the one new integration: one public repository's tags, then one tag's index resolved to its
 `linux/amd64` manifest, then that manifest's config labels. It reads anonymously, takes no credential, and names no
 policy: the tag ranking is the kernel's. `swhurl-v2 deploy` composes them — decode the records, read the tags, take
@@ -1704,7 +1709,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | Notifications: `SWHURL_NOTIFY_URL`, the projected `notify` token | **Done:** the profile states the address and every instance renders the URL and the projected `notify` token beside its callee tokens ([slice](v2-status.md#slice-record-the-always-on-instance-surface-29-october-2026)) | Done; the address is a platform fact, not a per-app one |
 | Events: NATS users, streams and consumers | **Done, live.** The server's **user list** comes from a pinned snapshot and `make check-v2` proves it is what the platform runs ([part one](v2-status.md#slice-record-events-part-one-the-servers-user-list-29-october-2026)); a keyed instance renders its `SWHURL_EVENTS_*` variables, its `Stream` and `Consumer`s, the unit's `platform-nats` dependency and `decryption`, and the folder lists its seed ([part two](v2-status.md#slice-record-events-part-two-the-instance-side-29-october-2026)); and v2 **mints** a pair with `swhurl-v2 mint`: the seed is drawn from the command, encrypted to the profile's `sops.recipient` by the one adapter that runs a command, and written beside the record, which states the public key ([slice](v2-status.md#slice-record-minting-a-broker-identity-29-october-2026)). `compile`/`migrate` still take the encrypted file as a declared input and never read it | Done; a public key cannot be checked against its seed without decrypting, so drift is proved by the workload signing in |
 | Promotion of a v2-owned instance | **Implemented offline 30 October 2026 and first performed live the same day**: `kernel.SelectPromotion` and `swhurl-v2 promote` take the release staging selects into production's record pair and compiled files, with production's own facts unchanged; the refusals are above, and `swhurl-try-11` production was migrated and then promoted ([evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026)). **A first promotion (creating production) is not modelled**, a rollback's direction is stated rather than decided, and readiness is the caller's check | A create-instance operation for a first promotion; a rollback decision |
-| A v2 release record states no tag | `artifact` states the image, its digest, media type and platform, and the commit it was built from; the **tag** an instance was selected with is not recorded, so a freshness check has to resolve the `ImagePolicy`'s newest tag through its index to the `linux/amd64` manifest to compare. `verify-platform` does that in `tools/swhurl/apps/images.py` (`platform_digest`), a 23-line mirror of `adapters/registry.Describe` — the rule is v2's and now exists twice, though both sides now reach a record's digest the same way (`migrate` resolves it through the adapter since 31 October 2026) | **Decided 31 October 2026 (option A):** keep the mirror in v1 and leave the record as it is. Recording the selected tag is a v2 release-identity change (every release ID and compiled file moves), so it belongs to the slice that reworks these records — the repository read — rather than to a v1 check |
+| A v2 release record states no tag | `artifact` states the image, its digest, media type and platform, and the commit it was built from; the **tag** an instance was selected with is not recorded, so a freshness check has to resolve the `ImagePolicy`'s newest tag through its index to the `linux/amd64` manifest to compare. `verify-platform` does that in `tools/swhurl/apps/images.py` (`platform_digest`), a 23-line mirror of `adapters/registry.Describe` — the rule is v2's and now exists twice, though both sides now reach a record's digest the same way (`migrate` resolves it through the adapter since 31 October 2026) | **Decided 31 October 2026 (option A):** keep the mirror in v1 and leave the record as it is. Recording the selected tag is a v2 release-identity change (every release ID and compiled file moves), so it belongs to a slice that reworks these records. The slice that does rework them ([§10](#10-the-declaration-travels-with-the-image-approved-1-november-2026)) removes the offers commit and does not add the tag: the check keeps its mirror |
 | A writer that prunes | **Closed offline 31 October 2026**: `compile` writes the files an instance's records render and leaves a file they no longer render in place — with `allows` emptied on 31 October 2026, `v2-apps/instances/swhurl-try-10/staging/callers.json` stayed behind until it was deleted by hand. Every write of a compiled folder now prunes by the renderer's own names and reports each removal, so a declared input is never touched ([record](v2-status.md#slice-record-the-cutovers-write-primitives-offline-31-october-2026)) | Done; `compile --out` into a fresh directory remains the truth-teller |
 | Secrets (`envFrom`, Reloader) and bindings to resources | Non-empty `bindings` refused; no secrets | Phase 7, per app |
 | Telemetry: the OTLP endpoint and its variables | **Done and live 29 October 2026**: the release states whether its image reports, the profile states the collector's endpoint, protocol and the block its address is in (`telemetry.nodeCIDR`), `HOST_IP` is defined before the endpoint that expands it, and a reporting instance's policy admits the collector's block on the endpoint's port ([slice](v2-status.md#slice-record-the-telemetry-export-29-october-2026)). It was found blocked the same day (the policy admitted no collector) and fixed in its own slice | Done; per-app endpoint overrides remain a future release fact, and a multi-node cluster states a block covering every node |
@@ -1714,7 +1719,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | Resources from the image's minimums; a per-instance CPU choice | CPU from the profile; one memory value for request and limit | When an app needs more |
 | Quota headroom for an instance's other pods | The backup pod is counted (`replicas + 1` for a rolling update, plus one for the backup, with the job's own requests); no other second workload exists | The next feature that adds pods to an instance's namespace |
 | Image automation, automatic release discovery, auto-merge | **The offline half is implemented** ([contract](#image-automation-what-an-image-states), [slice](v2-status.md#slice-record-image-automations-offline-half-29-october-2026)): a staging unit renders the `ImageRepository`/`ImagePolicy` pair and `swhurl-v2 deploy` resolves the newest tag through `adapters/registry`, reads the image's declaration label, refuses what the instance cannot take, selects and compiles, and writes records and files. **Done and live 30 October 2026**: the image states its declaration and its revision, the v2 Deploy workflow is started by the image Alert, and all three v2-owned staging instances followed their images to the running pod ([evidence](current-state.md#the-first-image-delivered-by-v2-30-october-2026)). Auto-merge is not modelled | Auto-merge; a production path for a v2-owned instance |
-| An image's declaration | The build writes one JSON document into the image's config labels (`platform.swhurl.com/declaration`); v2 reads it with the manifest, and `secrets`/`memoryMiB` only to refuse them. The declaration is not the whole app: offers remain deferred | When an offer must travel with an image, or a fact the declaration omits must be applied |
+| An image's declaration | The build writes one JSON document into the image's config labels (`platform.swhurl.com/declaration`); v2 reads it with the manifest, and `secrets`/`memoryMiB` only to refuse them. The declaration is not the whole app: offers remain deferred | **Decided 1 November 2026:** an offer travels with the image, and the facts the label omits are added at version 2 ([§10](#10-the-declaration-travels-with-the-image-approved-1-november-2026)) |
 | The render fingerprint in the resources | The compilation ID is in the compilation document only. Observation did not need it in the cluster: the unit's applied revision is read instead, and compared only when the caller supplies the intended commit | Phase 5, if a later observation needs an artifact identity in the cluster |
 | Reloader's watch list | **Done and live 29 October 2026**: `platform/reloader/values.json` is the ConfigMap its HelmRelease merges as values, rendered from the profile's own namespaces and every instance that declares a Secret; v1's writer is deleted and the Render workflow regenerates it ([slice](v2-status.md#slice-record-reloaders-watch-list-29-october-2026)). One semantic difference is stated: a v1 Secret file whose names its release has not declared yet is not watched, because v2 reads declarations and the snapshot never reads an encrypted file | Done |
 | The unit's registration in `clusters/home/kustomization.yaml` | The unit file is written at `delivery.unitsRoot` by `compile --out`; its one-line registration stays a reviewed edit by the operator ([decided with the delivery slice](#first-delivery-slice-implemented-offline-25-october-2026-operator-run)) | Decided; revisit only if per-instance registrations become noise |
@@ -1727,7 +1732,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | A credential source for reading a cluster | The [third observation slice](#third-observation-slice-a-credential-source-and-an-observe-command-implemented-25-october-2026) reads a kubeconfig in its **JSON** form (`kubectl config view --raw -o json`) and refuses a credential plugin. YAML, and the in-cluster service-account token, are not read | Reopened by an approved YAML dependency, or by a v2 that runs inside the cluster |
 | An operator-facing observation report (envelope, exit codes, document schema) | `swhurl-v2 observe` writes `v2-observation` version 2 to stdout: source, time, verdict, findings, the protection's own answer, assessed/unassessed, not covered, target. Exit 0 means a report was produced, never that the instance is running | Changes with the next consumer of the document (a console, a checker); `version` rises with its shape |
 | Observation from a live cluster: what it cannot read | Reads are the four kinds; pod phase, restarts, events, terminating and evicted pods, foreign ownership and every other kind are not read. A `--revision` is required, because the command cannot know which commit Flux should be at | `observe` now takes `--calls` and `--egress`, so it can observe what compile can render; further kinds with the first consumer that needs them |
-| What an app offers (offers documents) | **Implemented offline 30 October 2026** ([slice](v2-status.md#slice-record-what-an-app-offers-30-october-2026)): the release states `description`, `apiPath` and the commit its documents were read at; an instance renders `SWHURL_DESCRIPTION` and the two annotations; `migrate` carries all of it and copies the documents as a declared input beside the record; `compile` writes them beside the manifests, where the console reads them. **v2 generates and refreshes nothing**: a document comes from the predecessor or from the operator, and no repository is read. A deploy keeps the three facts (the image's declaration cannot state them), so a new image keeps the documents of the commit they were read at | A repository read (`adapters/` for the app's Git host, its credential and approval), so a new image's documents travel without a person; until then a v2-owned instance's documents are as old as its migration |
+| What an app offers (offers documents) | **Implemented offline 30 October 2026** ([slice](v2-status.md#slice-record-what-an-app-offers-30-october-2026)): the release states `description`, `apiPath` and the commit its documents were read at; an instance renders `SWHURL_DESCRIPTION` and the two annotations; `migrate` carries all of it and copies the documents as a declared input beside the record; `compile` writes them beside the manifests, where the console reads them. **v2 generates and refreshes nothing**: a document comes from the predecessor or from the operator, and no repository is read. A deploy keeps the three facts (the image's declaration cannot state them), so a new image keeps the documents of the commit they were read at | **Decided 1 November 2026: the documents travel in the image's own declaration label** ([§10](#10-the-declaration-travels-with-the-image-approved-1-november-2026)), so a new image's documents arrive with it and no repository is read — no Git-host adapter, no credential, no rate limit, and the bytes are pinned by the digest. The read this row owed is retired rather than paid for; OCI referrer artifacts were rejected because GHCR answers no referrers endpoint, leaving only a mutable tag. |
 | Live feature flags | None | Later |
 | Console: repository creation, seed images, historical Activity | None | Later |
 | Multiple stacks and app types (the templates) | None | Later |
@@ -2004,11 +2009,153 @@ cannot render without one. The report names `make v2-render` as the next step, a
 - **What reopens this:** a create that must read the repository before it can write (option 2), or a first
   production that must be created without a person (a promotion-direction decision).
 
-**What the next gate needs.** `check-templates` renders each stack template and turns its `swhurl.yaml` into an
-instance with `make app-new --manifest`, and a template has no image for a create to read a declaration from. So
-retiring `app-new` — and with it the console's v1 record reader — needs one of: `create --declaration FILE` (this
-section's original shape, and a second source for one fact), a v2 repository read (option 2, which reaches the
-`swhurl.yaml` at the image's commit without a YAML parser in v2), or a frozen fixture for the template check that
-stops covering the declaration. That choice is the operator's.
+**What the next gate needed, and the choice taken on 1 November 2026.** `check-templates` renders each stack
+template and turns its `swhurl.yaml` into an instance with `make app-new --manifest`, and a template has no image for a
+create to read a declaration from. So retiring `app-new` needed one of: `create --declaration FILE` (this section's
+original shape, and a second source for one fact), a v2 repository read (option 2), or a frozen fixture for the
+template check that stops covering the declaration. The operator took the second option's purpose without its adapter:
+**the declaration label carries the offered documents too**, so the producer's JSON is what `create`, `deploy` and the
+template check all read, and `app-new` retires with no image, no registry and no YAML reader in v2. The contract, the
+migration and the acceptance are [§10](#10-the-declaration-travels-with-the-image-approved-1-november-2026).
 
 Status, decisions, evidence and the fresh-context handoff live in [v2 status](v2-status.md). Contracts stay here: [the gap list](#6-deliberately-deferred), [guardrails](#guardrails), the [change report](#change-report) and the [extension recipes](#extension-recipes). Nothing in this page authorises implementation beyond the approved slice.
+
+## 10. The declaration travels with the image: approved 1 November 2026
+
+**Approved: the offered documents travel in the image's declaration label.** A new app's records come from its image
+alone. The build that already writes the declaration label writes the app's documents into it too, and `create`,
+`deploy` and the template check read that one label. **No repository read is built**: no Git-host adapter, no
+credential, no rate limit, and the documents are pinned by the digest that names the release. The gap list's owed
+"what an app offers" read is retired rather than paid for, and `make app-new` retires with it, because the label is
+JSON and the producer prints it from a rendered template with no image and no registry.
+
+**Why not the repository read.** Every fact group but the documents is already in the label; only the bytes are not.
+
+| Fact group | `swhurl.yaml` | label version 1 | needs a YAML reader in v2 |
+| --- | --- | --- | --- |
+| runtime, telemetry, database, publishes, secrets, memory floor | yes | yes | — |
+| `description`, `apiPath`, `databaseSize`, which document is which | yes | no | yes |
+| the documents' bytes | yes (files) | no | no — copied verbatim |
+
+So the read would still have needed a YAML reader for everything but the bytes, and this shape needs neither. The
+decisive property is not the missing credential: **a digest would determine a release.** Every `ReleaseBundle` field
+is then read from the image, so one digest and one app name give one release ID, a force-pushed commit cannot make an
+image uncreateable, and `deploy` stops keeping a fact "the record states" in place of one the image cannot state.
+
+**The four choices the operator settled.**
+
+1. **Labels, not OCI referrer artifacts.** GHCR answers `404` to `/v2/<repo>/referrers/<digest>` (checked 1 November
+   2026), so only the fallback — a mutable `sha256-<hex>` tag — is available, which can be replaced after a release
+   recorded it and adds a second digest to pin. A label is inside the config blob the adapter already fetches, so one
+   digest still gives the whole release. Referrers stay the escape hatch if a document outgrows the cap.
+2. **`memoryMiB` is required**, so a create has no size flags at all: the image states the memory it runs in and the
+   volume a database is created with, as it already states a floor.
+3. **The offers folder has fixed names by role** — `openapi.json`, `asyncapi.yaml`, `flags.json` — and **no
+   `source.yaml` index**. Every instance already has exactly those names. The console reads the commit from the
+   release it is showing, not from an index file, and `create` and `deploy` write no index.
+4. **A clean break, not a compatibility layer.** Label version 1 is refused. The nine apps are re-derived by a
+   scripted migration (below) instead of by accepting two shapes.
+
+**The label, version 2.** One JSON document in the image's config label `platform.swhurl.com/declaration`. Strict, as
+today: unknown fields, nulls, wrong types and another `schemaVersion` are refused, and absent means absent.
+
+| Field | Rule |
+| --- | --- |
+| `schemaVersion` | Integer `2`. Version 1 is refused: an image either states its whole declaration or is not this platform's |
+| `runtime` | As today: `kind` `web` or `worker` (`job` unsupported), non-root `uid`, `port` and `healthPath` for a `web` image only |
+| `telemetry` | Optional boolean: the image reports to the platform collector |
+| `database` | Optional `sqlite` |
+| `publishes` | Optional event names, each at most once: what the `events` document sends. The producer computes it and the platform check ties the two, because v2 reads no YAML |
+| `secrets` | Optional names, **refused when non-empty**: v2 models no secret |
+| `memoryMiB` | **Required**, integer at least 1: the memory the image runs in |
+| `databaseSizeMiB` | **Required** when `database` is set, and refused when it is not: the volume a new database is created with |
+| `description` | Optional: one line of 1–200 printable characters, served to the app as `SWHURL_DESCRIPTION` |
+| `apiPath` | Optional absolute path where a `web` image serves its API description. Required with the `api` document, and refused without it |
+| `documents` | Optional object of at most `api`, `events` and `flags`, each the file's bytes **base64-encoded**, so the record's copy is byte-identical. `events` is required when `publishes` is non-empty; `flags` is present when the app's build has written it |
+
+**Size.** The producer refuses a declaration whose encoded JSON exceeds **120 KiB**, naming the documents and their
+sizes, because the value reaches buildx as one argument (the kernel's `MAX_ARG_STRLEN` is 131,071 bytes; measured, not
+assumed). The adapter's 1 MiB body cap is the hard ceiling and is not approached. The largest instance today carries
+8.5 KB of documents (`demo-orders` staging: a 6.6 KB OpenAPI and a 1.8 KB AsyncAPI) and the largest single document is
+6.6 KB. Base64 costs a third rather than a few percent and is chosen anyway: no encoding step can then change a byte.
+
+**What reads it.**
+
+- `create`: the four facts it still takes from flags — the description, the API path, the volume size and the
+  documents — come from the label, and those flags go.
+- `deploy`: a new image now replaces the description, the API path **and the documents**, so an instance that follows
+  its image changes what it offers in the same commit. That is the capability the gap list owed.
+- `check-templates`: renders each type, runs the producer, and hands the label to `swhurl-v2 declaration`, which
+  decodes it and applies the instance's creation rules with no image, no registry and no write.
+- the console: reads a role's document by its fixed name and the commit from the release it is already reading, so
+  `console/catalogue.py` loses `source.yaml` and `console/records.py` loses its v1 record branch — the branch its own
+  docstring says goes when v2 has `create`.
+
+**Records that change.** `release.offers` — the commit the documents were read at — is removed: it is always
+`source.commit`, because the documents travel with the image built from that commit. One element leaves the release's
+identity array, so every release ID and every compiled file's identity changes once, in the re-derive commit. An
+instance's `platform.swhurl.com/offers` annotation renders `source.commit`'s first seven characters and exists only
+when the instance has documents; the `api-description` annotation follows `apiPath`. `migrate` no longer sets the
+documents' commit — it is always `source.commit` — and keeps `--offers`, which copies a predecessor's documents; and
+`promote` carries production's documents from staging as it already does.
+
+**A create, as it becomes.**
+
+```text
+swhurl-v2 create --records DIR --app APP --team TEAM --image REPO:<run>-<commit> \
+                 --profile PROFILE.json [--exposure private|authenticated-web] --out DIR
+writes  v2-records/<app>/app.json
+        v2-records/<app>/staging/{release,instance}.json
+        v2-records/<app>/staging/events.sops.yaml
+        v2-records/<app>/staging/offers/{openapi.json,asyncapi.yaml,flags.json}   the roles the image states
+```
+
+Refusals: an app that already has records; a reference outside the tag contract, or a tag whose suffix the revision
+label does not start with; a label absent, not version 2, or carrying an unknown, null or mistyped fact; `secrets`
+non-empty; the `job` kind; `apiPath` without the `api` document, or the document without the path; `publishes` without
+`events`; `database` without `databaseSizeMiB`, or `databaseSizeMiB` without a database; a name, team or exposure the
+record does not allow; an encoded declaration over the cap. Nothing is written on a refusal.
+
+**What `deploy` keeps and takes.** Takes from the image: runtime, telemetry, database, publications, the memory the
+instance runs in (a rise above it is a refusal, as today), the description, the API path and the documents. Keeps from
+the record: replicas, exposure, `calls`, `allows`, `subscriptions`, the broker key and its encrypted seed — the
+instance's grants and choices, which no image states.
+
+**The migration.** Nine apps, four of them with production. Ordered, each step checked before the next:
+
+1. Land the producer's version 2, v2's decoder and creation rules, the console's fixed-name reader and v1 branch
+   deletion, `check-templates` on the producer, and `app-new`'s deletion, in one commit; tag both templates with the
+   pinned platform revision.
+2. Copier-update each app repository to the new tag, then commit and push. This is the only step that writes to your
+   repositories, so the list and the diffs come to you for approval first. Until an app's build lands a version 2
+   image its Deploy run refuses the label and keeps the running image, so nothing goes down in between.
+3. `swhurl-v2 deploy` over `v2-records` re-derives every staging release from its new image; then `make v2-render`,
+   `make check-v2`, and one reviewed commit.
+4. For the four apps with production, one reviewed `promote` each: production's running image carries a version 1
+   label, so a clean break reaches production only by promotion, and each promotion takes it to the image staging
+   already runs. A promotion that changes what an app publishes is held for review, as today.
+5. `make verify-platform`, `make app-status`, and dated evidence in [current state](current-state.md).
+
+The three `swhurl-try-*` apps with no production can be removed instead of migrated; that is a separate
+confirm-first action and not part of this slice.
+
+**The documentation this changes when it lands.** `docs/apps.md`'s "what an app offers" table and the deploy
+paragraph that says the declaration label cannot carry the description and that no later read would recover the
+documents; the `Offer` entry in the glossary if it names where the documents travel; the gap-list rows above, which
+move from *decided* to *done*; and the `app-new` row in the [deletion plan](v2-deletion-plan.md).
+
+**Acceptance.**
+
+- Offline: `make check` and `make check-v2` green; a `create` from a real image that carries the documents writes the
+  roles byte-identically and no index; a `deploy` replaces a record's documents and description from a new image;
+  `check-templates` passes through the producer and no longer runs `app-new`; the console shows an app's offers with
+  no `source.yaml`; a version 1 image is refused by name.
+- Live: one throwaway app built from the updated template, created with `swhurl-v2 create`, rendered, delivered and
+  observed running with its documents in the catalogue; then the migration above; then the throwaway removed.
+
+**Not in scope.** A repository read; a private app repository; OCI referrer artifacts; a first production (`promote`
+still refuses an environment with no record); the console's New app form, which stays a pointer to `app-repo` →
+`create` while its v1 record branch is deleted; secrets, alerts, a `job` kind and egress grants.
+
+**What reopens this.** A document over the cap (referrers, or the read this section refuses); a fact an image should
+not carry; or an app repository that cannot take the template update.

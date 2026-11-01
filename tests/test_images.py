@@ -5,7 +5,6 @@ import json
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -171,7 +170,7 @@ class WorkflowPinTests(unittest.TestCase):
                 .on('git', 'worktree', 'add', handler=add)
                 .on('git', 'worktree', 'remove')
                 .on('git', '-C', handler=lambda argv, i: ids(argv, i) if 'rev-parse' in argv else _result(argv, ''))
-                .on(sys.executable, '-m', 'swhurl', 'app-sync', handler=lambda argv, _i: self.rendered.append(argv) or _result(argv, ''))
+                .on('make', '-s', 'v2-render', handler=lambda argv, _i: self.rendered.append(argv) or _result(argv, ''))
                 .on('make', returncode=checks, stdout='[BAD] policy: broken' if checks else '')
                 .on('git', 'add')
                 .on('git', 'write-tree', stdout='tree0')

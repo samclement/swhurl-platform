@@ -26,6 +26,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   the cluster's 1 signing key(s)". The first two runs reported all 13 namespaces as differing, because the cluster
   adds `kubernetes.io/metadata.name` and Flux's two labels to the namespace it applies; the check now compares only
   the labels Git states.
+- **What the first Validate run caught:** the console-deploy job's pin still ran `make app-sync` (deleted in
+  phase 3), so the pin step failed before the checks — the Render workflow's own step and `bots.render` called it
+  too. All three run `make v2-render` now: v2's whole-tree render, writing only when the tree disagrees with the
+  records. That run's other jobs, `check-apps` included, passed.
 - **Not exercised:** `check-apps` on a tree whose records and compiled files disagree (the render check owns that
   and its output is passed through), a live namespace whose label Git also states with another value (only the
   positive path ran), and the `app-new` create path's v1 rendering, which still needs Helm — phase 5's templates.

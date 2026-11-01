@@ -3,7 +3,6 @@ import contextlib
 import io
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,7 +14,7 @@ BASE = 'b' * 40
 
 
 class PushMainTests(unittest.TestCase):
-    def runner(self, *, checks=0, push_failures=0, sync=None, deploy=None,
+    def runner(self, *, checks=0, push_failures=0, deploy=None,
                paths='apps/a/staging/helmrelease.yaml\nplatform/auth/kustomization.yaml'):
         runner = FakeRunner()
         self.pushes, self.worktrees = 0, []
@@ -29,8 +28,6 @@ class PushMainTests(unittest.TestCase):
             self.pushes += 1
             return Result(args, 1 if self.pushes <= push_failures else 0, '', '! [rejected] (fetch first)')
 
-        if sync:
-            runner.on(sys.executable, handler=sync)
         if deploy is not None:  # before the generic make rule: the first match wins
             runner.on('make', 'v2-deploy', handler=deploy)
         (runner.on('git', 'fetch')
@@ -94,18 +91,6 @@ class PushMainTests(unittest.TestCase):
             self.assertEqual((self.pushes, len(self.removed(runner))), (0, 1))
             self.assertEqual(runner.calls.count(('git', 'fetch', 'origin', 'main')), 1, 'not retried')
 
-    def test_deploy_pushes_what_succeeded_and_fails_the_run(self):
-        log = '[OK] a/staging: image ghcr.io/x/a:2\n[OK] a/staging needs: port 8080\n[ERROR] b/staging: held\n'
-        runner = self.runner(sync=lambda args, _: Result(args, 1, log, ''))
-        with contextlib.redirect_stdout(io.StringIO()) as out:
-            code = bots.main_deploy(['--root', '/repo'], runner=runner)
-        self.assertEqual((code, self.pushes), (1, 1))
-        self.assertIn('[ERROR] b/staging: held', out.getvalue())
-        message = self.commits(runner)[0][-1]
-        self.assertTrue(message.startswith('deploy: a (deploy workflow)\n\n[OK] a/staging: image'), message)
-        self.assertIn('needs: port 8080', message)
-        self.assertNotIn('[ERROR]', message)
-
     def test_deploy_v2_pushes_what_moved_and_fails_the_run(self):
         report = ('{"kind":"v2-deploy-records","version":1,"records":"v2-records","instances":['
                   '{"application":"a","environment":"staging","outcome":"changed","tag":"5-abc"},'
@@ -138,9 +123,10 @@ class PushMainTests(unittest.TestCase):
                          'nothing changed: nothing to render or check')
 
     def test_render_names_the_apps_it_rendered(self):
-        runner = self.runner(sync=lambda args, _: Result(args))
+        runner = self.runner()
         with contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(bots.main_render(['--root', '/repo'], runner=runner), 0)
+        self.assertIn(('make', '-s', 'v2-render'), runner.calls, "v2's one render writes the platform documents too")
         self.assertIn('pushed cccccccccccc to main', out.getvalue())
         self.assertTrue(self.commits(runner)[0][-1].startswith('render: a (render workflow)\n\napps/a/staging/'))
         self.assertEqual(bots.apps_in(['apps/teams.yaml', 'platform/x.yaml']), '', 'no app folder: shared files')

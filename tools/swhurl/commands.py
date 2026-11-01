@@ -188,7 +188,7 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 'swhurl.validate:main'),
         Command('test', 'Unit tests for the tooling, console, manifests and command safety; K= runs only matching classes (needs uv)', LOCAL,
                 takes=(Var('K', '<pattern>', required=False, flag='-k'),)),
-        Command('check-apps', 'Render every app instance and check the app policy and the app model', LOCAL, 'swhurl.apps.policy:main'),
+        Command('check-apps', "v2's records render to the files Git holds (needs Go); app teams, notify routes and the template fixtures pass the app policy", LOCAL, 'swhurl.apps.policy:main'),
         Command('check-templates', 'Render each app type from its stack template; each swhurl.yaml must pass app-new and the app policy (needs network)',
                 LOCAL, 'swhurl.apps.templates_check:main', uv=True),
         Command('check-otel', 'Render the OTel collectors and validate their config with that exact otelcol-k8s release', LOCAL, 'swhurl.otel:main'),

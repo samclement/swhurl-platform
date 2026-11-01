@@ -26,7 +26,7 @@ with Helm) and checks the resulting Kubernetes objects:
                       admitted on the app port when the instance has a route, nobody otherwise
   identity            the app is told who it is (SWHURL_APP, SWHURL_ENV, defined before anything that
                       uses $(SWHURL_ENV)); a web app also gets the token issuer and the signing keys
-                      in apps/signing-keys.json
+                      from the profile's auth block (v2 renders platform/auth from it)
   call-tokens         the only service-account tokens a pod carries are one per app it declares it
                       calls, each for that audience alone and short-lived
   events              an instance that declares events (SWHURL_EVENTS_PUBLISH / _SUBSCRIBE) has the
@@ -41,32 +41,30 @@ for an instance of this platform (under apps/; the test fixtures are exempt), fr
 
 and, for the whole tree:
 
-  app relations       one record evaluator checks calls and subscriptions: absent apps or consent
-                      are pending without access; present unsupported targets and missing events fail.
-                      Exact generated comparisons check variables, tokens, policies, Consumers and NATS
-                      permissions, including required identities and the users file
-  egress-ports        every instance has its own port on the egress proxy, and platform/egress/proxy.yaml
-                      is what the instances generate (make app-sync rewrites it)
-  egress-grants       each host an instance may reach (make app-egress) is a host name or *.domain with
-                      a port, granted once and not inside a wildcard grant of the same instance
+  v2's records        v2 compiles every record into its instance folder and unit, and renders the platform's
+                      documents from them: `v2/check-rendered.sh` (what `make check-v2` runs) says whether Git
+                      holds them. The comparison is v2's, not a second reader's
+  team                every app record states a team registered in apps/teams.yaml (`v2-records/<app>/app.json`)
   notify-channels     every channel a team notifies exists as a listed Secret in platform/notify, and
-                      routes.yaml is what apps/teams.yaml generates (make app-sync rewrites it)
+                      routes.yaml is what apps/teams.yaml generates
 
   app records         App, Release and Settings parse strictly; every committed manifest must be
                       exactly what its instance's records render. Settings belong to each environment;
                       a release may be ahead in staging, but its kind and command agree across
-                      environments. Encrypted Secrets are never compared
+                      environments. Encrypted Secrets are never compared. Only the template fixtures still
+                      hold an instance folder, so those are the instances this renders
 
 A reviewed exception goes in Settings.exceptions in instance.yaml as
   exceptions: "rule-id=reason; other-rule=reason"
 make app-sync renders the HelmRelease's platform.swhurl.com/policy-exceptions annotation;
 do not edit that annotation by hand. Exceptions without a reason are rejected.
 
-    python3 -m swhurl check-apps [INSTANCE_DIR ...]   (default: every instance under
-                                                apps and tests/fixtures/apps)
+    python3 -m swhurl check-apps [INSTANCE_DIR ...]   (default: the template fixtures under
+                                                tests/fixtures/apps, then the whole tree)
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -75,7 +73,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, app_alerts, interface, platform, yamlio
-from swhurl.apps import channels, egress, events, helmrelease, offers
+from swhurl.apps import channels, events, helmrelease, offers
 from swhurl.apps.calling import (
     TOKEN_SECONDS,
     allowed_callers,
@@ -94,6 +92,7 @@ from swhurl.apps.contract import (
     QUOTA,
     QUOTA_HEADROOM,
     STORAGE_CLASSES,
+    TEAMS_FILE,
     image_policy_name,
     in_cookie_domain,
     network_policy,
@@ -453,6 +452,45 @@ def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
                        if rule not in allowed]
 
 
+RECORDS = Path('v2-records')
+RENDERED = Path('v2/check-rendered.sh')
+
+
+def records_rendered(runner: Runner | None = None, root: Path = ROOT) -> str | None:
+    """Why v2's tree is not what its records render, or None when it is.
+
+    v2 compiles every record into its instance folder and unit and renders the platform's documents from them.
+    The comparison is v2's own script (``v2/check-rendered.sh``, which ``make check-v2`` also runs), so this
+    module owns no second compiler; it renders the working tree, so an uncommitted record counts.
+    """
+    runner = runner or Runner.from_environment(cwd=root)
+    result = runner.run(['bash', str(root / RENDERED)], cwd=root, check=False)
+    if not result.returncode:
+        return None
+    return ((result.stdout or '') + (result.stderr or '')).strip() or f'{RENDERED} exited {result.returncode}'
+
+
+def team_problems(root: Path = ROOT) -> list[str]:
+    """Every app record states a team registered in apps/teams.yaml (rule team).
+
+    v2 reads the namespace's team label from the app record, and a team nobody registered has no channel and no
+    description; the registry stays v1's file because ``team-*`` still writes it.
+    """
+    known = teams(root)
+    found = []
+    for path in sorted((root / RECORDS).glob('*/app.json')):
+        app = path.parent.name
+        try:
+            name = json.loads(path.read_text()).get('team')
+        except (OSError, ValueError, AttributeError) as error:
+            found.append(f'{path.relative_to(root)} cannot be read ({error}), so its team is unchecked')
+            continue
+        if name not in known:
+            found.append(f'{app} states team {name!r}, which is not in {TEAMS_FILE} '
+                         f'(make team-add NAME={name} DESCRIPTION="...")')
+    return found
+
+
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     paths = [Path(a).resolve() for a in argv or []] or instances()
     failed = 0
@@ -478,27 +516,29 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 print(f'[BAD] app records: {root}')
                 for problem in problems:
                     print(f'       {problem}')
-    else:  # the whole tree
-        problems = egress.problems(ROOT)
+    else:  # the whole tree: v2's own comparison, then the registry its records name
+        problems = records_rendered(runner)
         if problems:
             failed += 1
-            print('[BAD] egress ports and grants')
+            print('[BAD] v2\'s records and the files they render')
+            for problem in problems.splitlines():
+                print(f'       {problem}')
+        else:
+            print('[OK] v2\'s records render to the files Git holds')
+        problems = team_problems()
+        if problems:
+            failed += 1
+            print('[BAD] app teams')
             for problem in problems:
                 print(f'       {problem}')
+        else:
+            print('[OK] every app record states a registered team')
         problems = channels.problems(ROOT)
         if problems:
             failed += 1
             print(f'[BAD] {channels.NOTIFY_DIR}')
             for problem in problems:
                 print(f'       {problem}')
-        problems = generated.check(ROOT)
-        if problems:
-            failed += 1
-            print('[BAD] app model: records are invalid or their rendered files differ (docs/apps.md#the-app-policy)')
-            for problem in problems:
-                print(f'       {problem}')
-        else:
-            print('[OK] app model: rendering every instance\'s records reproduces its manifests')
     if failed:
         print(f'\n{failed} instance(s) or app(s) violate the app contract.')
         return 1

@@ -11,7 +11,6 @@ from pathlib import Path
 
 from swhurl import ROOT, kube
 from swhurl.apps import channels, helmrelease
-from swhurl.apps.model import store
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
@@ -23,11 +22,6 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
     report.section('Notification channels')
     wanted = channels.routes_file(root)
     if not wanted:
-        return
-    world, errors = store.world(root)
-    if errors:
-        for error in errors:
-            report.bad(error)
         return
     get = ['kubectl', '-n', channels.NAMESPACE, 'get']
     try:
@@ -51,9 +45,13 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
                    '(make reconcile UNIT=platform-notify)')
     elif known:
         report.ok(f'{len(known)} channel(s) have their Secret')
-    owned: dict[str, set[str]] = {}  # each team's apps, from the instances in Git
-    for each, entry in world.items():
-        owned.setdefault(entry.app.team, set()).add(each.app)
+    owned: dict[str, set[str]] = {}  # each team's apps, from v2's app records
+    for record in sorted((root / 'v2-records').glob('*/app.json')):
+        try:
+            name, team = record.parent.name, json.loads(record.read_text()).get('team')
+        except (OSError, ValueError, KeyError, TypeError):
+            continue  # an app record that cannot be read fails check-apps; here it adds no warning
+        owned.setdefault(team, set()).add(name)
     for team, apps in sorted(owned.items()):
         if team and not routes.get(team):
             report.warn(f'team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '

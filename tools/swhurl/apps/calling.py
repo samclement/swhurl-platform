@@ -24,9 +24,10 @@ TOKENS_VOLUME = 'tokens'
 TOKEN_SECONDS = 600  # the shortest the API server issues; the kubelet replaces the file at 80%
 ISSUER = 'https://kubernetes.default.svc.cluster.local'
 """This cluster's service-account token issuer (make verify-platform compares it with the live one)."""
-SIGNING_KEYS_FILE = Path('apps/signing-keys.json')
-"""The cluster's public token-signing keys. Apps cannot fetch them (the API refuses anonymous
-requests), so they are kept here and given to each web app; make platform-signing-keys refreshes it."""
+SIGNING_KEYS_FILE = Path('v2/testdata/profile.json')
+"""The platform profile: its ``auth`` block holds the token issuer and the cluster's public signing keys. v2 renders
+``platform/auth`` from it, which is how every managed namespace gets them; apps cannot fetch them (the API refuses
+anonymous requests). One document, one writer: nothing writes a copy for the instances any more."""
 
 
 def callee_address(app: str, port: int) -> str:
@@ -44,11 +45,13 @@ def allowed_callers(variables: dict) -> list[str]:
 
 
 def signing_keys(root: Path = ROOT) -> str:
-    """The public key set as one line of JSON, from ``root`` (a scratch root falls back to this checkout); '' if absent."""
+    """The public key set as one line of JSON, from the profile in ``root`` (a scratch root falls back to this
+    checkout); '' if it states none."""
     for base in (root, ROOT):
         path = base / SIGNING_KEYS_FILE
         if path.is_file():
-            return json.dumps(json.loads(path.read_text()), sort_keys=True, separators=(',', ':'))
+            keys = (json.loads(path.read_text()).get('auth') or {}).get('keys') or ''
+            return json.dumps(json.loads(keys), sort_keys=True, separators=(',', ':')) if keys else ''
     return ''
 
 

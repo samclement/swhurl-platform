@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 from swhurl import platform, yamlio
-from swhurl.apps.model import store, workload
+from swhurl.apps.model import workload
 from swhurl.run import CommandError, Runner
 
 ROOT = platform.ROOT
@@ -92,22 +92,7 @@ def ensure(runner: Runner, repository: str, token: str, host: str) -> str:
 
 
 def auto_deploy_repositories(root: Path = ROOT) -> dict[str, str]:
-    """``app: OWNER/REPO`` for each platform app's staging Release (automatic deploys).
-
-    v1 states a staging instance in ``apps/``; a v2-owned one states the same repository in its own release
-    record, which is the truth for it, so both trees are read here.
-    """
-    world, errors = store.world(root)
-    if errors:
-        raise HookError('; '.join(errors))
-    found = {each.app: entry.release.image.repository.removeprefix(REGISTRY) for each, entry in world.items()
-             if each.env == 'staging' and entry.release.image.repository == workload.platform_image(each.app)}
-    found.update(v2_staging_repositories(root))
-    return found
-
-
-def v2_staging_repositories(root: Path) -> dict[str, str]:
-    """The repository each v2-owned staging instance's image is built from, read from its release record."""
+    """``app: OWNER/REPO`` for each platform app's staging Release (automatic deploys), from v2's records."""
     found = {}
     for record in sorted((root / 'v2-records').glob('*/staging/release.json')):
         try:

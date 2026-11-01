@@ -44,8 +44,8 @@ def swhurl(runner: Runner, work: Path, *args: str, check: bool = True):
 
 
 def checked(runner: Runner, work: Path, checks: Sequence[str] = CHECKS) -> None:
-    """The checks the tree must pass: check-repo renders the registered units, check-apps compares every instance
-    with its records, and check-v2 holds v2's rules and the platform files its records render. A failure shows the
+    """The checks the tree must pass: check-repo renders the registered units, check-apps compiles v2's every record
+    and compares it with the files Git holds, and check-v2 holds v2's Go rules. A failure shows the
     whole output: CI has no other copy of it."""
     result = runner.run(['make', *checks], cwd=work, check=False)
     if result.returncode:

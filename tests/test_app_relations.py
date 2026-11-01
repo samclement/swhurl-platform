@@ -45,7 +45,8 @@ class RelationTests(unittest.TestCase):
             path = self.root / path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(value)
-        (self.root / calling.SIGNING_KEYS_FILE).write_text('{}')
+        (self.root / calling.SIGNING_KEYS_FILE).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / calling.SIGNING_KEYS_FILE).write_text('{"auth": {"keys": "{}"}}')
         if rendered:
             write.apply(self.root, write.plan(self.root, world, self.platform, frozenset(world)))
 

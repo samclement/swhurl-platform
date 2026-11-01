@@ -21,12 +21,11 @@ A unit showing `DependencyNotReady` is waiting for another unit; fix that one fi
 | `ingestion-key` | The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed | Cluster (read), Secrets (read), commands in pods |
 | `registration` | A HyperDX team exists, so registration is closed | Cluster (read), commands in pods |
 | `ingress` | Traefik redirects HTTP to HTTPS | Cluster (read) |
-| `image-automation` | Every app's ImagePolicy is Ready and staging runs the image it picked (warns otherwise) | Cluster (read), this host |
-| `isolation` | Every app instance in Git has a registered team, the platform quota and a NetworkPolicy on its pods | Cluster (read), this host |
+| `image-automation` | Every app's ImagePolicy is Ready and staging runs the image its record states (warns otherwise) | Cluster (read), this host |
+| `isolation` | Every instance v2 compiled has its namespace, a registered team, the platform quota and a NetworkPolicy | Cluster (read), this host |
 | `signing-keys` | The signing keys and token issuer apps were given are the cluster's | Cluster (read), this host |
-| `secrets` | Every secret name an app's image needs has a value in Git (a missing one warns) | this host |
-| `events` | NATS and its controller run, and every declared stream and consumer exists | Cluster (read), this host |
-| `egress` | The egress proxy runs both replicas, with a port of its own for every app instance | Cluster (read), this host |
+| `events` | NATS and its controller run, and every stream and consumer v2 rendered is Ready | Cluster (read), this host |
+| `egress` | The egress proxy runs both replicas, with a port of its own for every instance v2 compiled | Cluster (read), this host |
 | `alerts` | The Flux failure Alert exists and its provider does (a missing Alert warns) | Cluster (read) |
 | `channels` | The team routes are Git's and every channel has its Secret (a team without a channel warns) | Cluster (read), this host |
 | `notify-service` | The notify service runs, on the console's image (another image warns) | Cluster (read) |
@@ -120,12 +119,14 @@ Look for a recent successful job and both reserved names reported up to date or 
 
 ### Signing keys
 
-Apps check each other's calls ([calling another app](apps.md#calling-another-app)) against the cluster's public service-account signing keys, kept in `apps/signing-keys.json` and written into every web app as `SWHURL_AUTH_KEYS`. They are public keys, not a Secret. k3s creates the key pair once and keeps it, so the file changes only when the cluster is rebuilt or the key is rotated by hand. Until the file follows, every call between apps is refused with 401 while browser access keeps working. `make verify-platform` (section "Call identity") reports the difference; to fix it:
+Apps check each other's calls ([calling another app](apps.md#calling-another-app)) against the cluster's public service-account signing keys. They are public keys, not a Secret, and they live in one place: the `auth` block of the platform profile, [`v2/testdata/profile.json`](../v2/testdata/profile.json), from which v2 renders [`platform/auth`](../platform/auth) for every managed namespace. (`apps/signing-keys.json`, v1's copy, is gone: nothing wrote it any more, so a rotation would have left two answers.) k3s creates the key pair once and keeps it, so the profile changes only when the cluster is rebuilt or the key is rotated by hand. Until it follows, every call between apps is refused with 401 while browser access keeps working. `make verify-platform` (section "Call identity") reports the difference; to fix it, read the cluster's key set and put it in the profile's `auth.keys` as one JSON string, then render:
 
-```
-make platform-signing-keys     # reads the keys from the cluster, rewrites the file and every web app instance
-make check-apps
-git add apps && git commit -m "apps: refresh signing keys" && git push
+```bash
+kubectl get --raw /openid/v1/jwks          # the key set, and the issuer from /.well-known/openid-configuration
+cd v2 && go run ./cmd/swhurl-v2 render --records ../v2-records \
+     --profile testdata/profile.json --out .. --revision "$(git rev-parse HEAD)"
+cd .. && make check-apps
+git add platform v2/testdata v2-apps && git commit -m "keys: refresh the token signing keys" && git push
 ```
 
 The keys live in `platform/auth`, one `swhurl-auth` ConfigMap per managed namespace, rendered by `swhurl-v2 auth` from the profile and applied by the `platform-auth` unit — so a rotation rewrites that one folder, and every managed namespace gets it together. A v1-rendered callee verifies with them from its environment, which only a new pod reads, so it restarts when Flux

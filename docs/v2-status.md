@@ -1,12 +1,23 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: phase 4 — the v2-only checks: replace `check-apps` from v2's records, read v2 records in `verify-platform` and delete its v1 branch — then phase 5, the external repositories
+Gate: phase 5 — the eight app repositories' v1 `deploy.yml`, which is a change outside this repository and needs the operator's confirmation and the GitHub tokens
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
 ## Authority
+
+**Worked 31 October 2026: the checks read v2's tree (phase 4).** `make check-apps` is v2's own render check —
+every `v2-records` instance compiled and compared with the files Git holds, the same comparison `make check-v2`
+makes — followed by the three rules no compiler can decide: each app record's team is registered, the notify routes
+are the registry's, and the template fixtures still pass the Helm policy. `make verify-platform` reads
+`v2-apps/instances/`; its v1 branch, its "0 instance(s)" path and `check_secrets` are deleted, and so is
+`apps/signing-keys.json`: both of its readers now read the profile's `auth` block, which is what v2 renders
+`platform/auth` from, so a key has one source. Nothing was applied to the cluster; the live pass of
+`verify-platform` names all 13 instances from v2's tree. See
+[record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026) and
+[evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026).
 
 **Worked 31 October 2026: the console writes v2's records, now live; phase 3 has deleted the v1 writer.** The app page's forms run `swhurl-v2 edit`,
 `remove` and `promote`, then `swhurl-v2 render`, in a temporary checkout; the PR carries the records and the rendered
@@ -108,6 +119,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Done live 30 October 2026**: `swhurl-try-11` production was migrated to v2 and promoted from its v1 digest to its staging's release; `make app-status` and `observe` agree, and a repeat promotion is a no-op. A first promotion (creating production) is still not modelled, a rollback's direction is stated rather than decided, and v1 callees no longer admit the migrated caller. Both instances were removed on 31 October 2026; the record of what they proved stands | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
 | What an app offers | A release states its own description, API path and the commit its documents were read at; an instance renders them and carries the documents | **Done and live 30 October 2026**: the three facts are release identity, all four v2-owned HelmReleases then carried the variable and the two annotations in the cluster (the two described instances restarted onto it; the other two did not, an annotation being metadata; two remain), and the documents travel as declared inputs from `v2-records/` to `v2-apps/`, where the console reads them | [slice](#slice-record-what-an-app-offers-30-october-2026), [evidence](current-state.md#what-an-app-offers-carried-and-rendered-30-october-2026) |
 | Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **1a done, and 1b's migrations done 31 October 2026**: the nine staging instances are v2's — records, compiled files and units, one writer per instance — and a migrated record states the platform's manifest digest, read from the registry rather than copied from the predecessor; all four production instances are v2's too, `demo-orders` and `demo-shop` moved together because one calls the other, with their retained claims adopted by name and production's bare host restored in `kernel.routeHost`; v1's writer is **deleted** (phase 3, 31 October 2026): its instance commands, modules and tests are gone, `resolve` reads one record shape, and Activity reads v2's tree — [record](#slice-record-the-cutover-reaches-production-four-instances-31-october-2026), [1a record](#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
+| The v2-only checks | `make check` and `verify-platform` read v2's tree, so no check keeps a v1 record alive | **Done 31 October 2026** (phase 4): `check-apps` is v2's render check plus the team registry, the notify routes and the template fixtures' policy; `verify-platform` reads `v2-apps/` and the egress allocation and its v1 branch is deleted; `apps/signing-keys.json` is gone, so the profile's `auth` block is the one source of the signing keys — [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026), [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
 | Derived files | One render from v2's own records: the resolution, every compiled instance folder and unit, and the platform's documents, comparable with Git | **Done, offline then live 31 October 2026**: `swhurl-v2 render` composes the existing resolvers, renderers and compiler, so a record change cannot leave the tree half-rendered; `make check-v2` now compares 208 files — `v2-apps/` and the instance units were unchecked before — and a one-field record change names the file it moves. The console writes through it: PR #101 moved `swhurl-try-10/staging` to 192 MiB and #102 returned it to 128, both verified on the cluster — [record](#slice-record-one-render-from-the-records-offline-31-october-2026) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **One live** (`swhurl-try-10` staging, stateful on its own volume; the other, `swhurl-try-11`, was removed on 31 October 2026), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
@@ -151,6 +163,7 @@ credential, would make them travel; delivery is manual (compile, commit, push) f
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | What an app offers | **done and live 30 October 2026**: a release's `description`, `apiPath` and `offers` commit render the variable and the two annotations, which all four v2-owned instances now carry; `migrate` carries them and the documents; v2 generates and fetches nothing | [slice](#slice-record-what-an-app-offers-30-october-2026) |
 | 7. Selective replacement | two live: `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging (`swhurl-try-11` staging was a third until 31 October 2026); the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
+| The v2-only checks | **done 31 October 2026 (phase 4)**: `check-apps` runs v2's `render --check` plus the team registry, the notify routes and the template fixtures' policy; `verify-platform` reads `v2-apps/instances/` and `platform/egress/allocation.json`, with no v1 branch and no `check_secrets`; `apps/signing-keys.json` is deleted and the profile's `auth` block is the one source of the keys | [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026), [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
 | Cutover's write primitives | done, offline 31 October 2026: `swhurl-v2 edit` applies one named change and writes the record with the files it renders in one effect; `swhurl-v2 remove` deletes an instance's records, files, unit and auth object and edits both registrations; every write of a compiled folder prunes what the records no longer render and keeps the folder's declared inputs | [record](#slice-record-the-cutovers-write-primitives-offline-31-october-2026), [evidence](current-state.md#the-cutovers-write-primitives-offline-31-october-2026) |
 | Promotion | done and live 30 October 2026: `swhurl-try-11` production is v2's and runs the release its staging selects; the handover orphaned v1's unit, adopted the same namespace and release, and then moved one release reference | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
 
@@ -214,6 +227,56 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 **25 October 2026 — the backup job: six decisions, all as proposed ("go").** A database instance renders its own backup — the Secret holding two *references* to the upload key, the nightly CronJob, and a policy for the pod that reaches S3 — from a new `PlatformProfile.backup` block (image and digest, S3 prefix, age recipient, writer Secret, `suspended`); Flux substitution stays the credential mechanism, with a rule that no other `${…}` may appear in a substituted instance's documents; the backup pod is the instance's second workload, so it gets the platform's narrow policy and the quota counts it; the schedule keeps v1's derivation, so a migration keeps its slot; restore and freshness are not modelled. [The slice](iteration-2-plan.md#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026). What reopens it: v2 owning secret material, or a second workload with different needs.
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
+
+## Slice record: the checks read v2's tree (phase 4, 31 October 2026)
+
+- **Outcome:** no check reads a v1 record any more, so nothing in `make check` or `verify-platform` depends on the
+  tree phase 3 deleted. `make check-apps` is v2's render check — every `v2-records` instance compiled and compared
+  with the files Git holds — plus the three rules no compiler can decide: each `v2-records/*/app.json` states a team
+  registered in `apps/teams.yaml`, the notify routes are that registry's, and the template fixtures still pass the
+  Helm policy. `make verify-platform` reads `v2-apps/instances/`: the isolation check compares the namespace labels,
+  quota and NetworkPolicy each instance declares with the live objects, the events check the declared streams and
+  consumers with NATS, and the egress check `platform/egress/allocation.json`.
+- **One comparator, not two.** `check-apps` delegates the comparison itself to [`v2/check-rendered.sh`](../v2/check-rendered.sh),
+  the script `check-v2` runs, instead of rebuilding the render in Python; the alternative — a Python reader that
+  derives namespace, quota, policy and stream facts from the records — is a second compiler, and it is exactly what
+  the v1 check had become. The cost is a dependency the check did not have: `make check-apps` needs Go, so
+  Validate's `apps` job and Deploy install it. `make check-apps` still renders the three template fixtures with Helm,
+  so the chart cache that job fills is still wanted.
+- **What `verify-platform` reads, and why the compiled files rather than the records.** The compiled folder is what
+  Git applies, and `check-apps` proves it is what the records render, so the chain has no unverified gap. A Python
+  reader of the same records would state each fact twice and could drift from the compiler; `check_isolation`
+  therefore compares declared objects, and only the labels Git states (the cluster adds `kubernetes.io/metadata.name`
+  and Flux's own two, which Git does not).
+- **Deleted, not left as a branch:** `check_secrets` (v1's declared secret names have no v2 reader), v1's
+  `egress.problems`/`grant_problems` (the allocation is v2's and `check-v2` compares it), the `store.world` reads in
+  the isolation, events and notify-channel checks, and `apps/signing-keys.json`. The three remaining v1-record
+  readers — the Image Automation check's staging releases, the backup's expected releases, and notify's team
+  ownership — read `v2-records/` now; they were the last places a check would have gone stale silently.
+- **A key has one source.** `apps/signing-keys.json` was v1's copy of keys v2 already renders into
+  `platform/auth/` from the profile, and `make platform-signing-keys` — the only thing that wrote it — was deleted in
+  phase 3, so a rotation would have produced a permanent failure with no fix command. The file is gone;
+  `verify-platform`'s `signing-keys` check compares the profile's `auth.keys` and `auth.issuer` with the cluster and
+  names the profile when they differ ([the recipe](operations.md#signing-keys)).
+- **Contract:** `make check-apps` exits 0 when the render check passes and the three rules hold, 1 otherwise, and 2
+  when it cannot render the fixtures; `verify-platform` reports and never writes (unchanged). The v1 branch and the
+  "0 instance(s)" message are gone rather than kept as a fallback: a checkout with no `v2-records` fails the render
+  check, which is the intended state now that every instance is v2's.
+- **Evidence, offline:** `make check` (759 tests, 35 render entrypoints, 0 errors, 0 warnings), `make check-apps`
+  (3 fixture instances, the render check, every record's team), `make check-v2` and `REQUIRE_HELM=1 make check-v2`
+  (208 files, 0 differ), `make check-repo`, `make check-lint`. New reads have tests: `tests/test_verify.py` builds
+  compiled folders for the isolation and events checks, and `tests/fakecluster.py` answers from `v2-apps/instances`
+  instead of `apps/`.
+- **Evidence, live:** `make verify-platform` exits 0 with 92 OK and one warning (the console image, older than the
+  checkout until Validate deploys it), including "13 app namespace(s) have a registered team, the platform quota and
+  a NetworkPolicy", "13 declared stream(s) and consumer(s) exist in NATS", "13 instance(s) each have a port of their
+  own", and the profile's one signing key.
+- **Not exercised:** `check-apps` on a tree whose records differ from `v2-apps` (the render check owns that, and its
+  output is passed through unchanged); a cluster whose namespace carries a label Git also states but with another
+  value, which the check would report (only the label comparison's positive path ran live); and the un-migrated
+  `app-new` fixture path, whose v1 rendering still needs Helm — the create path and the templates are phase 5's.
+- **Next gate:** phase 5, the eight app repositories' `deploy.yml` (outside this repository; needs the operator's
+  confirmation and the GitHub tokens).
 
 ## Slice record: one render from the records (offline, 31 October 2026)
 

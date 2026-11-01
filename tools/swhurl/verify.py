@@ -66,18 +66,16 @@ CHECKS = (
              "The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed"),
     Check.of('registration', 'cluster exec', clickstack.check_registration, 'A HyperDX team exists, so registration is closed'),
     Check.of('ingress', 'cluster', check_ingress, 'Traefik redirects HTTP to HTTPS'),
-    Check.of('image-automation', 'cluster host', apps.check_image_automation,  # reads apps/<app>/staging
-             "Every app's ImagePolicy is Ready and staging runs the image it picked (warns otherwise)"),
-    Check.of('isolation', 'cluster host', apps.check_isolation,  # reads apps/teams.yaml
-             'Every app instance in Git has a registered team, the platform quota and a NetworkPolicy on its pods'),
-    Check.of('signing-keys', 'cluster host', apps.check_signing_keys,  # reads apps/signing-keys.json
+    Check.of('image-automation', 'cluster host', apps.check_image_automation,  # reads v2-records/<app>/staging
+             "Every app's ImagePolicy is Ready and staging runs the image its record states (warns otherwise)"),
+    Check.of('isolation', 'cluster host', apps.check_isolation,  # reads v2-apps/ and apps/teams.yaml
+             'Every instance v2 compiled has its namespace, a registered team, the platform quota and a NetworkPolicy'),
+    Check.of('signing-keys', 'cluster host', apps.check_signing_keys,  # reads the profile's auth block
              "The signing keys and token issuer apps were given are the cluster's"),
-    Check.of('secrets', 'host', apps.check_secrets,  # reads the instances in Git, never a value
-             'Every secret name an app\'s image needs has a value in Git (a missing one warns)'),
-    Check.of('events', 'cluster host', apps.check_events,  # reads NATS's streams and consumers live
-             'NATS and its controller run, and every declared stream and consumer exists'),
-    Check.of('egress', 'cluster host', apps.check_egress,  # reads platform/egress/proxy.yaml
-             'The egress proxy runs both replicas, with a port of its own for every app instance'),
+    Check.of('events', 'cluster host', apps.check_events,  # reads itself and NATS's own objects
+             'NATS and its controller run, and every stream and consumer v2 rendered is Ready'),
+    Check.of('egress', 'cluster host', apps.check_egress,  # reads platform/egress/allocation.json
+             'The egress proxy runs both replicas, with a port of its own for every instance v2 compiled'),
     Check.of('alerts', 'cluster', flux.check_alerts, 'The Flux failure Alert exists and its provider does (a missing Alert warns)'),
     Check.of('channels', 'cluster host', notifications.check_channels,  # reads apps/teams.yaml and platform/notify
              "The team routes are Git's and every channel has its Secret (a team without a channel warns)"),

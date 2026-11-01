@@ -98,6 +98,14 @@ jobs:
         with:
           version: 'v3.19.0'
 
+      # The bot's own gate runs make check-apps, which compiles v2's records.
+      - if: steps.compare.outputs.deploy == 'true'
+        name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: v2/go.mod
+          cache: false # no go.sum: v2 has no dependencies
+
       - if: steps.compare.outputs.deploy == 'true'
         name: Install flux-schema
         run: |

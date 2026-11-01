@@ -218,6 +218,9 @@ func TestListTimesOut(t *testing.T) {
 	instance := (&server{answer: func(t *testing.T, _ http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
+			// The client has already timed out. Keep the handler from writing an empty 200 that could race
+			// the timeout error the adapter is about to classify.
+			time.Sleep(200 * time.Millisecond)
 		case <-time.After(2 * time.Second):
 		}
 	}}).serve(t)

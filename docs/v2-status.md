@@ -1,12 +1,21 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the operator's choice on the `create` decision brief (the last v1 writer)
+Gate: a decision on retiring `make app-new` (how `check-templates` validates a template's `swhurl.yaml` with no image), then the console's New app on `create`
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
 ## Authority
+
+**Worked 1 November 2026: `create`, offline.** `swhurl-v2 create` writes a new app's staging records from the image
+its repository publishes, so a v2 instance no longer has to begin as a v1 record and be migrated. The image is read
+through the registry adapter a delivery uses — its declaration label, its revision label checked against the tag,
+and the `linux/amd64` manifest's digest — and the pair is the kernel's creation, with a freshly minted broker
+identity whose seed is written encrypted before the record that names its key. It writes records only: the
+allocation, the compiled files and the unit are the whole tree's, so `make v2-render` writes them next. `make app-new`
+and the console's New app are unchanged and still v1's; retiring them is the next gate, and the blocker is named
+there ([record](#slice-record-create-offline-1-november-2026)).
 
 **Closed 1 November 2026: phase 5 is void.** No app repository has a v1 `.github/workflows/deploy.yml`, and none
 ever had one on `main`: the nine repositories with records, `hello-ts`, `swhurl-try-19`, `swhurl-try-20`, and both
@@ -132,6 +141,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | What an app offers | A release states its own description, API path and the commit its documents were read at; an instance renders them and carries the documents | **Done and live 30 October 2026**: the three facts are release identity, all four v2-owned HelmReleases then carried the variable and the two annotations in the cluster (the two described instances restarted onto it; the other two did not, an annotation being metadata; two remain), and the documents travel as declared inputs from `v2-records/` to `v2-apps/`, where the console reads them | [slice](#slice-record-what-an-app-offers-30-october-2026), [evidence](current-state.md#what-an-app-offers-carried-and-rendered-30-october-2026) |
 | Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **1a done, and 1b's migrations done 31 October 2026**: the nine staging instances are v2's — records, compiled files and units, one writer per instance — and a migrated record states the platform's manifest digest, read from the registry rather than copied from the predecessor; all four production instances are v2's too, `demo-orders` and `demo-shop` moved together because one calls the other, with their retained claims adopted by name and production's bare host restored in `kernel.routeHost`; v1's writer is **deleted** (phase 3, 31 October 2026): its instance commands, modules and tests are gone, `resolve` reads one record shape, and Activity reads v2's tree — [record](#slice-record-the-cutover-reaches-production-four-instances-31-october-2026), [1a record](#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
 | The v2-only checks | `make check` and `verify-platform` read v2's tree, so no check keeps a v1 record alive | **Done 31 October 2026** (phase 4): `check-apps` is v2's render check plus the team registry, the notify routes and the template fixtures' policy; `verify-platform` reads `v2-apps/` and the egress allocation and its v1 branch is deleted; `apps/signing-keys.json` is gone, so the profile's `auth` block is the one source of the signing keys — [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026), [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
+| Create | A new app's first instance is v2's from the first commit: the records come from the image's own declaration, not from a v1 record migrated afterwards | **Done, offline 1 November 2026**: `swhurl-v2 create` resolves the image through the registry, states its declaration, revision, digest and publications, mints the broker identity, and writes records only — `make app-new` and the console's New app stay v1's until the template check has a path that needs no image — [record](#slice-record-create-offline-1-november-2026) |
 | Derived files | One render from v2's own records: the resolution, every compiled instance folder and unit, and the platform's documents, comparable with Git | **Done, offline then live 31 October 2026**: `swhurl-v2 render` composes the existing resolvers, renderers and compiler, so a record change cannot leave the tree half-rendered; `make check-v2` now compares 208 files — `v2-apps/` and the instance units were unchecked before — and a one-field record change names the file it moves. The console writes through it: PR #101 moved `swhurl-try-10/staging` to 192 MiB and #102 returned it to 128, both verified on the cluster — [record](#slice-record-one-render-from-the-records-offline-31-october-2026) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **All 13 live** (nine staging and four production; `swhurl-try-11` was removed on 31 October 2026), and every migration's records are **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
@@ -178,6 +188,7 @@ credential, would make them travel; delivery is manual (compile, commit, push) f
 | The v2-only checks | **done 31 October 2026 (phase 4)**: `check-apps` runs v2's `render --check` plus the team registry, the notify routes and the template fixtures' policy; `verify-platform` reads `v2-apps/instances/` and `platform/egress/allocation.json`, with no v1 branch and no `check_secrets`; `apps/signing-keys.json` is deleted and the profile's `auth` block is the one source of the keys | [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026), [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
 | Cutover's write primitives | done, offline 31 October 2026: `swhurl-v2 edit` applies one named change and writes the record with the files it renders in one effect; `swhurl-v2 remove` deletes an instance's records, files, unit and auth object and edits both registrations; every write of a compiled folder prunes what the records no longer render and keeps the folder's declared inputs | [record](#slice-record-the-cutovers-write-primitives-offline-31-october-2026), [evidence](current-state.md#the-cutovers-write-primitives-offline-31-october-2026) |
 | Promotion | done and live 30 October 2026: `swhurl-try-11` production is v2's and runs the release its staging selects; the handover orphaned v1's unit, adopted the same namespace and release, and then moved one release reference | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
+| Create | done, offline 1 November 2026: `swhurl-v2 create` writes a new app's staging records from the image's own declaration label, its revision label and the `linux/amd64` manifest, mints its broker identity, and writes records only — the render after it allocates the port and writes the files; `make app-new` and the console's New app stay v1's until the template check has a path that needs no image | [record](#slice-record-create-offline-1-november-2026) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
 
@@ -239,6 +250,67 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 **25 October 2026 — the backup job: six decisions, all as proposed ("go").** A database instance renders its own backup — the Secret holding two *references* to the upload key, the nightly CronJob, and a policy for the pod that reaches S3 — from a new `PlatformProfile.backup` block (image and digest, S3 prefix, age recipient, writer Secret, `suspended`); Flux substitution stays the credential mechanism, with a rule that no other `${…}` may appear in a substituted instance's documents; the backup pod is the instance's second workload, so it gets the platform's narrow policy and the quota counts it; the schedule keeps v1's derivation, so a migration keeps its slot; restore and freshness are not modelled. [The slice](iteration-2-plan.md#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026). What reopens it: v2 owning secret material, or a second workload with different needs.
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
+
+## Slice record: `create` (offline, 1 November 2026)
+
+- **Outcome:** `swhurl-v2 create` states a new app's staging records from the image its repository publishes, so a
+  v2-owned instance no longer has to begin as a v1 record and be migrated. `kernel.SplitImage` splits the reference
+  into the artifact a record keeps and the tag that must be the platform's `<run>-<commit>`;
+  `orchestration.Create` resolves the tag through the registry adapter a delivery uses and takes the image's facts
+  from where a delivery takes them — the declaration label for the runtime, telemetry, database, publications and
+  memory floor, the revision label for the commit (checked against the tag), the `linux/amd64` manifest for the
+  digest and media type. `kernel.Creation` decides the pair: staging, one replica, the memory the operator chose or
+  the image's floor, `private` unless `--exposure` names the other grant, a volume of `--storage-mib` exactly when
+  the image keeps a database, and the public half of a freshly minted identity; `adapters/sops` encrypts its seed and
+  the seed is written before the record that names the key, as `mint` does. `--description` and `--api-path` are the
+  two offered facts an image cannot state, and `--offers DIR` copies the documents it publishes, with the image's
+  commit as their provenance. An app that already has records is refused.
+- **What a create does not write, and why.** The compiled files, the unit and the instance's proxy port are the whole
+  tree's: the allocation is derived from every instance, so an instance that does not exist yet cannot be in it, and a
+  database instance's backup job cannot render without one. `create` therefore writes records only and its report
+  names the next step (`make v2-render`, which allocates and renders); the unit's one line in
+  `clusters/home/kustomization.yaml` stays the operator's reviewed edit, as §5 decided for `compile`. This is the
+  brief's one substantive contract change, and it is what makes a first database app creatable at all.
+- **Two narrower deviations from the brief, both scope reductions.** (1) There is no `--declaration FILE`: the image
+  already states its declaration in the label v2 decodes on every delivery, and v2 is `stdlib-only`, so reading a
+  local `swhurl.yaml` would need a YAML parser and a dependency. (2) `create` does not read `apps/teams.yaml`: a team
+  registry is not a v2 fact, and `make check-apps` already refuses an app record whose team is unregistered (verified
+  by moving a created record's team to an unregistered name).
+- **Owners and boundaries.** One new kernel file (`creation.go`) and three small kernel additions (`SplitImage`, and
+  `WithOffered`, which `deploy`'s carry-forward now shares instead of spelling out); one new use case
+  (`orchestration/create.go`) that reuses `declarationOf`, `revisionOf`, `recordFiles` and `encryptedSeed` (extracted
+  from `Mint`); one command and one `commands` entry. `recordFiles` takes the records root as an argument, so a create
+  writes the tree the caller named. The command reads the profile and the offers folder, draws the seed and refuses an
+  existing app; it decides nothing else. Writes go through `adapters/files`, the only effect.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 behaviour, files and live state are
+  unchanged: no command was removed and nothing was applied; `make app-new`, the console and `check-templates` still
+  use their v1 path. 2. Pure packages take no effects: the declaration is an argument, the seed is the caller's, and
+  the clock, network and filesystem stay outside `kernel`. 3. Golden bytes and identities are unchanged; a create
+  computes both identities from what it states, and `deploy`'s candidate is byte-identical (its identity comes from
+  the same `WithOffered`). 4. No refusal code changed; the new ones are the kernel's existing `invalid`,
+  `unsupported` and `wrong_application` on fields a create states, plus `refused: artifact.image` for a reference
+  that carries no platform tag. 5. Failure paths are tested: a refused create writes nothing (tested), and the seed is
+  written before the record that names it, so a partial failure leaves no key without its seed. 6. Scope: offline,
+  against a real public registry; no private image was read, and no live readiness is claimed. 7. Nothing here is live
+  readiness: the cluster was not touched. 8. This page, the registry, the plan's brief, the deletion plan and current
+  state change together.
+- **Evidence, 1 November 2026:** `go test ./...` in `v2/` — every package passes, with new tests for `SplitImage`,
+  `Creation`'s rules, the use case (records, order, refusals) and the command (report, records-only, refusals, an
+  existing app); `make check-v2` — 208 files compared, 0 differ. Against the real registry, `swhurl-v2 create
+  --image ghcr.io/samclement/demo-orders:73-7fd0704` wrote the four records into a temporary tree, stating
+  `sha256:f41173699743…` and commit `7fd0704d1e0b…` and refusing without `--memory-mib` because that image states no
+  memory floor. In a detached worktree at `37fda001` holding those records, `swhurl-v2 render --records v2-records
+  --out . --revision HEAD` exited 0 and wrote the instance's files, its unit and the allocation's port `30106` with
+  the backup host, and `render --check` compared with no differences; `make check-apps` passed there, and refused the
+  same tree once its team was changed to an unregistered name.
+- **Deferred rows touched:** the gap list's "create" carve-out is answered by
+  [§9](iteration-2-plan.md#9-the-create-path-implemented-offline-1-november-2026), which now records
+  what was built and what was not.
+- **Next gate:** retiring `make app-new` and the console's v1 record reader needs a decision first: `check-templates`
+  turns each stack template's `swhurl.yaml` into an instance with `app-new --manifest`, and a template has no image
+  to read a declaration from, so it either needs a `create` that takes a declaration without a registry (`--declaration
+  FILE`, the brief's original shape), a v2 repository read (option 2, with its adapter and credential), or a frozen
+  fixture. Then the console's New app runs `app-repo` → `swhurl-v2 create` and `records.py`'s v1 reader goes.
 
 ## Slice record: phase 5 is void (1 November 2026)
 

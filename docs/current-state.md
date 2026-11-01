@@ -2,6 +2,27 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## `create`: a new app's records come from its image (1 November 2026)
+
+- **What changed:** `swhurl-v2 create` states a new app's staging records from the image its repository publishes —
+  the image's own declaration label, its revision label checked against the tag, and the `linux/amd64` manifest's
+  digest — mints its broker identity (the seed encrypted through `sops`, written before the record that names the
+  key), and writes records only. The allocation, the compiled files and the unit are the whole tree's, so the next
+  `make v2-render` writes them. [Record](v2-status.md#slice-record-create-offline-1-november-2026),
+  [contract](iteration-2-plan.md#9-the-create-path-implemented-offline-1-november-2026).
+- **Checked offline, against the real registry:** `swhurl-v2 create --image ghcr.io/samclement/demo-orders:73-7fd0704`
+  wrote four records into a temporary tree, stating digest `sha256:f41173699743…`, commit `7fd0704d1e0b…`, `sqlite`
+  and `publishes: [created]`, and refused the first time without `--memory-mib`, because that image's declaration
+  states no memory floor. In a detached worktree holding those records, `swhurl-v2 render --records v2-records --out .
+  --revision HEAD` exited 0, wrote the instance's files and unit and gave it proxy port `30106` with the backup host;
+  `render --check` then compared with no differences, and `make check-apps` passed — and failed on its team rule once
+  the record's team was changed to an unregistered name.
+- **Checked offline:** `go test ./...` in `v2/` (new tests for the reference split, the creation's rules, the use case
+  and the command), `make check-v2` (208 files compared, 0 differ) and `make check`.
+- **Not exercised:** no instance was created on the cluster, so nothing here is live readiness: `observe` has not
+  said `running` for a created instance, `make app-new` and the console's New app still write v1 records, and the
+  conversion of a whole template-rendered app (its documents, its first promotion) is untested end to end.
+
 ## Phase 5 is void: no app repository has a v1 Deploy workflow (1 November 2026)
 
 - **What changed:** the deletion plan's phase 5 was "remove the eight app repositories' v1 `deploy.yml`". Verified

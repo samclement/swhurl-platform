@@ -1913,7 +1913,13 @@ The operator approved the quickest route to a v2-only platform and accepted brea
 **Acceptance.** `make check-v2` recompile and `make check-apps` agree; the [bridge](v2-status.md#slice-record-phase-3-snapshot-export-and-ownership-inventory) compares every instance's rendered objects with what the cluster runs and reports **no field differences**; `make verify-platform` passes with no warning and no v1 branch; `swhurl-v2 resolve` reads one record shape; and no `apps/` record survives for an instance v2 owns. **What it buys:** the [gap list](#6-deliberately-deferred)'s transition rows — v1 caller of a v2 callee, v2 caller of a v1 callee, `resolve`'s two shapes, the writer that does not prune, the kept ports of removed instances, the events stub and the v1/v2 freshness seam — all die with the second writer instead of being maintained. **What it costs:** the operator loses the `app-*` commands and must use `swhurl-v2`, and the console reads v2 records only (a small change, in 1b). **Left after it:** genuine capability, not seam repair — the repository read, restore breadth, auto-merge and a first-class create-production.
 
 
-## 9. The create path: decision brief (proposed 1 November 2026, not approved)
+## 9. The create path: implemented offline 1 November 2026
+
+**Approved and built: option 1.** `swhurl-v2 create` writes a new app's staging records from the image its repository
+publishes. It is offline and reads no app repository: the image resolves through the registry adapter a delivery
+already uses, and its other inputs are the platform profile, two offered facts and a folder of documents.
+`make app-new`, the console's New app and the template check are untouched and still v1's; retiring them is the next
+gate, and it needs the decision this section's last paragraph names.
 
 **Why now.** Every existing instance is v2's (nine staging, four production), v1's instance writer is deleted, the
 checks read v2's tree and the only Deploy workflow is v2's. One v1 writer remains: **a new app's create**.
@@ -1946,10 +1952,39 @@ the documents at that commit). The record pair is v2's JSON (`app.json`, `stagin
    This is the largest external effect (a public repository, org permissions, the template renderer) and
    duplicates `app-repo` for no record-shape gain. Not recommended.
 
-**Recommendation: option 1**, then option 2 when a new image must carry new documents. It removes the last v1
-writer and the console's last v1 read with no new dependency, and it keeps `app-repo` (a GitHub fact) where it is.
+**Recommendation: option 1** (taken), then option 2 when a new image must carry new documents. It removes the last
+v1 writer and the console's last v1 read with no new dependency, and it keeps `app-repo` (a GitHub fact) where it is.
 
-**Contract sketch for option 1.**
+**What was built, and the three places it is narrower than the sketch below.** The declaration is not a
+`--declaration FILE`: the image states it in the label v2 decodes on every delivery, and v2 is `stdlib-only`, so a
+local `swhurl.yaml` would need a YAML parser and a dependency. So `--description` and `--api-path` are flags (the two
+offered facts an image cannot state) and `--offers DIR` supplies the documents. The team's registration is
+`make check-apps`' rule, not the command's: v2 has no team registry, and that check already refuses an app record
+whose team is unregistered. And `create` writes **records only**: the compiled files, the unit and the instance's proxy
+port are the whole tree's, because the allocation is derived from every instance and a database instance's backup job
+cannot render without one. The report names `make v2-render` as the next step, and the unit's one line in
+`clusters/home/kustomization.yaml` stays a reviewed edit, as §5 decided.
+
+**The contract as delivered.**
+
+- **Command:** `swhurl-v2 create --records DIR --app APPLICATION --team TEAM --image REPO:<run>-<commit> --profile
+  PROFILE.json --out DIR [--description TEXT] [--api-path PATH] [--exposure GRANT] [--memory-mib N] [--storage-mib N]
+  [--offers DIR]`.
+- **Inputs:** the image reference (a tag in the platform's contract, never a bare digest), the platform profile, the
+  two offered facts and the documents, the team, and the instance's own choices. `staging` only.
+- **Writes:** `--records/<app>/app.json`, `<app>/staging/{release,instance}.json`, `staging/events.sops.yaml` (the
+  minted identity's seed, encrypted, written before the record that names its key) and `staging/offers/` (the given
+  documents), each reported. Nothing else.
+- **Refuses:** an app that already has records; an image with no declaration label, or one whose runtime, memory floor
+  or secret names the instance cannot take; a revision the tag does not abbreviate; a reference outside the tag
+  contract; a database without `--storage-mib`, and a volume for an image with no database; a memory below the
+  image's floor; an exposure, kind or team name the model does not allow.
+- **Tested:** a create from a real public image writes four records whose release states the manifest digest, the full
+  commit and the publications the image states; the whole-tree render accepts them and allocates a port;
+  `render --check` agrees and `check-apps` passes; a refused create writes nothing. **Not taken:** a live throwaway
+  instance, and so `observe` saying `running`.
+
+**The brief as proposed.**
 
 - **Inputs:** application name, `staging` only, image reference (tag or digest), the declaration, the optional
   `swhurl.yaml` fields (`description`, `apiPath`, `provides`), the offered documents, the platform profile, and the
@@ -1968,5 +2003,12 @@ writer and the console's last v1 read with no new dependency, and it keeps `app-
   repository read (option 2).
 - **What reopens this:** a create that must read the repository before it can write (option 2), or a first
   production that must be created without a person (a promotion-direction decision).
+
+**What the next gate needs.** `check-templates` renders each stack template and turns its `swhurl.yaml` into an
+instance with `make app-new --manifest`, and a template has no image for a create to read a declaration from. So
+retiring `app-new` — and with it the console's v1 record reader — needs one of: `create --declaration FILE` (this
+section's original shape, and a second source for one fact), a v2 repository read (option 2, which reaches the
+`swhurl.yaml` at the image's commit without a YAML parser in v2), or a frozen fixture for the template check that
+stops covering the declaration. That choice is the operator's.
 
 Status, decisions, evidence and the fresh-context handoff live in [v2 status](v2-status.md). Contracts stay here: [the gap list](#6-deliberately-deferred), [guardrails](#guardrails), the [change report](#change-report) and the [extension recipes](#extension-recipes). Nothing in this page authorises implementation beyond the approved slice.

@@ -199,6 +199,21 @@ func (r ReleaseBundle) validateOffered() error {
 	return nil
 }
 
+// WithOffered is the release with what the app offers: the one line it says about itself, the path it serves its
+// API description on, and the commit its offered documents were read at. None of them is the image's fact — an image
+// states what it needs, never what it publishes — so a caller supplies them when it writes a release, and the
+// identity is computed again for them. Setting none of them is the release the image alone states.
+func (r ReleaseBundle) WithOffered(description, apiPath, offers string) (ReleaseBundle, error) {
+	r.Description, r.APIPath, r.Offers = description, apiPath, offers
+	r.ReleaseID = "" // the identity the caller may have asserted is the one without them
+	id, err := r.ID()
+	if err != nil {
+		return ReleaseBundle{}, err
+	}
+	r.ReleaseID = id
+	return r, nil
+}
+
 func (s Source) validate() error {
 	if !sourcePattern.MatchString(s.Repository) {
 		return refuse(Invalid, "source.repository", "invalid format")

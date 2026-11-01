@@ -22,6 +22,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   `check-docs` 0 errors, 0 warnings).
 - **After the push, `8c0d10e1`:** Validate, Render and the pages build all passed, `make flux-reconcile` moved nothing
   (the commit changes Go source and docs, no manifest) and `make verify-platform` reported **93 OK, 0 warnings**.
+- **The one live effect of the change, `56ece454`:** because `v2/` is part of the console image's hash, Validate's
+  console-image job built and pinned `src-e2b013c6dbe29121`; Flux rolled it out (`1/1`, no restarts) and both checker
+  jobs ran on it (`console-dashboards` and `console-notifications` at 15:08, each `ok` on that image). `make
+  verify-platform` on the final head, `bc3108dc`, is **93 OK, 0 warnings**.
 - **Not exercised:** no instance was created on the cluster, so nothing here is live readiness: `observe` has not
   said `running` for a created instance, `make app-new` and the console's New app still write v1 records, and the
   conversion of a whole template-rendered app (its documents, its first promotion) is untested end to end.

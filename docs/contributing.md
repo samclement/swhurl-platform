@@ -6,6 +6,7 @@ How to change this repo without breaking the cluster or the docs. Commits go str
 
 Use the [software change workflow](software-change-workflow.md) to agree an outcome, observable contracts, design boundaries, authority and evidence with a coding agent. It includes an operator quick start, a reusable task-record template and an illustrative promotion-preview proposal. Invoke it explicitly in your request; it is a procedure, not an installed command or permission to commit or deploy.
 
+**Agent CLI:** [`bin/agent-cli`](../bin/agent-cli) answers the lookups agents repeated across sessions from one place, in terse text or `--json`: `state`, `ci`, `make`, `go`, `v2`, `doc`, `targets`, `console`, `flux`, `pods`, `ch`, `http`, `gate`, `apps`, `prs` and `sessions` (each has `--help`, which names the commands it replaces). It is a development aid like the code graph: one standard-library script outside `tools/`, not a `swhurl` command, calling `git`, `gh`, `kubectl`, `curl` and `go` directly rather than through `Runner`. It only reads, except `make`, `go` and `v2`, which run what you name; `ch` queries ClickHouse with `readonly=1`. Exit status: 0 healthy, 1 it found a failure, 2 misuse, 3 a tool it needs failed. `tests/test_agent_cli.py` tests its offline parts and `make check-lint` lints it. When agents start repeating a new lookup, add it as a subcommand rather than a note.
 
 ## Validation
 

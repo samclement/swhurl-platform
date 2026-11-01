@@ -8,6 +8,19 @@
 
 GitOps source for a live single-node k3s homelab. Flux applies `main`; changes reach the cluster only through Git or the documented `make` targets.
 
+**Use `bin/agent-cli` before a raw command or a file read** (`bin/agent-cli <subcommand> --help`, `--json` on each; [contributing](docs/contributing.md#agent-assisted-changes)):
+
+| Instead of | Run |
+| --- | --- |
+| `make check 2>&1 \| tail`, `make test K=…`, `make verify-platform \| grep BAD` | `bin/agent-cli make <target> [VAR=…]` (problems only; full log saved) |
+| `git status`, `git log --oneline`, ahead/behind | `bin/agent-cli state` |
+| `gh run list/watch/view`, a sleep loop on CI | `bin/agent-cli ci [rev] --wait --log` |
+| `grep -n "^## " docs/x.md`, `sed -n` a section | `bin/agent-cli doc <file> [heading]` |
+| reading the Makefile or `make help` | `bin/agent-cli targets [name]` |
+| `cd v2 && GOPROXY=off … go test` | `bin/agent-cli go -- test ./kernel` |
+| `kubectl` for Flux, pods, the console image | `bin/agent-cli flux`, `pods`, `console` |
+| `v2-status.md`/`workstreams.md` for "what next", `v2-records/*.json` | `bin/agent-cli gate`, `apps` |
+
 ## Rules
 
 - Update documentation in the same change as behaviour. Each topic has one canonical page (map below); link, don't copy. Describe what is, not what was. A change under `v2/` or `devtools/codegraph/` updates that workstream's page in `docs/workstreams.md` too; `make check-docs` checks the registry's state, next gate and uncommitted work against Git, so a record that goes stale fails a check rather than waiting to be re-read.

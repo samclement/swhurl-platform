@@ -1,0 +1,636 @@
+#!/usr/bin/env python3
+"""agent-cli: the lookups and checks coding agents repeated across sessions in this repository, in one place.
+
+Each subcommand replaces a command sequence that past sessions ran again and again (git state, CI runs,
+make output filtered for problems, doc sections, the console's image, Flux readiness ...). Output is
+terse text for an agent; --json prints the same facts as one JSON object. Standard library only.
+
+Exit status: 0 the answer is healthy, 1 it found a failure (a failed run, check or unit), 2 misuse,
+3 a tool it needs failed (no cluster, gh not signed in). Read-only except `make`, which runs the target
+you name, and `go`/`v2`, which run what you pass.
+"""
+from __future__ import annotations
+
+import argparse
+import difflib
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+LOGS = Path(os.environ.get('TMPDIR', '/tmp')) / 'agent-cli'
+# Scripted kubectl needs this; the k3s wrapper otherwise reads /etc/rancher/k3s/k3s.yaml (AGENTS.md).
+ENV = {**os.environ, 'KUBECONFIG': os.path.expanduser('~/.kube/config')}
+GO_ENV = {'GOTOOLCHAIN': 'go1.26.0', 'GOPROXY': 'off', 'GOSUMDB': 'off', 'CGO_ENABLED': '0'}
+ANSI = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
+PROBLEM = re.compile(r'^\s*\[(BAD|ERROR|FAIL)\]|^(FAIL|FAILED|ERROR)\b|^--- FAIL|^panic:|Traceback \(most recent'
+                     r'|^\S+\.(py|go|sh|ts|kt):\d+|^\s*File ".*", line \d+|\w*Error:|^make(\[\d+\])?: \*\*\*|✖')
+WARN = re.compile(r'^\s*\[WARN\]|^WARN|warning:', re.I)
+SUMMARY = re.compile(r'^Ran \d+ tests|^(OK|FAILED)\b|\d+ passed|All checks passed|^ok\s')
+TAIL = 10  # lines of a failed make's output shown after its problem lines
+DOCS = {'plan': 'docs/plan.md', 'state': 'docs/current-state.md', 'evidence': 'docs/current-state.md',
+        'v2': 'docs/v2-status.md', 'iteration': 'docs/iteration-2-plan.md', 'agents': 'AGENTS.md'}
+SESSIONS = [Path.home() / '.pi/agent/sessions' / ('-' + str(ROOT).replace('/', '-') + '--'),
+            Path.home() / '.claude/projects' / str(ROOT).replace('/', '-').replace('.', '-')]
+
+
+class ToolFailed(Exception):
+    """A tool this subcommand needs failed (exit 3)."""
+
+
+def sh(*args: str, cwd: Path | str = ROOT, env: dict | None = None, check: bool = True,
+       timeout: float | None = None) -> subprocess.CompletedProcess:
+    try:
+        r = subprocess.run(args, cwd=cwd, env={**ENV, **(env or {})}, capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        raise ToolFailed(f'{args[0]}: not installed') from None
+    if check and r.returncode:
+        raise ToolFailed(f'{" ".join(args[:4])}: exit {r.returncode}: {(r.stderr or r.stdout).strip()[-400:]}')
+    return r
+
+
+def sh_json(*args: str, **kw) -> object:
+    return json.loads(sh(*args, **kw).stdout or 'null')
+
+
+def kube(*args: str) -> dict:
+    return sh_json('kubectl', *args, '-o', 'json', timeout=60)
+
+
+def ready(obj: dict) -> tuple[str, str]:
+    """(status, 'reason: message') of an object's Ready condition."""
+    for c in obj.get('status', {}).get('conditions', []):
+        if c.get('type') == 'Ready':
+            return c.get('status', '?'), f"{c.get('reason', '')}: {c.get('message', '')}".strip(': ')
+    return 'Unknown', 'no Ready condition'
+
+
+def clip(text: str, n: int = 160) -> str:
+    text = ' '.join(text.split())
+    return text if len(text) <= n else text[:n - 1] + '…'
+
+
+# state -----------------------------------------------------------------------
+
+def cmd_state(a):
+    if a.fetch:
+        sh('git', 'fetch', '-q', 'origin')
+    branch = sh('git', 'branch', '--show-current').stdout.strip() or 'detached'
+    head = sh('git', 'log', '-1', '--format=%h %s').stdout.strip()
+    counts = sh('git', 'rev-list', '--left-right', '--count', 'HEAD...origin/main', check=False).stdout.split()
+    ahead, behind = (int(counts[0]), int(counts[1])) if len(counts) == 2 else (None, None)
+    dirty = sh('git', 'status', '--porcelain').stdout.splitlines()
+    stashes = len(sh('git', 'stash', 'list').stdout.splitlines())
+    worktrees = len([line for line in sh('git', 'worktree', 'list').stdout.splitlines() if line])
+    log = sh('git', 'log', f'-{a.n}', '--format=%h %ad %s', '--date=format:%m-%d %H:%M').stdout.splitlines()
+    model = '/'.join(filter(None, [os.environ.get('PI_PROVIDER'), os.environ.get('PI_MODEL')]))
+    data = {'branch': branch, 'head': head, 'ahead': ahead, 'behind': behind, 'fetched': a.fetch, 'dirty': dirty,
+            'stashes': stashes, 'worktrees': worktrees, 'log': log, 'model': model,
+            'thinking': os.environ.get('PI_REASONING_LEVEL', '')}
+    lines = [f'{branch} {head}',
+             f'origin/main ahead {ahead} behind {behind}{"" if a.fetch else " (not fetched; --fetch)"}'
+             f' stash {stashes} worktrees {worktrees}',
+             f'dirty {len(dirty)}', *(f' {line}' for line in dirty[:30])]
+    if model:
+        lines.append(f'model {model} {data["thinking"]}'.rstrip())
+    return data, lines + ['log', *(f' {line}' for line in log)], 0
+
+
+# ci --------------------------------------------------------------------------
+
+def runs_for(sha: str) -> list[dict]:
+    return sh_json('gh', 'run', 'list', '--commit', sha, '--limit', '20', '--json',
+                   'databaseId,workflowName,status,conclusion,event,url,createdAt') or []
+
+
+def failed_log(run_id: int, n: int) -> list[str]:
+    """The last n lines of a run's failed steps, without the job/step/timestamp prefix."""
+    out = sh('gh', 'run', 'view', str(run_id), '--log-failed', check=False, timeout=120).stdout
+    lines = [re.sub(r'^\d{4}-\d\d-\d\dT[\d:.]+Z ', '', line.split('\t', 2)[-1]) for line in out.splitlines()]
+    return [ANSI.sub('', line) for line in lines if line.strip()][-n:]
+
+
+def cmd_ci(a):
+    sha = sh('git', 'rev-parse', a.rev).stdout.strip()
+    deadline = time.time() + a.timeout
+    runs = runs_for(sha)
+    while a.wait and time.time() < deadline and (not runs or any(r['status'] != 'completed' for r in runs)):
+        time.sleep(15)
+        runs = runs_for(sha)
+    for r in runs:
+        r['failedJobs'] = []
+        if r['conclusion'] in ('failure', 'timed_out', 'startup_failure'):
+            jobs = sh_json('gh', 'run', 'view', str(r['databaseId']), '--json', 'jobs')['jobs']
+            r['failedJobs'] = [{'name': j['name'], 'steps': [s['name'] for s in j.get('steps', [])
+                                                              if s.get('conclusion') == 'failure']}
+                               for j in jobs if j.get('conclusion') == 'failure']
+            if a.log:
+                r['log'] = failed_log(r['databaseId'], a.lines)
+    failed = [r for r in runs if r['failedJobs'] or r['conclusion'] in ('failure', 'timed_out', 'startup_failure')]
+    pending = [r for r in runs if r['status'] != 'completed']
+    lines = [f'{sha[:8]} runs {len(runs)} failed {len(failed)} pending {len(pending)}'
+             + (' (timed out waiting)' if a.wait and pending else '')]
+    for r in runs:
+        lines.append(f"{r['workflowName']} {r['databaseId']} {r['status']}/{r['conclusion'] or '-'} {r['event']} {r['url']}")
+        for j in r['failedJobs']:
+            lines.append(f"  job {j['name']} failed: {', '.join(j['steps']) or '?'}")
+        lines += [f'  | {line}' for line in r.get('log', [])]
+    if failed and not a.log:
+        lines.append('hint: --log for the failed steps\' output')
+    return {'sha': sha, 'runs': runs}, lines, 1 if failed else 0
+
+
+# make ------------------------------------------------------------------------
+
+def summarize(text: str) -> dict:
+    lines = ANSI.sub('', text).splitlines()
+    warnings = list(dict.fromkeys(line for line in lines if WARN.search(line)))
+    problems = list(dict.fromkeys(line for line in lines if PROBLEM.search(line) and not WARN.search(line)))
+    return {'problems': problems, 'warnings': warnings,
+            'summary': [line for line in lines if SUMMARY.search(line)][-6:], 'tail': lines[-TAIL:]}
+
+
+def cmd_make(a):
+    targets = a.targets or ['check']
+    LOGS.mkdir(parents=True, exist_ok=True)
+    log = LOGS / ('make-' + re.sub(r'[^\w.=-]+', '_', '_'.join(targets))[:80] + '.log')
+    start = time.time()
+    r = subprocess.run(['make', '--no-print-directory', *targets], cwd=ROOT, env=ENV, text=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    log.write_text(r.stdout)
+    s = summarize(r.stdout)
+    data = {'targets': targets, 'exit': r.returncode, 'seconds': round(time.time() - start, 1), 'log': str(log), **s}
+    head = f"make {' '.join(targets)}: {'ok' if r.returncode == 0 else f'FAIL exit {r.returncode}'} {data['seconds']}s"
+    lines = [f"{head} problems {len(s['problems'])} warnings {len(s['warnings'])} log {log}"]
+    if a.full:
+        return data, lines + ANSI.sub('', r.stdout).splitlines(), min(r.returncode, 1)
+    lines += s['summary'] + s['warnings'][:20]
+    if r.returncode:  # on success they are expected output (tests print the refusals they check)
+        lines += s['problems'][:40] + ['tail', *(f' {line}' for line in s['tail'])]
+    return data, lines, min(r.returncode, 1)
+
+
+# go, v2 ----------------------------------------------------------------------
+
+def cmd_go(a):
+    args = [x for x in a.args if x != '--'] or ['test', '-count=1', './...']
+    r = sh('go', *args, cwd=ROOT / 'v2', env=GO_ENV, check=False)
+    lines = ANSI.sub('', r.stdout + r.stderr).splitlines()
+    passed = [line for line in lines if line.startswith('ok ')]
+    rest = [line for line in lines if not line.startswith(('ok ', '?  '))]
+    data = {'args': args, 'exit': r.returncode, 'passedPackages': len(passed), 'output': rest}
+    return data, [f"go {' '.join(args)}: {'ok' if r.returncode == 0 else f'FAIL exit {r.returncode}'}"
+                  + (f' packages ok {len(passed)}' if passed else '')] + rest[:80], min(r.returncode, 1)
+
+
+def cmd_v2(a):
+    LOGS.mkdir(parents=True, exist_ok=True)
+    binary = LOGS / 'swhurl-v2'
+    sh('go', 'build', '-o', str(binary), './cmd/swhurl-v2', cwd=ROOT / 'v2', env=GO_ENV)
+    args = [x for x in a.args if x != '--']
+    r = subprocess.run([str(binary), *args], env=ENV, text=True, capture_output=True)
+    if not a.json:
+        sys.stdout.write(r.stdout)
+        sys.stderr.write(r.stderr)
+        return None, [], r.returncode
+    return {'args': args, 'exit': r.returncode, 'stdout': r.stdout, 'stderr': r.stderr}, [], r.returncode
+
+
+# doc -------------------------------------------------------------------------
+
+def resolve_doc(name: str) -> Path:
+    for candidate in (DOCS.get(name.lower(), name), f'docs/{name}', f'docs/{name}.md', f'{name}.md', f'{name.upper()}.md'):
+        path = ROOT / candidate
+        if path.is_file():
+            return path
+    print(f'agent-cli doc: no file {name!r} (aliases: {", ".join(DOCS)})', file=sys.stderr)
+    raise SystemExit(2)
+
+
+def headings(text: str) -> list[dict]:
+    """Markdown headings outside fenced blocks: {line (1-based), level, title}."""
+    found, fence = [], ''
+    for number, line in enumerate(text.splitlines(), 1):
+        marker = re.match(r'^\s*(`{3,}|~{3,})', line)
+        if marker:
+            fence = '' if fence and marker.group(1).startswith(fence) else (fence or marker.group(1))
+            continue
+        m = None if fence else re.match(r'^(#{1,6})\s+(.*?)\s*#*\s*$', line)
+        if m:
+            found.append({'line': number, 'level': len(m.group(1)), 'title': m.group(2)})
+    return found
+
+
+def section(text: str, heads: list[dict], head: dict) -> tuple[int, int]:
+    """The 1-based line range of head's section: to the next heading at its level or above."""
+    end = next((h['line'] - 1 for h in heads if h['line'] > head['line'] and h['level'] <= head['level']),
+               len(text.splitlines()))
+    return head['line'], end
+
+
+def cmd_doc(a):
+    path = resolve_doc(a.file)
+    rel = str(path.relative_to(ROOT))
+    text = path.read_text()
+    heads = headings(text)
+    if not a.heading:
+        shown = [h for h in heads if h['level'] <= a.level]
+        shown = shown[:a.first] if a.first else shown[-a.last:] if a.last else shown
+        data = {'path': rel, 'lines': len(text.splitlines()), 'headings': shown}
+        return data, [f"{rel} lines {data['lines']} headings {len(shown)}"] + [
+            f"{h['line']} {'#' * h['level']} {h['title']}" for h in shown], 0
+    pattern = re.compile(a.heading, re.I)
+    matches = [h for h in heads if pattern.search(h['title'])]
+    if not matches:
+        close = difflib.get_close_matches(a.heading, [h['title'] for h in heads], 5, 0.3)
+        return {'path': rel, 'match': None, 'close': close}, [f'{rel}: no heading matches {a.heading!r}'] + [
+            f' close: {c}' for c in close], 1
+    start, end = section(text, heads, matches[0])
+    body = text.splitlines()[start - 1:end]
+    data = {'path': rel, 'title': matches[0]['title'], 'start': start, 'end': end, 'text': '\n'.join(body),
+            'others': [{'line': h['line'], 'title': h['title']} for h in matches[1:]]}
+    lines = [f'{rel}:{start}-{end}'] + [f" also {h['line']} {h['title']}" for h in matches[1:6]] + body
+    return data, lines, 0
+
+
+# targets ---------------------------------------------------------------------
+
+def commands() -> dict:
+    sys.path.insert(0, str(ROOT / 'tools'))
+    from swhurl.commands import COMMANDS  # imports nothing else until a command runs
+    return COMMANDS
+
+
+def recipe(name: str) -> list[str]:
+    lines = (ROOT / 'Makefile').read_text().splitlines()
+    for i, line in enumerate(lines):
+        if re.match(rf'^{re.escape(name)}\s*:(?!=)', line):
+            body = []
+            for following in lines[i + 1:]:
+                if not following.startswith('\t'):
+                    break
+                body.append(following.strip())
+            return body
+    return []
+
+
+def cmd_targets(a):
+    found = {n: c for n, c in commands().items() if not c.internal}
+    if not a.name:
+        rows = [{'name': n, 'touches': c.touches, 'vars': ' '.join(v.signature() for v in c.variables),
+                 'dryRun': c.dry_run, 'help': c.help} for n, c in found.items()]
+        return rows, [f"{r['name']} [{r['touches']}]{' ' + r['vars'] if r['vars'] else ''}"
+                      f"{' dry-run=' + r['dryRun'] if r['dryRun'] else ''}: {r['help']}" for r in rows], 0
+    if a.name not in found:
+        close = difflib.get_close_matches(a.name, list(found), 5, 0.4)
+        return {'name': a.name, 'close': close}, [f'no target {a.name}; close: {" ".join(close)}'], 1
+    c = found[a.name]
+    data = {'name': c.name, 'help': c.help, 'touches': c.touches, 'vars': [v.signature() for v in c.variables],
+            'dryRun': c.dry_run, 'run': c.run or 'Makefile recipe', 'recipe': [] if c.run else recipe(c.name)}
+    lines = [f'{c.name}: {c.help}', f'touches {c.touches or "-"} dry-run {c.dry_run or "-"} run {data["run"]}',
+             f"vars {' '.join(data['vars']) or '-'}", *(f' {line}' for line in data['recipe'])]
+    return data, lines, 0
+
+
+# cluster ---------------------------------------------------------------------
+
+def cmd_console(a):
+    if a.wait:
+        sh('kubectl', '-n', 'console', 'rollout', 'status', 'deploy/console', '--timeout=180s', check=False, timeout=200)
+    deploy = kube('-n', 'console', 'get', 'deploy', 'console')
+    image = deploy['spec']['template']['spec']['containers'][0]['image']
+    tag = re.search(r':([^:@]+)(@|$)', image.split('/')[-1])
+    tag = tag.group(1) if tag else image
+    st = deploy.get('status', {})
+    rolled = (st.get('observedGeneration') == deploy['metadata']['generation']
+              and st.get('updatedReplicas', 0) == st.get('replicas', 0) == st.get('readyReplicas', 0))
+    expected = sh('git', 'log', '-1', 'origin/main', '--grep=^deploy: console image', '--format=%h %s', check=False).stdout
+    want = re.search(r'(src-[0-9a-f]+)', expected)
+    want = want.group(1) if want else ''
+    pods = [{'name': p['metadata']['name'], 'phase': p['status'].get('phase'),
+             'ready': sum(c.get('ready', False) for c in p['status'].get('containerStatuses', [])),
+             'restarts': sum(c.get('restartCount', 0) for c in p['status'].get('containerStatuses', []))}
+            for p in kube('-n', 'console', 'get', 'pods', '-l', 'app.kubernetes.io/name=console')['items']
+            if owner(p) == 'ReplicaSet']
+    jobs = sorted(kube('-n', 'console', 'get', 'jobs')['items'], key=lambda j: j['metadata']['creationTimestamp'])
+    jobs = [{'name': j['metadata']['name'], 'created': j['metadata']['creationTimestamp'],
+             'result': 'ok' if j['status'].get('succeeded') else 'failed' if j['status'].get('failed') else 'running',
+             'tag': (re.search(r':([^:@/]+)(@|$)', j['spec']['template']['spec']['containers'][0]['image']) or [None, '?'])[1]}
+            for j in jobs[-a.jobs:]]
+    match = bool(want) and want == tag
+    data = {'image': image, 'tag': tag, 'expected': want, 'expectedCommit': expected.split(' ')[0], 'match': match,
+            'rolledOut': rolled, 'ready': st.get('readyReplicas', 0), 'replicas': st.get('replicas', 0),
+            'pods': pods, 'jobs': jobs}
+    lines = [f"image {tag} expected {want or '?'} ({data['expectedCommit'] or 'no deploy commit'}) "
+             f"{'match' if match else 'MISMATCH'}",
+             f"deploy ready {data['ready']}/{data['replicas']} {'rolled-out' if rolled else 'ROLLING'}",
+             *(f"pod {p['name']} {p['phase']} ready {p['ready']} restarts {p['restarts']}" for p in pods),
+             *(f"job {j['name']} {j['result']} {j['tag']} {j['created']}" for j in jobs)]
+    return data, lines, 0 if match and rolled else 1
+
+
+def cmd_flux(a):
+    source = kube('-n', 'flux-system', 'get', 'gitrepository', 'swhurl-platform')
+    revision = source.get('status', {}).get('artifact', {}).get('revision', '')
+    origin = sh('git', 'rev-parse', 'origin/main', check=False).stdout.strip()
+    units = []
+    for kind, resource in (('ks', 'kustomizations.kustomize.toolkit.fluxcd.io'), ('hr', 'helmreleases.helm.toolkit.fluxcd.io')):
+        for o in kube('get', resource, '-A')['items']:
+            status, message = ready(o)
+            applied = o.get('status', {}).get('lastAppliedRevision', '')
+            units.append({'kind': kind, 'namespace': o['metadata']['namespace'], 'name': o['metadata']['name'],
+                          'ready': status, 'message': message, 'suspended': o['spec'].get('suspend', False),
+                          'applied': applied})
+    sha = revision.split(':')[-1]
+    bad = [u for u in units if u['ready'] != 'True' and not u['suspended']]
+    behind = [u for u in units if u['kind'] == 'ks' and u['applied'] and u['applied'] != revision]
+    data = {'source': revision, 'originMain': origin, 'sourceIsOrigin': bool(origin) and sha == origin,
+            'units': units if a.all else bad, 'notReady': len(bad), 'behind': [u['name'] for u in behind],
+            'suspended': [u['name'] for u in units if u['suspended']]}
+    count = {k: sum(u['kind'] == k for u in units) for k in ('ks', 'hr')}
+    lines = [f"source {revision[:-32] if len(sha) == 40 else revision} "
+             f"{'= origin/main' if data['sourceIsOrigin'] else '!= origin/main ' + origin[:8]} (local ref; fetch for news)",
+             f"kustomizations {count['ks']} helmreleases {count['hr']} not-ready {len(bad)} "
+             f"behind-source {len(behind)} suspended {len(data['suspended'])}"]
+    lines += [f"{u['kind']} {u['namespace']}/{u['name']} {u['ready']}{' suspended' if u['suspended'] else ''}"
+              f" {clip(u['message'])}" for u in (units if a.all else bad)]
+    lines += [f'behind {" ".join(data["behind"])}'] if behind else []
+    lines += [f'suspended {" ".join(data["suspended"])}'] if data['suspended'] else []
+    return data, lines, 1 if bad else 0
+
+
+def owner(obj: dict) -> str:
+    return next((o['kind'] for o in obj['metadata'].get('ownerReferences', [])), '')
+
+
+def cmd_pods(a):
+    items = kube('get', 'pods', *(['-n', a.namespace] if a.namespace else ['-A']))['items']
+    rows = []
+    for p in items:
+        statuses = p['status'].get('containerStatuses', [])
+        phase = p['status'].get('phase', '?')
+        reasons = [s['state'][k].get('reason', k) for s in statuses for k in s.get('state', {}) if k != 'running']
+        row = {'namespace': p['metadata']['namespace'], 'name': p['metadata']['name'], 'phase': phase,
+               'ready': f"{sum(s.get('ready', False) for s in statuses)}/{len(statuses)}",
+               'restarts': sum(s.get('restartCount', 0) for s in statuses), 'reason': ','.join(reasons),
+               'job': owner(p) == 'Job', 'started': p['status'].get('startTime', '')}
+        row['unhealthy'] = phase not in ('Running', 'Succeeded') or (
+            phase == 'Running' and not all(s.get('ready') for s in statuses))
+        rows.append(row)
+    # A Job's pod is running or history, not an outage: failed ones are counted apart, newest few listed.
+    bad = [r for r in rows if r['unhealthy'] and not r['job']]
+    failed_jobs = sorted((r for r in rows if r['job'] and r['phase'] == 'Failed'), key=lambda r: r['started'])
+    restarted = sorted((r for r in rows if r['restarts'] and not r['unhealthy']), key=lambda r: -r['restarts'])
+    data = {'pods': len(rows), 'unhealthy': bad, 'failedJobPods': failed_jobs, 'restarted': restarted[:10]}
+    lines = [f'pods {len(rows)} unhealthy {len(bad)} failed-job-pods {len(failed_jobs)}']
+    lines += [f"{r['namespace']}/{r['name']} {r['phase']} {r['ready']} {r['reason']} restarts {r['restarts']}" for r in bad]
+    lines += [f"failed-job {r['started']} {r['namespace']}/{r['name']}" for r in failed_jobs[-5:]]
+    lines += [f"restarts {r['restarts']} {r['namespace']}/{r['name']}" for r in restarted[:10]]
+    return data, lines, 1 if bad else 0
+
+
+def cmd_ch(a):
+    base = ['kubectl', '-n', 'observability', 'exec', a.pod, '--', 'clickhouse-client', '--readonly=1', '-q', a.sql]
+    r = sh(*base, '--format', 'JSONEachRow' if a.json else 'TSVWithNames', check=False, timeout=a.timeout)
+    if r.returncode:
+        raise ToolFailed(clip(r.stderr or r.stdout, 600))
+    if a.json:
+        return [json.loads(line) for line in r.stdout.splitlines() if line], [], 0
+    return None, r.stdout.rstrip('\n').splitlines(), 0
+
+
+def cmd_http(a):
+    rows = []
+    for target in a.targets:
+        for url in ([target] if '://' in target else [f'http://{target}/', f'https://{target}/']):
+            r = sh('curl', '-sS', '-o', '/dev/null', '-m', str(a.timeout), '-w', '%{http_code} %{redirect_url}', url,
+                   check=False, timeout=a.timeout + 5)
+            code, _, location = r.stdout.partition(' ')
+            rows.append({'url': url, 'code': int(code or 0), 'location': location, 'error': clip(r.stderr, 120)})
+    lines = [f"{r['url']} {r['code']}{' -> ' + clip(r['location'], 100) if r['location'] else ''}"
+             f"{' ' + r['error'] if r['error'] else ''}" for r in rows]
+    return rows, lines, 1 if any(r['code'] == 0 or r['code'] >= 500 for r in rows) else 0
+
+
+# repository facts ------------------------------------------------------------
+
+def cmd_gate(a):
+    status = (ROOT / 'docs/v2-status.md').read_text().splitlines()[:12]
+    v2 = {m.group(1).lower(): m.group(2) for m in (re.match(r'^(Status|Gate|Uncommitted):\s*(.*)', line) for line in status) if m}
+    text = (ROOT / 'docs/workstreams.md').read_text()
+    heads = headings(text)
+    start, end = section(text, heads, next(h for h in heads if h['title'] == 'Workstreams'))
+    rows, header = [], None
+    for line in text.splitlines()[start:end]:
+        if not line.startswith('|') or set(line) <= set('|- '):
+            continue
+        cells = [c.strip() for c in line.strip('|').split('|')]
+        if header is None:
+            header = [c.lower() for c in cells]
+        else:
+            rows.append(dict(zip(header, cells, strict=False)))
+    data = {'v2': v2, 'workstreams': rows}
+    lines = [f'v2 {k} {v}' for k, v in v2.items()]
+    lines += [f"ws {r.get('workstream')} | {r.get('state')} | next: {r.get('next gate')} | needs: {r.get('needs')}"
+              for r in rows]
+    return data, lines, 0
+
+
+def cmd_apps(a):
+    rows = []
+    for instance in sorted((ROOT / 'v2-records').glob('*/*/instance.json')):
+        record = json.loads(instance.read_text())
+        release = instance.with_name('release.json')
+        release = json.loads(release.read_text()) if release.is_file() else {}
+        rows.append({'app': record.get('application'), 'env': record.get('environment'), 'owner': 'v2',
+                     'exposure': record.get('grants', {}).get('exposure', ''),
+                     'replicas': record.get('configuration', {}).get('replicas'),
+                     'allows': record.get('allows', []), 'events': bool(record.get('events')),
+                     'commit': release.get('source', {}).get('commit', '')[:8],
+                     'digest': release.get('artifact', {}).get('digest', '')[7:19]})
+    seen = {(r['app'], r['env']) for r in rows}
+    for env_dir in sorted(p for p in (ROOT / 'apps').glob('*/*') if p.is_dir() and any(p.iterdir())):
+        if (env_dir.parent.name, env_dir.name) not in seen:
+            rows.append({'app': env_dir.parent.name, 'env': env_dir.name, 'owner': 'v1'})
+    if a.live:
+        units = {o['metadata']['name']: ready(o)[0]
+                 for o in kube('-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io')['items']}
+        for r in rows:
+            r['unit'] = units.get(f"app-{r['app']}-{r['env']}", 'absent')
+    lines = [f"{r['app']}/{r['env']} {r['owner']} {r.get('exposure') or '-'} replicas {r.get('replicas', '-')} "
+             f"commit {r.get('commit') or '-'} digest {r.get('digest') or '-'}"
+             f"{' events' if r.get('events') else ''}{' allows ' + ','.join(r['allows']) if r.get('allows') else ''}"
+             f"{' unit ' + r['unit'] if 'unit' in r else ''}" for r in rows]
+    return rows, [f'instances {len(rows)} (namespace <app>-<env>, unit app-<app>-<env>)'] + lines, 0
+
+
+def cmd_prs(a):
+    prs = sh_json('gh', 'pr', 'list', '--state', a.state, '--limit', '30', '--json',
+                  'number,title,author,headRefName,isDraft,mergeable,statusCheckRollup,url') or []
+    lines = []
+    for p in prs:
+        checks = p.pop('statusCheckRollup') or []
+        result = [c.get('conclusion') or c.get('state') or c.get('status') for c in checks]
+        p['checks'] = {'ok': sum(r in ('SUCCESS', 'NEUTRAL', 'SKIPPED') for r in result),
+                       'fail': sum(r in ('FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED') for r in result)}
+        p['checks']['pending'] = len(result) - p['checks']['ok'] - p['checks']['fail']
+        p['author'] = p['author']['login']
+        c = p['checks']
+        lines.append(f"#{p['number']} {p['author']} {p['headRefName']} checks {c['ok']}ok/{c['fail']}fail/{c['pending']}pending"
+                     f" {p['mergeable']}{' draft' if p['isDraft'] else ''}: {p['title']}")
+    return prs, [f'prs {len(prs)} ({a.state})'] + lines, 1 if any(p['checks']['fail'] for p in prs) else 0
+
+
+def session_text(entry: dict) -> tuple[str, str]:
+    """(role, text) of a pi or Claude Code transcript line; ('', '') when it carries no message text."""
+    message = entry.get('message') if isinstance(entry.get('message'), dict) else {}
+    role, content = message.get('role', ''), message.get('content')
+    if role not in ('user', 'assistant'):
+        return '', ''
+    if isinstance(content, str):
+        return role, content
+    return role, ' '.join(c.get('text', '') for c in content or [] if isinstance(c, dict) and c.get('type') == 'text')
+
+
+def cmd_sessions(a):
+    pattern = re.compile(a.pattern, re.I)
+    current = os.environ.get('PI_SESSION_ID', '')
+    hits = []
+    files = sorted((f for d in SESSIONS if d.is_dir() for f in d.rglob('*.jsonl')), key=lambda f: f.stat().st_mtime,
+                   reverse=True)
+    for f in files:
+        if current and current in f.name:
+            continue
+        for raw in f.open(errors='replace'):
+            if not pattern.search(raw):
+                continue
+            try:
+                entry = json.loads(raw)
+            except ValueError:
+                continue
+            role, text = session_text(entry)
+            m = pattern.search(text) if role and (a.role == 'any' or role == a.role) else None
+            if m and not any(h['file'] == str(f) and h['raw'] == m.group(0) + text[:80] for h in hits):
+                hits.append({'file': str(f), 'when': entry.get('timestamp', '')[:16], 'role': role,
+                             'text': clip(text[max(0, m.start() - 100):m.end() + 140], 260), 'raw': m.group(0) + text[:80]})
+                if len(hits) >= a.limit:
+                    break
+        if len(hits) >= a.limit:
+            break
+    lines = [f'hits {len(hits)} (newest session first; files in {", ".join(str(d) for d in SESSIONS)})']
+    for h in hits:
+        del h['raw']
+    lines += [f"{h['when'] or '?'} {Path(h['file']).stem} {h['role']}: {h['text']}" for h in hits]
+    return hits, lines, 0
+
+
+# main ------------------------------------------------------------------------
+
+def parser() -> argparse.ArgumentParser:
+    top = argparse.ArgumentParser(prog='agent-cli', description=__doc__.split('\n\n')[0],
+                                  formatter_class=argparse.RawDescriptionHelpFormatter,
+                                  epilog='--json works on every subcommand. agent-cli <subcommand> --help for each.')
+    top.add_argument('--json', action='store_true', help='print JSON instead of text')
+    sub = top.add_subparsers(dest='command', required=True, metavar='<subcommand>')
+
+    def add(name, function, help, description=''):
+        p = sub.add_parser(name, help=help, description=description or help)
+        p.add_argument('--json', action='store_true', help='print JSON instead of text')
+        p.set_defaults(function=function)
+        return p
+
+    p = add('state', cmd_state, 'git branch, HEAD, ahead/behind origin/main, dirty files, recent log, model',
+            'Replaces: git status --short; git log --oneline -5; git diff --stat; git rev-parse; printenv | grep PI_.')
+    p.add_argument('-n', type=int, default=5, help='commits to list (default 5)')
+    p.add_argument('--fetch', action='store_true', help='git fetch origin first')
+    p = add('ci', cmd_ci, 'GitHub Actions runs for a commit: status, failed jobs and steps, optionally their log',
+            'Replaces: gh run list --commit; gh run watch $id --exit-status; gh run view $id --json jobs / --log-failed.')
+    p.add_argument('rev', nargs='?', default='HEAD', help='commit (default HEAD; push first)')
+    p.add_argument('--wait', action='store_true', help='poll every 15 s until every run has completed')
+    p.add_argument('--timeout', type=int, default=1800, help='seconds --wait polls (default 1800)')
+    p.add_argument('--log', action='store_true', help='print the failed steps\' log tail')
+    p.add_argument('--lines', type=int, default=40, help='log lines per failed run (default 40)')
+    p = add('make', cmd_make, 'run make targets; print ok/FAIL, problem and warning lines, the log path',
+            'Replaces: make check 2>&1 | tail -N; | grep -E "^\\[(BAD|ERROR|WARN)|FAIL|Error". Runs the targets '
+            'you name (default: check), so it changes what they change. Full output is saved to the log path.')
+    p.add_argument('targets', nargs='*', help='targets and VAR=value (e.g. test K=test_verify, check-v2, verify-platform)')
+    p.add_argument('--full', action='store_true', help='print the whole output')
+    p = add('go', cmd_go, 'go in v2/ with the pinned offline toolchain env; prints failures only',
+            'Replaces: cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go test -count=1 ./... '
+            '(default args). Pass go arguments after --, e.g. agent-cli go -- vet ./kernel.')
+    p.add_argument('args', nargs=argparse.REMAINDER, help='go arguments (default: test -count=1 ./...)')
+    p = add('v2', cmd_v2, 'build swhurl-v2 from the working tree and run it with your arguments (from your cwd)',
+            'Replaces: (cd v2 && GOPROXY=off ... go build -o /tmp/swhurl-v2 ./cmd/swhurl-v2) && /tmp/swhurl-v2 ...')
+    p.add_argument('args', nargs=argparse.REMAINDER, help='swhurl-v2 arguments, after --')
+    p = add('doc', cmd_doc, 'a document\'s heading outline with line numbers, or one section\'s text',
+            'Replaces: grep -n "^## " docs/X.md; sed -n "/^## X/,/^## /p"; read with offset after wc -l. '
+            f'FILE is a path, docs/<name>, or an alias: {", ".join(f"{k}={v}" for k, v in DOCS.items())}.')
+    p.add_argument('file')
+    p.add_argument('heading', nargs='?', help='regex on heading titles: print the first match\'s section')
+    p.add_argument('--level', type=int, default=3, help='deepest heading level in the outline (default 3)')
+    p.add_argument('--first', type=int, default=0, help='only the first N headings (current-state: newest first)')
+    p.add_argument('--last', type=int, default=0, help='only the last N headings (plan: newest last)')
+    p = add('targets', cmd_targets, 'make targets from tools/swhurl/commands.py; one target\'s vars and recipe',
+            'Replaces: make help; grep -n "^check:" Makefile; sed -n on the Makefile; reading commands.py.')
+    p.add_argument('name', nargs='?')
+    p = add('console', cmd_console, 'console image vs the newest deploy commit, rollout, pods, recent jobs',
+            'Replaces: kubectl -n console get deploy console -o jsonpath=...image; rollout status; get jobs '
+            '--sort-by; git log --grep "deploy: console image". Exit 1 on mismatch or rollout in progress.')
+    p.add_argument('--wait', action='store_true', help='wait for the rollout first (180 s)')
+    p.add_argument('--jobs', type=int, default=5, help='recent jobs to list (default 5)')
+    p = add('flux', cmd_flux, 'Flux source revision vs origin/main; Kustomizations/HelmReleases not Ready',
+            'Replaces: kubectl -n flux-system get kustomizations; flux get kustomizations -A; get gitrepository.')
+    p.add_argument('--all', action='store_true', help='list every unit, not just the failing ones')
+    p = add('pods', cmd_pods, 'pods not Running/Ready, and the most restarted', 'Replaces: kubectl get pods -A | grep -v Running.')
+    p.add_argument('-n', '--namespace', help='one namespace (default: all)')
+    p = add('ch', cmd_ch, 'read-only ClickHouse query in the ClickStack pod (TSV with names)',
+            'Replaces: kubectl -n observability exec clickstack-clickhouse-clickhouse-0-0-0 -- clickhouse-client -q. '
+            'Runs with readonly=1.')
+    p.add_argument('sql')
+    p.add_argument('--pod', default='clickstack-clickhouse-clickhouse-0-0-0')
+    p.add_argument('--timeout', type=int, default=120)
+    p = add('http', cmd_http, 'status code and redirect of http:// and https:// for each host (or URL)',
+            'Replaces: curl -s -o /dev/null -w "%%{http_code} %%{redirect_url}" per entry point. Signed out only.')
+    p.add_argument('targets', nargs='+', help='host (both schemes) or full URL')
+    p.add_argument('--timeout', type=int, default=10)
+    p = add('gate', cmd_gate, 'v2 status/gate/uncommitted and each workstream\'s state, next gate and needs',
+            'Replaces: reading docs/v2-status.md and docs/workstreams.md to answer "what next?".')
+    p = add('apps', cmd_apps, 'instances from v2-records (and any v1 leftovers): exposure, release, allows',
+            'Replaces: ls apps; ls v2-records; cat v2-records/<app>/<env>/{instance,release}.json.')
+    p.add_argument('--live', action='store_true', help='add each instance\'s Flux unit Ready status')
+    p = add('prs', cmd_prs, 'pull requests with check counts and mergeability',
+            'Replaces: gh pr list; gh pr view; gh pr checks.')
+    p.add_argument('--state', default='open', choices=('open', 'closed', 'merged', 'all'))
+    p = add('sessions', cmd_sessions, 'search past pi and Claude Code transcripts of this repo',
+            'Replaces: "find the session that has ..." by hand. Searches message text, newest session first, '
+            'skipping the current one.')
+    p.add_argument('pattern', help='case-insensitive regex')
+    p.add_argument('--role', default='any', choices=('any', 'user', 'assistant'))
+    p.add_argument('--limit', type=int, default=20)
+    return top
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    as_json = '--json' in argv
+    argv = [x for x in argv if x != '--json']  # anywhere, also after go/v2 arguments
+    a = parser().parse_args(argv)
+    a.json = as_json
+    try:
+        data, lines, code = a.function(a)
+    except ToolFailed as error:
+        print(json.dumps({'error': str(error)}) if as_json else f'error: {error}', file=sys.stderr)
+        return 3
+    if as_json and data is not None:
+        print(json.dumps(data, separators=(',', ':'), default=str))
+    elif lines:
+        print('\n'.join(lines))
+    return code
+
+
+if __name__ == '__main__':
+    sys.exit(main())

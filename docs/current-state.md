@@ -18,8 +18,14 @@ What has been verified on the live cluster, and when: current facts first, then 
   changed in the fix.
 - **Verified:** the focused Go test passes, and `make check-v2` passes with `render --check` at **208 files,
   0 differ**.
-- **Not done:** the memory change is not live, and its revert is not needed. The first live edit is repeated after
-  this fix reaches the console image.
+- **The change and its revert are live.** The repeat opened **PR #101** (job #41); it merged as `83705c4d` after
+  Validate passed. Flux applied it, `swhurl-try-10/staging` reached **Healthy** with Helm release v47, the Deployment
+  stated **192Mi** request and limit, and its pod was ready with no restarts. The console then opened **PR #102**
+  (job #42, memory **192 → 128**); it merged as `ffc3e2cc`, Flux applied it, the instance reached **Healthy** with
+  Helm release v48, the Deployment stated **128Mi** again, and its pod was ready with no restarts. `make
+  verify-platform` passed after both merges.
+- **Not exercised:** a v2 promotion through the console. The live edit proves `edit` and `render`; a promotion also
+  needs a staging release that already exists in production, and the operator has not asked for one.
 
 ## The console writes v2's records, offline (31 October 2026)
 

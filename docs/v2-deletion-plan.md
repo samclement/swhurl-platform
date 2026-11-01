@@ -1,11 +1,11 @@
 # Deleting v1: the plan for 1b's second half
 
-**Status: in progress (31 October 2026). Phases 0 and 1 and phase 2's offline console port are done; the first
-live console edit is next, then phase 3. The four decisions in section 5 were confirmed 31 October 2026.** The
-migrations are done: nine staging and four production instances are v2-owned, `apps/` holds no instance record, and
-the live checks in [current state](current-state.md#the-production-cutover-four-instances-31-october-2026) pass. What
-remains is the live check of the console's writer, then the deletions and the v1-only branches in `verify-platform`
-and `resolve`.
+**Status: in progress (31 October 2026). Phases 0, 1 and 2 are done — the console reads v2's records and writes
+them through the `swhurl-v2` binary, live-tested by a memory change and its revert; phase 3 is next. The four
+decisions in section 5 were confirmed 31 October 2026.** The migrations are done: nine staging and four production
+instances are v2-owned, `apps/` holds no instance record, and the live checks in
+[current state](current-state.md#the-production-cutover-four-instances-31-october-2026) pass. What remains is the
+deletions and the v1-only branches in `verify-platform` and `resolve`.
 
 This page is the working plan, not a status page. The contract stays in
 [iteration 2, section 8](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026);
@@ -201,7 +201,7 @@ phase 3 (§2.3).
   every instance page on a ConfigMap permission the console does not hold; the derivation above replaced that read.
   [Current state](current-state.md#the-console-reads-v2-and-writes-nothing-31-october-2026) has the evidence.
 
-**Phase 2 — the console writes v2 (2–3 days).**
+**Phase 2 — the console writes v2. Done 31 October 2026.**
 - Build `swhurl-v2` in `images/console/Dockerfile`; add `tools/swhurl/console/v2.py` as the only adapter
   (argv, records root, profile, expected revision; no model in Python).
 - Port `merge.py`/`proposal.py`/`promotion.py` and `routes/instance.py` to it for `edit`, `remove`, `promote`;
@@ -240,8 +240,14 @@ phase 3 (§2.3).
   an earlier creation started. A console image without the binary refuses with the command to run, rather than
   failing a job. **The one open choice was the operator's, and option 1 was taken:** every v2 PR is held and the
   gate's v1 read/judge/`app-sync` stays untouched until phase 3 deletes it. Nothing was applied.
-- **Next: the first live edit**, with the operator's explicit confirmation of the throwaway instance, the change and
-  its revert. Then a promotion of a staging release that already exists in production, if the operator asks for it.
+- **Done live 31 October 2026: the change and its revert.** PR #101 took `swhurl-try-10/staging` from 128 to
+  192 MiB and PR #102 returned it to 128; the operator merged each held PR, Flux applied it, the Deployment stated
+  the new memory (192Mi then 128Mi) with a ready pod, the instance reached Healthy, and `make verify-platform`
+  passed. The first attempt, PR #100, was closed unmerged after Validate exposed the migration test's live-vs-frozen
+  HelmRelease input; the test now reads the frozen fixtures. A promotion through the console has not been exercised;
+  it waits for a staging release that already exists in production and the operator's request.
+  [Current state](current-state.md#the-first-live-console-edit-and-the-frozen-fixture-it-found-31-october-2026) has
+  the evidence.
 
 **Phase 3 — delete the v1 writer commands and modules (1–2 days).**
 - Remove the **delete** rows from `commands.py`, the Makefile `COMMANDS`, [commands](commands.md), their tests

@@ -19,14 +19,15 @@ What has been verified on the live cluster, and when: current facts first, then 
   (3 fixture instances, the render check, every record's team), `make check-v2` and `REQUIRE_HELM=1 make check-v2`
   (208 files, 0 differ), `make check-repo`, `make check-lint`. `check-apps` needs Go now — Validate's `apps` job
   and Deploy install it — and still renders the fixtures with Helm, so the chart cache stays.
-- **Checked, live (`make verify-platform`, exit 0, 92 OK, 1 WARN):** the warning is the console image, older than
-  the checkout until Validate deploys it. The app checks named **13 instances from v2's tree**: "13 app
+- **Checked, live (`make verify-platform`, exit 0, 93 OK, no warning):** the console image caught up along the
+  way — Validate's deploy job pinned `src-50207ca800b0ebef` on `e57d1348`, Flux applied it, and the check reports
+  it "built from the current tooling" (`253c0b7d`). The app checks named **13 instances from v2's tree**: "13 app
   namespace(s) have a registered team, the platform quota and a NetworkPolicy", "13 declared stream(s) and
   consumer(s) exist in NATS", "13 instance(s) each have a port of their own", and "v2/testdata/profile.json states
   the cluster's 1 signing key(s)". The first two runs reported all 13 namespaces as differing, because the cluster
   adds `kubernetes.io/metadata.name` and Flux's two labels to the namespace it applies; the check now compares only
   the labels Git states.
-- **What the first Validate run caught:** the console-deploy job's pin still ran `make app-sync` (deleted in
+- **What the first Validate run caught (and the second one fixed):** the console-deploy job's pin still ran `make app-sync` (deleted in
   phase 3), so the pin step failed before the checks — the Render workflow's own step and `bots.render` called it
   too. All three run `make v2-render` now: v2's whole-tree render, writing only when the tree disagrees with the
   records. That run's other jobs, `check-apps` included, passed.

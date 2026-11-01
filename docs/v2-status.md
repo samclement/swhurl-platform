@@ -1872,7 +1872,7 @@ and the one domain whose answer could have needed a new adapter.
 
 1. `AGENTS.md` (and the inherited working preferences), then this page.
 2. [Design principles](iteration-2-plan.md#design-principles), then [development layers](iteration-2-plan.md#4-development-layers-and-adapters) and the [phase-3 brief](iteration-2-plan.md#phase-3-shadow-not-synchronise).
-3. For the parts being changed: [architecture review](architecture-review.md) (release identity, ownership, transition contracts) and [model review](model-review.html) (where v1's complexity comes from). For the domain itself, [records](../tools/swhurl/apps/model/records.py) and [model tests](../tests/test_app_model.py) are the v1 behaviour worth understanding before translating it.
+3. For the parts being changed: [architecture review](architecture-review.md) (release identity, ownership, transition contracts) and [model review](model-review.html) (where v1's complexity comes from). For the domain itself, [records](../tools/swhurl/apps/model/records.py) and the [v2 model tests](../v2/kernel/edit_test.go) are the behaviour worth understanding.
 
 **How to approach a v2 change:**
 

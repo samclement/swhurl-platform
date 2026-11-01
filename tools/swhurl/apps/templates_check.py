@@ -2,10 +2,10 @@
 
 For each stack in ``contract.STACKS``: clone its template at the pinned revision, render each app type
 built with it (``contract.APP_TYPES``, the only answers the template accepts) with Copier, as ``make
-app-repo`` does, and turn the rendered ``swhurl.yaml`` into a staging and a prod instance with ``app-new
---manifest`` in a scratch root. Each instance must pass the app policy, and the two must not drift apart
-(``make check-apps`` rules). One set of answers no type has (``OUTSIDE_TYPES``) must be refused by the
-template's validator.
+app-repo`` does, and turn the rendered ``swhurl.yaml`` into a staging instance with ``app-new --manifest``
+in a scratch root. It must pass the app policy and the app model (``make check-apps`` rules). Production
+is v2's now, so this check stops at staging until v2 has a create path. One set of answers no type has
+(``OUTSIDE_TYPES``) must be refused by the template's validator.
 
 Renders and checks run in parallel, one process each (``--jobs``, default every CPU).
 
@@ -23,7 +23,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from swhurl.apps import declaration, edit, new, policy, repo
+from swhurl.apps import declaration, new, policy, repo
 from swhurl.apps.contract import (
     APP_TYPES,
     STACK_REVISIONS,
@@ -33,34 +33,26 @@ from swhurl.apps.contract import (
     type_answers,
 )
 from swhurl.apps.errors import EditError
-from swhurl.apps.instance import ENVIRONMENTS, instance_folder
+from swhurl.apps.instance import instance_folder
 from swhurl.apps.model import generated
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 NAME = 'contract-check'
 REFUSED = 'Validation error for question'  # how Copier says the template's validator refused an answer
-# A template app's staging image (auto-deploy needs <run>-<sha>) pinned with a digest, as prod requires.
+# A template app's staging image (auto-deploy needs <run>-<sha>) pinned with a digest.
 IMAGE = f'ghcr.io/samclement/{NAME}:1-abcdef0@sha256:' + '0' * 64
 # A worker with a database: no app type has it, so the template's validator must refuse it.
 OUTSIDE_TYPES = {'kind': 'worker', 'database': 'sqlite'}
 
 
-def instance(root: Path, manifest: Path, env: str) -> tuple[int, str]:
+def instance(root: Path, manifest: Path) -> tuple[int, str]:
     """``app-new --manifest`` into ``root`` without its own policy run; returns (exit code, its output)."""
     out = StringIO()
     with redirect_stdout(out), redirect_stderr(out):
-        if env == 'staging':
-            # A template names no team (the creator chooses one): any registered team serves the check.
-            code = new.main([NAME, '--root', str(root), '--manifest', str(manifest), '--env', env,
-                             '--image', IMAGE, '--no-policy-check', '--team', next(iter(teams()), '')])
-        else:
-            try:
-                edit.promote(root, NAME)
-                code = 0
-            except EditError as error:
-                print(error)
-                code = 1
+        # A template names no team (the creator chooses one): any registered team serves the check.
+        code = new.main([NAME, '--root', str(root), '--manifest', str(manifest), '--env', 'staging',
+                         '--image', IMAGE, '--no-policy-check', '--team', next(iter(teams()), '')])
     return code, out.getvalue()
 
 
@@ -93,26 +85,24 @@ def render_combination(runner: Runner, template: Path, stack: str, answers: dict
 
 
 def check_manifest(runner: Runner, report: Report, label: str, manifest: bytes, work: Path) -> bool:
-    """The platform half for one rendered swhurl.yaml: a staging and a prod instance that pass the app policy."""
+    """The platform half for one rendered swhurl.yaml: a staging instance that passes the app policy."""
     root = work / 'root'
     shutil.rmtree(root, ignore_errors=True)
     (root / 'clusters/home').mkdir(parents=True)
     (root / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
     path = work / declaration.FILE
     path.write_bytes(manifest)
-    instances = []
-    for env in ENVIRONMENTS:
-        code, output = instance(root, path, env)
-        if code:
-            report.bad(f'{label}: app-new refused its {declaration.FILE} for {env}: {output.strip()}')
-            return False
-        instances.append(instance_folder(root, NAME, env))
-    problems = [f'{each.name}: {p}' for each in instances for p in policy.evaluate(each, runner)]
+    code, output = instance(root, path)
+    if code:
+        report.bad(f'{label}: app-new refused its {declaration.FILE} for staging: {output.strip()}')
+        return False
+    staging = instance_folder(root, NAME, 'staging')
+    problems = [f'{staging.name}: {p}' for p in policy.evaluate(staging, runner)]
     problems += [f'app model: {p}' for p in generated.problems(root)]
     if problems:
         report.bad(f'{label}: ' + '; '.join(problems))
         return False
-    report.ok(f'{label}: staging and prod pass the app policy')
+    report.ok(f'{label}: staging passes the app policy')
     return True
 
 

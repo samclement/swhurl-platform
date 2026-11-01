@@ -24,7 +24,7 @@ The recommendation is a **small domain model and compiler, with thin system adap
 The review covered the working tree at `5d076a36`, including existing uncommitted offline fixes in:
 
 - `docs/apps.md`, `docs/contributing.md`, `docs/operations.md`, `docs/plan.md`;
-- `tests/test_app_model.py`, `tests/test_interface.py`, `tests/test_notifications.py`;
+- `tests/test_interface.py`, `tests/test_notifications.py`;
 - `tools/swhurl/apps/model/generated.py`, `tools/swhurl/interface.py`, `tools/swhurl/notifications/notice.py`, `tools/swhurl/recovery.py`, `tools/swhurl/sqlite_backup.py`.
 
 Those fixes were not part of the commit saving this proposal. The unrelated untracked `todo.txt` was not reviewed or changed.
@@ -380,7 +380,7 @@ Storage binding
 
 A release may require SQLite. Selecting it must not itself imply permission to erase a volume, change file ownership, copy staging data, reverse migrations, expand storage or switch database engines.
 
-Current transition guards capture part of this distinction in [`transitions.py`](../tools/swhurl/apps/transitions.py).
+v1's transition guards captured part of this distinction; they were removed with the v1 writer in phase 3.
 
 ## 4. Artefact C — Composable and chainable primitives
 
@@ -974,7 +974,7 @@ Avoid a universal component registry, generic workflow/DAG language, event sourc
 | --- | --- |
 | Domain values | `apps/model/records.py` |
 | Relationships | `apps/model/relations.py` |
-| Transition decisions | `apps/transitions.py`, `apps/promotion.py` |
+| Transition decisions | `apps/promotion.py` |
 | Preparation | `apps/model/write.py` |
 | Compilation | `apps/model/render.py` and capability modules |
 | Git publication | `bots.py`, `console/proposal.py` |

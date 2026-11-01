@@ -12,7 +12,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
-from swhurl.apps import contract, declaration, new, ops
+from swhurl.apps import contract, declaration, ops
 from swhurl.apps import promotion as gate
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
@@ -67,11 +67,11 @@ def routes(ctx: Context) -> list[Route]:
                                                                 together=files.together), declared.problem
         shown = replace(shown, rows=relation_rows)
         return page(request, 'app.html', status=status, secret_states=secrets, flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
-                    writable=True, v2=declared.source == declared_records.V2,
+                    writable=declared.source == declared_records.V2, v2=declared.source == declared_records.V2,
                     flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
                     connections=shown, relation_problem=relation_problem, allows=declared.allows if declared.declared else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
-                    scale_fields=V2_SCALE_FIELDS if declared.source == declared_records.V2 else merge.SCALE_FIELDS,
+                    scale_fields=V2_SCALE_FIELDS,
                     minimum=declared.minimum, declared=declared, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=proposal.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
@@ -232,56 +232,51 @@ def routes(ctx: Context) -> list[Route]:
                           'rollback': False, 'secrets': [], 'storage': None, 'needs_host': False, 'admits': [],
                           'setup': False}
                 return page(request, 'promotion.html', review=review, prs=existing)
-            status = promotion.staging_status(runner, github, found)
-            if status is None:
-                raise actions.ActionError('staging is missing; deploy staging before promoting')
-            reviewed = promotion.main_tree(runner, github, lambda root: promotion.review(root, app, status, runner))
-            return page(request, 'promotion.html', review=reviewed, prs=existing)
-        except (EditError, new.GenerationError, actions.ActionError) as error:
+            raise actions.ActionError('this instance is still v1\'s: migrate it with `swhurl-v2 migrate` before promoting it here')
+        except actions.ActionError as error:
             return page(request, 'error.html', status_code=409, error=str(error))
         except (CommandError, cluster.ReadError) as error:
             return page(request, 'error.html', status_code=502, error=str(error))
 
     async def change_app(request: Request) -> Response:
-        """Promote, scale, change access to, change the connections of or remove an instance: a PR made by v2's binary
-        for a v2 instance, or by the clone's app-* commands for a v1 one still to be migrated."""
+        """Scale, change access to, change the connections of, promote or remove a v2 instance: a held PR made by
+        v2's binary. v2's records are the only ones the console writes."""
         app, env, change = (request.path_params[k] for k in ('app', 'env', 'change'))
         found = Instance.named(app, env)
-        if found is None or change != 'promote' and change not in (*merge.INSTANCE_KINDS, 'remove', *merge.V2_ACTION):
+        if found is None or change not in ('remove', 'promote', 'egress', 'schedule', *merge.V2_ACTION):
             return page(request, 'error.html', status_code=404, error='No such app instance or change.')
         if github is None:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
         fields = parse_qs((await request.body()).decode(), keep_blank_values=True)
         form = {k: v[0] for k, v in fields.items()}
         declared = declared_records.of(app, env, document_source)
-        v2_instance = declared.source == declared_records.V2
-        if v2_instance:
-            if refused := v2_read_only(request, app, env, change):
-                return refused
-        action = merge.V2_ACTION.get(change, change) if v2_instance else change
+        if declared.source != declared_records.V2:
+            return page(request, 'error.html', status_code=409,
+                        error=f'{app}/{env} is still v1\'s: migrate it with `swhurl-v2 migrate` before changing it here.')
+        if change in ('egress', 'schedule'):
+            return page(request, 'error.html', status_code=400,
+                        error=f'v2 does not model {change}: the form is not offered for this instance')
+        if refused := v2_read_only(request, app, env, change):
+            return refused
+        action = merge.V2_ACTION[change]
         try:
             if env not in merge.ACTIONS[action].envs:
                 raise actions.ActionError(f'{change} from the {" or ".join(merge.ACTIONS[action].envs)} instance')
             if change == 'connect':
                 for ticked in ('calls', 'subscribe'):  # one checkbox per app or event
                     form[ticked] = ','.join(value for value in fields.get(ticked, []) if value)
-            if v2_instance:
-                if change in ('egress', 'schedule'):
-                    raise actions.ActionError(f'v2 does not model {change}: the form is not offered for this instance')
-                commands = v2_commands(change, app, env, form, declared)
-            else:
-                commands = merge.ACTIONS[change].commands(app, env, form)
+            commands = v2_commands(change, app, env, form, declared)
             if change == 'connect':  # only what the form offered: the environment's web apps and events
                 callable_apps, offered_events, problem = connectable(env, app)
                 if problem:
                     raise actions.ActionError(f'cannot check the apps and events chosen: {problem}')
                 merge.Connections.from_form(form).check_offered({row.instance.app for row in callable_apps},
                                                                   {name for name, _ in offered_events})
-        except (actions.ActionError, EditError, new.GenerationError) as error:
+        except actions.ActionError as error:
             return page(request, 'error.html', status_code=400, error=str(error))
         except CommandError as error:
             return page(request, 'error.html', status_code=502, error=str(error))
-        return propose(request, action, app, env, commands, auto_merge=not v2_instance and form.get('hold') != 'on')
+        return propose(request, action, app, env, commands, auto_merge=False)
 
     async def use_offer(request: Request) -> Response:
         """The catalogue's Use: the app chosen there connects, as its own Connect to an app would."""

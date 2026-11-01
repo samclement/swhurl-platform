@@ -238,7 +238,7 @@ class PullStageTests(unittest.TestCase):
         self.assertIn('nothing changed', stages.track(job('scale', 'web/staging'), closed).outcome)
         for action in (stages.NEW_APP_JOB, stages.FINISH_JOB):
             self.assertIn('repository and image made for it still exist', stages.track(job(action, 'web/staging'), closed).outcome)
-        track = stages.pull_track(stages.Pull(9, URL, 'open', 'passed', auto=True), 'console/promote-web-staging-abc1234')
+        track = stages.pull_track(stages.Pull(9, URL, 'open', 'passed', auto=True), 'console/v2-promote-web-staging-abc1234')
         self.assertEqual(track.stages[-1].label, 'Live in prod')
         self.assertEqual(stages.target_of('console/new-my-app-staging-abc1234'), ('new', 'my-app/staging'))
 

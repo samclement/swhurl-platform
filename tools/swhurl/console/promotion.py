@@ -1,37 +1,18 @@
-"""Review and open promotion PRs using GitHub's authoritative tree, not cached cluster rows.
-
-A promotion PR carries only the app's records (promotion.records): production's Release, its offers
-documents and, for a first promotion, its Settings and encrypted files. Main renders the rest when the
-PR is merged (the merge gate, or the Render workflow after a merge on GitHub)."""
+"""How a promotion PR is recognised, and whether an instance is settled after other commits."""
 from __future__ import annotations
 
-import contextlib
-import difflib
-import io
 import re
 import shutil
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl.apps import ops, promotion
-from swhurl.apps.errors import EditError
-from swhurl.apps.instance import Instance
-from swhurl.apps.model import relations, write
-from swhurl.apps.model.draft import RenderError
-from swhurl.apps.model.records import Release
-from swhurl.apps.new import GenerationError
 from swhurl.console import github as gh
 from swhurl.console import merge
 from swhurl.console.actions import ActionError
-from swhurl.console.proposal import download, staging_history
-from swhurl.run import CommandError, Runner
-
-IMAGE_LINE = re.compile(r'(?m)^Promote the reviewed staging image `([^`\n]+)` to `[a-z0-9-]+/prod`\.')
-"""The PR body's first line, which names the promoted image: an open PR for another image is refused."""
-RENDERED = ('apps', 'clusters', 'platform')  # where a promotion's rendered files are
-DIFF_LINES = 400  # the review page's rendered diff stops here
+from swhurl.console.proposal import download
+from swhurl.run import Runner
 
 
 def main_tree(runner: Runner, github: gh.GitHub, read: Callable[[Path], object]):
@@ -59,129 +40,6 @@ def settled_status(runner: Runner, github: gh.GitHub | None, status: ops.Instanc
     return promotion.settled(status, changed)
 
 
-def staging_status(runner: Runner, github: gh.GitHub | None, instance: Instance) -> ops.InstanceStatus | None:
-    """Staging read from the cluster, as the gate judges it."""
-    return settled_status(runner, github, ops.gather_status(runner, instance))
-
-
-def admitting(root: Path, app: str) -> list[str]:
-    """The production apps a first promotion of ``app`` also changes once main renders it: each app staging
-    calls that runs in production and allows it there gains the new caller in its allowed callers and
-    network policy."""
-    world, _ = write.read(root)
-    target = Instance(app, 'prod')
-    world[target] = promotion.first_production(root, world, app, preview=True).entry
-    try:
-        return [r.target for r in relations.evaluate(target, world) if r.role == 'calls' and not r.pending]
-    except RenderError as error:
-        raise EditError(str(error)) from None
-
-
-@dataclass(frozen=True)
-class Proposal:
-    """What a promotion's console PR adds to every console PR, read from the downloaded main before its command
-    runs: its body, what it also affects (a first promotion's callees), the staged history its rule judges and
-    its readiness check, once per job after preparation and before any GitHub write."""
-    app: str
-    image: str
-    current: Release | None  # staging's Release on that main: the newest of its staged history
-    body: str
-    affects: str
-
-    def staged(self, api: gh.GitHubAPI, head: str) -> Callable[[Release], bool]:
-        return lambda release: promotion.staged(release, staging_history(api, head, self.app, self.current))
-
-    def check(self, runner: Runner, github: gh.GitHub) -> None:
-        if problem := promotion.source_problem(staging_status(runner, github, Instance(self.app, 'staging')), self.image):
-            raise ActionError(problem)
-
-
-def image_of(commands: tuple[merge.Command, ...]) -> str:
-    return next(arg.split('=', 1)[1] for arg in commands[0].argv if arg.startswith('--expect-image='))
-
-
-def proposal(tree: Path, app: str, commands: tuple[merge.Command, ...]) -> Proposal:
-    world, _ = write.read(tree)
-    image, first = image_of(commands), promotion.select(tree, world, app).outcome == 'create'
-    admits = admitting(tree, app) if first else []
-    body = f'Promote the reviewed staging image `{image}` to `{app}/prod`.'
-    if first:
-        body += ('\n\nBefore merging, review the production hostname, and if Secret placeholders were created, set each value on this branch '
-                 f'with `make app-secret APP={app} ENV=prod NAME=<name>` (in your own terminal). Main renders production when this is merged.')
-    if admits:
-        body += (f"\n\nThis also lets `{app}` call {', '.join(f'`{callee}/prod`' for callee in admits)}: "
-                 "each gains it in `SWHURL_ALLOWED_CALLERS` and its network policy when main renders it.")
-    affects = f'also changes the allowed callers and network policy for {", ".join(admits)} once main renders it' if admits else ''
-    return Proposal(app, image, promotion.release_of(tree, app, 'staging'), body, affects)
-
-
-def contents(root: Path) -> dict[str, bytes]:
-    """Every file under the folders a promotion writes, by path from ``root``."""
-    return {path.relative_to(root).as_posix(): path.read_bytes()
-            for top in RENDERED for path in sorted((root / top).rglob('*')) if path.is_file()}
-
-
-def rendered_diff(root: Path, app: str, image: str, runner: Runner) -> tuple[str, int, list[str]]:
-    """What a later promotion of ``image`` changes in main (``root``, which is changed): ``(unified diff of
-    the rendered files, how many, the records it changes)``, the diff stopping after DIFF_LINES lines.
-    Records are left out of the diff: the PR shows them."""
-    before = contents(root)
-    with contextlib.redirect_stdout(io.StringIO()):
-        from swhurl.apps import edit
-        edit.promote(root, app, expect_image=image, runner=runner)
-    after = contents(root)
-    changed = sorted(path for path in before.keys() | after.keys() if before.get(path) != after.get(path))
-    paths = [path for path in changed if not promotion.records(app, path)]
-    lines: list[str] = []
-    for path in paths:
-        lines += difflib.unified_diff(before.get(path, b'').decode(errors='replace').splitlines(),
-                                      after.get(path, b'').decode(errors='replace').splitlines(),
-                                      f'a/{path}', f'b/{path}', lineterm='')
-    if len(lines) > DIFF_LINES:
-        lines = [*lines[:DIFF_LINES], f'… {len(lines) - DIFF_LINES} more lines']
-    return '\n'.join(lines), len(paths), [path for path in changed if promotion.records(app, path)]
-
-
-def review(root: Path, app: str, status: ops.InstanceStatus, runner: Runner | None = None) -> dict:
-    world, _ = write.read(root)
-    decision = promotion.select(root, world, app)
-    source, target = world[Instance(app, 'staging')], world.get(Instance(app, 'prod'))
-    problem = promotion.source_problem(status, decision.image)
-    if problem:
-        raise ActionError(problem)
-    exposure = source.settings.grants.exposure
-    first, admits = None, []
-    if decision.outcome == 'create':
-        first = promotion.first_production(root, world, app, preview=True)
-        admits = admitting(root, app)
-    needs_host = decision.outcome == 'create' and exposure == 'public'
-    if target:
-        settings = target.settings
-        addresses = (settings.choices.host or promotion.contract.default_host(app, 'prod'),) if settings.grants.exposure != 'private' else ()
-    elif first and first.host:
-        addresses = (first.host,)
-    else:
-        addresses = ()
-    found = {'app': app, 'outcome': decision.outcome, 'image': decision.image, 'previous': decision.previous,
-             'rollback': decision.rollback, 'needs_host': needs_host,
-             'secrets': first.secret_keys if first else [], 'storage': first.database_size if first and first.database_size else None,
-             'admits': admits,
-             'address': ', '.join('https://' + address for address in addresses) or
-             ('private (no route)' if not needs_host else ''),
-             'setup': decision.outcome == 'create', 'diff': '', 'diff_files': 0, 'diff_problem': '', 'held': ''}
-    if decision.outcome == 'update':
-        before, staged = promotion.release_of(root, app, 'prod'), promotion.release_of(root, app, 'staging')
-        try:
-            found['diff'], found['diff_files'], records = rendered_diff(root, app, decision.image, runner or Runner())
-        except (EditError, CommandError, GenerationError) as error:
-            found['diff_problem'] = str(error)
-        else:
-            # Why a person would merge it (promotion.held), shown before the PR exists; staging runs this digest.
-            found['held'] = merge.judge('promote', app, 'staging', records, before,
-                                        merge.ACTIONS['promote'].read(root, app, 'staging'), lambda release: promotion.staged(release, [staged]))
-    return found
-
-
 def merge_mode(pr: gh.PullRequest) -> str:
     """How an open console PR gets merged: by the gate (its label), or by a person and why."""
     if gh.AUTO_MERGE_LABEL in pr.labels:
@@ -193,19 +51,5 @@ def merge_mode(pr: gh.PullRequest) -> str:
 
 
 def matching(pr: gh.PullRequest, app: str) -> bool:
-    """Whether ``pr`` promotes ``app``'s staging to production (merge.parse), in either writer."""
+    """Whether ``pr`` promotes ``app``'s staging to production, in either writer."""
     return merge.parse(pr.branch) in (('promote', app, 'staging'), ('v2-promote', app, 'staging'))
-
-
-def promoted_image(body: str) -> str:
-    found = IMAGE_LINE.search(body)
-    return found[1] if found else ''
-
-
-def existing(runner: Runner, github: gh.GitHub, app: str, image: str) -> gh.PullRequest | None:
-    for pr in gh.console_prs(runner, github):
-        if matching(pr, app):
-            if promoted_image(pr.body) != image:
-                raise ActionError(f'A promotion PR is already open: {pr.url}. Close it explicitly before reviewing a replacement image.')
-            return pr
-    return None

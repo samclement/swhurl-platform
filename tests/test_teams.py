@@ -11,9 +11,9 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT, interface
-from swhurl.apps import channels, contract, edit, teams
+from swhurl.apps import channels, contract, teams
 from swhurl.apps.errors import EditError
-from swhurl.apps.model import generated
+from swhurl.apps.model import generated, write
 from swhurl.run import FakeRunner, Result
 
 SAMPLE = ROOT / 'tests/fixtures/instance'  # one app, hello, in staging and prod, team demo
@@ -59,7 +59,7 @@ class TeamTests(unittest.TestCase):
         """hello belongs to ``team``: its App record, and what that renders."""
         path = self.root / 'apps/hello/app.yaml'
         path.write_text(path.read_text().replace('team: demo', f'team: {team}'))
-        self.quiet(edit.sync)
+        self.quiet(write.sync)
 
     def test_a_rename_relabels_every_app_of_the_team(self):
         self.quiet(teams.remove, 'payments')
@@ -100,30 +100,19 @@ class TeamTests(unittest.TestCase):
     def allows(self, env='staging'):
         return yaml.safe_load((self.root / 'apps/hello' / env / 'instance.yaml').read_text()).get('allows')
 
-    def test_team_grants_follow_a_rename_block_a_removal_and_must_name_a_registered_team(self):
-        from swhurl.apps import edit
-        self.quiet(edit.set_allows, 'hello', 'staging', add=['team:payments', 'reports'])
-        self.quiet(teams.change, 'payments', rename='billing')
-        self.assertEqual(self.allows(), ['team:billing', 'reports'], 'the rename rewrites the grant in the same change')
-        self.assertIsNone(self.allows('prod'), 'production has its own grants')
-        self.assertEqual(generated.problems(self.root), [])
-        before = (self.root / 'apps/teams.yaml').read_text()
-        with self.assertRaisesRegex(EditError, 'team:billing is allowed to call hello/staging: remove those grants first'):
-            teams.remove(self.root, 'billing')
-        self.assertEqual((self.root / 'apps/teams.yaml').read_text(), before, 'a refused removal changes nothing')
-        self.quiet(edit.set_allows, 'hello', 'staging', remove=['team:billing'])
-        self.quiet(teams.remove, 'billing')
-        self.assertNotIn('billing', self.registered())
-        record = self.root / 'apps/hello/staging/instance.yaml'
-        record.write_text(record.read_text().replace('- reports', '- team:nobody'))
-        self.assertIn('hello/staging: instance.yaml: allows team:nobody, which is not registered in apps/teams.yaml (rule team)',
-                      generated.problems(self.root))
+    def set_allows(self, names, env='staging'):
+        path = self.root / 'apps/hello' / env / 'instance.yaml'
+        doc = yaml.safe_load(path.read_text())
+        doc['allows'] = names
+        path.write_text(yaml.safe_dump(doc, sort_keys=False))
+        self.quiet(write.sync)
+
 
     def notify_unit(self):
         directory = self.root / channels.NOTIFY_DIR
         directory.mkdir(parents=True)
         (directory / 'kustomization.yaml').write_text('# Channels.\nresources:\n  - namespace.yaml\n  - routes.yaml\n')
-        edit.sync(self.root)
+        write.sync(self.root)
         (self.root / channels.UNIT_FILE).write_text(
             '# The notify unit.\nspec:\n  path: ./platform/notify\n  prune: true\n')
 
@@ -224,14 +213,14 @@ class TeamTests(unittest.TestCase):
         registry = self.root / 'apps/teams.yaml'
         one = registry.read_text()
         registry.write_text(one.replace('- payments-phone', '- payments-phone\n    - payments-desk'))
-        edit.sync(self.root)
+        write.sync(self.root)
         self.assertEqual(channels.problems(self.root), ['notify-channels: team payments notifies 2 channels; a team has one '
                                                         '(make team-edit NAME=payments ARGS="--notify <channel>")'])
         registry.write_text(one)
-        edit.sync(self.root)
+        write.sync(self.root)
         with self.assertRaisesRegex(EditError, 'channel payments-phone is notified by payments'):
             teams.channel_remove(self.root, 'payments-phone')
-        self.quiet(edit.set_allows, 'hello', 'staging', add=['team:payments'])
+        self.set_allows(['team:payments'])
         self.quiet(teams.change, 'payments', rename='billing')
         self.assertEqual(self.allows(), ['team:billing'])
         self.assertEqual(self.routes(), {'billing': ['payments-phone']})
@@ -243,7 +232,7 @@ class TeamTests(unittest.TestCase):
         self.quiet(teams.channel_remove, 'payments-desk')
         self.assertNotIn('decryption', (self.root / channels.UNIT_FILE).read_text(), 'no channel, nothing to decrypt')
         self.assertEqual(channels.problems(self.root), [])
-        self.quiet(edit.set_allows, 'hello', 'staging', remove=['team:billing'])
+        self.set_allows([])
         self.quiet(teams.remove, 'billing')
         self.assertEqual(self.routes(), {})
         self.quiet(teams.change, 'demo', notify=[])

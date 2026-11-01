@@ -1,5 +1,0 @@
-# Read from the app's repository by make app-offers: do not edit.
-repository: samclement/demo-shop
-commit: a244f82
-events: asyncapi.yaml
-flags: flags.json

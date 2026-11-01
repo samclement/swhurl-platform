@@ -1,1 +1,0 @@
-{"apiVersion":"jetstream.nats.io/v1beta2","kind":"Consumer","metadata":{"name":"swhurl-try-10-visited","namespace":"swhurl-try-13-staging"},"spec":{"ackPolicy":"explicit","ackWait":"30s","deliverPolicy":"all","durableName":"swhurl-try-13_visited","filterSubject":"staging.swhurl-try-10.visited","maxDeliver":5,"streamName":"staging-swhurl-try-10"}}

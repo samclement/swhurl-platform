@@ -1,18 +1,18 @@
 name: Render
 
-# Keeps main rendered from its records (docs/architecture.md#how-changes-reach-the-cluster). Every file
-# under apps/ other than an app's input records (app.yaml, release.yaml, instance.yaml, offers/, the
-# encrypted files), and the shared files derived from every instance, is rendered from those records by
-# make app-sync. A held console pull request carries only records; when you merge it on GitHub, this
-# workflow renders the newest main, checks it with make check-repo and make check-apps, and pushes the
-# rendered files as one commit. A push that is already rendered (the console's gate, the Deploy
-# workflow, make app-* commands) leaves nothing to do, and the run writes nothing.
+# Keeps main rendered from its records (docs/architecture.md#how-changes-reach-the-cluster). Every compiled
+# instance file and unit under v2-apps/, and the platform files derived from the records (the egress
+# allocation and the proxy's objects, auth, the broker's users, Reloader's namespaces), is rendered by
+# make v2-render, which runs v2's one render and writes only when the tree disagrees. A held console pull
+# request carries only records; when you merge it on GitHub, this workflow renders the newest main, checks
+# it with make check-repo and make check-apps, and pushes the rendered files as one commit. A push that is
+# already rendered (the console's gate, the Deploy v2 workflow) leaves nothing to do, and the run writes
+# nothing.
 #
 # The commit is pushed with GITHUB_TOKEN, which starts no workflows (so not this one again, and not
-# Validate): the checks run here before pushing. Flux's webhook still applies it. app-sync makes a NATS
-# identity only when both its public allocation and encrypted seed are absent; a partial pair refuses,
-# never rotates. This workflow has no sops: missing identities fail before any writes. A complete
-# records-only pull request carries its identity and needs no encryption here or in Validate.
+# Validate): the checks run here before pushing. Flux's webhook still applies it. v2 renders an instance's
+# broker identity from the record it already holds, so nothing here encrypts; a partial pair refuses,
+# never rotates, and a complete records-only pull request carries its identity.
 #
 # One run at a time; a newer pending run replaces an older one, since each renders the newest main. A
 # push lost to another writer reads main again and renders again.

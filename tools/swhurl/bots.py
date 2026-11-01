@@ -4,7 +4,7 @@
 ``push_main`` starts from the newest main in a fresh worktree, lets ``change`` edit it, checks the result,
 commits the whole tree and pushes without force. A push lost to another writer starts again from the
 newer main; anything ``change``, the checks or ``ready`` raise ends it with nothing pushed. The
-``bot-render`` and ``bot-deploy`` commands are the Render and Deploy workflows' one step each.
+``bot-render`` and ``bot-deploy-v2`` are the Render and Deploy v2 workflows' one step each.
 """
 from __future__ import annotations
 

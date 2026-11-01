@@ -1,5 +1,5 @@
-# When an app's staging ImagePolicy reports its newest image, start the Deploy workflow
-# (.github/workflows/deploy.yml), which writes the tag, digest and offers in one commit
+# When an app's staging ImagePolicy reports its newest image, start the v2 Deploy workflow
+# (.github/workflows/deploy-v2.yml), which writes the tag, the digest and the declaration's facts in one commit
 # (docs/apps.md#deploy-a-new-image). The token is the console's GITHUB_TOKEN, fine-grained for this
 # repository alone; repository_dispatch needs its Contents: read and write (dispatch-secret.sops.yaml;
 # rotate both copies together: docs/operations.md#secrets).

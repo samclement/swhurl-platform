@@ -9,13 +9,12 @@ from dataclasses import replace
 from pathlib import Path
 
 from swhurl import interface, yamlio
-from swhurl.apps import calling, connections, edit, events, new
+from swhurl.apps import calling, connections, events, new
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated, relations, render, store, write
 from swhurl.apps.model.draft import EVENTS_SECRET, Entry, Platform, RenderError
 from swhurl.apps.model.records import Allocations, App, Grants, Image, Release, Settings
-from swhurl.console import promotion
 from swhurl.run import FakeRunner
 
 
@@ -219,32 +218,13 @@ class RelationTests(unittest.TestCase):
         self.save(world)
         self.assertIn(f'{each}: has no NATS key; make app-sync creates it', generated.problems(self.root))
 
-    def test_creation_and_edit_accept_absent_targets(self):
-        for env in ('staging', 'prod'):
-            each = Instance('reader', env)
-            self.save({each: entry()})
-            with redirect_stdout(io.StringIO()):
-                edit.set_calls(self.root, 'reader', env, add=['absent'])
-            self.assertIn('to exist', relations.evaluate(each, write.read(self.root)[0])[0].pending)
-        (self.root / events.CONTROLLER_KEY_FILE).unlink()  # a scratch creation needs no key allocation
+    def test_creation_accepts_an_absent_call_target(self):
         with redirect_stdout(io.StringIO()):
             args = new.parse_args(['created', '--env=staging', '--team=demo', '--image=example/app:1',
                                    '--calls=absent', '--health-path=/', '--no-auto-deploy', '--root', str(self.root)])
             new.generate(args, self.root, runner=FakeRunner())
         self.assertNotIn(interface.callee_variable('absent'), yamlio.load(
             (self.root / 'apps/created/staging/helmrelease.yaml').read_text())['spec']['values']['controllers']['main']['containers']['main']['env'])
-
-    def test_promotion_consent_uses_production_relations_not_staging_subscriptions(self):
-        app = Instance('reader', 'staging')
-        world = {app: entry(calls=('orders', 'missing'), subscriptions=('events.created',)),
-                 Instance('orders', 'prod'): entry(allows=('team:demo',)),
-                 Instance('events', 'prod'): entry()}
-        self.save(world, rendered=False)
-        self.assertEqual(promotion.admitting(self.root, 'reader'), ['orders'])
-        world[Instance('orders', 'prod')] = entry(kind='worker')
-        self.save(world, rendered=False)
-        with self.assertRaisesRegex(EditError, 'no address to call'):
-            promotion.admitting(self.root, 'reader')
 
     def test_evaluator_is_standard_library_only_and_policy_keeps_no_ruamel_boundary(self):
         for imports, forbidden in (('from swhurl.apps.model import relations', '("yaml", "ruamel")'),

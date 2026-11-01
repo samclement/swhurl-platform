@@ -60,14 +60,14 @@ def run(runner, problems=lambda path: []):
 
 
 class CheckTemplatesTests(unittest.TestCase):
-    def test_each_type_becomes_a_staging_and_prod_instance(self):
+    def test_each_type_becomes_a_staging_instance(self):
         checked = []
         runner = template_runner(lambda a: WORKER if a['kind'] == 'worker' else WEB)
         code, out = run(runner, problems=lambda path: checked.append(path.name) or [])
         self.assertEqual(code, 0, out)
-        self.assertIn('[OK] typescript api=openapi database=sqlite kind=web (api): staging and prod pass the app policy', out)
-        self.assertIn('[OK] typescript api=none database=none kind=worker (worker): staging and prod pass the app policy', out)
-        self.assertEqual(sorted(checked), ['prod', 'prod', 'staging', 'staging'], 'each type in both environments')
+        self.assertIn('[OK] typescript api=openapi database=sqlite kind=web (api): staging passes the app policy', out)
+        self.assertIn('[OK] typescript api=none database=none kind=worker (worker): staging passes the app policy', out)
+        self.assertEqual(sorted(checked), ['staging', 'staging'], 'each type in staging; production is v2\'s create path')
         renders = [c for c in runner.calls if c[:2] == ('copier', 'copy')]
         self.assertEqual(len(renders), 3, 'two types and the answers no type has')
         self.assertTrue(all('--vcs-ref' not in c for c in renders), 'renders the pinned checkout as a plain folder')
@@ -113,7 +113,7 @@ class CheckTemplatesTests(unittest.TestCase):
                 self.assertIn(expected, out)
         code, out = run(template_runner(lambda a: WEB), problems=lambda path: ['no-root: runs as root'])
         self.assertEqual(code, 1)
-        self.assertIn('prod: no-root: runs as root', out)
+        self.assertIn('staging: no-root: runs as root', out)
         broken = template_runner(lambda a: WEB)
         broken._rules[-1] = (('copier', 'copy'), lambda args, _input: Result(args, 1, '', 'no such template'))
         code, out = run(broken)

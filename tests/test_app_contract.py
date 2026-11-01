@@ -14,11 +14,10 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT, interface
-from swhurl.apps import calling, contract, declaration, edit
+from swhurl.apps import contract, declaration
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
 from swhurl.apps.defaults import secret_key_problem
-from swhurl.apps.model import generated
 from swhurl.run import CommandError, FakeRunner, Result
 
 FIXTURES = ROOT / 'tests/fixtures/apps'
@@ -156,29 +155,6 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(env('job'), {'SWHURL_APP': 'job', 'SWHURL_ENV': 'staging', 'SWHURL_NOTIFY_URL': 'http://notify.notify.svc.cluster.local:8080'},
                          'a worker receives no calls')
 
-    def test_calls_at_creation_connect_wait_or_refuse_invalid_targets_without_writes(self):
-        self.assertEqual(self.gen('orders', '--image', 'r/orders:1', '--health-path', '/h', '--port', '9000'), 0)
-        with redirect_stdout(io.StringIO()):
-            edit.set_allows(self.tmp, 'orders', 'staging', add=['team:demo'])
-        self.assertEqual(self.gen('reports', '--image', 'r/reports:1', '--health-path', '/h', '--calls', 'orders'), 0)
-
-        def values(app):
-            return yaml.safe_load((self.tmp / f'apps/{app}/staging/helmrelease.yaml').read_text())['spec']['values']
-        caller = values('reports')
-        self.assertEqual(caller['controllers']['main']['containers']['main']['env']['SWHURL_SERVICE_ORDERS_URL'],
-                         'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000')
-        self.assertEqual(caller['persistence']['tokens'], calling.tokens_volume(['orders']))
-        self.assertEqual(values('orders')['controllers']['main']['containers']['main']['env']['SWHURL_ALLOWED_CALLERS'],
-                         'reports')
-        with redirect_stdout(io.StringIO()):
-            self.assertEqual(self.gen('waiting', '--image', 'r/waiting:1', '--kind', 'worker', '--calls', 'nowhere'), 0)
-        self.assertEqual(values('waiting')['persistence']['tokens'], calling.tokens_volume([]))
-        before = {p: p.read_bytes() for p in self.tmp.rglob('*') if p.is_file()}
-        err = io.StringIO()
-        with redirect_stderr(err), redirect_stdout(io.StringIO()):
-            self.assertEqual(self.gen('lost', '--image', 'r/lost:1', '--kind', 'worker', '--calls', 'waiting'), 2)
-        self.assertIn('a worker: it has no address to call', err.getvalue())
-        self.assertEqual({p: p.read_bytes() for p in self.tmp.rglob('*') if p.is_file()}, before)
 
     def test_an_unregistered_team_is_refused_before_writing(self):
         (self.tmp / 'apps').mkdir()
@@ -247,25 +223,6 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(values['ingress']['main']['hosts'][0]['host'], 'staging-w.homelab.swhurl.com')
         self.assertIn('middlewares', str(values['ingress']['main']['annotations']))
 
-    def test_auto_deploy_watches_the_image_in_staging_only(self):
-        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging', '--image', TEMPLATE_IMAGE,
-                                       '--root', str(self.tmp), '--no-policy-check']), 0)
-        with redirect_stdout(io.StringIO()):
-            edit.promote(self.tmp, 'w')
-        staging, prod = self.tmp / 'apps/w/staging', self.tmp / 'apps/w/prod'
-        repository, image_policy = yaml.safe_load_all((staging / contract.IMAGE_AUTOMATION_FILE).read_text())
-        self.assertEqual((repository['kind'], repository['metadata']['namespace'], repository['spec']['image']),
-                         ('ImageRepository', 'flux-system', 'ghcr.io/samclement/w'))
-        self.assertEqual(image_policy['metadata']['name'], 'w-staging')
-        self.assertEqual(image_policy['spec']['digestReflectionPolicy'], 'Always')
-        self.assertIn('interval', image_policy['spec'], 'Flux rejects Always without an interval')
-        self.assertEqual(image_policy['spec']['filterTags']['extract'], '$run')
-        unit = yaml.safe_load((self.tmp / 'clusters/home/app-w-staging.yaml').read_text())
-        self.assertIn({'name': 'platform-image-automation'}, unit['spec']['dependsOn'])
-        self.assertIn('tag: 12-abcdef0\n', (staging / 'helmrelease.yaml').read_text(), 'the Deploy workflow writes it: no markers')
-        self.assertIn(contract.IMAGE_AUTOMATION_FILE, (staging / 'kustomization.yaml').read_text())
-        self.assertFalse((prod / contract.IMAGE_AUTOMATION_FILE).exists())
-        self.assertEqual(generated.problems(self.tmp), [], 'each environment renders its own automation')
 
     def test_auto_deploy_needs_a_template_tag_and_digest(self):
         for image in ('ghcr.io/samclement/w:1.0@sha256:' + 'a' * 64, 'ghcr.io/samclement/w:12-abcdef0'):
@@ -357,9 +314,9 @@ class GeneratorTests(unittest.TestCase):
             result = subprocess.run([str(FIXTURES.parent / 'apps.sh')], env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             out = Path(tmp) / 'out'
-            generated = {p.relative_to(out) for p in out.rglob('*.yaml')}
-            committed = {p.relative_to(FIXTURES) for p in FIXTURES.rglob('*.yaml')}
-            self.assertEqual(generated, committed, 'fixture file set drifted; run tests/fixtures/apps.sh')
+            generated = {p.relative_to(out) for p in out.rglob('*.yaml') if 'smoke-data' not in p.as_posix()}
+            committed = {p.relative_to(FIXTURES) for p in FIXTURES.rglob('*.yaml') if 'smoke-data' not in p.as_posix()}
+            self.assertEqual(generated, committed, 'fixture set drifted; run tests/fixtures/apps.sh')
             for rel in generated:
                 if rel.name.endswith('.sops.yaml'):
                     self.assertIn('sops:', (FIXTURES / rel).read_text(), f'{rel} is not encrypted')

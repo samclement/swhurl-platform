@@ -11,7 +11,7 @@ import json
 import os
 import re
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
@@ -19,16 +19,14 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, bots, interface, yamlio
-from swhurl.apps import channels, egress, events, promotion
+from swhurl.apps import channels, events
 from swhurl.apps.calling import NOTIFY
-from swhurl.apps.contract import SECRET_FILE, TEAMS_FILE, schedule_problem
-from swhurl.apps.errors import EditError
+from swhurl.apps.contract import TEAMS_FILE
 from swhurl.apps.instance import instance_folder, instance_unit_file
 from swhurl.apps.model import records
 from swhurl.apps.model.records import (
     ALLOW_RE,
     APP_FILE,
-    RECORD_FILES,
     RELEASE_FILE,
     SETTINGS_FILE,
     App,
@@ -100,6 +98,17 @@ def check_events_key(root: Path, app: str, settings: Settings) -> None:
         raise Hold('the PR pairs its events key with no NATS public key')
 
 
+def settings_of(root: Path, app: str, env: str) -> Settings | None:
+    """An instance's Settings in the tree at ``root``; None when it has none."""
+    path = instance_folder(root, app, env) / SETTINGS_FILE
+    if not path.is_file():
+        return None
+    try:
+        return Settings.parse(yamlio.load(path.read_text()), f'{app}/{env}: {SETTINGS_FILE}')
+    except (RecordError, yaml.YAMLError) as error:
+        raise Hold(f'the instance record cannot be read: {error}') from None
+
+
 def encrypted_reason(action: str, app: str, env: str, statuses: Mapping[str, str], root: Path) -> str:
     """One encrypted-input rule for publication and every merge attempt. Deletion needs no setup.
     Only a new app's added staging seed, checked against its recipients and public allocation, is exempt.
@@ -142,15 +151,10 @@ def check_new_app(work: Path, app: str) -> None:
         check_events_key(work, app, settings)
 
 
-def instance_records(app: str, env: str, path: str) -> bool:
-    return path == f'apps/{app}/{env}/{SETTINGS_FILE}'
 
 
-def removal_inputs(app: str, env: str, path: str) -> bool:
-    """The inputs a removal deletes: the instance's records, encrypted files and offers, and the App record."""
-    folder = f'apps/{app}/{env}/'
-    return path == f'apps/{app}/{APP_FILE}' or (path.startswith(folder) and (
-        path.removeprefix(folder) in RECORD_FILES | {SECRET_FILE, events.SECRET_FILE} or path.startswith(f'{folder}offers/')))
+
+
 
 
 def team_inputs(path: str) -> bool:
@@ -206,26 +210,10 @@ def checked_host(host: str) -> str:
     return host
 
 
-def scale_flags(form: Mapping[str, str]) -> list[str]:
-    """``--flag=value`` for each filled-in scale field; at least one is needed."""
-    flags = []
-    for field, flag, label in SCALE_FIELDS:
-        value = form.get(field, '').strip()
-        if value:
-            if not re.fullmatch(r'[0-9A-Za-z.]{1,12}', value):
-                raise ActionError(f'{label} {value!r} is not a number or quantity')
-            flags.append(f'--{flag}={value}')
-    if not flags:
-        raise ActionError('change at least one of replicas, CPU, memory or memory limit')
-    return flags
 
 
-def expose_flags(form: Mapping[str, str]) -> list[str]:
-    """``--exposure=`` and an optional ``--host=`` for app-expose."""
-    exposure, host = form.get('exposure', '').strip(), checked_host(form.get('host', '').strip())
-    if exposure not in records.EXPOSURES:
-        raise ActionError(f'exposure must be one of {", ".join(records.EXPOSURES)}')
-    return [f'--exposure={exposure}'] + ([f'--host={host}'] if host else [])
+
+
 
 
 @dataclass(frozen=True)
@@ -273,48 +261,16 @@ class Connections:
         return tuple(commands)
 
 
-def removing(app: str, env: str, form: Mapping[str, str]) -> tuple[Command, ...]:
-    """The command that removes one connection this app declared: the row's ``role``, ``app`` and ``event``."""
-    role, other, event = (form.get(key, '').strip() for key in ('role', 'app', 'event'))
-    if role == 'calls' and records.NAME_RE.match(other):
-        return (Command('app-calls', (app, env, f'--remove={other}')),)
-    if role == 'subscribes' and records.SUBSCRIPTION_RE.match(f'{other}.{event}'):
-        return (Command('app-events', (app, env, f'--remove-subscribe={other}.{event}')),)
-    if role == 'publishes':
-        raise ActionError('to stop publishing, edit asyncapi.yaml named by provides.eventsFile; '
-                          'publications cannot be removed on the platform')
-    if role == 'reaches' and not egress.grant_problem(event):
-        return (Command('app-egress', (app, env, f'--remove={event}')),)
-    raise ActionError('no such connection to remove: only the app that declared one can remove it')
 
 
-def allow_flags(form: Mapping[str, str]) -> list[str]:
-    """``--add=`` and ``--remove=`` for app-allows, from the form's comma-separated ``add`` and ``remove``."""
-    chosen = {field: [name.strip() for name in form.get(field, '').split(',') if name.strip()] for field in ('add', 'remove')}
-    if bad := [name for names in chosen.values() for name in names if not ALLOW_RE.match(name)]:
-        raise ActionError(f'{", ".join(bad)}: an allowed caller is an app name or team:<team>')
-    flags = [f'--{field}={",".join(names)}' for field, names in chosen.items() if names]
-    if not flags:
-        raise ActionError('name an app or team:<team> to allow or stop allowing')
-    return flags
 
 
-def egress_hosts(form: Mapping[str, str]) -> list[str]:
-    """The hosts a form grants (``hosts``, comma-separated), each as app-egress keeps it."""
-    hosts = [egress.grant(name) for name in form.get('hosts', '').split(',') if name.strip()]
-    if not hosts:
-        raise ActionError('name a host, such as api.stripe.com')
-    problems = [problem for name in hosts if (problem := egress.grant_problem(name))]
-    if problems:
-        raise ActionError('; '.join(problems))
-    return hosts
 
 
-def schedule_commands(app: str, env: str, form: Mapping[str, str]) -> tuple[Command, ...]:
-    when = ' '.join(form.get('schedule', '').split())
-    if problem := schedule_problem(when):
-        raise ActionError(problem)
-    return (Command('app-schedule', (app, env, f'--schedule={when}')),)
+
+
+
+
 
 
 def team_commands(action: str, name: str, form: Mapping[str, str]) -> tuple[Command, ...]:
@@ -347,12 +303,7 @@ def new_commands(name: str, _env: str, form: Mapping) -> tuple[Command, ...]:
                                 f'--image={form["image"]}', *form['flags'])),)
 
 
-def promote_commands(app: str, _env: str, form: Mapping[str, str]) -> tuple[Command, ...]:
-    if not form.get('image'):
-        raise ActionError('refresh the staging app page and review the image before promotion')
-    host = checked_host(form.get('host', ''))
-    return (Command('app-promote', (app, f'--expect-image={form["image"]}', '--prepare-only',
-                                   *([f'--host={host}'] if host else []))),)
+
 
 
 def v2_commands(app: str, env: str, settings: tuple[str, ...]) -> tuple[Command, ...]:
@@ -506,50 +457,10 @@ def gated(branch_name: str) -> bool:
     return bool(found and ACTIONS[found[0]].gated)
 
 
-def settings_of(root: Path, app: str, env: str) -> Settings | None:
-    """An instance's Settings in the tree at ``root``; None when it has none."""
-    path = instance_folder(root, app, env) / SETTINGS_FILE
-    if not path.is_file():
-        return None
-    try:
-        return Settings.parse(yamlio.load(path.read_text()), f'{app}/{env}: {SETTINGS_FILE}')
-    except (RecordError, yaml.YAMLError) as error:
-        raise Hold(f'the instance record cannot be read: {error}') from None
 
 
-REACH = 'changes who can reach it'
-STAGING_REVIEW: dict[str, tuple[str, str]] = {
-    'exceptions': ('changes its app-policy exceptions', 'changed'),
-    'exposure': (REACH, 'changed'), 'host': (REACH, 'changed'), 'issuer': (REACH, 'changed'),
-    'allows': ('allows {added} to call it', 'added'),
-    'egress': ('grants hosts outside the cluster: {added}', 'added'),
-    'calls': ('', 'free'), 'subscriptions': ('', 'free'), 'replicas': ('', 'free'), 'capacity': ('', 'free'), 'schedule': ('', 'free'),
-}
-"""Each Grants and Choices field's staging review, first match in order: held when ``changed``, or a name ``added``, or ``free``."""
 
 
-def settings_held(env: str, before: Settings | None, after: Settings | None) -> str:
-    """An instance change's one rule: why a person merges it, or '' when it merges itself. ``before`` and
-    ``after``: the instance's Settings on main and with the change. Held when it touches production or what the
-    platform allocated (compared whole), else as ``STAGING_REVIEW`` says.
-    The words follow "this pull request" (console) and "Auto-merge refused: it" (the gate)."""
-    if before is None:
-        return 'changes an instance main does not have'
-    if after is None:
-        return "removes the instance's settings record"
-    if before == after:
-        return ''
-    if env != 'staging':
-        return 'changes production settings'
-    if after.allocations != before.allocations:
-        return 'changes what the platform allocated it (egress port, events key or database)'
-    for name, (reason, review) in STAGING_REVIEW.items():
-        old, new = (getattr(s.grants if hasattr(s.grants, name) else s.choices, name) for s in (before, after))
-        if review == 'changed' and old != new:
-            return reason
-        if review == 'added' and (added := [item for item in new if item not in old]):
-            return reason.format(added=', '.join(added))
-    return ''
 
 
 def new_inputs(root: Path, app: str, _env: str) -> tuple[bool, str]:
@@ -566,11 +477,7 @@ def new_held(_app, _env, _files, before, after, _staged) -> str:
     return 'new-app PR overwrites an existing app or instance' if before[0] else after[1]
 
 
-def production_inputs(root: Path, app: str, _env: str) -> Release | None:
-    try:
-        return promotion.release_of(root, app, 'prod')
-    except EditError as error:
-        raise Hold(f'the production release record cannot be read: {error}') from None
+
 
 
 def manual_inputs(_root, _name, _env):
@@ -581,45 +488,16 @@ def manual_held(*_args) -> str:
     return 'needs manual review'
 
 
-def instance_held(_app, env, _files, before, after, _staged) -> str:
-    return settings_held(env, before, after)
 
 
-def promotion_held(app, _env, files, before, after, staged) -> str:
-    return promotion.held(app, files, before, after, staged)
+
+
 
 
 ACTIONS: dict[str, Action] = {
     'new': Action(('staging',), lambda app, _env, path: new_app_records(app, path), new_commands,
                   new_inputs, new_held, 'apps: add {name}/staging', job='new app and repository',
                   kind='new-app', again='create it again'),
-    'promote': Action(('staging',), lambda app, _env, path: promotion.records(app, path), promote_commands,
-                      production_inputs, promotion_held, 'apps: promote {name}/staging to {name}/prod',
-                      kind='promotion', again='promote again', target_env='prod'),
-    'scale': Action(('staging', 'prod'), instance_records,
-                    lambda app, env, form: (Command('app-scale', (app, env, *scale_flags(form))),),
-                    settings_of, instance_held, 'apps: scale {name}/{env}', kind='instance'),
-    'schedule': Action(('staging', 'prod'), instance_records, schedule_commands,
-                       settings_of, instance_held, 'apps: change when it runs: {name}/{env}', kind='instance'),
-    'expose': Action(('staging', 'prod'), instance_records,
-                     lambda app, env, form: (Command('app-expose', (app, env, *expose_flags(form))),),
-                     settings_of, instance_held, 'apps: change access to {name}/{env}', kind='instance'),
-    # Subscribing may give an instance its first NATS key: that PR also carries the encrypted seed (held).
-    'connect': Action(('staging', 'prod'), lambda app, env, path: instance_records(app, env, path)
-                      or path == f'apps/{app}/{env}/{events.SECRET_FILE}',
-                      lambda app, env, form: Connections.from_form(form).adding(app, env),
-                      settings_of, instance_held, 'apps: change the connections of {name}/{env}', kind='instance'),
-    'disconnect': Action(('staging', 'prod'), instance_records, removing,
-                         settings_of, instance_held, 'apps: change the connections of {name}/{env}', kind='instance'),
-    'egress': Action(('staging', 'prod'), instance_records,
-                     lambda app, env, form: (Command('app-egress', (app, env, f'--add={",".join(egress_hosts(form))}')),),
-                     settings_of, instance_held, 'apps: change the hosts outside the cluster of {name}/{env}', kind='instance'),
-    'allow': Action(('staging', 'prod'), instance_records,
-                    lambda app, env, form: (Command('app-allows', (app, env, *allow_flags(form))),),
-                    settings_of, instance_held, 'apps: change who may call {name}/{env}', kind='instance'),
-    'remove': Action(('staging', 'prod'), removal_inputs,
-                     lambda app, env, _form: (Command('app-remove', (app, env)),),
-                     manual_inputs, manual_held, 'apps: remove {name}/{env}', gated=False, keeps='D'),
     **{f'team-{action}': Action((), lambda _name, _env, path: team_inputs(path),
                               lambda name, _env, form, action=action: team_commands(action, name, form),
                               manual_inputs, manual_held, f'teams: {verb} {{name}}', job=f'team {action}', gated=False)
@@ -666,7 +544,6 @@ ACTIONS.update({
 """Every console Git change: branch/target, command builder, input ownership and semantic merge rule.
 Readers return only the facts the rule needs. Console preparation and each newest-main gate retry read
 before and after, then judge the same facts; read failures propagate, never authorize a merge."""
-INSTANCE_KINDS = tuple(name for name, entry in ACTIONS.items() if entry.kind == 'instance' and not name.startswith('v2-'))
 V2_KINDS = tuple(name for name in ACTIONS if name.startswith('v2-') and name != 'v2-promote')
 V2_ACTION = {name.removeprefix('v2-'): name for name in (*V2_KINDS, 'v2-promote')}
 
@@ -731,14 +608,7 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
     runner.run(['git', 'push', 'origin', '--delete', pr['head']['ref']], cwd=root, mutating=True, check=False)
 
 
-def staging_history(runner: Runner, work: Path, app: str) -> Iterator[Release]:
-    """Complete staging Releases selected on main's first-parent history. Git failures propagate."""
-    path = (instance_folder(Path(), app, 'staging') / RELEASE_FILE).as_posix()
-    revisions = runner.output(['git', 'log', '--first-parent', '--diff-filter=AM',
-                               '--format=%H', 'HEAD', '--', path], cwd=work).splitlines()
-    for revision in revisions:
-        text = runner.output(['git', 'show', f'{revision}:{path}'], cwd=work)
-        yield Release.parse(yamlio.load(text), f'{app}/staging at {revision}')
+
 
 
 def merge_records(runner: Runner, root: Path, number: int, sha: str, repo: str, pr: dict, action: str,
@@ -763,10 +633,8 @@ def merge_records(runner: Runner, root: Path, number: int, sha: str, repo: str, 
             ['git', 'diff', '--name-status', '--no-renames', base], cwd=work).splitlines())
         if reason := encrypted_reason(action, app, env, statuses, work):
             raise Hold(f'it {reason}: a person reviews it')
-        if reason := judge(action, app, env, files, before, after,
-                           lambda release: promotion.staged(release, staging_history(runner, work, app))):
+        if reason := judge(action, app, env, files, before, after):
             raise Hold(f'it {reason}: a person reviews it')
-        bots.swhurl(runner, work, 'app-sync')
         # GitHub shows the PR merged: its head is the commit's second parent.
         return bots.Commit(f'Merge pull request #{number}: {pr.get("title", "")}', (sha,))
 

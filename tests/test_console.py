@@ -2,7 +2,6 @@
 import datetime as dt
 import io
 import json
-import re
 import threading
 import unittest
 from contextlib import redirect_stderr
@@ -218,98 +217,8 @@ class ConnectionsTests(unittest.TestCase):
                          'what it declared first, then what others declared about it')
         self.assertEqual([(r.role, r.app, r.event) for r in rows['job', 'staging'].rows], [('subscribes', 'orders', 'created')])
 
-    def test_the_app_page_lists_connections_and_offers_what_is_left_to_connect(self):
-        def page(app):
-            runner = self.cluster()
-            runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit(f'app-{app}-staging')))
-            runner.on('kubectl', '-n', f'{app}-staging', 'get', 'helmrelease', stdout=json.dumps(
-                next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == f'{app}-staging')))
-            runner.on('kubectl', '-n', f'{app}-staging', 'get', stdout=json.dumps({'items': []}))
-            runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
-            return client(runner).get(f'/apps/{app}/staging', headers=WHO).text
-        text = page('reports')
-        self.assertIn('<table class="compact connections">', text)
-        self.assertIn('<input type="hidden" name="role" value="calls"><input type="hidden" name="app" value="orders">', text)
-        self.assertNotIn('name="calls" value="orders"', text, 'what it calls already is not offered again')
-        self.assertNotIn('name="calls" value="reports"', text, 'nor itself')
-        self.assertIn('name="subscribe" value="orders.created"', text)
-        self.assertIn('name="subscribe" value="orders.paid"', text)
-        orders = page('orders')
-        self.assertIn('name="calls" value="reports"', orders)
-        self.assertNotIn('name="calls" value="job"', orders, 'a worker cannot be called')
-        self.assertEqual(orders.count('/apps/orders/staging/disconnect'), 0, 'publications cannot be edited on the platform')
-        self.assertNotIn('Publish an event</summary>', orders)
-        self.assertNotIn('Describes itself', orders)
-        expected = {orders: [('← incoming', 'call', 'reports', 'calls this app', '&lt;b&gt;insights'),
-                             ('→ outgoing', 'event', 'any subscriber', 'publishes paid', ''),
-                             ('← incoming', 'event', 'job', 'receives created', 'payments')],
-                    text: [('→ outgoing', 'call', 'orders', 'its API', 'payments')],
-                    page('job'): [('→ outgoing', 'event', 'orders', 'receives created', 'payments')]}
-        for shown, rows in expected.items():
-            table = re.search(r'<table class="compact connections">.*?</table>', shown, re.S)[0]
-            listed = [tuple(re.sub(r'<[^>]+>', '', cell).strip() for cell in re.findall(r'<td>.*?</td>', row, re.S))
-                      for row in re.findall(r'<tr>.*?</tr>', table, re.S)]
-            for row in rows:
-                self.assertIn(row, listed, 'one connection per row, the same columns for each')
 
-    def test_the_app_page_shows_calls_waiting_for_a_grant_and_who_it_allows(self):
-        runner = self.cluster()
-        runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit('app-reports-staging')))
-        runner.on('kubectl', '-n', 'reports-staging', 'get', 'helmrelease', stdout=json.dumps(
-            next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == 'reports-staging')))
-        runner.on('kubectl', '-n', 'reports-staging', 'get', stdout=json.dumps({'items': []}))
-        runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
-        record = 'version: 1\ncalls: [orders, billing]\nsubscriptions: [gone.created]\nallows: [team:demo, shop]\n'
-        documents = {
-            'apps/reports/staging/instance.yaml': record,
-            'apps/reports/app.yaml': 'version: 1\nteam: demo\n',
-            **{f'apps/{app}/staging/release.yaml': 'version: 1\nimage: {repository: example/app}\nkind: web\nuid: 1000\nport: 8080\nhealthPath: /\n'
-               for app in ('reports', 'orders', 'billing')},
-            **{f'apps/{app}/app.yaml': f'version: 1\nteam: {team}\n' for app, team in (('orders', 'payments'), ('billing', 'finance'))},
-            'apps/orders/staging/instance.yaml': 'version: 1\nallows: [reports]\n',
-            'apps/billing/staging/instance.yaml': 'version: 1\n',
-        }
-        text = client(runner, documents=documents.get).get('/apps/reports/staging', headers=WHO).text
-        table = re.search(r'<table class="compact connections">.*?</table>', text, re.S)[0]
-        listed = [tuple(re.sub(r'<[^>]+>', '', cell).strip() for cell in re.findall(r'<td>.*?</td>', row, re.S))
-                  for row in re.findall(r'<tr>.*?</tr>', table, re.S)]
-        self.assertIn(('→ outgoing', 'call', 'billing', 'its API, waiting for billing to allow it', 'finance'), listed,
-                      'a call recorded in Git that renders nothing yet')
-        self.assertIn(('→ outgoing', 'call', 'orders', 'its API', 'payments'), listed, 'the live one is shown once')
-        self.assertEqual(len([row for row in listed if row[1:3] == ('call', 'orders')]), 1)
-        self.assertIn('<input type="hidden" name="role" value="calls"><input type="hidden" name="app" value="billing">', text,
-                      'a waiting call can be removed')
-        self.assertIn('receives, waiting for gone/staging to exist', text)
-        self.assertIn('<input type="hidden" name="role" value="subscribes"><input type="hidden" name="app" value="gone"><input type="hidden" name="event" value="created">', text)
-        documents['apps/billing/staging/instance.yaml'] = 'version: 1\nallows: [reports]\n'
-        lagging = client(runner, documents=documents.get).get('/apps/reports/staging', headers=WHO).text
-        self.assertIn('connected in Git, not yet observed live', lagging)
-        self.assertNotIn('waiting for billing to allow it', lagging)
-        del documents['apps/billing/staging/instance.yaml'], documents['apps/billing/staging/release.yaml']
-        pending = client(runner, documents=documents.get).get('/apps/reports/staging', headers=WHO).text
-        self.assertIn('waiting for billing/staging to declare a release', pending)
-        self.assertIn('Allow callers</summary>', text)
-        for name in ('team:demo', 'shop'):
-            self.assertIn(f'<input type="hidden" name="remove" value="{name}">', text)
-        unread = client(runner, documents=lambda path: None).get('/apps/reports/staging', headers=WHO).text
-        self.assertNotIn('Allowed callers', unread, 'Git unreadable: only what runs is shown')
-        self.assertIn('its records are not in Git, so what it declares is unknown', unread)
 
-    def test_an_app_that_describes_its_events_declares_them_in_its_repository(self):
-        runner = self.cluster()
-        described = next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == 'orders-staging')
-        described['metadata']['annotations'] = {'platform.swhurl.com/offers': 'abc1234'}
-        runner._rules.insert(0, (tuple(cluster.RELEASES[:3]), Result((), 0, json.dumps({'items': [described]}), '')))
-        self.assertEqual({row.instance.app: row.connections.offers for row in cluster.apps(runner)}['orders'], 'abc1234')
-        runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit('app-orders-staging')))
-        runner.on('kubectl', '-n', 'orders-staging', 'get', 'helmrelease', stdout=json.dumps(described))
-        runner.on('kubectl', '-n', 'orders-staging', 'get', stdout=json.dumps({'items': []}))
-        runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
-        text = client(runner).get('/apps/orders/staging', headers=WHO).text
-        self.assertIn('href="https://github.com/samclement/orders/tree/abc1234"', text)
-        self.assertNotIn('Publish an event</summary>', text, 'the document is the declaration')
-        self.assertIn('Connect to an app</summary>', text)
-        self.assertEqual(cluster.Connections().summary, '')
 
     ASYNCAPI = """asyncapi: 3.0.0
 info: {title: orders, version: 0.1.0}
@@ -570,17 +479,6 @@ operations:
         text = client(self.described_cluster(), documents=broken).get('/catalogue', headers=WHO).text
         self.assertIn('Its description could not be shown: could not be read from Git: OSError.', text)
 
-    def test_the_connect_picker_says_what_each_choice_is(self):
-        runner = self.described_cluster()
-        runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit('app-reports-staging')))
-        runner.on('kubectl', '-n', 'reports-staging', 'get', 'helmrelease', stdout=json.dumps(
-            next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == 'reports-staging')))
-        runner.on('kubectl', '-n', 'reports-staging', 'get', stdout=json.dumps({'items': []}))
-        runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
-        text = client(runner, documents=self.documents()).get('/apps/reports/staging', headers=WHO).text
-        self.assertIn('<code>orders.created</code> <span class="muted">from orders, team payments · An order was &lt;b&gt;accepted&lt;/b&gt;</span>', text)
-        self.assertIn('<code>orders.paid</code> <span class="muted">from orders, team payments</span>', text)
-        self.assertIn('<a href="/catalogue?env=staging">catalogue</a>', text)
 
     def test_an_account_that_cannot_list_namespaces_still_gets_the_apps(self):
         runner = fake(**{'kubectl get namespaces -l platform.swhurl.com/app': ''})
@@ -858,33 +756,6 @@ class AppDetailTests(unittest.TestCase):
                 self.assertIn(detail, response.text)
                 self.assertNotIn('No such app instance', response.text)
 
-    def test_the_scale_form_shows_the_minimum_the_release_records(self):
-        asked = []
-
-        def opener(request):
-            asked.append(request.full_url)  # the page's stack lookup reads the default branch; the minimum reads none
-            return {}, b'version: 1\nkind: web\nhealthPath: /h\nstack: typescript\n'
-        recorded = ('version: 1\nimage: {repository: ghcr.io/samclement/web, tag: 12-abc1234}\nkind: web\nuid: 65532\n'
-                    'port: 8080\nhealthPath: /h\nresources: {cpu: 100m, memoryLimit: 384Mi}\n')
-        bare = 'version: 1\nimage: {repository: ghcr.io/samclement/web, tag: 12-abc1234}\nkind: web\nuid: 65532\nport: 8080\nhealthPath: /h\n'
-
-        def answers(tag):
-            found = {f'kubectl -n {"flux-system" if kind in ("kustomization", "gitrepository") else "web-prod"} get {kind}': json.dumps(value)
-                     for kind, value in (('kustomization', unit('app-web-prod')),
-                                         ('gitrepository', {'status': {'artifact': {'revision': 'main@sha1:fff0000'}}}),
-                                         ('helmrelease', {**release('web-prod', 'web', tag=tag), 'status': unit('web')['status']}),
-                                         ('pods', {'items': []}), ('deploy,statefulset,daemonset,cronjob', {'items': []}),
-                                         ('ingress', {'items': []}), ('certificate', {'items': []}))}
-            return fake(**found)
-        documents = {'apps/web/prod/release.yaml': recorded}.get
-        text = client(answers('12-abc1234'), repo_opener=opener, documents=documents).get('/apps/web/prod', headers=WHO).text
-        self.assertIn("The image's minimum, from its <code>swhurl.yaml</code>: cpu request 100m, memory limit 384Mi.", text)
-        self.assertEqual([url for url in asked if 'ref=' in url], [], "no read at the image's commit for the minimum")
-        text = client(answers('12-abc1234'), repo_opener=opener, documents={'apps/web/prod/release.yaml': bare}.get).get('/apps/web/prod', headers=WHO).text
-        self.assertIn('The image declares no minimum', text)
-        text = client(answers('12-abc1234'), repo_opener=opener, documents={}.get).get('/apps/web/prod', headers=WHO).text
-        self.assertNotIn("image's minimum", text, 'a release Git cannot give says nothing')
-        self.assertIn('Calls and subscriptions are granted here', text)
 
     def test_a_later_read_failure_does_not_show_partial_health(self):
         runner = (FakeRunner().on('kubectl', '-n', 'flux-system', 'get', 'kustomization',
@@ -895,55 +766,6 @@ class AppDetailTests(unittest.TestCase):
         self.assertIn('Forbidden', response.text)
         self.assertNotIn('<strong>Healthy</strong>', response.text)
 
-    def test_shows_gathered_status(self):
-        def get(kind, value):
-            return (f'kubectl -n {"flux-system" if kind in ("kustomization", "gitrepository") else "web-prod"} get {kind}',
-                    json.dumps(value))
-        answers = dict([
-            get('kustomization', unit('app-web-prod')),
-            get('gitrepository', {'status': {'artifact': {'revision': 'main@sha1:fff0000'}}}),
-            get('helmrelease', {**release('web-prod', 'web', sqlite=True), 'status': unit('web')['status']}),
-            get('pods', {'items': [{'metadata': {'name': 'web-1'}, 'status': {'containerStatuses': [
-                {'ready': False, 'state': {'waiting': {'reason': 'CrashLoopBackOff'}}}]}}]}),
-            get('deploy,statefulset,daemonset,cronjob', {'items': []}),
-            get('ingress', {'items': [{'spec': {'rules': [{'host': 'web.homelab.swhurl.com'}]}}]}),
-            get('certificate', {'items': []}),
-        ])
-        text = client(fake(**answers)).get('/apps/web/prod', headers=WHO).text
-        self.assertIn('not yet applied', text)
-        self.assertIn('id="replicas" name="replicas" value="" placeholder="1"', text)
-        self.assertEqual(text.count('<form class="wizard"'), 3, 'the app page uses the New app form layout')
-        self.assertNotIn('action="/apps/web/prod/egress"', text,
-                         'v2 records no egress grant and v1 no longer writes one, so the page offers no form for it')
-        self.assertEqual(text.count('action="/apps/web/prod/connect"'), 1, 'only subscription and call grants')
-        self.assertNotIn('name="publish"', text, 'publications come only from the app document')
-        self.assertNotIn('<table class="compact connections">', text, 'nothing to list')
-        self.assertIn('No connections observed live or read from Git.', text)
-        self.assertLess(text.index('>Use</h2>'), text.index('>Connect</h2>'))
-        self.assertLess(text.index('>Connect</h2>'), text.index('>Operate</h2>'))
-        self.assertEqual(text.count('<h1>web '), 1, 'the app is named once, with its language; the environment is the tab')
-        self.assertIn('<h1>web <span class="pill"', text)
-        for part in ('use', 'connect', 'operate'):
-            self.assertIn(f'<section class="card" id="{part}"', text, 'each part is a card of its own')
-        self.assertEqual(text.count('<details class="act" name="app-form"'), 3, 'each change opens in its card, one at a time')
-        self.assertIn('<div><span>State</span>', text, 'the summary: one fact per column')
-        self.assertIn('hx-post="/units/app-web-prod/reconcile" hx-target="this" hx-select="unset"', text, 'Reconcile answers in place')
-        self.assertIn('href="https://github.com/samclement/web"', text)
-        self.assertIn('Logs and traces', text)
-        self.assertIn('search?where=ServiceName%3A%22web%22', text)
-        self.assertIn('action="/apps/web/prod/remove"', text)
-        self.assertIn('<section class="card danger"', text)
-        self.assertIn('<span class="status failing">', text, 'a failing pod makes the verdict')
-        self.assertIn('<span class="state failing">Failing</span>', text)
-        self.assertNotIn('/promote', text, 'promote is offered only on staging')
-        self.assertIn('https://web.homelab.swhurl.com', text)
-        self.assertIn('CrashLoopBackOff', text)
-        self.assertIn('Public (no sign-in)', text, 'a route without the sign-in middleware reads as public')
-        self.assertIn('action="/apps/web/prod/expose"', text)
-        self.assertIn('name="exposure" value="public" checked>', text)
-        self.assertIn('<strong>Public</strong> <span class="muted">(now)</span>', text)
-        self.assertIn('<div><span>Database</span><span class="pill">SQLite</span></div>', text)
-        self.assertIn('<span class="pill">SQLite</span> <code>/data/app.db</code>', text)
 
     def test_unknown_or_invalid_instance_is_404_without_odd_kubectl_calls(self):
         runner = fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', 'app-nope-prod',

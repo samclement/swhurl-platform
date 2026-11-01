@@ -235,6 +235,11 @@ class Progress:
 REACHED = ('live', 'zero', 'removed')  # where a change ends; Job.reached records the first time it was seen there
 
 
+def action_kind(action: str) -> str:
+    """The stage vocabulary's action for a console branch action: v2's scale is still a scale."""
+    return action.removeprefix('v2-')
+
+
 def progress(action: str, merged: Target | None, main: Target | None, live: AppRow | str | None,
              reached: str = '') -> Progress:
     """How far the change ``action`` merged has got. ``merged`` and ``main`` are the instance in the merge
@@ -272,7 +277,8 @@ def progress(action: str, merged: Target | None, main: Target | None, live: AppR
 
 
 def landing(action: str, live: AppRow | str | None, target: Target) -> Progress:
-    """How far the cluster has got to ``target``, main's render of the change."""
+    """
+    action = action_kind(action)How far the cluster has got to ``target``, main's render of the change."""
     if target.pending:
         return Progress('rendering', 'main has not rendered it yet')
     if live is None:
@@ -337,6 +343,7 @@ def prepared(job: Job) -> Stage:
 
 
 def end_label(action: str, target: str) -> str:
+    action = action_kind(action)
     """Where a change to ``target`` ends once its pull request is merged and applied."""
     app, _, env = target.partition('/')
     if not env or target.startswith('team:'):
@@ -345,6 +352,7 @@ def end_label(action: str, target: str) -> str:
 
 
 def landing_stages(action: str, end: str) -> list[Stage]:
+    action = action_kind(action)
     """The stages after a merge, not reached yet: Flux applying it and, unless it removes, the instance running it."""
     if end == 'On main':
         return []
@@ -360,6 +368,7 @@ def seen(when: str) -> str:
 
 
 def after_pull(pull: Pull, action: str, target: str, landed: Progress | None) -> tuple[list[Stage], str, str]:
+    action = action_kind(action)
     """Validate, Merge, Flux applying it and the terminal stop: ``(stages, status, outcome)``.
     ``landed`` is how far a merged change to an instance has got; None when it was not judged."""
     end = end_label(action, target)

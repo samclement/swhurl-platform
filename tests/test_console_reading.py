@@ -248,7 +248,6 @@ class AppFileTests(unittest.TestCase):
                 response = c.get('/apps/web/prod', headers=WHO)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('connected in Git, not yet observed live', response.text)
-                self.assertIn('memory request 64Mi', response.text)
         self.assertEqual(len(heads), 2)
         # Every file it reads once: the instance's records, its target's, the v1 Secret, and the v2 probe that
         # says whether this instance is v2's at all (it is not, in this fixture).
@@ -296,7 +295,7 @@ class AppFileTests(unittest.TestCase):
             self.assertIn(expected, response.text)
             # What Git does say is shown even when one of the three records is not there; a reader that fails
             # says nothing, so nothing is claimed.
-            self.assertEqual('memory request 64Mi' in response.text, settings is None)
+            self.assertNotIn('memory request', response.text)
             self.assertTrue(all(count == 1 for count in Counter(asked).values()), asked)
 
     def test_template_reads_use_the_same_scope_and_client_closes_on_template_failure(self):

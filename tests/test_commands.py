@@ -42,6 +42,19 @@ class SpecTests(unittest.TestCase):
         self.assertEqual(make['COMMANDS'], {name for name, command in TARGETS.items() if command.run},
                          'COMMANDS in the Makefile is every target with a function; the others have a recipe')
 
+    def test_the_v1_instance_writer_commands_stay_deleted(self):
+        removed = ('app-scale', 'app-expose', 'app-calls', 'app-allows', 'app-events', 'app-team', 'app-remove',
+                   'app-deploy', 'app-promote', 'app-sync', 'app-check', 'app-offers', 'app-egress', 'app-alerts',
+                   'app-schedule', 'app-secret', 'platform-signing-keys', 'bot-deploy')
+        for name in removed:
+            with self.subTest(command=name):
+                self.assertNotIn(name, COMMANDS)
+                self.assertNotIn(name, TARGETS)
+                self.assertNotIn(name, database()['COMMANDS'])
+        for module in ('cli', 'edit', 'keys', 'transitions'):
+            with self.subTest(module=module):
+                self.assertFalse((ROOT / 'tools/swhurl/apps' / f'{module}.py').exists())
+
     def test_platform_webhooks_have_only_the_dashboard_command_path(self):
         for obsolete in ('clickstack-notify-webhook', 'clickstack-ntfy-webhook'):
             self.assertNotIn(obsolete, COMMANDS)

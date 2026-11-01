@@ -32,7 +32,7 @@ from pathlib import Path
 from ruamel.yaml.comments import CommentedMap
 
 from swhurl import ROOT
-from swhurl.apps import channels, cli
+from swhurl.apps import channels
 from swhurl.apps.contract import TEAMS_FILE
 from swhurl.apps.errors import EditError
 from swhurl.apps.model import records, write
@@ -283,6 +283,17 @@ def team_channel(root: Path, team: str, address: str | None, transport: str = 'n
                     runner=runner, registry_document=document)
 
 
+def run(action, check_dir: bool = False) -> int:
+    """Run one team edit; a refused edit is one line and exit 2."""
+    try:
+        action()
+    except EditError as error:
+        print(f'[ERROR] {error}', file=sys.stderr)
+        return 2
+    print('[INFO] Next: make check-apps, then commit, push and make flux-reconcile')
+    return 0
+
+
 def read_address() -> str:
     """One line from standard input; a terminal is prompted without echo."""
     return (getpass.getpass('Channel address (not shown): ') if sys.stdin.isatty() else sys.stdin.readline()).strip()
@@ -294,7 +305,7 @@ def main_add(argv: list[str] | None = None) -> int:
     p.add_argument('--description', default='')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return cli.run(lambda: add(args.root.resolve(), args.name, args.description), False)
+    return run(lambda: add(args.root.resolve(), args.name, args.description), False)
 
 
 def main_edit(argv: list[str] | None = None) -> int:
@@ -306,7 +317,7 @@ def main_edit(argv: list[str] | None = None) -> int:
                    help='the channel that gets its apps\' lifecycle messages; an empty value clears it')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return cli.run(lambda: change(args.root.resolve(), args.name, args.description, args.rename, args.notify), False)
+    return run(lambda: change(args.root.resolve(), args.name, args.description, args.rename, args.notify), False)
 
 
 def main_team_channel(argv: list[str] | None = None, runner: Runner | None = None) -> int:
@@ -317,7 +328,7 @@ def main_team_channel(argv: list[str] | None = None, runner: Runner | None = Non
     p.add_argument('--transport', default='ntfy', choices=channels.TRANSPORTS)
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return cli.run(lambda: team_channel(args.root.resolve(), args.name, None if args.remove else read_address(),
+    return run(lambda: team_channel(args.root.resolve(), args.name, None if args.remove else read_address(),
                                          args.transport, runner), False)
 
 
@@ -329,7 +340,7 @@ def main_channel_add(argv: list[str] | None = None, runner: Runner | None = None
     p.add_argument('--replace', action='store_true', help='give an existing channel a new address')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return cli.run(lambda: channel_add(args.root.resolve(), args.name, read_address(), args.transport,
+    return run(lambda: channel_add(args.root.resolve(), args.name, read_address(), args.transport,
                                         args.replace, runner), False)
 
 
@@ -338,7 +349,7 @@ def main_channel_remove(argv: list[str] | None = None) -> int:
     p.add_argument('name')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return cli.run(lambda: channel_remove(args.root.resolve(), args.name), False)
+    return run(lambda: channel_remove(args.root.resolve(), args.name), False)
 
 
 def main_remove(argv: list[str] | None = None) -> int:
@@ -347,4 +358,4 @@ def main_remove(argv: list[str] | None = None) -> int:
     p.add_argument('--move-apps-to', metavar='TEAM')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return cli.run(lambda: remove(args.root.resolve(), args.name, args.move_apps_to), False)
+    return run(lambda: remove(args.root.resolve(), args.name, args.move_apps_to), False)

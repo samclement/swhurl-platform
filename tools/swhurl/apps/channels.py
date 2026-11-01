@@ -108,5 +108,6 @@ def problems(root: Path) -> list[str]:
     if unit.is_file() and ('decryption' in (yamlio.load(unit.read_text()).get('spec') or {})) != encrypted:
         found.append(f'{UNIT_FILE} must decrypt exactly while {NOTIFY_DIR} holds an encrypted file (the channel commands set it)')
     if not generated.same(*routes_file(root)):
-        found.append(f'{ROUTES_FILE} is not what the channel files and apps/teams.yaml declare; make app-sync rewrites it')
+        found.append(f'{ROUTES_FILE} is not what the channel files and apps/teams.yaml declare; the team and channel '
+                     f'commands rewrite it')
     return [f'notify-channels: {problem}' for problem in found]

@@ -56,7 +56,7 @@ and, for the whole tree:
 
 A reviewed exception goes in Settings.exceptions in instance.yaml as
   exceptions: "rule-id=reason; other-rule=reason"
-make app-sync renders the HelmRelease's platform.swhurl.com/policy-exceptions annotation;
+the render writes the HelmRelease's platform.swhurl.com/policy-exceptions annotation;
 do not edit that annotation by hand. Exceptions without a reason are rejected.
 
     python3 -m swhurl check-apps [INSTANCE_DIR ...]   (default: the template fixtures under
@@ -191,10 +191,10 @@ def check_isolation(docs: list[dict], labels: dict, known_teams: dict[str, str])
         try:
             app_alerts.thresholds(str(spec or ''))
         except ValueError as error:
-            violations.append(('alerts', f'{interface.ALERTS_ANNOTATION}: {error}; make app-alerts sets it'))
+            violations.append(('alerts', f'{interface.ALERTS_ANNOTATION}: {error}; nothing writes it now (v2 models no alert setting)'))
     if labels.get(interface.TEAM) not in known_teams:
         violations.append(('team', f'Namespace team {labels.get(interface.TEAM)!r} is not registered in apps/teams.yaml '
-                                   f'({", ".join(known_teams)}); set it with make app-team'))
+                                   f'({", ".join(known_teams)}); set it with swhurl-v2 edit --set team=… or the console'))
     releases = [d for d in docs if d['kind'] == 'HelmRelease']
     if not releases:
         return violations
@@ -229,7 +229,7 @@ def check_isolation(docs: list[dict], labels: dict, known_teams: dict[str, str])
         admitted = (['Traefik'] if routed else []) + callers
         violations.append(('network-policy', "the instance needs exactly one NetworkPolicy, on the app's pods, admitting "
                            + (f'{", ".join(admitted)} on port {port}' if admitted else 'nobody')
-                           + '; make app-sync writes it'))
+                           + '; the render writes it'))
     return violations
 
 
@@ -243,7 +243,7 @@ def check_identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str,
     wanted = identity_variables(app, labels.get(interface.ENVIRONMENT), helmrelease.port(releases[0]) is not None, keys)
     wrong = [key for key, value in wanted.items() if variables.get(key) != value]
     if wrong:
-        violations.append(('identity', f'{", ".join(wrong)} missing or not what the platform sets; make app-sync writes them'))
+        violations.append(('identity', f'{", ".join(wrong)} missing or not what the platform sets; the render writes them'))
     calls = declared_calls(variables)
     for doc in docs:
         spec = pod_spec(doc)
@@ -267,7 +267,7 @@ def check_identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str,
         if tokens != expected:
             violations.append(('call-tokens', f'{where} must carry one {TOKEN_SECONDS}-second token per declared call '
                                f'({", ".join(calls) or "none declared"}) and one for the notify service, each for that '
-                               'audience only; make app-sync writes them'))
+                               'audience only; the render writes them'))
     violations += check_events(docs, releases[0], labels)
     return violations
 
@@ -294,7 +294,8 @@ def check_events(docs: list[dict], release: dict, labels: dict) -> list[tuple[st
             return doc['kind'], doc['metadata']['name'], doc['spec']
         if sorted(map(shape, declared), key=str) != sorted(map(shape, wanted), key=str):
             problems.append('its streams and consumers are not what its declaration generates')
-    return [('events', f'{problem}; make app-events sets them and make app-sync rewrites what follows') for problem in problems]
+    return [('events', f'{problem}; swhurl-v2 edit --set subscriptions=… sets them and the render rewrites what '
+                       'follows') for problem in problems]
 
 
 def check_container(container: dict, pod_ctx: dict, where: str, env: str | None) -> list[tuple[str, str]]:

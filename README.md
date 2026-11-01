@@ -51,7 +51,7 @@ An app's life:
 
 1. [Start it](docs/apps.md#start-a-new-app) from the console's **New app** or `make app-repo`. Its repository and staging instance exist a few minutes later.
 2. [Push to the app's repository](docs/apps.md#deploy-a-new-image). Each build deploys to staging.
-3. [Promote it](docs/apps.md#promote-to-production) with **Review promotion** or `make app-promote`.
+3. [Promote it](docs/apps.md#promote-to-production) with **Review promotion**, or `swhurl-v2 promote` in your terminal.
 4. [Operate](docs/apps.md#operate-an-instance) or [remove](docs/apps.md#remove-an-app) it.
 
 What an app can declare, and what the platform builds from each declaration, is in [how apps work together](docs/architecture.md#how-apps-work-together). Each capability has its own section: [teams and isolation](docs/apps.md#teams-and-isolation), [calling another app](docs/apps.md#calling-another-app), [events](docs/apps.md#events), [feature flags](docs/apps.md#feature-flags), [what an app offers](docs/apps.md#what-an-app-offers), [notifications](docs/apps.md#notifications), [secrets](docs/apps.md#secrets), [telemetry](docs/apps.md#telemetry).
@@ -115,7 +115,8 @@ One machine runs k3s. cert-manager gets certificates from Let's Encrypt, the pac
 | `clusters/home/` | Flux entrypoint: sources, settings and one Flux unit per capability or app instance |
 | `infra/` | Namespaces, storage classes, cert-manager, issuers, Traefik settings |
 | `platform/` | Sign-in, ClickStack and its operators, OTel collectors, Reloader, NATS and the feature flag buckets, alerts, the notify service, the console and the Flux webhooks, with their encrypted Secrets |
-| `apps/<app>/<env>/` | Generated app instances. Each app's code lives in its own repository, made from a [stack template](docs/apps.md#stacks-and-features). |
+| `apps/` | The team registry (`teams.yaml`). Each app's code lives in its own repository, made from a [stack template](docs/apps.md#stacks-and-features) |
+| `v2-records/` | What each app instance is, as records; `v2-apps/` holds what they compile to, and `v2/` is the compiler ([apps](docs/apps.md)) |
 | `images/` | Container images built from this repo (the console) |
 | `tools/swhurl/` | Python operator tooling behind every `make` target, and the console's code |
 | `host/` | Host systemd timers for dynamic DNS, backups and the heartbeat |

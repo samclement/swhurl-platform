@@ -401,8 +401,8 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn(f'[OK] {len(channels.team_channels(ROOT))} team(s) notify a channel, as in Git', report.lines, text)
         _, report, text = run(healthy(routes={'items': [{'metadata': {'name': channels.ROUTES_NAME}, 'data': {
             channels.ROUTES_KEY: json.dumps({'teams': {'ghosts': ['nowhere']}})}}]}))
-        self.assertIn('[BAD] the team routes in the cluster are not those of apps/teams.yaml: make app-sync, commit, push '
-                      'and make flux-reconcile', report.lines, text)
+        self.assertIn('[BAD] the team routes in the cluster are not those of apps/teams.yaml: a team or channel change '
+                      'rewrites them, so commit, push and make flux-reconcile', report.lines, text)
         _, report, text = run(healthy(routes={'items': []}))
         self.assertTrue(any('team routes in the cluster are not' in line for line in report.lines), text)
         _, report, text = run(healthy(routes=Result((), 1, '', 'forbidden')))

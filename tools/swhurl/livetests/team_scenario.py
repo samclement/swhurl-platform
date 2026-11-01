@@ -37,7 +37,7 @@ def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> No
             raise Preflight('give CALLER, CALLEE and SUBSCRIBER (app names) and optionally ENV')
     releases = {app: release(t, app, env) for app in (caller, callee, subscriber)}
     if callee not in calling.declared_calls(helmrelease.variables(releases[caller])):
-        raise Preflight(f'{caller}/{env} does not declare a call to {callee}: make app-calls APP={caller} ENV={env} ARGS="--add {callee}"')
+        raise Preflight(f'{caller}/{env} does not declare a call to {callee}: add it with swhurl-v2 edit --set calls=…')
     published = events.published(helmrelease.variables(releases[callee]))
     if not published:
         raise Preflight(f'{callee}/{env} publishes no event: add a send operation to its asyncapi.yaml '
@@ -45,7 +45,7 @@ def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> No
     event = published[0]
     if (callee, event) not in events.subscribed(helmrelease.variables(releases[subscriber])):
         raise Preflight(f'{subscriber}/{env} does not subscribe to {callee}.{event}: '
-                        f'make app-events APP={subscriber} ENV={env} ARGS="--subscribe {callee}.{event}"')
+                        f'add it with swhurl-v2 edit --set subscriptions=…')
     port = helmrelease.port(releases[caller])
     if not port:
         raise Preflight(f'{caller}/{env} is a worker: the caller must be a web app')

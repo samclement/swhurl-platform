@@ -2,7 +2,7 @@
 names that follow from an app declaring which apps it calls.
 
 The truth is calls on the caller and allows on the callee in instance.yaml. A pair connects
-only when both agree (allows may name the caller or its team). make app-sync renders the
+only when both agree (allows may name the caller or its team). The render writes the
 SWHURL_SERVICE_<APP>_URL variable, a short-lived service-account token only that callee accepts,
 the callee's allowed-callers variable and its NetworkPolicy. A call without a grant, a grant
 without a call or a call to an absent instance renders nothing for the pair. Every instance

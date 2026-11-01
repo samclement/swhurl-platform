@@ -34,8 +34,8 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
         return
     routes = channels.team_channels(root)
     if live != channels.routes(root):
-        report.bad('the team routes in the cluster are not those of apps/teams.yaml: make app-sync, commit, push '
-                   'and make flux-reconcile')
+        report.bad('the team routes in the cluster are not those of apps/teams.yaml: a team or channel change '
+                   'rewrites them, so commit, push and make flux-reconcile')
     else:
         report.ok(f'{len(routes)} team(s) notify a channel, as in Git')
     known = channels.channels(root)

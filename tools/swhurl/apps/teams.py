@@ -157,13 +157,13 @@ def remove(root: Path, name: str, move_apps_to: str | None = None) -> None:
     apps = sorted({each.app for each, value in world.items() if value.app.team == name})
     if apps and not move_apps_to:
         raise EditError(f'team {name} still owns {", ".join(apps)}: move them with --move-apps-to <team>, '
-                        'or each with make app-team, then remove it')
+                        'or each with swhurl-v2 edit --set team=…, then remove it')
     if move_apps_to is not None and (move_apps_to == name or move_apps_to not in teams):
         raise EditError(f'--move-apps-to must name another registered team: {", ".join(t for t in teams if t != name)}')
     granted = sorted(str(each) for each, value in world.items() if f'{TEAM_GRANT}{name}' in value.settings.grants.allows)
     if granted:
         raise EditError(f'team:{name} is allowed to call {", ".join(granted)}: remove those grants first '
-                        f'(make app-allows APP=<app> ENV=<env> ARGS="--remove team:{name}")')
+                        f'(remove it with swhurl-v2 edit --set allows=… on each)')
     operations = {each: write.Update(lambda value: replace(value, app=replace(value.app, team=move_apps_to)))
                   for each, value in world.items() if value.app.team == name}
     del teams[name]

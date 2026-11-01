@@ -42,7 +42,7 @@
           {{ ui.text_field('new-name', 'Name', '', 'billing', 'Lowercase letters, digits and hyphens; at most 40 characters.', name='name') }}
           {{ ui.text_field('new-description', 'Description', '', 'What the team owns', 'Optional. One line.', name='description') }}
         </fieldset>
-        {{ ui.submit('Open new team PR', 'Changes apps/teams.yaml only. Once merged, the team can be chosen on New app and with make app-team.') }}
+        {{ ui.submit('Open new team PR', 'Changes apps/teams.yaml only. Once merged, the team can be chosen on New app and with swhurl-v2 edit --set team=….') }}
       </form>
     </details>
   </div>

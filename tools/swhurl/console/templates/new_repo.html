@@ -67,7 +67,7 @@
           {% else %}<span class="warn">No team is registered yet. <a href="/teams">Add one</a> first: every app belongs to a team.</span>
           {% endfor %}
         </div>
-        <span class="muted hint">Choose one: there is no default. A label saying who owns the app: it groups and filters the Deployments list and map, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. Add a team or give one a notification channel on the <a href="/teams">Teams</a> page; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
+        <span class="muted hint">Choose one: there is no default. A label saying who owns the app: it groups and filters the Deployments list and map, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. Add a team or give one a notification channel on the <a href="/teams">Teams</a> page; change an app's team later on the app's page.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
       </div>
     </div>
   </section>

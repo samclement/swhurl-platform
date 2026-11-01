@@ -82,7 +82,8 @@ class ManifestTests(unittest.TestCase):
               'provides': {'apiFile': 'api.json', 'api': '/api'}}, 'provides.apiFile applies to kind web only'),
             ({'resources': {'memory': 64}, 'calls': [], 'team': 'payments', 'events': {'subscribe': ['a.b']}},
              'team, calls, events.subscribe: a grant, set on the platform, not in this file '
-             '(make app-team; make app-calls; make app-events, or the console); remove it'),
+             '(swhurl-v2 edit --set team=…; swhurl-v2 edit --set calls=…; '
+             'swhurl-v2 edit --set subscriptions=…, or the console); remove it'),
             ({'uid': True, 'resources': {'memory': 64}}, 'uid must be int'),
         ]
         for fields, expected in scenarios:
@@ -168,7 +169,7 @@ class LifetimeTests(unittest.TestCase):
         read = {declaration.LIVE: 'read again', declaration.IGNORED: 'ignored', declaration.REFUSED: 'refused'}
         self.assertEqual(rows, [(item.name, item.kind, read[item.read]) for item in declaration.FIELDS])
         for item in declaration.FIELDS:
-            if item.then.startswith('make '):
+            if item.then.startswith(('make ', 'swhurl-v2 ')):
                 with self.subTest(field=item.name):
                     self.assertRegex(section, rf'(?m)^\| `{re.escape(item.name)}` \|.*`{re.escape(item.then.split(";")[0])}')
 

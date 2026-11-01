@@ -257,7 +257,7 @@ def problems(instance: Path, published: list[str], annotation: str = '') -> list
     try:
         offers = read(instance)
     except OfferError as error:
-        return [f'offers: {error}; make app-offers reads them again']
+        return [f'offers: {error}; the Deploy workflow reads them again']
     if offers is None:
         found = [f'offers: the release is annotated {interface.OFFERS_ANNOTATION} but the instance keeps no {OFFERS_DIR}/'] if annotation else []
         if published:
@@ -271,4 +271,4 @@ def problems(instance: Path, published: list[str], annotation: str = '') -> list
     if offers.described is not None and [e.name for e in offers.described] != published:
         found.append(f'offers: publishes {", ".join(published) or "nothing"}, but {OFFERS_DIR}/{offers.events} describes '
                      f'{", ".join(e.name for e in offers.described) or "nothing"}')
-    return [f'{problem}; make app-offers APP={instance.parent.name} ENV={instance.name} rewrites it' for problem in found]
+    return [f'{problem}; the Deploy workflow rewrites it from the app repository' for problem in found]

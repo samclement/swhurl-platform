@@ -2,7 +2,7 @@
 
 Every gated console PR carries only input records: a new app's, a promotion's, or one instance's
 Settings (ACTIONS). The gate merges them onto the newest main, applies the action's rule, renders with
-app-sync, checks and pushes one commit, merging again when main moved first. A PR the gate holds loses its auto-merge label and gets a comment saying why;
+the action's rule, checks and pushes one commit, merging again when main moved first. A PR the gate holds loses its auto-merge label and gets a comment saying why;
 any other failure keeps the label, so the next run tries again.
 """
 from __future__ import annotations
@@ -510,7 +510,7 @@ ACTIONS: dict[str, Action] = {
 }
 
 # The v2 actions are separate entries, not a branch inside the v1 ones: every v2 PR is held for a person, while
-# the v1 read/judge/app-sync gate stays as it is until phase 3 deletes it. A v2 action carries its records and
+# the v1 new-app gate stays as it is. A v2 action carries its records and
 # what `render` writes from them, and reads no policy: a v2 PR has no automatic rule.
 ACTIONS.update({
     'v2-scale': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),

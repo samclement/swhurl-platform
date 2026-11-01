@@ -60,7 +60,7 @@ def teams(root: Path = ROOT) -> dict[str, str]:
 QUOTA_FILE = 'resourcequota.yaml'
 NETWORK_POLICY_FILE = 'networkpolicy.yaml'
 ISOLATION_FILES = (QUOTA_FILE, NETWORK_POLICY_FILE)
-# One size for every instance namespace: room for app-scale's maximum replicas at template sizes.
+# One size for every instance namespace: room for Scale's maximum replicas at template sizes.
 QUOTA = {'pods': '14', 'requests.cpu': '2', 'requests.memory': '2Gi', 'limits.memory': '4Gi'}
 # What else runs in an instance's namespace beside the app: the SQLite backup job (apps/model/backup.py) or restore pod
 # (sqlite_restore.pod_manifest) and cert-manager's HTTP-01 solver. The quota check leaves this free.
@@ -135,7 +135,7 @@ def otlp_variables(service: str) -> dict:
 
 # An app's own Secret: every key becomes a variable (envFrom, optional so the app starts before its first
 # value is set). The names its image needs (swhurl.yaml's secrets) are noted on the HelmRelease; the values
-# live in SECRET_FILE, which only the operator can write (make app-secret): a name without a value there
+# live in SECRET_FILE, which only the operator writes by hand: a name without a value there
 # is "value missing", a value no name asks for is unused.
 SECRET_FILE = 'secret.sops.yaml'
 
@@ -183,7 +183,7 @@ class AppType:
     text: str
     stacks: tuple[str, ...]
     answers: dict[str, str]
-    exposure: str  # what staging starts with; changed later with make app-expose
+    exposure: str  # what staging starts with; changed later with swhurl-v2 edit --set exposure=…
 
 
 APP_TYPES = {

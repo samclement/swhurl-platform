@@ -1,5 +1,5 @@
 """An app's own secrets: the names its image reads become variables from one Secret, whose values only
-the operator sets (make app-secret); the encrypted file is listed when present or prepared as ciphertext."""
+the operator sets by hand; the encrypted file is listed when present or prepared as ciphertext."""
 from __future__ import annotations
 
 from swhurl import interface

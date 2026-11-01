@@ -227,13 +227,13 @@ def hint(reason: str, last: str, instance: Instance, settings: dict[str, str]) -
     app, env = instance.app, instance.env
     if 'OOMKilled' in (reason, last):
         return (f'It ran out of memory (limit {settings.get("memory_limit", "?")}): raise it with '
-                f'make app-scale APP={app} ENV={env} ARGS="--memory-limit 256Mi", or Scale in the console.')
+                f'swhurl-v2 edit --set memoryMiB=256, or Scale in the console.')
     if reason in ('ImagePullBackOff', 'ErrImagePull', 'InvalidImageName'):
         return ('The node cannot pull the image: check the tag and digest exist, and that the GHCR package is public '
                 '(the cluster has no registry credentials; on GitHub: the package\'s settings, Change visibility).')
     if reason == 'CreateContainerConfigError':
-        return (f'A Secret or key it uses is missing: set the value in your own terminal with make app-secret APP={app} ENV={env} '
-                'NAME=<name> (make check-secrets finds REPLACE_ME), commit and push.')
+        return ('A Secret or key it uses is missing: set the value by hand in its secret.sops.yaml '
+                '(make check-secrets finds REPLACE_ME), commit and push.')
     if reason in ('CrashLoopBackOff', 'Error'):
         port = settings.get('port', "the instance's port")
         return (f'It starts and exits: read why with make app-logs APP={app} ENV={env} PREVIOUS=true. Usual causes: '
@@ -246,7 +246,7 @@ def hint(reason: str, last: str, instance: Instance, settings: dict[str, str]) -
 
 
 def release_settings(release: dict | None) -> dict[str, str]:
-    """Replicas and resources as the HelmRelease sets them (what app-scale edits)."""
+    """Replicas and resources as the HelmRelease sets them (what Scale edits)."""
     controller = helmrelease.workload(release)
     resources = helmrelease.container(release).get('resources') or {}
     found = {'replicas': str(controller.get('replicas', 1)),
@@ -391,7 +391,7 @@ def status_lines(found: InstanceStatus, team: str = '', stored: list[str] | None
         lines.append('           ' + ', '.join(f'{name} ({state})' for name, state in states.items()))
         if MISSING in states.values():
             i = found.instance
-            lines.append(f'           set a missing value in your own terminal: make app-secret APP={i.app} ENV={i.env} NAME=<name>')
+            lines.append(f'           set a missing value by hand in {i.app}/{i.env} secret.sops.yaml')
     if found.problems:
         lines.append('Problems')
         for p in found.problems:

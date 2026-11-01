@@ -5,6 +5,7 @@ import io
 import json
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
 from swhurl import ROOT
 
@@ -66,6 +67,80 @@ class Targets(unittest.TestCase):
         code, out = run('targets', 'chek')
         self.assertEqual(code, 1)
         self.assertIn('check', out)
+
+
+class Clock:
+    """time.time and time.sleep for a test: sleeping advances the clock instead of waiting."""
+    def __init__(self):
+        self.now = 1000.0
+
+    def time(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+class CI(unittest.TestCase):
+    SHA = 'a' * 40
+
+    def ci(self, runs, pushed, *argv):
+        clock = Clock()
+        polls = []
+
+        def runs_for(sha):
+            polls.append(clock.now)
+            return runs(clock.now - 1000)
+
+        with mock.patch.object(cli, 'sh', return_value=mock.Mock(stdout=self.SHA + '\n')), \
+                mock.patch.object(cli, 'runs_for', runs_for), mock.patch.object(cli, 'pushed', return_value=pushed), \
+                mock.patch.object(cli.time, 'time', clock.time), mock.patch.object(cli.time, 'sleep', clock.sleep):
+            code, out = run('ci', *argv)
+        return code, out, polls, clock.now - 1000
+
+    def test_an_unpushed_commit_stops_at_once_even_with_wait(self):
+        code, out, polls, waited = self.ci(lambda t: [], False, '--wait')
+        self.assertEqual((code, len(polls), waited), (1, 1, 0))
+        self.assertIn('not pushed', out)
+
+    def test_wait_gives_up_when_no_run_starts_for_a_pushed_commit(self):
+        code, out, _, waited = self.ci(lambda t: [], True, '--wait')
+        self.assertEqual(code, 1)
+        self.assertIn(f'none started within {cli.APPEAR}s', out)
+        self.assertLess(waited, cli.APPEAR + 30)
+
+    def test_wait_follows_a_run_that_starts_late_until_it_completes(self):
+        def runs(t):
+            if t < 30:
+                return []
+            done = t >= 300
+            return [{'databaseId': 1, 'workflowName': 'Validate', 'status': 'completed' if done else 'in_progress',
+                     'conclusion': 'success' if done else '', 'event': 'push', 'url': 'u'}]
+        code, out, _, waited = self.ci(runs, True, '--wait')
+        self.assertEqual((code, out.splitlines()[0]), (0, 'aaaaaaaa runs 1 failed 0 pending 0'))
+        self.assertGreaterEqual(waited, 300)
+
+    def test_a_network_failure_is_retried_then_reported(self):
+        clock, calls = Clock(), []
+
+        def sh_json(*args, **kw):
+            calls.append(clock.now)
+            raise cli.ToolFailed('gh run list --commit: exit 1: error connecting to api.github.com')
+        with mock.patch.object(cli, 'sh_json', sh_json), mock.patch.object(cli.time, 'time', clock.time), \
+                mock.patch.object(cli.time, 'sleep', clock.sleep), self.assertRaises(cli.ToolFailed):
+            cli.runs_for(self.SHA)
+        self.assertGreater(len(calls), 1)
+        self.assertLessEqual(calls[-1] - calls[0], cli.RETRY + 10)
+
+    def test_a_request_error_is_not_retried(self):
+        calls = []
+
+        def sh_json(*args, **kw):
+            calls.append(1)
+            raise cli.ToolFailed('gh run list --commit: exit 1: authentication required')
+        with mock.patch.object(cli, 'sh_json', sh_json), self.assertRaises(cli.ToolFailed):
+            cli.runs_for(self.SHA)
+        self.assertEqual(len(calls), 1)
 
 
 class Sessions(unittest.TestCase):

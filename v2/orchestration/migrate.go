@@ -118,8 +118,8 @@ func writeMigration(facts legacy.Migration, artifact kernel.Artifact, inputs Mig
 	result := Migration{Facts: facts, Release: release, Instance: spec, App: app, Compilation: compiled,
 		Rendered: rendered, Egress: egress, UnmetCalls: unmet(facts.Calls, callees(rendered)),
 		UnmetCallers: unmet(facts.Allows, rendered.Callers)}
-	written := append(recordFiles(facts.Application, facts.Environment, appDocument, releaseDocument, instanceDocument,
-		inputs.EventsSecret, inputs.Offers), files...)
+	written := append(recordFiles(recordsRoot, facts.Application, facts.Environment, appDocument, releaseDocument,
+		instanceDocument, inputs.EventsSecret, inputs.Offers), files...)
 	result.Written, err = writeCompiled(destination, compiled, written, writer)
 	return result, err
 }
@@ -187,16 +187,16 @@ func recordsOf(facts legacy.Migration, artifact kernel.Artifact) (kernel.Release
 	return release, spec, app, nil
 }
 
-// recordFiles is the records a migration writes: one app record and the environment's pair, under the root
-// the snapshot exporter reads. An instance with a broker identity also keeps its encrypted seed beside the
-// record, before the instance that names its public key, so the record folder is what a later compile reads.
-// The documents it publishes are declared inputs of the same folder, so a later compile reads them from the
-// record rather than from the compiled copy a prune may remove.
-func recordFiles(application, environment string, app, release, instance, eventsSecret []byte,
+// recordFiles is the records one instance states: one app record and the environment's pair, under the records root
+// the caller chose — a migration's own tree, or the tree a create writes into. An instance with a broker identity also
+// keeps its encrypted seed beside the record, before the instance that names its public key, so the record folder is
+// what a later compile reads. The documents it publishes are declared inputs of the same folder, so a later compile
+// reads them from the record rather than from the compiled copy a prune may remove.
+func recordFiles(root, application, environment string, app, release, instance, eventsSecret []byte,
 	offers []kernel.File) []kernel.File {
-	folder := recordsRoot + "/" + application + "/" + environment
+	folder := root + "/" + application + "/" + environment
 	records := []kernel.File{
-		{Path: recordsRoot + "/" + application + "/app.json", Document: app},
+		{Path: root + "/" + application + "/app.json", Document: app},
 		{Path: folder + "/release.json", Document: release},
 	}
 	if len(eventsSecret) > 0 {

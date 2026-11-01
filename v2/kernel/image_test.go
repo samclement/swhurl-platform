@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -306,6 +307,42 @@ func TestRevisionOf(t *testing.T) {
 			}
 			if test.ok && revision != test.revision {
 				t.Fatalf("revision %q", revision)
+			}
+		})
+	}
+}
+
+// An image reference an operator names splits into the artifact a record keeps and the tag that states the commit,
+// and a reference that states no such tag is refused rather than fitted to one.
+func TestSplitImage(t *testing.T) {
+	commit := strings.Repeat("d", 40)
+	for _, test := range []struct {
+		name, reference        string
+		image, tag, commitWant string
+		ok                     bool
+	}{
+		{name: "a tag the platform publishes", reference: "ghcr.io/samclement/demo-orders:43-" + commit,
+			image: "ghcr.io/samclement/demo-orders", tag: "43-" + commit, commitWant: commit, ok: true},
+		{name: "a digest states no commit a tag can carry",
+			reference: "ghcr.io/samclement/demo-orders@sha256:" + strings.Repeat("d", 64)},
+		{name: "a tag outside the contract", reference: "ghcr.io/samclement/demo-orders:latest"},
+		{name: "no tag at all", reference: "ghcr.io/samclement/demo-orders"},
+		{name: "a host the platform does not name", reference: "localhost/x:43-" + commit},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			image, tag, err := SplitImage(test.reference)
+			if test.ok != (err == nil) {
+				t.Fatalf("ok %v, err %v", test.ok, err)
+			}
+			if !test.ok {
+				var refusal *Error
+				if !errors.As(err, &refusal) || refusal.Code != Invalid {
+					t.Fatalf("error = %v, want invalid", err)
+				}
+				return
+			}
+			if image != test.image || tag.Name != test.tag || tag.Commit != test.commitWant {
+				t.Fatalf("image %q tag %+v", image, tag)
 			}
 		})
 	}

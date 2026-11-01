@@ -147,14 +147,7 @@ func (r deployRequest) candidate(tag kernel.ImageTag, published registry.Image) 
 // recomputed for them: a deploy that dropped them would un-describe a working app and forget which commit its
 // documents came from, which no later read could recover from Git.
 func carryingOffered(candidate, current kernel.ReleaseBundle) (kernel.ReleaseBundle, error) {
-	candidate.Description, candidate.APIPath, candidate.Offers = current.Description, current.APIPath, current.Offers
-	candidate.ReleaseID = "" // the identity `Release` asserted is the one without them
-	id, err := candidate.ID()
-	if err != nil {
-		return kernel.ReleaseBundle{}, err
-	}
-	candidate.ReleaseID = id
-	return candidate, nil
+	return candidate.WithOffered(current.Description, current.APIPath, current.Offers)
 }
 
 // revisionOf reads the commit an image states it was built from. A tag alone never supplies it: the platform's tag

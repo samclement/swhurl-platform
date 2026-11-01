@@ -43,6 +43,9 @@ const usage = `usage:
   swhurl-v2 compile --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json [--calls CALLS.json] [--out DIR]
   swhurl-v2 edit --records DIR --app APPLICATION [--env ENVIRONMENT] --set NAME=VALUE --profile PROFILE.json \
       --out DIR [--calls CALLS.json] [--egress EGRESS.json]
+  swhurl-v2 create --records DIR --app APPLICATION --team TEAM --image REPO:<run>-<commit> --profile PROFILE.json \
+      --out DIR [--description TEXT] [--api-path PATH] [--exposure GRANT] [--memory-mib N] [--storage-mib N] \
+      [--offers DIR]
   swhurl-v2 remove --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
       --calls CALLS.json --out DIR
   swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
@@ -167,6 +170,16 @@ named settings v2 does not model yet: they are refused rather than accepted as a
 allows or subscriptions writes the record the resolution predates: the report says so (resolutionStale) and the
 operator regenerates v2-records/calls.json from the edited tree.
 
+create states a new app's first instance from the image its repository published: the image resolves through the
+registry, states its own declaration and the commit it was built from, and its records are written under --records.
+The instance is staging's, with one replica, the memory the image states unless --memory-mib gives more, the exposure
+--exposure names (private by default: that grant is what edit changes), a volume of --storage-mib when the image keeps
+a database, and a freshly minted broker identity whose encrypted seed is written before the record that states its
+public key. --description and --api-path are what the image cannot state; --offers is the folder holding the documents
+it publishes, whose provenance is the image's commit. It writes records only: the compiled files, the unit and the
+instance's proxy port are the whole tree's, so the next render decides them, and the unit's one line in
+clusters/home/kustomization.yaml is a reviewed edit. It refuses an app that already has records.
+
 remove deletes one v2-owned instance: its record pair with its seed and the documents it publishes, the files
 compiled from them, its unit, the namespace's auth object, and the app record when this was the app's last
 environment. It writes the two kustomizations without the entries that named them in the same effect, so a commit
@@ -213,6 +226,14 @@ func readInput(path string) ([]byte, error) {
 }
 
 func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error), writer files.Writer) int {
+	return runWith(args, out, diagnostic, cli{readFile: readFile, writer: writer, archives: archiveReader,
+		registries: registryReader, seed: randomSeed, encrypter: sops.New()})
+}
+
+// runWith runs one command with the cli a test assembled: the adapters a command needs supplied, everything else the
+// binary's. It is the one dispatcher every test entry point goes through, so a test cannot exercise a different
+// argument parser or exit status than the binary does.
+func runWith(args []string, out, diagnostic io.Writer, c cli) int {
 	r, outcome := parse(args)
 	switch outcome {
 	case help:
@@ -221,8 +242,7 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 		fmt.Fprint(diagnostic, usage)
 		return 2
 	}
-	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archiveReader,
-		registries: registryReader, seed: randomSeed, encrypter: sops.New()}
+	c.out, c.diagnostic = out, diagnostic
 	return commands[r.command](c, r)
 }
 
@@ -230,51 +250,24 @@ func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte
 // without a credential or a network.
 func runWithArchives(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error),
 	writer files.Writer, archives func(bucket, region string) (s3.Reader, error)) int {
-	r, outcome := parse(args)
-	switch outcome {
-	case help:
-		return emit(out, diagnostic, []byte(usage))
-	case misuse:
-		fmt.Fprint(diagnostic, usage)
-		return 2
-	}
-	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archives,
-		registries: registryReader, seed: randomSeed, encrypter: sops.New()}
-	return commands[r.command](c, r)
+	return runWith(args, out, diagnostic, cli{readFile: readFile, writer: writer, archives: archives,
+		registries: registryReader, seed: randomSeed, encrypter: sops.New()})
 }
 
 // runWithEncrypter runs one command with a supplied encrypter and seed, so a mint's test needs neither sops nor
 // randomness. Everything else is what the binary does.
 func runWithEncrypter(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error),
 	writer files.Writer, encrypter sops.Encrypter, seed func() ([32]byte, error)) int {
-	r, outcome := parse(args)
-	switch outcome {
-	case help:
-		return emit(out, diagnostic, []byte(usage))
-	case misuse:
-		fmt.Fprint(diagnostic, usage)
-		return 2
-	}
-	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archiveReader,
-		registries: registryReader, seed: seed, encrypter: encrypter}
-	return commands[r.command](c, r)
+	return runWith(args, out, diagnostic, cli{readFile: readFile, writer: writer, archives: archiveReader,
+		registries: registryReader, seed: seed, encrypter: encrypter})
 }
 
 // runWithRegistry runs one command with a supplied image-registry reader, so a test can answer a tag and a
 // declaration without a network.
 func runWithRegistry(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error),
 	writer files.Writer, registries func(image string) (registry.Reader, error)) int {
-	r, outcome := parse(args)
-	switch outcome {
-	case help:
-		return emit(out, diagnostic, []byte(usage))
-	case misuse:
-		fmt.Fprint(diagnostic, usage)
-		return 2
-	}
-	c := cli{out: out, diagnostic: diagnostic, readFile: readFile, writer: writer, archives: archiveReader,
-		registries: registries, seed: randomSeed, encrypter: sops.New()}
-	return commands[r.command](c, r)
+	return runWith(args, out, diagnostic, cli{readFile: readFile, writer: writer, archives: archiveReader,
+		registries: registries, seed: randomSeed, encrypter: sops.New()})
 }
 
 // registryReader is the image-registry reader the command builds: public packages, anonymous, over the
@@ -314,6 +307,7 @@ var commands = map[string]func(cli, request) int{
 	"users":             cli.users,
 	"reloader":          cli.reloader,
 	"mint":              cli.mint,
+	"create":            cli.create,
 	"migrate":           cli.migrate,
 	"edit":              cli.edit,
 	"remove":            cli.remove,
@@ -333,6 +327,8 @@ type request struct {
 	previous, egressFile, allocation                   string
 	records                                            string
 	eventsSecret, offers, change                       string
+	team, image, description, apiPath, exposure        string
+	memoryMiB, storageMiB                              string
 	rotate, check                                      bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
@@ -420,6 +416,9 @@ func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool 
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		r.registerOut(flags)
+	case "create":
+		r.registerCreateFlags(flags)
 		r.registerOut(flags)
 	case "remove":
 		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
@@ -551,6 +550,22 @@ func (r *request) registerRecords(flags *flag.FlagSet) {
 	flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 }
 
+// registerCreateFlags adds what a create states about the app it makes: its team, the image it starts from, and the
+// facts the image itself does not carry.
+func (r *request) registerCreateFlags(flags *flag.FlagSet) {
+	flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
+	flags.Var(&once{value: &r.app}, "app", "the application to create")
+	flags.Var(&once{value: &r.team}, "team", "the owning team")
+	flags.Var(&once{value: &r.image}, "image", "the image its repository published, REPO:<run>-<commit>")
+	flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+	flags.Var(&once{value: &r.description}, "description", "the one line the app says about itself (optional)")
+	flags.Var(&once{value: &r.apiPath}, "api-path", "where a web app serves its API description (optional)")
+	flags.Var(&once{value: &r.exposure}, "exposure", "private (default), or authenticated-web")
+	flags.Var(&once{value: &r.memoryMiB}, "memory-mib", "memory in MiB (default: what the image states)")
+	flags.Var(&once{value: &r.storageMiB}, "storage-mib", "the volume a database is created with, in MiB")
+	flags.Var(&once{value: &r.offers}, "offers", "the folder holding the documents the app publishes (optional)")
+}
+
 // registerOut adds the destination a command writes its files under.
 func (r *request) registerOut(flags *flag.FlagSet) {
 	r.outFlag = &once{value: &r.out}
@@ -608,6 +623,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"preview":        func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
 	"select-release": func(r *request) []string { return []string{r.instance, r.release, r.expected} },
 	"mint":           func(r *request) []string { return []string{r.instance, r.profile, r.out} },
+	"create":         func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
 	"remove":         func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
 	// A live read needs the instance, its release, the profile, the revision to expect and a credential.
 	"observe": func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },

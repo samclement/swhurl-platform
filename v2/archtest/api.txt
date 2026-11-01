@@ -156,12 +156,14 @@ kernel: func (*Error) Error() string
 kernel: func (AppSpec) ID() (AppID, error)
 kernel: func (Backup) Host() string
 kernel: func (Connections) ID() ConnectionsID
+kernel: func (Creation) Instance() (InstanceSpec, AppSpec, error)
 kernel: func (Declaration) Release(application, repository, commit, image, digest, mediaType string) (ReleaseBundle, error)
 kernel: func (EgressDocument) EgressOf(application, environment string) (*Egress, error)
 kernel: func (EgressFacts) NeedsEgress() bool
 kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
 kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
+kernel: func (ReleaseBundle) WithOffered(description, apiPath, offers string) (ReleaseBundle, error)
 kernel: func (Reloader) Namespaces() ([]string, error)
 kernel: func (Telemetry) CollectorPort() (int32, bool)
 kernel: func AcceptDeclaration(declaration Declaration, spec InstanceSpec, current ReleaseBundle) error
@@ -204,6 +206,7 @@ kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func RevisionOf(tag ImageTag, revision string) (string, error)
 kernel: func SelectPromotion(staging, target InstanceSpec, current, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
+kernel: func SplitImage(reference string) (string, ImageTag, error)
 kernel: func SubscribersOf(data []byte, application, environment string) ([]string, error)
 kernel: func UnitPath(application, environment string, profile PlatformProfile) string
 kernel: func WithAllows(spec InstanceSpec, allows []string) (InstanceSpec, error)
@@ -238,6 +241,7 @@ kernel: type ConnectionsPair struct {Caller string `json:"caller"` Callee string
 kernel: type ConnectionsRefusal struct {Application string `json:"application"` Callee string `json:"callee"` Environment string `json:"environment"` Reason string `json:"reason"`}
 kernel: type ConnectionsSubscription struct {Subscriber string `json:"subscriber"` Publisher string `json:"publisher"` Event string `json:"event"` Environment string `json:"environment"` Stream string `json:"stream"` Consumer string `json:"consumer"` Subject string `json:"subject"` Object string `json:"object"`}
 kernel: type ConnectionsWaiting struct {Caller string `json:"caller"` Callee string `json:"callee"` Environment string `json:"environment"` Reason string `json:"reason"`}
+kernel: type Creation struct {Application, Team string Release ReleaseBundle Declaration Declaration MemoryMiB int32 StorageMiB int32 Exposure string Key string}
 kernel: type DNS struct {Namespace string `json:"namespace"` Labels map[string]string `json:"labels"`}
 kernel: type Declaration struct {SchemaVersion int32 `json:"schemaVersion"` Runtime Runtime `json:"runtime"` Telemetry bool `json:"telemetry,omitempty"` Database string `json:"database,omitempty"` Publishes []string `json:"publishes,omitempty"` Secrets []string `json:"secrets,omitempty"` MemoryMiB int32 `json:"memoryMiB,omitempty"`}
 kernel: type Delivery struct {Source string `json:"source"` OutputRoot string `json:"outputRoot"` UnitsRoot string `json:"unitsRoot"` DependsOn []string `json:"dependsOn"`}
@@ -433,6 +437,7 @@ orchestration: const StepNotRead = "not_read"
 orchestration: func (*Refusal) Error() string
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
+orchestration: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
 orchestration: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 orchestration: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
 orchestration: func Migrate(ctx context.Context, inputs MigrationInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer) (Migration, error)
@@ -444,6 +449,8 @@ orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
+orchestration: type CreateInputs struct {Application, Team string Image string Description, APIPath string Offers []kernel.File Profile []byte RecordsRoot string MemoryMiB, StorageMiB int32 Exposure string Seed [32]byte}
+orchestration: type Created struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Public string Written []files.Outcome}
 orchestration: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
 orchestration: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
 orchestration: type Editable struct {InstanceInputs Change string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}

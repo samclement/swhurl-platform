@@ -54,20 +54,49 @@ type ImageTag struct {
 func NewestTag(tags []string) (ImageTag, bool) {
 	best, found := ImageTag{}, false
 	for _, tag := range tags {
-		match := imageTagPattern.FindStringSubmatch(tag)
-		if match == nil {
+		candidate, ok := parseImageTag(tag)
+		if !ok {
 			continue
 		}
-		run, err := strconv.ParseInt(match[1], 10, 64)
-		if err != nil {
-			continue // a run number the platform cannot rank is not a candidate
-		}
-		candidate := ImageTag{Name: tag, Run: run, Commit: tag[strings.LastIndex(tag, "-")+1:]}
 		if !found || candidate.Run > best.Run || (candidate.Run == best.Run && candidate.Name > best.Name) {
 			best, found = candidate, true
 		}
 	}
 	return best, found
+}
+
+// parseImageTag is one tag with the platform's contract applied: the run number it ranks by and the commit its suffix
+// abbreviates. A tag outside the contract states neither, so it is no candidate.
+func parseImageTag(name string) (ImageTag, bool) {
+	match := imageTagPattern.FindStringSubmatch(name)
+	if match == nil {
+		return ImageTag{}, false
+	}
+	run, err := strconv.ParseInt(match[1], 10, 64)
+	if err != nil {
+		return ImageTag{}, false // a run number the platform cannot rank is not a candidate
+	}
+	return ImageTag{Name: name, Run: run, Commit: name[strings.LastIndex(name, "-")+1:]}, true
+}
+
+// SplitImage is one image reference as an operator states it, split into the artifact image a record keeps — the
+// registry host and the repository path — and the tag it was published with. The tag is what states the commit a
+// release needs, so a promise without one, or one whose tag is not the platform's `<run>-<commit>`, states nothing a
+// record can be checked against.
+func SplitImage(reference string) (string, ImageTag, error) {
+	cut := strings.LastIndex(reference, ":")
+	if strings.Contains(reference, "@") || cut < 0 || cut < strings.LastIndex(reference, "/") {
+		return "", ImageTag{}, refuse(Invalid, "artifact.image", "expected REPO:<run>-<commit>, not a digest")
+	}
+	image, name := reference[:cut], reference[cut+1:]
+	if _, _, err := ImageParts(image); err != nil {
+		return "", ImageTag{}, err
+	}
+	tag, ok := parseImageTag(name)
+	if !ok {
+		return "", ImageTag{}, refuse(Invalid, "artifact.image", "expected the platform's <run>-<commit> tag")
+	}
+	return image, tag, nil
 }
 
 // RevisionOf is the commit an image was built from, checked against the tag that published it: the revision is a

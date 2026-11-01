@@ -36,24 +36,14 @@ func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter 
 	if err != nil {
 		return MintOutcome{}, err
 	}
-	if profile.SOPS.Recipient == "" {
-		return MintOutcome{}, &Refusal{"sops", "the_profile_states_no_recipient"}
-	}
 	pair := kernel.NewUserKey(inputs.Seed)
 	previous := spec.Events.Key
 	updated, err := kernel.WithBrokerKey(spec, pair, inputs.Rotate)
 	if err != nil {
 		return MintOutcome{}, err
 	}
-	plaintext, err := kernel.EventsSecret(updated, pair)
+	encrypted, err := encryptedSeed(updated, pair, profile, encrypter)
 	if err != nil {
-		return MintOutcome{}, err
-	}
-	encrypted, err := encrypter.Encrypt(plaintext, profile.SOPS.Recipient)
-	if err != nil {
-		return MintOutcome{}, err
-	}
-	if err := kernel.CheckEncryptedSeed(encrypted, pair.Seed); err != nil {
 		return MintOutcome{}, err
 	}
 	record, err := kernel.EncodeInstance(updated)
@@ -68,4 +58,26 @@ func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter 
 	outcome := MintOutcome{Application: updated.Application, Environment: updated.Environment,
 		Public: pair.Public, Previous: previous, Written: written}
 	return outcome, err
+}
+
+// encryptedSeed is one instance's seed Secret, encrypted to the platform's recipient and checked as far as v2 can
+// check a ciphertext it never decrypts. A mint and a create both write it before the record that states the key, so a
+// failure leaves a record that states no identity rather than one with no seed.
+func encryptedSeed(spec kernel.InstanceSpec, pair kernel.UserKey, profile kernel.PlatformProfile,
+	encrypter sops.Encrypter) ([]byte, error) {
+	if profile.SOPS.Recipient == "" {
+		return nil, &Refusal{"sops", "the_profile_states_no_recipient"}
+	}
+	plaintext, err := kernel.EventsSecret(spec, pair)
+	if err != nil {
+		return nil, err
+	}
+	encrypted, err := encrypter.Encrypt(plaintext, profile.SOPS.Recipient)
+	if err != nil {
+		return nil, err
+	}
+	if err := kernel.CheckEncryptedSeed(encrypted, pair.Seed); err != nil {
+		return nil, err
+	}
+	return encrypted, nil
 }

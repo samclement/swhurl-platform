@@ -12,24 +12,25 @@ import (
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// eventSnapshot is a snapshot with a publisher, a subscriber, a v2 publisher that publishes nothing, and a name no
-// instance answers to: the resolver connects the first two, refuses the third's event and leaves the fourth waiting.
+// eventSnapshot is a v2 snapshot with a publisher, a subscriber, a v2 publisher that publishes nothing, and a
+// name no instance answers to: the resolver connects the first two, refuses the third's event and leaves the
+// fourth waiting.
 func eventSnapshot(t *testing.T) map[string]any {
 	t.Helper()
-	instance := func(application, format string, settings, release map[string]any) map[string]any {
-		return map[string]any{"application": application, "environment": "staging", "format": format,
+	instance := func(application string, events map[string]any, release map[string]any) map[string]any {
+		return map[string]any{"application": application, "environment": "staging", "format": "v2",
 			"missing": []any{}, "objects": []any{},
-			"records": map[string]any{"instance": settings, "release": release}}
+			"records": map[string]any{"instance": map[string]any{"schemaVersion": 1,
+				"application": application, "environment": "staging", "events": events}, "release": release}}
 	}
 	return map[string]any{"version": 1, "revision": strings.Repeat("a", 40), "residual": []any{},
 		"instances": []any{
-			instance("orders", "v1", map[string]any{"allocations": map[string]any{
-				"eventsKey": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"}},
-				map[string]any{"publishes": []any{"created"}}),
-			instance("notifier", "v1", map[string]any{"subscriptions": []any{"orders.created", "absent.created"},
-				"allocations": map[string]any{"eventsKey": "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI"}},
-				map[string]any{}),
-			instance("quiet", "v2", map[string]any{}, map[string]any{}),
+			instance("orders", map[string]any{"key": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"},
+				map[string]any{"schemaVersion": 1, "publishes": []any{"created"}}),
+			instance("notifier", map[string]any{
+				"key":           "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
+				"subscriptions": []any{"orders.created", "absent.created"}}, map[string]any{"schemaVersion": 1}),
+			instance("quiet", map[string]any{}, map[string]any{"schemaVersion": 1}),
 		}}
 }
 
@@ -77,7 +78,7 @@ func TestResolveRefusesAnEventItsV2PublisherDoesNotPublish(t *testing.T) {
 	snapshot := eventSnapshot(t)
 	instances := snapshot["instances"].([]any)
 	notifier := instances[1].(map[string]any)["records"].(map[string]any)["instance"].(map[string]any)
-	notifier["subscriptions"] = []any{"quiet.created"}
+	notifier["events"].(map[string]any)["subscriptions"] = []any{"quiet.created"}
 	var out, diagnostic bytes.Buffer
 	status := run([]string{"resolve", "--snapshot", writeSnapshot(t, snapshot)}, &out, &diagnostic, os.ReadFile, files.New())
 	if status != 2 || !strings.Contains(diagnostic.String(), "not_published") {
@@ -211,15 +212,14 @@ func TestProfileStatesThePlatformsBroker(t *testing.T) {
 }
 
 // A v2-owned instance states its broker identity in its own record, and the readers see it: the resolver connects
-// a subscription it grants itself and the user list gives it the consumer's permission. Both shapes must read the
-// same facts, or a migrated instance silently loses its events.
+// a subscription it grants itself and the user list gives it the consumer's permission.
 func TestOwnRecordsStateTheBrokerIdentity(t *testing.T) {
 	key := "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI"
 	snapshot := map[string]any{"version": 1, "revision": strings.Repeat("a", 40), "residual": []any{},
 		"instances": []any{
-			map[string]any{"application": "orders", "environment": "staging", "format": "v1", "missing": []any{},
-				"objects": []any{}, "records": map[string]any{"instance": map[string]any{
-					"allocations": map[string]any{"eventsKey": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"}},
+			map[string]any{"application": "orders", "environment": "staging", "format": "v2", "missing": []any{},
+				"objects": []any{}, "records": map[string]any{"instance": map[string]any{"events": map[string]any{
+					"key": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"}},
 					"release": map[string]any{"publishes": []any{"created"}}}},
 			map[string]any{"application": "notifier", "environment": "staging", "format": "v2", "missing": []any{},
 				"objects": []any{}, "records": map[string]any{"instance": map[string]any{

@@ -58,10 +58,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   reaches `main`; it now carries the built `swhurl-v2`.
 - **Not exercised:** the first live edit (a throwaway instance, its change and revert, waiting for the operator's
   confirmation); a real console PR opened, validated and merged by hand; a signed-in browser clicking a v2 form;
-  the resume route against a real interrupted creation; a deployed console image actually running the binary; and
-  **Activity's progress after a v2 PR merges** — `stages.render_targets` still reads v1's `apps/` records and render
-  annotations, which a v2 instance does not have, so a v2 change's row is not a claim about its rollout. Porting
-  that reader belongs with phase 3's deletion of v1's render, not this adapter.
+  the resume route against a real interrupted creation; and a deployed console image actually running the binary.
+  **Activity's progress after a v2 PR merges is now read from v2's tree** (phase 3): `stages.render_targets` reads
+  `v2-records/` and `v2-apps/`, and `progress` treats the record pair as the render because v2 commits records and
+  manifests together. It is tested offline against v2 targets; no live PR has been watched through it yet.
 
 ## The derived tree comes from v2's own records (31 October 2026)
 

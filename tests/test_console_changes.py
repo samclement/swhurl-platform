@@ -9,20 +9,16 @@ import tarfile
 import tempfile
 import unittest
 import urllib.error
-from dataclasses import replace
 from pathlib import Path
-from unittest import mock
 
 import httpx
 import yaml
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import calling, channels, egress, new
-from swhurl.apps.instance import Instance
+from swhurl.apps import calling, channels, new
 from swhurl.apps.model import write as model_sync
-from swhurl.apps.state import State
-from swhurl.console import actions, cluster, server, stages
+from swhurl.console import actions, cluster, server
 from swhurl.console import github as gh
 from swhurl.run import FakeRunner, Result
 
@@ -126,57 +122,6 @@ class FakeGitHub:
     def sent(self, key: str) -> list[dict]:
         return [json.loads(r.content) for r in self.requests if f'{r.method} {r.url.path}'.endswith(key.split(' ', 1)[1])
                 and r.method == key.split(' ', 1)[0]]
-
-
-def rendered(hash, digest, settings, records):
-    """An instance a tree has records for and has rendered (stages.Target)."""
-    return stages.Target(records, settings, digest, hash, digest, hash)
-
-
-
-
-
-
-class NewAppRenderTargetTests(unittest.TestCase):
-    def test_manual_records_merge_then_port_allocation_is_creation_completion_not_replacement(self):
-        records = {path: data for path, data in MAIN.items() if path in (
-            'apps/hello/app.yaml', 'apps/hello/staging/release.yaml', 'apps/hello/staging/instance.yaml', calling.SIGNING_KEYS_FILE.as_posix())}
-        settings = yaml.safe_load(records['apps/hello/staging/instance.yaml'])
-        settings.get('allocations', {}).pop('egressPort', None)
-        records['apps/hello/staging/instance.yaml'] = yaml.safe_dump(settings).encode()
-        with mock.patch.dict(MAIN, records, clear=True):
-            before = stages.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/staging']
-        self.assertTrue(before.pending)
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            for path, data in records.items():
-                (root / path).parent.mkdir(parents=True, exist_ok=True)
-                (root / path).write_bytes(data)
-            shutil.copytree(ROOT / egress.DIRECTORY, root / egress.DIRECTORY, dirs_exist_ok=True)
-            model_sync.sync(root)
-            rendered = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*') if p.is_file()}
-        self.assertIn('egressPort', yaml.safe_load(rendered['apps/hello/staging/instance.yaml'])['allocations'])
-        with mock.patch.dict(MAIN, rendered, clear=True):
-            current = stages.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/staging']
-        self.assertEqual(before.records, current.records, 'system port allocation is not a new request')
-        self.assertEqual(before.settings, current.settings)
-        def live(target):
-            return cluster.AppRow(Instance('hello', 'staging'), State('healthy'), False, 'x', digest=target.digest,
-                                  render_hash=target.hash, render_ready=True, render_state=State('healthy'), image_matches=True)
-        for action in stages.NEW_APP_ACTIONS:
-            with self.subTest(action=action):
-                result = stages.progress(action, before, current, live(current))
-                self.assertEqual(result.state, 'live')
-                # Even if the first read after Render sees its own build rather than the seed,
-                # the creation still follows it; a later operator setting does supersede it.
-                built = replace(current, hash='built', expected='built', digest='own-build', rendered='own-build', records='new-release')
-                result = stages.progress(action, before, built, live(built))
-                self.assertEqual((result.state, result.newer), ('live', 'own-build'))
-                changed = replace(current, hash='changed', settings='operator-change', records='operator-change')
-                result = stages.progress(action, before, changed, live(changed))
-                self.assertEqual(result.state, 'superseded')
-
-
 
 
 class TreeRunner(FakeRunner):

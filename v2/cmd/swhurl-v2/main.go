@@ -127,8 +127,9 @@ reloader renders the namespaces Reloader watches: the platform's own as the prof
 instance that declares a Secret a change must restart it for — its broker key or a Secret its release names.
 The list is the ConfigMap the Reloader HelmRelease merges as values, so the HelmRelease keeps no list of its own.
 
-resolve reads one snapshot's declarations and writes the resolved connections as a v2-calls document:
-which pairs are connected, which wait for the other side and why, and which are refused. compile takes
+resolve reads one snapshot's v2-owned instances and writes the resolved connections as a v2-calls document:
+which pairs are connected, which wait for the other side and why, and which are refused. A snapshot
+instance that is still a predecessor's records is refused. compile takes
 that document with --calls and renders only the pairs it names for the instance being compiled.
 
 render renders every file v2 derives from its records in one run: the resolution at DIR/calls.json, every instance's

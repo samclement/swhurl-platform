@@ -55,7 +55,7 @@ it. The writer functions are in `tools/swhurl/apps/cli.py`, `new.py`, `offers.py
 | `app-alerts` | alert settings | none (v2 renders no alert) | **delete** (inert, below) |
 | `app-schedule` | job schedule | none (no `job` kind) | **delete** (inert, below) |
 | `app-secret` | secret names/values | none (secrets are not modelled) | **delete** (inert, below) |
-| `app-new` | a new staging instance | `swhurl-v2 create` (records only, offline 1 November 2026) | **keep** until the template check has a path that needs no image (the create path, below) |
+| `app-new` | a new staging instance | `swhurl-v2 create` (records only, offline 1 November 2026) | **delete** with the §10 slice: the declaration label carries the offered documents, so `check-templates` runs the producer and `swhurl-v2 declaration` instead ([the brief](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026)) |
 | `app-repo` | a GitHub repository from a template | none yet | **keep** |
 | `app-hooks` | image webhooks | none yet | **keep** |
 | `team-*`, `channel-*` | `apps/teams.yaml` | none (v2 reads the team string, not the registry) | **keep** |
@@ -72,9 +72,10 @@ the create path, the GitHub side and the shared team registry, none of which v2 
 The create flow after phase 3 is `app-repo` → `app-new` → `swhurl-v2 migrate` → delete the v1 record and switch the
 unit, the sequence all 13 migrations took: a v1-created instance is a staging post, not a state the platform stays
 in. `swhurl-v2 create` (offline 1 November 2026) replaces that whole sequence from `app-repo` onwards — it states the
-records from the image's own declaration — but `app-new` stays until `check-templates`, which turns a template's
-`swhurl.yaml` into an instance with no image to read, has a path that needs none
-([the decision](iteration-2-plan.md#9-the-create-path-implemented-offline-1-november-2026)).
+records from the image's own declaration. `app-new`'s last dependency was `check-templates`, which turns a template's
+`swhurl.yaml` into an instance with no image to read; since the declaration label now carries the offered documents,
+the template check reads the producer's JSON through `swhurl-v2 declaration` and `app-new` is deleted in that slice
+([the brief](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026)).
 
 `platform-signing-keys` is a **delete** row, and `apps/signing-keys.json` went with it in phase 4: `verify`'s
 `signing-keys` check compares the profile's `auth.keys` and `auth.issuer` with the cluster, the policy reads the same
@@ -87,8 +88,8 @@ block, and `platform/auth/` is rendered from it, so a rotated key has one source
   phase 4 with a v2 check (compile every `v2-records` instance, compare with `v2-apps`, and validate the
   platform documents), or delete it if `make check-v2` already covers every assertion. The plan is to replace,
   because `check-apps` also checks the team registry and app policy for the v1-only facts.
-- `check-templates` calls `app-new` in a temporary directory; it stays while `app-new` stays. If `app-new` is
-  later deleted, `check-templates` is ported or retired in that change.
+- `check-templates` calls `app-new` in a temporary directory today; the §10 slice points it at the producer and
+  `swhurl-v2 declaration`, so `app-new` is deleted with it, not before it.
 - `live-test-*` commands that use the writer (`live-test-lifecycle`, `live-test-app-template`,
   `live-test-call-identity`, `live-test-network-policy`, `live-test-team-scenario`, the restore tests) are
   inventoried in phase 3; each is ported to v2 or deleted with the command it tests. None is left pointing at a
@@ -295,9 +296,9 @@ phase 3 (§2.3).
   repository; it was deleted on 1 November (the next bullet). The plan's "only remaining second writer" was
   therefore internal and is already gone.
 - **What was left was a new app's create.** `swhurl-v2 create` now states a new app's records from its image
-  (offline 1 November 2026); `make app-new` and the console's New app are still v1's, and retiring them needs the
-  template check's decision ([v2 status](v2-status.md#slice-record-create-offline-1-november-2026)). That, not phase
-  5, is the next gate.
+  (offline 1 November 2026). The template check's decision was taken on 1 November 2026 — the declaration label
+  carries the offered documents, so `check-templates` reads the producer's JSON and `app-new` goes with it — and that
+  slice, not phase 5, is the next gate ([the brief](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026)).
 - **This repository's v1 Deploy workflow is gone** (`deploy.yml`, deleted 1 November 2026): its one step,
   `swhurl bot-deploy`, was deleted with phase 4, so the hourly run failed on `unknown command: bot-deploy`.
   Every instance is v2's, so it had nothing left to deploy; the [v2 Deploy workflow](../.github/workflows/deploy-v2.yml)
@@ -341,7 +342,10 @@ what is refused is a design chosen because the answer was not known yet.
    change rebuilds the console.
 3. **The eight app repositories' `deploy.yml` was phase 5 — closed 1 November 2026 with nothing to change.** No
    app repository has or had one on `main`, so there was never an external second writer; the only v1 Deploy
-   workflow was this repository's, deleted the same day. The last v1 writer is a new app's create (`app-new`).
+   workflow was this repository's, deleted the same day. The last v1 writer is a new app's create (`app-new`),
+   deleted in the [§10 slice](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026) —
+   at which point no fact has a v1 writer and the [rule in §1](#1-the-rule-this-slice-enforces) holds for the
+   platform's own records.
 4. **The freeze is a pin, not a file.** The snapshot is regenerated from `dfe4dafa`, so §2.3 records the command,
    the revision and the hash rather than a 49 KB copy the next phase invalidates.
 
@@ -369,11 +373,13 @@ inherit it as a mystery.
 Paste this prompt:
 
 > Read `docs/v2-deletion-plan.md` and `docs/iteration-2-plan.md` §8. The migrations and phases 0–5 are done, and
-> `swhurl-v2 create` exists (offline); the next gate is a decision on how `check-templates` validates a template
-> with no image, then the console's New app on `create`. The decisions in §5 are confirmed; do not reopen them. Run
-> `make check` after each commit (commit first, then check on the clean tree) and `make check-v2` for every v2
-> change. Do not touch `flux-system` or the app repositories; phase 5 was closed on 1 November 2026 (no app
-> repository has or had a v1 `deploy.yml`). Keep one implementation writer at a time.
+> `swhurl-v2 create` exists (offline); the next gate is the approved §10 slice — the declaration label carries the
+> offered documents at version 2, so `create`, `deploy` and `check-templates` read the image, `app-new` is deleted
+> and the nine apps are re-derived (`docs/iteration-2-plan.md` §10). The decisions in §5 are confirmed; do not reopen
+> them. Run `make check` after each commit (commit first, then check on the clean tree) and `make check-v2` for every
+> v2 change. Do not touch `flux-system`; the app repositories change only in the migration step, with the operator's
+> approval of the list and the diffs. Phase 5 was closed on 1 November 2026 (no app repository has or had a v1
+> `deploy.yml`). Keep one implementation writer at a time.
 
 The first commands to run in that session:
 

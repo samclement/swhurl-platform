@@ -1,12 +1,21 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: phase 5 — the eight app repositories' v1 `deploy.yml`, which is a change outside this repository and needs the operator's confirmation and the GitHub tokens
+Gate: the operator's choice on the `create` decision brief (the last v1 writer)
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
 ## Authority
+
+**Closed 1 November 2026: phase 5 is void.** No app repository has a v1 `.github/workflows/deploy.yml`, and none
+ever had one on `main`: the nine repositories with records, `hello-ts`, `swhurl-try-19`, `swhurl-try-20`, and both
+stack templates at their pinned revisions carry only `container.yml` → `app.yml` (a template has `app.yml` and
+`template.yml`). The only v1 Deploy workflow was this repository's, started by Flux's image dispatch and deleted on
+1 November (`f6ba34a8`), so there is no external second writer to remove. The last v1 writer is a new app's create:
+`make app-new` writes `apps/<app>/<env>/`, the console keeps its v1 record reader until v2 has `create`, and
+`swhurl-v2` has no create command. That is the next gate. See
+[the record](#slice-record-phase-5-is-void-1-november-2026).
 
 **Worked 31 October 2026: the checks read v2's tree (phase 4).** `make check-apps` is v2's own render check —
 every `v2-records` instance compiled and compared with the files Git holds, the same comparison `make check-v2`
@@ -124,7 +133,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **1a done, and 1b's migrations done 31 October 2026**: the nine staging instances are v2's — records, compiled files and units, one writer per instance — and a migrated record states the platform's manifest digest, read from the registry rather than copied from the predecessor; all four production instances are v2's too, `demo-orders` and `demo-shop` moved together because one calls the other, with their retained claims adopted by name and production's bare host restored in `kernel.routeHost`; v1's writer is **deleted** (phase 3, 31 October 2026): its instance commands, modules and tests are gone, `resolve` reads one record shape, and Activity reads v2's tree — [record](#slice-record-the-cutover-reaches-production-four-instances-31-october-2026), [1a record](#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
 | The v2-only checks | `make check` and `verify-platform` read v2's tree, so no check keeps a v1 record alive | **Done 31 October 2026** (phase 4): `check-apps` is v2's render check plus the team registry, the notify routes and the template fixtures' policy; `verify-platform` reads `v2-apps/` and the egress allocation and its v1 branch is deleted; `apps/signing-keys.json` is gone, so the profile's `auth` block is the one source of the signing keys — [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026), [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
 | Derived files | One render from v2's own records: the resolution, every compiled instance folder and unit, and the platform's documents, comparable with Git | **Done, offline then live 31 October 2026**: `swhurl-v2 render` composes the existing resolvers, renderers and compiler, so a record change cannot leave the tree half-rendered; `make check-v2` now compares 208 files — `v2-apps/` and the instance units were unchecked before — and a one-field record change names the file it moves. The console writes through it: PR #101 moved `swhurl-try-10/staging` to 192 MiB and #102 returned it to 128, both verified on the cluster — [record](#slice-record-one-render-from-the-records-offline-31-october-2026) |
-| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **One live** (`swhurl-try-10` staging, stateful on its own volume; the other, `swhurl-try-11`, was removed on 31 October 2026), and a migration's records are now **written by v2** (`migrate`) rather than by hand |
+| 7. Selective replacement | An existing v1 app migrated to v2 ownership | **All 13 live** (nine staging and four production; `swhurl-try-11` was removed on 31 October 2026), and every migration's records are **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
 | Always-on instance surface | Telemetry (the endpoint and the way out to it), the notify address and token, and the app-owned team label on every instance | **Done and live 29 October 2026**: the env, tokens and team labels rolled to both v2-owned instances, and a reporting image's policy admits the collector the env names (the export was found blocked the same day; [evidence](current-state.md#a-v2-owned-instance-cannot-reach-the-node-collector-29-october-2026)) |
 | Team grants | A callee's record states who may call it by team, and the resolution decides the members from each caller's own record | **Done, offline 30 October 2026**: `allows` takes `team:<team>`, `resolve` matches it against the caller's `app.json`, and the five v1 instances that grant a team migrate; the grant never renders as a member list |
@@ -165,7 +174,7 @@ credential, would make them travel; delivery is manual (compile, commit, push) f
 | Image automation | **done and live 30 October 2026**: `swhurl-v2 deploy` (one instance or every `v2-records/<app>/staging`), the v2 Deploy workflow started by the image Alert and hourly, the declaration and revision labels from both templates (`v0.2.21` / `v0.2.20`), the broker's user list rendered in the same commit, and the three staging instances running their delivered digests (`make app-status` matches, `swhurl-v2 observe` says `running`) | [slice](#slice-record-image-automations-offline-half-29-october-2026) |
 | Reloader watch list | done and live 29 October 2026: v1's writer deleted, `make v2-reloader` (and the Render workflow) renders `platform/reloader/values.json`, and `make check-v2` compares it with Git; the Reloader HelmRelease merges it as values | [slice](#slice-record-reloaders-watch-list-29-october-2026) |
 | What an app offers | **done and live 30 October 2026**: a release's `description`, `apiPath` and `offers` commit render the variable and the two annotations, which all four v2-owned instances now carry; `migrate` carries them and the documents; v2 generates and fetches nothing | [slice](#slice-record-what-an-app-offers-30-october-2026) |
-| 7. Selective replacement | two live: `swhurl-try-10` staging (with its own volume) and, as the first subscriber, `demo-notifier` staging (`swhurl-try-11` staging was a third until 31 October 2026); the `migrate` use case writes their record pairs from v1's records, and the two real migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
+| 7. Selective replacement | **all 13 live**: nine staging and four production instances are v2-owned; the `migrate` use case wrote every record pair from v1's records, and the live migrations are its acceptance test | [phases](iteration-2-plan.md#5-incremental-delivery), [slice](#slice-record-the-migrate-use-case), [evidence](current-state.md#the-first-stateful-migration-swhurl-try-10-staging-keeps-its-volume-26-october-2026) |
 | The v2-only checks | **done 31 October 2026 (phase 4)**: `check-apps` runs v2's `render --check` plus the team registry, the notify routes and the template fixtures' policy; `verify-platform` reads `v2-apps/instances/` and `platform/egress/allocation.json`, with no v1 branch and no `check_secrets`; `apps/signing-keys.json` is deleted and the profile's `auth` block is the one source of the keys | [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026), [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
 | Cutover's write primitives | done, offline 31 October 2026: `swhurl-v2 edit` applies one named change and writes the record with the files it renders in one effect; `swhurl-v2 remove` deletes an instance's records, files, unit and auth object and edits both registrations; every write of a compiled folder prunes what the records no longer render and keeps the folder's declared inputs | [record](#slice-record-the-cutovers-write-primitives-offline-31-october-2026), [evidence](current-state.md#the-cutovers-write-primitives-offline-31-october-2026) |
 | Promotion | done and live 30 October 2026: `swhurl-try-11` production is v2's and runs the release its staging selects; the handover orphaned v1's unit, adopted the same namespace and release, and then moved one release reference | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
@@ -231,6 +240,43 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
 
+## Slice record: phase 5 is void (1 November 2026)
+
+- **Outcome:** the deletion plan's [phase 5](v2-deletion-plan.md#3-phases) — removing the app repositories' v1
+  Deploy workflow — has nothing to remove. No app repository has `.github/workflows/deploy.yml`, and none ever had
+  one on `main`: the nine repositories with records (`demo-orders`, `demo-shop`, `demo-shopper`, `demo-notifier`,
+  `swhurl-try-10`, `-13`, `-30`, `-31`, `-32`), the three older ones (`hello-ts`, `swhurl-try-19`,
+  `swhurl-try-20`), and both stack templates at their pins in `tools/swhurl/apps/contract.py` carry
+  `container.yml` → `app.yml` only (a template has `app.yml` and `template.yml`). `container.yml` has
+  `contents: read, packages: write` and calls the template's shared `app.yml`; none writes platform Git.
+- **The one v1 Deploy workflow was this repository's.** It ran `swhurl bot-deploy` and was started by Flux's image
+  dispatch (`platform/image-automation/dispatch.yaml`), never by an app repository; it was deleted on 1 November
+  (`f6ba34a8`) because every instance is v2's and the v2 Deploy workflow takes the same dispatch, schedule and
+  manual run. The plan's "only remaining second writer" is therefore gone, and it was never external.
+- **What is left is a new app's create.** `make app-new` still writes `apps/<app>/<env>/` and its unit, and
+  `tools/swhurl/console/records.py` keeps a v1 record reader "until v2 has `create`"; `swhurl-v2` has no create
+  command. That is the next gate, not an external repository change.
+- **Owners and boundaries.** No code, adapter or record changed. The verification read public GitHub metadata
+  (workflow listings and path history) and this repository's Git; the docs and two hand-written comments now name
+  the writers that exist.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 files and live state unchanged;
+  nothing was applied. 2. Pure packages untouched. 3. No identity, golden or compiled file changed. 4. No refusal
+  changed; the gate's text changed, not a contract. 5. This slice has no new failure path; a 404 is recorded as
+  absence of the file, not as an unread repository. 6. Scope: public repositories only; a private app repository
+  (none is documented) was not readable anonymously and is not reported as checked. 7. Offline only; no live
+  readiness is claimed. 8. This page, the deletion plan, the registry, the gap row and current state change
+  together.
+- **Evidence, 1 November 2026:** GitHub API `contents/.github/workflows` for the twelve public app repositories and
+  `commits?path=.github/workflows/deploy.yml` for each (all `[]`); both templates at their pins list `app.yml` and
+  `template.yml`; `git show f6ba34a8^:.github/workflows/deploy.yml` shows the dispatch trigger; `apps/` holds only
+  `README.md` and `teams.yaml`, and 13 `v2-records/*/*/instance.json` exist.
+- **Deferred rows touched:** [the proxy's configuration](iteration-2-plan.md#6-deliberately-deferred) is marked
+  done (the row still named the deleted `make app-sync`). The generated headers in `platform/notify/routes.yaml` and
+  the 13 `offers/source.yaml` still name `make app-sync`/`make app-offers`, because their writers were not re-run;
+  the two hand-written comments (`platform/egress/helmrelease.yaml`, `platform/console/nats.sops.yaml`) are
+  corrected.
+- **Next gate:** a decision brief for `swhurl-v2 create` (the last v1 writer), then the operator's choice.
+
 ## Slice record: the checks read v2's tree (phase 4, 31 October 2026)
 
 - **Outcome:** no check reads a v1 record any more, so nothing in `make check` or `verify-platform` depends on the
@@ -284,9 +330,9 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 - **Not exercised:** `check-apps` on a tree whose records differ from `v2-apps` (the render check owns that, and its
   output is passed through unchanged); a cluster whose namespace carries a label Git also states but with another
   value, which the check would report (only the label comparison's positive path ran live); and the un-migrated
-  `app-new` fixture path, whose v1 rendering still needs Helm — the create path and the templates are phase 5's.
-- **Next gate:** phase 5, the eight app repositories' `deploy.yml` (outside this repository; needs the operator's
-  confirmation and the GitHub tokens).
+  `app-new` fixture path, whose v1 rendering still needs Helm — the create slice owns it.
+- **Next gate:** a decision brief for `swhurl-v2 create`, the last v1 writer (phase 5 was closed on 1 November 2026:
+  no app repository has or had a v1 `deploy.yml`).
 
 ## Slice record: one render from the records (offline, 31 October 2026)
 

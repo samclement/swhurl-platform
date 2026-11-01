@@ -1688,7 +1688,7 @@ Do not make feature parity the first goal. This is the one list of unimplemented
 | Feature or semantic gap | v2 today | Decide by |
 | --- | --- | --- |
 | Egress proxy: proxy variables, port allocation, egress grants | Rendered and live since [the cutover](#the-egress-cutover-implemented-26-october-2026): a stable port per instance, the client variables, the grants annotation and policy, and the proxy's configuration with grants enforced. A database instance's backup host is [the platform's grant](#the-backup-host-is-the-platforms-grant-implemented-28-october-2026). **A v2 record cannot declare a host of its own**: a v2-owned instance's grants are the backup host only, and `swhurl-v2 edit --set egress=…` refuses the setting by name | The first v2-owned instance that must reach an outside host: an `egress` field on the instance record (an identity change) |
-| The proxy's configuration as the live one | `make app-sync` still writes `platform/egress/proxy.yaml`, which Flux applies; what v2 renders is compared with it offline and applied nowhere. No instance declares a grant, so an enforced proxy would refuse every outbound host | A live slice after v1's `granted=-` history has been granted or explained ([stage E3b](plan.md#stage-5-egress-grants)); needs the operator |
+| The proxy's configuration as the live one | **Done and live 26 October 2026**: the cutover made `platform/egress/configmap.json` and `networkpolicy.json` the applied objects, rendered from the allocation with grants enforced, and v1's generator is deleted ([cutover](#the-egress-cutover-implemented-26-october-2026)). A v2 record still cannot declare an outside host of its own (the first row) | — |
 | An instance that must not reach outside | Every instance in the snapshot is allocated a port, and nothing withholds one | The first kind that must not egress |
 | A v2-owned instance's records | Kept in `v2-records/`: v2's own `instance.json`/`release.json`, one app-level `app.json` (its team), and the committed resolution `calls.json`, so the instance [recompiles from Git alone](#a-v2-owned-instance-recompiles-from-git-alone-implemented-26-october-2026) and CI fails on a stale file. **The translation is a use case** ([`migrate`](#the-migrate-use-case-implemented-26-october-2026)), and the record now [states its own declarations](v2-status.md#slice-record-the-record-states-its-declarations-a): `calls` and `allows` are facts of the pair, `resolve` reads them from either record shape, and **the v1-shaped YAML copies are gone**. The [always-on slice](v2-status.md#slice-record-the-always-on-instance-surface-29-october-2026) added the app record and its team label | Done for the app record, its team label and a team grant in `allows` ([slice](v2-status.md#slice-record-team-grants-30-october-2026)) |
 | Freshness of a v2-owned instance's backups | **Both facts are observed**: the job (`observe` reads the CronJob, the pods its runs create and the newest run's Job) and the newest archive (`observe --archive` lists the instance's own prefix with the operator's credentials). `verify-platform` still builds its expected list from the app records in `apps/`, so a v1-side check cannot see a v2-owned instance; v2 can | Done; the archive's credential is the operator's environment, and a standing key for a console check is the next step if one is wanted |
@@ -1912,5 +1912,61 @@ The operator approved the quickest route to a v2-only platform and accepted brea
 
 **Acceptance.** `make check-v2` recompile and `make check-apps` agree; the [bridge](v2-status.md#slice-record-phase-3-snapshot-export-and-ownership-inventory) compares every instance's rendered objects with what the cluster runs and reports **no field differences**; `make verify-platform` passes with no warning and no v1 branch; `swhurl-v2 resolve` reads one record shape; and no `apps/` record survives for an instance v2 owns. **What it buys:** the [gap list](#6-deliberately-deferred)'s transition rows — v1 caller of a v2 callee, v2 caller of a v1 callee, `resolve`'s two shapes, the writer that does not prune, the kept ports of removed instances, the events stub and the v1/v2 freshness seam — all die with the second writer instead of being maintained. **What it costs:** the operator loses the `app-*` commands and must use `swhurl-v2`, and the console reads v2 records only (a small change, in 1b). **Left after it:** genuine capability, not seam repair — the repository read, restore breadth, auto-merge and a first-class create-production.
 
+
+## 9. The create path: decision brief (proposed 1 November 2026, not approved)
+
+**Why now.** Every existing instance is v2's (nine staging, four production), v1's instance writer is deleted, the
+checks read v2's tree and the only Deploy workflow is v2's. One v1 writer remains: **a new app's create**.
+`make app-new` writes `apps/<app>/<env>/` and its unit, `make app-repo` renders the GitHub repository from a stack
+template, the console's New app is disabled behind `app-repo` → `app-new` → `migrate`, and the console keeps a v1
+record reader until v2 has `create` ([record](v2-status.md#slice-record-phase-5-is-void-1-november-2026)). A first
+production is also not modelled: `promote` refuses an environment with no record.
+
+**The fact set a create states.** The same facts `migrate` maps from a predecessor, but from the app's own
+declaration: the image and its `linux/amd64` manifest, the commit it was built from, the declaration the image
+carries (`kind`, port, health path, uid, telemetry, memory), and what the app offers (`description`, `apiPath`,
+the documents at that commit). The record pair is v2's JSON (`app.json`, `staging/instance.json`,
+`staging/release.json`, `offers/`), and the existing compiler, resolvers and renderers write the files.
+
+**Options.**
+
+1. **Records from a declaration file (recommended).** `swhurl-v2 create APPLICATION --records DIR --profile FILE
+   --image REF [--declaration FILE] [--offers DIR] --team TEAM` writes the record pair and compiles it. The
+   declaration and documents are read from local files — the operator or `app-repo` supplies them — so the command
+   needs no network and no new adapter. `make app-repo` still creates the GitHub repository; `make app-new`
+   retires and the console's New app points at `app-repo` → `swhurl-v2 create`; the v1 reader in `records.py` is
+   deleted. Trade-off: a person still supplies the declaration until the repository read exists, but the model,
+   the records and the compiled files are v2's from the first commit.
+2. **Create reads the app's repository.** Add a Git-host adapter (stdlib `net/http`), a credential decision and a
+   commit pin, so `create` reads `swhurl.yaml` and the documents at the image's commit itself. This is the
+   repository read the gap list already owes "what an app offers", and it would also refresh a new image's
+   documents. Trade-off: a new external effect and credential before anything can be created; it can be a second
+   slice on top of option 1 without moving the record shape.
+3. **Create including the GitHub repository.** v2 renders the template and creates the repository and package.
+   This is the largest external effect (a public repository, org permissions, the template renderer) and
+   duplicates `app-repo` for no record-shape gain. Not recommended.
+
+**Recommendation: option 1**, then option 2 when a new image must carry new documents. It removes the last v1
+writer and the console's last v1 read with no new dependency, and it keeps `app-repo` (a GitHub fact) where it is.
+
+**Contract sketch for option 1.**
+
+- **Inputs:** application name, `staging` only, image reference (tag or digest), the declaration, the optional
+  `swhurl.yaml` fields (`description`, `apiPath`, `provides`), the offered documents, the platform profile, and the
+  team (a flag or the app's existing record). `--records` is the tree to write; nothing is output to stdout.
+- **Writes:** `v2-records/<app>/app.json`, `staging/instance.json`, `staging/release.json`, `offers/` (declared
+  inputs), the compiled folder and unit — one effect, like `edit`. `render` remains the whole-tree command.
+- **Refuses:** an app that already exists in any environment, an environment other than staging, a name or image
+  the app policy would refuse, a declaration the instance cannot take, an offered document that is not the shape
+  the release states, and a team not in `apps/teams.yaml`. An app whose declaration needs a broker identity uses
+  `mint`'s primitive (the seed is written before the record that states the public key); a subscription may stay a
+  follow-up if the first slice is records-only.
+- **Acceptance:** a throwaway app's records are created from a real image, `make check-v2`/`check-apps` agree,
+  `observe` says running, the console's page reads it with no v1 fallback, `make app-new` and the v1 reader are
+  deleted, and a first production is still refused with its own message. Nothing live beyond the throwaway.
+- **Not in scope:** a first production (a second create decision), a job kind, secrets, alerts, auto-merge, and the
+  repository read (option 2).
+- **What reopens this:** a create that must read the repository before it can write (option 2), or a first
+  production that must be created without a person (a promotion-direction decision).
 
 Status, decisions, evidence and the fresh-context handoff live in [v2 status](v2-status.md). Contracts stay here: [the gap list](#6-deliberately-deferred), [guardrails](#guardrails), the [change report](#change-report) and the [extension recipes](#extension-recipes). Nothing in this page authorises implementation beyond the approved slice.

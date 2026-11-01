@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Phase 5 is void: no app repository has a v1 Deploy workflow (1 November 2026)
+
+- **What changed:** the deletion plan's phase 5 was "remove the eight app repositories' v1 `deploy.yml`". Verified
+  on GitHub: no app repository has `.github/workflows/deploy.yml`, and none ever had one on `main`. The nine
+  repositories with records (`demo-orders`, `demo-shop`, `demo-shopper`, `demo-notifier`, `swhurl-try-10`, `-13`,
+  `-30`, `-31`, `-32`), the three older public ones (`hello-ts`, `swhurl-try-19`, `swhurl-try-20`), and both stack
+  templates at their pins in `tools/swhurl/apps/contract.py` carry only `container.yml` → `app.yml` (a template
+  has `app.yml` and `template.yml`). `container.yml` has `contents: read, packages: write`; none writes platform
+  Git. The only v1 Deploy workflow was this repository's, started by Flux's image dispatch and deleted on
+  1 November (`f6ba34a8`). **Phase 5 is closed with no external change, and the deletion plan's phases 0–5 are
+  done.** [Record](v2-status.md#slice-record-phase-5-is-void-1-november-2026).
+- **What is actually left:** a new app's create. `make app-new` still writes `apps/<app>/<env>/` and its unit, and
+  the console keeps its v1 record reader until v2 has `create` (`tools/swhurl/console/records.py:10`); `swhurl-v2`
+  has no create command. The next gate is a decision brief for it, not an external repository edit.
+- **Docs corrected in the same change:** the gate in [v2 status](v2-status.md), the deletion plan's status, phase 5,
+  decision 3 and new-session prompt, the registry row in [workstreams](workstreams.md), the stale "one live" rows
+  for selective replacement (all 13 instances are v2's), the gap row that still said `make app-sync` writes the
+  proxy, and two hand-written comments (`platform/egress/helmrelease.yaml`, `platform/console/nats.sops.yaml`).
+- **Checked, offline:** `make check-docs`, `make check-v2`, `make check-apps`, `make check-repo`,
+  `make check-lint` and `make check`; no cluster action, and the two comments change no object's values.
+- **Not exercised:** a private app repository (none is documented; app repositories are public) was not readable
+  anonymously and is not claimed to be checked. The generated headers in `platform/notify/routes.yaml` and the 13
+  `offers/source.yaml` still name deleted commands: changing them means re-running their writers, and for
+  `routes.yaml` that is a `tools/` change and therefore a console rebuild; left for the create slice.
+
 ## Every page and message names a command that exists (1 November 2026)
 
 - **What changed:** the v1 edit commands went in phase 3, but the pages, the console's pages and the strings the

@@ -1,9 +1,10 @@
 # The egress proxy: app instances reach outside the cluster through it, each on a port of its own
 # (docs/services.md#egress-proxy). Squid, with no cache, logging every request to stdout.
 #
-# Which ports exist and what Squid does on each is not written here: proxy.yaml (generated from the
-# app instances by make app-sync) supplies the configuration and the Service ports through valuesFrom.
-# The chart's checksum of its ConfigMap restarts the pods on a change, one at a time.
+# Which ports exist and what Squid does on each is not written here: the egress-proxy ConfigMap
+# (configmap.json, rendered from the instance records by make v2-render) supplies the configuration and
+# the Service ports through valuesFrom. The chart's checksum of its ConfigMap restarts the pods on a
+# change, one at a time.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:

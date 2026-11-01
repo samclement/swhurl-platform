@@ -18,7 +18,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   `render --check` then compared with no differences, and `make check-apps` passed — and failed on its team rule once
   the record's team was changed to an unregistered name.
 - **Checked offline:** `go test ./...` in `v2/` (new tests for the reference split, the creation's rules, the use case
-  and the command), `make check-v2` (208 files compared, 0 differ) and `make check`.
+  and the command), `make check-v2` (208 files compared, 0 differ) and `make check` (98 and 758 tests, 0 failures;
+  `check-docs` 0 errors, 0 warnings).
+- **After the push, `8c0d10e1`:** Validate, Render and the pages build all passed, `make flux-reconcile` moved nothing
+  (the commit changes Go source and docs, no manifest) and `make verify-platform` reported **93 OK, 0 warnings**.
 - **Not exercised:** no instance was created on the cluster, so nothing here is live readiness: `observe` has not
   said `running` for a created instance, `make app-new` and the console's New app still write v1 records, and the
   conversion of a whole template-rendered app (its documents, its first promotion) is untested end to end.

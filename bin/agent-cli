@@ -102,9 +102,28 @@ def cmd_state(a):
 
 # ci --------------------------------------------------------------------------
 
+# gh's wording when the network, not the request, failed; such a failure is retried for RETRY seconds.
+TRANSIENT = re.compile(r'error connecting|timeout|timed out|connection (reset|refused)|TLS|EOF|HTTP 50[234]', re.I)
+RETRY = 60
+APPEAR = 120  # seconds --wait gives a pushed commit's runs to start before reporting that none did
+
+
 def runs_for(sha: str) -> list[dict]:
-    return sh_json('gh', 'run', 'list', '--commit', sha, '--limit', '20', '--json',
-                   'databaseId,workflowName,status,conclusion,event,url,createdAt') or []
+    deadline = time.time() + RETRY
+    while True:
+        try:
+            return sh_json('gh', 'run', 'list', '--commit', sha, '--limit', '20', '--json',
+                           'databaseId,workflowName,status,conclusion,event,url,createdAt') or []
+        except ToolFailed as error:
+            if not TRANSIENT.search(str(error)) or time.time() >= deadline:
+                raise
+            time.sleep(10)
+
+
+def pushed(sha: str) -> bool:
+    """Whether a branch on origin holds the commit (fetched first): only then can a run start for it."""
+    sh('git', 'fetch', '-q', 'origin', check=False, timeout=60)
+    return bool(sh('git', 'branch', '-r', '--contains', sha, check=False).stdout.strip())
 
 
 def failed_log(run_id: int, n: int) -> list[str]:
@@ -116,11 +135,20 @@ def failed_log(run_id: int, n: int) -> list[str]:
 
 def cmd_ci(a):
     sha = sh('git', 'rev-parse', a.rev).stdout.strip()
-    deadline = time.time() + a.timeout
+    start = time.time()
     runs = runs_for(sha)
-    while a.wait and time.time() < deadline and (not runs or any(r['status'] != 'completed' for r in runs)):
+    if not runs and not pushed(sha):
+        return ({'sha': sha, 'pushed': False, 'runs': []},
+                [f'{sha[:8]} not pushed: no origin branch holds it, so no run will start (push, then retry)'], 1)
+    while a.wait and (not runs or any(r['status'] != 'completed' for r in runs)):
+        waited = time.time() - start
+        if waited >= a.timeout or (not runs and waited >= APPEAR):
+            break
         time.sleep(15)
         runs = runs_for(sha)
+    if not runs:
+        note = f' (none started within {APPEAR}s of waiting)' if a.wait else ' (not started yet? --wait)'
+        return {'sha': sha, 'pushed': True, 'runs': []}, [f'{sha[:8]} runs 0{note}'], 1 if a.wait else 0
     for r in runs:
         r['failedJobs'] = []
         if r['conclusion'] in ('failure', 'timed_out', 'startup_failure'):
@@ -141,7 +169,7 @@ def cmd_ci(a):
         lines += [f'  | {line}' for line in r.get('log', [])]
     if failed and not a.log:
         lines.append('hint: --log for the failed steps\' output')
-    return {'sha': sha, 'runs': runs}, lines, 1 if failed else 0
+    return {'sha': sha, 'pushed': True, 'runs': runs}, lines, 1 if failed else 0
 
 
 # make ------------------------------------------------------------------------
@@ -548,9 +576,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument('-n', type=int, default=5, help='commits to list (default 5)')
     p.add_argument('--fetch', action='store_true', help='git fetch origin first')
     p = add('ci', cmd_ci, 'GitHub Actions runs for a commit: status, failed jobs and steps, optionally their log',
-            'Replaces: gh run list --commit; gh run watch $id --exit-status; gh run view $id --json jobs / --log-failed.')
+            'Replaces: gh run list --commit; gh run watch $id --exit-status; gh run view $id --json jobs / --log-failed. '
+            f'A network failure talking to GitHub is retried for {RETRY} s before it is reported (exit 3).')
     p.add_argument('rev', nargs='?', default='HEAD', help='commit (default HEAD; push first)')
-    p.add_argument('--wait', action='store_true', help='poll every 15 s until every run has completed')
+    p.add_argument('--wait', action='store_true', help='poll every 15 s until every run has completed; stops at once '
+                   f'for an unpushed commit, and after {APPEAR} s if no run has started')
     p.add_argument('--timeout', type=int, default=1800, help='seconds --wait polls (default 1800)')
     p.add_argument('--log', action='store_true', help='print the failed steps\' log tail')
     p.add_argument('--lines', type=int, default=40, help='log lines per failed run (default 40)')

@@ -5,7 +5,7 @@
   "release": "rel-sha256:7100614ee0b546672095e8ba9907a92ce4cc80e2284129e5bceec69abe707a8d",
   "configuration": {
     "replicas": 1,
-    "memoryMiB": 192
+    "memoryMiB": 128
   },
   "grants": {
     "exposure": "authenticated-web"

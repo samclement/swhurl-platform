@@ -287,6 +287,10 @@ phase 3 (§2.3).
 - Until then, an app repository's v1 Deploy workflow can still write a v1 release for an app whose instance is
   v2-owned. The plan is to remove that workflow in phase 5, or to make it call the v2 Deploy workflow. This is
   the only remaining second writer after phase 3, and it is external.
+- **This repository's v1 Deploy workflow is gone** (`deploy.yml`, deleted 31 October 2026): its one step,
+  `swhurl bot-deploy`, was deleted with phase 4, so the hourly run failed on `unknown command: bot-deploy`.
+  Every instance is v2's, so it had nothing left to deploy; the [v2 Deploy workflow](../.github/workflows/deploy-v2.yml)
+  takes the same `repository_dispatch`, schedule and manual run.
 
 ## 4. Acceptance for the whole slice
 

@@ -3,11 +3,11 @@
   "application": "demo-shopper",
   "source": {
     "repository": "samclement/demo-shopper",
-    "commit": "51519ea2dfb6cf6a50da38fca8681dd10e7eadbb"
+    "commit": "1b09c74b57c20097415d3d7bfdc8aa2088a009eb"
   },
   "artifact": {
     "image": "ghcr.io/samclement/demo-shopper",
-    "digest": "sha256:65f2cd0e43a5ea51998d4baea8243677b8c3bd35deb117699aa22fb625a0c267",
+    "digest": "sha256:80c8390ab1766c48342323768a68f47c54aa148a3345a5717458efe755328207",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -20,5 +20,5 @@
   "telemetry": true,
   "description": "Demo: a worker that buys something from demo-shop every half minute, so there is always some traffic",
   "offers": "51519ea2dfb6cf6a50da38fca8681dd10e7eadbb",
-  "releaseId": "rel-sha256:005d354fab709064edc7ab84d4c6ea1639e57921067ab8b5a2b9475546292f85"
+  "releaseId": "rel-sha256:f25b0e90d8b624c9d2f60eef2ba93fa04c3922d91cc6642ab6b430eed2d59eb4"
 }

@@ -14,10 +14,13 @@ makes — followed by the three rules no compiler can decide: each app record's 
 are the registry's, and the template fixtures still pass the Helm policy. `make verify-platform` reads
 `v2-apps/instances/`; its v1 branch, its "0 instance(s)" path and `check_secrets` are deleted, and so is
 `apps/signing-keys.json`: both of its readers now read the profile's `auth` block, which is what v2 renders
-`platform/auth` from, so a key has one source. Nothing was applied to the cluster; the live pass of
-`verify-platform` names all 13 instances from v2's tree. See
+`platform/auth` from, so a key has one source. Nothing was applied to the cluster — the only live change was
+Validate's own console image pin on the merge; the live pass of `verify-platform` names all 13 instances from v2's
+tree. See
 [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026) and
-[evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026).
+[evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026). Two follow-ups the merge surfaced, both
+fixed in the same slice: the bot paths that still ran the deleted `app-sync` (`make v2-render` replaces it), and the
+console image, which Validate deployed on the merge.
 
 **Worked 31 October 2026: the console writes v2's records, now live; phase 3 has deleted the v1 writer.** The app page's forms run `swhurl-v2 edit`,
 `remove` and `promote`, then `swhurl-v2 render`, in a temporary checkout; the PR carries the records and the rendered
@@ -274,10 +277,10 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   (208 files, 0 differ), `make check-repo`, `make check-lint`. New reads have tests: `tests/test_verify.py` builds
   compiled folders for the isolation and events checks, and `tests/fakecluster.py` answers from `v2-apps/instances`
   instead of `apps/`.
-- **Evidence, live:** `make verify-platform` exits 0 with 92 OK and one warning (the console image, older than the
-  checkout until Validate deploys it), including "13 app namespace(s) have a registered team, the platform quota and
-  a NetworkPolicy", "13 declared stream(s) and consumer(s) exist in NATS", "13 instance(s) each have a port of their
-  own", and the profile's one signing key.
+- **Evidence, live:** `make verify-platform` exits 0 with 93 OK and no warning — the console image caught up when
+  Validate's deploy job pinned `src-50207ca800b0ebef` on `e57d1348` and Flux applied it (`253c0b7d`) — including
+  "13 app namespace(s) have a registered team, the platform quota and a NetworkPolicy", "13 declared stream(s) and
+  consumer(s) exist in NATS", "13 instance(s) each have a port of their own", and the profile's one signing key.
 - **Not exercised:** `check-apps` on a tree whose records differ from `v2-apps` (the render check owns that, and its
   output is passed through unchanged); a cluster whose namespace carries a label Git also states but with another
   value, which the check would report (only the label comparison's positive path ran live); and the un-migrated

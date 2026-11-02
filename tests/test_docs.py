@@ -15,7 +15,16 @@ from swhurl.run import FakeRunner, Runner
 HEAD = ('| Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |\n'
         '| --- | --- | --- | --- | --- | --- | --- | --- |\n')
 BLOCK = 'Status: approved\nGate: a decision\nUncommitted: none\n'
-PAGE = '# Alpha: status\n\n' + BLOCK + '\nWhere it stands.\n'
+PAGE = ('# Alpha: status\n\n' + BLOCK +
+        '\n## Where it stands\n\n'
+        '| Capability | State | Evidence |\n| --- | --- | --- |\n'
+        '| the model | done | [the model](#where-it-stands) |\n'
+        '\n## Remaining work\n\n1. the next thing.\n'
+        '\n## Deferred features\n\n'
+        '| Feature | v2 today | Reopen when |\n| --- | --- | --- |\n'
+        '| alerts | refused by name | an instance needs one |\n'
+        '\n## Durable decisions\n\n- One writer per fact.\n'
+        '\n## How this page is kept\n\nOverwritten, not appended to.\n')
 
 
 def row(name='Alpha', kind='main', state='approved', gate='a decision', needs='operator approval',
@@ -127,6 +136,38 @@ class PageTests(Tree):
         report, output = self.check(table=HEAD + row(page='[plan](plan.md)'), page=None, runner=fake(pages=''),
                                     extra={'plan.md': '# Plan\n\nNo status block.\n'})
         self.assertEqual(report.failures, 0, output)
+
+
+class ProgressTests(Tree):
+    """A progress page is a map: overwritten, bounded, and every claim points at evidence."""
+
+    def test_a_page_missing_a_section_fails(self):
+        page = PAGE.replace('## Durable decisions', '## Notes')
+        report, output = self.check(page=page)
+        self.assertIn('missing the section(s) Durable decisions', output)
+
+    def test_a_capability_state_must_be_done_or_partial(self):
+        report, output = self.check(page=PAGE.replace('| done |', '| nearly |'))
+        self.assertIn('expected done or partial', output)
+
+    def test_a_capability_evidence_link_must_resolve(self):
+        report, output = self.check(page=PAGE.replace('(#where-it-stands)', '(#no-such-heading)'))
+        self.assertIn('missing heading', output)
+        report, output = self.check(page=PAGE.replace('| the model | done | [the model](#where-it-stands) |',
+                                                      '| the model | done | since we did it |'))
+        self.assertIn('Evidence has no link', output)
+
+    def test_a_deferred_row_must_say_what_reopens_it(self):
+        report, output = self.check(page=PAGE.replace('| an instance needs one |', '| |'))
+        self.assertIn('state what v2 does today and what reopens it', output)
+
+    def test_a_slice_record_heading_fails(self):
+        report, output = self.check(page=PAGE + '\n## Slice record: one more thing\n')
+        self.assertIn('has a "## Slice record" heading', output)
+
+    def test_a_page_over_the_cap_fails(self):
+        report, output = self.check(page=PAGE + '\nfiller\n' * docs.MAX_LINES)
+        self.assertIn(f'stays at or under {docs.MAX_LINES}', output)
 
 
 class GitTests(Tree):

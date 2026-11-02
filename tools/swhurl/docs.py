@@ -11,6 +11,9 @@ once, in a table — `docs/workstreams.md` — and this command compares it with
   ERROR  "Uncommitted: none" while that workstream's paths are dirty, or a named path that is clean
   ERROR  a commit cited on a status page that is not in this history
   ERROR  a change under a workstream's paths that does not also change its page
+ERROR  a status page without the progress shape: its sections, a state per capability, an
+       evidence link per row that resolves, a deferred table with a reason to reopen each row,
+       no slice-record heading, or more than MAX_LINES lines
 
 Nothing here judges whether a contract is good. It catches the record going stale, which is
 what makes a long migration hard to resume.
@@ -39,6 +42,13 @@ STATUS_SUFFIX = '-status.md'
 CITED = re.compile(r'`([0-9a-f]{7,40})`')
 HEAD = 25  # a status page states its block near the top
 EMPTY = ('', '—', '-')
+# A progress page is a map, not a log: this is its shape, and its size is the forcing function.
+MAX_LINES = 250
+SECTIONS = ('Where it stands', 'Remaining work', 'Deferred features', 'Durable decisions', 'How this page is kept')
+CAPABILITY = ('Capability', 'State', 'Evidence')
+CAPABILITY_STATES = ('done', 'partial')
+DEFERRED = ('Feature', 'v2 today', 'Reopen when')
+SLICE_RECORD = re.compile(r'^##\s+Slice record\b', re.M)
 
 
 @dataclass(frozen=True)
@@ -220,6 +230,95 @@ def orphan_problems(rows: list[Row], runner: Runner, root: Path = ROOT) -> list[
             if name.removeprefix('docs/') not in pages]
 
 
+def section(text: str, heading: str) -> list[str] | None:
+    """The lines under one `## heading`, up to the next `## `; None when the heading is absent."""
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip() == f'## {heading}'), None)
+    if start is None:
+        return None
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('## ')), len(lines))
+    return lines[start + 1:end]
+
+
+def table_rows(lines: list[str], header: tuple[str, ...]) -> list[list[str]] | None:
+    """The rows of the first table with exactly ``header``, without its separator; None if absent."""
+    start = next((i for i, line in enumerate(lines)
+                  if line.strip().startswith('|') and tuple(cells(line)) == header), None)
+    if start is None:
+        return None
+    rows = []
+    for line in lines[start + 2:]:
+        if not line.strip().startswith('|'):
+            break
+        rows.append(cells(line))
+    return rows
+
+
+def link_problem(page: Path, target: str) -> str:
+    """Why a Markdown link in ``page`` does not resolve, or '' when it does."""
+    if re.match(r'^[a-z][a-z0-9+.-]*:', target):
+        return ''
+    path_part, _, anchor = target.partition('#')
+    resolved = (page.parent / path_part).resolve() if path_part else page
+    if not resolved.exists():
+        return 'missing file'
+    if anchor and resolved.suffix == '.md' and anchor not in anchors(resolved):
+        return 'missing heading'
+    return ''
+
+
+def progress_problems(row: Row, root: Path = ROOT) -> list[str]:
+    """A progress page is overwritten, not appended to: check its shape, not just its block."""
+    page = page_file(row, root)
+    where = str(page.relative_to(root))
+    text = page.read_text()
+    found = []
+    if len(text.splitlines()) > MAX_LINES:
+        found.append(f'{where}: {len(text.splitlines())} lines; a progress page stays at or under {MAX_LINES}. '
+                     'Move narrative to Git or current-state and delete what the goal no longer needs')
+    if SLICE_RECORD.search(text):
+        found.append(f'{where}: has a "## Slice record" heading; a progress page is overwritten, so the record '
+                     'belongs in Git and one dated current-state entry')
+    missing = [name for name in SECTIONS if section(text, name) is None]
+    if missing:
+        found.append(f'{where}: missing the section(s) {", ".join(missing)}; a progress page states '
+                     'Where it stands, Remaining work, Deferred features, Durable decisions and How this page is kept')
+    lines = section(text, 'Where it stands')
+    if lines is not None:
+        rows = table_rows(lines, CAPABILITY)
+        if rows is None:
+            found.append(f'{where}: Where it stands has no "| {" | ".join(CAPABILITY)} |" table')
+        elif not rows:
+            found.append(f'{where}: Where it stands has no capability row')
+        else:
+            for cells_ in rows:
+                label = cells_[0] if cells_ else '?'
+                if len(cells_) != len(CAPABILITY):
+                    found.append(f'{where}: capability {label}: expected {len(CAPABILITY)} cells, found {len(cells_)}')
+                    continue
+                if cells_[1].strip('* ') not in CAPABILITY_STATES:
+                    found.append(f'{where}: capability {label}: State is {cells_[1]!r}; expected done or partial')
+                links = LINK.findall(cells_[2])
+                if not links:
+                    found.append(f'{where}: capability {label}: Evidence has no link')
+                for target in links:
+                    problem = link_problem(page, target)
+                    if problem:
+                        found.append(f'{where}: capability {label}: Evidence {target} ({problem})')
+    lines = section(text, 'Deferred features')
+    if lines is not None:
+        rows = table_rows(lines, DEFERRED)
+        if rows is None:
+            found.append(f'{where}: Deferred features has no "| {" | ".join(DEFERRED)} |" table')
+        else:
+            for cells_ in rows:
+                if len(cells_) != len(DEFERRED):
+                    found.append(f'{where}: a deferred row has {len(cells_)} cells, not {len(DEFERRED)}')
+                elif not cells_[1] or not cells_[2]:
+                    found.append(f'{where}: deferred {cells_[0]}: state what v2 does today and what reopens it')
+    return found
+
+
 def summarize(report: Report, problems: list[str], okay: str) -> None:
     for problem in problems:
         report.bad(problem)
@@ -242,6 +341,8 @@ def check(runner: Runner, report: Report, root: Path = ROOT) -> None:
     pages = [row for row in rows if status_page(row, root) and page_file(row, root).is_file()]
     summarize(report, [p for row in pages for p in block_problems(row, root)],
               f'{len(pages)} status page(s) agree with the registry')
+    summarize(report, [p for row in pages for p in progress_problems(row, root)],
+              f'{len(pages)} progress page(s) keep the progress shape')
     summarize(report, tracked_problems(rows, runner, root), 'every owned path holds a tracked file')
     summarize(report, uncommitted_problems(rows, runner, root), 'uncommitted work matches each status page')
     if shallow(runner):

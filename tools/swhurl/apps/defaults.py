@@ -12,7 +12,7 @@ import re
 from swhurl import interface
 
 DEFAULT_DATABASE_SIZE = '1Gi'
-"""A new database's volume, unless app-new is given another."""
+"""A new database's volume, unless the image's declaration states another."""
 
 DEFAULT_MEMORY_MIB = 128
 """The memory an image that states no `resources.memory` runs in: the platform's default limit, so every image's

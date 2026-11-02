@@ -16,7 +16,7 @@ is created.
    the template when the answers have one (seconds), or else the image that run builds, smoke-tests
    and publishes;
 5. reads the image's digest from GHCR (anonymously, as the cluster pulls) and prints the
-   ``make app-new … --from-repo`` line that adds the app to staging.
+   ``swhurl-v2 create`` line that makes the app's staging instance.
 
 DRY_RUN=true checks the name and that the repository does not exist, and prints the plan.
 """
@@ -117,7 +117,7 @@ class Request:
     owner: str = APP_OWNER
     description: str = ''
     answers: dict[str, str] = field(default_factory=dict)
-    exposure: str = ''  # what staging starts with, from the type ('' for app-new's default)
+    exposure: str = ''  # what staging starts with, from the type ('' for the platform's default)
 
     @property
     def repo(self) -> str:
@@ -213,14 +213,14 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
     req.check()
     check_answers(req.answers, template_questions(req.stack, opener))
     if runner.run(['gh', 'repo', 'view', req.repo, '--json', 'name'], check=False).returncode == 0:
-        raise RepoError(f'{req.repo} already exists; choose another NAME (or use it with make app-new --from-repo)')
+        raise RepoError(f'{req.repo} already exists; choose another NAME')
     template = STACKS[req.stack]
     if runner.dry_run:
         out(f'Plan (app-repo {req.repo}):')
         answers = ''.join(f' {k}={v}' for k, v in sorted(req.answers.items()))
         out(f'  - render {template} ({req.stack}) with app_name={req.name}{answers} using {" ".join(copier_command())}')
         out(f'  - create the public repository {req.repo}, push the first commit over SSH, add the image webhook')
-        out(f'  - wait for its first {APP_WORKFLOW} run, read the image digest from GHCR, print the app-new line')
+        out(f'  - wait for its first {APP_WORKFLOW} run, read the image digest from GHCR, print the v2 create line')
         return f'{req.image}:<run>-<sha>@sha256:<digest>'
 
     scratch = Path(tempfile.mkdtemp(prefix='app-repo-'))
@@ -252,10 +252,18 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
         tag = f'{run["number"]}-{run["headSha"][:7]}'
         image = f'{req.image}:{tag}@{image_digest(req.image, tag, opener)}'
         out(f'[OK] First image: {image}')
-    out('Next, add it to staging (a Git edit; commit and push it). <team> is the team that owns it, a name in apps/teams.yaml:')
-    exposure = f' --exposure {req.exposure}' if req.exposure and req.answers.get('kind', 'web') == 'web' else ''
-    out(f'  make app-new NAME={req.name} ARGS="--from-repo {req.repo} --env staging --team <team>{exposure} --image {image}"')
+    out('Next, create its staging instance with v2 (a Git edit: commit it, push, then `make v2-render`). '
+        '<team> is the team that owns it, a name in apps/teams.yaml:')
+    kind = req.answers.get('kind', 'web')
+    out(f' {create_command(req.name, image, req.exposure if kind == "web" else "")}')
     return image
+
+
+def create_command(name: str, image: str, exposure: str = '') -> str:
+    """The v2 command that creates an app's staging instance once its repository has published an image."""
+    found = f' --exposure {exposure}' if exposure else ''
+    return (f'swhurl-v2 create --records v2-records --app {name} --team <team>{found} --image {image} '
+            '--profile v2/testdata/profile.json --out .')
 
 
 def from_environment(name: str, environ: Mapping[str, str]) -> Request:

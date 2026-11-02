@@ -270,7 +270,7 @@ def default_host(name: str, env: str) -> str:
 
 
 # Automatic staging deploys (docs/apps.md#deploy-a-new-image): for an app with --auto-deploy,
-# app-new writes an ImageRepository and ImagePolicy (in flux-system) into the staging instance. The
+# the compiler writes an ImageRepository and ImagePolicy (in flux-system) into the staging instance. The
 # policy's report starts the Deploy workflow, which reads the registry with the same filter
 # (apps/images.py) and writes the tag and digest. Tags must be <run number>-<commit sha>, as the
 # template's workflow publishes them; the highest run wins.

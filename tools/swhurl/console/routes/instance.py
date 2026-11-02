@@ -28,7 +28,7 @@ V2_SCALE_FIELDS = (('replicas', 'replicas', 'Replicas'), ('memory', 'memoryMiB',
 
 
 def _in_git(root, found: Instance) -> bool:
-    """Whether the instance's declaration is in a checkout: v2's records, or v1's while `app-new` still creates one."""
+    """Whether the instance's declaration is in a checkout: v2's records."""
     return (root / declared_records.V2_RECORDS / found.app / found.env).is_dir() or found.folder(root).is_dir()
 
 

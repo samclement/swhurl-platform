@@ -55,7 +55,7 @@ it. The writer functions are in `tools/swhurl/apps/cli.py`, `new.py`, `offers.py
 | `app-alerts` | alert settings | none (v2 renders no alert) | **delete** (inert, below) |
 | `app-schedule` | job schedule | none (no `job` kind) | **delete** (inert, below) |
 | `app-secret` | secret names/values | none (secrets are not modelled) | **delete** (inert, below) |
-| `app-new` | a new staging instance | `swhurl-v2 create` (records only, offline 1 November 2026) | **delete** with the §10 slice: the declaration label carries the offered documents, so `check-templates` runs the producer and `swhurl-v2 declaration` instead ([the brief](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026)) |
+| `app-new` | a new staging instance | `swhurl-v2 create` (records only, offline 1 November 2026) | **deleted 1 November 2026** with the §10 slice: the declaration label carries the offered documents, so `check-templates` runs the producer and `swhurl-v2 declaration` instead, and the console's New app runs `create` ([the brief](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026), [the record](v2-status.md#slice-record-the-console-creates-an-app-with-v2-1-november-2026)) |
 | `app-repo` | a GitHub repository from a template | none yet | **keep** |
 | `app-hooks` | image webhooks | none yet | **keep** |
 | `team-*`, `channel-*` | `apps/teams.yaml` | none (v2 reads the team string, not the registry) | **keep** |
@@ -67,14 +67,16 @@ instance has one. `app-egress`, `app-alerts`, `app-secret` and `app-schedule` al
 demo-shop/staging (missing apps/demo-shop/staging/release.yaml)` and exit 2. Keeping them would keep dead code whose
 first act is to write a v1 record for an instance v2 owns, so **decision 1a deletes them** and the four facts (egress
 grants, alert thresholds, job schedule, secret values) are recorded as lost until v2 models them. `app-new`,
-`app-repo`, `app-hooks`, `team-*` and `channel-*` are not in that position: they need no existing record — they are
-the create path, the GitHub side and the shared team registry, none of which v2 writes. **Decision 1b keeps them.**
-The create flow after phase 3 is `app-repo` → `app-new` → `swhurl-v2 migrate` → delete the v1 record and switch the
-unit, the sequence all 13 migrations took: a v1-created instance is a staging post, not a state the platform stays
-in. `swhurl-v2 create` (offline 1 November 2026) replaces that whole sequence from `app-repo` onwards — it states the
+`app-repo`, `app-hooks`, `team-*` and `channel-*` were not in that position: they needed no existing record — they were
+the create path, the GitHub side and the shared team registry, none of which v2 writes. **Decision 1b kept them**;
+`app-new` is now deleted, `app-repo` prints the `create` line, and the rest remain.
+The create flow after phase 3 was `app-repo` → `app-new` → `swhurl-v2 migrate` → delete the v1 record and switch the
+unit, the sequence all 13 migrations took: a v1-created instance was a staging post, not a state the platform stayed
+in. Since 1 November 2026 the flow is `app-repo` → the `swhurl-v2 create` line it prints → `make v2-render`, and the
+console's New app does the same in one held pull request. `swhurl-v2 create` (offline 1 November 2026) replaces that whole sequence from `app-repo` onwards — it states the
 records from the image's own declaration. `app-new`'s last dependency was `check-templates`, which turns a template's
 `swhurl.yaml` into an instance with no image to read; since the declaration label now carries the offered documents,
-the template check reads the producer's JSON through `swhurl-v2 declaration` and `app-new` is deleted in that slice
+the template check reads the producer's JSON through `swhurl-v2 declaration` and `app-new` was deleted in that slice, on 1 November 2026, so no v1 create path is left
 ([the brief](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026)).
 
 `platform-signing-keys` is a **delete** row, and `apps/signing-keys.json` went with it in phase 4: `verify`'s
@@ -88,8 +90,8 @@ block, and `platform/auth/` is rendered from it, so a rotated key has one source
   phase 4 with a v2 check (compile every `v2-records` instance, compare with `v2-apps`, and validate the
   platform documents), or delete it if `make check-v2` already covers every assertion. The plan is to replace,
   because `check-apps` also checks the team registry and app policy for the v1-only facts.
-- `check-templates` calls `app-new` in a temporary directory today; the §10 slice points it at the producer and
-  `swhurl-v2 declaration`, so `app-new` is deleted with it, not before it.
+- `check-templates` called `app-new` in a temporary directory; since 1 November 2026 it runs the image-declaration
+  producer and `swhurl-v2 declaration`, which is why `app-new` could be deleted with it.
 - `live-test-*` commands that use the writer (`live-test-lifecycle`, `live-test-app-template`,
   `live-test-call-identity`, `live-test-network-policy`, `live-test-team-scenario`, the restore tests) are
   inventoried in phase 3; each is ported to v2 or deleted with the command it tests. None is left pointing at a
@@ -216,7 +218,9 @@ phase 3 (§2.3).
 - Port `merge.py`/`proposal.py`/`promotion.py` and `routes/instance.py` to it for `edit`, `remove`, `promote`;
   keep the proposal/PR flow (write the v2 records in a temp checkout, run the binary, commit the diff).
 - Port `routes/new_app.py` only if v2 has a create path; otherwise disable new-app with a pointer to
-  `app-repo` + `app-new` (the v1-only create) and state the gap.
+  `app-repo` + `app-new` (the v1-only create) and state the gap. **Done 1 November 2026:** with `create` in place the
+  form is live again and its job runs `create`, an `edit` per further choice and `render`; the pointer page, the v1
+  new-app gate and the `app-new` command are deleted.
 - Tests: edit replicas, exposure, calls, allows, events, team; remove; promote; a refused edit carries v2's
   refusal; the console cannot write a v1 record.
 - Live: one change to a throwaway staging instance, then revert; a promotion of a staging release that already
@@ -244,9 +248,9 @@ phase 3 (§2.3).
   `edit`/`remove`/`promote` followed by `render`, each `gated=False`; `proposal.py` runs them on the PR head and
   never auto-merges one; `routes/instance.py` builds them from the forms (replicas and memory only, whole-list
   connections and allowed callers, no host), and `review_promotion` shows the v2 review. The app page offers those
-  forms again; the banner that said the records were v1's is gone. `routes/new_app.py` is disabled with the four-step
-  pointer (`app-repo` → `app-new` → `migrate` → delete the v1 records), while its resume route still finishes a job
-  an earlier creation started. A console image without the binary refuses with the command to run, rather than
+  forms again; the banner that said the records were v1's is gone. `routes/new_app.py` was disabled at that point with the four-step
+  pointer (`app-repo` → `app-new` → `migrate` → delete the v1 records), and its resume route finished a job an earlier
+  creation started; on 1 November 2026 the form returned as v2's create path. A console image without the binary refuses with the command to run, rather than
   failing a job. **The one open choice was the operator's, and option 1 was taken:** every v2 PR is held and the
   gate's v1 read/judge/`app-sync` stays untouched until phase 3 deletes it. Nothing was applied.
 - **Done live 31 October 2026: the change and its revert.** PR #101 took `swhurl-try-10/staging` from 128 to

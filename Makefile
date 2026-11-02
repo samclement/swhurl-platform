@@ -12,7 +12,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help reconcile verify-platform notifications-check notifications-heartbeat verify-logs flux-install \
 	clickstack-bootstrap clickstack-dashboards \
-	app-repo app-hooks app-new team-add team-edit team-remove team-channel channel-add channel-remove \
+	app-repo app-hooks team-add team-edit team-remove team-channel channel-add channel-remove \
 	app-status app-logs app-reconcile console-image console-dev \
 	platform-certs-staging platform-certs-prod suspend resume destroy-data backup-mongodb backup-sqlite restore-sqlite \
 	check-repo check-apps check-templates check-otel check-secrets check-docs v2-snapshot \

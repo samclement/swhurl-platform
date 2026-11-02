@@ -82,8 +82,7 @@
         <span class="label">Access</span>
         <div class="choices">{{ ui.exposure_choices(form.exposure or app_types[chosen_type].exposure) }}</div>
       </div>
-      {{ ui.text_field('host', 'Host', form.host or '', 'derived from the name', 'Leave empty for a signed-in app to get staging-<name>.' ~ domain ~ '. A public app needs its own host outside ' ~ domain ~ '.') }}
-    </div>
+          </div>
   </section>
   <section class="card" id="worker-note" hidden>
     <div class="card-head">
@@ -114,7 +113,7 @@
     <ol class="card-body steps">
       <li><span>Repository</span>Creates the public repository <code id="s-repo">{{ owner }}/&lt;name&gt;</code> from the stack's template.</li>
       <li><span>First build</span>Checks the app and publishes <code id="s-image">ghcr.io/{{ owner }}/&lt;name&gt;</code>.</li>
-      <li><span>Pull request</span>Adds <code id="s-instance">&lt;name&gt;/staging</code> here, set up from the app's <code>swhurl.yaml</code> and what you chose under <strong>Connects to</strong>: the apps it calls start admitting it, and it gets a key for its events.</li>
+      <li><span>Pull request</span>Adds <code id="s-instance">&lt;name&gt;/staging</code> here, set up from what the image itself declares and what you chose under <strong>Connects to</strong>: the apps it calls start admitting it, and it gets a key for its events. It waits for your review.</li>
       <li><span>After you merge</span>Every push to the app's <code>main</code> deploys to staging.</li>
     </ol>
     <div class="card-body">

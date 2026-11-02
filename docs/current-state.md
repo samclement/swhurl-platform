@@ -2,6 +2,33 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Every image states its documents, and the productions follow (1 November 2026)
+
+- **What changed:** both stack templates pin the platform at the commit whose build writes declaration label version
+  2 (TypeScript `v0.2.24`, Kotlin `v0.2.23`). The six app repositories with instances took the template and published
+  images whose labels carry their OpenAPI, AsyncAPI and flags; `swhurl-v2 deploy --calls … --egress …` moved every
+  staging instance to its newest image, and one reviewed `swhurl-v2 promote` each moved `demo-orders`, `demo-shop`,
+  `swhurl-try-10` and `swhurl-try-30` production to its staging's release. The three throwaways without production
+  (`swhurl-try-13`, `-31`, `-32`) were removed with `swhurl-v2 remove`; none kept a volume, so no data was deleted.
+  [Record](v2-status.md#slice-record-the-app-repositories-take-version-2-and-the-four-productions-follow-1-november-2026).
+- **Checked live:** `make flux-reconcile` applied the new HelmReleases; `make verify-platform` reported **93 OK, 0
+  warnings**; `make app-status`-equivalent inventory shows **10 instances**, all v2-owned, each running the digest
+  its record states, and the four productions running exactly their staging's commit and digest (`demo-orders`
+  `e4e9a39f`/`573d39f88232`, `demo-shop` `3bf4f9cf`/`663a105fd982`, `swhurl-try-10` `f3065a3e`/`dbf85b168a8d`,
+  `swhurl-try-30` `fd0b84a0`/`10d2131f021d`). The offers annotations now name those commits, and `demo-orders/prod`
+  still states its API path. The namespaces and HelmReleases of the three removed throwaways are gone.
+- **What the deploy proved:** `deploy` decodes the label before writing anything, so every one of the six images was
+  read as a version 2 declaration — the first run refused the three database instances until `--egress` named the
+  allocation, which is the model working rather than a bypass. The documents in `v2-records/…/offers/` are the
+  images' own bytes, not a predecessor's copy.
+- **Checked offline after the change:** `make v2-render`, `make check-v2` (**194 files, 0 differ**), `make check`,
+  `make check-templates` (7 app types, 0 problems, 2 warnings for the job kind) and `make check-docs`.
+- **Removed with the throwaways:** the three repositories and their GHCR container packages, deleted with the tokens
+  in `secrets/` (verified present before use; every delete answered `deleted` and a follow-up read answered `gone`).
+- **Not exercised:** no image built from the updated template has been *created* (`swhurl-v2 create`) on the cluster,
+  so the create path is still proved offline only; the console's app page has not been reloaded in a signed-in
+  browser since the records changed; and a rollback (a promotion of an older release) is still unperformed.
+
 ## The declaration travels with the image, offline half (1 November 2026)
 
 - **What changed:** the label an image build writes is **version 2** and carries the app's documents — its OpenAPI,

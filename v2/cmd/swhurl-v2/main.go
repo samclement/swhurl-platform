@@ -73,8 +73,10 @@ promote moves one app's production to the release its staging selects, from the 
 DIR/<app>/staging is the source and DIR/<app>/<env> the target, whose own configuration, grants, calls, storage and
 broker identity stay unchanged. It refuses a candidate that is not the release staging selects, a target that is not
 production, another application, a user that changes on an instance with a volume, a stale --expect, and everything
-compile refuses. A release already selected is a no-op that writes nothing. A promotion's direction is not decided
-from the records — a release states no build order — so a person reads a rollback from the two releases it states.
+compile refuses. Its --egress document is given whole, and production takes it only when the allocation records a
+grant for it, exactly as a delivery does, so what a promotion writes equals what the whole-tree render writes. A
+release already selected is a no-op that writes nothing. A promotion's direction is not decided from the records — a
+release states no build order — so a person reads a rollback from the two releases it states.
 
 compile reads the instance, its release, the app record (one per app: its team) and the platform profile;
 the app record is required for delivery, because the namespace team label is the app's fact. Input files are

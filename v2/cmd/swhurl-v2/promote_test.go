@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func promoteTree(t *testing.T) string {
 // promote runs the command against one tree; the expectation is production's own revision unless a test says otherwise.
 func promote(t *testing.T, root string, extra ...string) (int, promoteDocument, string, *filestest.Fake) {
 	t.Helper()
-	if len(extra) == 0 {
+	if !slices.Contains(extra, "--expect") {
 		// The revision the caller reviewed is production's, as the tree holds it now.
 		revision := "inst-sha256:" + strings.Repeat("0", 64)
 		if recorded, err := os.ReadFile(filepath.Join(root, recordsFixture, "prod", "instance.json")); err == nil {
@@ -51,7 +52,7 @@ func promote(t *testing.T, root string, extra ...string) (int, promoteDocument, 
 				revision = string(computed)
 			}
 		}
-		extra = []string{"--expect", revision}
+		extra = append(extra, "--expect", revision)
 	}
 	writer := filestest.New()
 	var stdout, diagnostic bytes.Buffer
@@ -99,6 +100,43 @@ func TestPromoteMovesProductionToStagingsRelease(t *testing.T) {
 	if !strings.Contains(string(writer.Contents["v2-apps/instances/demo-orders/prod/helmrelease.json"]),
 		candidate.Artifact.Digest) {
 		t.Error("the compiled production HelmRelease does not name the promoted digest")
+	}
+}
+
+// A promotion compiles production from the allocation only when the document records a grant for production, which
+// is render's and deploy's rule too: the allocation keeps a port for an instance whose records are gone, and a port
+// with nothing to reach must not put that instance behind the proxy. Before this rule promotion passed the document
+// whole, so a promoted worker gained proxy variables and a policy rule the next whole-tree render removed.
+func TestPromoteGivesProductionTheAllocationOnlyWhenItGrantsSomething(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		grants      []string
+		expectProxy bool
+	}{
+		{"a port with nothing to reach stays unused", []string{}, false},
+		{"a granted host puts production behind the proxy", []string{"example.com:443"}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			allocation := filepath.Join(t.TempDir(), "allocation.json")
+			document := map[string]any{"kind": "v2-egress", "version": 1, "revision": strings.Repeat("c", 40),
+				"instances": []map[string]any{{"application": recordsFixture, "environment": "prod",
+					"port": 30107, "grants": test.grants}}}
+			data, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(allocation, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			status, _, diagnostic, writer := promote(t, promoteTree(t), "--egress", allocation)
+			if status != 0 {
+				t.Fatalf("exit %d: %s", status, diagnostic)
+			}
+			helmrelease := string(writer.Contents["v2-apps/instances/demo-orders/prod/helmrelease.json"])
+			if got := strings.Contains(helmrelease, "HTTP_PROXY"); got != test.expectProxy {
+				t.Fatalf("HTTP_PROXY present: %v, want %v", got, test.expectProxy)
+			}
+		})
 	}
 }
 

@@ -12,12 +12,14 @@ import (
 )
 
 // compiledDatabase is the CLI's compilation of the SQLite fixture, allocated at v1's port for that
-// instance, with each file's document.
+// instance and granted the profile's backup host, as the allocation gives a database, with each file's
+// document.
 func compiledDatabase(t *testing.T) map[string]map[string]any {
 	t.Helper()
 	allocation := filepath.Join(t.TempDir(), "egress.json")
 	document := `{"kind":"v2-egress","version":1,"revision":"` + strings.Repeat("b", 40) +
-		`","instances":[{"application":"demo-orders","environment":"staging","port":30102,"grants":[]}]}`
+		`","instances":[{"application":"demo-orders","environment":"staging","port":30102,` +
+		`"grants":["swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"]}]}`
 	if err := os.WriteFile(allocation, []byte(document), 0o600); err != nil {
 		t.Fatal(err)
 	}

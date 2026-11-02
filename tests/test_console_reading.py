@@ -224,6 +224,7 @@ class AppFileTests(unittest.TestCase):
             'v2-records/other/app.json': '{"schemaVersion": 1, "application": "other", "team": "demo"}',
             'v2-records/other/prod/instance.json': '{"schemaVersion": 1, "application": "other", "environment": "prod", "allows": ["web"]}',
             'v2-records/other/prod/release.json': OWNED_RELEASE,
+            'apps/teams.yaml': 'teams:\n  demo: {}\n',  # the Change team form's choices
         }
         asked = []
         heads = []

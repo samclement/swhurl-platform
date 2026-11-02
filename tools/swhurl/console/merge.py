@@ -344,6 +344,13 @@ def v2_allow_settings(form: Mapping[str, str]) -> tuple[str, ...]:
     return (f'allows={",".join(allows)}',)
 
 
+def v2_team_settings(form: Mapping[str, str]) -> tuple[str, ...]:
+    team = form.get('team', '').strip()
+    if not records.NAME_RE.fullmatch(team):
+        raise ActionError('choose the team that owns the app')
+    return (f'team={team}',)
+
+
 def v2_remove_commands(app: str, env: str, _form: Mapping[str, str]) -> tuple[Command, ...]:
     return (Command('remove', tuple(v2.remove_argv(app, env)), tool='v2'),
             Command('render', tuple(v2.render_argv()), tool='v2'))
@@ -491,6 +498,11 @@ ACTIONS.update({
                        lambda app, env, form: v2_commands(app, env, v2_allow_settings(form)),
                        manual_inputs, manual_held, 'apps: change who may call {name}/{env}', kind='instance',
                        gated=False, keeps='AMD'),
+    # The team is the app's: the edit names no environment and rewrites both, whichever page it was asked from.
+    'v2-team': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path, envs=('staging', 'prod')),
+                      lambda app, _env, form: v2_commands(app, '', v2_team_settings(form)),
+                      manual_inputs, manual_held, 'apps: change the team of {name}', kind='instance',
+                      gated=False, keeps='AMD'),
     'v2-remove': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
                         v2_remove_commands, manual_inputs, manual_held, 'apps: remove {name}/{env}',
                         kind='instance', gated=False, keeps='AMD'),

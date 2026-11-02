@@ -20,7 +20,7 @@ import yaml
 
 from swhurl import platform, yamlio
 from swhurl.apps import channels
-from swhurl.apps.contract import TEAMS_FILE
+from swhurl.apps.contract import TEAMS_FILE, registered_teams
 from swhurl.console import merge
 from swhurl.console.actions import ActionError
 from swhurl.console.merge import REFUSAL, REFUSAL_LIMIT
@@ -40,12 +40,11 @@ def platform_teams(runner: Runner, github: GitHub) -> dict[str, str]:
     api = GitHubAPI(runner, github)
     try:
         listing = api.json('GET', f'/contents/{TEAMS_FILE.as_posix()}?ref={BASE}')
-        registered = (yamlio.load(base64.b64decode(listing.get('content', ''))) or {}).get('teams') or {}
+        return registered_teams(base64.b64decode(listing.get('content', '')))
     except (ValueError, AttributeError, yaml.YAMLError) as error:
         raise ActionError(f'cannot read {TEAMS_FILE}: {error}') from None
     finally:
         api.client.close()
-    return {str(name): (entry or {}).get('description', '') for name, entry in registered.items()}
 
 
 @dataclass(frozen=True)

@@ -38,10 +38,13 @@ OTHER_APP = json.dumps({**json.loads(APP), 'application': 'other', 'team': 'paym
 PROD_INSTANCE = json.dumps({**json.loads(INSTANCE), 'environment': 'prod'})
 PROD_RELEASE = json.dumps({**json.loads(RELEASE), 'artifact': {'image': 'ghcr.io/x/hello', 'digest': 'sha256:0'}})
 
+TEAMS = 'teams:\n  demo:\n    description: The demo apps\n  payments: {}\n'
+
 RECORDS = {'v2-records/hello/app.json': APP, 'v2-records/hello/staging/instance.json': INSTANCE,
            'v2-records/hello/staging/release.json': RELEASE, 'v2-records/hello/prod/instance.json': PROD_INSTANCE,
            'v2-records/hello/prod/release.json': PROD_RELEASE, 'v2-records/other/app.json': OTHER_APP,
-           'v2-records/other/staging/instance.json': OTHER, 'v2-records/other/staging/release.json': OTHER_RELEASE}
+           'v2-records/other/staging/instance.json': OTHER, 'v2-records/other/staging/release.json': OTHER_RELEASE,
+           'apps/teams.yaml': TEAMS}
 
 
 def records(extra=None):
@@ -94,6 +97,14 @@ class PageTests(unittest.TestCase):
         self.assertIn('action="/apps/hello/staging/remove"', text)
         self.assertIn('<button class="danger" disabled>', text, 'no GitHub token: the button is not usable')
         self.assertIn('href="/apps/hello/staging/promotion"', text)
+
+    def test_the_team_form_offers_the_registered_teams_and_marks_the_current_one(self):
+        text = self.page()
+        self.assertIn('action="/apps/hello/staging/team"', text)
+        self.assertIn('value="payments" required >', text)
+        self.assertIn('value="demo" required checked disabled>', text)
+        text = client(running(), documents=records({'apps/teams.yaml': None})).get('/apps/hello/staging', headers=WHO).text
+        self.assertIn('apps/teams.yaml is not in Git', text)
 
     def test_what_it_declares_is_a_row_with_why_it_is_not_connected_yet(self):
         text = self.page()
@@ -223,6 +234,7 @@ class RouteTests(unittest.TestCase):
             '/apps/hello/staging/expose': ({'exposure': 'private'}, 'v2-expose', ['edit', 'render']),
             '/apps/hello/staging/disconnect': ({'role': 'calls', 'app': 'other'}, 'v2-disconnect', ['edit', 'render']),
             '/apps/hello/staging/allow': ({'add': 'someone-else'}, 'v2-allow', ['edit', 'render']),
+            '/apps/hello/staging/team': ({'team': 'payments'}, 'v2-team', ['edit', 'render']),
             '/apps/hello/staging/remove': ({}, 'v2-remove', ['remove', 'render']),
             '/apps/hello/staging/promote': ({'image': 'ghcr.io/x/hello@sha256:1'}, 'v2-promote', ['promote', 'render']),
         }
@@ -248,6 +260,28 @@ class RouteTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertIn(message, response.text)
                 self.assertEqual(captured, [])
+
+    def test_a_team_change_names_no_environment_and_only_a_registered_new_team(self):
+        response, captured = self.post('/apps/hello/prod/team', {'team': 'payments'})
+        self.assertEqual(response.status_code, 303, response.text)
+        argv = captured[0][1][0].argv
+        self.assertIn('team=payments', argv)
+        self.assertFalse([arg for arg in argv if arg.startswith('--env')], "the team is the app's, not one environment's")
+        for form, message in (({'team': 'nobody'}, 'choose a registered team: one of demo, payments'),
+                              ({'team': 'demo'}, 'hello already belongs to demo'),
+                              ({}, 'choose a registered team')):
+            with self.subTest(form=form):
+                response, captured = self.post('/apps/hello/staging/team', form)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.text)
+                self.assertEqual(captured, [])
+
+    def test_a_team_change_may_carry_both_environments_and_a_scale_only_its_own(self):
+        prod = 'v2-apps/instances/hello/prod/helmrelease.json'
+        self.assertTrue(merge.ACTIONS['v2-team'].owns('hello', 'staging', prod))
+        self.assertTrue(merge.ACTIONS['v2-team'].owns('hello', 'staging', 'v2-records/hello/app.json'))
+        self.assertFalse(merge.ACTIONS['v2-team'].owns('hello', 'staging', 'v2-records/other/app.json'))
+        self.assertFalse(merge.ACTIONS['v2-scale'].owns('hello', 'staging', prod))
 
     def test_expose_refuses_a_host_and_an_unknown_v2_fact(self):
         response, captured = self.post('/apps/hello/staging/expose', {'exposure': 'public', 'host': 'hello.example.com'})

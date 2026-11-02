@@ -110,7 +110,13 @@ func TestMigrateReproducesCommittedInstances(t *testing.T) {
 		folder := filepath.Dir(instancePath)
 		segments := strings.Split(filepath.ToSlash(folder), "/")
 		application, environment := segments[len(segments)-2], segments[len(segments)-1]
-		frozen := filepath.Join("..", "..", "testdata", "legacy", application, environment, "migrated")
+		predecessorRecords := filepath.Join("..", "..", "testdata", "legacy", application, environment)
+		if _, err := os.Stat(predecessorRecords); os.IsNotExist(err) {
+			// The app was created by v2 (`create`), so it never had a predecessor's records to migrate: there is no
+			// translation to reproduce, and TestOwnedInstancesRecompileFromGit checks what it holds now.
+			continue
+		}
+		frozen := filepath.Join(predecessorRecords, "migrated")
 		committedRecord, committedInstance := readFile(t, filepath.Join(frozen, "instance.json")),
 			readFile(t, filepath.Join(frozen, "release.json"))
 		// The pair has moved on when either record Git holds is not the migrated one: a new release selected, or

@@ -52,11 +52,16 @@ spec:
         # made per trace, so a kept trace is whole); raise the ratio to look closer at HyperDX itself.
         OTEL_TRACES_SAMPLER: parentbased_traceidratio
         OTEL_TRACES_SAMPLER_ARG: "0.1"
+        # The collector also reads this ConfigMap. Each batch it flushes becomes a ClickHouse part, and with
+        # few parts in a daily partition the merge selector rewrites the day's growing part (1M+ metric rows)
+        # every five new parts. Flushing every 30 s instead of 5 s cuts those rewrites about fivefold, for
+        # telemetry that arrives up to 30 s later.
+        HYPERDX_OTEL_BATCH_TIMEOUT: 30s
       deployment:
         # The chart does not restart the app when hyperdx.config changes (no checksum) and Reloader does not
         # watch observability: change this value with any change to hyperdx.config to roll the pod from Git.
         podAnnotations:
-          platform.swhurl.com/config-revision: "1"
+          platform.swhurl.com/config-revision: "2"
       ingress:
         enabled: true
         annotations:

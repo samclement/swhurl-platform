@@ -31,7 +31,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   grant (`allocatedFor`), so it put this worker behind the proxy — proxy variables and a NetworkPolicy rule — which
   `make v2-render` then removed; the documented invocation omitted `--egress`. (2) is **fixed the same day** in
   `orchestration.egressOf` ([record](v2-status.md#slice-record-a-promotion-takes-only-a-granted-allocation-2-november-2026));
-  (1) stays in the [gap list](iteration-2-plan.md#6-deliberately-deferred).
+  (1) is closed by a one-way conversion of the old record, not a reader ([decision](v2-status.md#decisions)).
 - **Not exercised:** a rollback of production that retains data across the boundary (this instance has no database),
   the console's promotion path for a rollback (the CLI ran it, so the held-PR rule was not seen in a browser), and a
   rollback to an image that states declaration label version 2 (no app has published a second such image yet).

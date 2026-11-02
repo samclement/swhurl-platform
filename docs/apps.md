@@ -832,7 +832,27 @@ Production gets independent, initially empty storage. Startup applies database m
 
 To guard the exact production you reviewed, pass production's own instance revision (`swhurl-v2 instance-revision v2-records/<app>/prod/instance.json`): a record that moved since is refused rather than overwritten. `--expect` is an instance revision, not a commit.
 
-**A rollback is a promotion of an older release**, and v2 needs no separate command for it. Point staging at the older release (`swhurl-v2 select-release` with its record, then `make v2-render`), promote as above, and merge; v2 states staging's release and production's before it and decides no direction, because a release states no build order. The refusals stand: a rollback that would change production's database or its running user is refused, and database migrations are not reversed. Choosing an older release is still a hand step — as selecting any new image is — and today it is also a small translation: an image built before declaration label version 2 states no documents, so its release record is written in the current shape from what that image's record and offers already stated ([how one rollback was stated](v2-status.md#slice-record-a-live-rollback-swhurl-try-30-2-november-2026)). A promotion reads `--egress` exactly as a delivery does: the document is given whole and production takes it only when the allocation records a grant for it, so a port with nothing behind it changes nothing and a database still needs its backup grant.
+### Roll back to an older release
+
+**A rollback is a promotion of an older release**, and v2 needs no separate command for it. Point staging at the older release (`swhurl-v2 select-release` with its record, then `make v2-render`), promote as above, and merge; v2 states staging's release and production's before it and decides no direction, because a release states no build order. The refusals stand: a rollback that would change production's database or its running user is refused, and database migrations are not reversed. Choosing an older release is still a hand step — as selecting any new image is. A promotion reads `--egress` exactly as a delivery does: the document is given whole and production takes it only when the allocation records a grant for it, so a port with nothing behind it changes nothing and a database still needs its backup grant.
+
+**A release from before declaration label version 2 is converted once, not read.** An image built before 1 November 2026 states label version 1, which v2 refuses, and the record it ran with states the commit its documents were read at (`offers`) where v2 states the roles they fill (`documents`). v2's records keep one shape, so convert that record in the tree instead of adding a reader for the old one — the record is data, and after this conversion nothing holds the old shape:
+
+```bash
+old=<the commit whose release you are restoring>; folder=v2-records/<app>/<env>
+git checkout "$old" -- "$folder/offers" && rm -f "$folder/offers/source.yaml"
+git show "$old:$folder/release.json" \
+  | jq 'del(.offers, .releaseId) | .documents = ["events", "flags"]' > "$folder/release.json"
+id=$(swhurl-v2 release-id "$folder/release.json")   # refuses what the record cannot carry, and computes its identity
+jq --arg id "$id" '.releaseId = $id' "$folder/release.json" > /tmp/release.json
+mv /tmp/release.json "$folder/release.json"
+swhurl-v2 select-release --instance "$folder/instance.json" --release "$folder/release.json" \
+  --expect "$(swhurl-v2 instance-revision "$folder/instance.json")" > /tmp/instance.json
+mv /tmp/instance.json "$folder/instance.json"
+make v2-render
+```
+
+`documents` names the roles the old offers folder holds: `openapi.json` is `api`, `asyncapi.yaml` is `events`, `flags.json` is `flags` (the folder's old `source.yaml` index names the same, and is not a document). The conversion is needed only while an app's previous image predates label version 2; after its next image every release the records state has the current shape. On `swhurl-try-30`'s `25-9e2b082` record it reproduces `rel-sha256:8ce8ff7f…`, the identity `57c76acb` gave that release ([the record](v2-status.md#slice-record-a-live-rollback-swhurl-try-30-2-november-2026)).
 
 It takes the release staging selects into production's record pair and files, and nothing else: production's replicas, exposure, calls, subscriptions and volume stay its own. It refuses a release staging does not select, a user change on an instance with a volume, a stale expectation, and anything the compiler refuses. v2 has no promotion gate: check staging first (`make app-status`, `swhurl-v2 observe`).
 

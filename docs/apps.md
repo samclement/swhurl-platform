@@ -816,7 +816,7 @@ Try staging, then run **in your own terminal**:
 
 ```bash
 swhurl-v2 promote --records v2-records --app <app> --env prod \
-  --profile v2/testdata/profile.json \
+  --profile v2/testdata/profile.json --egress platform/egress/allocation.json \
   --expect "$(swhurl-v2 instance-revision v2-records/<app>/prod/instance.json)" --out .
 make check
 git add v2-records v2-apps clusters/home && git commit -m "apps: promote <app> to prod" && git push
@@ -832,7 +832,7 @@ Production gets independent, initially empty storage. Startup applies database m
 
 To guard the exact production you reviewed, pass production's own instance revision (`swhurl-v2 instance-revision v2-records/<app>/prod/instance.json`): a record that moved since is refused rather than overwritten. `--expect` is an instance revision, not a commit.
 
-**A rollback is a promotion of an older release**, and v2 needs no separate command for it. Point staging at the older release (`swhurl-v2 select-release` with its record, then `make v2-render`), promote as above, and merge; v2 states staging's release and production's before it and decides no direction, because a release states no build order. The refusals stand: a rollback that would change production's database or its running user is refused, and database migrations are not reversed. Choosing an older release is still a hand step — as selecting any new image is — and today it is also a small translation: an image built before declaration label version 2 states no documents, so its release record is written in the current shape from what that image's record and offers already stated ([how one rollback was stated](v2-status.md#slice-record-a-live-rollback-swhurl-try-30-2-november-2026)). Do not give `promote` `--egress` unless the instance's allocation records a grant: it compiles production with the document whole, unlike the whole-tree render.
+**A rollback is a promotion of an older release**, and v2 needs no separate command for it. Point staging at the older release (`swhurl-v2 select-release` with its record, then `make v2-render`), promote as above, and merge; v2 states staging's release and production's before it and decides no direction, because a release states no build order. The refusals stand: a rollback that would change production's database or its running user is refused, and database migrations are not reversed. Choosing an older release is still a hand step — as selecting any new image is — and today it is also a small translation: an image built before declaration label version 2 states no documents, so its release record is written in the current shape from what that image's record and offers already stated ([how one rollback was stated](v2-status.md#slice-record-a-live-rollback-swhurl-try-30-2-november-2026)). A promotion reads `--egress` exactly as a delivery does: the document is given whole and production takes it only when the allocation records a grant for it, so a port with nothing behind it changes nothing and a database still needs its backup grant.
 
 It takes the release staging selects into production's record pair and files, and nothing else: production's replicas, exposure, calls, subscriptions and volume stay its own. It refuses a release staging does not select, a user change on an instance with a volume, a stale expectation, and anything the compiler refuses. v2 has no promotion gate: check staging first (`make app-status`, `swhurl-v2 observe`).
 

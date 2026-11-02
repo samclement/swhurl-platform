@@ -74,14 +74,14 @@ func (c cli) deployRecords(r request) int {
 	if status != 0 {
 		return status
 	}
-	egress, allocation, status := c.recordsEgress(r)
+	egress, status := c.recordsEgress(r)
 	if status != 0 {
 		return status
 	}
 	document := deployRecordsDocument{Kind: recordsKind, Version: 1, Records: r.records,
 		Instances: make([]deployRecordsEntry, 0, len(instances)), Note: recordsNote}
 	for _, one := range instances {
-		entry := c.deployOne(r, one, profile, calls, egress, allocation)
+		entry := c.deployOne(r, one, profile, calls, egress)
 		document.Instances = append(document.Instances, entry)
 		fmt.Fprintf(c.diagnostic, "%s/%s: %s %s\n", entry.Application, entry.Environment, entry.Outcome, detail(entry))
 	}
@@ -96,10 +96,9 @@ func (c cli) deployRecords(r request) int {
 	return recordsStatus(document.Instances)
 }
 
-// deployOne runs one delivery: the registry its image is published to, its allocation when the allocation records
-// a grant for it, and the decisions the single-instance command makes.
-func (c cli) deployOne(r request, one recordInstance, profile, calls, egress []byte,
-	allocation *kernel.EgressDocument) deployRecordsEntry {
+// deployOne runs one delivery: the registry its image is published to, the allocation document the use case gives
+// the instance only a granted place out of, and the decisions the single-instance command makes.
+func (c cli) deployOne(r request, one recordInstance, profile, calls, egress []byte) deployRecordsEntry {
 	entry := deployRecordsEntry{Application: one.application, Environment: one.environment}
 	images, err := c.registries(one.image)
 	if err != nil {
@@ -107,7 +106,7 @@ func (c cli) deployOne(r request, one recordInstance, profile, calls, egress []b
 		return entry
 	}
 	inputs := orchestration.DeployInputs{Instance: one.instance, Release: one.release, App: one.app,
-		Profile: profile, Calls: calls, Egress: allocatedFor(allocation, egress, one), Expected: one.revision}
+		Profile: profile, Calls: calls, Egress: egress, Expected: one.revision}
 	result, err := orchestration.DeployImage(context.Background(), inputs, images, r.out, c.writer)
 	entry.Files = result.Written
 	switch {
@@ -124,37 +123,20 @@ func (c cli) deployOne(r request, one recordInstance, profile, calls, egress []b
 	return entry
 }
 
-// allocatedFor is whether an instance is compiled behind the proxy. The allocation document is given whole to
-// every instance, and an instance takes it only when the document records something that instance may reach: a
-// port kept for an instance with nothing to reach is not a reason to put it behind the proxy, and a database's
-// backup grant is what makes it use one. An instance whose release keeps a database and whose allocation records
-// no grant is refused by the compiler rather than passed silently.
-func allocatedFor(allocation *kernel.EgressDocument, egress []byte, one recordInstance) []byte {
-	if allocation == nil {
-		return nil
-	}
-	own, err := allocation.EgressOf(one.application, one.environment)
-	if err != nil || len(own.Grants) == 0 {
-		return nil
-	}
-	return egress
-}
-
-// recordsEgress reads the allocation once: the decoded document decides each instance, and the bytes are what a
-// delivery compiles with.
-func (c cli) recordsEgress(r request) ([]byte, *kernel.EgressDocument, int) {
+// recordsEgress reads the allocation once, so a malformed document refuses the whole run instead of being
+// discovered instance by instance. Which instances may take it is the use case's rule.
+func (c cli) recordsEgress(r request) ([]byte, int) {
 	if r.egressFile == "" {
-		return nil, nil, 0
+		return nil, 0
 	}
 	egress, status := c.read(r.egressFile, "egress")
 	if status != 0 {
-		return nil, nil, status
+		return nil, status
 	}
-	decoded, err := kernel.DecodeEgressDocument(egress)
-	if err != nil {
-		return nil, nil, fail(c.diagnostic, err)
+	if _, err := kernel.DecodeEgressDocument(egress); err != nil {
+		return nil, fail(c.diagnostic, err)
 	}
-	return egress, &decoded, 0
+	return egress, 0
 }
 
 // recordsStatus is the worst outcome: an I/O or registry failure, else a refusal, else success.

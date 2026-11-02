@@ -273,6 +273,38 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
 
+## Slice record: a promotion takes only a granted allocation (2 November 2026)
+
+- **Outcome:** the rule "an instance is compiled behind the proxy only when the allocation records something that
+  instance may reach" now lives where every use case reads the document: `orchestration.egressOf` returns an
+  instance's place only when it records a grant. `render`, `deploy` (one instance and every staging one), `edit`,
+  `migrate` and `promote` share that one decision, so a promotion's output equals the whole-tree render's, and
+  `deploy_records.go`'s own copy of the rule (`allocatedFor`) is deleted. A document that does not name an instance
+  is treated like a port with nothing behind it: the instance takes none, and a database instance without a grant is
+  still refused by the compiler (`unsupported: backup.egress`), because its nightly upload must leave through the
+  proxy.
+- **What it fixes, concretely:** the live rollback's first promotion was given `--egress` and put a worker with no
+  grants behind the proxy — the variables and the policy rule that the next `make v2-render` removed. The documented
+  invocation instead omitted the document, which is a refusal for a production that keeps a database. Neither is a
+  choice now: the same document gives the same files, with or without `--egress`, and the console's promotion (which
+  always passes it) can no longer drift from the render that follows it.
+- **Owners and boundaries.** The allocation stays the platform's document; the one decision about which instance may
+  take its place is the use case's, and the commands pass the bytes whole. The compiler keeps the refusal of a
+  database with no way out, so the rule has one place per layer rather than one per command.
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 is untouched. 2. `kernel` is
+  untouched: the rule moved between the use case and the commands, not into the pure model. 3. No golden byte or
+  identity changed; `make check-v2` re-renders the same 208 files. 4. No refusal code changed — a database without a
+  grant is still `unsupported: backup.egress`; the one test that hand-wrote an allocation with a port and no grants
+  for a database now states the backup grant the allocator gives it. 5. Failure paths: a malformed allocation still
+  refuses a whole delivery run before any instance is attempted. 6. Scope: promotion and delivery, offline. 7.
+  Offline only: nothing was applied. 8. This page and the plan's promotion row change together.
+- **Evidence, 2 November 2026:** `go test ./...` green (20 packages). The new
+  `TestPromoteGivesProductionTheAllocationOnlyWhenItGrantsSomething` proves both branches — a port with nothing to
+  reach writes no `HTTP_PROXY`, a granted host writes it — and
+  `TestRecordsGivesAnInstanceItsAllocationOnlyWhenItGrantsSomething` still passes through the moved rule.
+- **Next:** the rollback's other defect, a release record v2 can derive for an image built before declaration label
+  version 2, is the operator's next decision.
+
 ## Slice record: a live rollback (`swhurl-try-30`, 2 November 2026)
 
 - **Outcome:** the last unexercised v2 command, `promote`, run with an **older** release. `swhurl-try-30` staging
@@ -304,19 +336,21 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   assessed scope is the throwaway's worker; a rollback that would change a database or the running user is refused by
   selection and was not applicable. 7. Offline checks are not live readiness: the live proof is the digests the pods
   ran, not `make check-v2`. 8. This page, the registry, the gap list and current state change together.
-- **Two defects the proof found, neither fixed here.** (1) **A rollback across the declaration boundary is not
+- **Two defects the proof found.** (1) **A rollback across the declaration boundary is not
   derivable:** every app's previous image is label version 1 today, so the first rollback of a real app needs the same
   hand translation, and a record that only the current image format can read would make it a command. (2) `promote`
-  given `--egress` compiles production with the whole allocation, while `render` and `deploy` pass it only when the
+  given `--egress` compiles production with the whole allocation, while `render` and `deploy` passes it only when the
   allocation records a grant for the instance (`allocatedFor`); the allocation keeps a port for an instance with
   nothing to reach, so the promotion put this worker behind the proxy (proxy variables and a NetworkPolicy rule) that
   the whole-tree render then removed. The documented invocation omits `--egress`, so the rollback's second promotion
-  was given none and its output equals the render's.
+  was given none and its output equals the render's. **Fixed the same day:** the rule now lives in `egressOf`, so
+  every use case that reads an allocation applies it ([record](#slice-record-a-promotion-takes-only-a-granted-allocation-2-november-2026)).
 - **Evidence, 2 November 2026:** `6a549014` (staging selects the older release), `a0195302` (production promoted to
   it), `916522f7` (both back on the newest image); `make check-v2` green on each; after `make flux-reconcile` the
   staging pod ran `…@sha256:7772200b…` Ready, then the production pod did, then both ran `…@sha256:10d2131f…` Ready on
   the return trip.
-- **Deferred rows touched:** the gap list's promotion row gains the live rollback and the two defects.
+- **Deferred rows touched:** the gap list's promotion row gains the live rollback and the two defects; one of them
+  closed the same day ([record](#slice-record-a-promotion-takes-only-a-granted-allocation-2-november-2026)).
 - **Next gate:** M14 (`interface.py` coverage), then the endstate commit that flips this workstream to `done`.
 
 ## Slice record: `create` (offline, 1 November 2026)

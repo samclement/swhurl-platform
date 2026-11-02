@@ -24,12 +24,14 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **What the command decided and what it did not:** staging's release reached production with production's
   configuration, grants, calls, storage and broker identity unchanged; the direction is a person's reading, because a
   release states no build order.
-- **Two defects the proof found, neither fixed here:** (1) a rollback to an image built before declaration label
+- **Two defects the proof found:** (1) a rollback to an image built before declaration label
   version 2 needs its release record hand-written in the current shape, since neither the image's label nor the
   record that first selected it decodes today, and every app's previous image is version 1; (2) `promote --egress`
-  compiles production with the whole allocation while `render` and `deploy` pass it only when the allocation records a
+  compiled production with the whole allocation while `render` and `deploy` pass it only when the allocation records a
   grant (`allocatedFor`), so it put this worker behind the proxy — proxy variables and a NetworkPolicy rule — which
-  `make v2-render` then removed; the documented invocation omits `--egress`. Both are in the [gap list](iteration-2-plan.md#6-deliberately-deferred).
+  `make v2-render` then removed; the documented invocation omitted `--egress`. (2) is **fixed the same day** in
+  `orchestration.egressOf` ([record](v2-status.md#slice-record-a-promotion-takes-only-a-granted-allocation-2-november-2026));
+  (1) stays in the [gap list](iteration-2-plan.md#6-deliberately-deferred).
 - **Not exercised:** a rollback of production that retains data across the boundary (this instance has no database),
   the console's promotion path for a rollback (the CLI ran it, so the held-PR rule was not seen in a browser), and a
   rollback to an image that states declaration label version 2 (no app has published a second such image yet).

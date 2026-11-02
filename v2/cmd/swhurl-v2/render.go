@@ -126,8 +126,7 @@ func (c cli) renderTree(r request, revision string) (rendering, int) {
 	}
 	for _, one := range folders {
 		inputs := orchestration.Inputs{Instance: one.instance, Release: one.release, App: one.app, Profile: profileData,
-			Calls: calls, Egress: allocatedFor(&rendered.allocation, egress, recordInstance{application: one.application,
-				environment: one.environment}), EventsSecret: one.secret, Offers: one.offers}
+			Calls: calls, Egress: egress, EventsSecret: one.secret, Offers: one.offers}
 		written, err := instanceRender(inputs)
 		if err != nil {
 			return rendering{}, fail(c.diagnostic, fmt.Errorf("%s/%s: %w", one.application, one.environment, err))

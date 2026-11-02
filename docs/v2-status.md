@@ -216,6 +216,23 @@ Of the phase-1 review's findings, the coexistence check's blind spots are delibe
 
 ## Decisions
 
+**2 November 2026 — a release from before label version 2 is converted once, and v2 gains no reader for it (worked,
+offline).** The live rollback left one gap: rolling back to an image built before 1 November 2026 needs a release
+record in the current shape, and neither the image's label (version 1) nor the record it ran with (`offers` instead
+of `documents`) is one v2 reads. The operator chose one-way conversion over a translation layer: v2's decoders keep
+one shape, and the record is converted in the tree when it is needed — the old record's fields plus the roles its
+offers folder holds, validated by `release-id`, which computes the identity, then selected and rendered as any
+release is. It is not a command because the window closes itself: after each app's next image, every release the
+records state has the current shape, so a converter would be a permanent reader for a schema v2 will not write
+again. Teaching `DecodeRelease` or `DecodeDeclaration` the old shape was rejected for the same reason and because a
+version 1 label states no documents, description or API path at all, so a release derived from one would silently
+drop what the app offers. **Verified 2 November 2026:** converting `swhurl-try-30`'s `25-9e2b082` record (the record
+at `1d041e97` plus the offers folder at that commit) reproduces `rel-sha256:8ce8ff7f…`, the identity `57c76acb` gave
+that release, and the decoder refuses a roles list the record cannot carry (a publication without `events`, an API
+path without `api`, a role it does not name) — [recipe](apps.md#roll-back-to-an-older-release),
+[defect record](#slice-record-a-live-rollback-swhurl-try-30-2-november-2026). What reopens it: a rollback that must
+run without a person, or a second record-schema change whose old shape must stay readable.
+
 **31 October 2026 — a migration states the platform's digest, not the reference its record kept (approved: option 1).** A
 predecessor's record keeps the digest v1's image automation selected, and for a multi-platform build that is its
 **index**'s; v2's release states the `linux/amd64` manifest the cluster runs. `migrate` now reads that manifest from the
@@ -338,7 +355,8 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   ran, not `make check-v2`. 8. This page, the registry, the gap list and current state change together.
 - **Two defects the proof found.** (1) **A rollback across the declaration boundary is not
   derivable:** every app's previous image is label version 1 today, so the first rollback of a real app needs the same
-  hand translation, and a record that only the current image format can read would make it a command. (2) `promote`
+  hand translation, and a record that only the current image format can read would make it a command. **Decided the
+  same day: no reader; the record is converted once, as data** ([decision](#decisions), [recipe](apps.md#roll-back-to-an-older-release)). (2) `promote`
   given `--egress` compiles production with the whole allocation, while `render` and `deploy` passes it only when the
   allocation records a grant for the instance (`allocatedFor`); the allocation keeps a port for an instance with
   nothing to reach, so the promotion put this worker behind the proxy (proxy variables and a NetworkPolicy rule) that

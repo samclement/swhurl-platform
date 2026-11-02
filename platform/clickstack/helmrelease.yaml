@@ -95,6 +95,20 @@ spec:
       spec:
         statefulSet:
           spec:
+            template:
+              spec:
+                containers:
+                  # The operator's default 500M limit OOM-killed mongod three times in 34 days, once while
+                  # HyperDX and its collector restarted. WiredTiger sizes its cache from this limit (256 MB at
+                  # both), so the rest is headroom for connections and queries.
+                  - name: mongod
+                    resources:
+                      requests:
+                        cpu: 500m
+                        memory: 400M
+                      limits:
+                        cpu: "1"
+                        memory: 1Gi
             volumeClaimTemplates:
               # Irreplaceable (team, users, sources): the volume outlives its claim.
               - metadata:

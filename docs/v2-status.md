@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: one live rollback (a promotion of an older release), the last unexercised v2 command, then the endstate commit flips this workstream to `done`
+Gate: M14 (`interface.py` coverage), then the endstate commit that flips this workstream to `done`
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -159,7 +159,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | Calls | Consent decided purely, a pair rendered both ways, delivery wired (`resolve` → `compile --calls`), the keys rendered once for every managed namespace, and the auth material reaching a callee only as files its image re-reads | **Done, proved live**: the pair (26 Oct), and on 29 Oct a new caller and a key rotation each taking effect in the running pod with **no restart** |
 | Storage | A retained volume, one writer, and a namespace removal cannot prune | **Done, proved live** |
 | Backup | A nightly job per database that leaves through the proxy and cannot be lost to removal or quota | **Done and proved live 27 October 2026**: the job, its archive, the restore v2 performs — the plan, the Secret, the Job, the sequence with its undo, the report — and one real restore of `swhurl-try-10` staging in 30 seconds |
-| Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Done live 30 October 2026**: `swhurl-try-11` production was migrated to v2 and promoted from its v1 digest to its staging's release; `make app-status` and `observe` agree, and a repeat promotion is a no-op. A first promotion (creating production) is still not modelled, a rollback's direction is stated rather than decided, and v1 callees no longer admit the migrated caller. Both instances were removed on 31 October 2026; the record of what they proved stands | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
+| Promotion | A v2-owned staging instance's release reaches its v2-owned production, with production's own facts intact | **Done live 30 October 2026**: `swhurl-try-11` production was migrated to v2 and promoted from its v1 digest to its staging's release; `make app-status` and `observe` agree, and a repeat promotion is a no-op. A first promotion (creating production) is still not modelled, a rollback's direction is stated rather than decided, and v1 callees no longer admit the migrated caller. Both instances were removed on 31 October 2026; the record of what they proved stands. **A rollback, live 2 November 2026:** `swhurl-try-30` staging selected the release built from the commit tag `25-9e2b082` and production was promoted to it from `sha256:10d2131f…`, then both were returned to the newest image, so `promote` has now run in both directions and every v2 command has run live | [first promotion](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [rollback](#slice-record-a-live-rollback-swhurl-try-30-2-november-2026), [evidence](current-state.md#a-rollback-exercised-live-2-november-2026) |
 | What an app offers | A release states its own description, API path and which document roles it carries; an instance renders them and carries the documents | **Done and live 1 November 2026**: the documents travel in the image's own declaration label at version 2, a release's `documents` are the roles it carries and the commit is the image's `source.commit`; both templates pin the platform that writes it, the six app repositories publish such images, every staging instance and the four productions run them, and the console reads a role by its fixed name with no `source.yaml` and no v1 record branch | [offline half](#slice-record-the-declaration-travels-with-the-image-offline-half-1-november-2026), [live half](#slice-record-the-app-repositories-take-version-2-and-the-four-productions-follow-1-november-2026), [evidence](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
 | Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **1a done, and 1b's migrations done 31 October 2026**: the nine staging instances are v2's — records, compiled files and units, one writer per instance — and a migrated record states the platform's manifest digest, read from the registry rather than copied from the predecessor; all four production instances are v2's too, `demo-orders` and `demo-shop` moved together because one calls the other, with their retained claims adopted by name and production's bare host restored in `kernel.routeHost`; v1's writer is **deleted** (phase 3, 31 October 2026): its instance commands, modules and tests are gone, `resolve` reads one record shape, and Activity reads v2's tree — [record](#slice-record-the-cutover-reaches-production-four-instances-31-october-2026), [1a record](#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
 | The v2-only checks | `make check` and `verify-platform` read v2's tree, so no check keeps a v1 record alive | **Done 31 October 2026** (phase 4): `check-apps` is v2's render check plus the team registry, the notify routes and the template fixtures' policy; `verify-platform` reads `v2-apps/` and the egress allocation and its v1 branch is deleted; `apps/signing-keys.json` is gone, so the profile's `auth` block is the one source of the signing keys — [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026), [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
@@ -272,6 +272,52 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 **25 October 2026 — the backup job: six decisions, all as proposed ("go").** A database instance renders its own backup — the Secret holding two *references* to the upload key, the nightly CronJob, and a policy for the pod that reaches S3 — from a new `PlatformProfile.backup` block (image and digest, S3 prefix, age recipient, writer Secret, `suspended`); Flux substitution stays the credential mechanism, with a rule that no other `${…}` may appear in a substituted instance's documents; the backup pod is the instance's second workload, so it gets the platform's narrow policy and the quota counts it; the schedule keeps v1's derivation, so a migration keeps its slot; restore and freshness are not modelled. [The slice](iteration-2-plan.md#sqlite-backup-egress-part-three-decision-brief-and-implementation-25-october-2026). What reopens it: v2 owning secret material, or a second workload with different needs.
 
 **25 October 2026 — the first delivery slice approved and implemented offline:** the [delivery slice](iteration-2-plan.md#first-delivery-slice-implemented-offline-25-october-2026-operator-run) — deny-all egress, a bounded `compile --out DIR`, and the unit written where kustomize can see it. Its contract, acceptance per invariant and the costs taken are on that page. **The live half has not run:** no instance has been compiled into the repository, and nothing has reached the cluster.
+
+## Slice record: a live rollback (`swhurl-try-30`, 2 November 2026)
+
+- **Outcome:** the last unexercised v2 command, `promote`, run with an **older** release. `swhurl-try-30` staging
+  selected the release built from the commit tag `25-9e2b082` (its `linux/amd64` manifest `sha256:7772200b…`) in place
+  of the newest tag `26-fd0b84a`, production was promoted to it from `sha256:10d2131f…`, and both pods ran the older digest
+  and were Ready; `make v2-deploy` then returned staging to the newest image and one more promotion returned
+  production. A rollback needs no new command and no decided direction: v2 states the two releases and a person reads
+  which is older.
+- **How the older release was stated, and why it is a hand step.** Neither derivable source is readable now: the
+  image's own declaration is label **version 1**, which `swhurl-v2 declaration` refuses (`unsupported: only version 2
+  is supported`), and the record it was first selected with (`1d041e97`) still states `offers`, which the release
+  decoder refuses (`unsupported: release: unsupported field`). The record written was the `57c76acb` translation of
+  that record — same source commit, digest read anonymously from the registry's `linux/amd64` manifest, same
+  description, same `publishes`, and `documents` `[events, flags]` from the commit its offers were read at — and its
+  `release-id` reproduced the ID `57c76acb` itself computed (`rel-sha256:8ce8ff7f…`), so the rollback states the
+  older release byte for byte rather than inventing one. `select-release --expect inst-sha256:7a32eaf6…` moved the
+  instance's `release` field and nothing else; `make v2-render` wrote the compiled file and the offers annotation.
+- **Owners and boundaries.** No code changed. The image repository owns the artifact and its declaration; the
+  registry is where the artifact claim is read; selection owns which release an instance names; promotion owns
+  copying that release into production and nothing else; a person owns the direction. The older record is the
+  operator's, written as every selected release for a new image is ([still a hand step](#slice-record-a-new-release-for-a-v2-owned-instance-swhurl-try-10-staging-v0219)).
+- **The [eight slice invariants](workstreams.md#what-a-status-page-is):** 1. v1 behaviour, files and live state are
+  unchanged: no v1 path was touched and the subject is a throwaway with no database, so no migration and no data was
+  involved. 2. Pure packages take no effects: `kernel` and `orchestration` were used as they stand. 3. Golden bytes
+  and identities are unchanged; the older record's identity is the one the platform computed at `57c76acb`, checked
+  by `release-id` before anything was written, and nothing was regenerated to pass. 4. No refusal code changed; the
+  run exercised one live refusal (a wrong `--expect` is `invalid: expected`). 5. Failure paths: a refusal writes
+  nothing, and the two live steps were verified by pod digest and readiness rather than by the commit landing. 6. The
+  assessed scope is the throwaway's worker; a rollback that would change a database or the running user is refused by
+  selection and was not applicable. 7. Offline checks are not live readiness: the live proof is the digests the pods
+  ran, not `make check-v2`. 8. This page, the registry, the gap list and current state change together.
+- **Two defects the proof found, neither fixed here.** (1) **A rollback across the declaration boundary is not
+  derivable:** every app's previous image is label version 1 today, so the first rollback of a real app needs the same
+  hand translation, and a record that only the current image format can read would make it a command. (2) `promote`
+  given `--egress` compiles production with the whole allocation, while `render` and `deploy` pass it only when the
+  allocation records a grant for the instance (`allocatedFor`); the allocation keeps a port for an instance with
+  nothing to reach, so the promotion put this worker behind the proxy (proxy variables and a NetworkPolicy rule) that
+  the whole-tree render then removed. The documented invocation omits `--egress`, so the rollback's second promotion
+  was given none and its output equals the render's.
+- **Evidence, 2 November 2026:** `6a549014` (staging selects the older release), `a0195302` (production promoted to
+  it), `916522f7` (both back on the newest image); `make check-v2` green on each; after `make flux-reconcile` the
+  staging pod ran `…@sha256:7772200b…` Ready, then the production pod did, then both ran `…@sha256:10d2131f…` Ready on
+  the return trip.
+- **Deferred rows touched:** the gap list's promotion row gains the live rollback and the two defects.
+- **Next gate:** M14 (`interface.py` coverage), then the endstate commit that flips this workstream to `done`.
 
 ## Slice record: `create` (offline, 1 November 2026)
 

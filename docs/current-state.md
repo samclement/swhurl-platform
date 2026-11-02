@@ -2,6 +2,39 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## A rollback, exercised live (2 November 2026)
+
+- **What changed:** three commits on `main`: `6a549014` made `swhurl-try-30` staging select the release built from
+  `9e2b082` instead of the newest `26-fd0b84a`, `a0195302` promoted it to production (the rollback), and `916522f7`
+  returned both to the newest image. The subject is a throwaway worker with production and no database, so no
+  migration, no volume and no data were involved.
+- **Where the older release came from:** tag `25-9e2b082`'s `linux/amd64` manifest is `sha256:7772200b…`, read
+  anonymously from GHCR. The image's own declaration is label **version 1** (`swhurl-v2 declaration` refuses it: only
+  version 2 is supported) and the record it was first selected with (`1d041e97`) states `offers`, which the release
+  decoder refuses, so the record was the `57c76acb` translation of that one: same source commit, digest, description,
+  publications and `documents` roles. Its `release-id` reproduced the ID `57c76acb` computed
+  (`rel-sha256:8ce8ff7f…`), so the older release was stated byte for byte rather than invented.
+- **Checked live:** `swhurl-v2 select-release --expect inst-sha256:7a32eaf6…` moved only staging's `release`;
+  `make v2-render` wrote one compiled file and the offers annotation. After `make flux-reconcile` the staging pod ran
+  `ghcr.io/samclement/swhurl-try-30@sha256:7772200b…` and was Ready. `swhurl-v2 promote --expect
+  inst-sha256:23d6ca1e…` (production's own instance revision) printed `prod: sha256:10d2131f… -> sha256:7772200b… at
+  9e2b0820b543` and wrote production's record pair and compiled file; after the reconcile the production pod ran the
+  older digest and was Ready. `make v2-deploy` then moved staging back to `26-fd0b84a`, one more promotion carried
+  production back, and both pods ran `sha256:10d2131f…` Ready.
+- **What the command decided and what it did not:** staging's release reached production with production's
+  configuration, grants, calls, storage and broker identity unchanged; the direction is a person's reading, because a
+  release states no build order.
+- **Two defects the proof found, neither fixed here:** (1) a rollback to an image built before declaration label
+  version 2 needs its release record hand-written in the current shape, since neither the image's label nor the
+  record that first selected it decodes today, and every app's previous image is version 1; (2) `promote --egress`
+  compiles production with the whole allocation while `render` and `deploy` pass it only when the allocation records a
+  grant (`allocatedFor`), so it put this worker behind the proxy — proxy variables and a NetworkPolicy rule — which
+  `make v2-render` then removed; the documented invocation omits `--egress`. Both are in the [gap list](iteration-2-plan.md#6-deliberately-deferred).
+- **Not exercised:** a rollback of production that retains data across the boundary (this instance has no database),
+  the console's promotion path for a rollback (the CLI ran it, so the held-PR rule was not seen in a browser), and a
+  rollback to an image that states declaration label version 2 (no app has published a second such image yet).
+  [Record](v2-status.md#slice-record-a-live-rollback-swhurl-try-30-2-november-2026).
+
 ## The console's New app is v2's, live (1 November 2026)
 
 - **What changed:** `830c6f20` moved the console's **New app** form onto `swhurl-v2 create` (then an `edit` per

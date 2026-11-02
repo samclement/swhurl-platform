@@ -17,7 +17,14 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Change:** `HYPERDX_OTEL_BATCH_TIMEOUT: 30s` in `hyperdx.config` (the collector takes `clickstack-config` as its
   environment and the batch processor reads `${env:HYPERDX_OTEL_BATCH_TIMEOUT:-5s}`), config revision 2 (`23f39769`).
   The reconcile restarted HyperDX but not the collector: its `checksum/config` covers only its own ConfigMap, so it
-  ran on without the variable. The next commit gives the collector the same `config-revision` pod annotation.
+  ran on without the variable. `c9b4bffb` gives the collector the same `config-revision` pod annotation; it rolled at
+  23:17:34 UTC with the variable set to `30s`.
+- **First six minutes:** every `otel_*` table received 2 new parts a minute (from 5.6 to 12 in the hour before),
+  `otel_metrics_sum` 2 or 3 merges, and its newest row was 7 s old. Collector logs showed one OpAMP `500` from
+  HyperDX while that restarted, nothing since.
+- **MongoDB OOM during the rollout:** `mongod` (limit 500M) was OOM-killed at 23:18:03, 30 s after the collector
+  restarted, its third restart in 34 days (the previous one 3 days earlier); a `make verify-platform` running then
+  could not read the team. It came back by itself at 178Mi and the rerun passed. Not investigated further.
 - **Not yet measured:** the effect over a full day against the figures above.
 
 ## The team commands see v2's records, and the words stop promising v1 (2 November 2026)

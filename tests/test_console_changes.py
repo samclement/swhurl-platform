@@ -585,7 +585,8 @@ class TeamsPageTests(unittest.TestCase):
         self.assertIn('Apps without a registered team', page)
         self.assertIn('<td>retired</td>', page)
         self.assertIn('<a href="/apps/ghost/staging">ghost</a>', page)
-        self.assertIn('Move its 2 app(s) to', page, 'a team with apps is deleted only by moving them')
+        self.assertIn('It owns billing, orders, so it is not deleted', page, 'a team with apps is deleted only after they name another')
+        self.assertIn('<button class="primary" disabled>', page, 'and its delete button cannot open a refused pull request')
         self.assertEqual(page.count('action="/teams/remove"'), 2, 'every team can be deleted: none is special')
         self.assertEqual(page.count('name="rename"'), 2, 'and renamed')
         self.assertNotIn('default team', page)
@@ -619,8 +620,8 @@ class TeamsPageTests(unittest.TestCase):
              ('team-edit', 'payments', '--description=Orders', '--rename=orders'), '[console] teams: change payments'),
             ('edit', {'name': 'payments', 'description': '', 'rename': ''},
              ('team-edit', 'payments', '--description='), '[console] teams: change payments'),
-            ('remove', {'name': 'payments', 'move_apps_to': 'platform'},
-             ('team-remove', 'payments', '--move-apps-to=platform'), '[console] teams: remove payments'),
+            ('remove', {'name': 'payments'},
+             ('team-remove', 'payments'), '[console] teams: remove payments'),
         )
         for action, form, command, title in cases:
             with self.subTest(action=action, form=form):
@@ -698,12 +699,13 @@ class TeamsPageTests(unittest.TestCase):
     def test_malformed_input_opens_nothing_and_a_refused_command_shows_its_words(self):
         c = self.client()
         for action, form in (('add', {'name': 'Bad Name'}), ('add', {'name': ''}), ('edit', {'name': 'a', 'rename': '--root=/'}),
-                             ('remove', {'name': 'a', 'move_apps_to': 'x y'}), ('add', {'name': 'a', 'description': 'd' * 201}),
+                             ('remove', {'name': ''}), ('add', {'name': 'a', 'description': 'd' * 201}),
                              ('explode', {'name': 'a'})):
             with self.subTest(action=action, form=form):
                 self.assertEqual(c.post(f'/teams/{action}', data=form, headers=WHO).status_code, 400)
         self.assertFalse(any(call[1:3] == ('-m', 'swhurl') for call in self.runner.calls))
-        message = '[ERROR] team payments still owns billing, orders: move them with --move-apps-to <team>'
+        message = ('[ERROR] team payments is named by billing, orders in v2-records: move them first with '
+                   'swhurl-v2 edit --set team=<another team>, then remove it')
         c = self.client()
         self.runner._rules.insert(0, ((sys.executable, '-m', 'swhurl'), Result((), 2, '', message + '\n')))
         c.post('/teams/remove', data={'name': 'payments'}, headers=WHO)

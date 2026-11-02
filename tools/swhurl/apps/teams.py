@@ -9,11 +9,13 @@
 
 A team is a name with a description: the platform.swhurl.com/team label on an app's namespaces
 (docs/apps.md#teams-and-isolation). The registry and the apps that name a team must agree, or
-make check-apps fails (rule team), so each command changes both in one Git edit:
+make check-apps fails (rule team). v2 writes those records, so these commands cannot move an app or
+rewrite a grant, and they refuse while one names the team:
 
-  - renaming a team relabels every app that belongs to it;
-  - removing a team is refused while apps belong to it, unless they are moved to another team
-    in the same change;
+  - renaming a team is refused while a v2 record names it or allows team:<name>;
+  - removing a team is refused while one does;
+
+and the refusal names the v2 edit that does it (swhurl-v2 edit --set team=… / --set allows=…).
 
 Telemetry already stored keeps the name it was written with (swhurl.team); only new data follows.
 
@@ -25,8 +27,8 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 from ruamel.yaml.comments import CommentedMap
@@ -36,12 +38,12 @@ from swhurl.apps import channels
 from swhurl.apps.contract import TEAMS_FILE
 from swhurl.apps.errors import EditError
 from swhurl.apps.model import records, write
-from swhurl.apps.model.draft import Entry
 from swhurl.apps.model.records import TEAM_GRANT
 from swhurl.apps.yaml_file import YamlFile, mapping
 from swhurl.run import CommandError, Runner
 
 MAX_DESCRIPTION = 200
+RECORDS = Path('v2-records')  # v2's records: where an app's team and every allows grant live
 
 
 def registry(root: Path) -> tuple[YamlFile, dict]:
@@ -53,6 +55,32 @@ def checked_name(name: str) -> str:
     if not records.NAME_RE.match(name or ''):
         raise EditError('a team name is a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
     return name
+
+
+def named_by_records(root: Path, team: str) -> tuple[list[str], list[str]]:
+    """The apps whose own record names ``team``, and the instances whose ``allows`` grants it.
+
+    Read from v2's records, the only place a team is stated: v1 rendered files no longer exist, so reading
+    them found nothing and both refusals below could not fire (docs/v2-status.md#remaining-work).
+    """
+    named, granted = [], []
+    for path in sorted((root / RECORDS).glob('*/app.json')):
+        if _record(path).get('team') == team:
+            named.append(path.parent.name)
+    for path in sorted((root / RECORDS).glob('*/*/instance.json')):
+        if f'{TEAM_GRANT}{team}' in (_record(path).get('allows') or []):
+            granted.append(f'{path.parent.parent.name}/{path.parent.name}')
+    return named, granted
+
+
+def _record(path: Path) -> dict:
+    try:
+        found = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise EditError(f'{path} cannot be read ({error}), so the team commands cannot tell what names a team') from None
+    if not isinstance(found, dict):
+        raise EditError(f'{path} is not a record: expected a JSON object')
+    return found
 
 
 def checked_description(text: str) -> str:
@@ -101,8 +129,8 @@ def add(root: Path, name: str, description: str = '') -> None:
 
 def change(root: Path, name: str, description: str | None = None, rename: str | None = None,
            notify: list[str] | None = None) -> None:
-    """Change a team's description, name or channels. A rename relabels its apps and rewrites every
-    team:<old> grant in the same edit."""
+    """Change a team's description, name or channels. A rename is refused while a v2 app names the team
+    or a v2 record allows it: moving them is swhurl-v2 edit's, which writes the records."""
     document, teams = registry(root)
     if name not in teams:
         raise EditError(f'no team {name}; registered: {", ".join(teams)}')
@@ -126,48 +154,38 @@ def change(root: Path, name: str, description: str | None = None, rename: str | 
         else:
             current.pop('description', None)
         teams[name] = current
-    apps: list[str] = []
-    operations = {}
     if rename and rename != name:
         if checked_name(rename) in teams:
-            raise EditError(f'team {rename} already exists; to merge the two, remove {name} with --move-apps-to {rename}')
+            raise EditError(f'team {rename} already exists; a rename cannot merge two teams: move the apps '
+                            f'with swhurl-v2 edit --set team={rename}, then remove {name}')
+        named, granted = named_by_records(root, name)
+        if named:
+            raise EditError(f'team {name} is named by {", ".join(named)} in {RECORDS} and a rename moves nothing: '
+                            f'move them first with swhurl-v2 edit --set team={rename}')
+        if granted:
+            raise EditError(f'{TEAM_GRANT}{name} is allowed to call {", ".join(granted)}, so a rename would leave '
+                            f'that grant naming a team that is gone: remove it first (swhurl-v2 edit --set allows=…)')
         position = list(teams).index(name)
         teams.insert(position, rename, teams.pop(name))
-        world, _ = write.read(root)
-        before, after = f'{TEAM_GRANT}{name}', f'{TEAM_GRANT}{rename}'
-
-        def update(value: Entry) -> Entry:
-            allows = tuple(dict.fromkeys(after if grant == before else grant for grant in value.settings.grants.allows))
-            return replace(value, app=replace(value.app, team=rename) if value.app.team == name else value.app,
-                           settings=replace(value.settings, grants=replace(value.settings.grants, allows=allows)))
-        operations = {each: write.Update(update) for each, value in world.items()
-                      if value.app.team == name or before in value.settings.grants.allows}
-        apps = sorted({each.app for each in operations if world[each].app.team == name})
-    write.apply(root, prepare(root, document, operations))
-    print(f'[OK] team {name}' + (f' renamed to {rename}; relabelled {len(apps)} app(s)' if rename and rename != name else ' updated'))
+    write.apply(root, prepare(root, document))
+    print(f'[OK] team {name}' + (f' renamed to {rename}' if rename and rename != name else ' updated'))
 
 
-def remove(root: Path, name: str, move_apps_to: str | None = None) -> None:
-    """Remove a team. Its apps must go somewhere first: refuse, or move them in the same edit."""
+def remove(root: Path, name: str) -> None:
+    """Remove a team nothing names. Its apps and grants must go first, and v2's edit is what moves them."""
     document, teams = registry(root)
     if name not in teams:
         raise EditError(f'no team {name}; registered: {", ".join(teams)}')
-    world, _ = write.read(root)
-    apps = sorted({each.app for each, value in world.items() if value.app.team == name})
-    if apps and not move_apps_to:
-        raise EditError(f'team {name} still owns {", ".join(apps)}: move them with --move-apps-to <team>, '
-                        'or each with swhurl-v2 edit --set team=…, then remove it')
-    if move_apps_to is not None and (move_apps_to == name or move_apps_to not in teams):
-        raise EditError(f'--move-apps-to must name another registered team: {", ".join(t for t in teams if t != name)}')
-    granted = sorted(str(each) for each, value in world.items() if f'{TEAM_GRANT}{name}' in value.settings.grants.allows)
+    named, granted = named_by_records(root, name)
+    if named:
+        raise EditError(f'team {name} is named by {", ".join(named)} in {RECORDS}: move them first with '
+                        'swhurl-v2 edit --set team=<another team>, then remove it')
     if granted:
-        raise EditError(f'team:{name} is allowed to call {", ".join(granted)}: remove those grants first '
-                        f'(remove it with swhurl-v2 edit --set allows=… on each)')
-    operations = {each: write.Update(lambda value: replace(value, app=replace(value.app, team=move_apps_to)))
-                  for each, value in world.items() if value.app.team == name}
+        raise EditError(f'{TEAM_GRANT}{name} is allowed to call {", ".join(granted)}: remove those grants first '
+                        '(swhurl-v2 edit --set allows=… on each), then remove it')
     del teams[name]
-    write.apply(root, prepare(root, document, operations))
-    print(f'[OK] removed team {name}' + (f'; moved {", ".join(apps)} to {move_apps_to}' if apps else ''))
+    write.apply(root, prepare(root, document))
+    print(f'[OK] removed team {name}')
 
 
 def listed_channels(root: Path) -> tuple[YamlFile, list]:
@@ -308,7 +326,7 @@ def main_add(argv: list[str] | None = None) -> int:
 
 
 def main_edit(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog='swhurl team-edit', description='Change a team\'s description or name (a rename relabels its apps)')
+    p = argparse.ArgumentParser(prog='swhurl team-edit', description='Change a team\'s description, name or channel (a rename is refused while an app names it)')
     p.add_argument('name')
     p.add_argument('--description')
     p.add_argument('--rename', metavar='NEW')
@@ -352,9 +370,8 @@ def main_channel_remove(argv: list[str] | None = None) -> int:
 
 
 def main_remove(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog='swhurl team-remove', description='Remove a team that owns no app, or move its apps first')
+    p = argparse.ArgumentParser(prog='swhurl team-remove', description='Remove a team nothing names')
     p.add_argument('name')
-    p.add_argument('--move-apps-to', metavar='TEAM')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return run(lambda: remove(args.root.resolve(), args.name, args.move_apps_to), False)
+    return run(lambda: remove(args.root.resolve(), args.name), False)

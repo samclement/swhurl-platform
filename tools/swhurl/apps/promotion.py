@@ -185,7 +185,7 @@ def first_production(root: Path, world: World, app: str, *, host: str | None = N
     staging's (docs/apps.md#promote-to-production). ``preview``: a public app may have no --host yet."""
     staging = world[Instance(app, 'staging')]
     if not staging.app.team:
-        raise EditError('staging names no team (its namespace label); set it with make app-team before promoting')
+        raise EditError('staging names no team (its namespace label); set it with swhurl-v2 edit --set team= before promoting')
     exposure = staging.settings.grants.exposure
     if host and exposure != 'public':
         raise EditError('--host applies only to first promotion of a public app')

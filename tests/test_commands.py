@@ -124,7 +124,7 @@ class MakeTests(unittest.TestCase):
         for target, env, usage in (
                 ('destroy-data', {}, 'Usage: make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>'),
                 ('reconcile', {'UNIT': ''}, 'Usage: make reconcile UNIT=<name>'),
-                ('team-remove', {}, 'Usage: make team-remove NAME=<team> [ARGS="--move-apps-to OTHER"]')):
+                ('team-remove', {}, 'Usage: make team-remove NAME=<team>')):
             with self.subTest(target=target):
                 code, out, err, executed = run_make(target, env)
                 self.assertEqual((code, out, executed), (2, '', []))

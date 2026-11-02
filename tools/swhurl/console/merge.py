@@ -236,14 +236,16 @@ class Connections:
 
 
 def team_commands(action: str, name: str, form: Mapping[str, str]) -> tuple[Command, ...]:
+    """One command for the form's action. A team that apps or grants name is not renamed or removed: the
+    command refuses, and the refusal says to move them with swhurl-v2 edit, which writes the records."""
     description = ' '.join(form.get('description', '').split())
-    rename, move = form.get('rename', '').strip(), form.get('move_apps_to', '').strip()
-    for label, value in (('team name', name), ('new name', rename), ('team to move apps to', move)):
+    rename = form.get('rename', '').strip()
+    for label, value in (('team name', name), ('new name', rename)):
         if (value or label == 'team name') and not records.NAME_RE.fullmatch(value):
             raise ActionError(f'{label}: lowercase letters, digits and hyphens, at most 40 characters')
     if len(description) > 200:
         raise ActionError('a description is one line of at most 200 characters')
-    flags = ([f'--move-apps-to={move}'] if move else []) if action == 'remove' else [f'--description={description}']
+    flags = [] if action == 'remove' else [f'--description={description}']
     if action == 'edit' and rename and rename != name:
         flags.append(f'--rename={rename}')
     return (Command(f'team-{action}', (name, *flags)),)

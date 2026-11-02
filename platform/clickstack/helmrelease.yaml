@@ -58,8 +58,9 @@ spec:
         # telemetry that arrives up to 30 s later.
         HYPERDX_OTEL_BATCH_TIMEOUT: 30s
       deployment:
-        # The chart does not restart the app when hyperdx.config changes (no checksum) and Reloader does not
-        # watch observability: change this value with any change to hyperdx.config to roll the pod from Git.
+        # The chart does not restart the app or the collector when hyperdx.config changes (no checksum) and
+        # Reloader does not watch observability: change this value, and the collector's below, with any change
+        # to hyperdx.config to roll both pods from Git.
         podAnnotations:
           platform.swhurl.com/config-revision: "2"
       ingress:
@@ -86,6 +87,10 @@ spec:
             - hosts:
                 - clickstack.${BASE_DOMAIN}
               secretName: clickstack-tls
+    otel-collector:
+      # Merged with the chart's checksum/custom-config annotation.
+      podAnnotations:
+        platform.swhurl.com/config-revision: "2"
     mongodb:
       spec:
         statefulSet:

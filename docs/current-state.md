@@ -15,7 +15,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   Merge time rose through each day (430 s in the 00:00 UTC hour to 1,600 to 2,400 s in the evening) as the part
   grew, and reset at the new partition.
 - **Change:** `HYPERDX_OTEL_BATCH_TIMEOUT: 30s` in `hyperdx.config` (the collector takes `clickstack-config` as its
-  environment and the batch processor reads `${env:HYPERDX_OTEL_BATCH_TIMEOUT:-5s}`), config revision 2.
+  environment and the batch processor reads `${env:HYPERDX_OTEL_BATCH_TIMEOUT:-5s}`), config revision 2 (`23f39769`).
+  The reconcile restarted HyperDX but not the collector: its `checksum/config` covers only its own ConfigMap, so it
+  ran on without the variable. The next commit gives the collector the same `config-revision` pod annotation.
 - **Not yet measured:** the effect over a full day against the figures above.
 
 ## The team commands see v2's records, and the words stop promising v1 (2 November 2026)

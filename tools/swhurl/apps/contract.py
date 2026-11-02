@@ -45,13 +45,18 @@ STORAGE_CLASSES = {'local-path', RETAINED_STORAGE_CLASS}
 TEAMS_FILE = Path('apps/teams.yaml')
 
 
+def registered_teams(text: str | bytes) -> dict[str, str]:
+    """Team names and descriptions from the text of TEAMS_FILE."""
+    registered = (yamlio.load(text) or {}).get('teams') or {}
+    return {str(name): (entry or {}).get('description', '') for name, entry in registered.items()}
+
+
 def teams(root: Path = ROOT) -> dict[str, str]:
     """Registered team names and descriptions, from ``root`` (a scratch root falls back to this checkout)."""
     for base in (root, ROOT):
         path = base / TEAMS_FILE
         if path.is_file():
-            registered = (yamlio.load(path.read_text()) or {}).get('teams') or {}
-            return {name: (entry or {}).get('description', '') for name, entry in registered.items()}
+            return registered_teams(path.read_text())
     return {}
 
 

@@ -10,6 +10,7 @@ An app's life, and where each step is described. Every app comes from a stack te
 | Ship a new version | — | push to the app's repository | [Deploy a new image](#deploy-a-new-image) |
 | Promote to production | **Promote to production** | `swhurl-v2 promote` (the console runs it) | [Promote to production](#promote-to-production) |
 | Choose who can reach it | **Change access** | `swhurl-v2 edit --set exposure=…` | [Who can reach it](#who-can-reach-it) |
+| Move it to another team | **Change team** | `swhurl-v2 edit --set team=…` | [Teams and isolation](#teams-and-isolation) |
 | Give it secrets | — | not modelled by v2 ([secrets](#secrets)) | [Secrets](#secrets) |
 | Keep dependencies current | — | Renovate pull requests in the app's repository | [Dependency updates](#dependency-updates-in-app-repositories) |
 | Watch, resize, fix | the app page, **Scale**, **Reconcile** | `make app-status`, `app-logs`, `app-reconcile`; `swhurl-v2 edit --set replicas=…` | [Operate an instance](#operate-an-instance) |
@@ -302,7 +303,7 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `secrets` | need | read again | With every new staging image: a new name deploys without its value, shown as **value missing** until it is set; a dropped name keeps its value, shown as unused ([secrets](#secrets)) |
 | `provides` | offer | read again | The v2 Deploy workflow reads it at the commit of every new staging image, and a promotion carries the result to production ([what an app offers](#what-an-app-offers)). `apiFile` offers the API to other apps (the Catalogue lists it); `api` only gives the console a link to the served description. Removing either removes what it gave |
 | `flags` | offer | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
-| `team` | grant | refused | `swhurl-v2 edit --set team=…` (one change for every environment), or `--team` at creation |
+| `team` | grant | refused | the app page's **Change team** or `swhurl-v2 edit --set team=…` (one change for every environment), or `--team` at creation |
 | `exposure` | grant | refused | `swhurl-v2 edit --set exposure=…`, or `--exposure` at creation (default: web apps signed-in, workers private) |
 | `alerts` | grant | refused | Nothing: v2 has no alert setting, and `edit --set alerts` refuses it by name |
 | `calls` | grant | refused | `swhurl-v2 edit --set calls=…` |
@@ -362,16 +363,16 @@ Set it with `--exposure` at creation, and change it later with the app page's **
 
 ## Teams and isolation
 
-Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, or the console's team choice, where none is preselected), or `create` refuses; change it for every environment at once with `swhurl-v2 edit --set team=<team>` (it names no environment). A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
+Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, or the console's team choice, where none is preselected), or `create` refuses; change it for every environment at once with the app page's **Change team** (a held pull request, offering only the registered teams) or `swhurl-v2 edit --set team=<team>` (it names no environment). A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
 
 Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`. The registry and the apps that name a team must agree (`make check-apps` rule `team` fails when an app names a team that is gone), and v2 writes an app's records, so these commands cannot move an app or rewrite a grant: they refuse while one names the team, and the refusal names the v2 edit that does it.
 
 | Change | What keeps apps from being orphaned |
 | --- | --- |
-| Rename a team | Refused while a v2 app record names it or an `allows` grants `team:<name>`: a rename relabels nothing, so move them first with `swhurl-v2 edit --set team=…` (or remove those grants) |
-| Remove a team that owns apps | Refused while a v2 app record names it: move them first with `swhurl-v2 edit --set team=<another team>` |
+| Rename a team | Refused while a v2 app record names it or an `allows` grants `team:<name>`: a rename relabels nothing, so move them first with each app's **Change team** (or remove those grants) |
+| Remove a team that owns apps | Refused while a v2 app record names it: move them first with each app's **Change team** |
 | Remove a team an `allows` names | Refused, listing the instances; remove those grants first (`swhurl-v2 edit --set allows=…`) |
-| An app already naming an unregistered team | Listed first on the Teams page; register the team or move the app with `swhurl-v2 edit --set team=…` |
+| An app already naming an unregistered team | Listed first on the Teams page; register the team or move the app with its **Change team** |
 
 Team changes validate the registry and plan the [notification routes](services.md#notification-channels) before writing. Console PRs carry the registry and its generated routes, and nothing else ([PR contents](console.md#removals-teams-and-channels)).
 

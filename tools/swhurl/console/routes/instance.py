@@ -66,9 +66,11 @@ def routes(ctx: Context) -> list[Route]:
         relation_rows, relation_problem = declared_records.rows(declared, shown.rows, document_source,
                                                                 together=files.together), declared.problem
         shown = replace(shown, rows=relation_rows)
+        teams, teams_error = registered_teams() if declared.source == declared_records.V2 else ({}, '')
         return page(request, 'app.html', status=status, secret_states=secrets, flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
                     writable=declared.source == declared_records.V2, v2=declared.source == declared_records.V2,
                     flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
+                    teams=teams, teams_error=teams_error,
                     connections=shown, relation_problem=relation_problem, allows=declared.allows if declared.declared else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
                     scale_fields=V2_SCALE_FIELDS,
@@ -76,6 +78,16 @@ def routes(ctx: Context) -> list[Route]:
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=proposal.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
+
+    def registered_teams() -> tuple[dict[str, str], str]:
+        """``(registered teams, problem)`` at the commit the page reads the records at; none on a problem."""
+        if document_source is None:
+            return {}, 'this console has no Git reader (no GitHub token)'
+        try:
+            text = document_source(contract.TEAMS_FILE.as_posix())
+            return (contract.registered_teams(text), '') if text is not None else ({}, f'{contract.TEAMS_FILE} is not in Git')
+        except Exception as error:  # noqa: BLE001 (GitHub unavailable or an unreadable registry: the form says so)
+            return {}, f'cannot read {contract.TEAMS_FILE}: {error}'
 
     def v2_read_only(request: Request, app: str, env: str, change: str) -> Response | None:
         """The phase-1 refusal, kept for a console image without the binary: it cannot write v2 at all."""
@@ -116,6 +128,15 @@ def routes(ctx: Context) -> list[Route]:
             if allows == ','.join(declared.allows):
                 raise actions.ActionError('that changes nothing: name an app or team:<team> to allow or stop allowing')
             form = {**form, 'allows': allows}
+        elif change == 'team':
+            teams, problem = registered_teams()
+            team = form.get('team', '').strip()
+            if problem:
+                raise actions.ActionError(f'cannot check the team chosen: {problem}')
+            if team not in teams:
+                raise actions.ActionError(f'choose a registered team: one of {", ".join(teams) or "none"}')
+            if team == declared.team:
+                raise actions.ActionError(f'{app} already belongs to {team}: that changes nothing')
         elif change == 'promote':
             if form.get('image') != declared.image_reference:
                 raise actions.ActionError('staging changed since this page was loaded; refresh and review it again')

@@ -203,7 +203,7 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
   </div>
 </section>
 
-<section class="card" id="operate" style="--acts: {{ 1 if writable else 0 }}; --pitch: 9.5rem">
+<section class="card" id="operate" style="--acts: {{ 2 if writable else 0 }}; --pitch: 9.5rem">
   <div class="card-head">
     <h2>Operate</h2>
     <p class="muted">What runs, whether it matches Git, and how to change it.</p>
@@ -216,6 +216,22 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
             </span>
         </fieldset>
         {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
+      </form>
+    </details>{% endif %}
+    {% if writable %}<details class="act" name="app-form" style="--slot: 1; --wide: 9rem">
+      <summary class="button">{{ st.icon('edit') }} Change team</summary>
+      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/team">
+        <fieldset>
+          <div class="choices">
+            {% for name, text in teams | dictsort %}
+            <label class="choice"><input type="radio" name="team" value="{{ name }}" required {{ 'checked disabled' if name == declared.team }}>
+              <span><strong>{{ name }}</strong>{% if name == declared.team %} <span class="muted">(now)</span>{% endif %}{% if text %}<br><span class="muted">{{ text }}</span>{% endif %}</span></label>
+            {% else %}<span class="warn">{{ teams_error or 'No team is registered.' }} <a href="/teams">Teams</a></span>
+            {% endfor %}
+          </div>
+          <span class="muted hint">The team is the app's: the change moves staging and production together. It says who owns the app and whose notification channel hears about it; it grants nobody access, but a <code>team:</code> grant on another app follows it.</span>
+        </fieldset>
+        {{ ui.submit('Open team PR', 'You review and merge it on GitHub.', disabled=not teams) }}
       </form>
     </details>{% endif %}
   </div>

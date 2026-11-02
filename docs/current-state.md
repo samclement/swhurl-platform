@@ -2,6 +2,22 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## ClickHouse merge rewrites (2 November 2026)
+
+- **Cause, read-only on `system.part_log`, `system.parts` and `system.metric_log`:** ClickHouse used 0.2 to 0.6
+  cores an hour over 48 hours (1-second peaks 2.5 to 3.5 of 4), following merge time; HyperDX's selects used about
+  50 CPU-seconds a day and insert flushes about 1,100. Each metrics table's daily partition held 2 to 9 parts, and
+  every ~30 s the merge selector rewrote the day's largest part (`otel_metrics_sum` `20261102_481037_*`, levels 463
+  to 487 in 12 minutes, 1.05M to 1.10M rows, about 5 s each) together with ~5 new parts of 15 to 1,500 rows: its
+  fixed cost per part (5 MiB) outweighs these ~1 MiB compressed parts, so any 5 or 6 qualify. New parts follow the
+  collector's 5 s batch timeout (about 13,000 a day per metrics table; async insert's 200 ms window does not
+  combine them). Over 24 hours the three metrics tables spent 15,119 merge-seconds of 18,700, for 12M rows in.
+  Merge time rose through each day (430 s in the 00:00 UTC hour to 1,600 to 2,400 s in the evening) as the part
+  grew, and reset at the new partition.
+- **Change:** `HYPERDX_OTEL_BATCH_TIMEOUT: 30s` in `hyperdx.config` (the collector takes `clickstack-config` as its
+  environment and the batch processor reads `${env:HYPERDX_OTEL_BATCH_TIMEOUT:-5s}`), config revision 2.
+- **Not yet measured:** the effect over a full day against the figures above.
+
 ## The team commands see v2's records, and the words stop promising v1 (2 November 2026)
 
 - **What changed:** `team-edit`'s rename and `team-remove` planned against the v1 model, which finds no instance

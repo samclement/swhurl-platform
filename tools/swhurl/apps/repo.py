@@ -1,6 +1,6 @@
 """Create an app's GitHub repository from a stack's template and wait for its first image.
 
-    make app-repo NAME=<app> TYPE=web-app|api|worker|scheduled-job [STACK=typescript|kotlin] [DESCRIPTION="..."]
+    make app-repo NAME=<app> TYPE=web-app|api|worker [STACK=typescript|kotlin] [DESCRIPTION="..."]
 
 TYPE sets every answer of the stack template (contract.APP_TYPES), the only answers the template
 accepts, and the exposure staging starts with; STACK defaults to the type's first. A type whose

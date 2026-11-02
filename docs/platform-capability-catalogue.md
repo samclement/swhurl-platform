@@ -21,7 +21,7 @@ This column describes **the current POC**, not the proposed AKS platform:
 | Self-service developer portal | **Yes** | Discover applications, inspect environments and request supported changes without using Kubernetes directly. |
 | Application scaffolding and repository creation | **Yes** | Start with a working repository, pipeline and staging deployment rather than assembling them manually. |
 | Supported application templates | **Yes** — TypeScript and Kotlin | Start with an approved framework, health checks, telemetry and platform integration already configured. |
-| Different workload types | **Yes** — web apps, APIs, workers and scheduled jobs | Choose a suitable starting point for an interactive application, service or background workload. |
+| Different workload types | **Yes** — web apps, APIs and workers | Choose a suitable starting point for an interactive application, service or background workload. |
 | Application-owned requirements declaration | **Yes** — `swhurl.yaml` | Declare ports, health checks, resources, secret names and other requirements alongside application code. |
 | Automated template maintenance | **Yes** — reviewed Copier updates | Receive improvements to shared application foundations without manually copying changes between repositories. |
 | Team ownership and application descriptions | **Yes** | Identify who owns a service and filter applications by responsible team. |

@@ -199,11 +199,10 @@ APP_TYPES = {
     'worker': AppType('Worker', 'Reacts to events, or works in a steady loop; no web address.', ('typescript', 'kotlin'),
                       {'kind': 'worker', 'database': 'none', 'api': 'none'},
                       'private'),
-    'scheduled-job': AppType('Scheduled job', 'Work at a time of day: each run does its work and exits. Daily at 03:17 '
-                             'UTC until changed; no web address and no database.', ('typescript', 'kotlin'),
-                             {'kind': 'job', 'database': 'none', 'api': 'none'},
-                             'private'),
 }
+
+# No type is a job: v2 refuses the job kind (docs/apps.md#scheduled-jobs), so a scheduled-job type could not be
+# created. A job type returns with the kind.
 
 # A job runs as a CronJob (docs/apps.md#scheduled-jobs): one pod per run, never two at once, a failed run
 # not retried, the last successful and the last failed run kept. Its schedule is set on the platform.

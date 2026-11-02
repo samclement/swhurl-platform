@@ -1,6 +1,8 @@
 """make check-templates: each app type, rendered from its stack's template, must produce a label v2's creation
 rules accept; offline."""
 import io
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -69,6 +71,27 @@ def run(runner, label=None):
 
 
 class CheckTemplatesTests(unittest.TestCase):
+    def test_a_missing_binary_is_built_once_and_named_for_the_run(self):
+        """A fresh checkout has no swhurl-v2: the check builds one, so a missing build is not reported as a
+        missing command."""
+        runner = FakeRunner().on('go', 'build')
+        with mock.patch.dict(os.environ, {}, clear=False), \
+                mock.patch.object(templates_check.shutil, 'which', return_value=None), \
+                tempfile.TemporaryDirectory() as build_dir:
+            os.environ.pop('SWHURL_V2', None)
+            templates_check.named_binary(runner, Path(build_dir))
+            named = os.environ['SWHURL_V2']
+            self.assertEqual(named, str(Path(build_dir) / 'swhurl-v2'))
+        self.assertEqual(runner.calls, [('go', 'build', '-o', named, './cmd/swhurl-v2')])
+
+    def test_a_named_or_installed_binary_is_used_as_it_is(self):
+        runner = FakeRunner()
+        with mock.patch.dict(os.environ, {'SWHURL_V2': '/somewhere/swhurl-v2'}):
+            with tempfile.TemporaryDirectory() as build_dir:
+                templates_check.named_binary(runner, Path(build_dir))
+            self.assertEqual(os.environ['SWHURL_V2'], '/somewhere/swhurl-v2')
+        self.assertEqual(runner.calls, [], 'nothing is built when the environment or PATH names a binary')
+
     def test_each_type_produces_a_label_the_creation_rules_accept(self):
         runner = template_runner(lambda a: WORKER if a['kind'] == 'worker' else WEB)
         code, out = run(runner)

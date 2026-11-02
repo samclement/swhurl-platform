@@ -82,6 +82,7 @@ def main():
         print(f'no test class matches {args.k!r}')
         return 1
     start, ran, skipped, failures, times = time.monotonic(), 0, 0, list(loader.errors), {}
+    failed: list[str] = []
     with ProcessPoolExecutor(max_workers=args.j, initializer=_init) as pool:
         for name, ok, count, skips, output, seconds in pool.map(_run, names):
             ran, skipped = ran + count, skipped + skips
@@ -90,8 +91,12 @@ def main():
                 print(f'{name} ... {"ok" if ok else "FAIL"}', flush=True)
             if not ok:
                 failures.append(output)
+                failed.append(name)
     for output in failures:
         print(output)
+    if failed:  # the command that re-runs one module, where it is wanted
+        modules = sorted({name.partition('.')[0] for name in failed})
+        print('Re-run what failed: ' + ', '.join(f'make test K={module}' for module in modules))
     if len(times) > 1 and args.slowest:
         print('Slowest classes (their tests\' time added up):')
         for name, seconds in sorted(times.items(), key=lambda item: -item[1])[:args.slowest]:

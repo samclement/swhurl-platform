@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the contradictions and the team commands (the words first), then the Python retired in bash
+Gate: creation and editing agree, then the Python retired in bash
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -70,16 +70,9 @@ what Python each slice deletes, not feature parity: v2 changes seven things afte
 `memoryMiB`, `exposure`, `calls`, `allows`, `subscriptions`, `team`), and the deferred list is capability,
 not migration.
 
-**A. The words first.** The docs and the console promise management that no longer exists. Correcting that
-costs nothing and stops an operator running a command that is gone.
+**A. The record.** One claim left to settle, and it changes no code.
 
-1. **The contradictions, with an intent for each.** [plan §0 item 25](plan.md#0-where-this-paused-and-what-is-left)
-   assesses all seven, and says what is fixed now, what becomes backlog and what is dropped. Verify the
-   first before editing its copy: the console offers a `scheduled-job` type while v2 refuses `kind: job`.
-2. **The team commands see v2 apps.** `team-remove` and `team-edit` plan against the v1 model, which finds
-   no instance now, so the documented refusal cannot fire and a rename relabels nothing. Make them read
-   `v2-records`, or refuse while a v2 app names the team.
-3. **Renovate, recorded rather than changed** (anytime; nothing depends on it). Verified 2 November 2026: no
+1. **Renovate, recorded rather than changed** (anytime; nothing depends on it). Verified 2 November 2026: no
    app-chart PR ever existed (PR #47's base had no `apps/` HelmRelease), and the app chart version is the
    profile's, which Renovate cannot see in `v2-apps/*.json`. Take #47 as the platform's three HelmReleases,
    keep apps on 5.2.1, and drop `apps/` from `managerFilePatterns` only if a later bump shows it reads
@@ -87,34 +80,34 @@ costs nothing and stops an operator running a command that is gone.
 
 **B. Make creation and editing agree.** No new record field and no new capability.
 
-4. **The team form on the app page.** `edit --set team=` already works; the console picks a team only at
-   creation, and its own hint says the app page has the form.
-5. **Decide whether `create` takes a connection.** `calls`, `allows` and `subscriptions` are edit-only, so a
+2. **The team form on the app page.** `edit --set team=` already works; the console picks a team only at
+   creation, and the Teams page says to move an app from a place that has no form.
+3. **Decide whether `create` takes a connection.** `calls`, `allows` and `subscriptions` are edit-only, so a
    new app is born unconnected. Either accept them at creation or say so where a new app is started.
-6. **`mint --rotate`, in the console or in words.** A broker identity can be rotated from the CLI only, and
+4. **`mint --rotate`, in the console or in words.** A broker identity can be rotated from the CLI only, and
    nothing says so.
 
 **C. Retire the Python that is only operator convenience.** Bash, console-free, and the largest deletion per
 unit of risk.
 
-7. **The v1-only commands become bash**: `app-status`, `app-logs`, `app-reconcile`, `suspend`/`resume`,
+5. **The v1-only commands become bash**: `app-status`, `app-logs`, `app-reconcile`, `suspend`/`resume`,
    `clickstack-dashboards`, `backup-mongodb`, `notifications-*`, `destroy-data`, then the checks
    (`check-docs`, `check-repo`, `verify-platform`, `check-templates`). Each keeps its `make` name; the slice
    passes when the target still runs and `commands.py` loses a row.
-8. **One S3 location, one source.** After item 9, because one `SQLITE_S3_URI` reader is
+6. **One S3 location, one source.** After item 7, because one `SQLITE_S3_URI` reader is
    `apps/model/backup.py`: read `BACKUP_S3_URI` from `platform/backup/mongodb.yaml`, and `SQLITE_S3_URI`
    from the profile, or check that the two agree. Neither value changes.
-9. **The v1 Python model.** Decide whether it stays bounded (a ratchet test) or goes with the fixtures'
+7. **The v1 Python model.** Decide whether it stays bounded (a ratchet test) or goes with the fixtures'
    policy. It reads no v2 record and is the last Python that touches an app's rendered files; the v1
    renderer's interface tests in `tests/test_interface.py` go or stay with it, and only the console port
    frees it.
 
 **D. Then the rest of the road.**
 
-10. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and
-    set the next gate: a decision brief for the console port, the largest Python surface.
-11. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
-    each its own approved slice.
+8. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and
+   set the next gate: a decision brief for the console port, the largest Python surface.
+9. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
+   each its own approved slice.
 
 ## Deferred features
 
@@ -127,10 +120,10 @@ operator decides against it.
 | An instance that must not reach outside | Every instance that needs one gets a proxy port; nothing withholds one | A kind that must not egress |
 | The egress namespace's own egress | Not restricted (the rendered policy states Ingress only) | Default-deny for the platform's own namespaces |
 | Routes: `public`, a host override, route observation | `authenticated-web` and `private` only; no host is stored; observation checks no route | An instance needs a public route or an unusual host |
-| App kinds: `job` and a command override | Refused (`unsupported`); `worker` is modelled. The console's New app still offers a scheduled-job type that a create would refuse | An instance needs a schedule or a command override |
+| App kinds: `job` and a command override | Refused (`unsupported`); `worker` is modelled, and no app type is a job | An instance needs a schedule or a command override |
 | The kind or type of an existing app | Fixed by the image at creation; `deploy` refuses a changed `runtime.kind` and says "create a new app for another kind" | An instance must change kind without a new app |
 | A connection at creation | `calls`, `allows` and `subscriptions` are `edit` only; a new app is born unconnected | A new app must arrive already connected |
-| A team rename relabelling its apps | `edit --set team=` moves one app; `team-edit --rename` reads the v1 model and moves nothing | A team must be renamed across its apps in one change |
+| A team rename relabelling its apps | `edit --set team=` moves one app; `team-edit --rename` and `team-remove` refuse while a v2 record names the team or allows it | A team must be renamed across its apps in one change |
 | Secrets (`envFrom`, Reloader) and bindings | Non-empty `bindings` and `secrets` are refused | An app declares one |
 | Alerts | Not generated; `edit --set alerts=` is refused by name | An app needs an alert |
 | A per-instance memory or CPU choice | CPU from the profile; one memory value for request and limit | An app needs more |

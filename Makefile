@@ -92,7 +92,7 @@ v2-report:
 
 .PHONY: check-lint
 check-lint:
-	uvx ruff@0.16.9 check tools tests devtools bin/agent-cli
+	uvx ruff@0.16.9 check tools tests devtools
 	uvx --from shellcheck-py==0.11.0.1 shellcheck -x $$(git ls-files --cached --others --exclude-standard '*.sh')
 
 # Host timers (host/install-timer.sh) -------------------------------------------

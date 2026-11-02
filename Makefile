@@ -53,9 +53,14 @@ test:
 check-codegraph:
 	PYTHONPATH=$(CURDIR)/devtools/codegraph python3 -m unittest discover -s $(CURDIR)/devtools/codegraph/tests -t $(CURDIR)/devtools/codegraph
 
+# v2's toolchain: the Go v2/go.mod states, and nothing fetched (the module is standard library only).
+V2_GO_ENV = GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0
+# Starts a recipe that runs v2's own CLI: builds "$$work/swhurl-v2" into a throwaway folder removed on exit.
+V2_BUILD = set -Eeuo pipefail; work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; (cd v2 && $(V2_GO_ENV) go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2)
+
 .PHONY: check-v2
 check-v2:
-	cd v2 && export GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 \
+	cd v2 && export $(V2_GO_ENV) \
 		&& unformatted=$$(gofmt -l .) && { [ -z "$$unformatted" ] || { echo "gofmt: run gofmt -w on: $$unformatted"; exit 1; }; } \
 		&& go vet ./... && go test -count=1 ./... && ./check-rendered.sh
 
@@ -63,7 +68,7 @@ check-v2:
 # It reads a snapshot of the working tree, so an uncommitted record change counts, and writes that one file.
 .PHONY: v2-users
 v2-users:
-	@set -Eeuo pipefail; 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 	revision=$$(git stash create); 	$(MAKE) -s v2-snapshot REVISION="$${revision:-HEAD}" OUT="$$work/snapshot.json" >/dev/null; 	(cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2); 	"$$work/swhurl-v2" users --snapshot "$$work/snapshot.json" --profile v2/testdata/profile.json --out platform
+	@$(V2_BUILD); 	revision=$$(git stash create); 	$(MAKE) -s v2-snapshot REVISION="$${revision:-HEAD}" OUT="$$work/snapshot.json" >/dev/null; 	"$$work/swhurl-v2" users --snapshot "$$work/snapshot.json" --profile v2/testdata/profile.json --out platform
 
 # Render the whole tree from v2's records: the resolution, every compiled folder and unit, the egress allocation and
 # the proxy's objects, platform/auth, NATS's user list and Reloader's watch list. It writes only when the tree
@@ -71,20 +76,20 @@ v2-users:
 # this on every push, does not bump that line on every push. Needs Go 1.26.0.
 .PHONY: v2-render
 v2-render:
-	@set -Eeuo pipefail; 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 	(cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2); 	if "$$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --check >/dev/null; then echo "the tree is what the records render; nothing written"; else "$$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --revision "$$(git rev-parse HEAD)"; fi
+	@$(V2_BUILD); 	if "$$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --check >/dev/null; then echo "the tree is what the records render; nothing written"; else "$$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --revision "$$(git rev-parse HEAD)"; fi
 
 # Render Reloader's watch list, platform/reloader/values.json, from the records: v2 owns the file (docs/services.md#reloader).
 # It reads a snapshot of the working tree, so an uncommitted record change counts, and writes that one file.
 .PHONY: v2-reloader
 v2-reloader:
-	@set -Eeuo pipefail; 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 	revision=$$(git stash create); 	$(MAKE) -s v2-snapshot REVISION="$${revision:-HEAD}" OUT="$$work/snapshot.json" >/dev/null; 	(cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2); 	"$$work/swhurl-v2" reloader --snapshot "$$work/snapshot.json" --profile v2/testdata/profile.json --out platform
+	@$(V2_BUILD); 	revision=$$(git stash create); 	$(MAKE) -s v2-snapshot REVISION="$${revision:-HEAD}" OUT="$$work/snapshot.json" >/dev/null; 	"$$work/swhurl-v2" reloader --snapshot "$$work/snapshot.json" --profile v2/testdata/profile.json --out platform
 
 # Bring every v2-owned staging instance to the newest image its repository publishes, with v2's own records and
 # files: swhurl-v2 deploy --records reads v2-records/<app>/staging, delivers each instance on its own, and fails the
 # run if any refused or failed. Needs Go 1.26.0 and read-only access to the public registry.
 .PHONY: v2-deploy
 v2-deploy:
-	@set -Eeuo pipefail; 	work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 	(cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2); 	"$$work/swhurl-v2" deploy --records v2-records --profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json --out .
+	@$(V2_BUILD); 	"$$work/swhurl-v2" deploy --records v2-records --profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json --out .
 
 .PHONY: v2-report
 v2-report:

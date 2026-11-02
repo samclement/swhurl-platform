@@ -13,8 +13,8 @@ Renders and checks run in parallel, one process each (``--jobs``, default every 
 This is the platform half of a template's contract: the template's own CI builds and runs each type, this
 check proves the platform accepts what the template declares, in seconds and without building anything.
 
-``SWHURL_V2`` names the ``swhurl-v2`` binary (default: the one on PATH). Build it with
-``cd v2 && go build -o /tmp/swhurl-v2 ./cmd/swhurl-v2``.
+``SWHURL_V2`` names the ``swhurl-v2`` binary, as CI names the one it builds; with neither it nor a binary on
+``PATH``, the check builds one from ``v2/`` into a temporary folder and uses it for that run.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from concurrent.futures import ProcessPoolExecutor
 from io import StringIO
 from pathlib import Path
 
-from swhurl import interface
+from swhurl import ROOT, interface
 from swhurl.apps import declaration, image_declaration, repo
 from swhurl.apps.contract import (
     APP_TYPES,
@@ -48,6 +48,26 @@ OUTSIDE_TYPES = {'kind': 'worker', 'database': 'sqlite'}
 def binary() -> str:
     """The v2 binary that applies the creation rules, as the check's environment names it."""
     return os.environ.get('SWHURL_V2') or shutil.which('swhurl-v2') or 'swhurl-v2'
+
+
+# What v2's build pins, as the make targets and CI give it: the toolchain v2/go.mod states, and nothing
+# fetched over the network (the module is standard library only).
+V2_BUILD_ENV = {'GOTOOLCHAIN': 'go1.26.0', 'GOPROXY': 'off', 'GOSUMDB': 'off', 'CGO_ENABLED': '0'}
+
+
+def named_binary(runner: Runner, build_dir: Path) -> None:
+    """Name the binary in ``SWHURL_V2``, building one from ``v2/`` when neither it nor ``PATH`` has one.
+
+    A fresh checkout has no binary, and "missing required command: swhurl-v2" reads as a broken check rather
+    than as a missing build, so the check does the build itself. One build serves the whole run: the workers
+    of the render pool are started after this and inherit the name.
+    """
+    if os.environ.get('SWHURL_V2') or shutil.which('swhurl-v2'):
+        return
+    built = build_dir / 'swhurl-v2'
+    print('[INFO] no swhurl-v2 named or on PATH: building one from v2/ (SWHURL_V2 names the one CI builds)')
+    runner.run(['go', 'build', '-o', str(built), './cmd/swhurl-v2'], cwd=ROOT / 'v2', env=V2_BUILD_ENV)
+    os.environ['SWHURL_V2'] = str(built)
 
 
 def declaration_label(rendered: Path) -> str:
@@ -207,4 +227,6 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, report: Re
     jobs = args.jobs if runner is None else 1
     runner, report = runner or Runner(), report or Report()
     stacks = {args.stack: STACKS[args.stack]} if args.stack else STACKS
-    return check(runner, report, stacks, jobs)
+    with tempfile.TemporaryDirectory(prefix='check-templates-v2-') as build_dir:
+        named_binary(runner, Path(build_dir))
+        return check(runner, report, stacks, jobs)

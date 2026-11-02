@@ -10,13 +10,13 @@ from unittest import mock
 
 import yaml
 
-from swhurl import ROOT, interface
+from swhurl import ROOT
 from swhurl.apps import channels, contract, teams
 from swhurl.apps.errors import EditError
-from swhurl.apps.model import generated, write
+from swhurl.apps.model import write
 from swhurl.run import FakeRunner, Result
 
-SAMPLE = ROOT / 'tests/fixtures/instance'  # one app, hello, in staging and prod, team demo
+SAMPLE = ROOT / 'tests/fixtures/instance'  # one v1 app, hello, in staging and prod; v1's renderer reads it
 
 
 class TeamTests(unittest.TestCase):
@@ -28,6 +28,16 @@ class TeamTests(unittest.TestCase):
             shutil.copytree(SAMPLE / rel, self.root / rel)
         (self.root / 'apps/teams.yaml').write_text(
             '# Teams that own apps.\nteams:\n  demo:\n    description: The platform itself\n  payments: {}\n')
+        # v2's records are where a team is stated: hello belongs to demo.
+        self.record('hello/app.json', {'schemaVersion': 1, 'application': 'hello', 'team': 'demo'})
+
+    def record(self, rel, document):
+        path = self.root / 'v2-records' / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(document, indent=2))
+
+    def record_of(self, rel='hello/app.json'):
+        return json.loads((self.root / 'v2-records' / rel).read_text())
 
     def quiet(self, fn, *args, **kwargs):
         with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()):
@@ -36,9 +46,6 @@ class TeamTests(unittest.TestCase):
 
     def registered(self):
         return contract.teams(self.root)
-
-    def team_of(self, env):
-        return yaml.safe_load((self.root / 'apps/hello' / env / 'namespace.yaml').read_text())['metadata']['labels'][interface.TEAM]
 
     def test_add_and_describe(self):
         self.quiet(teams.add, 'insights', '  Reporting\n and  dashboards ')
@@ -55,58 +62,53 @@ class TeamTests(unittest.TestCase):
             with self.subTest(args=args), self.assertRaisesRegex(EditError, message):
                 fn(self.root, *args)
 
-    def owned_by(self, team):
-        """hello belongs to ``team``: its App record, and what that renders."""
-        path = self.root / 'apps/hello/app.yaml'
-        path.write_text(path.read_text().replace('team: demo', f'team: {team}'))
-        self.quiet(write.sync)
-
-    def test_a_rename_relabels_every_app_of_the_team(self):
+    def test_a_rename_is_refused_while_a_record_names_the_team(self):
         self.quiet(teams.remove, 'payments')
         self.quiet(teams.add, 'core')
         self.quiet(teams.remove, 'core')  # round trip of an empty team
         (self.root / 'apps/teams.yaml').write_text('teams:\n  demo: {}\n  legacy: {description: Old}\n  payments: {}\n')
-        self.owned_by('legacy')
+        before = (self.root / 'apps/teams.yaml').read_text()
+        self.record('hello/app.json', {'schemaVersion': 1, 'application': 'hello', 'team': 'legacy'})
+        with self.assertRaisesRegex(EditError, 'team legacy is named by hello in v2-records and a rename moves nothing: '
+                                               'move them first with swhurl-v2 edit --set team=orders'):
+            teams.change(self.root, 'legacy', rename='orders')
+        self.assertEqual((self.root / 'apps/teams.yaml').read_text(), before, 'a refused rename changes nothing')
+        self.record('hello/app.json', {'schemaVersion': 1, 'application': 'hello', 'team': 'demo'})
         out = self.quiet(teams.change, 'legacy', rename='orders')
-        self.assertIn('renamed to orders; relabelled 1 app(s)', out)
+        self.assertIn('renamed to orders', out)
         self.assertEqual(list(self.registered()), ['demo', 'orders', 'payments'], 'it keeps its place and description')
         self.assertEqual(self.registered()['orders'], 'Old')
-        self.assertEqual((self.team_of('staging'), self.team_of('prod')), ('orders', 'orders'))
-        self.assertEqual(yaml.safe_load((self.root / 'apps/hello/app.yaml').read_text())['team'], 'orders')
-        self.assertEqual(generated.problems(self.root), [])
-        with self.assertRaisesRegex(EditError, 'already exists; to merge the two, remove orders with --move-apps-to payments'):
+        self.assertEqual(self.record_of()['team'], 'demo', 'a rename relabels nothing: the record is v2\'s to write')
+        with self.assertRaisesRegex(EditError, 'already exists; a rename cannot merge two teams: move the apps with '
+                                               'swhurl-v2 edit --set team=payments'):
             teams.change(self.root, 'orders', rename='payments')
-        self.quiet(teams.change, 'demo', rename='core')  # no team is special: any can be renamed
-        self.assertEqual(list(self.registered()), ['core', 'orders', 'payments'])
+        self.quiet(teams.change, 'payments', rename='core')  # no team is special: one nothing names can be renamed
+        self.assertEqual(list(self.registered()), ['demo', 'orders', 'core'])
 
-    def test_a_team_with_apps_is_not_removed_unless_they_are_moved(self):
+    def test_a_team_a_record_or_a_grant_names_is_not_removed(self):
         self.quiet(teams.add, 'legacy')
-        self.owned_by('legacy')
         before = (self.root / 'apps/teams.yaml').read_text()
-        with self.assertRaisesRegex(EditError, 'team legacy still owns hello: move them with --move-apps-to'):
-            teams.remove(self.root, 'legacy')
-        for target, message in (('legacy', 'another registered team'), ('nobody', 'another registered team: demo, payments')):
-            with self.subTest(target=target), self.assertRaisesRegex(EditError, message):
-                teams.remove(self.root, 'legacy', target)
-        self.assertEqual(((self.root / 'apps/teams.yaml').read_text(), self.team_of('staging')), (before, 'legacy'),
-                         'a refused removal changes nothing')
-        out = self.quiet(teams.remove, 'legacy', 'payments')
-        self.assertIn('removed team legacy; moved hello to payments', out)
-        self.assertNotIn('legacy', self.registered())
-        self.assertEqual((self.team_of('staging'), self.team_of('prod')), ('payments', 'payments'))
-        self.quiet(teams.remove, 'demo')  # no team is special: one that owns nothing can go
-        self.assertEqual(list(self.registered()), ['payments'])
+        with self.assertRaisesRegex(EditError, 'team demo is named by hello in v2-records: move them first with '
+                                               'swhurl-v2 edit --set team=<another team>, then remove it'):
+            teams.remove(self.root, 'demo')
+        self.assertEqual((self.root / 'apps/teams.yaml').read_text(), before, 'a refused removal changes nothing')
+        self.record('hello/app.json', {'schemaVersion': 1, 'application': 'hello', 'team': 'legacy'})
+        self.set_allows(['team:demo', 'team:payments'])
+        with self.assertRaisesRegex(EditError, 'team:demo is allowed to call hello/staging: remove those grants first'):
+            teams.remove(self.root, 'demo')
+        self.set_allows(['team:payments'])
+        self.quiet(teams.remove, 'demo')  # no team is special: one nothing names can go
+        self.assertEqual(list(self.registered()), ['payments', 'legacy'])
 
-    def allows(self, env='staging'):
-        return yaml.safe_load((self.root / 'apps/hello' / env / 'instance.yaml').read_text()).get('allows')
+    def test_a_record_that_cannot_be_read_refuses_rather_than_passing(self):
+        (self.root / 'v2-records/hello/app.json').write_text('{')
+        with self.assertRaisesRegex(EditError, 'cannot be read'):
+            teams.remove(self.root, 'demo')
+        self.assertIn('demo', self.registered())
 
     def set_allows(self, names, env='staging'):
-        path = self.root / 'apps/hello' / env / 'instance.yaml'
-        doc = yaml.safe_load(path.read_text())
-        doc['allows'] = names
-        path.write_text(yaml.safe_dump(doc, sort_keys=False))
-        self.quiet(write.sync)
-
+        self.record(f'hello/{env}/instance.json', {'schemaVersion': 1, 'application': 'hello', 'environment': env,
+                                                   'allows': names})
 
     def notify_unit(self):
         directory = self.root / channels.NOTIFY_DIR
@@ -173,7 +175,7 @@ class TeamTests(unittest.TestCase):
         record = self.root / 'apps/hello/staging/release.yaml'
         record.write_text('invalid: [')
         for action in (lambda: teams.change(self.root, 'demo', rename='core'),
-                       lambda: teams.remove(self.root, 'demo', 'payments'),
+                       lambda: teams.remove(self.root, 'demo'),
                        lambda: teams.team_channel(self.root, 'demo', 'https://ntfy.sh/private', runner=runner)):
             before = self.snapshot()
             with self.assertRaises(EditError):
@@ -221,8 +223,11 @@ class TeamTests(unittest.TestCase):
         with self.assertRaisesRegex(EditError, 'channel payments-phone is notified by payments'):
             teams.channel_remove(self.root, 'payments-phone')
         self.set_allows(['team:payments'])
+        with self.assertRaisesRegex(EditError, 'team:payments is allowed to call hello/staging, so a rename would leave '
+                                               'that grant naming a team that is gone'):
+            teams.change(self.root, 'payments', rename='billing')
+        self.set_allows([])
         self.quiet(teams.change, 'payments', rename='billing')
-        self.assertEqual(self.allows(), ['team:billing'])
         self.assertEqual(self.routes(), {'billing': ['payments-phone']})
         self.quiet(teams.change, 'billing', notify=['payments-desk'])
         self.quiet(teams.channel_remove, 'payments-phone')
@@ -296,12 +301,11 @@ class TeamTests(unittest.TestCase):
         self.assertEqual(self.routes(), {'payments': ['payments-phone']})
 
     def test_an_app_naming_an_unregistered_team_is_found(self):
-        path = self.root / 'apps/hello/app.yaml'
-        path.write_text(path.read_text().replace('team: demo', 'team: ghost'))
+        self.record('hello/app.json', {'schemaVersion': 1, 'application': 'hello', 'team': 'ghost'})
         self.assertNotIn('ghost', self.registered())
         self.quiet(teams.add, 'ghost')  # registering it is one of the two ways out
         self.assertIn('ghost', self.registered())
-        with self.assertRaisesRegex(EditError, 'team ghost still owns hello'):
+        with self.assertRaisesRegex(EditError, 'team ghost is named by hello'):
             teams.remove(self.root, 'ghost')
 
     def test_commands_exit_2_on_refusal(self):
@@ -310,7 +314,7 @@ class TeamTests(unittest.TestCase):
             self.assertEqual(teams.main_remove(['demo', '--root', str(self.root)]), 2)
             self.assertEqual(teams.main_add(['insights', '--description', 'Reporting', '--root', str(self.root)]), 0)
             self.assertEqual(teams.main_edit(['insights', '--rename', 'reports', '--root', str(self.root)]), 0)
-        self.assertIn('[ERROR] team demo still owns hello', err.getvalue())
+        self.assertIn('[ERROR] team demo is named by hello', err.getvalue())
         self.assertIn('reports', self.registered())
 
 

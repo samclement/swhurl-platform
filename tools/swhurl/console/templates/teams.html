@@ -22,7 +22,7 @@
 
 {% if unregistered %}
 <h2 class="bad">Apps without a registered team</h2>
-<p class="muted">These apps name a team that is not in <code>apps/teams.yaml</code> (or none). <code>make check-apps</code> fails until each is fixed: register the team below, or move the app with <code>make app-team APP=&lt;app&gt; ARGS="--team &lt;team&gt;"</code>.</p>
+<p class="muted">These apps name a team that is not in <code>apps/teams.yaml</code> (or none). <code>make check-apps</code> fails until each is fixed: register the team below, or move the app with <code>swhurl-v2 edit --set team=&lt;team&gt;</code>.</p>
 <table class="compact">
   <tr><th>Team named</th><th>Apps</th></tr>
   {% for team, apps in unregistered.items() %}<tr><td>{{ team or 'none' }}</td><td>{{ apps_of(team) }}</td></tr>{% endfor %}
@@ -62,7 +62,7 @@
         <input type="hidden" name="name" value="{{ name }}">
         <fieldset>
           {{ ui.text_field('description-' ~ name, 'Description', description, 'What the team owns', 'One line. Empty removes it.', name='description') }}
-          {{ ui.text_field('rename-' ~ name, 'Name', name, name, 'Changing it renames the team: the same pull request relabels ' ~ ('its ' ~ count ~ ' app' ~ ('s' if count != 1 else '') ~ ' (' ~ (apps | join(', ')) ~ ')' if count else 'nothing else, since it owns no app') ~ ', so none is left naming the old team. Stored logs and traces keep the old name.', name='rename') }}
+          {{ ui.text_field('rename-' ~ name, 'Name', name, name, 'Changing it renames the team. ' ~ ('It owns ' ~ count ~ ' app' ~ ('s' if count != 1 else '') ~ ' (' ~ (apps | join(', ')) ~ '), so the command refuses until each names another team: move them with swhurl-v2 edit --set team=… first' if count else 'It owns no app, so nothing else changes') ~ '. Stored logs and traces keep the old name.', name='rename') }}
         </fieldset>
         {{ ui.submit('Open edit PR', 'You review and merge it on GitHub.') }}
       </form>
@@ -87,20 +87,14 @@
     </details>
     <details class="act" name="team-form" style="--slot: 1">
       <summary class="button danger">{{ st.icon('trash') }} Delete</summary>
-      <form class="wizard" method="post" action="/teams/remove" data-confirm="Open a pull request deleting team {{ name }}{% if count %} and moving its {{ count }} app(s) to the team chosen{% endif %}?" data-confirm-label="Open delete PR">
+      <form class="wizard" method="post" action="/teams/remove" data-confirm="Open a pull request deleting team {{ name }}?" data-confirm-label="Open delete PR">
         <input type="hidden" name="name" value="{{ name }}">
         <fieldset>
           {% if count %}
-          <div class="field">
-            <label for="move-{{ name }}">Move its {{ count }} app(s) to</label>
-            <select id="move-{{ name }}" name="move_apps_to" required>
-              {% for other in teams | sort if other != name %}<option value="{{ other }}">{{ other }}</option>{% endfor %}
-            </select>
-            <span class="muted hint">A team that owns apps is not deleted on its own: the same pull request moves {{ apps | join(', ') }} first, so no app is left without a team.</span>
-          </div>
+          <span class="muted hint">It owns {{ apps | join(', ') }}, so it is not deleted: move each app to another team first with <code>swhurl-v2 edit --set team=&lt;team&gt;</code> (the app page's form is not built yet), then delete the team.</span>
           {% else %}<span class="muted hint">It owns no app, so nothing else changes. An open pull request for a new app in this team would fail its checks until it names another.</span>{% endif %}
         </fieldset>
-        {{ ui.submit('Open delete PR', 'You review and merge it on GitHub.') }}
+        {{ ui.submit('Open delete PR', 'You review and merge it on GitHub.', disabled=count) }}
       </form>
     </details>
   </div>

@@ -365,16 +365,16 @@ Set it with `--exposure` at creation, and change it later with the app page's **
 
 Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, or the console's team choice, where none is preselected), or `create` refuses; change it for every environment at once with `swhurl-v2 edit --set team=<team>` (it names no environment). A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
 
-Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`. The registry and the apps that name a team change together, so no app is left naming a team that is gone (`make check-apps` rule `team` would fail):
+Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`. The registry and the apps that name a team must agree (`make check-apps` rule `team` fails when an app names a team that is gone), and v2 writes an app's records, so these commands cannot move an app or rewrite a grant: they refuse while one names the team, and the refusal names the v2 edit that does it.
 
 | Change | What keeps apps from being orphaned |
 | --- | --- |
-| Rename a team | The same change relabels every app that belongs to it and rewrites every `team:<old>` [grant](#calling-another-app) |
-| Remove a team that owns apps | Refused, unless the same change moves them to another team (`--move-apps-to`) |
+| Rename a team | Refused while a v2 app record names it or an `allows` grants `team:<name>`: a rename relabels nothing, so move them first with `swhurl-v2 edit --set team=…` (or remove those grants) |
+| Remove a team that owns apps | Refused while a v2 app record names it: move them first with `swhurl-v2 edit --set team=<another team>` |
 | Remove a team an `allows` names | Refused, listing the instances; remove those grants first (`swhurl-v2 edit --set allows=…`) |
 | An app already naming an unregistered team | Listed first on the Teams page; register the team or move the app with `swhurl-v2 edit --set team=…` |
 
-Team changes validate all affected instances and plan their records, manifests and [notification routes](services.md#notification-channels) together before writing. Console PRs carry the registry and affected App/Settings records, not the generated labels or routes ([PR contents](console.md#removals-teams-and-channels)).
+Team changes validate the registry and plan the [notification routes](services.md#notification-channels) before writing. Console PRs carry the registry and its generated routes, and nothing else ([PR contents](console.md#removals-teams-and-channels)).
 
 Logs and traces already stored keep the team name they were written with; only new data carries a new name.
 

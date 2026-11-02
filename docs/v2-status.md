@@ -2,7 +2,7 @@
 
 Status: in progress
 Gate: the live create proof: a throwaway app built from the updated template, created with `swhurl-v2 create`, observed running with its documents, then removed (the operator's approval for `make app-repo`)
-Uncommitted: `v2-records`, `v2-apps`, `v2/cmd/swhurl-v2/migrate_test.go`
+Uncommitted: `v2-records`, `v2-apps`, `platform/egress`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -435,9 +435,14 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 - **Evidence, 1 November 2026:** the repository's Container run published `4-84ca549`, whose declaration decoded as
   `schemaVersion 2, memoryMiB 128, documents [events, flags]`; `create` wrote six files; `make check-v2` and
   `make check-apps` green; `make check` green after this page named the uncommitted work.
-- **Still owed by this proof:** the delivery and the removal — `make flux-reconcile`, observation of the running
-  instance, the console's page showing its documents, then `swhurl-v2 remove` and the repository and package
-  deleted — are recorded in [current state](current-state.md) when they have run.
+- **Delivered, observed and removed:** `make flux-reconcile` installed the unit and its HelmRelease; the pod ran
+  `1/1` on `sha256:b51d3e0f…`, `make app-status` said `Healthy` with Git applied, and `swhurl-v2 observe` returned
+  **`verdict: running`** with unit, release, workload, image, readiness and replicas all as intended (the backup
+  block is `stale/no_runs`, which is expected for an instance that never ran a backup). The catalogue's own reader
+  parsed the documents with no `source.yaml`: one event from `asyncapi.yaml` and the `shout` flag from
+  `flags.json`. The instance was then removed by `swhurl-v2 remove`, the platform documents re-rendered, and the
+  repository and its GHCR package deleted with the tokens in `secrets/`. The live evidence is in
+  [current state](current-state.md#a-new-app-created-from-its-own-image-live-1-november-2026).
 
 ## Slice record: phase 5 is void (1 November 2026)
 

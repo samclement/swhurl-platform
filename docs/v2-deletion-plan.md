@@ -5,15 +5,15 @@
 console reads v2's records and writes them through the `swhurl-v2` binary, live-tested by a memory change and its
 revert; v1's writer commands and modules are deleted, `resolve` reads one record shape, Activity reads v2's tree, and
 the platform's checks read v2's too — `check-apps` is v2's render check and `verify-platform` reads `v2-apps/`
-([record](v2-status.md#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026),
+([v2 status](v2-status.md#where-it-stands),
 [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026)). The four decisions in section 5 were confirmed
 31 October 2026. The migrations are done: nine staging and four production instances are v2-owned, `apps/` holds no
 instance record, and the live checks in
 [current state](current-state.md#the-production-cutover-four-instances-31-october-2026) pass.
 
 This page is the working plan, not a status page. The contract stays in
-[iteration 2, section 8](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026);
-the decision record is on [v2 status](v2-status.md#decisions). The operator chose **option 2**: delete every
+[iteration 2, section 8](iteration-2-plan.md#8-the-cutover-one-writer-v1s-writer-deleted-approved-31-october-2026);
+the decision record is on [v2 status](v2-status.md#durable-decisions). The operator chose **option 2**: delete every
 instance-writing command v2 replaces, port the console to v2 records in the same slice, and keep only read-only
 operations plus the capability commands v2 has no replacement for. Execute it in the phases below; each phase is a
 green commit.
@@ -25,8 +25,9 @@ writer until v2 models it. There is never a fact with two writers. That is why k
 `app-schedule` is not a compatibility layer: v2 renders neither fact, so v1 remains its single writer. The
 moment v2 models one of them, its v1 command is deleted in that v2 change.
 
-The acceptance is therefore **no fact has two writers**, not "no v1 code exists". `apps/` stays as the home of
-the unmodeled facts and the shared team registry; it holds no instance record.
+That is the **transition** rule, not the goal: the goal is one Go implementation and no Python ([v2
+status](v2-status.md)). `apps/` stays as the home of the unmodeled facts and the shared team registry; it
+holds no instance record.
 
 ## 2. Inventory
 
@@ -55,7 +56,7 @@ it. The writer functions are in `tools/swhurl/apps/cli.py`, `new.py`, `offers.py
 | `app-alerts` | alert settings | none (v2 renders no alert) | **delete** (inert, below) |
 | `app-schedule` | job schedule | none (no `job` kind) | **delete** (inert, below) |
 | `app-secret` | secret names/values | none (secrets are not modelled) | **delete** (inert, below) |
-| `app-new` | a new staging instance | `swhurl-v2 create` (records only, offline 1 November 2026) | **deleted 1 November 2026** with the §10 slice: the declaration label carries the offered documents, so `check-templates` runs the producer and `swhurl-v2 declaration` instead, and the console's New app runs `create` ([the brief](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026), [the record](v2-status.md#slice-record-the-console-creates-an-app-with-v2-1-november-2026)) |
+| `app-new` | a new staging instance | `swhurl-v2 create` (records only, offline 1 November 2026) | **deleted 1 November 2026** with the §10 slice: the declaration label carries the offered documents, so `check-templates` runs the producer and `swhurl-v2 declaration` instead, and the console's New app runs `create` ([the brief](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026)) |
 | `app-repo` | a GitHub repository from a template | none yet | **keep** |
 | `app-hooks` | image webhooks | none yet | **keep** |
 | `team-*`, `channel-*` | `apps/teams.yaml` | none (v2 reads the team string, not the registry) | **keep** |

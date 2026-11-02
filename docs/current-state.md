@@ -2,6 +2,23 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## One progress page, and the plan pruned (2 November 2026)
+
+- **What changed:** `docs/v2-status.md` was rewritten in place as v2's one progress page — the goal, one row per
+  capability with one evidence link, the remaining Python, the ordered remaining work, the deferred features and the
+  durable decisions — replacing 71 `## Slice record` sections whose facts already sat in those rows and here.
+  `iteration-2-plan.md` lost the delivered-slice narratives: sections 5 and 6 are now a pointer, and sections 8 to 10
+  keep only the cutover, create and declaration contracts. `check-docs` now fails a page that appends a slice record,
+  states a capability without `done` or `partial`, links evidence that does not resolve, leaves a deferred row without
+  what reopens it, or exceeds 250 lines.
+- **What it makes explicit:** the goal is one Go implementation and no Python, which the docs implied but did not state,
+  with the remaining Python surfaces and their state on one table. M14 is re-scoped to the four leftovers that exist —
+  the interface scan, one S3 location, the team commands' v1 model, and Renovate recorded as nothing to change — and
+  the ownership milestone, not "done", is what follows it.
+- **Checked:** `make check` (its link check found the anchors the rewrite deleted, now repointed), `make check-docs`,
+  and `docs/v2-status.md` at 158 lines, under the cap the check enforces.
+- **Not exercised:** nothing on the cluster; this slice changed documentation and one check.
+
 ## A rollback, exercised live (2 November 2026)
 
 - **What changed:** three commits on `main`: `6a549014` made `swhurl-try-30` staging select the release built from
@@ -30,12 +47,11 @@ What has been verified on the live cluster, and when: current facts first, then 
   compiled production with the whole allocation while `render` and `deploy` pass it only when the allocation records a
   grant (`allocatedFor`), so it put this worker behind the proxy — proxy variables and a NetworkPolicy rule — which
   `make v2-render` then removed; the documented invocation omitted `--egress`. (2) is **fixed the same day** in
-  `orchestration.egressOf` ([record](v2-status.md#slice-record-a-promotion-takes-only-a-granted-allocation-2-november-2026));
-  (1) is closed by a one-way conversion of the old record, not a reader ([decision](v2-status.md#decisions)).
+  `orchestration.egressOf`;
+  (1) is closed by a one-way conversion of the old record, not a reader ([the rule](v2-status.md#durable-decisions)).
 - **Not exercised:** a rollback of production that retains data across the boundary (this instance has no database),
   the console's promotion path for a rollback (the CLI ran it, so the held-PR rule was not seen in a browser), and a
   rollback to an image that states declaration label version 2 (no app has published a second such image yet).
-  [Record](v2-status.md#slice-record-a-live-rollback-swhurl-try-30-2-november-2026).
 
 ## The console's New app is v2's, live (1 November 2026)
 
@@ -55,7 +71,6 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Not exercised:** a signed-in load of the live form and a creation through it — both create a real public GitHub
   repository, so they are the operator's, with a `swhurl-try-<n>` name so it can be removed with its repository and
   package. A created app with a database, a promotion and a rollback are likewise unexercised.
-  [Record](v2-status.md#slice-record-the-console-creates-an-app-with-v2-1-november-2026).
 
 ## A new app created from its own image, live (1 November 2026)
 
@@ -65,7 +80,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   `events` and `flags` documents, the app's description), checked the revision label against the tag, minted its
   broker identity and wrote six record files with the documents byte for byte. `make v2-render` wrote the compiled
   instance, its unit and its proxy port; the unit's line in `clusters/home/kustomization.yaml` was the reviewed edit.
-  [Record](v2-status.md#slice-record-a-new-app-created-from-its-own-image-live-1-november-2026).
+
 - **Checked live:** the image's own config blob (read anonymously from GHCR) states
   `schemaVersion 2, memoryMiB 128, documents [events, flags]`. After `make flux-reconcile`, the pod ran `1/1` and
   `make app-status` reported `Healthy`, Git desired and applied at the same revision, the running image equal to the
@@ -94,7 +109,6 @@ What has been verified on the live cluster, and when: current facts first, then 
   staging instance to its newest image, and one reviewed `swhurl-v2 promote` each moved `demo-orders`, `demo-shop`,
   `swhurl-try-10` and `swhurl-try-30` production to its staging's release. The three throwaways without production
   (`swhurl-try-13`, `-31`, `-32`) were removed with `swhurl-v2 remove`; none kept a volume, so no data was deleted.
-  [Record](v2-status.md#slice-record-the-app-repositories-take-version-2-and-the-four-productions-follow-1-november-2026).
 - **Checked live:** `make flux-reconcile` applied the new HelmReleases; `make verify-platform` reported **93 OK, 0
   warnings**; `make app-status`-equivalent inventory shows **10 instances**, all v2-owned, each running the digest
   its record states, and the four productions running exactly their staging's commit and digest (`demo-orders`
@@ -123,8 +137,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   image's own `source.commit`. `create` and `deploy` write the image's documents into `offers/` byte for byte;
   `migrate` takes the roles from a predecessor's folder; the console reads a role by its fixed name with no
   `source.yaml` and no v1 record branch; and `check-templates` runs the producer and `swhurl-v2 declaration` instead
-  of `app-new`. [Record](v2-status.md#slice-record-the-declaration-travels-with-the-image-offline-half-1-november-2026),
-  [contract](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026).
+  of `app-new` ([contract](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026)).
 - **Checked offline:** `cd v2 && go test ./...` (every package), `make check-v2` (208 files compared, 0 differ),
   `make check` (764 tests, 0 failures; `check-docs` 0 errors), and `make check-templates` with the built binary —
   **7 app types, 0 problems, 2 warnings**, the warnings being the `job` kind v2 does not model yet. A version 1
@@ -150,8 +163,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   the image's own declaration label, its revision label checked against the tag, and the `linux/amd64` manifest's
   digest — mints its broker identity (the seed encrypted through `sops`, written before the record that names the
   key), and writes records only. The allocation, the compiled files and the unit are the whole tree's, so the next
-  `make v2-render` writes them. [Record](v2-status.md#slice-record-create-offline-1-november-2026),
-  [contract](iteration-2-plan.md#9-the-create-path-implemented-offline-1-november-2026).
+  `make v2-render` writes them ([contract](iteration-2-plan.md#9-the-create-path-implemented-1-november-2026)).
 - **Checked offline, against the real registry:** `swhurl-v2 create --image ghcr.io/samclement/demo-orders:73-7fd0704`
   wrote four records into a temporary tree, stating digest `sha256:f41173699743…`, commit `7fd0704d1e0b…`, `sqlite`
   and `publishes: [created]`, and refused the first time without `--memory-mib`, because that image's declaration
@@ -182,7 +194,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   has `app.yml` and `template.yml`). `container.yml` has `contents: read, packages: write`; none writes platform
   Git. The only v1 Deploy workflow was this repository's, started by Flux's image dispatch and deleted on
   1 November (`f6ba34a8`). **Phase 5 is closed with no external change, and the deletion plan's phases 0–5 are
-  done.** [Record](v2-status.md#slice-record-phase-5-is-void-1-november-2026).
+  done.**
 - **What is actually left:** a new app's create. `make app-new` still writes `apps/<app>/<env>/` and its unit, and
   the console keeps its v1 record reader until v2 has `create` (`tools/swhurl/console/records.py:10`); `swhurl-v2`
   has no create command. The next gate is a decision brief for it, not an external repository edit.
@@ -992,7 +1004,7 @@ with `hostPort: 4318`. The difference is the **policy**: a v2-rendered instance'
 `policyTypes: [Ingress, Egress]` and admits only DNS, its broker and its callers (v1's apps state `Ingress` only,
 so they can egress). So the always-on telemetry surface renders an endpoint the same instance's policy denies —
 the "not exercised" item in the [always-on entry](#the-always-on-instance-surface-is-live-29-october-2026) is now
-an observed defect, and the same is true of the two newly keyed instances. Fixed the same day by [the telemetry slice](v2-status.md#slice-record-the-telemetry-export-29-october-2026): the
+an observed defect, and the same is true of the two newly keyed instances. Fixed the same day: the
 profile states the block and a reporting instance's policy admits it. [The evidence](#the-three-v2-owned-instances-export-telemetry-29-october-2026).
 
 ## v2 minted a broker identity for both keyless instances (29 October 2026)
@@ -1399,7 +1411,7 @@ v2 observed the migrated stateful instance's protection itself, **read-only**, a
 | a temporary rule with no peer (`ingress: [{}]`) | connected, app answered |
 | a temporary `ipBlock: 10.42.0.0/16` peer on the port | connected, app answered |
 
-That also explains the older puzzles: isolation looked proven because the *denial* half works; the ingress controller reaches apps because it runs on the host network; and the proxy's own namespace peers were never exercised — the backup pod needed only its own egress rule. So the call's rules now state `PlatformProfile.network.podCIDR`, the **port is the network boundary** and the **token is the identity** ([the decision](iteration-2-plan.md#calls-on-the-pod-network-with-the-token-as-the-callers-identity-implemented-26-october-2026)).
+That also explains the older puzzles: isolation looked proven because the *denial* half works; the ingress controller reaches apps because it runs on the host network; and the proxy's own namespace peers were never exercised — the backup pod needed only its own egress rule. So the call's rules now state `PlatformProfile.network.podCIDR`, the **port is the network boundary** and the **token is the identity** ([the rule](v2-status.md#durable-decisions)).
 
 *The token's subject.* With the network fixed, the callee answered `401` with `"token is not from an app in this environment"`. Its source states the contract exactly: `sub` must be `system:serviceaccount:<app>-<env>:<app>`, i.e. **the caller's pod must run as the service account named after the app**. The app does, by the chart's default; the first probe did not (it used `default`), which is why it was refused. The same probe run with `serviceAccountName: swhurl-try-11` is the one that succeeded. A caller that is not the app — a probe, a job — is not a caller by this contract.
 

@@ -8,7 +8,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 
 ### Open work
 
-**Where each workstream stands, and what finishes it: [workstreams](workstreams.md).** The two offline workstreams keep their status, contracts and handoff on their own pages; the numbered items below are the live platform's detail. **Approved 31 October 2026: the v2 cutover** — v2 gains `edit`, `remove` and a writer that prunes, then owns every instance and v1's writer is deleted ([decisions](v2-status.md#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026)).
+**Where each workstream stands, and what finishes it: [workstreams](workstreams.md).** Each workstream keeps its progress, contracts and handoff on its own page; the numbered items below are the live platform's detail. **v2 owns every instance and v1's writer is deleted (31 October 2026)** ([decisions](v2-status.md#durable-decisions), [contract](iteration-2-plan.md#8-the-cutover-one-writer-v1s-writer-deleted-approved-31-october-2026)).
 
 1. **PR06 — private app repositories and images** ([section 4](#private-app-repositories-and-images--planned-9-october-2026-not-started)). **On hold while the incident reviewer is rolled back.** No private-repository or image change was implemented. The 9 October design in section 4 remains a record for reconsideration, not the next execution task.
 2. **PR08a gate** (section 5; drill plan in [section 13](#13-recovery-drill-pr08a-gate-and-fresh-bootstrap--designed-3-october-2026-not-started)): restore on a separate machine from S3 using only the docs. Follow-ups: replace the backup use of IAM user `sam` with scoped credentials; the per-database CronJobs in [section 25](#25-per-database-backups--designed-18-october-2026-started-18-october-2026), deferred until after section 24's cutover. A public pinned backup image does not depend on the deferred private-image work in PR06.
@@ -2300,14 +2300,15 @@ Delete: release.new_nats_key; duplicate key branches in new.generate, release.ch
 - No compatibility shims (M4's rule), no behaviour change. It goes last so that it does not conflict with M9–M12.
 - **Budget:** 0 to +50.
 
-**M14: interface and tooling leftovers (F8, C8).**
+**M14: post-cutover leftovers (interface, one S3 location, team guard, Renovate recorded).**
 
-- **S3 URI.** `platform.BACKUP_S3_URI` (`platform.py:27`) repeats `platform/backup/mongodb.yaml:51`. Preferred: read it from the manifest with the shared reader used for `backups_suspended`. Fallback, if the in-cluster checker has no repository tree: a `check-repo` equality check.
-- **Template repositories.** `check-templates`, which renders every app type in CI, also scans its output for `SWHURL_[A-Z_]+` and `platform.swhurl.com/` names and fails on one that `interface.py` does not list. A regex scan checks one direction only; it needs no change in the template repositories.
-- **Renovate.** First check the Renovate PR history or dependency dashboard for an app chart bump under `apps/`. If confirmed: take `apps/` out of `managerFilePatterns`, add a regex manager for `CHART_VERSION` in `apps/contract.py`, then decide who renders such a PR (a person runs `app-sync` on its branch, or Render also runs on `contract.py`).
-- **Budget:** +20 to +40 (checks).
+- **Interface catalogue.** Add to `check-templates`: after rendering every app type, fail on a `SWHURL_[A-Z_]+` or `platform.swhurl.com/` name that `interface.py` does not list. The scan finds `SWHURL_TOKENS_DIR` and `SWHURL_EVENTS_FILE` in both pinned templates, so the catalogue gains both, with their rows in [apps](apps.md). The reverse direction is checked against v2's compiled tree, not v1's model.
+- **One S3 location.** `platform.BACKUP_S3_URI` (`platform.py:27`) repeats `platform/backup/mongodb.yaml:51`, and its only reader is the host-only `recovery.py`, which can read the manifest. `SQLITE_S3_URI` likewise duplicates `profile.backup.s3Uri`; read both, or check equality, rather than restate.
+- **Team guard.** `team-remove` and `team-edit` guard through `write.read(ROOT)`, which reads v1's model and sees no instances since the cutover, so they no longer refuse removing a team a v2 app names; `make check-apps` catches it afterwards. They read `v2-records` (or refuse) before the edit.
+- **Renovate, recorded not changed.** No app-chart PR existed: PR #47's base held no `apps/*/helmrelease.yaml`, and an app's chart version is the profile's, which Renovate cannot see in `v2-apps/*.json`. Apps stay on 5.2.1; drop `apps/` from `managerFilePatterns` only if a later bump shows it reads something there.
+- **Budget:** +40 to +60 (checks, and the Go model behind the team guard).
 
-**Decisions (operator, 23 October 2026).** The reconciliation lands first (M9.0). The C2 equality choice follows the scratch-sync result. Rotation passes `guard`. M11 moves promotion and new-app work out and dispatches on kind (no `Action` hooks). M12 uses a review table, not only a test. M13 includes the `server.py` split, done last. M14 verifies the Renovate behaviour before changing anything.
+**Decisions (operator, 23 October 2026).** The reconciliation lands first (M9.0). The C2 equality choice follows the scratch-sync result. Rotation passes `guard`. M11 moves promotion and new-app work out and dispatches on kind (no `Action` hooks). M12 uses a review table, not only a test. M13 includes the `server.py` split, done last. M14 records that Renovate has no app-chart bump to make; the app chart version is the profile's.
 
 **Unverified until each milestone's first step:** why `sync` gives every instance a NATS key; whether the fixture roots have a registry; whether the checker image has the repository tree; whether the backup image pin shares Validate's push path; Renovate's behaviour on rendered files.
 

@@ -2,6 +2,26 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The team commands see v2's records, and the words stop promising v1 (2 November 2026)
+
+- **What changed:** `team-edit`'s rename and `team-remove` planned against the v1 model, which finds no instance
+  now, so the documented refusal could not fire and a rename relabelled nothing. Both read
+  `v2-records/<app>/app.json` and each `<env>/instance.json`'s `allows`, and refuse while either names the team,
+  naming the `swhurl-v2 edit` that moves it; `--move-apps-to` and the relabel it did went with the v1 model, and the
+  console's Delete form says so, offering the button only for a team nothing names. Separately, the contradictions
+  [plan item 25](plan.md#0-where-this-paused-and-what-is-left) assessed: no app type is a scheduled job (v2 refuses
+  `kind: job`, so the New app wizard could not finish), and [apps](apps.md) stops teaching v1 hand edits — the
+  telemetry block comes from the image's declaration and the profile, memory is `edit --set memoryMiB=`, and a
+  connection is not created with the app.
+- **Checked:** `make test` (713 tests), `make check-docs`, `make check-lint`, `make check-apps` and
+  `make check-templates` pass (the last with a built `swhurl-v2` on `PATH`; it renders three types now, not four).
+  Read against the live tree and changing nothing, the new reader names `demo-notifier`, `demo-orders`, `demo-shop`
+  and `demo-shopper` for `demo`, with `demo-orders/prod`, `demo-orders/staging` and `demo-shop/staging` allowing
+  `team:demo`, so `make team-edit NAME=demo ARGS=--rename=…` now refuses instead of renaming silently.
+- **Not exercised:** a real `team-edit`/`team-remove` run against the tree (both write, and no team moved); a page in
+  a signed-in browser (the disabled Delete button is the test's rendering only). The template changes reach the
+  cluster with the console image Validate deploys, so `make verify-platform` warns until the new image runs.
+
 ## The interface catalogue checks the templates and v2's tree (2 November 2026)
 
 - **What changed:** `make check-templates` scans every app type's rendered template for `SWHURL_*` and

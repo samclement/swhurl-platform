@@ -2,7 +2,7 @@
 
 Status: in progress
 Gate: the live create proof: a throwaway app built from the updated template, created with `swhurl-v2 create`, observed running with its documents, then removed (the operator's approval for `make app-repo`)
-Uncommitted: none
+Uncommitted: `v2-records`, `v2-apps`, `v2/cmd/swhurl-v2/migrate_test.go`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 
@@ -414,6 +414,30 @@ that is not a resource. (3): a removal command that reads the tree it is about t
 - **Not exercised:** no image was built from a template and then *created* (`create`), so the create path is still
   proved offline only; the throwaway repositories of the three removed apps and their packages were deleted with the
   tokens in `secrets/`, which no v2 command does.
+
+## Slice record: a new app created from its own image, live (1 November 2026)
+
+- **What changed:** `swhurl-try-33` — a throwaway made by `make app-repo NAME=swhurl-try-33 TYPE=web-app` from the
+  TypeScript template at `v0.2.25` — became the first instance v2 created from an image instead of migrating a v1
+  record. `swhurl-v2 create --records v2-records --app swhurl-try-33 --team demo --image
+  ghcr.io/samclement/swhurl-try-33:4-84ca549 --profile v2/testdata/profile.json --out .` resolved the tag, read the
+  image's version 2 label (memory 128 MiB, a web runtime, `events` and `flags` documents, the app's own
+  description), checked the revision label against the tag, minted the broker identity, and wrote the six record
+  files with the documents byte for byte. `make v2-render` then wrote the compiled instance, its unit and its
+  proxy port; the unit's one line in `clusters/home/kustomization.yaml` is the reviewed edit.
+- **Two facts the proof corrected.** (1) The template's rendered `container.yml` named the previous release's
+  reusable workflow, so the first app made from `v0.2.24` still ran the platform that writes label version 1 and
+  `create` refused it: `TypeScript v0.2.25` and `Kotlin v0.2.24` point a new app's workflow at their own release,
+  and `STACK_REVISIONS` names them. (2) `TestMigrateReproducesCommittedInstances` walked every committed
+  `instance.json` and demanded a frozen predecessor; an app that `create` wrote never had one, so the test now skips
+  an instance with no `testdata/legacy/<app>/<env>` and leaves what it holds to
+  `TestOwnedInstancesRecompileFromGit`.
+- **Evidence, 1 November 2026:** the repository's Container run published `4-84ca549`, whose declaration decoded as
+  `schemaVersion 2, memoryMiB 128, documents [events, flags]`; `create` wrote six files; `make check-v2` and
+  `make check-apps` green; `make check` green after this page named the uncommitted work.
+- **Still owed by this proof:** the delivery and the removal — `make flux-reconcile`, observation of the running
+  instance, the console's page showing its documents, then `swhurl-v2 remove` and the repository and package
+  deleted — are recorded in [current state](current-state.md) when they have run.
 
 ## Slice record: phase 5 is void (1 November 2026)
 

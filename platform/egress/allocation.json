@@ -1,7 +1,7 @@
 {
   "kind": "v2-egress",
   "version": 1,
-  "revision": "774ecba10567e4b3f9db293b3138686c43216bd4",
+  "revision": "6bf4fcc33c242616ee60f2b8149b1890292dc645",
   "instances": [
     {
       "application": "demo-orders",
@@ -110,6 +110,14 @@
       "environment": "staging",
       "port": 30116,
       "grants": []
+    },
+    {
+      "application": "swhurl-try-33",
+      "environment": "staging",
+      "port": 30106,
+      "grants": [
+        "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
+      ]
     }
   ]
 }

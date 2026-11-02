@@ -287,6 +287,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: v2/go.mod
+          cache: false # no go.sum: v2 has no dependencies
 
       - name: Check every stack template combination against the app contract
         env:

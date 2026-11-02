@@ -24,7 +24,12 @@ What has been verified on the live cluster, and when: current facts first, then 
   HyperDX while that restarted, nothing since.
 - **MongoDB OOM during the rollout:** `mongod` (limit 500M) was OOM-killed at 23:18:03, 30 s after the collector
   restarted, its third restart in 34 days (the previous one 3 days earlier); a `make verify-platform` running then
-  could not read the team. It came back by itself at 178Mi and the rerun passed. Not investigated further.
+  could not read the team. It came back by itself at 178Mi and the rerun passed.
+- **mongod 1Gi (`407daa01`):** after backup `20261102T232755Z` (14 collections, uploaded to S3) the HelmRelease sets
+  `mongod`'s limit to 1Gi (requests unchanged at 500m and 400M; the agent keeps the operator's 500M). The operator
+  rolled the StatefulSet; the container's cgroup reads 1073741824, the resource is `Running`, `mongod` used 117Mi,
+  `make verify-platform` passed (a team exists, the newest backup 0.1 h old) and the ClickStack host returned 301
+  over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
 ## The team commands see v2's records, and the words stop promising v1 (2 November 2026)

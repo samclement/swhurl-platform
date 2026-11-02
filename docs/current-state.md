@@ -32,6 +32,24 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## The app page's Change team (2 November 2026)
+
+- **What changed (`a78aab58`):** the app page's Operate card has **Change team**, offering the teams in
+  `apps/teams.yaml` read at the same commit as the page's records. It opens a held PR (`v2-team`) that runs
+  `swhurl-v2 edit --set team=` with no environment, then `render`, so either tab moves both environments; the
+  console refuses an unregistered team or the current one before a job starts. The Teams page and New app point
+  to it instead of the CLI. The registry's text has one parser (`contract.registered_teams`), which the CLI and both console readers use.
+- **Checked:** `make check` (718 tests), `make check-docs` and `make check-lint` pass. Validate run `41547428769`
+  built and deployed console image `src-b0575415c2a3487a`; `make verify-platform` passes.
+- **Live, through a port-forward with `X-Auth-Request-Email`:** `/apps/swhurl-try-30/prod` offers `demo`,
+  `insights` (marked current, not selectable) and `payments`. Posting `insights` answered 400
+  (`already belongs to insights`); posting `payments` opened PR #103, held for manual merge, carrying
+  `v2-records/swhurl-try-30/app.json`, both environments' `namespace.json` (team label `insights` to `payments`) and
+  the base-commit line of `calls.json` and the egress allocation. The PR was closed unmerged and its branch deleted;
+  both namespaces still carry `insights`. Over the ingress the page answers `301` on http and `302` to Google
+  sign-in on https.
+- **Not exercised:** the form in a signed-in browser, and a merged team change.
+
 ## The team commands see v2's records, and the words stop promising v1 (2 November 2026)
 
 - **What changed:** `team-edit`'s rename and `team-remove` planned against the v1 model, which finds no instance

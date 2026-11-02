@@ -1,8 +1,8 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the live create proof: a throwaway app built from the updated template, created with `swhurl-v2 create`, observed running with its documents, then removed (the operator's approval for `make app-repo`)
-Uncommitted: `v2-records`, `v2-apps`, `platform/egress`
+Gate: the console's New app form moves to `create` and `app-new` is deleted, the last v1 create path (the live create proof landed 1 November 2026)
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 

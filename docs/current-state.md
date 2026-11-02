@@ -2,6 +2,26 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console's New app is v2's, live (1 November 2026)
+
+- **What changed:** `830c6f20` moved the console's **New app** form onto `swhurl-v2 create` (then an `edit` per
+  further choice and `render`) and deleted `make app-new` with its generator, flags, fixtures and check path. The
+  console image Validate built from it is `src-6d4fe4ee62d4bd45`, pinned in `4f47097f`.
+- **Checked live:** `make flux-reconcile` rolled the console; `bin/agent-cli console` reports the running image equal
+  to the pinned one with the deployment rolled out and one pod Ready with no restarts, and the dashboard and
+  notification-checker jobs ran on the new image (`src-6d4fe4ee62d4bd45`) instead of the previous one. Inside the
+  running pod, `merge.ACTIONS['new']` is `gated=False`, its first command is `create`, and `v2.available(...)` is
+  `True`, so the form's job has the binary it calls. `https://console.homelab.swhurl.com/new` answers **302** to the
+  Google sign-in when signed out, as every signed-in route does. `make verify-platform` passed with no warning and
+  `make app-status` listed the ten instances, all v2-owned.
+- **Checked offline:** `make check` green (716 Python tests, including the form's route, the interrupted-job resume
+  asserting the `create` arguments and a held pull request, and `app-repo`'s printed `create` line);
+  `make check-templates` 0 problems and 2 warnings, the `job` kind v2 does not model.
+- **Not exercised:** a signed-in load of the live form and a creation through it — both create a real public GitHub
+  repository, so they are the operator's, with a `swhurl-try-<n>` name so it can be removed with its repository and
+  package. A created app with a database, a promotion and a rollback are likewise unexercised.
+  [Record](v2-status.md#slice-record-the-console-creates-an-app-with-v2-1-november-2026).
+
 ## A new app created from its own image, live (1 November 2026)
 
 - **What changed:** `swhurl-try-33`, made by `make app-repo NAME=swhurl-try-33 TYPE=web-app` from the TypeScript

@@ -3,7 +3,8 @@
 Standard library only: importing this catalogue reads no configuration. ENTRIES maps each name
 (or documented family) to its surface, meaning and availability; docs/apps.md is checked against it.
 Optional reader overrides are inputs, not environment variables emitted by the renderers.
-Recovery and test labels use label(), but are not app capabilities.
+Recovery and test labels use label(), but are not app capabilities. unlisted() is the one test of a name
+against the catalogue: check-templates applies it to what each app type reads, check-repo to what v2 emits.
 """
 import re
 
@@ -26,6 +27,8 @@ CALLERS_FILE_VARIABLE = 'SWHURL_ALLOWED_CALLERS_FILE'
 DESCRIPTION_VARIABLE = 'SWHURL_DESCRIPTION'
 NOTIFY_VARIABLE = 'SWHURL_NOTIFY_URL'
 NOTIFY_TOKEN_VARIABLE = 'SWHURL_NOTIFY_TOKEN_FILE'
+TOKENS_DIR_VARIABLE = 'SWHURL_TOKENS_DIR'
+EVENTS_FILE_VARIABLE = 'SWHURL_EVENTS_FILE'
 SERVICE_VARIABLE = 'SWHURL_SERVICE_<APP>_URL'
 SERVICE_VARIABLE_RE = re.compile(r'^SWHURL_SERVICE_([A-Z0-9_]+)_URL$')
 PUBLISH_VARIABLE = 'SWHURL_EVENTS_PUBLISH'
@@ -68,11 +71,25 @@ def callee_variable(app: str) -> str:
     return SERVICE_VARIABLE.replace('<APP>', app.upper().replace('-', '_'))
 
 
+# A platform name anywhere in a file: an app reads it, or the platform writes it.
+NAME_RE = re.compile(r'SWHURL_[A-Z0-9_]+|' + re.escape(LABEL_DOMAIN) + r'/[a-z0-9-]+')
+
+
+def unlisted(names) -> set[str]:
+    """The names the catalogue does not list. A family member counts as listed, and so does the family's
+    prefix alone (``SWHURL_SERVICE_``), which a reader builds the rest of at run time."""
+    prefix = SERVICE_VARIABLE.partition('<')[0]
+    return {name for name in names
+            if name not in ENTRIES and name != prefix and not SERVICE_VARIABLE_RE.match(name)}
+
+
 ENTRIES = {
     APP_VARIABLE: ('env', 'App name', 'Every instance'),
     ENVIRONMENT_VARIABLE: ('env', 'Environment name', 'Every instance'),
     NOTIFY_VARIABLE: ('env', 'Notify service address', 'Every instance'),
     NOTIFY_TOKEN_VARIABLE: ('env override', f'Notify token file override; defaults to {TOKENS_MOUNT}/notify/token', 'Optional input to the Python notify reader; not injected'),
+    TOKENS_DIR_VARIABLE: ('env override', f'Token folder override; defaults to {TOKENS_MOUNT}', 'Optional input to the template readers; not injected'),
+    EVENTS_FILE_VARIABLE: ('env override', 'Events description file override; defaults to asyncapi.yaml', 'Optional input to the template readers; not injected'),
     ISSUER_VARIABLE: ('env', 'Token issuer', 'Web instances (v1-rendered)'),
     KEYS_VARIABLE: ('env', 'Public token-signing keys', 'Web instances (v1-rendered)'),
     CALLERS_VARIABLE: ('env', 'Accepted callers, comma-separated', 'At least one connected caller (v1-rendered)'),

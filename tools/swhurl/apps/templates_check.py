@@ -4,8 +4,9 @@ For each stack in ``contract.STACKS``: clone its template at the pinned revision
 built with it (``contract.APP_TYPES``, the only answers the template accepts) with Copier, as ``make
 app-repo`` does, run the image-declaration producer over the rendered app, and hand the label to
 ``swhurl-v2 declaration``. That command decodes the label and applies the creation rules an instance of it
-would face, so what a build will produce is proved with no image, no registry and no write. One set of
-answers no type has (``OUTSIDE_TYPES``) must be refused by the template's validator.
+would face, so what a build will produce is proved with no image, no registry and no write. Every
+``SWHURL_*`` or ``platform.swhurl.com/*`` name in the rendered app must be one ``interface.py`` lists. One set
+of answers no type has (``OUTSIDE_TYPES``) must be refused by the template's validator.
 
 Renders and checks run in parallel, one process each (``--jobs``, default every CPU).
 
@@ -25,6 +26,7 @@ from concurrent.futures import ProcessPoolExecutor
 from io import StringIO
 from pathlib import Path
 
+from swhurl import interface
 from swhurl.apps import declaration, image_declaration, repo
 from swhurl.apps.contract import (
     APP_TYPES,
@@ -81,8 +83,21 @@ def render_combination(runner: Runner, template: Path, stack: str, answers: dict
     return ('manifest', rendered) if manifest.is_file() else ('missing', '')
 
 
+def unlisted_names(rendered: Path) -> dict[str, str]:
+    """Each platform name the rendered app uses that ``interface.py`` does not list, with the first file using it."""
+    found: dict[str, str] = {}
+    for path in sorted(p for p in rendered.rglob('*') if p.is_file()):
+        for name in interface.unlisted(interface.NAME_RE.findall(path.read_text(errors='replace'))):
+            found.setdefault(name, str(path.relative_to(rendered)))
+    return found
+
+
 def check_manifest(runner: Runner, report: Report, label: str, rendered: Path, work: Path) -> bool:
-    """The platform half for one rendered app: the producer's label, and the creation rules v2 applies to it."""
+    """The platform half for one rendered app: the names it uses, the producer's label, and the creation rules
+    v2 applies to it."""
+    if unlisted := unlisted_names(rendered):
+        report.bad(f'{label}: interface.py does not list ' +
+                   ', '.join(f'{name} ({path})' for name, path in sorted(unlisted.items())))
     try:
         text = declaration_label(rendered)
     except image_declaration.LabelError as error:
@@ -101,11 +116,11 @@ def check_manifest(runner: Runner, report: Report, label: str, rendered: Path, w
             # A kind v2 does not model yet (the job kind): the label is what the platform will refuse by name when
             # someone tries to create it, so the check reports the gap instead of failing the template.
             report.warn(f'{label}: v2 does not model it yet ({said})')
-            return True
+            return not unlisted
         report.bad(f'{label}: swhurl-v2 declaration refused the label: {said}')
         return False
     report.ok(f'{label}: the label applies to a new instance')
-    return True
+    return not unlisted
 
 
 def manifest_job(runner: Runner, label: str, rendered: Path, work: Path) -> tuple[bool, list[tuple[str, str]]]:

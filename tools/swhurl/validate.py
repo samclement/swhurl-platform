@@ -14,6 +14,7 @@ import yaml
 
 from swhurl import ROOT, interface, platform, yamlio
 from swhurl.apps import contract
+from swhurl.apps.checks import COMPILED
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -234,6 +235,17 @@ def check_interface_table(report: Report, root: Path = ROOT) -> None:
     report.ok(f'docs/apps.md lists the {len(names)} app interface entries')
 
 
+def check_emitted_names(report: Report, root: Path = ROOT) -> None:
+    """Every platform name v2's compiled tree gives an app is one the registry lists. The backup job's label
+    is the platform's own, on its job rather than the app's objects."""
+    files = sorted(p for p in (root / COMPILED).rglob('*') if p.is_file())
+    problems = {f'{name}: {path.relative_to(root)}' for path in files
+                for name in interface.unlisted(interface.NAME_RE.findall(path.read_text())) - {contract.BACKUP_LABEL}}
+    if problems:
+        fail(f'{COMPILED} gives apps names the app interface registry does not list:\n  ' + '\n  '.join(sorted(problems)))
+    report.ok(f'every platform name in {COMPILED} ({len(files)} files) is in the app interface registry')
+
+
 def validate(runner: Runner, report: Report, root: Path = ROOT) -> int:
     """Run every check, recording failures instead of stopping at the first."""
     def attempt(check, *args):
@@ -246,6 +258,7 @@ def validate(runner: Runner, report: Report, root: Path = ROOT) -> int:
     attempt(check_doc_links, runner, report, root)
     attempt(check_unit_table, report, root)
     attempt(check_interface_table, report, root)
+    attempt(check_emitted_names, report, root)
     attempt(check_shell_syntax, runner, report)
     attempt(check_secrets, report, root)
     attempt(check_config, report, root)

@@ -134,6 +134,15 @@ class CheckTemplatesTests(unittest.TestCase):
         self.assertEqual(code, 1, 'any other copier failure fails')
         self.assertIn('the template failed otherwise', out)
 
+    def test_a_name_the_interface_does_not_list_fails(self):
+        reads = '# reads SWHURL_APP, SWHURL_SERVICE_ORDERS_URL, SWHURL_SERVICE_ and platform.swhurl.com/team\n'
+        code, out = run(template_runner(lambda a: WEB + reads))
+        self.assertEqual(code, 0, out)
+        code, out = run(template_runner(lambda a: WEB + reads + '# and SWHURL_UNLISTED\n'))
+        self.assertEqual(code, 1)
+        self.assertIn('interface.py does not list SWHURL_UNLISTED (swhurl.yaml)', out)
+        self.assertIn('the label applies to a new instance', out, 'the declaration is still checked')
+
     def test_a_missing_manifest_fails(self):
         code, out = run(template_runner(lambda a: None))
         self.assertEqual(code, 1)

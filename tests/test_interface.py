@@ -84,6 +84,24 @@ class InterfaceTests(unittest.TestCase):
                 with self.assertRaisesRegex(validate.ValidationError, problem):
                     validate.check_interface_table(Report(io.StringIO()), root)
 
+    def test_unlisted_names_allow_the_service_family_and_its_prefix(self):
+        text = ('SWHURL_APP SWHURL_SERVICE_ORDERS_API_URL `SWHURL_SERVICE_${name}_URL` SWHURL_TOKENS_DIR '
+                'platform.swhurl.com/team SWHURL_SERVICE_lower SWHURL_OTHER platform.swhurl.com/other')
+        self.assertEqual(interface.unlisted(interface.NAME_RE.findall(text)),
+                         {'SWHURL_OTHER', 'platform.swhurl.com/other'})
+
+    def test_v2s_compiled_tree_gives_apps_only_listed_names(self):
+        validate.check_emitted_names(Report(io.StringIO()))
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / 'v2-apps/instances/shop/staging'
+            folder.mkdir(parents=True)
+            (folder / 'backup-cronjob.json').write_text('{"labels": {"platform.swhurl.com/backup": "true"}}')
+            (folder / 'helmrelease.json').write_text('{"env": {"SWHURL_APP": "shop", "SWHURL_SERVICE_ORDERS_URL": "x"}}')
+            validate.check_emitted_names(Report(io.StringIO()), Path(tmp))
+            (folder / 'helmrelease.json').write_text('{"env": {"SWHURL_NEW": "x"}}')
+            with self.assertRaisesRegex(validate.ValidationError, 'SWHURL_NEW: v2-apps/instances/shop/staging/helmrelease.json'):
+                validate.check_emitted_names(Report(io.StringIO()), Path(tmp))
+
     def test_emitted_environment_names_across_independent_capabilities(self):
         observed = set()
         for kind, telemetry, egress, keyed in itertools.product(records.KINDS, (False, True), (False, True), (False, True)):

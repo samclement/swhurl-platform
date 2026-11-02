@@ -43,9 +43,9 @@ it are [the offline half of §10](#slice-record-the-declaration-travels-with-the
 ever had one on `main`: the nine repositories with records, `hello-ts`, `swhurl-try-19`, `swhurl-try-20`, and both
 stack templates at their pinned revisions carry only `container.yml` → `app.yml` (a template has `app.yml` and
 `template.yml`). The only v1 Deploy workflow was this repository's, started by Flux's image dispatch and deleted on
-1 November (`f6ba34a8`), so there is no external second writer to remove. The last v1 writer is a new app's create:
-`make app-new` writes `apps/<app>/<env>/`, the console keeps its v1 record reader until v2 has `create`, and
-`swhurl-v2` has no create command. That is the next gate. See
+1 November (`f6ba34a8`), so there is no external second writer to remove. The last v1 writer was a new app's create —
+`make app-new` writing `apps/<app>/<env>/` — deleted later the same day when the console's New app moved to `create`
+([record](#slice-record-the-console-creates-an-app-with-v2-1-november-2026)). See
 [the record](#slice-record-phase-5-is-void-1-november-2026).
 
 **Worked 31 October 2026: the checks read v2's tree (phase 4).** `make check-apps` is v2's own render check —

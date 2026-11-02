@@ -2,7 +2,7 @@
 
 Status: in progress
 Gate: §10's live verification: the cluster runs every version 2 image, the promoted productions agree with staging, and the evidence is dated
-Uncommitted: `v2-apps`, `v2-records`
+Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
 

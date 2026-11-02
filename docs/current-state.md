@@ -18,9 +18,15 @@ What has been verified on the live cluster, and when: current facts first, then 
   Read against the live tree and changing nothing, the new reader names `demo-notifier`, `demo-orders`, `demo-shop`
   and `demo-shopper` for `demo`, with `demo-orders/prod`, `demo-orders/staging` and `demo-shop/staging` allowing
   `team:demo`, so `make team-edit NAME=demo ARGS=--rename=…` now refuses instead of renaming silently.
-- **Not exercised:** a real `team-edit`/`team-remove` run against the tree (both write, and no team moved); a page in
-  a signed-in browser (the disabled Delete button is the test's rendering only). The template changes reach the
-  cluster with the console image Validate deploys, so `make verify-platform` warns until the new image runs.
+- **Live, `b66ed898`:** Validate run `41528704952` built console image `src-ad2ac2a83675ff5c` and deployed it; the
+  console runs it and `make verify-platform` passes. Rendered by that image (a request to the pod with
+  `X-Auth-Request-Email`, so the unauthenticated ingress path was not exercised): `/teams` names neither
+  `Scheduled job` nor `move_apps_to`, its Delete form says each app must name another team first, and `/new`
+  offers three types, its team hint naming `swhurl-v2 edit --set team=`. Over the ingress, `/teams` and `/new`
+  answer `301` on http and `302` to Google sign-in on https. `make app-status APP=demo-orders ENV=prod` is
+  Healthy at that revision.
+- **Not exercised:** a real `team-edit`/`team-remove` run against the tree (both write, and no team moved); either
+  page in a signed-in browser, which is also what would show the Delete button disabled for a team with apps.
 
 ## The interface catalogue checks the templates and v2's tree (2 November 2026)
 

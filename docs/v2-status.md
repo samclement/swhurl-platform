@@ -42,6 +42,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Image automation and deploy | done | [record](current-state.md#the-first-image-delivered-by-v2-30-october-2026) |
 | Create | done | [record](current-state.md#a-new-app-created-from-its-own-image-live-1-november-2026) |
 | Console writes v2's records | done | [record](current-state.md#the-consoles-new-app-is-v2s-live-1-november-2026) |
+| Interface catalogue: templates and v2's tree | done | [record](current-state.md#the-interface-catalogue-checks-the-templates-and-v2s-tree-2-november-2026) |
 
 ## Remaining Python
 
@@ -63,25 +64,22 @@ goal; each row is its own approved slice.
 
 Ordered; each item is small enough to land and verify alone.
 
-1. **The interface catalogue (M14, re-scoped).** Add the template scan to `check-templates`: render each
-   app type and fail on a `SWHURL_*` or `platform.swhurl.com/*` name that `interface.py` does not list. It
-   finds two today, `SWHURL_TOKENS_DIR` and `SWHURL_EVENTS_FILE`. Point the emitter-side check at v2's
-   compiled tree instead of the v1 Python renderer, and add the missing rows to `docs/apps.md`.
-2. **One S3 location, one source.** Read `BACKUP_S3_URI` from `platform/backup/mongodb.yaml` (its only
+1. **One S3 location, one source.** Read `BACKUP_S3_URI` from `platform/backup/mongodb.yaml` (its only
    reader, `recovery.py`, is a host command, so the tree is there) and either read `SQLITE_S3_URI` from the
    profile or check that the two agree.
-3. **The team commands see v2 apps.** `team-remove` and `team-edit` plan against the v1 model, which finds
+2. **The team commands see v2 apps.** `team-remove` and `team-edit` plan against the v1 model, which finds
    no instance now, so their documented refusal cannot fire. Make them read `v2-records`, or refuse while a
    v2 app names the team.
-4. **Renovate, recorded rather than changed.** Verified 2 November 2026: no app-chart PR ever existed (PR
+3. **Renovate, recorded rather than changed.** Verified 2 November 2026: no app-chart PR ever existed (PR
    #47's base had no `apps/` HelmRelease), and the app chart version is the profile's, which Renovate cannot
    see in `v2-apps/*.json`. Take #47 as the platform's three HelmReleases, keep apps on 5.2.1, and drop
    `apps/` from `managerFilePatterns` only if a later bump shows it reads something there.
-5. **The v1 Python model.** Decide whether it stays bounded (a ratchet test) or goes with the fixtures'
-   policy. It reads no v2 record and is the last Python that touches an app's rendered files.
-6. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and set
+4. **The v1 Python model.** Decide whether it stays bounded (a ratchet test) or goes with the fixtures'
+   policy. It reads no v2 record and is the last Python that touches an app's rendered files; the v1
+   renderer's interface tests in `tests/test_interface.py` go or stay with it.
+5. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and set
    the next gate: a decision brief for the console port, the largest Python surface.
-7. **The Python retirements.** Console, operator commands, checks, producer and host tooling, each its own
+6. **The Python retirements.** Console, operator commands, checks, producer and host tooling, each its own
    approved slice; the retirement order and the first brief are the next gate after the milestone.
 
 ## Deferred features

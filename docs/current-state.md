@@ -2,6 +2,21 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The interface catalogue checks the templates and v2's tree (2 November 2026)
+
+- **What changed:** `make check-templates` scans every app type's rendered template for `SWHURL_*` and
+  `platform.swhurl.com/*` names and fails on one `interface.py` does not list; `make check` does the same to v2's
+  compiled tree (`v2-apps/instances`), the names the platform actually gives apps, instead of only the v1 renderer's
+  test. One primitive, `interface.unlisted`, decides both, and counts the service-variable family and its bare prefix
+  (`SWHURL_SERVICE_`, which the readers complete at run time) as listed. The catalogue and
+  [its table](apps.md#platform-provided-interface) gained `SWHURL_TOKENS_DIR` and `SWHURL_EVENTS_FILE`, the two reader
+  overrides both pinned templates accept; they are `env override` rows, so nothing renders them.
+- **Checked:** `make check-templates` passes at the pinned revisions and, with those two rows removed, fails every app
+  type of both stacks naming them and the file that reads them; the tree check passes on all 128 compiled files, the
+  backup job's own `platform.swhurl.com/backup` label excepted by name.
+- **Not exercised:** nothing on the cluster; the v1 renderer's interface tests stay until the v1 model's fate is
+  decided ([remaining work](v2-status.md#remaining-work)).
+
 ## One progress page, and the plan pruned (2 November 2026)
 
 - **What changed:** `docs/v2-status.md` was rewritten in place as v2's one progress page — the goal, one row per

@@ -195,7 +195,7 @@ Every instance runs non-root with no service-account token, all capabilities dro
 
 For example, every instance receives `SWHURL_APP` and a notify token; a SQLite instance also receives `DATABASE_PATH=/data/app.db`. An absent conditional name means that capability is not supplied, not an empty/default value. Web token-signing keys may be empty in scratch roots without a key file. NATS identity requires both its public allocation and encrypted seed availability; publications and subscriptions additionally require that identity.
 
-This is the canonical list of platform-provided environment names, managed app metadata and token/data paths, plus optional reader overrides. An `env override` is an input accepted by a platform reader, not a variable injected into app manifests. [`interface.py`](../tools/swhurl/interface.py) owns the names, meanings and availability; `make check` checks this table, while capability renderers own when and how they are emitted. User-declared Secret keys are not platform-provided names. Recovery/test/backup labels and infrastructure-only metadata are not app capabilities. The token family uses a concrete audience (`notify` or a connected callee); the service-variable family uses the callee's app name. See [calls](#calling-another-app), [events](#events), [secrets](#secrets) and [telemetry](#telemetry) for use and policy.
+This is the canonical list of platform-provided environment names, managed app metadata and token/data paths, plus optional reader overrides. An `env override` is an input accepted by a platform reader, not a variable injected into app manifests. [`interface.py`](../tools/swhurl/interface.py) owns the names, meanings and availability; `make check` checks this table and that every such name in v2's compiled tree (`v2-apps/instances`) is in it, `make check-templates` that every such name an app type's rendered template uses is, while capability renderers own when and how they are emitted. User-declared Secret keys are not platform-provided names. Recovery/test/backup labels and infrastructure-only metadata are not app capabilities. The token family uses a concrete audience (`notify` or a connected callee); the service-variable family uses the callee's app name. See [calls](#calling-another-app), [events](#events), [secrets](#secrets) and [telemetry](#telemetry) for use and policy.
 
 <!-- app-interface -->
 | Name | Surface | Meaning | Availability |
@@ -204,6 +204,8 @@ This is the canonical list of platform-provided environment names, managed app m
 | `SWHURL_ENV` | env | Environment name | Every instance |
 | `SWHURL_NOTIFY_URL` | env | Notify service address | Every instance |
 | `SWHURL_NOTIFY_TOKEN_FILE` | env override | Notify token file override; defaults to /var/run/swhurl/tokens/notify/token | Optional input to the Python notify reader; not injected |
+| `SWHURL_TOKENS_DIR` | env override | Token folder override; defaults to /var/run/swhurl/tokens | Optional input to the template readers; not injected |
+| `SWHURL_EVENTS_FILE` | env override | Events description file override; defaults to asyncapi.yaml | Optional input to the template readers; not injected |
 | `SWHURL_AUTH_ISSUER` | env | Token issuer | Web instances (v1-rendered) |
 | `SWHURL_AUTH_KEYS` | env | Public token-signing keys | Web instances (v1-rendered) |
 | `SWHURL_AUTH_KEYS_FILE` | env | Path of the public token-signing keys, mounted from swhurl-auth | A callee (v2-rendered) |

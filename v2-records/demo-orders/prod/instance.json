@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "application": "demo-orders",
   "environment": "prod",
-  "release": "rel-sha256:9b623dd22cd25b7f3969e3541121ebc7472b37b2c1d012fb0e8d1f625310afe2",
+  "release": "rel-sha256:6688f8412aabf84670e2ef5edcb74e27cd3a95b7bbcd76ba495c250ef83a6773",
   "configuration": {
     "replicas": 1,
     "memoryMiB": 128

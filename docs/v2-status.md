@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the §10 slice's live half: the nine app repositories at a template tag that writes a version 2 label, then one reviewed promotion for each of the four apps with production (offline half landed 1 November 2026)
+Gate: §10's live verification: the cluster runs every version 2 image, the promoted productions agree with staging, and the evidence is dated
 Uncommitted: `v2-apps`, `v2-records`
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -391,6 +391,29 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   page named the uncommitted work. The cluster half is applied and verified after the commit.
 - **Not exercised:** the throwaway repositories and their GHCR packages are not deleted by `remove`; that is a
   separate action with the tokens in `secrets/`, recorded in [current state](current-state.md).
+
+## Slice record: the app repositories take version 2, and the four productions follow (1 November 2026)
+
+- **What changed:** both stack templates now pin the platform at the commit whose build writes label version 2
+  (TypeScript `v0.2.24`, Kotlin `v0.2.23`), so a rendered app's build states its documents in the image. The six app
+  repositories that still have instances — `demo-orders`, `demo-shop`, `demo-shopper`, `demo-notifier`,
+  `swhurl-try-10` and `swhurl-try-30` — took the new template through `copier update` and a one-line bump of the
+  reusable workflow's tag; each pushed to `main` and published an image that states version 2 (all six builds
+  passed). `swhurl-v2 deploy` then moved every staging instance to its newest image with `--calls` and `--egress`, so
+  each record's `documents`, description and API path came from the image itself; the four apps with production
+  followed through one reviewed `promote` each, `--expect` holding the current instance revision.
+- **What a deploy of the new images proved:** `deploy` decodes the label before it writes anything, so a version 1
+  image would have been refused by name; six changed and none was refused except the three database instances'
+  first run, which correctly demanded `--egress` before it would render their backup. That is the live proof that
+  the documents travel with the image rather than from the repository or a predecessor's folder.
+- **Evidence, 1 November 2026:** six Container builds green on GitHub; `make v2-render` and `make check-v2`
+  (**194 files, 0 differ**) after deploy and after promotion; the promoted digests are `demo-orders/prod`
+  `sha256:573d39f8…`, `demo-shop/prod` `sha256:663a105f…`, `swhurl-try-10/prod` `sha256:dbf85b16…` and
+  `swhurl-try-30/prod` `sha256:10d2131f…`, each the manifest of its staging's new image and each replacing the digest
+  the previous release stated.
+- **Not exercised:** no image was built from a template and then *created* (`create`), so the create path is still
+  proved offline only; the throwaway repositories of the three removed apps and their packages were deleted with the
+  tokens in `secrets/`, which no v2 command does.
 
 ## Slice record: phase 5 is void (1 November 2026)
 

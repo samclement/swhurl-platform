@@ -16,7 +16,7 @@ import yaml
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import calling, channels, new
+from swhurl.apps import calling, channels
 from swhurl.apps.model import write as model_sync
 from swhurl.console import actions, cluster, server
 from swhurl.console import github as gh
@@ -27,6 +27,13 @@ HEAD = 'abc1234' + '0' * 33
 WHO = {'X-Auth-Request-Email': 'sam@swhurl.com', 'Origin': 'http://testserver'}
 NEW = {'name': 'weather-api', 'type': 'web-app', 'stack': 'typescript', 'team': 'platform', 'exposure': 'authenticated-web', 'host': ''}
 IMAGE = 'ghcr.io/me/hello:2.0@sha256:' + 'a' * 64
+
+
+def parse_image(image: str) -> dict:
+    """REPO:TAG@sha256:... as the Helm values and the record state it."""
+    name, _, digest = image.partition('@')
+    repository, _, tag = name.rpartition(':')
+    return {'repository': repository, 'tag': tag, **({'digest': digest} if digest else {})}
 REVISION = 'main@sha1:' + HEAD
 SAMPLE = ROOT / 'tests/fixtures/instance'  # frozen sample instance; see its README
 MAIN = {'README.md': b'# repo\n', calling.SIGNING_KEYS_FILE.as_posix(): (ROOT / calling.SIGNING_KEYS_FILE).read_bytes()}
@@ -35,12 +42,12 @@ for env in ('staging', 'prod'):
         MAIN[path.relative_to(SAMPLE).as_posix()] = path.read_bytes()
     rel = f'apps/hello/{env}/helmrelease.yaml'
     doc = yaml.safe_load(MAIN[rel])
-    doc['spec']['values']['controllers']['main']['containers']['main']['image'] = new.parse_image(
+    doc['spec']['values']['controllers']['main']['containers']['main']['image'] = parse_image(
         IMAGE if env == 'staging' else 'ghcr.io/me/hello:1.0@sha256:' + 'b' * 64)
     MAIN[rel] = yaml.safe_dump(doc, sort_keys=False).encode()
     record = f'apps/hello/{env}/release.yaml'  # the Release record says the same image
     doc = yaml.safe_load(MAIN[record])
-    doc['image'] = new.parse_image(IMAGE if env == 'staging' else 'ghcr.io/me/hello:1.0@sha256:' + 'b' * 64)
+    doc['image'] = parse_image(IMAGE if env == 'staging' else 'ghcr.io/me/hello:1.0@sha256:' + 'b' * 64)
     MAIN[record] = yaml.safe_dump(doc, sort_keys=False).encode()
 MAIN['apps/hello/app.yaml'] = (SAMPLE / 'apps/hello/app.yaml').read_bytes()
 for rel in ('clusters/home/app-hello-staging.yaml', 'clusters/home/app-hello-prod.yaml'):
@@ -124,14 +131,51 @@ class FakeGitHub:
                 and r.method == key.split(' ', 1)[0]]
 
 
+V2_CREATE = ('v2-records/demo/app.json', 'v2-records/demo/staging/release.json', 'v2-records/demo/staging/instance.json',
+             'v2-records/demo/staging/events.sops.yaml')
+V2_RENDER = ('v2-apps/instances/demo/staging/helmrelease.json', 'clusters/home/app-demo-staging.json',
+             'v2-records/calls.json')
+
+
+def v2_create(tree: Path, app: str) -> None:
+    """What ``swhurl-v2 create`` writes for a new app: its records, with the seed v2 encrypted itself."""
+    for name in V2_CREATE:
+        path = tree / name.replace('demo', app, 1)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'{{"application": "{app}", "environment": "staging"}}\n' if 'instance' in name else '{}\n')
+
+
+def v2_render(tree: Path, app: str) -> None:
+    """What ``swhurl-v2 render`` writes for it: the compiled folder, the unit and the platform documents."""
+    for name in V2_RENDER:
+        path = tree / name.replace('demo', app, 1)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{}\n')
+
+
 class TreeRunner(FakeRunner):
-    """A FakeRunner whose tooling commands edit the downloaded tree they run in, as app-new does."""
+    """A FakeRunner whose tooling commands edit the downloaded tree they run in, as the console's PR commands do."""
 
     def __init__(self, edit=None, **kwargs):
         super().__init__(**kwargs)
         self.edit = edit  # None: app-promote writes production's records, anything else a new file
 
     def _execute(self, argv, *, input, env, cwd):
+        if cwd is not None and argv[:1] == ('swhurl-v2',):
+            tree, command = Path(cwd), argv[1]
+            app = argv[argv.index('--app') + 1] if '--app' in argv else ''
+            if command == 'create':
+                v2_create(tree, app)
+            elif command == 'render':
+                for found in sorted((tree / 'v2-records').glob('*/app.json')):
+                    v2_render(tree, found.parent.name)
+            elif command == 'edit':
+                path = tree / 'v2-records' / app / 'staging/instance.json'
+                doc = yaml.safe_load(path.read_text())
+                setting = argv[argv.index('--set') + 1]
+                doc[setting.partition('=')[0]] = setting.partition('=')[2]
+                path.write_text(yaml.safe_dump(doc))
+            return super()._execute(argv, input=input, env=env, cwd=cwd)
         if cwd is not None and argv[:3] == (sys.executable, '-m', 'swhurl'):
             if self.edit is not None:
                 self.edit(Path(cwd))
@@ -139,19 +183,6 @@ class TreeRunner(FakeRunner):
                 promoted(Path(cwd))
             elif argv[3] in SETTINGS_COMMANDS:
                 settings_edit(Path(cwd), argv[3:])
-            elif argv[3:4] == ('app-new',):
-                app = argv[4]
-                for name in ('app.yaml', 'staging/release.yaml', 'staging/instance.yaml', 'staging/helmrelease.yaml'):
-                    path = Path(cwd) / 'apps' / app / name
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_bytes(MAIN[f'apps/hello/{name}'])
-                path = Path(cwd) / 'apps' / app / 'staging/instance.yaml'
-                doc = yaml.safe_load(path.read_text())
-                for flag in argv[5:]:
-                    key, _, value = flag.removeprefix('--').partition('=')
-                    if key in ('calls', 'subscribe'):
-                        doc['calls' if key == 'calls' else 'subscriptions'] = value.split(',')
-                path.write_text(yaml.safe_dump(doc))
             elif argv[3:4] == ('app-remove',):
                 shutil.rmtree(Path(cwd) / 'apps' / argv[4] / argv[5])
             elif argv[3].startswith('team-'):
@@ -210,9 +241,6 @@ def promoted(tree: Path) -> None:
         settings.write_text('version: 1\nexposure: authenticated-web\n')
 
 
-APP_NEW_OK = Result((), 0, '[OK] wrote apps/weather-api/staging/helmrelease.yaml\n')
-
-
 def staging_app(name, variables=None, port=8080):
     """A unit and release as the cluster lists them, for the apps the New app form offers."""
     values = {'controllers': {'main': {'containers': {'main': {'env': variables or {}}}}}}
@@ -223,7 +251,7 @@ def staging_app(name, variables=None, port=8080):
             {'metadata': {'namespace': f'{name}-staging', 'name': name}, 'spec': {'values': values}})
 
 
-def tree_fake(app_new=APP_NEW_OK, edit=None, staging=()):
+def tree_fake(edit=None, staging=()):
     """``staging``: the staging_app()s that run (none by default)."""
     runner = TreeRunner(edit)
     # Only the three lists the New app form reads, and what the Teams page judges each app's state from;
@@ -235,9 +263,7 @@ def tree_fake(app_new=APP_NEW_OK, edit=None, staging=()):
         runner.on(*prefix, stdout=json.dumps({'items': found}))
     runner.on(*cluster.SOURCE[:6], stdout=json.dumps({'status': {'artifact': {'revision': REVISION}}}))
     runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
-    (runner.on(sys.executable, '-m', 'swhurl', 'app-new', handler=lambda args, _: Result(
-        args, app_new.returncode, app_new.stdout, app_new.stderr))
-        .on(sys.executable, '-m', 'swhurl', handler=lambda args, _: Result(args, 0, '[OK] edited\n')))
+    runner.on('swhurl-v2', stdout='{}').on(sys.executable, '-m', 'swhurl', handler=lambda args, _: Result(args, 0, '[OK] edited\n'))
     return runner
 
 
@@ -260,30 +286,26 @@ class NewAppRouteTests(unittest.TestCase):
         github = self.api.github if github else None
         return TestClient(app_under_test(runner, jobs=jobs, github=github)), jobs
 
-    def test_the_page_says_a_new_app_is_made_outside_the_console(self):
+    def test_the_page_offers_the_form_and_asks_for_no_host(self):
         runner = tree_fake()
         c, jobs = self.client(runner)
         for url in ('/new', '/new?preset=swhurl-web'):
             with self.subTest(url=url):
                 page = c.get(url, headers=WHO).text
-                self.assertIn('The console does not create apps any more', page)
-                self.assertIn('make app-repo NAME=&lt;app&gt; TYPE=&lt;type&gt; STACK=&lt;stack&gt;', page)
-                self.assertIn('make app-new NAME=&lt;app&gt; ARGS=', page)
-                self.assertIn('swhurl-v2 migrate', page)
-                self.assertNotIn('action="/new/repo"', page, 'the disabled page has no form')
-        self.assertIsNone(jobs.get(1))
-        self.assertEqual(runner.calls, [], 'the disabled page reads no cluster')
-        self.assertEqual(self.api.requests, [], 'and GitHub')
+                self.assertIn('action="/new/repo"', page)
+                self.assertIn('<h1>New app</h1>', page)
+                self.assertNotIn('name="host"', page, 'v2 derives the address from the name and the exposure')
+                self.assertNotIn('app-new', page)
+                self.assertNotIn('swhurl-v2 migrate', page)
+        self.assertIsNone(jobs.get(1), 'reading the form starts nothing')
 
-    def test_the_old_form_is_refused_and_creates_nothing(self):
+    def test_without_github_tokens_the_form_is_refused_and_nothing_is_created(self):
         runner = tree_fake()
-        c, jobs = self.client(runner)
+        c, jobs = self.client(runner, github=False)
         response = c.post('/new/repo', data=NEW, headers=WHO)
         self.assertEqual(response.status_code, 409)
-        self.assertIn('The console no longer creates apps.', response.text)
-        self.assertIn('swhurl-v2 migrate', response.text)
+        self.assertIn('Both GitHub tokens must be configured', response.text)
         self.assertIsNone(jobs.get(1))
-        self.assertEqual(runner.calls, [])
         self.assertEqual(self.api.requests, [])
 
     def test_cross_site_post_is_refused_before_the_route(self):
@@ -298,7 +320,7 @@ def staging_reads(runner):
         'kustomization': {'spec': {}, 'status': {**ready, 'lastAppliedRevision': REVISION}},
         'gitrepository': {'status': {'artifact': {'revision': REVISION}}},
         'helmrelease': {'status': ready, 'spec': {'values': {'controllers': {'main': {
-            'containers': {'main': {'image': new.parse_image(IMAGE)}}}}}}},
+            'containers': {'main': {'image': parse_image(IMAGE)}}}}}}},
         'pods': {'items': [{'metadata': {'name': 'hello-1'}, 'status': {'containerStatuses': [
             {'ready': True, 'imageID': IMAGE.split(':2.0')[0] + '@' + IMAGE.split('@')[1]}]}}]},
         'deploy,statefulset,daemonset,cronjob': {'items': [{'kind': 'Deployment', 'metadata': {'name': 'hello'},
@@ -523,7 +545,8 @@ class AppReposTests(unittest.TestCase):
         self.assertEqual(client.runner.calls, [], 'nothing rendered')
         api = FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'failure'}])
         client = repos.AppRepos(repo_runner(), api.config)
-        add = 'run make app-new NAME=notes ARGS="--from-repo samclement/notes --env staging --image <image the run prints>"'
+        add = ('run swhurl-v2 create --records v2-records --app notes --team <team> --image <image the run prints> '
+               '--profile v2/testdata/profile.json --out .')
         with self.assertRaises(actions.ActionError) as failed:
             repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None,
                                   opener=ghcr_opener)

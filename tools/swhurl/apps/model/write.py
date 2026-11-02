@@ -1,4 +1,4 @@
-"""Prepare, plan and write what the platform derives from v1 records (app-new and the team and channel edits).
+"""Prepare, plan and write what the platform derives from v1 records (the team and channel edits).
 
 Reads every instance's records (store.py), allocates ports, storage and identities during preparation
 (never rendering), and plans ciphertext and rendered files before any write. Writes the records and

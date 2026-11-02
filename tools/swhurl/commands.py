@@ -139,8 +139,6 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 'swhurl.apps.repo:main', takes=(Var('NAME', '<app>'),), dry_run=READS),
         Command('app-hooks', "Create or repoint the image webhook on every auto-deploy app's repository (idempotent)", GITHUB,
                 'swhurl.apps.hooks:main', dry_run=READS),
-        _edit('app-new', 'new:main', 'Generate the staging instance of an app made by app-repo, which prints this line (ARGS=--help for options)',
-              Var('NAME', '<app>'), args('"--from-repo OWNER/<app> --env staging --image ghcr.io/OWNER/<app>:TAG@DIGEST"')),
         _edit('team-add', 'teams:main_add', 'Register a team in apps/teams.yaml',
               Var('NAME', '<team>'), Var('DESCRIPTION', '"what it owns"', required=False, flag='--description')),
         _edit('team-edit', 'teams:main_edit', 'Change a team; a rename relabels its apps',

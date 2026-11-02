@@ -1923,14 +1923,17 @@ The operator approved the quickest route to a v2-only platform and accepted brea
 **Approved and built: option 1.** `swhurl-v2 create` writes a new app's staging records from the image its repository
 publishes. It is offline and reads no app repository: the image resolves through the registry adapter a delivery
 already uses, and its other inputs are the platform profile, two offered facts and a folder of documents.
-`make app-new`, the console's New app and the template check are untouched and still v1's; retiring them is the next
-gate, and it needs the decision this section's last paragraph names.
+Its acceptance is met: a throwaway app was created from a real image, `observe` said running, and the console now
+runs the same command ([the live proof](v2-status.md#slice-record-a-new-app-created-from-its-own-image-live-1-november-2026)).
+
+**Landed 1 November 2026: the console creates an app with it, and `app-new` is deleted.** The New app form's job runs
+`create`, an `edit` per further choice and `render`, and opens one held pull request; `make app-repo` prints the
+`create` line, and `app-new`'s generator, flags, fixtures and check path are gone ([the record](v2-status.md#slice-record-the-console-creates-an-app-with-v2-1-november-2026)).
 
 **Why now.** Every existing instance is v2's (nine staging, four production), v1's instance writer is deleted, the
 checks read v2's tree and the only Deploy workflow is v2's. One v1 writer remains: **a new app's create**.
-`make app-new` writes `apps/<app>/<env>/` and its unit, `make app-repo` renders the GitHub repository from a stack
-template, the console's New app is disabled behind `app-repo` → `app-new` → `migrate`, and the console keeps a v1
-record reader until v2 has `create` ([record](v2-status.md#slice-record-phase-5-is-void-1-november-2026)). A first
+`make app-new` wrote `apps/<app>/<env>/` and its unit, `make app-repo` renders the GitHub repository from a stack
+template, and the console kept a v1 record reader until v2 had `create` ([record](v2-status.md#slice-record-phase-5-is-void-1-november-2026)). A first
 production is also not modelled: `promote` refuses an environment with no record.
 
 **The fact set a create states.** The same facts `migrate` maps from a predecessor, but from the app's own
@@ -2009,7 +2012,7 @@ cannot render without one. The report names `make v2-render` as the next step, a
 - **What reopens this:** a create that must read the repository before it can write (option 2), or a first
   production that must be created without a person (a promotion-direction decision).
 
-**What the next gate needed, and the choice taken on 1 November 2026.** `check-templates` renders each stack
+**What the next gate needed, and the choice taken on 1 November 2026 — both parts now landed.** `check-templates` renders each stack
 template and turns its `swhurl.yaml` into an instance with `make app-new --manifest`, and a template has no image for a
 create to read a declaration from. So retiring `app-new` needed one of: `create --declaration FILE` (this section's
 original shape, and a second source for one fact), a v2 repository read (option 2), or a frozen fixture for the

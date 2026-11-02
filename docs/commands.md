@@ -26,9 +26,8 @@ Creation, the GitHub side, the shared team registry and the read-only operations
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `app-repo NAME=<app>` † | Create the app's public GitHub repository from a stack's Copier template (`TYPE=web-app`, `api`, `worker` or `scheduled-job`, required, which sets every answer; `STACK=typescript` or `kotlin`, the type's first by default; `DESCRIPTION=`), push it, add the [image webhook](services.md#image-webhook), wait for its first image and print the `app-new` line ([start a new app](apps.md#start-a-new-app)) | GitHub |
+| `app-repo NAME=<app>` † | Create the app's public GitHub repository from a stack's Copier template (`TYPE=web-app`, `api`, `worker` or `scheduled-job`, required, which sets every answer; `STACK=typescript` or `kotlin`, the type's first by default; `DESCRIPTION=`), push it, add the [image webhook](services.md#image-webhook), wait for its first image and print the `swhurl-v2 create` line ([start a new app](apps.md#start-a-new-app)) | GitHub |
 | `app-hooks` † | Create the [image webhook](services.md#image-webhook) on the repository of every app with automatic deploys, or repoint it after its token was rotated; leaves a correct one alone. Uses your `gh` login and reads the token from SOPS | GitHub |
-| `app-new NAME=<app> ARGS="--from-repo samclement/<app> --image ..."` | Generate the staging instance of an app made by `app-repo` or the console (the line they print) and check it against the app policy; defaults come from the app's [`swhurl.yaml`](apps.md#swhurlyaml). Refuses any other repository or image | Git |
 | `team-add NAME= [DESCRIPTION=]` | Register a team in `apps/teams.yaml` ([teams](apps.md#teams-and-isolation)) | Git edit |
 | `team-edit NAME= ARGS="--description TEXT"`, `"--rename NEW"` or `"--notify CHANNEL"` | Change a team's description, name or [notification channel](services.md#notification-channels) (one per team; `--notify ""` clears it). A rename relabels every app of the team in the same change; the default team cannot be renamed | Git edit |
 | `team-remove NAME= [ARGS="--move-apps-to OTHER"]` | Remove a team. Refused while apps belong to it, unless they are moved to another team in the same change | Git edit |
@@ -41,7 +40,7 @@ Creation, the GitHub side, the shared team registry and the read-only operations
 | `console-image` | Pin `platform/console` and the [notify service](services.md#notify-service) to the [console](console.md#deploy-a-new-console) image published for this commit: the `src-<hash>` tag of its inputs and its digest on GHCR. Refuses with uncommitted inputs or before the image is published. Validate's deploy job does this itself (`--expect src-<hash> --commit`); by hand it is the fallback | Git |
 | `console-dev [PORT=8080]` | The [console](console.md) on `http://127.0.0.1:8080` as a fixed dev identity. It uses your kubeconfig, so its buttons act with your rights, and opens real PRs if `GITHUB_TOKEN` is set. Needs `uv` | Cluster, GitHub |
 
-App creation and template checks use `uv` with locked dependencies. `app-new` fails if the generated instance cannot be checked against the app policy; `check-templates` needs the v2 binary (`cd v2 && go build -o /tmp/swhurl-v2 ./cmd/swhurl-v2`, then `SWHURL_V2=/tmp/swhurl-v2 make check-templates`).
+Template checks use `uv` with locked dependencies. `check-templates` needs the v2 binary (`cd v2 && go build -o /tmp/swhurl-v2 ./cmd/swhurl-v2`, then `SWHURL_V2=/tmp/swhurl-v2 make check-templates`).
 
 ## Settings
 

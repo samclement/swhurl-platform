@@ -156,8 +156,7 @@ class AppRepos:
 
 def add_command(req: repo.Request) -> str:
     """The terminal command that adds the app to staging once its repository has published an image."""
-    return (f'make app-new NAME={req.name} ARGS="--from-repo {req.repo} --env staging '
-            '--image <image the run prints>"')
+    return repo.create_command(req.name, '<image the run prints>')
 
 
 def create_app_repo(runner: Runner, repos: AppRepos, job: Job, req: repo.Request, *,

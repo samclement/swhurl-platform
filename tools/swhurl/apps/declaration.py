@@ -125,7 +125,7 @@ class Needs:
 class Declaration:
     """A valid swhurl.yaml."""
     seed: dict
-    """app-new's defaults, by option name: every seed field, and what the live ones mean for a new instance."""
+    """The defaults a create takes, by field: every seed field, and what the live ones mean for a new instance."""
     stack: str = ''
     description: str = ''  # one line saying what the app does
     api_path: str = ''  # provides.api: where a web app serves its API description
@@ -224,7 +224,7 @@ def _provides_defaults(provides: dict, kind: str, fail: Callable[[str], Declarat
         if path is not None and (not isinstance(path, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*', path)):
             raise fail(f'provides.{key} is a file in the repository, such as {"openapi.json" if key == "apiFile" else "asyncapi.yaml"}')
     if provides.get('apiFile') or provides.get('eventsFile'):
-        defaults['offers'] = True  # app-new reads them from the repository (the Deploy workflow)
+        defaults['offers'] = True  # the repository's documents are what the Deploy workflow reads
     if provides.get('apiFile') and kind != 'web':
         raise fail('provides.apiFile applies to kind web only')
     if provides.get('api'):
@@ -354,7 +354,7 @@ def of(doc: object, source: str = FILE) -> Declaration:
         if problem := flag_problem(name, flag):
             raise fail(problem)
     if flags:
-        defaults['offers'] = True  # app-new keeps them beside the instance from the start (the Deploy workflow)
+        defaults['offers'] = True  # they travel beside the instance from the start (the Deploy workflow)
     if description:
         defaults['description'] = description
     return Declaration(defaults, field('stack', str) or '', description, provides.get('api') or '',

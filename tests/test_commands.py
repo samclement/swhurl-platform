@@ -122,7 +122,7 @@ class DocTests(unittest.TestCase):
 class MakeTests(unittest.TestCase):
     def test_a_missing_variable_is_refused_with_the_usage_line(self):
         for target, env, usage in (
-                ('app-new', {}, 'Usage: make app-new NAME=<app>'),
+                ('destroy-data', {}, 'Usage: make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>'),
                 ('reconcile', {'UNIT': ''}, 'Usage: make reconcile UNIT=<name>'),
                 ('team-remove', {}, 'Usage: make team-remove NAME=<team> [ARGS="--move-apps-to OTHER"]')):
             with self.subTest(target=target):
@@ -131,9 +131,9 @@ class MakeTests(unittest.TestCase):
                 self.assertIn(usage, err)
 
     def test_dry_run_is_refused_where_the_command_has_no_dry_run(self):
-        code, out, err, executed = run_make('app-new', {'NAME': 'web', 'DRY_RUN': 'true'})
+        code, out, err, executed = run_make('console-image', {'DRY_RUN': 'true'})
         self.assertEqual((code, out, executed), (2, '', []))
-        self.assertIn('make app-new has no dry run', err)
+        self.assertIn('make console-image has no dry run', err)
         code, _, _, executed = run_make('notifications-check', {'DRY_RUN': 'false'})
         self.assertEqual(len(executed), 1, 'DRY_RUN=false runs it')
 
@@ -144,7 +144,6 @@ class MakeTests(unittest.TestCase):
 
     def test_variables_become_arguments(self):
         for target, env, expected in (
-                ('app-new', {'NAME': 'web', 'ARGS': '--env staging --image image@sha256:abc'}, ['web', '--env', 'staging', '--image', 'image@sha256:abc']),
                 ('team-edit', {'NAME': 'a', 'ARGS': '--notify ""'}, ['a', '--notify', '']),
                 ('team-add', {'NAME': 'a', 'DESCRIPTION': 'what it owns'}, ['a', '--description', 'what it owns']),
                 ('team-add', {'NAME': 'a'}, ['a']),
@@ -184,7 +183,7 @@ class MakeTests(unittest.TestCase):
         with redirect_stdout(out), redirect_stderr(err):
             self.assertEqual(__main__.main(['--help']), 0)
             self.assertEqual(__main__.main(['flux-reconcile']), 2, 'a recipe in the Makefile is not a swhurl command')
-        self.assertIn('  app-new', out.getvalue())
+        self.assertIn('  app-repo', out.getvalue())
         self.assertNotIn('  flux-reconcile ', out.getvalue())
         self.assertIn('unknown command: flux-reconcile', err.getvalue())
 

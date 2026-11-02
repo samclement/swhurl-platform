@@ -20,16 +20,14 @@ import yaml
 
 from swhurl import ROOT, bots, interface, yamlio
 from swhurl.apps import channels, events
-from swhurl.apps.calling import NOTIFY
 from swhurl.apps.contract import TEAMS_FILE
-from swhurl.apps.instance import instance_folder, instance_unit_file
+from swhurl.apps.instance import instance_folder
 from swhurl.apps.model import records
 from swhurl.apps.model.records import (
     ALLOW_RE,
     APP_FILE,
     RELEASE_FILE,
     SETTINGS_FILE,
-    App,
     RecordError,
     Release,
     Settings,
@@ -110,51 +108,17 @@ def settings_of(root: Path, app: str, env: str) -> Settings | None:
 
 
 def encrypted_reason(action: str, app: str, env: str, statuses: Mapping[str, str], root: Path) -> str:
-    """One encrypted-input rule for publication and every merge attempt. Deletion needs no setup.
-    Only a new app's added staging seed, checked against its recipients and public allocation, is exempt.
-    """
+    """One encrypted-input rule for publication and every merge attempt. Deletion needs no setup. A new app's
+    seed is written and encrypted by v2's ``create`` itself, so a creation is exempt; any other changed
+    encrypted file needs its values set on the branch."""
+    if action == 'new':
+        return ''
     encrypted = [p for p, status in statuses.items() if status != 'D' and p.endswith('.sops.yaml')]
     if not encrypted:
-        return ''
-    if action == 'new' and env == 'staging' and encrypted == [f'apps/{app}/staging/{events.SECRET_FILE}'] and statuses[encrypted[0]] == 'A':
-        try:
-            settings = settings_of(root, app, env)
-            if settings is None:
-                raise Hold('the new app has no staging settings')
-            check_events_key(root, app, settings)
-        except Hold as error:
-            return str(error)
         return ''
     if all(Path(p).name == events.SECRET_FILE for p in encrypted):
         return "adds or changes the app's generated encrypted events key"
     return 'needs Secret values to be set on the pull request branch'
-
-
-def check_new_app(work: Path, app: str) -> None:
-    """Required, strict records; no port chosen on the PR branch and no grants to other apps."""
-    if app == NOTIFY:
-        raise Hold(f'{NOTIFY} is reserved for the platform notification service')
-    folder = instance_folder(work, app, 'staging')
-    try:
-        App.parse(yamlio.load((folder.parent / APP_FILE).read_text()))
-        release = Release.parse(yamlio.load((folder / RELEASE_FILE).read_text()))
-        settings = Settings.parse(yamlio.load((folder / SETTINGS_FILE).read_text()))
-    except (OSError, RecordError, yaml.YAMLError) as error:
-        raise Hold(f'the new app records cannot be read: {error}') from None
-    if settings.grants.exceptions:
-        raise Hold('it sets policy exceptions: a person reviews it')
-    if settings.allocations.egress_port is not None:
-        raise Hold('a new-app PR must not preallocate an egress port')
-    if settings.grants.calls or settings.grants.subscriptions:
-        raise Hold('it calls or subscribes to another app: a person reviews it')
-    if events.has_nats(work) or release.publishes or settings.allocations.events_key or (folder / events.SECRET_FILE).exists():
-        check_events_key(work, app, settings)
-
-
-
-
-
-
 
 
 def team_inputs(path: str) -> bool:
@@ -182,8 +146,6 @@ class Command:
         if self.tool == 'v2':
             return ' '.join((v2.BINARY, *self.argv))
         name, *args = self.argv
-        if self.name == 'app-new':
-            return f'make app-new NAME={name} ARGS="{" ".join(args)}"'
         if self.name == 'team-channel':
             suffix = ' ARGS=--remove' if '--remove' in args else '    # the address was entered on the console and is only in the encrypted file'
             return f'make team-channel NAME={name}{suffix}'
@@ -244,9 +206,9 @@ class Connections:
             raise ActionError(f'{", ".join(missing)}: not a web app, or an event, that staging has now; reload the form')
 
     def new_app_flags(self) -> list[str]:
-        """``--calls=`` and ``--subscribe=`` for app-new."""
-        return [f'--{field}={",".join(names)}' for field, names in
-                (('calls', self.calls), ('subscribe', self.subscribe)) if names]
+        """The settings a create writes after the records: ``calls=`` and ``subscriptions=``."""
+        return [f'{field}={",".join(names)}' for field, names in
+                (('calls', self.calls), ('subscriptions', self.subscribe)) if names]
 
     def adding(self, app: str, env: str) -> tuple[Command, ...]:
         """The app-calls and app-events commands that add these to an instance; one clone runs both,
@@ -299,8 +261,19 @@ def channel_commands(name: str, form: Mapping[str, str], *, remove: bool = False
 
 
 def new_commands(name: str, _env: str, form: Mapping) -> tuple[Command, ...]:
-    return (Command('app-new', (name, f'--from-repo={form["repo"]}', '--env=staging',
-                                f'--image={form["image"]}', *form['flags'])),)
+    """v2's creation from the image the new repository published, then the grants the form chose, then the
+    whole-tree render. ``create`` writes records only, so the edit and the render are what make the PR carry
+    everything v2 derives from them."""
+    settings = list(form['flags'])
+    team = next((s.partition('=')[2] for s in settings if s.startswith('team=')), '')
+    exposure = next((s.partition('=')[2] for s in settings if s.startswith('exposure=')), '')
+    create = ['create', '--records', v2.RECORDS, '--app', name, '--team', team, '--image', form['image'],
+              '--profile', v2.PROFILE, '--out', v2.OUT, *(['--exposure', exposure] if exposure else [])]
+    commands = [Command('create', tuple(create), tool='v2')]
+    commands += [Command('edit', tuple(v2.edit_argv(name, 'staging', setting)), tool='v2')
+                 for setting in settings if not setting.startswith(('team=', 'exposure='))]
+    commands.append(Command('render', tuple(v2.render_argv()), tool='v2'))
+    return tuple(commands)
 
 
 
@@ -463,23 +436,6 @@ def gated(branch_name: str) -> bool:
 
 
 
-def new_inputs(root: Path, app: str, _env: str) -> tuple[bool, str]:
-    exists = (root / 'apps' / app).exists() or any(
-        instance_unit_file(root, app, env).exists() for env in ('staging', 'prod'))
-    try:
-        check_new_app(root, app)
-    except Hold as error:
-        return exists, str(error)
-    return exists, ''
-
-
-def new_held(_app, _env, _files, before, after, _staged) -> str:
-    return 'new-app PR overwrites an existing app or instance' if before[0] else after[1]
-
-
-
-
-
 def manual_inputs(_root, _name, _env):
     return None
 
@@ -495,9 +451,9 @@ def manual_held(*_args) -> str:
 
 
 ACTIONS: dict[str, Action] = {
-    'new': Action(('staging',), lambda app, _env, path: new_app_records(app, path), new_commands,
-                  new_inputs, new_held, 'apps: add {name}/staging', job='new app and repository',
-                  kind='new-app', again='create it again'),
+    'new': Action(('staging',), v2_owns, new_commands, manual_inputs, manual_held,
+                  'v2-records: add {name}/staging', job='new app and repository',
+                  kind='new-app', again='create it again', gated=False),
     **{f'team-{action}': Action((), lambda _name, _env, path: team_inputs(path),
                               lambda name, _env, form, action=action: team_commands(action, name, form),
                               manual_inputs, manual_held, f'teams: {verb} {{name}}', job=f'team {action}', gated=False)

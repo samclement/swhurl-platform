@@ -1,7 +1,7 @@
 # Offline Go v2: status and handoff
 
 Status: in progress
-Gate: the console's New app form moves to `create` and `app-new` is deleted, the last v1 create path (the live create proof landed 1 November 2026)
+Gate: one live rollback (a promotion of an older release), the last unexercised v2 command, then the endstate commit flips this workstream to `done`
 Uncommitted: none
 
 Where v2 stands and how to resume it. The [iteration 2 plan](iteration-2-plan.md) owns the **contracts** (records, identity, selection, the compiler, the phase-3 brief and [the gap list](iteration-2-plan.md#6-deliberately-deferred)); [workstreams](workstreams.md) indexes the workstreams; [current state](current-state.md) holds dated live evidence. This page does not restate a contract: link it or change it there.
@@ -23,14 +23,20 @@ each of the four with production by one reviewed promotion. The contract, the mi
 **The offline half is in the working tree** (below); every image running today still carries label version 1, so
 nothing live has changed.
 
+**Worked 1 November 2026: the console creates an app with v2, and `app-new` is deleted.** The New app form's job runs
+`swhurl-v2 create`, an `edit` per further choice and `render`, and opens one pull request carrying the records and what
+they rendered; a v2 pull request, so a person merges it. `make app-repo` now prints the `create` line instead of an
+`app-new` one, `make app-new`, its generator, its flags and its fixtures are deleted, and the console's v1 new-app gate
+is gone with them. The form also drops the host field and the **Public** choice: v2 derives the address, and models
+no public exposure. See [the record](#slice-record-the-console-creates-an-app-with-v2-1-november-2026).
+
 **Worked 1 November 2026: `create`, offline.** `swhurl-v2 create` writes a new app's staging records from the image
 its repository publishes, so a v2 instance no longer has to begin as a v1 record and be migrated. The image is read
 through the registry adapter a delivery uses — its declaration label, its revision label checked against the tag,
 and the `linux/amd64` manifest's digest — and the pair is the kernel's creation, with a freshly minted broker
 identity whose seed is written encrypted before the record that names its key. It writes records only: the
-allocation, the compiled files and the unit are the whole tree's, so `make v2-render` writes them next. `make app-new`
-and the console's New app are unchanged and still v1's; retiring them is the next gate, and the blocker is named
-there ([record](#slice-record-create-offline-1-november-2026)). The label version 2 and the documents that travel in
+allocation, the compiled files and the unit are the whole tree's, so `make v2-render` writes them next. `make app-new` and the console's New app were still v1's at that point; they moved to `create` in the same day's
+console slice ([record](#slice-record-create-offline-1-november-2026)). The label version 2 and the documents that travel in
 it are [the offline half of §10](#slice-record-the-declaration-travels-with-the-image-offline-half-1-november-2026).
 
 **Closed 1 November 2026: phase 5 is void.** No app repository has a v1 `.github/workflows/deploy.yml`, and none
@@ -157,7 +163,7 @@ The goal is a v2 that can own instances without breaking the running platform. T
 | What an app offers | A release states its own description, API path and which document roles it carries; an instance renders them and carries the documents | **Done and live 1 November 2026**: the documents travel in the image's own declaration label at version 2, a release's `documents` are the roles it carries and the commit is the image's `source.commit`; both templates pin the platform that writes it, the six app repositories publish such images, every staging instance and the four productions run them, and the console reads a role by its fixed name with no `source.yaml` and no v1 record branch | [offline half](#slice-record-the-declaration-travels-with-the-image-offline-half-1-november-2026), [live half](#slice-record-the-app-repositories-take-version-2-and-the-four-productions-follow-1-november-2026), [evidence](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
 | Cutover | v2 owns every instance and v1's writer is deleted, so no fact has two writers | **1a done, and 1b's migrations done 31 October 2026**: the nine staging instances are v2's — records, compiled files and units, one writer per instance — and a migrated record states the platform's manifest digest, read from the registry rather than copied from the predecessor; all four production instances are v2's too, `demo-orders` and `demo-shop` moved together because one calls the other, with their retained claims adopted by name and production's bare host restored in `kernel.routeHost`; v1's writer is **deleted** (phase 3, 31 October 2026): its instance commands, modules and tests are gone, `resolve` reads one record shape, and Activity reads v2's tree — [record](#slice-record-the-cutover-reaches-production-four-instances-31-october-2026), [1a record](#slice-record-the-cutover-reaches-the-cluster-a-staging-instance-then-three-then-three), [decisions](#decisions), [contract](iteration-2-plan.md#8-the-cutover-finish-the-migration-and-delete-v1-approved-31-october-2026) |
 | The v2-only checks | `make check` and `verify-platform` read v2's tree, so no check keeps a v1 record alive | **Done 31 October 2026** (phase 4): `check-apps` is v2's render check plus the team registry, the notify routes and the template fixtures' policy; `verify-platform` reads `v2-apps/` and the egress allocation and its v1 branch is deleted; `apps/signing-keys.json` is gone, so the profile's `auth` block is the one source of the signing keys — [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026), [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
-| Create | A new app's first instance is v2's from the first commit: the records come from the image's own declaration, not from a v1 record migrated afterwards | **Done, offline 1 November 2026**: `swhurl-v2 create` resolves the image through the registry, states its declaration (now including the documents it offers), revision, digest and publications, mints the broker identity, and writes records only; `make check-templates` proves a rendered app's label through `swhurl-v2 declaration`, so the platform half of a template's contract needs no image — `make app-new` and the console's New app stay v1's until that form moves to `create` — [record](#slice-record-create-offline-1-november-2026) |
+| Create | A new app's first instance is v2's from the first commit: the records come from the image's own declaration, not from a v1 record migrated afterwards | **Done, offline then live 1 November 2026**: `swhurl-v2 create` resolves the image through the registry, states its declaration (including the documents it offers), revision, digest and publications, mints the broker identity, and writes records only; `make check-templates` proves a rendered app's label through `swhurl-v2 declaration`, so the platform half of a template's contract needs no image; a created app ran live and was removed, and the console's New app now opens the same records, so no v1 create path is left — [offline record](#slice-record-create-offline-1-november-2026), [live proof](#slice-record-a-new-app-created-from-its-own-image-live-1-november-2026), [console record](#slice-record-the-console-creates-an-app-with-v2-1-november-2026) |
 | Derived files | One render from v2's own records: the resolution, every compiled instance folder and unit, and the platform's documents, comparable with Git | **Done, offline then live 31 October 2026**: `swhurl-v2 render` composes the existing resolvers, renderers and compiler, so a record change cannot leave the tree half-rendered; `make check-v2` now compares 208 files — `v2-apps/` and the instance units were unchecked before — and a one-field record change names the file it moves. The console writes through it: PR #101 moved `swhurl-try-10/staging` to 192 MiB and #102 returned it to 128, both verified on the cluster — [record](#slice-record-one-render-from-the-records-offline-31-october-2026) |
 | 7. Selective replacement | An existing v1 app migrated to v2 ownership | **All 13 live** (nine staging and four production; `swhurl-try-11` was removed on 31 October 2026), and every migration's records are **written by v2** (`migrate`) rather than by hand |
 | Egress | A stable port per instance, the client variables, the grants annotation, the policy, DNS, and the proxy's own configuration — one port per allocation, identity by port, grants enforced | **Done, live**: v2 renders the proxy and enforces grants (26 Oct) |
@@ -204,7 +210,7 @@ record states. The console, which reads them by fixed name, no longer has a v1 b
 | The v2-only checks | **done 31 October 2026 (phase 4)**: `check-apps` runs v2's `render --check` plus the team registry, the notify routes and the template fixtures' policy; `verify-platform` reads `v2-apps/instances/` and `platform/egress/allocation.json`, with no v1 branch and no `check_secrets`; `apps/signing-keys.json` is deleted and the profile's `auth` block is the one source of the keys | [record](#slice-record-the-checks-read-v2s-tree-phase-4-31-october-2026), [evidence](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
 | Cutover's write primitives | done, offline 31 October 2026: `swhurl-v2 edit` applies one named change and writes the record with the files it renders in one effect; `swhurl-v2 remove` deletes an instance's records, files, unit and auth object and edits both registrations; every write of a compiled folder prunes what the records no longer render and keeps the folder's declared inputs | [record](#slice-record-the-cutovers-write-primitives-offline-31-october-2026), [evidence](current-state.md#the-cutovers-write-primitives-offline-31-october-2026) |
 | Promotion | done and live 30 October 2026: `swhurl-try-11` production is v2's and runs the release its staging selects; the handover orphaned v1's unit, adopted the same namespace and release, and then moved one release reference | [slice](#slice-record-the-first-live-promotion-of-swhurl-try-11-30-october-2026), [evidence](current-state.md#the-first-live-promotion-swhurl-try-11-production-moves-to-v2-30-october-2026) |
-| Create | done, offline 1 November 2026: `swhurl-v2 create` writes a new app's staging records from the image's own declaration label, its revision label and the `linux/amd64` manifest, mints its broker identity, and writes records only — the render after it allocates the port and writes the files; `make app-new` and the console's New app stay v1's until the template check has a path that needs no image | [record](#slice-record-create-offline-1-november-2026) |
+| Create | done, offline then live 1 November 2026: `swhurl-v2 create` writes a new app's staging records from the image's own declaration label, its revision label and the `linux/amd64` manifest, mints its broker identity, and writes records only — the render after it allocates the port and writes the files; the console's New app runs it and `make app-new` is deleted, so a new app has one create path | [offline record](#slice-record-create-offline-1-november-2026), [live proof](#slice-record-a-new-app-created-from-its-own-image-live-1-november-2026), [console record](#slice-record-the-console-creates-an-app-with-v2-1-november-2026) |
 
 Of the phase-1 review's findings, the coexistence check's blind spots are deliberately left. Nothing in v2 is published, and no v2 intent or resource reaches an active Flux path.
 
@@ -391,6 +397,31 @@ that is not a resource. (3): a removal command that reads the tree it is about t
   page named the uncommitted work. The cluster half is applied and verified after the commit.
 - **Not exercised:** the throwaway repositories and their GHCR packages are not deleted by `remove`; that is a
   separate action with the tokens in `secrets/`, recorded in [current state](current-state.md).
+
+## Slice record: the console creates an app with v2 (1 November 2026)
+
+- **Outcome:** a new app has one create path, and it is v2's. The console's **New app** form creates the repository,
+  waits for its first image, then runs `swhurl-v2 create`, one `edit` per further choice and `swhurl-v2 render` in
+  the PR's scratch tree, so the pull request carries `v2-records/<app>/` and what render derives rather than a v1
+  record. `make app-new` is deleted with its generator, flags, fixtures and its last `check-templates` caller, and
+  `make app-repo` prints the `create` line.
+- **What changed:** `merge.ACTIONS['new']` builds `create`/`edit`/`render` (tool `v2`), carries v2's records and is
+  `gated=False`, so the console holds it like every other v2 pull request; the v1 new-app record reader
+  (`check_new_app`) is gone, and `v2_new_inputs`/`v2_new_held` with it. `proposal.NewApp` collects v2 settings
+  (`team`, `exposure`, `calls`, `subscriptions`) instead of command flags, refuses a host ("v2 derives the address")
+  and the reserved `notify` name, and drops the **Public** choice the form offered, since v2 models no public
+  exposure. `repos.add_command` and `repo.create_command` print the one `create` line. Deleted:
+  `tools/swhurl/apps/new.py`, its two test modules, `tests/fixtures/manifests/`, `new_disabled.html`, the
+  `app-new` command entry, its `docs/commands.md` row and its `Makefile` line.
+- **Checked:** `make test` — 716 tests pass, including the console's new-app route, the interrupted-job resume (which
+  now asserts the `swhurl-v2 create` arguments and `render`, and no `auto-merge` label), and `app-repo`'s printed
+  line; `make check-templates` with the built binary — 0 problems, 2 warnings (the `job` kind v2 does not model);
+  `make check` green.
+- **Not exercised:** a signed-in page load of the live form and a real creation through it. Both create a public
+  GitHub repository, so they are the operator's: the next app created that way should be named `swhurl-try-<n>` so
+  it can be removed with its repository and package. A created app with a database, or promoted, is likewise
+  unexercised ([the live create proof](#slice-record-a-new-app-created-from-its-own-image-live-1-november-2026)
+  used a web app with a volume but no promotion).
 
 ## Slice record: the app repositories take version 2, and the four productions follow (1 November 2026)
 

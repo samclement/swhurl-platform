@@ -115,8 +115,8 @@ class AppRepoTests(unittest.TestCase):
         self.assertEqual((manifest.get_method(), manifest.full_url),
                          ('HEAD', 'https://ghcr.io/v2/samclement/notes/manifests/1-abcdef0'))
         self.assertIn('application/vnd.oci.image.index.v1+json', manifest.get_header('Accept'))
-        self.assertIn(f'make app-new NAME=notes ARGS="--from-repo samclement/notes --env staging --team <team> --image {image}"',
-                      lines[-1])
+        self.assertEqual(f'swhurl-v2 create --records v2-records --app notes --team <team> '
+                         f'--image {image} --profile v2/testdata/profile.json --out .', lines[-1].strip())
 
     def test_a_seed_published_first_is_the_first_image(self):
         cluster = Cluster(runs=[[{'number': 1, 'headSha': SHA, 'status': 'in_progress', 'conclusion': '', 'url': 'u'}]])
@@ -125,7 +125,7 @@ class AppRepoTests(unittest.TestCase):
         self.assertEqual(image, f'ghcr.io/samclement/notes:0-abcdef0@{DIGEST}')
         self.assertEqual(seen[-1].full_url, 'https://ghcr.io/v2/samclement/notes/manifests/0-abcdef0')
         self.assertIn('seed', lines[-3])
-        self.assertIn(f'--image {image}"', lines[-1])
+        self.assertIn(f'--image {image} ', lines[-1])
         self.assertNotIn(('gh', 'run', 'list'), [c[:3] for c in cluster.runner.calls], 'no need to wait for the build')
 
     def test_an_unreadable_webhook_token_is_a_warning_not_a_failure(self):

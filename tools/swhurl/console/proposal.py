@@ -17,15 +17,14 @@ import sys
 import tarfile
 import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from swhurl import yamlio
 from swhurl.apps import repo
+from swhurl.apps.calling import NOTIFY
 from swhurl.apps.contract import APP_OWNER, APP_TYPES, STACKS, TEAMS_FILE, type_answers
-from swhurl.apps.model import records, store
-from swhurl.apps.model.records import SETTINGS_FILE, Settings
+from swhurl.apps.model import records
 from swhurl.console import merge, v2
 from swhurl.console.actions import ActionError, Job
 from swhurl.console.github import AUTO_MERGE_LABEL, BASE, GitHub, GitHubAPI
@@ -36,7 +35,6 @@ AUTHOR = ('swhurl console', 'console@users.noreply.github.com')
 
 EXPOSURE_LABELS = {
     'authenticated-web': ('Signed in', 'A web address under {domain}, behind Google sign-in: only the accounts on the sign-in list.'),
-    'public': ('Public', 'Anyone on the internet, no sign-in. Needs a host outside {domain}.'),
     'private': ('Private', 'No web address: only the apps granted a call to it can reach it. For APIs, workers and jobs.'),
 }
 """The form's plain-language names for each exposure: (title, description)."""
@@ -98,7 +96,7 @@ def publish(api: GitHubAPI, job: Job, tree: Path, before: dict, after: dict, cha
 
 def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str], input: str | None = None,
              tool: str = 'python') -> None:
-    """The clone's own tooling (``app-new``, ``team-add``, ...) or v2's binary. ``input`` is a secret's
+    """The clone's own tooling (``team-add``, ...) or v2's binary. ``input`` is a secret's
     one way in (never an argument, never in the job's lines). A python tool leaves no bytecode: every file it
     writes in the clone becomes part of the commit. A v2 refusal is shown in v2's own words."""
     if tool == 'v2':
@@ -137,12 +135,6 @@ def open_action(runner: Runner, github: GitHub, job: Job, action: str, name: str
                           if command.name == 'promote' else '')
                 argv = v2.resolve(argv, revision=head, expect=expect)
             run_tool(runner, job, tree, command.name, argv, input=command.input, tool=command.tool)
-        if entry.kind == 'new-app':
-            # A new app's PR carries no egress port: app-new renders one for CLI use; the gate allocates it on newest main.
-            path = tree / 'apps' / name / 'staging' / SETTINGS_FILE
-            settings = Settings.parse(yamlio.load(path.read_text()))
-            settings = replace(settings, allocations=replace(settings.allocations, egress_port=None))
-            path.write_text(store.text(settings.document()))
         proposed = entry.read(tree, name, env)
         after = snapshot(tree)
         statuses = {p: 'D' if p not in after else 'A' if p not in before else 'M'
@@ -184,7 +176,7 @@ NEW_APP = 'new-app'  # a job's resume record: the New app form's choices
 
 @dataclass(frozen=True)
 class NewApp:
-    """The New app form's choices: the repository to create and the app-new flags for its staging
+    """The New app form's choices: the repository to create and the v2 settings for its staging
     instance. ``record`` is what a job keeps to finish the work later, and ``from_record`` reads it back."""
     name: str
     stack: str
@@ -205,6 +197,8 @@ class NewApp:
         description = ' '.join(form.get('description', '').split())[:200]
         if not records.NAME_RE.match(name):
             raise ActionError('name must be a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
+        if name == NOTIFY:
+            raise ActionError(f'{NOTIFY} is reserved for the platform notification service')
         if stack not in STACKS:
             raise ActionError(f'stack must be one of {", ".join(sorted(STACKS))}')
         app_type = form.get('type', '').strip()
@@ -221,32 +215,31 @@ class NewApp:
             raise ActionError(f'no team is registered ({TEAMS_FILE}): add one on the Teams page first; every app belongs to a team')
         if team not in teams:
             raise ActionError(f'choose the team that owns the app: one of {", ".join(teams)} ({TEAMS_FILE})')
-        flags = [f'--team={team}']
+        settings = [f'team={team}']
         exposure, host = form.get('exposure', '').strip() or APP_TYPES[app_type].exposure, form.get('host', '').strip()
-        if answers.get('kind') != 'web':
-            if host:
-                raise ActionError('a worker has no web address; leave Host empty')
-        else:
-            if exposure:
-                if exposure not in records.EXPOSURES:
-                    raise ActionError(f'exposure must be one of {", ".join(records.EXPOSURES)}')
-                flags.append(f'--exposure={exposure}')
-            if merge.checked_host(host):
-                flags.append(f'--host={host}')
+        if host:
+            raise ActionError('v2 derives the address from the app name and the exposure: it does not model a host')
+        if exposure == 'public':
+            raise ActionError('v2 does not model public exposure yet: choose signed-in, or private for an API, '
+                              'worker or job')
+        if exposure and answers.get('kind') == 'web':
+            if exposure not in EXPOSURE_LABELS:
+                raise ActionError(f'exposure must be one of {", ".join(records.EXPOSURES)}')
+            settings.append(f'exposure={exposure}')
         chosen = merge.Connections.from_form(form)
         if callable_apps is not None and offered_events is not None:
             chosen.check_offered(callable_apps, offered_events)
-        return cls(name, stack, description, answers, (*flags, *chosen.new_app_flags()))
+        return cls(name, stack, description, answers, (*settings, *chosen.new_app_flags()))
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> NewApp:
         """The choices a job kept; ``ValueError``, ``KeyError`` or ``TypeError`` if they cannot be used."""
         name, stack, flags = str(record['name']), str(record['stack']), tuple(str(flag) for flag in record['extra'])
-        if not records.NAME_RE.match(name) or stack not in STACKS or not all(flag.startswith('--') for flag in flags):
+        if not records.NAME_RE.match(name) or stack not in STACKS or not all('=' in flag for flag in flags):
             raise ValueError(name)
-        if any(flag.startswith('--publish=') for flag in flags):
-            raise ActionError('publishing choices are no longer supported: edit asyncapi.yaml named by '
-                              'provides.eventsFile, then start a new job')
+        if any(flag.startswith(('publish=', 'host=')) for flag in flags):
+            raise ActionError('these choices are no longer supported: the image states what it publishes, and v2 '
+                              'derives the address; start a new job')
         return cls(name, stack, str(record.get('description') or ''),
                    {str(k): str(v) for k, v in (record.get('answers') or {}).items()}, flags)
 

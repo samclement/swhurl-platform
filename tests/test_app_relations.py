@@ -1,15 +1,13 @@
 """One Git relation meaning for rendering, consent, intent and declared removal dependencies."""
-import io
 import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
 from dataclasses import replace
 from pathlib import Path
 
 from swhurl import interface, yamlio
-from swhurl.apps import calling, connections, events, new
+from swhurl.apps import calling, connections, events
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated, relations, render, store, write
@@ -218,14 +216,6 @@ class RelationTests(unittest.TestCase):
         world[each] = entry(key='')
         self.save(world)
         self.assertIn(f'{each}: has no NATS key; a render creates it', generated.problems(self.root))
-
-    def test_creation_accepts_an_absent_call_target(self):
-        with redirect_stdout(io.StringIO()):
-            args = new.parse_args(['created', '--env=staging', '--team=demo', '--image=example/app:1',
-                                   '--calls=absent', '--health-path=/', '--no-auto-deploy', '--root', str(self.root)])
-            new.generate(args, self.root, runner=FakeRunner())
-        self.assertNotIn(interface.callee_variable('absent'), yamlio.load(
-            (self.root / 'apps/created/staging/helmrelease.yaml').read_text())['spec']['values']['controllers']['main']['containers']['main']['env'])
 
     def test_evaluator_is_standard_library_only_and_policy_keeps_no_ruamel_boundary(self):
         for imports, forbidden in (('from swhurl.apps.model import relations', '("yaml", "ruamel")'),

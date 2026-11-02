@@ -161,7 +161,7 @@ class JobStoreTests(unittest.TestCase):
 
 class ResumeTests(unittest.TestCase):
     RESUME = {'kind': 'new-app', 'name': 'notes', 'stack': 'typescript', 'description': 'Take notes', 'answers': {'kind': 'web'},
-              'extra': ['--team=platform', '--exposure=authenticated-web'], 'touches_others': False}
+              'extra': ['team=platform', 'exposure=authenticated-web'], 'touches_others': False}
 
     def console(self, state='interrupted', resume=None, existing=('hello-ts', 'notes'), link=''):
         shared = {4: jobstore.record(actions.Job(4, 'new app and repository', 'notes/staging', 'sam@swhurl.com', NOW,
@@ -186,12 +186,15 @@ class ResumeTests(unittest.TestCase):
         job = self.jobs.get(5)
         self.assertEqual((job.action, job.state, job.link, job.unit), ('finish new app', 'succeeded', 'https://github.com/x/pull/7', 'notes/staging'),
                          '\n'.join(job.lines))
-        app_new = next(call for call in self.runner.calls if call[3:4] == ('app-new',))
-        self.assertEqual(app_new[4:], ('notes', '--from-repo=samclement/notes', '--env=staging',
-                                       f'--image=ghcr.io/samclement/notes:1-init000@{DIGEST}', '--team=platform', '--exposure=authenticated-web'))
+        create = next(call for call in self.runner.calls if call[0:2] == ('swhurl-v2', 'create'))
+        self.assertEqual(create[2:], ('--records', 'v2-records', '--app', 'notes', '--team', 'platform',
+                                      '--image', f'ghcr.io/samclement/notes:1-init000@{DIGEST}',
+                                      '--profile', 'v2/testdata/profile.json', '--out', '.',
+                                      '--exposure', 'authenticated-web'))
+        self.assertTrue(any(call[0:2] == ('swhurl-v2', 'render') for call in self.runner.calls), 'the PR carries what render writes')
         self.assertEqual(self.app_api.writes(), [], 'the repository is only read')
         self.assertFalse(any('copy' in call for call in self.runner.calls), 'nothing is rendered again')
-        self.assertEqual(self.platform_api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}])
+        self.assertEqual(self.platform_api.sent('POST /issues/7/labels'), [], 'a v2 PR is held for a person')
         self.assertNotIn('action="/jobs/4/resume"', c.get('/jobs/4', headers=WHO).text, 'finished since: offered once')
         self.assertEqual(c.post('/jobs/4/resume', headers=WHO).status_code, 404)
 

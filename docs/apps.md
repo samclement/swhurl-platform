@@ -128,11 +128,10 @@ A new app is created by **type**: what a team is building. The type sets every a
 | `web-app` | A site people use in a browser | TypeScript | `web` | `vite` | `sqlite` | `openapi` | signed-in |
 | `api` | Data and operations other apps call | TypeScript, Kotlin | `web` | — | `sqlite` | `openapi` | private |
 | `worker` | Reacting to events, or work in a steady loop | TypeScript, Kotlin | `worker` | — | `none` | `none` | private (no route) |
-| `scheduled-job` | Work at a time of day: each run does its work and ends | TypeScript, Kotlin | `job` | — | `none` | `none` | private (no route); [runs on a schedule](#scheduled-jobs) |
 
 Every type also has an events document and an example feature flag ([below](#stacks-and-features)). Only a web app or an API keeps a database: an image's declaration and a `swhurl.yaml` refuse one for a worker or a job, which keep what they need in an API they call. A web app without a database (made before the types) still runs.
 
-Data shared between apps belongs in an API; a web app's own SQLite keeps what only it uses. A browser reaches an API through a web app, which calls it for the signed-in person ([a browser calling an API](#calling-another-app)). Access changes later with **Change access** (`swhurl-v2 edit --set exposure=…`), and calls, events and scale as for any app. A type is not recorded on the app: its `.copier-answers.yml` keeps the answers it was made with. Changing a type adds its new answers to `APP_TYPES` and to each template's validator, and keeps the old answers in the validator until no app records them; an app whose answers are no type's cannot take a template update. A web app's page is served at `/` and its own API under `/api/*`, which the Catalogue does not list (`frontend`, below). A scheduled job runs as a CronJob ([scheduled jobs](#scheduled-jobs)) ([plan](plan.md#23-app-types-for-new-apps--decided-17-october-2026)).
+Data shared between apps belongs in an API; a web app's own SQLite keeps what only it uses. A browser reaches an API through a web app, which calls it for the signed-in person ([a browser calling an API](#calling-another-app)). Access changes later with **Change access** (`swhurl-v2 edit --set exposure=…`), and calls, events and scale as for any app. A type is not recorded on the app: its `.copier-answers.yml` keeps the answers it was made with. Changing a type adds its new answers to `APP_TYPES` and to each template's validator, and keeps the old answers in the validator until no app records them; an app whose answers are no type's cannot take a template update. A web app's page is served at `/` and its own API under `/api/*`, which the Catalogue does not list (`frontend`, below) ([plan](plan.md#23-app-types-for-new-apps--decided-17-october-2026)). No type is a scheduled job: v2 refuses the job kind, so the fourth type waits for it ([scheduled jobs](#scheduled-jobs)).
 
 ### Stacks and features
 
@@ -147,7 +146,7 @@ A **stack** is a [Copier](https://copier.readthedocs.io/) template repository fo
 
 | Feature | The app gets | The platform adds |
 | --- | --- | --- |
-| `kind` | An HTTP service answering `/healthz`, a background process that works every `WORK_INTERVAL_MS`, or a [scheduled job](#scheduled-jobs): one run of `work()` that ends with its status | A worker is private: no Service or route (the console hides **Change access**) |
+| `kind` | An HTTP service answering `/healthz`, a background process that works every `WORK_INTERVAL_MS`, or a [scheduled job](#scheduled-jobs), which v2 refuses | A worker is private: no Service or route (the console hides **Change access**) |
 | `database: sqlite` | SQLite at `DATABASE_PATH` with migrations in `migrations/` applied at startup | A retained volume, one copy running at a time, nightly backups and `make restore-sqlite` ([operations](operations.md#backups-and-recovery)). Staging and production each have their own database; a promote copies the image, not the data |
 | `api: openapi` | An [OpenAPI](https://www.openapis.org) description generated from the app's routes, committed in its repository and served by the app: `openapi.json` (TypeScript, Hono with `@hono/zod-openapi`) or `src/main/resources/openapi.yaml` (Kotlin, Micronaut OpenAPI). A test fails while the file and the routes disagree | The link on the app page (`provides.api`), and the document kept beside each instance (`provides.apiFile`; [what an app offers](#what-an-app-offers)) |
 | Events (every app) | An [AsyncAPI 3](https://www.asyncapi.com) document, `asyncapi.yaml`, describing each event the app publishes (name, meaning, payload schema, example), with one example event (`visited` for web, `worked` otherwise). The helper refuses to publish an event that is not in the file or a payload that does not fit its schema. An app that publishes nothing keeps the file with `channels: {}` | Its NATS key and stream at creation, and what it publishes from the document from then on ([what an app offers](#what-an-app-offers)) |
@@ -269,17 +268,17 @@ What the app reads arrives in runtime configuration (for example `SWHURL_DESCRIP
 # Identity
 version: 1              # required; this platform reads version 1
 stack: kotlin           # which template the app came from
-kind: web               # required: web, worker or job       --kind
+kind: web               # required: web or worker (a job is refused: docs/apps.md#scheduled-jobs)
 # Needs: what the image needs to run
-port: 8080              # web only (default 8080)            --port
-healthPath: /healthz    # web only, required                 --health-path
-uid: 65532              # default 65532                      --uid
-telemetry: otlp         # otlp or none (default)             --otlp
-resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}   # optional, the image's minimum: --cpu, --memory, --memory-limit
-database: sqlite        # optional; databaseSize: 1Gi        --database, --database-size
-secrets: [API_TOKEN]    # optional: variable names           --secret-keys
+port: 8080              # web only (default 8080)
+healthPath: /healthz    # web only, required
+uid: 65532              # default 65532
+telemetry: otlp         # otlp or none (default)
+resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}   # optional, the image's minimum
+database: sqlite        # optional; databaseSize: 1Gi
+secrets: [API_TOKEN]    # optional: variable names
 # Offers: what other apps can use
-provides: {api: /openapi.json}   # optional, web only: where its API description is served (no flag)
+provides: {api: /openapi.json}   # optional, web only: where its API description is served
 #   also apiFile: openapi.json and eventsFile: asyncapi.yaml: where the repository keeps its OpenAPI and AsyncAPI documents (what an app offers)
 flags:                  # optional: feature flags, typed, with a value per environment (see Feature flags)
   new-checkout: {type: boolean, default: false, staging: true}
@@ -306,8 +305,8 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `team` | grant | refused | `swhurl-v2 edit --set team=…` (one change for every environment), or `--team` at creation |
 | `exposure` | grant | refused | `swhurl-v2 edit --set exposure=…`, or `--exposure` at creation (default: web apps signed-in, workers private) |
 | `alerts` | grant | refused | Nothing: v2 has no alert setting, and `edit --set alerts` refuses it by name |
-| `calls` | grant | refused | `swhurl-v2 edit --set calls=…`, or `--calls` at creation |
-| `events.subscribe` | grant | refused | `swhurl-v2 edit --set subscriptions=…`, or `--subscribe` at creation |
+| `calls` | grant | refused | `swhurl-v2 edit --set calls=…` |
+| `events.subscribe` | grant | refused | `swhurl-v2 edit --set subscriptions=…` |
 | `autoDeploy` | dropped | ignored | Nothing: staging always follows new images; the templates no longer write it |
 
 | Configuration | If removed | Who reads the generated result |
@@ -327,9 +326,9 @@ The independent API fields are intentional: `provides.api` links a running descr
 
 ## Scheduled jobs
 
-**v2 does not model the job kind yet.** No command creates one: an image whose declaration says `job` is refused, `make check-templates` reports the gap as a warning, and `swhurl-v2 migrate` refuses a v1 instance of this kind. The rest of this section describes the v1 rendering such an instance had.
+**v2 does not model the job kind yet.** No command creates one (no app type is a job): an image whose declaration says `job` is refused, and `swhurl-v2 migrate` refuses a v1 instance of this kind. The rest of this section describes the v1 rendering such an instance had.
 
-A job (`kind: job`, the **Scheduled job** type) has no web address and no running pod between runs: Kubernetes starts one pod per run, on the schedule, from a CronJob the chart makes (`controllers.main.type: cronjob`). The run calls the app's `work()` once and ends: status 0 is a successful run, anything else a failed one. For example, a job that runs every ten minutes in staging:
+A job (`kind: job`) has no web address and no running pod between runs: Kubernetes starts one pod per run, on the schedule, from a CronJob the chart makes (`controllers.main.type: cronjob`). The run calls the app's `work()` once and ends: status 0 is a successful run, anything else a failed one. For example, a job that runs every ten minutes in staging:
 
 ```bash
 # five cron fields, Etc/UTC: the v1 generator's --schedule; v2 models neither the kind nor a schedule
@@ -702,10 +701,10 @@ What reaches ClickStack depends on whether the app has an OpenTelemetry SDK:
 | Your app | Do | What reaches ClickStack |
 | --- | --- | --- |
 | No OpenTelemetry SDK | Nothing | stdout and stderr as logs, with pod, namespace and deployment attributes |
-| An SDK that should report here | `--otlp` (the console's **Sends OpenTelemetry** box) | The logs above, plus traces, metrics and structured logs under `ServiceName` = the app name |
-| An SDK that should not report here, or reports to its own backend | Leave `--otlp` off; set `OTEL_SDK_DISABLED=true` or its own endpoint | Logs only. An unconfigured SDK sends to `localhost:4318`, where nothing listens in the pod, and logs export errors |
+| An SDK that should report here | `telemetry: otlp` in the app's `swhurl.yaml`, which its image's declaration carries | The logs above, plus traces, metrics and structured logs under `ServiceName` = the app name |
+| An SDK that should not report here, or reports to its own backend | Leave `telemetry` at `none`; set `OTEL_SDK_DISABLED=true` or its own endpoint | Logs only. An unconfigured SDK sends to `localhost:4318`, where nothing listens in the pod, and logs export errors |
 
-`--otlp` writes the cluster default into the container, the same in every environment (the values come from [`contract.py`](../tools/swhurl/apps/contract.py)):
+`telemetry: otlp` makes v2's render write the cluster default into the container, the same in every environment: the endpoint and its protocol come from the profile's `telemetry`, and the values in the container are [`contract.py`](../tools/swhurl/apps/contract.py)'s:
 
 ```yaml
             env:
@@ -720,14 +719,14 @@ What reaches ClickStack depends on whether the app has an OpenTelemetry SDK:
 
 The collector DaemonSet runs on every node with host networking, so it listens on the node IP: 4318 for OTLP over HTTP, 4317 for gRPC. It adds the ingestion key and the pod, namespace and deployment, and forwards to ClickStack ([services](services.md#clickstack-and-otel)). A v2-owned instance's policy is deny-by-default and admits the collector explicitly: the profile states the address block the endpoint's host is in (`telemetry.nodeCIDR`), and the policy admits that block on the endpoint's port. Without it the exporter's `Connection refused` is what a reporting app logs, so a profile that states a collector must state the block.
 
-**What must be true of the app** for `--otlp` to work:
+**What must be true of the app** for `telemetry: otlp` to work:
 
 - It has an OpenTelemetry SDK or auto-instrumentation. A Node app that is an ES module must register OpenTelemetry's loader hook before anything is imported, or HTTP is not traced; the template does this in `src/instrumentation.ts`.
 - The SDK reads the standard `OTEL_*` environment variables; an endpoint hard-coded in the app overrides them.
 - It exports OTLP over HTTP/protobuf. For gRPC, change the endpoint port to 4317 and the protocol to `grpc` by hand.
 - It sends no key or auth headers; the collector adds them.
 
-To add this to an existing instance, paste the block into each environment's HelmRelease. `make check-apps` fails (rule `otlp-host-ip`) if `$(HOST_IP)` is used without `HOST_IP` defined from `status.hostIP` before it; Kubernetes would otherwise pass the literal text to the SDK.
+Nothing here is written by hand: the image's declaration states `telemetry: otlp`, and v2 renders the block from it and the profile, so a new image is all an existing instance needs. `make check-apps` fails (rule `otlp-host-ip`) if `$(HOST_IP)` is used without `HOST_IP` defined from `status.hostIP` before it; Kubernetes would otherwise pass the literal text to the SDK.
 
 **Logs linked to traces:** a JSON log line that carries `trace_id` and `span_id` (32 and 16 hex characters, at the top level as pino writes them, or under `mdc` as logback writes them with the Java agent) is attached to that trace, so a trace in HyperDX shows its logs. Both templates do this already.
 
@@ -952,7 +951,7 @@ Each instance's egress port is kept in [`platform/egress/allocation.json`](../pl
 
 The compiler and the resolver validate a change as they render it: a record they cannot render, a policy violation or an unresolvable call returns nonzero and writes nothing, and `make check-apps` fails when a committed file differs from what its records render. Files already written remain locally for review; fix the failure and run `make check` before committing. The console opens no pull request when a command fails.
 
-The [notification expectations](services.md#notification-expectations) define deployment, rollback, uninstall and prolonged-health messages for each app/environment; the [current filters](services.md#current-notification-behavior) describe what is live today. When a pod fails, `make app-status` and the app page name the usual cause and the fix: out of memory (raise `--memory-limit`), an image the node cannot pull (missing tag, or a private GHCR package), a missing Secret value, a crash loop (`make app-logs APP= ENV= PREVIOUS=true` shows the crashed container's output; usually the wrong port or a write outside `/tmp`), or a failing readiness check (the app must answer its health path on its port).
+The [notification expectations](services.md#notification-expectations) define deployment, rollback, uninstall and prolonged-health messages for each app/environment; the [current filters](services.md#current-notification-behavior) describe what is live today. When a pod fails, `make app-status` and the app page name the usual cause and the fix: out of memory (raise it with `swhurl-v2 edit --set memoryMiB=…`, or the app page's **Scale**), an image the node cannot pull (missing tag, or a private GHCR package), a missing Secret value, a crash loop (`make app-logs APP= ENV= PREVIOUS=true` shows the crashed container's output; usually the wrong port or a write outside `/tmp`), or a failing readiness check (the app must answer its health path on its port).
 
 An instance fails fast: if its pods are not Ready within 3 minutes of a change (`FAIL_AFTER` in [`contract.py`](../tools/swhurl/apps/contract.py): the unit's `timeout` and the HelmRelease's `timeout`), its unit turns red and `make flux-reconcile` reports it; Helm then retries once and stops. `make app-status` lists failing containers. After fixing the cause, push, or run `make app-reconcile`. An app that genuinely needs longer to start (a large image, a slow first migration) can raise both timeouts in its own files.
 
@@ -963,7 +962,7 @@ The scheduled `console-dashboards` job gives every Flux-managed app a HyperDX da
 
 | Row | Web app | Worker | Scheduled job |
 | --- | --- | --- | --- |
-| Traces (needs `--otlp`) | Requests per minute, errors, p95 latency of server spans | Runs per minute, errors, p95 duration of root spans | **Runs**, **Failed runs** and **Run duration p95 (s)**: its root spans named `run`, one per run |
+| Traces (needs `telemetry: otlp`) | Requests per minute, errors, p95 latency of server spans | Runs per minute, errors, p95 duration of root spans | **Runs**, **Failed runs** and **Run duration p95 (s)**: its root spans named `run`, one per run |
 | Second row | Error logs and log lines per minute | the same | **Last runs** (time, environment, status, seconds, reason) and error logs |
 | Logs | The latest log lines, with their environment | the same | the same |
 

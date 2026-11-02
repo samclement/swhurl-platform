@@ -704,7 +704,7 @@ What reaches ClickStack depends on whether the app has an OpenTelemetry SDK:
 | An SDK that should report here | `telemetry: otlp` in the app's `swhurl.yaml`, which its image's declaration carries | The logs above, plus traces, metrics and structured logs under `ServiceName` = the app name |
 | An SDK that should not report here, or reports to its own backend | Leave `telemetry` at `none`; set `OTEL_SDK_DISABLED=true` or its own endpoint | Logs only. An unconfigured SDK sends to `localhost:4318`, where nothing listens in the pod, and logs export errors |
 
-`telemetry: otlp` makes v2's render write the cluster default into the container, the same in every environment: the endpoint and its protocol come from the profile's `telemetry`, and the values in the container are [`contract.py`](../tools/swhurl/apps/contract.py)'s:
+`telemetry: otlp` makes v2's render write the cluster default into the container, the same in every environment: `HOST_IP` is the node the pod runs on, and the endpoint, protocol and service name are the profile's `telemetry` and the app's own name:
 
 ```yaml
             env:
@@ -712,9 +712,9 @@ What reaches ClickStack depends on whether the app has an OpenTelemetry SDK:
                 valueFrom:
                   fieldRef:
                     fieldPath: status.hostIP                # the node IP
-              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
-              OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-              OTEL_SERVICE_NAME: weather-api                # the app name
+              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318   # the profile's telemetry.endpoint
+              OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf            # the profile's telemetry.protocol
+              OTEL_SERVICE_NAME: weather-api                        # the app name
 ```
 
 The collector DaemonSet runs on every node with host networking, so it listens on the node IP: 4318 for OTLP over HTTP, 4317 for gRPC. It adds the ingestion key and the pod, namespace and deployment, and forwards to ClickStack ([services](services.md#clickstack-and-otel)). A v2-owned instance's policy is deny-by-default and admits the collector explicitly: the profile states the address block the endpoint's host is in (`telemetry.nodeCIDR`), and the policy admits that block on the endpoint's port. Without it the exporter's `Connection refused` is what a reporting app logs, so a profile that states a collector must state the block.

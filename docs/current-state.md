@@ -2,6 +2,35 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## A new app created from its own image, live (1 November 2026)
+
+- **What changed:** `swhurl-try-33`, made by `make app-repo NAME=swhurl-try-33 TYPE=web-app` from the TypeScript
+  template at `v0.2.25`, became the first instance a new app got from v2 alone: `swhurl-v2 create` resolved
+  `ghcr.io/samclement/swhurl-try-33:4-84ca549`, read the image's version 2 declaration (128 MiB, web runtime,
+  `events` and `flags` documents, the app's description), checked the revision label against the tag, minted its
+  broker identity and wrote six record files with the documents byte for byte. `make v2-render` wrote the compiled
+  instance, its unit and its proxy port; the unit's line in `clusters/home/kustomization.yaml` was the reviewed edit.
+  [Record](v2-status.md#slice-record-a-new-app-created-from-its-own-image-live-1-november-2026).
+- **Checked live:** the image's own config blob (read anonymously from GHCR) states
+  `schemaVersion 2, memoryMiB 128, documents [events, flags]`. After `make flux-reconcile`, the pod ran `1/1` and
+  `make app-status` reported `Healthy`, Git desired and applied at the same revision, the running image equal to the
+  record's digest `sha256:b51d3e0f…`, and team `demo`. `swhurl-v2 observe` returned **`verdict: running`**, with
+  `unit`, `unit.revision`, `release`, `workload`, `image`, `ready` and `replicas` all as intended, and the backup
+  block `stale/no_runs` as expected for an instance that has not run a backup. The HelmRelease carried the offers
+  annotation `84ca549` and the description the image states.
+- **Checked offline, against the live records:** the console's own catalogue reader, given the rendered folder,
+  returned no problem, one event parsed from `asyncapi.yaml` and the `shout` flag from `flags.json` — no
+  `source.yaml` exists to read.
+- **Then removed:** `swhurl-v2 remove`, `make v2-render`, and the namespace, HelmRelease and unit were gone after the
+  reconcile; the repository and its GHCR package were deleted with the tokens in `secrets/`, each delete confirmed
+  and a follow-up read returning `gone`.
+- **Two defects the proof found and fixed:** the template's rendered `container.yml` still named the previous
+  release's reusable workflow, so the first app made from `v0.2.24` built a version 1 label and `create` refused it
+  (TypeScript `v0.2.25` and Kotlin `v0.2.24` point a new app at their own release); and the migration acceptance
+  test demanded a frozen predecessor for every committed instance, which a created app never has.
+- **Not exercised:** a created app with a database (this one is web with a volume and a backup CronJob, but no
+  backup run), a created app's promotion (this throwaway had no production), and a created app's rollback.
+
 ## Every image states its documents, and the productions follow (1 November 2026)
 
 - **What changed:** both stack templates pin the platform at the commit whose build writes declaration label version

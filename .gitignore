@@ -25,3 +25,6 @@ todo.md
 # pigram local secrets/cache
 .pi/pigram.json
 .pi/tmp/
+
+# A local `go build ./cmd/swhurl-v2` in v2/ (make targets build into a throwaway folder)
+/v2/swhurl-v2

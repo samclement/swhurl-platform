@@ -32,6 +32,22 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## `swhurl-v2 status` replaces `make app-status` (3 November 2026)
+
+- **What changed (`2cfc7752`):** the console port's first slice. `make app-status` runs `swhurl-v2 status`, which
+  compares the cluster with the instance's records at `HEAD` and gives one of the console's six states with the
+  fact that decided it. Observation gained failing containers, the expected Ingress and Certificates by name (a
+  read-only `Certificate` kind in `adapters/kube`) and the state; `observe`'s entry point is gone. Python's status
+  printer went (about 165 lines net); `gather_status` stays for the console and the promotion gate.
+- **Checked:** `go test ./...`, `make check-v2`, `make check`, `make check-lint`; Validate passed and deployed
+  console image `src-8ac93dce56e47138`, both CronJobs ran on it, and `make verify-platform` passed.
+- **Live, read-only:** all 10 instances read `healthy` from `swhurl-v2 status` and from v1's verdict (the console's
+  rule) side by side, about a second each including the build. A worker shows no route; an unreachable API server
+  gives `unknown: unit transport` with exit 0; an environment with no record exits 2 naming it.
+- **Live, on the throwaway `swhurl-try-30-staging`:** with its unit suspended status read `suspended: unit
+  suspended`, with its release suspended `suspended: release suspended`, and `healthy` once both were resumed.
+- **Not exercised:** a failing container live (the command test covers it), and a Certificate that is not Ready.
+
 ## The ownership milestone: every instance is v2's (3 November 2026)
 
 - **What it records:** v2 renders, writes and checks every app instance, and the

@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: a decision brief for the console port
+Gate: the operator's choice on the console port brief
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -48,19 +48,20 @@ This page is the one place v2's progress, remaining work and deferred features l
 ## Remaining Python
 
 What still runs Python, what replaces it, and where that port stands. This table is the distance to the
-goal; each row is its own approved slice. **Order matters here.** Six modules (`instance`, `contract`,
-`declaration`, `ops`, `repo`, `run`) are imported by the console, so they leave with the console port, not
-with a command; `policy`, `checks`, `teams`, the backup tooling and `notifications` are console-free and can
-go first. Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
+goal; each row is its own approved slice. **Order matters here.** Through its imports the console reaches 91
+of 119 modules (13.9k of 19.8k lines), including `verify`, `apps/checks`, `recovery`, `dashboards` and the
+notification checker, so those leave with or through the console port, not with a command; `apps/policy`,
+`apps/teams`, the docs and template checks, `backup_job`, `sqlite_restore` and the notify service are
+console-free and can go first ([the brief](iteration-2-plan.md#11-the-console-port-decision-brief-proposed-3-november-2026-not-approved)). Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
 calls are bash ([`host/ops.sh`](../host/ops.sh)), and the rest makes a safety decision, runs in the cluster or
 is shared with the console, so Go replaces it. A target that becomes bash keeps its row in `commands.py` and
 loses its `run=` function.
 
 | Python surface | What replaces it | State |
 | --- | --- | --- |
-| Platform checks (`check-apps`'s team, notify and fixture rules, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: `render --check` and `check-v2` are Go; the rest is Python. `policy.py` and `checks.py` are console-free and go first |
-| Recovery and backup tooling (`recovery.py`, `backup_job.py` with `backup-mongodb` and `backup-sqlite`, `sqlite_backup.py`, `sqlite_restore.py`, `backupset.py`) | `swhurl-v2 restore` covers an instance; the backup image's Go tool replaces the jobs; operator recovery remains | partial, and console-free |
-| The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | not started: console-free, about 1.5k lines that run every minute in the cluster or send alerts, so services rather than operator convenience |
+| Platform checks (`check-apps`'s team, notify and fixture rules, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: `render --check` and `check-v2` are Go; the rest is Python. `apps/policy.py` is console-free; `verify` and `apps/checks` are reached by the console's platform page |
+| Recovery and backup tooling (`recovery.py`, `backup_job.py` with `backup-mongodb` and `backup-sqlite`, `sqlite_backup.py`, `sqlite_restore.py`, `backupset.py`) | `swhurl-v2 restore` covers an instance; the backup image's Go tool replaces the jobs; operator recovery remains | partial: `backup_job` and `sqlite_restore` are console-free; `recovery` and `backupset` are reached by `verify` |
+| The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | not started: the notify service is console-free, the checker's modules are reached by `verify`; about 1.5k lines that run every minute in the cluster or send alerts, so services rather than operator convenience |
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `observe`, `mint`, `restore`); `app-logs`, `app-reconcile`, `suspend` and `resume` are bash ([`host/ops.sh`](../host/ops.sh)); `app-status` shares `ops.gather_status` with the console and leaves with it; `destroy-data` stays Python, a safety decision with its own tests |
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
 | The v1 records model and its fixture oracle (`apps/model/*`) | delete; v2 judges the fixtures | bounded, not started: 1,547 lines, imported by 17 modules (11 under `apps/`, 3 under `console/`, `dashboards.py` and 2 live tests) and 5 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
@@ -84,9 +85,9 @@ not migration.
 
 **B. Then the rest of the road.**
 
-2. **A decision brief for the console port**, the largest Python surface and the one that keeps six modules
-   alive: what a Go server keeping the HTMX templates costs, against the console-free retirements first.
-   Docs only; the port itself needs the operator's approval.
+2. **The operator's choice on the console port.** The
+   [brief](iteration-2-plan.md#11-the-console-port-decision-brief-proposed-3-november-2026-not-approved)
+   recommends strangling it from inside, status first; the port needs the operator's approval.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 

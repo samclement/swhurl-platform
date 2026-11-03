@@ -1,4 +1,4 @@
-"""suspend / resume / destroy-data: every refusal and the destructive order, offline."""
+"""destroy-data: every refusal and the destructive order, offline (suspend and resume: test_command_safety)."""
 import io
 import json
 import unittest
@@ -49,20 +49,16 @@ def mutations(runner):
 
 class TargetTests(unittest.TestCase):
     def test_shapes(self):
-        ok = {('suspend', 'kustomization/a'): ('kustomization', 'flux-system', 'a'),
-              ('resume', 'helmrelease/ns/r'): ('helmrelease', 'ns', 'r'),
-              ('destroy-data', 'pvc/ns/c'): ('pvc', 'ns', 'c'),
+        ok = {('destroy-data', 'pvc/ns/c'): ('pvc', 'ns', 'c'),
               ('destroy-data', 'pv/v'): ('pv', '', 'v')}
         for (action, text), expected in ok.items():
             target = lifecycle.parse_target(action, text)
             self.assertEqual((target.kind, target.namespace, target.name), expected)
-        bad = [('suspend', 'kustomization/a/b', 'Use kustomization/<name>'),
-               ('suspend', 'helmrelease/r', 'Use helmrelease/<namespace>/<name>'),
-               ('destroy-data', 'pvc/c', 'Use pvc/<namespace>/<name>'),
+        bad = [('destroy-data', 'pvc/c', 'Use pvc/<namespace>/<name>'),
                ('destroy-data', 'pv/ns/v', 'Use pv/<name>'),
                ('destroy-data', 'pvc//c', 'Use pvc/<namespace>/<name>'),
-               ('suspend', 'a/b/c/d', 'Invalid target'),
-               ('suspend', 'pvc/ns/c', 'suspend'),
+               ('destroy-data', 'a/b/c/d', 'Invalid target'),
+               ('suspend', 'pvc/ns/c', 'destroy-data'),
                ('destroy-data', 'kustomization/a', 'destroy-data')]
         for action, text, message in bad:
             with self.subTest(text=text), self.assertRaisesRegex(lifecycle.LifecycleError, message):
@@ -143,33 +139,7 @@ class DestroyDataTests(unittest.TestCase):
         self.assertIn('delete failed', err)
 
 
-class SuspendResumeTests(unittest.TestCase):
-    def test_suspend_kustomization_explains_helm_caveat(self):
-        runner = cluster()
-        code, out, _ = run(runner, 'suspend', 'kustomization/homelab-a')
-        self.assertEqual(code, 0)
-        self.assertIn(('flux', 'suspend', 'kustomization', 'homelab-a', '-n', 'flux-system'), runner.calls)
-        self.assertIn('suspend them separately to freeze Helm', out)
-
-    def test_resume_helmrelease_is_quiet(self):
-        runner = cluster()
-        code, out, _ = run(runner, 'resume', 'helmrelease/ns/r')
-        self.assertEqual((code, out), (0, ''))
-        self.assertIn(('flux', 'resume', 'helmrelease', 'r', '-n', 'ns'), runner.calls)
-
-    def test_missing_target_refused(self):
-        runner = FakeRunner().on('kubectl', returncode=1)
-        code, _, err = run(runner, 'suspend', 'kustomization/nope')
-        self.assertEqual(code, 2)
-        self.assertIn('kustomization flux-system/nope not found', err)
-
-    def test_dry_run_plans_flux(self):
-        runner = cluster(dry_run=True)
-        code, out, _ = run(runner, 'suspend', 'kustomization/homelab-a')
-        self.assertEqual(code, 0)
-        self.assertNotIn('flux', {c[0] for c in runner.calls})
-        self.assertTrue(out.startswith('Plan (suspend kustomization/homelab-a):\n'))
-
+class UsageTests(unittest.TestCase):
     def test_usage(self):
         for argv in ([], ['suspend'], ['suspend', ''], ['explode', 'pvc/a/b']):
             with self.subTest(argv=argv):

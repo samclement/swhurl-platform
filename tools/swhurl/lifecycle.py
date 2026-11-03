@@ -1,8 +1,6 @@
-"""Explicit lifecycle operations. Deployment and uninstall stay Git-driven;
-these commands cover what Git cannot express safely.
+"""Destroying data: what Git cannot express safely. Deployment and uninstall stay Git-driven;
+suspend and resume are one flux call each (host/ops.sh).
 
-    suspend      kustomization/<name> | helmrelease/<ns>/<name>
-    resume       kustomization/<name> | helmrelease/<ns>/<name>
     destroy-data pvc/<ns>/<name> | pv/<name>     (CONFIRM=<same target>)
 
 ``destroy-data`` is the only command that deletes data. It refuses unless
@@ -39,10 +37,6 @@ class Target:
 
 
 SHAPES = {
-    ('suspend', 'kustomization'): (1, 'Use kustomization/<name>'),
-    ('resume', 'kustomization'): (1, 'Use kustomization/<name>'),
-    ('suspend', 'helmrelease'): (2, 'Use helmrelease/<namespace>/<name>'),
-    ('resume', 'helmrelease'): (2, 'Use helmrelease/<namespace>/<name>'),
     ('destroy-data', 'pvc'): (2, 'Use pvc/<namespace>/<name>'),
     ('destroy-data', 'pv'): (1, 'Use pv/<name>'),
 }
@@ -58,30 +52,9 @@ def parse_target(action: str, text: str) -> Target:
     count, hint = SHAPES[(action, kind)]
     if len(parts) != count or not all(parts):
         raise LifecycleError(hint)
-    if kind == 'kustomization':
-        return Target(kind, FLUX_NS, parts[0], text)
     if count == 1:
         return Target(kind, '', parts[0], text)
     return Target(kind, parts[0], parts[1], text)
-
-
-def suspend_resume(runner: Runner, action: str, target: Target, out=print, *, quiet: bool = False) -> int:
-    """``quiet`` captures flux's progress output instead of streaming it (used by live tests)."""
-    found = runner.run(['kubectl', '-n', target.namespace, 'get', target.kind, target.name], check=False)
-    if found.returncode:
-        raise LifecycleError(f'{target.kind} {target.namespace}/{target.name} not found')
-    if runner.dry_run:
-        out(f'Plan ({action} {target.text}):')
-    flux = ['flux', action, target.kind, target.name, '-n', target.namespace]
-    code = runner.run(flux, mutating=True).returncode if quiet else runner.attached(flux, mutating=True)
-    if code:
-        return code
-    if action == 'suspend':
-        out(f'[INFO] Git changes stop applying to {target.text}; running workloads and data are untouched.')
-        if target.kind == 'kustomization':
-            out('[INFO] HelmReleases it created keep reconciling their last applied spec; '
-                'suspend them separately to freeze Helm.')
-    return 0
 
 
 def mounted_by_active_pod(pods: dict, claim: str) -> bool:
@@ -148,12 +121,10 @@ def destroy_data(runner: Runner, target: Target, out=print) -> int:
 
 def run_action(action: str, target_text: str, *, confirm: str, runner: Runner) -> int:
     target = parse_target(action, target_text)
-    if action == 'destroy-data' and confirm != target_text:
+    if confirm != target_text:
         raise LifecycleError(f'destroy-data permanently deletes {target_text} and its data. '
                              f'Re-run with CONFIRM={target_text}')
-    if action == 'destroy-data':
-        return destroy_data(runner, target)
-    return suspend_resume(runner, action, target)
+    return destroy_data(runner, target)
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:

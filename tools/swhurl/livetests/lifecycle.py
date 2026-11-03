@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 
-from swhurl import interface, lifecycle
+from swhurl import ROOT, interface, lifecycle
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 NS = 'lifecycle-test'
@@ -78,12 +78,11 @@ def body(t: LiveTest) -> None:
     t.check(bool(original), f'workload wrote data to {pv}', 'no marker written')
 
     t.step('Suspend and resume')
-    quiet = dict(out=lambda _line: None, quiet=True)
-    lifecycle.suspend_resume(t.runner, 'suspend', lifecycle.parse_target('suspend', f'kustomization/{UNIT}'), **quiet)
+    t.runner.run(['make', '-s', 'suspend', f'TARGET=kustomization/{UNIT}'], cwd=ROOT, mutating=True)
     suspended = (t.get('-n', 'flux-system', 'get', 'kustomization', UNIT) or {}).get('spec', {}).get('suspend')
     t.check(suspended is True, 'unit suspended', 'unit not suspended')
     t.check(available(t), 'workload still running while suspended', 'workload stopped while suspended')
-    lifecycle.suspend_resume(t.runner, 'resume', lifecycle.parse_target('resume', f'kustomization/{UNIT}'), **quiet)
+    t.runner.run(['make', '-s', 'resume', f'TARGET=kustomization/{UNIT}'], cwd=ROOT, mutating=True)
     t.check(t.succeeds('-n', 'flux-system', 'wait', '--for=condition=Ready', f'kustomization/{UNIT}', '--timeout=3m'),
             'unit resumed and Ready', 'unit not Ready after resume')
 

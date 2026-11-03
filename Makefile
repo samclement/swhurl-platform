@@ -13,8 +13,8 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 COMMANDS := help reconcile verify-platform notifications-check notifications-heartbeat verify-logs flux-install \
 	clickstack-bootstrap clickstack-dashboards \
 	app-repo app-hooks team-add team-edit team-remove team-channel channel-add channel-remove \
-	app-status app-logs app-reconcile console-image console-dev \
-	platform-certs-staging platform-certs-prod suspend resume destroy-data backup-mongodb backup-sqlite restore-sqlite \
+	app-status console-image console-dev \
+	platform-certs-staging platform-certs-prod destroy-data backup-mongodb backup-sqlite restore-sqlite \
 	check-repo check-apps check-templates check-otel check-secrets check-docs v2-snapshot \
 	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb live-test-restore-sqlite \
 	live-test-call-identity live-test-network-policy live-test-team-scenario
@@ -22,6 +22,13 @@ COMMANDS := help reconcile verify-platform notifications-check notifications-hea
 .PHONY: $(COMMANDS)
 $(COMMANDS):
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) make $@
+
+# One or two kubectl or flux calls (host/ops.sh), which read their variables from the environment.
+.PHONY: app-logs app-reconcile suspend resume
+app-logs app-reconcile:
+	@DRY_RUN=$(DRY_RUN) ./host/ops.sh $(@:app-%=%) "$$APP" "$$ENV"
+suspend resume:
+	@DRY_RUN=$(DRY_RUN) ./host/ops.sh $@ "$$TARGET"
 
 # Sequencing --------------------------------------------------------------------
 

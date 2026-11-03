@@ -32,6 +32,22 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## The thin operator commands are bash (3 November 2026)
+
+- **What changed:** `make app-logs`, `app-reconcile`, `suspend` and `resume` run [`host/ops.sh`](../host/ops.sh)
+  instead of Python, with the same calls, words and exit codes; each name is checked before any call, so a name
+  that would read as a flag (`kustomization/-A`) is refused, and `app-reconcile` gains a dry run. `ops.py` keeps
+  only `app-status`, which the console shares; `lifecycle.py` keeps only `destroy-data`. The unreachable
+  `app check` action, which checked a v1 folder that no longer exists, went with them. The Remaining Python table
+  in [v2 status](v2-status.md#remaining-python) now says which of item 2's commands are services, shared with the
+  console or safety decisions, and so go to Go rather than bash.
+- **Checked:** `make check` (715 tests; the four commands' tests run the script through `make` with fake `kubectl`
+  and `flux`), `make check-lint`, `make check-docs`.
+- **Live:** `make app-logs APP=swhurl-try-30 ENV=staging TAIL=2` printed two lines; `app-reconcile` planned under
+  `DRY_RUN=true` and then applied revision `68940963`, after which `make app-status` was Healthy at it; `make
+  suspend` planned without calling flux, and refused `kustomization/nope` with exit 2. `make live-test-lifecycle`
+  passed every step, its suspend and resume through `make`, and left no namespace, unit or suspension behind.
+
 ## Creation and editing agree (3 November 2026)
 
 - **Decided, no code:** `create` keeps taking only the team and the exposure. The console's New app already turns

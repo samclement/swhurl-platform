@@ -2,7 +2,7 @@
 
 Every `make` target, grouped by task. Each is stated once, in [`tools/swhurl/commands.py`](../tools/swhurl/commands.py): its variables, its help line, whether it takes `DRY_RUN=true` and what it touches. `make help` prints that list, a target refuses a missing variable with its usage line, and a test fails when a row here differs from it in name, variables, the † mark or the first word of **Touches**.
 
-**Touches:** **Local** is this checkout at most (some read the network); **Git** edits files for you to commit; **Cluster (read)** reads the live cluster; **Cluster** changes it; **Cluster (throwaway)** creates and removes labelled test resources; **GitHub** creates or changes a repository there; **Host** installs system units. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting; any other target that runs through `swhurl` refuses `DRY_RUN=true` and does nothing. Variables in `[]` are optional.
+**Touches:** **Local** is this checkout at most (some read the network); **Git** edits files for you to commit; **Cluster (read)** reads the live cluster; **Cluster** changes it; **Cluster (throwaway)** creates and removes labelled test resources; **GitHub** creates or changes a repository there; **Host** installs system units. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting; any other target that runs through `swhurl` or [`host/ops.sh`](../host/ops.sh) refuses `DRY_RUN=true` and does nothing. Variables in `[]` are optional.
 
 ## Deploy and verify
 
@@ -36,7 +36,7 @@ Creation, the GitHub side, the shared team registry and the read-only operations
 | `channel-remove NAME=` | Remove a channel. Refused while a team notifies it | Git edit |
 | `app-status APP= ENV=` | Its state (the console's verdict), whether Git is applied and the running image matches it (compared by digest), replicas, who can reach it, route, certificate, failing containers | Cluster (read) |
 | `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`, `PREVIOUS=true` for the last crashed container) | Cluster (read) |
-| `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |
+| `app-reconcile APP= ENV=` † | Fetch Git and reconcile only that instance | Cluster |
 | `console-image` | Pin `platform/console` and the [notify service](services.md#notify-service) to the [console](console.md#deploy-a-new-console) image published for this commit: the `src-<hash>` tag of its inputs and its digest on GHCR. Refuses with uncommitted inputs or before the image is published. Validate's deploy job does this itself (`--expect src-<hash> --commit`); by hand it is the fallback | Git |
 | `console-dev [PORT=8080]` | The [console](console.md) on `http://127.0.0.1:8080` as a fixed dev identity. It uses your kubeconfig, so its buttons act with your rights, and opens real PRs if `GITHUB_TOKEN` is set. Needs `uv` | Cluster, GitHub |
 

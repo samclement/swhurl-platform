@@ -41,7 +41,15 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Offline:** `make check-v2` passes, including a fake TLS API server accepting the mounted token and CA,
   missing-part errors, mutually exclusive flags and restore refusing the flag. The sole public-API baseline
   addition is the intended `kube.ServiceAccount` constructor, which validates supplied material without I/O.
-- **Live proof:** pending deployment; the console still uses Python for its status reads.
+- **Live proof at `d58d108a`:** Validate deployed console image `src-82d32b6400993a83`; Flux reconciliation,
+  rollout and `make verify-platform` passed. Inside the console pod, `status --in-cluster` reported `healthy`
+  with source `serviceaccount in console` for `demo-shop/staging`, `demo-orders/staging` and
+  `demo-notifier/staging`, matching host `make app-status`. Both database instances' backups were `current`,
+  including the newest Job's completion. The worker had no route or backup. Both console CronJobs succeeded
+  on the new image. Only JSON records were copied into a temporary pod directory, removed after the proof;
+  no credentials were copied. The console still uses Python for its status reads.
+- **Not exercised:** token rotation during a process (each invocation rereads the mount), or expiry/revocation
+  live. Missing material and credential-source conflicts are covered offline.
 
 ## `swhurl-v2 status` replaces `make app-status` (3 November 2026)
 

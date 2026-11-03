@@ -760,3 +760,104 @@ mounted token and CA and `KUBERNETES_SERVICE_HOST`/`PORT`, as `kubectl` uses the
 **Proof.** Offline: each missing part, the exclusive flags, a run against the fake API server with a temporary
 token and CA. Live, read-only: the records copied into the console pod's `/tmp` and `status --in-cluster` run
 there for one web and one database instance, matching `make app-status`, the backup readable.
+
+### Slice two: the console reads v2 status (proposed 3 November 2026)
+
+**Outcome.** The app page, Apps list and promotion readiness check use the same Go decision. The existing
+Starlette server, HTMX markup and PR workflow stay; this is not a server port. The operator agreed the direction:
+records at main, v2 deciding whether unapplied commits matter, and one bulk observation for the Apps list.
+The contract below still needs approval before implementation.
+
+```text
+GitHub main → one pinned commit → immutable input bundle ─┐
+GitHub compare(applied, pinned) → complete changed paths ─┼→ swhurl-v2 status → JSON → console presentation
+Kubernetes → applied revisions and live object evidence ─┘
+```
+
+**Authority and time.**
+
+- Resolve main once per request. Its SHA identifies both the records and the expected revision shown on the
+  page. Never combine a record from one SHA with a profile or calls document from another.
+- Reuse the existing tarball-reading path for an immutable input bundle: app/instance/release JSON under
+  `v2-records/`, the profile, calls and egress allocation, plus committed HelmReleases where the page displays
+  rendered variables. Share immutable bytes by SHA using the console's bounded cache; extract into a
+  request-owned temporary directory for the command. Do not cache live status between requests.
+- An absent record is not a failed GitHub read. Failed input reads show unavailable and disable changes;
+  they never fall back to Python's judge or silently use an older main. A record awaiting its first Flux unit
+  still gets the existing pending page. Removed instances remain visible as removing until live cleanup ends;
+  that inventory is not a reconstructed v2 record.
+
+**Unapplied commits: a pure v2 decision, not a Python state override.**
+
+- The console already reads the units for its inventory and controls. Use those applied SHAs to ask GitHub's
+  compare API once per distinct `(applied, pinned)` pair, then supply the results to status. There is no GitHub
+  adapter in Go in this slice: Python supplies facts, Go decides what they mean.
+- Add an optional `--changes FILE` containing comparisons identified by exact `from` and `to` SHAs and complete
+  changed-path lists, including previous filenames for renames. A truncated, failed or non-ancestor comparison
+  is unavailable, never an empty list. The existing compare API's 300-file cutoff remains conservative.
+- v2 derives each instance's relevant paths from its records and compiler/writer vocabulary: its app record,
+  instance inputs, rendered instance folder and unit registration, including removed/renamed paths. Do not copy
+  v1 path patterns into Python or introduce a parallel path catalogue.
+- An unapplied revision counts as unaffected only when the comparison is complete, its endpoints match the
+  expected commit and the unit revision read by this invocation, and no relevant path changed. If the unit moves
+  between the console's inventory read and v2's read, a nonmatching comparison grants no exemption. Exact revision
+  equality needs no comparison. Unknown relevance leaves status updating and refuses promotion.
+- Preserve the literal applied revision in the report. Report revision currentness separately as applied,
+  unaffected, pending or unknown with a reason; unaffected does not mean Flux applied the newest SHA. Only the
+  revision check is exempted: failures, suspension, a different digest and missing evidence are never excused.
+  Host status without `--changes` remains conservative as today.
+
+**Bulk observation and its boundary.**
+
+- `status --all` is mutually exclusive with `--app/--env`. It compiles every instance in the pinned records,
+  returns stable app/environment order and uses exactly the same pure evaluator as single-instance status.
+  One invocation serves each console request, including an app page that also needs the Apps summary.
+- Add an explicit all-namespaces list operation to `adapters/kube`; do not reinterpret an empty namespace on
+  existing `Read`/`List`, and keep nonempty selectors mandatory. Contract-test real and fake adapters together.
+- Candidate selectors are existing metadata, not authority: Flux ownership labels for HelmReleases, Ingresses
+  and Certificates; the app-instance label for Deployments and main pods; the backup label for CronJobs, backup
+  pods and Jobs. Read units in `flux-system`. Partition successful answers by namespace, name and target selector,
+  keeping only objects each compiled target names. Unrelated candidates neither create instances nor grant
+  ownership. No new workload labels or manifest changes are needed.
+- List each required kind/selector once per request, rather than seven reads per instance. Complete list
+  semantics are essential: pagination or a response exceeding the adapter's cap must not make unseen objects
+  absent. An incomplete or failed list becomes unavailable evidence for every dependent instance. This slice
+  does not raise response limits or claim an atomic snapshot across Kubernetes resources.
+- Single status keeps `v2-observation`; bulk gets a versioned collection of those reports with explicit app/env
+  identity. Extend the individual report version for facts the console currently loses: observed applied
+  revision, unit/release suspension and conditions, ready replica count and running image digests. Preserve
+  absent, unreadable and empty distinctly. Python must not infer these from the selected state or invent values.
+
+**Console and promotion.**
+
+- Replace `gather_status`, `status_of` and the instance `verdict` with the report. Adapt templates directly,
+  without recreating `InstanceStatus`. Python maps Go state/reason codes to display text only. Keep the shared
+  state/colour primitive and `unit_state` for the platform page; they are not instance judges.
+- Desired settings and database kind come from pinned records; rendered environment variables come from the
+  same commit's HelmRelease and are labelled desired, not observed. Secrets remain unsupported; do not fabricate
+  secret values or file locations. Remove dead job-kind controls. Existing connection/catalogue data and the
+  non-status parts of `AppRow` stay on their current readers in this slice.
+- Activity consumes Go's observation too, not a second Python verdict with revision checks bypassed. It remains
+  conservative while currentness is unproved; it may briefly show applying where v1's `render_state` said live.
+  Historical evidence and the broader Activity redesign are out of scope.
+- Promotion requires currentness (applied or proved unaffected), healthy workload, the reviewed digest still
+  selected by fresh main, and that digest running. Go owns that decision and returns the refusal reason. Check
+  again on submission, not only while rendering a disabled button. Preserve the existing stale-expectation check
+  when the PR clone is prepared; PRs remain held for manual review. This is a submission-time observation, not a
+  guarantee that staging remains healthy until a later manual merge.
+- The current Python `touches` helper checks v1 paths and can mislabel an instance's own change as elsewhere.
+  This affects the page's promotion warning; it is not an automatic merge bypass. No separate Python fix is
+  included without the operator's answer to that outstanding choice.
+
+**Delivery and acceptance.** Two implementation steps, no permanent dual judge: first bulk observation and
+revision evidence in Go, then switch the console consumers together and delete their Python status/readiness
+rules. Keep image helpers still imported by the notification checker. Gate each step with Go state-table and
+adapter contract tests, `make check-v2`, `make check` and lint; test the console adapter with `FakeRunner`.
+
+Required cases: unrelated change, own record/render/unit change, removed/renamed path, unavailable/truncated
+comparison, unit moving between reads, missing record versus failed GitHub read, failed/partial list versus an
+empty list, mixed healthy/failing instances, and a POST that refuses when staging changed or became unready.
+Assert list/detail agreement and list read counts independent of instance count. Measure cold and warm page reads
+against the current console before deployment; report the numbers, not a presumed speedup. Live: compare every
+instance, test signed-out redirects and signed-in pages/forms, and prove a promotion is refused while its own
+change is unapplied without merging a promotion or creating a repository as part of the test.

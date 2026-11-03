@@ -349,7 +349,7 @@ The v1 workload renderer applies the same schedule validation to records, not ju
 
 A job keeps no database (`database` is refused in its `swhurl.yaml` and by its template: the SQLite backup runs in the app's running pod, and a job has none). It is private, takes no calls (it has no Service) and has no replicas: an edit changes only its resources. It can call other apps, publish events and read its feature flags like any app; its template waits up to 5 s for the flag overrides before the run.
 
-**Its state** comes from its CronJob's record of its runs, not from pods (it has none between runs): **Healthy** once a run has succeeded (or while it waits for its first run), **Updating** while a run is going, **Failing** when the newest run ended without succeeding, until a later run succeeds, and **Suspended** when its schedule is. The app page shows the schedule, the last run and the last success; the app page's **Schedule** opens the pull request that setting would make, and its **Scale** changes only CPU and memory. The image it runs is the newest successful run's, so a promotion takes an image that has run successfully in staging. A failed run sends `<app>/<env> run failed` to the team's [notification channel](#notifications) at once, and `recovered` after the next successful run ([notification expectations](services.md#notification-expectations)). The templates' example declares a second flag, `fail-run`, off everywhere: turning it on for an environment on the app page makes the next run fail on purpose, to see how a failed run is reported.
+**Its state** comes from its CronJob's record of its runs, not from pods (it has none between runs): **Healthy** once a run has succeeded (or while it waits for its first run), **Updating** while a run is going, **Failing** when the newest run ended without succeeding, until a later run succeeds, and **Suspended** when its schedule is. v2 does not model job instances; the console offers no job or schedule controls. The image it runs is the newest successful run's, so a promotion takes an image that has run successfully in staging. A failed run sends `<app>/<env> run failed` to the team's [notification channel](#notifications) at once, and `recovered` after the next successful run ([notification expectations](services.md#notification-expectations)). The templates' example declares a second flag, `fail-run`, off everywhere: turning it on for an environment on the app page makes the next run fail on purpose, to see how a failed run is reported.
 
 ## Who can reach it
 
@@ -359,7 +359,7 @@ A job keeps no database (`database` is refused in its `swhurl.yaml` and by its t
 | `authenticated-web` (the default for a web app made from a stack) | Behind Google sign-in (the shared oauth2-proxy middleware) | Under `homelab.swhurl.com`; derived as `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) unless given |
 | `public` | No sign-in | A host **outside** `homelab.swhurl.com`, so the shared sign-in cookie never reaches it. v2 does not model it yet: `create` refuses it, and no v2 instance has one |
 
-Set it with `--exposure` at creation, and change it later with the app page's **Change access** form or `swhurl-v2 edit --records v2-records --app demo-shop --env staging --set exposure=public --profile v2/testdata/profile.json --out .`. The change rewrites the route, the namespace's exposure label and the unit's dependencies together, derives the host from the app and environment, and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` and the app page show the exposure read from the live routes.
+Set it with `--exposure` at creation, and change it later with the app page's **Change access** form or `swhurl-v2 edit --records v2-records --app demo-shop --env staging --set exposure=public --profile v2/testdata/profile.json --out .`. The change rewrites the route, the namespace's exposure label and the unit's dependencies together, derives the host from the app and environment, and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` reports route evidence. The app page labels the exposure from its pinned desired record and shows observed routes and certificate evidence separately.
 
 ## Teams and isolation
 
@@ -689,7 +689,7 @@ Overrides are not in Git and not backed up: if NATS loses them, every app return
 
 ## Secrets
 
-**v2 does not model secrets yet.** An app lists the secret variables it reads in `swhurl.yaml` (`secrets: [API_TOKEN]`), and an image that adds a name is what the release would state — but v2 refuses a release that declares secret names, so no v2 instance has one: `create` refuses such an image, and `swhurl-v2 migrate` stops on such an app. No instance has such a name today, and a name without a value shows as **value missing** on the app page and in `make app-status`.
+**v2 does not model secrets yet.** An app lists the secret variables it reads in `swhurl.yaml` (`secrets: [API_TOKEN]`), and an image that adds a name is what the release would state — but v2 refuses a release that declares secret names, so no v2 instance has one: `create` refuses such an image, and `swhurl-v2 migrate` stops on such an app. No instance has such a name today; the app page states that secrets are unsupported and does not infer values or files.
 
 **A v1 instance's value** was set with `make app-secret` — a command phase 3 deleted, so today the encrypted `apps/<app>/<env>/secret.sops.yaml` file is only restorable from Git, and nothing new writes one. Until v2 gains the capability, an app that needs a secret cannot be v2's.
 
@@ -856,26 +856,26 @@ make v2-render
 
 `documents` names the roles the old offers folder holds: `openapi.json` is `api`, `asyncapi.yaml` is `events`, `flags.json` is `flags` (the folder's old `source.yaml` index names the same, and is not a document). The conversion is needed only while an app's previous image predates label version 2; after its next image every release the records state has the current shape. On `swhurl-try-30`'s `25-9e2b082` record it reproduces `rel-sha256:8ce8ff7f…`, the identity `57c76acb` gave that release.
 
-It takes the release staging selects into production's record pair and files, and nothing else: production's replicas, exposure, calls, subscriptions and volume stay its own. It refuses a release staging does not select, a user change on an instance with a volume, a stale expectation, and anything the compiler refuses. v2 has no promotion gate: check staging first (`make app-status`, which runs `swhurl-v2 status`).
+It takes the release staging selects into production's record pair and files, and nothing else: production's replicas, exposure, calls, subscriptions and volume stay its own. It refuses a release staging does not select, a user change on an instance with a volume, a stale expectation, and anything the compiler refuses. The direct CLI does not read live readiness: check staging first (`make app-status`, which runs `swhurl-v2 status`). The console enforces Go readiness both on review and again before accepting a promotion submission.
 
 In the console, **Review promotion** shows the exact image destination and, for a later promotion, what `main` renders differently; **Promote to production** then opens a pull request that carries production's records and the files they rendered, held for you to merge. Existing promotion PRs are recovered from GitHub after a restart and reused (the PR's first line names its image); a replacement image requires explicitly closing the old PR. See [promotions](console.md#promotions).
 
 ### A commit elsewhere does not hold a promotion
 
-Every commit to `main` leaves every app's Flux unit one revision behind for a few seconds, and "Updating" on the console meanwhile. A promotion is held only by a commit that changes staging's own files (`v2-records/<app>/staging/`, its compiled folder or its unit file `clusters/home/app-<app>-staging.json`) and is not applied yet:
+Every commit to `main` can leave a Flux unit behind for a few seconds. Go judges the unapplied revision for both the console's displayed state and promotion readiness; Python supplies comparison facts, not a path rule.
 
-| Staging's unit is | The commits it has not applied change | Promotion |
+| Staging's unit is | Complete comparison evidence | Revision currentness |
 | --- | --- | --- |
-| at main's newest revision | nothing | goes ahead |
-| behind | another app, docs, the console | goes ahead, even while the unit waits for a dependency or re-applies |
-| behind | staging's own files | refused: "a change to staging is in Git and Flux has not applied it yet" |
-| behind | unknown (see below) | refused: "Flux is still applying the latest commit on main to staging" |
+| at the request's pinned main | not needed | applied |
+| behind | only unrelated paths changed | unaffected (the literal older applied SHA is still shown) |
+| behind | staging's record/render/unit paths or a supplied shared profile/calls/allocation document changed | pending |
+| behind | failed, truncated, non-ancestor or unmatched endpoints | unknown; no exemption |
 
-The console asks GitHub to compare the two commits (one request, only when the unit is behind); the CLI asks the checkout's own history. The answer is unknown, and the promotion waits as before, when GitHub cannot be read, the comparison lists 300 files or more, or the checkout does not have both commits (`git fetch`). What was reviewed is pinned by the image, not by the revision, so a commit elsewhere while the review page is open does not refuse it either.
+The console fetches each distinct applied→pinned-main comparison once per request, including both names of renames. A comparison listing 300 files or more is not complete proof. If the unit moves between inventory and Go's observation, that comparison cannot waive revision checks. Only revision currentness can be exempted: unhealthy/suspended state, a changed selected digest or missing running-digest proof still refuses promotion. Host `make app-status` without comparison evidence remains conservative; local console `--dev` can supply complete Git history from committed HEAD. The [status contract](iteration-2-plan.md#slice-two-the-console-reads-v2-status-approved-3-november-2026) specifies the paths and evidence boundary.
 
 ### Console promotion: what happens, and when
 
-For example, promoting `weather-api/staging` selects its current healthy, digest-pinned image and proposes that image for `weather-api/prod`. The console's **Review promotion** page reads live staging health and runs the promotion in a copy of GitHub `main` to show what it renders differently. Submitting **Promote to production** starts a job: it runs `main`'s own `swhurl-v2 promote` in a fresh scratch copy of `main`, then checks live staging once before any GitHub write, and opens a PR with the records and the files they rendered. The job finishing means the PR exists; it does not mean production has deployed.
+For example, promoting `weather-api/staging` selects its current healthy, digest-pinned image and proposes that image for `weather-api/prod`. The console's **Review promotion** page shows the selected image, production's image and Go's readiness warning; it does not pre-render a diff. Submitting **Promote to production** pins fresh main and asks Go again, this time with the submitted reviewed digest. Go requires currentness (applied or proved unaffected), healthy staging, the reviewed digest still selected and only that digest proved running. A refusal or unavailable evidence cannot start a proposal job. An accepted submission starts a job running `swhurl-v2 promote` and `render` in a fresh scratch copy, preserving the clone's `--expect` check and opening a held PR with records and rendered files. This is a submission-time observation, not a guarantee of staging health at a later manual merge. The job finishing means the PR exists; it does not mean production has deployed.
 
 ```mermaid
 sequenceDiagram
@@ -891,19 +891,20 @@ sequenceDiagram
 
   Operator->>Console: Review promotion for app
   Console->>Cluster: Check staging unit, HelmRelease, replicas and running digest
-  Console->>Platform: Read main and render the promotion there
-  Console-->>Operator: Show exact image, destination and rendered diff
+  Console->>Platform: Pin main and read immutable status inputs
+  Console-->>Operator: Show selected images and Go readiness warning
   Operator->>Console: Promote to production
-  Console->>Platform: Read main and run scratch swhurl-v2 promote (no live check)
-  Console->>Cluster: One fresh readiness check after preparation
-  Console->>Platform: Open console/promote PR of its records (only if check passed)
-  Platform->>Validate: PR event runs Validate (it renders the records first)
+  Console->>Platform: Pin fresh main and read status inputs
+  Console->>Cluster: Go readiness for submitted reviewed digest
+  Note over Console,Cluster: Refuse before starting a proposal job if unready or unavailable
+  Console->>Platform: Scratch promote with --expect, then render; open held PR
+  Platform->>Validate: PR event runs Validate on records and rendered files
   Validate-->>Platform: Checks pass
   Operator->>Platform: Merge the PR on GitHub (the gate merges no v2 kind)
-  Note over Operator,Platform: A held PR waits for the operator to merge it on GitHub, then the Render workflow renders main
+  Note over Operator,Platform: A held PR waits for the operator; readiness is not rechecked at manual merge
   Platform->>Flux: Merge push to main invokes Receiver (or source poll)
-  Flux->>Prod: First promotion creates prod unit and later promotion updates only image pin
-  opt First production and app has a route
+  Flux->>Prod: Apply promotion to the existing production instance
+  opt App has a route
     Prod->>CM: New Ingress requests TLS certificate
     CM->>Prod: HTTP-01 through Traefik and certificate saved in prod TLS Secret
   end
@@ -952,7 +953,7 @@ Each instance's egress port is kept in [`platform/egress/allocation.json`](../pl
 
 The compiler and the resolver validate a change as they render it: a record they cannot render, a policy violation or an unresolvable call returns nonzero and writes nothing, and `make check-apps` fails when a committed file differs from what its records render. Files already written remain locally for review; fix the failure and run `make check` before committing. The console opens no pull request when a command fails.
 
-The [notification expectations](services.md#notification-expectations) define deployment, rollback, uninstall and prolonged-health messages for each app/environment; the [current filters](services.md#current-notification-behavior) describe what is live today. When a pod fails, `make app-status` lists the container's reason and message, and the app page names the usual cause and the fix: out of memory (raise it with `swhurl-v2 edit --set memoryMiB=…`, or the app page's **Scale**), an image the node cannot pull (missing tag, or a private GHCR package), a missing Secret value, a crash loop (`make app-logs APP= ENV= PREVIOUS=true` shows the crashed container's output; usually the wrong port or a write outside `/tmp`), or a failing readiness check (the app must answer its health path on its port).
+The [notification expectations](services.md#notification-expectations) define deployment, rollback, uninstall and prolonged-health messages for each app/environment; the [current filters](services.md#current-notification-behavior) describe what is live today. When a pod fails, `make app-status` and the app page list Go's container reason and message. The console does not guess a fix: use the logs (`make app-logs APP= ENV= PREVIOUS=true` for the previous crashed container), check the image pin and package visibility, and compare the app's readiness path, port and memory with its declared needs.
 
 An instance fails fast: if its pods are not Ready within 3 minutes of a change (`FAIL_AFTER` in [`contract.py`](../tools/swhurl/apps/contract.py): the unit's `timeout` and the HelmRelease's `timeout`), its unit turns red and `make flux-reconcile` reports it; Helm then retries once and stops. `make app-status` lists failing containers. After fixing the cause, push, or run `make app-reconcile`. An app that genuinely needs longer to start (a large image, a slow first migration) can raise both timeouts in its own files.
 

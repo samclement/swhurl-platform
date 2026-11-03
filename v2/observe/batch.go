@@ -237,7 +237,7 @@ type Collection struct {
 	Instances                    []InstanceReport
 }
 
-// EncodeCollection wraps unchanged v4 individual reports in a versioned v2-observations envelope.
+// EncodeCollection wraps v5 individual reports in a versioned v2-observations envelope.
 func EncodeCollection(collection Collection) ([]byte, error) {
 	type entry struct {
 		Application string          `json:"application"`

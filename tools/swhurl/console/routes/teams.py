@@ -21,7 +21,7 @@ def routes(ctx: Context) -> list[Route]:
         def read():
             registered, registry_error = platform_teams()
             owned: dict[str, dict[str, dict[str, cluster.AppRow]]] = {}  # team, app, environment
-            for row in cluster.apps(runner):
+            for row in ctx.apps():
                 owned.setdefault(row.team, {}).setdefault(row.instance.app, {})[row.instance.env] = row
             # Apps whose team is not registered (or that carry none) are shown too: they are what a
             # careless change would leave behind, and the list says how to bring them back.

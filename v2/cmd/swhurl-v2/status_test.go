@@ -407,7 +407,7 @@ func TestStatusReportsTheRunningInstance(t *testing.T) {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
 	report := document(t, stdout)
-	if report["kind"] != "v2-observation" || report["version"] != float64(4) {
+	if report["kind"] != "v2-observation" || report["version"] != float64(5) {
 		t.Fatalf("the report envelope is %v/%v", report["kind"], report["version"])
 	}
 	if report["verdict"] != string(observe.IsRunning) || report["state"].(map[string]any)["name"] != observe.StateHealthy {
@@ -944,4 +944,43 @@ func apiAppliedRevision(a *api) string {
 		return a.appliedRevision
 	}
 	return "main@sha1:" + observedRevision
+}
+
+// The report boundary owns readiness for the selected digest on GET and the reviewed digest on POST.
+func TestStatusPromotionDecisionForSelectedAndReviewedDigest(t *testing.T) {
+	server := (&api{}).serve(t)
+	args := statusArgs(t, kubeconfig(t, server))
+	code, stdout, stderr := runStatus(t, args...)
+	if code != 0 {
+		t.Fatalf("%d %s", code, stderr)
+	}
+	base := document(t, stdout)
+	selected := base["target"].(map[string]any)["digest"].(string)
+	for _, test := range []struct {
+		digest, reason string
+		ready          bool
+	}{
+		{selected, "ready", true},
+		{"sha256:" + strings.Repeat("f", 64), "reviewed_digest_changed", false},
+		{"", "reviewed_digest_invalid", false},
+	} {
+		code, stdout, stderr := runStatus(t, append(args, "--reviewed-digest", test.digest)...)
+		if code != 0 {
+			t.Fatalf("%d %s", code, stderr)
+		}
+		decision := document(t, stdout)["promotion"].(map[string]any)
+		if decision["ready"] != test.ready || decision["reason"] != test.reason {
+			t.Fatalf("%q: %+v", test.digest, decision)
+		}
+	}
+}
+
+func TestStatusAllRefusesReviewedDigestEvenWhenEmpty(t *testing.T) {
+	for _, digest := range []string{"", "sha256:" + strings.Repeat("a", 64)} {
+		_, outcome := parse([]string{"status", "--records", "records", "--all", "--profile", "profile",
+			"--revision", observedRevision, "--in-cluster", "--reviewed-digest", digest})
+		if outcome != misuse {
+			t.Fatal("--all accepted a review")
+		}
+	}
 }

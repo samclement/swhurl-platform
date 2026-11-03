@@ -1,21 +1,10 @@
-"""An instance's live state (GLOSSARY.md): one verdict from the facts read off the cluster.
-
-``ops.InstanceStatus`` holds the facts (the Flux unit, the Helm release, the Git revision, the image
-and the replicas); ``verdict`` judges them. The console's Apps list and app page and the promotion
-gate ask here, so they cannot disagree about the same facts (``make app-status`` is ``swhurl-v2
-status``, which judges v2's records with the same vocabulary). ``unit_state`` is
-the same vocabulary for one Flux unit on its own, which is all a shared unit has.
-"""
+"""Shared state/label primitive and the platform page's single-unit state."""
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from swhurl.flux import WAITING_REASONS
-
-if TYPE_CHECKING:
-    from swhurl.apps.ops import InstanceStatus
 
 
 @dataclass(frozen=True)
@@ -49,69 +38,3 @@ def unit_state(ready: tuple[str, str], suspended: bool = False, reason: str = ''
     if status == 'Unknown' or reason in WAITING_REASONS or waiting:
         return State('updating', f'waiting for {waiting[1]}' if waiting else (message or 'applying a change'))
     return State('failing', message)
-
-
-def verdict(status: InstanceStatus, render_applied: bool = False) -> State:
-    """An instance's state, worst first, with the reason.
-
-    ``render_applied``: the caller has proved the live HelmRelease carries the render Git wants for this
-    instance (Activity compares render hashes, which no other instance's commit changes). The Git revisions
-    then say nothing more about it, and its Flux unit counts only when failing or suspended."""
-    if status.unit_suspended:
-        return State('suspended', 'Git changes are not applied until its Flux unit is resumed')
-    if status.release_suspended:
-        return State('suspended', 'the Helm release is suspended')
-    if status.problems:
-        return State('failing', f'{len(status.problems)} pod(s) failing; see below')
-    unit = unit_state(status.unit, reason=status.unit_reason)
-    if unit.key == 'failing':
-        return unit
-    if status.release and status.release[0] == 'False':
-        return State('failing', status.release[1])
-    if unit.key == 'updating' and not (status.unaffected or render_applied):
-        return unit
-    if status.release is None:
-        return State('unknown', 'the app release is missing')
-    if not render_applied:
-        if not status.desired_revision or not status.applied_revision:
-            return State('unknown', 'the desired or applied Git revision is missing')
-        if not status.current:
-            return State('updating', 'a Git change is not applied yet')
-    if status.job:
-        return job_verdict(status)
-    if status.image_state == 'different':
-        return State('updating', 'a new image is rolling out (or failing to)')
-    if status.release[0] != 'True':
-        return State('updating', status.release[1])
-    if not status.replicas or any(r.wanted is None for r in status.replicas):
-        return State('unknown', 'workload replica counts are missing')
-    if any(r.ready != r.wanted for r in status.replicas):
-        return State('updating', 'waiting for the requested replicas to be ready')
-    if all(r.wanted == 0 for r in status.replicas):
-        return State('stopped', 'scaled to zero replicas')
-    if status.image_state == 'none':
-        return State('unknown', 'no running image could be observed')
-    return State('healthy')
-
-
-def job_verdict(status: InstanceStatus) -> State:
-    """A scheduled job's state from its runs: it has no pods between them, and a failed run is not retried."""
-    runs = status.runs
-    if status.release and status.release[0] != 'True':
-        return State('updating', status.release[1])
-    if runs is None:
-        return State('unknown', 'its CronJob is missing')
-    if runs.suspended:
-        return State('suspended', 'its schedule is suspended: no run starts')
-    if runs.active:
-        return State('updating', f'a run is in progress (started {runs.last_schedule})')
-    if runs.failed:
-        return State('failing', f'the run started {runs.last_schedule} did not succeed; the next runs on schedule ({runs.schedule})')
-    if not runs.last_schedule:
-        return State('healthy', f'waiting for its first run ({runs.schedule}, Etc/UTC)')
-    return State('healthy', f'the last run succeeded at {runs.last_success}')
-
-
-def runs(status: InstanceStatus) -> bool:
-    """Healthy, and every pod runs the digest Git pins: what a promotion needs of its source."""
-    return verdict(status).key == 'healthy' and status.image_state == 'matches'

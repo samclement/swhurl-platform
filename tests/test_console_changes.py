@@ -254,15 +254,18 @@ def staging_app(name, variables=None, port=8080):
 def tree_fake(edit=None, staging=()):
     """``staging``: the staging_app()s that run (none by default)."""
     runner = TreeRunner(edit)
-    # Only the three lists the New app form reads, and what the Teams page judges each app's state from;
+    # Nonstatus inventory lists; Teams receives its instance decisions from Go report fixtures;
     # any other kubectl call is still unexpected.
     for prefix, found in ((cluster.UNITS[:5], [unit for unit, _ in staging]),
                           (cluster.RELEASES[:3], [release for _, release in staging]),
                           (('kubectl', 'get', 'namespaces'), []),
-                          (cluster.PODS[:4], []), (cluster.WORKLOADS[:4], []), (cluster.INGRESSES[:4], [])):
+                          (cluster.INGRESSES[:4], [])):
         runner.on(*prefix, stdout=json.dumps({'items': found}))
-    runner.on(*cluster.SOURCE[:6], stdout=json.dumps({'status': {'artifact': {'revision': REVISION}}}))
     runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
+    from console_observation import install
+    install(runner, [unit for unit, _ in staging], [release for _, release in staging])
+    for report in runner.status_reports.values():
+        report['target']['revision'] = HEAD
     runner.on('swhurl-v2', stdout='{}').on(sys.executable, '-m', 'swhurl', handler=lambda args, _: Result(args, 0, '[OK] edited\n'))
     return runner
 
@@ -594,7 +597,7 @@ class TeamsPageTests(unittest.TestCase):
         self.assertEqual(page.count('<details class="act" name="team-form"'), 7,
                          'new team, and per team edit, channel and delete: one open at a time')
         self.assertIn('href="/teams" class="here"', page)
-        self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in self.runner.calls), 'the page only reads')
+        self.assertTrue(all((call[0] == 'kubectl' and ('get' in call or call[1:3] == ('config', 'view'))) or call[:2] == ('swhurl-v2', 'status') for call in self.runner.calls), 'the page only reads')
 
     def test_an_apps_language_comes_from_its_own_repository_and_is_asked_for_once(self):
         asked = []

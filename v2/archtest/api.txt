@@ -422,6 +422,7 @@ observe: func CurrentnessOf(expected, literal, availability string, scope Change
 observe: func DecodeChanges(data []byte) (Changes, error)
 observe: func EncodeCollection(collection Collection) ([]byte, error)
 observe: func EncodeReport(report Report) ([]byte, error)
+observe: func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error)
 observe: func Explain(target Target, evidence Evidence) (Report, error)
 observe: func IndexCandidates(lists []List) (Candidates, error)
 observe: func IsPositive(outcome string) bool

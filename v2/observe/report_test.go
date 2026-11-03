@@ -3,6 +3,7 @@ package observe_test
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/observe"
@@ -30,7 +31,7 @@ func TestEncodeReportIsStableAndComplete(t *testing.T) {
 	if err := json.Unmarshal(first, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document["kind"] != "v2-observation" || document["version"] != float64(4) {
+	if document["kind"] != "v2-observation" || document["version"] != float64(5) {
 		t.Fatalf("envelope: %v %v", document["kind"], document["version"])
 	}
 	if document["verdict"] != string(observe.IsRunning) || document["source"] != report.Source {
@@ -68,6 +69,26 @@ func TestEncodeReportKeepsEmptyLists(t *testing.T) {
 	for _, field := range []string{"findings", "problems", "routes", "certificates", "assessed", "unassessed", "notCovered"} {
 		if _, ok := document[field].([]any); !ok {
 			t.Errorf("%s is %v, not a list", field, document[field])
+		}
+	}
+}
+
+func TestReportEncodesGoPromotionDecision(t *testing.T) {
+	report := explain(t, healthy(t))
+	for _, reviewed := range []string{report.Target.Digest, "sha256:" + strings.Repeat("a", 64), ""} {
+		data, err := observe.EncodeReviewedReport(report, reviewed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var document struct {
+			Version   int
+			Promotion observe.PromotionDecision
+		}
+		if err := json.Unmarshal(data, &document); err != nil {
+			t.Fatal(err)
+		}
+		if document.Version != 5 || document.Promotion != observe.PromotionReadiness(report, reviewed) {
+			t.Fatalf("%+v", document)
 		}
 	}
 }

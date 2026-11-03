@@ -2,11 +2,10 @@
 {% import "_form.html" as ui with context %}
 {% import "_status.html" as st %}
 {% import "_connections.html" as links with context %}
-{% set i = status.instance %}
-{% set row = summary.envs.get(i.env) if summary else none %}
 {% block title %}{{ i.app }}/{{ i.env }}{% endblock %}
 {% block main %}
 {% set c = connections %}
+{% set hosts = report.routes | map(attribute="hosts") | sum(start=[]) %}
 <p class="crumbs"><a href="/apps">Deployments</a> › {{ i.app }}</p>
 <h1>{{ i.app }}{% if stack %} <span class="pill" title="The stack in {{ i.app }}'s swhurl.yaml">{{ stack_names.get(stack, stack) }}</span>{% endif %}</h1>
 <nav class="tabs" aria-label="Environment">
@@ -18,13 +17,9 @@
   <div class="card-body facts">
     <div><span>State</span><span class="verdict">{{ st.state(state, detail=false) }}</span></div>
     <div><span>Team</span>{% if team %}<a href="/apps?team={{ team }}" title="The apps of team {{ team }}">{{ team }}</a>{% else %}<span class="warn">unknown</span>{% endif %}</div>
-    <div><span>Image</span><code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image | short }}</code></div>
-    {% if status.job %}
-    <div><span>Schedule</span>{% if status.runs %}<code title="Etc/UTC">{{ status.runs.schedule }}</code>{% else %}<span class="muted">unknown</span>{% endif %}</div>
-    {% else %}
-    <div><span>Replicas</span>{% for r in status.replicas %}<span class="{{ '' if r.ready == r.wanted else 'bad' }}">{{ r.ready }}/{{ r.wanted }} ready</span>{{ ', ' if not loop.last }}{% else %}<span class="muted">none</span>{% endfor %}</div>
-    {% endif %}
-    <div><span>Database</span>{% if not status.release %}<span class="muted">unknown</span>{% elif status.variables.get('DATABASE_PATH') %}<span class="pill">SQLite</span>{% else %}<span class="muted">none</span>{% endif %}</div>
+    <div><span>Image (desired)</span><code title="{{ desired_image }}">{{ desired_image | short }}</code></div>
+    <div><span>Replicas</span><span>{{ report.live.workload.readyReplicas if report.live.workload.readyReplicas is not none else 'unknown' }}/{{ report.target.replicas }} ready</span></div>
+    <div><span>Database (desired)</span><span>{{ database or 'none' }}</span></div>
     <div><span>Promotion</span>{% if summary and summary.comparison == 'ahead' %}<span class="pill attention" title="Staging runs a newer build than production">Prod behind</span>
       {% elif summary and summary.comparison == 'differs' %}<span class="pill attention" title="Staging and production run different images, and staging is not known to be the newer">Images differ</span>
       {% elif summary and summary.comparison == 'same' %}<span class="pill ok" title="Staging and production run the same image">In sync</span>
@@ -32,13 +27,13 @@
       {% else %}<span class="muted">—</span>{% endif %}</div>
   </div>
   {% if state.detail %}<div class="card-body"><p class="reason {{ 'bad' if state.key == 'failing' else 'muted' }}">{{ state.detail | short }}</p></div>{% endif %}
-  {% if status.problems %}
+  {% if report.problems %}
   <div class="card-body">
     <h3 class="bad">Failing pods</h3>
     <table class="compact">
       <tr><th>Pod</th><th>Reason</th><th>Message</th></tr>
-      {% for p in status.problems %}<tr><td class="mono">{{ p.pod }}</td><td class="bad">{{ p.reason }}</td><td class="muted">{{ p.message }}</td></tr>
-      {% if p.hint %}<tr><td></td><td colspan="2"><strong>Fix:</strong> {{ p.hint }}</td></tr>{% endif %}{% endfor %}
+      {% for p in report.problems %}<tr><td class="mono">{{ p.pod }}</td><td class="bad">{{ p.reason }}</td><td class="muted">{{ p.message }}</td></tr>
+{% endfor %}
     </table>
   </div>
   {% endif %}
@@ -48,17 +43,17 @@
 
 {# Each part is a card: its facts one per line, its changes at the top right. A change opens its form in
    the card (one at a time); the form's own button, with the pull-request icon, opens the pull request. #}
-<section class="card" id="use" style="--acts: {{ (2 if status.routes else 1) if writable else 0 }}; --pitch: 9.5rem">
+<section class="card" id="use" style="--acts: {{ (2 if hosts else 1) if writable else 0 }}; --pitch: 9.5rem">
   <div class="card-head">
     <h2>Use</h2>
     <p class="muted">Its web address, and who can reach it: granted here, not in the app's repository.</p>
-    {% if status.routes %}<a class="button primary act" style="--slot: 0; --wide: 9rem" href="https://{{ status.routes[0] }}">Open {{ st.icon('external') }}</a>{% endif %}
-    {% if writable %}<details class="act" name="app-form" style="--slot: {{ 1 if status.routes else 0 }}; --wide: 9rem">
+    {% if hosts %}<a class="button primary act" style="--slot: 0; --wide: 9rem" href="https://{{ hosts[0] }}">Open {{ st.icon('external') }}</a>{% endif %}
+    {% if writable %}<details class="act" name="app-form" style="--slot: {{ 1 if hosts else 0 }}; --wide: 9rem">
       <summary class="button">{{ st.icon('edit') }} Change access</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
         <fieldset>
-          {{ ui.exposure_choices(status.exposure, status.exposure, 'now') }}
-          {% if not v2 %}{{ ui.text_field('expose_host', 'Host', name='host', placeholder=status.routes[0] if status.routes else 'derived from the name',
+          {{ ui.exposure_choices(exposure, exposure, 'now') }}
+          {% if not v2 %}{{ ui.text_field('expose_host', 'Host', name='host', placeholder=hosts[0] if hosts else 'derived from the name',
                            hint='Leave empty to keep the current host (or, for a signed-in app, derive one). A public app needs a host outside ' ~ domain ~ '. Staging and production may differ.') }}
           {% else %}<p class="muted hint">v2 derives the address from the app name and the exposure; it does not model a host.</p>{% endif %}
         </fieldset>
@@ -68,9 +63,10 @@
   </div>
   <div class="card-body">
     <dl class="plain">
-      <dt>Web address</dt><dd>{% for host in status.routes %}<div><a href="https://{{ host }}">https://{{ host }} {{ st.icon('external') }}</a></div>{% else %}<span class="muted">none: {{ 'a worker, with nothing to open' if not c.address else 'private, reachable only by the apps that declare a call to it' }}</span>{% endfor %}</dd>
-      <dt>Who can reach it</dt><dd class="{{ 'warn' if status.exposure == 'public' else '' }}">{% set reach = exposures.get(status.exposure, status.exposure) %}{{ reach[:1] | upper }}{{ reach[1:] }}</dd>
-      <dt>TLS certificate</dt><dd>{% for name, ready in status.certificates %}<div>{{ st.check('ok' if ready == 'True' else 'bad') }} {{ name }}{% if ready != 'True' %} <span class="bad">not ready</span>{% endif %}</div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
+      <dt>Web address</dt><dd>{% for host in hosts %}<div><a href="https://{{ host }}">https://{{ host }} {{ st.icon('external') }}</a></div>{% else %}{% if report.routes %}{% for route in report.routes %}<span class="muted">{{ route.outcome }}: {{ route.reason | default('no address observed') | replace('_', ' ') }}</span>{% endfor %}{% else %}<span class="muted">none: {{ 'a worker, with nothing to open' if declared.kind == 'worker' else 'private, reachable only by the apps that declare a call to it' }}</span>{% endif %}{% endfor %}</dd>
+      <dt>Who can reach it (desired)</dt><dd class="{{ 'warn' if exposure == 'public' else '' }}">{% set reach = exposures.get(exposure, exposure) %}{{ reach[:1] | upper }}{{ reach[1:] }}</dd>
+      <dt>Route evidence</dt><dd>{% for route in report.routes %}<div>{{ route.name }}: {{ route.outcome }} {{ route.reason | default('') }}</div>{% else %}<span class="muted">not required (no desired route)</span>{% endfor %}</dd>
+      <dt>TLS certificate</dt><dd>{% for cert in report.certificates %}<div>{{ cert.name }}: {{ cert.outcome }} {{ cert.reason | default('') }}</div>{% else %}<span class="muted">not required (no desired certificate)</span>{% endfor %}</dd>
     </dl>
   </div>
 </section>
@@ -211,8 +207,8 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
       <summary class="button">{{ st.icon('edit') }} Scale</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
         <fieldset>
-          <div class="pair">{% for field, flag, label in scale_fields if not (status.job and field == 'replicas') %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
-          <span class="muted hint">{{ 'Replicas and memory (MiB) of each run.' if v2 else ('CPU and memory of each run.' if status.job else 'Replicas, CPU and memory.') }} Empty fields keep their current value, shown in grey.
+          <div class="pair">{% for field, flag, label in scale_fields %}{{ ui.text_field(field, label, placeholder=settings.get(flag, '')) }}{% endfor %}</div>
+          <span class="muted hint">Desired replicas and memory (MiB). Empty fields keep their current value, shown in grey.
             </span>
         </fieldset>
         {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
@@ -238,45 +234,22 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
   <div class="card-body">
     <dl class="plain">
       <dt>Image</dt>
-      {% if status.image_state == 'matches' %}
-      <dd><span class="mono">{{ status.desired_image | short }}</span> <span class="ok">running: matches Git</span></dd>
-      {% else %}
-      <dd><div class="mono">Git wants {{ status.desired_image | short }}</div><div class="mono">running {{ (status.running_images | join(', ') or 'none') | short }}</div>
-          {% if status.image_state == 'different' %}<div class="bad">different image: a rollout in progress or failing</div>
-          {% elif status.image_state == 'unpinned' %}<div class="muted">Git pins no digest, so this cannot be compared</div>{% endif %}</dd>
-      {% endif %}
-      {% if status.job %}
-      <dt>Runs</dt>
-      <dd>{% if status.runs %}<div>On <code>{{ status.runs.schedule }}</code> <span class="muted">(Etc/UTC){{ ' · suspended' if status.runs.suspended }}</span></div>
-          <div>Last run {% if status.runs.last_schedule %}<span class="mono">{{ status.runs.last_schedule }}</span>{% if status.runs.active %} <span class="warn">running</span>{% elif status.runs.failed %} <span class="bad">did not succeed</span>{% else %} <span class="ok">succeeded</span>{% endif %}{% else %}<span class="muted">none yet</span>{% endif %}</div>
-          <div>Last success {% if status.runs.last_success %}<span class="mono">{{ status.runs.last_success }}</span>{% else %}<span class="muted">never</span>{% endif %}</div>
-          <div class="muted">One pod per run; the last successful and the last failed run are kept (<code>kubectl -n {{ i.namespace }} get jobs</code>).</div>
-          {% else %}<span class="bad">its CronJob is missing</span>{% endif %}</dd>
-      {% else %}
-      <dt>Replicas</dt>
-      <dd>{% for r in status.replicas %}<div><span class="{{ 'ok' if r.ready == r.wanted else 'bad' }}">{{ r.ready }}/{{ r.wanted }} ready</span> <span class="muted">{{ r.workload }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
-      {% endif %}
-      <dt>Git revision</dt>
-      <dd><span class="mono">{{ status.applied_revision.split(':')[-1] | short }}</span> applied{% if not status.at_newest %} <span class="warn">· Git has {{ status.desired_revision.split(':')[-1] | short }}, not yet applied</span>{% endif %}</dd>
-      <dt>Flux unit</dt>
-      <dd>{{ st.check('ok' if status.unit[0] == 'True' else 'bad') }} <a class="mono" href="/units/{{ i.unit }}">{{ i.unit }}</a> <span class="muted">{{ status.unit[1] | short }}</span></dd>
-      <dt>Helm release</dt>
-      <dd>{% if status.release %}{{ st.check('ok' if status.release[0] == 'True' else 'bad') }} <span class="muted">{{ status.release[1] | short }}</span>{% else %}<span class="bad">not found</span>{% endif %}</dd>
-      <dt>Database</dt>
-      <dd>{% if status.variables.get('DATABASE_PATH') %}<span class="pill">SQLite</span> <code>{{ status.variables['DATABASE_PATH'] }}</code>{% elif not status.release %}<span class="muted">unknown</span>{% else %}<span class="muted">none</span>{% endif %}</dd>
+      <dd><div class="mono">Git wants {{ desired_image | short }}</div><div class="mono">Running digests: {% if report.live.running.digests is none %}unknown ({{ report.live.running.status }}){% else %}{{ (report.live.running.digests | join(', ') or 'none') | short }}{% endif %}</div></dd>
+      <dt>Replicas</dt><dd>{{ report.live.workload.readyReplicas if report.live.workload.readyReplicas is not none else 'unknown' }}/{{ report.target.replicas }} ready ({{ report.live.workload.status }})</dd>
+      <dt>Git revision</dt><dd><span class="mono">{{ report.currentness.appliedRevision | short }}</span> applied · expected <span class="mono">{{ report.target.revision | short }}</span><div>{{ report.currentness.state }}: {{ report.currentness.reason | replace('_', ' ') }}</div></dd>
+      <dt>Flux unit</dt><dd><a href="/units/{{ i.unit }}">{{ i.unit }}</a>: {{ report.live.unit.status }}{% for condition in report.live.unit.conditions or [] %}<div>{{ condition.type }}: {{ condition.status }} {{ condition.reason }}</div>{% endfor %}</dd>
+      <dt>Helm release</dt><dd>{{ report.live.release.status }}{% for condition in report.live.release.conditions or [] %}<div>{{ condition.type }}: {{ condition.status }} {{ condition.reason }}</div>{% endfor %}</dd>
+      <dt>Findings</dt><dd>{% for finding in report.findings %}<div>{{ finding.field }}: {{ finding.outcome }} {{ finding.reason | default('') | replace('_', ' ') }}</div>{% endfor %}</dd>
+      <dt>Database (desired)</dt><dd>{{ database or 'none' }}</dd>
       <dt>Namespace</dt><dd class="mono">{{ i.namespace }}</dd>
       <dt>Observe</dt>
       <dd><a href="{{ logs }}">Logs and traces {{ st.icon('external') }}</a>{% if dashboard %} <span class="muted">·</span> <a href="{{ dashboard }}" title="The App: {{ i.app }} dashboard in HyperDX: staging and production as separate lines">Dashboard {{ st.icon('external') }}</a>{% endif %} <span class="muted">·</span> <a href="https://github.com/{{ owner }}/{{ i.app }}">Repository {{ st.icon('external') }}</a></dd>
     </dl>
     <details class="section" id="environment">
-      <summary><strong>Environment</strong> <span class="muted">— the variables the platform sets, and your secrets (as <code>make app-status APP={{ i.app }} ENV={{ i.env }}</code>)</span></summary>
+      <summary><strong>Environment (desired)</strong> <span class="muted">— rendered variables committed at {{ report.target.revision | short }}, not observed container values</span></summary>
       <dl class="plain">
-        <dt>From the platform</dt>
-        <dd>{% for name, value in status.variables.items() %}<div><code>{{ name }}</code> <span class="muted mono">{{ value }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
-        <dt>Your secrets</dt>
-        <dd>{% if secret_states %}{% for name, state in secret_states.items() %}<div><code>{{ name }}</code> {% if state == 'value missing' %}<span class="pill attention">value missing</span>{% elif state == 'unused' %}<span class="pill">unused</span>{% else %}<span class="muted">set</span>{% endif %}</div>{% endfor %}{% endif %}
-          {%- if v2 %}<span class="muted">none: v2 does not model secrets, so the platform holds none for this instance (an image that declares one is held instead of deployed)</span>
-          {%- elif status.secret %}<div class="muted">Every key of the Secret <code>{{ status.secret }}</code> arrives as a variable of the same name; the names come from the image's <code>swhurl.yaml</code>. Values are encrypted in <a href="https://github.com/samclement/swhurl-platform/blob/main/apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml"><code>apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml</code></a>.</div>{% elif not secret_states %}<span class="muted">none</span>{% endif %}</dd>
+        <dt>From the platform (desired)</dt><dd>{% if variables is none %}<span class="warn">unknown: no committed HelmRelease</span>{% else %}{% for name, value in variables.items() %}<div><code>{{ name }}</code> <span class="muted mono">{{ value }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}{% endif %}</dd>
+        <dt>Your secrets</dt><dd><span class="muted">none: v2 does not model secrets; secret values and files are unsupported.</span></dd>
       </dl>
     </details>
   </div>
@@ -284,7 +257,7 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
     {% set job = running_jobs | selectattr('unit', 'in', (i.unit, i.app ~ '/' ~ i.env)) | first %}
     <div class="action-row">
       {% if job %}<span>{{ st.running(job, refresh_url) }}</span>
-      {% elif status.unit_suspended %}<form method="post" action="/units/{{ i.unit }}/resume" hx-post="/units/{{ i.unit }}/resume" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Resume</button></form>
+      {% elif report.live.unit.suspended %}<form method="post" action="/units/{{ i.unit }}/resume" hx-post="/units/{{ i.unit }}/resume" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Resume</button></form>
       <span class="muted">Apply Git changes to this instance again, starting with a reconcile.</span>
       {% else %}<form method="post" action="/units/{{ i.unit }}/reconcile" hx-post="/units/{{ i.unit }}/reconcile" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Reconcile</button></form>
       <span class="muted">Fetch Git and apply this instance now instead of at the next check. Safe: it applies what Git already says.</span>{% endif %}

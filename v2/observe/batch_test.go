@@ -60,7 +60,7 @@ func TestBulkCollectionEmptyEnvelopeAndIndividualReportVersion(t *testing.T) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.Kind != "v2-observations" || document.Version != 1 || document.Instances[0].Report.Kind != "v2-observation" || document.Instances[0].Report.Version != 4 || document.Instances[0].Application != "hello" || document.Instances[0].Report.Currentness.AppliedRevision != "main@sha1:"+commit {
+	if document.Kind != "v2-observations" || document.Version != 1 || document.Instances[0].Report.Kind != "v2-observation" || document.Instances[0].Report.Version != 5 || document.Instances[0].Application != "hello" || document.Instances[0].Report.Currentness.AppliedRevision != "main@sha1:"+commit {
 		t.Fatalf("%s", data)
 	}
 }

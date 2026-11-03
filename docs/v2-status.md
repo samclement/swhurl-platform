@@ -2,7 +2,7 @@
 
 Status: in progress
 Gate: the console readers on Go status
-Uncommitted: none
+Uncommitted: v2/, tools/swhurl/apps/, tools/swhurl/console/, tests/, docs/apps.md, docs/console.md, docs/iteration-2-plan.md
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
 kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl`

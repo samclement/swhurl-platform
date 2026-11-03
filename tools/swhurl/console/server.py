@@ -48,13 +48,14 @@ from swhurl.console import (
     proposal,
     repos,
     stages,
+    status,
 )
 from swhurl.console import github as gh
 from swhurl.console.context import Context, follow, logs_url, short_hashes
 from swhurl.console.reading import LOG as TIMING
 from swhurl.console.reading import Files
 from swhurl.console.routes import activity, instance, new_app, pages, teams
-from swhurl.run import Runner, SharedReads
+from swhurl.run import CommandError, Runner, SharedReads
 
 IDENTITY_HEADER = 'X-Auth-Request-Email'
 DEV_IDENTITY = 'operator@localhost (dev)'
@@ -189,7 +190,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     # from this checkout if it has one (console --dev); the image has no apps/, so then not at all.
     document_source = documents
     if not document_source:
-        if github:
+        if github and not dev_identity:
             document_source = platform_file
         elif (ROOT / 'apps').is_dir():
             document_source = local_file
@@ -202,6 +203,41 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             scoped = request_files.get()
             return scoped(path) if scoped is not None else file_source(path)
     described = catalogue.Documents(document_source)
+
+    bundles: dict[str, dict[str, bytes]] = {}
+
+    class RequestReads(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next) -> Response:
+            remote = file_source is platform_file
+            source = None if remote or file_source is local_file else file_source
+            with Files(runner, github if remote else None, source,
+                       local_root=None if remote else ROOT, bundles=bundles) as files:
+                token = request_files.set(files)
+                try:
+                    with runner.once():
+                        return await call_next(request)
+                finally:
+                    request_files.reset(token)
+
+    def app_rows() -> list[cluster.AppRow]:
+        files = request_files.get()
+        def read():
+            inventory = cluster.apps(runner, include_removing=True)
+            try:
+                reports = status.read(runner, files, cluster.items(runner, cluster.UNITS),
+                                      in_cluster=not bool(dev_identity) and bool(os.environ.get('KUBERNETES_SERVICE_HOST')))
+                return status.rows(inventory, reports)
+            except (actions.ActionError, CommandError, OSError, ValueError) as error:
+                raise cluster.ReadError(f'Go status unavailable: {error}') from None
+        return files.once('@rows', read)
+
+    def promotion_status(app: str, digest: str) -> dict:
+        try:
+            return status.read(runner, request_files.get(), cluster.items(runner, cluster.UNITS),
+                               in_cluster=not bool(dev_identity) and bool(os.environ.get('KUBERNETES_SERVICE_HOST')),
+                               app=app, reviewed_digest=digest)
+        except (actions.ActionError, CommandError, OSError, ValueError) as error:
+            raise actions.ActionError(f'Go promotion readiness unavailable: {error}') from None
 
     def offer_text(row: cluster.AppRow, event: str = '') -> str:
         """What an app's own documents say about its API, or about one of its events ('' if nothing)."""
@@ -273,21 +309,21 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         TIMING.info('render targets cache=%s revision=%s', 'hit' if commit in renders else 'miss', commit[:12])
         if commit not in renders:
             try:
-                keep(renders, commit, stages.render_targets(runner, github, commit))
+                keep(renders, commit, stages.render_targets(runner, github, commit, inputs=bundles.get(commit)))
             except actions.ActionError:
                 return None
         return renders.get(commit)
 
     def main_targets() -> tuple[str, dict[str, stages.Target] | None]:
         try:
-            head = gh.main_commit(runner, github) if github is not None else ''
-        except actions.ActionError:
+            head, _ = request_files.get().inputs()
+        except (actions.ActionError, CommandError, OSError, ValueError):
             return '', None
         return head, targets(head)
 
     def cluster_rows() -> dict[str, cluster.AppRow] | None:
         try:
-            return {f'{row.instance.app}/{row.instance.env}': row for row in cluster.apps(runner, include_removing=True)}
+            return {f'{row.instance.app}/{row.instance.env}': row for row in app_rows()}
         except cluster.ReadError:
             return None
 
@@ -402,7 +438,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         ``<app>.<event>`` with its publisher, and why they could not be read (the form still renders).
         For an existing ``app``, without itself and what it is connected to already."""
         try:
-            rows = [row for row in cluster.apps(runner, states=False) if row.instance.env == env]
+            rows = [row for row in cluster.apps(runner) if row.instance.env == env]
         except cluster.ReadError as problem:
             return [], [], str(problem)
         mine = next((row.connections for row in rows if row.instance.app == app), cluster.Connections())
@@ -445,11 +481,11 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     ctx = Context(runner, github, jobs, flags, app_repos, repo_opener, described, document_source, file_source, platform_file,
                   request_files, page, reading, open_prs, change_rows, stacks, platform_teams, platform_channels, teams_cache,
-                  channels_cache, connectable, propose, resumable)
+                  channels_cache, connectable, propose, resumable, app_rows, promotion_status)
     return Starlette(
         routes=[*pages.routes(ctx), *instance.routes(ctx), *teams.routes(ctx), *activity.routes(ctx), *new_app.routes(ctx),
                 Mount('/static', StaticFiles(directory=STATIC), name='static')],
-        middleware=[Middleware(RequireIdentity, dev_identity=dev_identity)], lifespan=lifespan)
+        middleware=[Middleware(RequireIdentity, dev_identity=dev_identity), Middleware(RequestReads)], lifespan=lifespan)
 
 
 def parser() -> argparse.ArgumentParser:

@@ -186,9 +186,11 @@ def changed_since(runner: Runner, github: GitHub, base: str, head: str) -> tuple
         compared = api.json('GET', f'/compare/{base}...{head}')
     finally:
         api.client.close()
-    if compared.get('status') not in ('ahead', 'identical'):
+    if not isinstance(compared, dict) or compared.get('status') not in ('ahead', 'identical'):
         return False, None
-    files = compared.get('files') or []
+    files = compared.get('files')
+    if not isinstance(files, list) or any(not isinstance(f, dict) or not isinstance(f.get('filename'), str) for f in files):
+        return True, None
     if len(files) >= COMPARED_FILES:
         return True, None
     return True, [name for f in files for name in (f.get('filename'), f.get('previous_filename')) if name]

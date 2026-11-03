@@ -11,9 +11,16 @@ import (
 // certificates, the protection's own answer, what was assessed, and what this slice never looks at. Identical
 // reports encode to identical bytes. Assessment lists are never null; live fields retain missing facts.
 func EncodeReport(report Report) ([]byte, error) {
+	return EncodeReviewedReport(report, report.Target.Digest)
+}
+
+// EncodeReviewedReport includes Go's readiness decision for the submitted reviewed digest.
+// EncodeReport uses the currently selected digest for page rendering; submission supplies its review.
+func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error) {
 	document := reportDocument{
 		Kind:        "v2-observation",
-		Version:     4,
+		Version:     5,
+		Promotion:   PromotionReadiness(report, reviewedDigest),
 		Currentness: report.Currentness, Live: report.Live,
 		Source:       report.Source,
 		ObservedAt:   report.ObservedAt,
@@ -60,6 +67,7 @@ type reportDocument struct {
 	Currentness  Currentness           `json:"currentness"`
 	Live         LiveFacts             `json:"live"`
 	State        stateDocument         `json:"state"`
+	Promotion    PromotionDecision     `json:"promotion"`
 	Verdict      Verdict               `json:"verdict"`
 	Backup       backupDocument        `json:"backup"`
 	Findings     []findingDocument     `json:"findings"`

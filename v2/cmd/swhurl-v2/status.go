@@ -48,7 +48,11 @@ func (c cli) status(r request) int {
 	if !r.json {
 		return emit(c.out, c.diagnostic, []byte(statusText(r.app, r.env, report)))
 	}
-	document, err := observe.EncodeReport(report)
+	reviewed := r.reviewedDigest
+	if !r.reviewedDigestSet {
+		reviewed = report.Target.Digest
+	}
+	document, err := observe.EncodeReviewedReport(report, reviewed)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}

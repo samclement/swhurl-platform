@@ -50,7 +50,7 @@ const usage = `usage:
       --calls CALLS.json --out DIR
   swhurl-v2 status --records DIR (--app APPLICATION --env ENVIRONMENT | --all) --profile PROFILE.json --revision COMMIT \
       (--kubeconfig KUBECONFIG.json | --in-cluster) [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
-      [--max-age DURATION] [--archive [--region REGION]] [--changes FILE [--repo-root DIR]] [--json]
+      [--max-age DURATION] [--archive [--region REGION]] [--changes FILE [--repo-root DIR]] [--reviewed-digest DIGEST] [--json]
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
       --committed HELMRELEASE.json --profile PROFILE.json
   swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json [--kubeconfig KUBECONFIG.json]
@@ -100,7 +100,7 @@ record's release. It reads only. A database instance's status also carries its p
 the runs its labels select, judged against --max-age (26h by default). With --archive it also lists the instance's
 own prefix in the object store, with the operator's AWS credentials from the environment, and says whether an
 archive exists and how old the newest one is; the region is discovered from the bucket unless --region states it.
---json prints the v2-observation document (version 4) instead of the text. An application and environment with no
+--json prints the v2-observation document (version 5) instead of the text. An application and environment with no
 record under DIR is refused. --all is exclusive with --app/--env and returns a v2-observations collection (version 1)
 in stable application/environment order. Core lists are batched; each database adds at most one newest-owner Job GET.
 --changes FILE supplies strict v2-changes version 1 comparisons with exact from/to SHAs, status (complete,
@@ -108,6 +108,9 @@ incomplete or unavailable), and paths (including previous rename paths). Only a 
 no relevant changed path can exempt the revision check, never health or digest checks. --repo-root DIR (default .)
 identifies the extracted repository root for repository-relative relevance; it requires --changes. Records, profile,
 calls and egress must be inside that root. Shared profile/resolution/allocation changes conservatively require applying.
+Every report includes promotion:{ready,reason}, evaluated for the selected digest by default. Single status accepts
+--reviewed-digest DIGEST to evaluate the submitted review instead (including an empty/invalid digest, which refuses
+readiness). It is forbidden with --all. This is a submission-time observation, not a later manual-merge guarantee.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
@@ -338,6 +341,7 @@ var commands = map[string]func(cli, request) int{
 // request is one parsed command line: the command, the files, revision, credentials and source it
 // names, and where to write.
 type request struct {
+	reviewedDigestSet                                  bool
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
 	region                                             string
@@ -346,7 +350,7 @@ type request struct {
 	app, settings, committed, snapshot, callFile       string
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
-	records, changes, repoRoot                         string
+	records, changes, repoRoot, reviewedDigest         string
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
 	rotate, check, json, inCluster, all                bool
@@ -391,7 +395,13 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	flags.SetOutput(io.Discard) // flag errors can echo rejected values
 	r.registerInputs(flags)
 	r.registerExtras(flags, r.command)
-	return flags, flags.Parse(args)
+	err := flags.Parse(args)
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "reviewed-digest" {
+			r.reviewedDigestSet = true
+		}
+	})
+	return flags, err
 }
 
 // registerInputs adds the file flags the v1-style commands share.
@@ -504,6 +514,7 @@ func (r *request) registerDeliveryFlags(flags *flag.FlagSet, command string) boo
 func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
 	case "status":
+		flags.Var(&once{value: &r.reviewedDigest}, "reviewed-digest", "submitted reviewed digest (single status only)")
 		flags.Var(&onceBool{value: &r.all}, "all", "observe all recorded instances; exclusive with --app/--env")
 		flags.Var(&once{value: &r.changes}, "changes", "complete, incomplete or unavailable revision comparisons")
 		flags.Var(&once{value: &r.repoRoot}, "repo-root", "repository root for changed paths (default .; requires --changes)")
@@ -670,7 +681,7 @@ func (r *request) statusNamed() []string {
 		return []string{""}
 	}
 	if r.all {
-		if r.app != "" || r.env != "" {
+		if r.app != "" || r.env != "" || r.reviewedDigestSet {
 			return []string{""}
 		}
 		return []string{r.records, r.profile, r.revision}

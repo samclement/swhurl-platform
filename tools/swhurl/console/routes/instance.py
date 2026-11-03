@@ -13,62 +13,62 @@ from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
 from swhurl.apps import contract, declaration, ops
-from swhurl.apps import promotion as gate
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
-from swhurl.apps.state import verdict
-from swhurl.console import actions, cluster, flagstore, merge, promotion, proposal, stages, v2
+from swhurl.console import actions, cluster, flagstore, merge, observation, promotion, proposal, stages, v2
 from swhurl.console import github as gh
 from swhurl.console import records as declared_records
 from swhurl.console.context import STACK_NAMES, Context, dashboard_urls, logs_url
-from swhurl.console.reading import Files
 from swhurl.run import CommandError
 
 V2_SCALE_FIELDS = (('replicas', 'replicas', 'Replicas'), ('memory', 'memoryMiB', 'Memory (MiB)'))
-
-
-def _in_git(root, found: Instance) -> bool:
-    """Whether the instance's declaration is in a checkout: v2's records."""
-    return (root / declared_records.V2_RECORDS / found.app / found.env).is_dir() or found.folder(root).is_dir()
 
 
 def routes(ctx: Context) -> list[Route]:
     runner, github, jobs, flags, described, page, open_prs, change_rows, stacks, connectable, propose = (
         ctx.runner, ctx.github, ctx.jobs, ctx.flags, ctx.described, ctx.page, ctx.open_prs, ctx.change_rows, ctx.stacks,
         ctx.connectable, ctx.propose)
-    document_source, file_source, platform_file, request_files = ctx.document_source, ctx.file_source, ctx.platform_file, ctx.request_files
+    document_source, request_files = ctx.document_source, ctx.request_files
 
     def read_app(request: Request) -> Response:
         found = Instance.named(request.path_params['app'], request.path_params['env'])
-        status, rows = runner.together(lambda: ops.gather_status(runner, found),
-                                       lambda: cluster.apps(runner)) if found else (None, [])
-        if status is None and found:
-            # Created here but not applied yet: say so instead of "no such app" (its links appear at once).
+        if found is None:
+            return page(request, 'error.html', status_code=404, error='No such app instance.')
+        rows = ctx.apps()
+        row = next((row for row in rows if row.instance == found), None)
+        report = row.report if row else None
+        if report is None:
             label = f'{found.app}/{found.env}'
             pending = [j for j in jobs.recent() if j.unit == label and j.action.startswith('new app')]
             prs, prs_error = open_prs()
             prs = [pr for pr in prs if stages.target_of(pr.branch) in (('new', label), ('promote', label))]
-            in_git = False
-            if not pending and not prs and github:
-                in_git = promotion.main_tree(runner, github, lambda root: _in_git(root, found))
-            if pending or prs or in_git:
-                return page(request, 'pending.html', label=label, jobs=pending, prs=prs, prs_error=prs_error, in_git=in_git)
-        if status is None:
+            if row:
+                return page(request, 'pending.html', label=label, jobs=pending, prs=prs, prs_error=prs_error,
+                            in_git=False, removing=True)
+            if pending or prs:
+                return page(request, 'pending.html', label=label, jobs=pending, prs=prs, prs_error=prs_error, in_git=False)
             return page(request, 'error.html', status_code=404, error='No such app instance.')
+        if report['live']['unit']['status'] == 'absent':
+            return page(request, 'pending.html', label=f'{found.app}/{found.env}', jobs=[], prs=[], prs_error='', in_git=True)
         summary = next((a for a in cluster.summaries(rows) if a.app == found.app), None)
-        promotion_problem = gate.source_problem(promotion.settled_status(runner, github, status), status.desired_image) if found.env == 'staging' else ''
+        promotion_problem = observation.promotion_problem(report) if found.env == 'staging' else ''
         row = summary.envs.get(found.env) if summary else None
         shown = row.connections if row else cluster.Connections()
         files = request_files.get()
         declared = declared_records.of(found.app, found.env, document_source)
-        (flag_list, flag_problem), secrets = files.together(
-            lambda: flag_rows(found, shown.offers), lambda: secret_states(found, status, declared))
+        flag_list, flag_problem = flag_rows(found, shown.offers)
+        instance = json.loads(files(f'v2-records/{found.app}/{found.env}/instance.json') or '{}')
+        release = json.loads(files(f'v2-records/{found.app}/{found.env}/release.json') or '{}')
+        desired_helm = files(f'v2-apps/instances/{found.app}/{found.env}/helmrelease.json')
+        variables = ops.shown_variables(json.loads(desired_helm))[0] if desired_helm is not None else None
         relation_rows, relation_problem = declared_records.rows(declared, shown.rows, document_source,
                                                                 together=files.together), declared.problem
         shown = replace(shown, rows=relation_rows)
         teams, teams_error = registered_teams() if declared.source == declared_records.V2 else ({}, '')
-        return page(request, 'app.html', status=status, secret_states=secrets, flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
-                    writable=declared.source == declared_records.V2, v2=declared.source == declared_records.V2,
+        return page(request, 'app.html', i=found, report=report, desired_image=declared.image_reference,
+                    settings=instance.get('configuration', {}), database=release.get('database'),
+                    variables=variables, exposure=(instance.get('grants') or {}).get('exposure', ''), flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
+                    writable=declared.source == declared_records.V2 and not declared.problem, v2=declared.source == declared_records.V2,
                     flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
                     teams=teams, teams_error=teams_error,
                     connections=shown, relation_problem=relation_problem, allows=declared.allows if declared.declared else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
@@ -77,7 +77,7 @@ def routes(ctx: Context) -> list[Route]:
                     declared=declared, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=proposal.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
-                    summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
+                    summary=summary, state=observation.state(report), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
 
     def registered_teams() -> tuple[dict[str, str], str]:
         """``(registered teams, problem)`` at the commit the page reads the records at; none on a problem."""
@@ -137,15 +137,7 @@ def routes(ctx: Context) -> list[Route]:
                 raise actions.ActionError(f'choose a registered team: one of {", ".join(teams) or "none"}')
             if team == declared.team:
                 raise actions.ActionError(f'{app} already belongs to {team}: that changes nothing')
-        elif change == 'promote':
-            if form.get('image') != declared.image_reference:
-                raise actions.ActionError('staging changed since this page was loaded; refresh and review it again')
         return merge.ACTIONS[action].commands(app, env, form)
-
-    def secret_states(found: Instance, status: ops.InstanceStatus, declared: declared_records.Declared) -> dict[str, str] | None:
-        """None: v2 holds no secret values, so there is no file to read. The page says what the image declares
-        and that v2 does not carry it, instead of naming a file that is not there."""
-        return None
 
     def flag_rows(found: Instance, offers_commit: str) -> tuple[list[dict], str]:
         """Each flag the instance's image declares, with its override, then each override of a flag it does
@@ -210,17 +202,10 @@ def routes(ctx: Context) -> list[Route]:
         return RedirectResponse(f'/apps/{app}/{env}?flag={name}#flags', status_code=303)
 
     def app(request: Request) -> Response:
-        # Keep the reader alive through rendering: template offer descriptions read files too.
-        remote = file_source is platform_file
-        with Files(runner, github if remote else None, None if remote else file_source) as files:
-            token = request_files.set(files)
-            try:
-                with runner.once():
-                    return read_app(request)
-            except (CommandError, cluster.ReadError, actions.ActionError, EditError) as error:
-                return page(request, 'error.html', status_code=502, error=str(error))
-            finally:
-                request_files.reset(token)
+        try:
+            return read_app(request)
+        except (CommandError, cluster.ReadError, actions.ActionError, EditError, ValueError, TypeError, OSError) as error:
+            return page(request, 'error.html', status_code=502, error=str(error))
 
     def review_promotion(request: Request) -> Response:
         app = request.path_params['app']
@@ -232,13 +217,19 @@ def routes(ctx: Context) -> list[Route]:
             if existing:
                 return page(request, 'promotion.html', review={'app': app}, prs=existing)
             declared = declared_records.of(app, 'staging', document_source)
+            if declared.problem:
+                raise actions.ActionError(declared.problem)
             if declared.source == declared_records.V2:
                 if refused := v2_read_only(request, app, 'staging', 'promote'):
                     return refused
                 production = declared_records.of(app, 'prod', document_source)
                 if not production.declared:
                     raise actions.ActionError('v2 has no first promotion: production has no records yet')
-                review = {'app': app, 'v2': True,
+                reports = ctx.apps()
+                report = next((row.report for row in reports if row.instance == found), None)
+                if report is None:
+                    raise actions.ActionError('Go promotion readiness unavailable: no staging report')
+                review = {'app': app, 'v2': True, 'problem': observation.promotion_problem(report),
                           'outcome': 'same' if declared.image_reference == production.image_reference else 'update',
                           'image': declared.image_reference, 'previous': production.image_reference,
                           'address': '', 'diff': '', 'diff_files': 0, 'diff_problem': '', 'held': 'needs manual review',
@@ -263,9 +254,9 @@ def routes(ctx: Context) -> list[Route]:
         fields = parse_qs((await request.body()).decode(), keep_blank_values=True)
         form = {k: v[0] for k, v in fields.items()}
         declared = declared_records.of(app, env, document_source)
-        if declared.source != declared_records.V2:
+        if declared.source != declared_records.V2 or declared.problem:
             return page(request, 'error.html', status_code=409,
-                        error=f'{app}/{env} is still v1\'s: migrate it with `swhurl-v2 migrate` before changing it here.')
+                        error=declared.problem or f'{app}/{env} has no v2 records')
         if change in ('egress', 'schedule'):
             return page(request, 'error.html', status_code=400,
                         error=f'v2 does not model {change}: the form is not offered for this instance')
@@ -278,6 +269,11 @@ def routes(ctx: Context) -> list[Route]:
             if change == 'connect':
                 for ticked in ('calls', 'subscribe'):  # one checkbox per app or event
                     form[ticked] = ','.join(value for value in fields.get(ticked, []) if value)
+            if change == 'promote':
+                reviewed = form.get('image', '').partition('@')[2]
+                report = ctx.promotion_status(app, reviewed)
+                if problem := observation.promotion_problem(report):
+                    raise actions.ActionError(problem)
             commands = v2_commands(change, app, env, form, declared)
             if change == 'connect':  # only what the form offered: the environment's web apps and events
                 callable_apps, offered_events, problem = connectable(env, app)

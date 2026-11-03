@@ -844,9 +844,9 @@ Kubernetes → applied revisions and live object evidence ─┘
   lists (units, releases, Deployments, main pods), plus two for routes/certificates if needed and two for backup
   CronJobs/pods if needed, independent of instance count, plus at most one newest-owner Job GET per database.
   `--archive` retains its separate per-database object-store listing.
-- Single status is `v2-observation` version **4**; bulk is `v2-observations` version **1**, with `source`,
+- Single status is `v2-observation` version **5**; bulk is `v2-observations` version **1**, with `source`,
   `observedAt`, `revision` and `instances:[{"application":"...","environment":"...","report":{...}}]`.
-  Each nested report is the unchanged single-report shape; an empty record tree yields `instances:[]` and no
+  Each nested report is the single-report shape; an empty record tree yields `instances:[]` and no
   Kubernetes reads. Both modes keep the same credential, source, revision, archive and JSON/text flags.
 - Each report adds `currentness:{state,reason,appliedRevision}` (the revision is literal, e.g.
   `main@sha1:<sha>`), and `live:{unit,release,workload,running}`. Unit/release facts carry `status`, optional
@@ -860,7 +860,11 @@ Kubernetes → applied revisions and live object evidence ─┘
   from the selected state or invent values.
 - The pure `observe.PromotionReadiness(report, reviewedDigest)` returns `{ready,reason}`; it requires currentness
   applied/unaffected, healthy state, the reviewed digest still selected, and only that digest proved running.
-  No review flag or provider adapter is added yet; the next step can call this contract without a Python judge.
+  Each version-5 JSON report exposes that decision as `promotion:{ready,reason}`, for the selected digest by
+  default. Single status accepts `--reviewed-digest DIGEST` to evaluate a submitted review (an explicitly empty or
+  invalid digest returns `ready:false`, never defaults to the selected digest); `--all` refuses that flag.
+  `EncodeReport` uses the selected digest; `EncodeReviewedReport(report, reviewedDigest)` is the explicit Go
+  encoding boundary for submission. No provider adapter or Python judge is involved.
 
 **Console and promotion.**
 
@@ -873,7 +877,12 @@ Kubernetes → applied revisions and live object evidence ─┘
   non-status parts of `AppRow` stay on their current readers in this slice.
 - Activity consumes Go's observation too, not a second Python verdict with revision checks bypassed. It remains
   conservative while currentness is unproved; it may briefly show applying where v1's `render_state` said live.
-  Historical evidence and the broader Activity redesign are out of scope.
+  Historical evidence and the broader Activity redesign are out of scope. The console validates version 5 and
+  the version-1 bulk envelope, preserving null/false/zero/empty values. Its request-owned `Files` scope pins main,
+  caches only filtered immutable archive bytes by SHA (60 entries), and removes extraction and the 0600 host
+  kubeconfig on exit, including failures. The pod uses `--in-cluster`; local `--dev` uses committed HEAD via
+  `Runner` Git reads and serializes the current explicit host kubeconfig through `Runner`. A missing binary,
+  invalid report or failed input read shows unavailable (HTTP 502), without status fallback or change forms.
 - Promotion requires currentness (applied or proved unaffected), healthy workload, the reviewed digest still
   selected by fresh main, and that digest running. Go owns that decision and returns the refusal reason. Check
   again on submission, not only while rendering a disabled button. Preserve the existing stale-expectation check

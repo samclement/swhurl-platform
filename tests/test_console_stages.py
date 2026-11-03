@@ -4,6 +4,8 @@ import json
 import unittest
 from unittest import mock
 
+from console_observation import report
+
 from swhurl.apps.instance import Instance
 from swhurl.apps.state import State
 from swhurl.console import cluster, jobstore, stages
@@ -83,9 +85,9 @@ def unrendered(digest='sha256:b', settings='settings-1', records='records-1'):
 TARGET, ABSENT = target(), stages.Target()
 
 
-def row(state=HEALTHY, applied='render-a', ready=True, image=True, digest='sha256:a'):
-    return cluster.AppRow(Instance('web', 'prod'), state, False, 'x', digest=digest, render_hash=applied,
-                          render_ready=ready, render_state=state, image_matches=image)
+def row(state=HEALTHY, digest='sha256:a'):
+    observed = report(state=state.key, reason=state.detail)
+    return cluster.AppRow(Instance('web', 'prod'), state, False, 'x', digest=digest, report=observed)
 
 
 class RenderProgressTests(unittest.TestCase):
@@ -96,19 +98,19 @@ class RenderProgressTests(unittest.TestCase):
         mine = target('render-a', 'sha256:a', 'settings-1', 'records-1')
         deployed = target('render-b', 'sha256:b', 'settings-1', 'records-2')
         rescaled = target('render-c', 'sha256:a', 'settings-2', 'records-3')
-        followed = self.progress(action='new', merged=mine, main=deployed, applied='render-b', digest='sha256:b')
+        followed = self.progress(action='new', merged=mine, main=deployed, digest='sha256:b')
         self.assertEqual((followed.state, followed.newer), ('live', 'sha256:b'), "a seed's own build 1 finishes its creation")
-        self.assertEqual(self.progress(action='scale', merged=mine, main=deployed, applied='render-a').state, 'applying',
+        self.assertEqual(self.progress(action='scale', merged=mine, main=deployed, state=State('updating', 'revision_not_current')).state, 'applying',
                          'the newer release must itself be applied')
-        self.assertEqual(self.progress(action='scale', merged=mine, main=deployed, applied='render-b').state, 'applying',
+        self.assertEqual(self.progress(action='scale', merged=mine, main=deployed, state=State('updating', 'different_digest')).state, 'applying',
                          "the running image is judged against main's render, not the merge commit's")
-        self.assertEqual(self.progress(merged=mine, main=deployed, applied='render-b', digest='sha256:b').state, 'superseded',
+        self.assertEqual(self.progress(merged=mine, main=deployed, digest='sha256:b').state, 'superseded',
                          'a promotion chooses its release: a newer one replaces it')
         self.assertEqual(self.progress(action='scale', merged=mine, main=rescaled).state, 'superseded', 'new settings replace it')
         seen = NOW.isoformat()
         replaced = self.progress(action='scale', merged=mine, main=rescaled, reached=seen)
         self.assertEqual((replaced.state, replaced.detail), ('replaced', seen), 'seen at its end, it ran')
-        self.assertEqual(self.progress(action='scale', merged=mine, main=deployed, applied='render-a', reached=seen).state,
+        self.assertEqual(self.progress(action='scale', merged=mine, main=deployed, state=State('updating', 'revision_not_current'), reached=seen).state,
                          'replaced', 'once it ran, a newer image rolling out is not this change in progress')
         self.assertEqual(self.progress(action='scale', merged=target(settings=''), main=target('render-b', records='records-2',
                                        settings='')).state, 'superseded', 'a tree without settings is never followed')
@@ -124,17 +126,17 @@ class RenderProgressTests(unittest.TestCase):
         self.assertEqual(self.progress(merged=stale, main=stale).state, 'rendering', 'a healthy old pod is not its render')
         for mine in (merged, stale):
             with self.subTest(merged=mine.hash):
-                found = self.progress(merged=mine, main=rendered, applied='render-b', digest='sha256:b')
+                found = self.progress(merged=mine, main=rendered, digest='sha256:b')
                 self.assertEqual((found.state, found.newer), ('live', ''), 'not superseded by its own render')
-        self.assertEqual(self.progress(merged=stale, main=rendered, applied='render-a').state, 'applying',
+        self.assertEqual(self.progress(merged=stale, main=rendered, state=State('updating', 'revision_not_current')).state, 'applying',
                          "main's render must itself be applied")
         callers = target('render-c', 'sha256:b')  # another app's call changed the render, not this instance's records
-        self.assertEqual(self.progress(merged=rendered, main=callers, applied='render-c', digest='sha256:b').state, 'live',
+        self.assertEqual(self.progress(merged=rendered, main=callers, digest='sha256:b').state, 'live',
                          "another app's records do not replace it")
         newer = target('render-d', 'sha256:c', records='records-2')  # a later release
-        self.assertEqual(self.progress(merged=rendered, main=newer, applied='render-d', digest='sha256:c').state, 'superseded',
+        self.assertEqual(self.progress(merged=rendered, main=newer, digest='sha256:c').state, 'superseded',
                          'a newer prod release replaces a promotion')
-        self.assertEqual(self.progress(action='scale', merged=rendered, main=newer, applied='render-d', digest='sha256:c').state,
+        self.assertEqual(self.progress(action='scale', merged=rendered, main=newer, digest='sha256:c').state,
                          'live', 'a newer release carries a scale (same settings)')
         self.assertEqual(self.progress(merged=merged, main=newer).state, 'superseded',
                          'a promotion replaced before Render ran does not keep waiting for its render')
@@ -147,10 +149,10 @@ class RenderProgressTests(unittest.TestCase):
         self.assertEqual(self.progress(merged=merged, main=ABSENT, reached=NOW.isoformat()).state, 'replaced')
 
     def test_a_healthy_old_release_cannot_complete_a_new_change(self):
-        self.assertEqual(self.progress(applied='old').state, 'applying')
-        self.assertEqual(self.progress(ready=False).state, 'applying', 'a stale Ready condition is insufficient')
-        self.assertEqual(self.progress(image=False).state, 'applying', 'hash application is not image rollout')
-        self.assertEqual(self.progress(digest='sha256:old').state, 'applying', 'the running digest must be the target')
+        self.assertEqual(self.progress(state=State('updating', 'revision_not_current')).state, 'applying')
+        self.assertEqual(self.progress(state=State('updating', 'stale_condition')).state, 'applying', 'a stale Ready condition is insufficient')
+        self.assertEqual(self.progress(state=State('updating', 'different_digest')).state, 'applying', 'hash application is not image rollout')
+        self.assertEqual(self.progress(state=State('updating', 'different_digest'), digest='sha256:old').state, 'applying', 'the running digest must be the target')
         found = self.progress()
         self.assertEqual((found.state, found.applied), ('live', True))
         self.assertEqual(self.progress(live=row(State('stopped'))).state, 'zero')
@@ -168,9 +170,9 @@ class RenderProgressTests(unittest.TestCase):
             return stages.Target(records, settings, digest, None if rendered is None else '', rendered, '', v2=True)
         mine = owned()
         self.assertFalse(mine.pending)
-        self.assertEqual(self.progress(merged=mine, main=mine, applied='', digest='sha256:a').state, 'live')
+        self.assertEqual(self.progress(merged=mine, main=mine, digest='sha256:a').state, 'live')
         self.assertEqual(self.progress(action='scale', merged=mine, main=owned('records-2', digest='sha256:b', rendered='sha256:b'),
-                                       applied='', digest='sha256:b').state, 'live', 'a newer image carries a scale')
+                                       digest='sha256:b').state, 'live', 'a newer image carries a scale')
         self.assertEqual(self.progress(merged=mine, main=owned('records-3', settings='settings-2')).state, 'superseded',
                          'changed settings replace a scale')
         for main in (owned('records-1', rendered=None), owned('records-1', rendered='sha256:old')):
@@ -264,12 +266,8 @@ class PullStageTests(unittest.TestCase):
 
 
 class ReleaseReadinessTests(unittest.TestCase):
-    def test_a_stale_ready_condition_cannot_complete_application(self):
-        release = {'metadata': {'generation': 3}, 'status': {'conditions': [
-            {'type': 'Ready', 'status': 'True', 'observedGeneration': 2}]}}
-        self.assertFalse(cluster.release_ready(release))
-        release['status']['conditions'][0]['observedGeneration'] = 3
-        self.assertTrue(cluster.release_ready(release))
-        release['status']['conditions'][0]['status'] = 'Unknown'
-        self.assertFalse(cluster.release_ready(release))
-        self.assertFalse(cluster.release_ready(None))
+    def test_go_updating_for_a_stale_ready_condition_cannot_complete_application(self):
+        observed = row(State('updating', 'stale_condition'))
+        self.assertEqual(stages.landing('scale', observed, TARGET).state, 'applying')
+        self.assertEqual(stages.landing('scale', row(), TARGET).state, 'live')
+        # Generation comparison itself is tested by Go: observe/state_test.go and explain_test.go.

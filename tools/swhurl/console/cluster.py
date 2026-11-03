@@ -14,7 +14,7 @@ from swhurl.apps.contract import (
     AUTO_DEPLOY_TAG_PATTERN,
 )
 from swhurl.apps.instance import Instance
-from swhurl.apps.state import State, ready_reason, unit_state, verdict
+from swhurl.apps.state import State, ready_reason, unit_state
 from swhurl.kube import ready_condition
 from swhurl.report import Entry, Report
 from swhurl.run import CommandError, Runner
@@ -23,10 +23,7 @@ from swhurl.verify import verify_platform
 UNITS = ['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io', '-o', 'json']
 RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']
 APP_NAMESPACES = ['kubectl', 'get', 'namespaces', '-l', interface.APP, '-o', 'json']
-SOURCE = ['kubectl', '-n', 'flux-system', 'get', 'gitrepository', ops.SOURCE, '-o', 'json']
-PODS = ['kubectl', 'get', 'pods', '--all-namespaces', '-l', ops.INSTANCE_LABEL, '-o', 'json']
 INGRESSES = ['kubectl', 'get', 'ingresses.networking.k8s.io', '--all-namespaces', '-o', 'json']
-WORKLOADS = ['kubectl', 'get', ops.WORKLOAD_KINDS, '--all-namespaces', '-l', ops.INSTANCE_LABEL, '-o', 'json']
 CONSOLE_CHECKS = frozenset({'cluster'})
 
 
@@ -60,8 +57,8 @@ class Connections:
 @dataclass(frozen=True)
 class AppRow:
     instance: Instance
-    state: State  # the verdict the app page gives from the same facts (apps/state.py)
-    suspended: bool  # its Flux unit: what the row's button resumes
+    state: State  # Go observation, attached by the request status reader
+    suspended: bool | None  # its Flux unit: what the row's button resumes
     image: str
     tag: str = ''
     digest: str = ''
@@ -71,9 +68,7 @@ class AppRow:
     connections: Connections = Connections()
     applied_revision: str = ''  # the Git revision its Flux unit last applied
     render_hash: str = ''
-    render_ready: bool = False
-    render_state: State = State('unknown')  # the verdict once render_hash is proved to be Git's target (stages.progress)
-    image_matches: bool = False
+    report: dict | None = None  # versioned Go observation; absent for inventory-only/removing rows
 
 
 @dataclass(frozen=True)
@@ -170,36 +165,16 @@ def items(runner: Runner, args: list[str]) -> list[dict]:
 NOT_READ = State('unknown', 'its state was not read for this page')
 
 
-def fetched(runner: Runner) -> str:
-    """The newest Git revision Flux has fetched; '' when it has none."""
-    try:
-        source = runner.json(SOURCE) or {}
-    except CommandError as error:
-        raise ReadError(str(error)) from None
-    return ((source.get('status') or {}).get('artifact') or {}).get('revision', '')
-
-
-def apps(runner: Runner, states: bool = True, *, include_removing: bool = False) -> list[AppRow]:
-    """Every app instance, from what runs: its Flux unit, its HelmRelease (image and the platform's
-    SWHURL_* variables, which say who it calls and what events it handles), the Ingress that publishes its
-    hosts (v1's chart rendered it, v2 keeps it apart), its namespace's team label, and its state from the same
-    facts as its own page (the Git source, its pods and its workloads). ``states=False`` skips those three
-    reads for a page that shows no state: every row is then Unknown and says why."""
+def apps(runner: Runner, *, include_removing: bool = False) -> list[AppRow]:
+    """Non-status inventory and connections. The request reader attaches Go's observations."""
     def namespaces() -> list[dict]:
         try:
             return items(runner, APP_NAMESPACES)
         except ReadError:  # an account that may not list namespaces still gets the rest
             return []
 
-    def git_source() -> dict:
-        try:
-            return runner.json(SOURCE) or {}
-        except CommandError as error:
-            raise ReadError(str(error)) from None
-    listed = [functools.partial(items, runner, RELEASES), namespaces, functools.partial(items, runner, UNITS),
-              functools.partial(items, runner, INGRESSES)]
-    judged = [git_source, functools.partial(items, runner, PODS), functools.partial(items, runner, WORKLOADS)]
-    read = runner.together(*listed, *(judged if states else ()))
+    read = runner.together(functools.partial(items, runner, RELEASES), namespaces,
+                           functools.partial(items, runner, UNITS), functools.partial(items, runner, INGRESSES))
     releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in read[0]}
     teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(interface.TEAM, '') for n in read[1]}
     ingresses = read[3]
@@ -210,13 +185,6 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
     if include_removing:
         found += [(instance, {}, release) for (namespace, name), release in releases.items()
                   if (instance := Instance.of_namespace(namespace)) and instance.app == name and instance not in known]
-    source = read[4] if states else {}
-    owned: dict[str, dict[tuple[str, str], list[dict]]] = {}
-    for kind, found_items in (('pods', read[5:6]), ('workloads', read[6:7])):
-        owned[kind] = defaultdict(list)
-        for item in found_items[0] if found_items else ():
-            metadata = item['metadata']
-            owned[kind][metadata.get('namespace', ''), (metadata.get('labels') or {}).get(ops.INSTANCE_LABEL, '')].append(item)
     subscribed = [(instance.env, publisher, event, instance.app) for instance, _, release in found
                   for publisher, event in events.subscribed(helmrelease.variables(release))]
     # Who calls an instance: v2 renders an allow-list as a resolved pair, so the caller carries the callee's
@@ -247,28 +215,14 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
                        egress.granted(release)),
             str(annotations.get(interface.OFFERS_ANNOTATION, '')),
             tuple(egress.granted(release)), egress.port_of(variables))
-        mine = (instance.namespace, instance.app)
-        status = ops.status_of(instance, unit, source, release, {'items': owned['pods'][mine]},
-                               {'items': owned['workloads'][mine]})
-        rows.append(AppRow(instance, verdict(status) if states else NOT_READ, status.unit_suspended,
+        rows.append(AppRow(instance, NOT_READ, (unit.get('spec') or {}).get('suspend'),
                            ops.desired_image(release) if release else 'no HelmRelease',
                            image.get('tag', ''), image.get('digest', ''), hosts,
                            str(variables.get(interface.DATABASE_PATH_VARIABLE, '')) if release else None,
-                           teams.get(instance.namespace, ''), connections, status.applied_revision,
-                           ((release or {}).get('metadata', {}).get('annotations') or {}).get(interface.RENDER_ANNOTATION, ''),
-                           release_ready(release),
-                           verdict(status, render_applied=True) if states else NOT_READ,
-                           status.image_state == 'matches'))
+                           teams.get(instance.namespace, ''), connections,
+                           (unit.get('status') or {}).get('lastAppliedRevision', ''),
+                           ((release or {}).get('metadata', {}).get('annotations') or {}).get(interface.RENDER_ANNOTATION, '')))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
-
-
-def release_ready(release: dict | None) -> bool:
-    if not release:
-        return False
-    generation = release.get('metadata', {}).get('generation')
-    condition = next((c for c in (release.get('status') or {}).get('conditions') or [] if c.get('type') == 'Ready'), {})
-    return (generation is not None and condition.get('status') == 'True'
-            and condition.get('observedGeneration') == generation)
 
 
 def ingress_hosts(ingresses: list[dict], instance: Instance) -> tuple[str, ...]:

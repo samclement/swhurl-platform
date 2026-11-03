@@ -44,6 +44,10 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Checked:** tests pin both readers to today's URIs, a test fails if the two name different buckets, and the
   freshness check reports a missing or malformed job location as bad; `make check` (721 tests), `make check-lint`,
   `make check-docs`.
+- **Live:** `make verify-platform` read MongoDB's backup (9.6 h old) and every SQLite instance's from the two files,
+  and passed with console image `src-f8efff595f375bfa`, which Validate deployed; `DRY_RUN=true make restore-sqlite
+  APP=demo-orders ENV=staging` found `sqlite-20261103T041300Z.db.age` at the profile's location and planned the
+  restore. Not exercised: a real restore.
 
 ## The v1 model is bounded (3 November 2026)
 

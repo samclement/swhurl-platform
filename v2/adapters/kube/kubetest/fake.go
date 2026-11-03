@@ -4,6 +4,7 @@ package kubetest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -23,6 +24,8 @@ type Answers struct {
 	Mismatched observe.Ref // a 200 whose document is not the object the ref names
 	Pods       observe.Ref
 	Selector   string
+	Collection []byte // optional raw successful list response for shared completeness tests
+	ListReason string // optional unavailable response
 	Items      [][]byte
 }
 
@@ -127,6 +130,10 @@ func (f *Fake) Read(_ context.Context, ref observe.Ref) (observe.Read, error) {
 
 // List answers the pod list, and refuses a request the real adapter would also refuse.
 func (f *Fake) List(_ context.Context, ref observe.Ref, selector string) (observe.List, error) {
+	return f.list(ref, selector, false)
+}
+
+func (f *Fake) list(ref observe.Ref, selector string, all bool) (observe.List, error) {
 	f.Selectors = append(f.Selectors, selector)
 	if f.Refuse != nil {
 		return observe.List{}, f.Refuse
@@ -134,14 +141,27 @@ func (f *Fake) List(_ context.Context, ref observe.Ref, selector string) (observ
 	if selector == "" {
 		return observe.List{}, &kube.Error{Code: kube.RefusedRequest, Subject: "selector", Reason: "required"}
 	}
-	if ref != f.Answers.Pods {
+	expected := f.Answers.Pods
+	if all {
+		expected.Namespace = ""
+	}
+	if ref != expected {
 		return observe.List{}, &kube.Error{Code: kube.RefusedRequest, Subject: "resource", Reason: "unsupported_kind"}
 	}
-	items := make([][]byte, 0, len(f.Answers.Items))
-	for _, item := range f.Answers.Items {
-		items = append(items, bytes.Clone(item))
+	if f.Answers.ListReason != "" {
+		return observe.List{Ref: ref, Selector: selector, Status: observe.Unavailable, Reason: f.Answers.ListReason}, nil
 	}
-	return observe.List{Ref: ref, Selector: selector, Status: observe.Present, Items: items}, nil
+	body := f.Answers.Collection
+	if body == nil {
+		items := make([]json.RawMessage, 0, len(f.Answers.Items))
+		for _, item := range f.Answers.Items {
+			items = append(items, json.RawMessage(item))
+		}
+		body, _ = json.Marshal(struct {
+			Items []json.RawMessage `json:"items"`
+		}{items})
+	}
+	return kube.DecodeCollection(ref, selector, body), nil
 }
 
 // Contract is the behaviour every kube.Reader must have: presence, absence, a failed read and an
@@ -289,4 +309,12 @@ func refused(err error, reason string) bool {
 // sameItems compares two lists of documents.
 func sameItems(items, want [][]byte) bool {
 	return slices.EqualFunc(items, want, bytes.Equal)
+}
+
+// ListAllNamespaces answers the scenario's collection without reinterpreting List's namespace.
+func (f *Fake) ListAllNamespaces(_ context.Context, ref observe.Ref, selector string) (observe.List, error) {
+	if ref.Namespace != "" || ref.Name != "" {
+		return observe.List{}, &kube.Error{Code: kube.RefusedRequest, Subject: "resource", Reason: "collection_required"}
+	}
+	return f.list(ref, selector, true)
 }

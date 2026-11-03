@@ -203,6 +203,11 @@ func (f *fakeCluster) List(ctx context.Context, ref observe.Ref, selector string
 	return observe.List{Ref: ref, Status: observe.Present, Items: pods(f.appPods)}, nil
 }
 
+// Restore never reads across namespaces; fail loudly if it begins to do so.
+func (f *fakeCluster) ListAllNamespaces(context.Context, observe.Ref, string) (observe.List, error) {
+	return observe.List{}, errors.New("unexpected all-namespaces read during restore")
+}
+
 // deleted is whether this run has already deleted one kind.
 func (f *fakeCluster) deleted(kind string) bool {
 	created, removed := 0, 0

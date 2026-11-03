@@ -696,3 +696,36 @@ func TestClusterScopedPaths(t *testing.T) {
 		t.Fatalf("a namespaced reference to a cluster-scoped kind: %v", err)
 	}
 }
+
+func TestCollectionContract(t *testing.T) {
+	kubetest.CollectionContract(t, func(t *testing.T, body []byte, reason string) kube.Reader {
+		server := &apiServer{body: body}
+		if reason == observe.ReasonForbidden {
+			server.status, server.body = http.StatusForbidden, nil
+		}
+		if reason == observe.ReasonTooLarge {
+			server.body = bytes.Repeat([]byte(" "), (1<<20)+1)
+		}
+		reader, err := kube.New(endpoint, &http.Client{Transport: server}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return reader
+	})
+}
+
+func TestAllNamespacesPathAndSelectorAreExplicit(t *testing.T) {
+	server := &apiServer{body: []byte(`{"items":[]}`)}
+	reader, err := kube.New(endpoint, &http.Client{Transport: server}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := observe.Ref{APIVersion: "apps/v1", Kind: "Deployment"}
+	if _, err := reader.ListAllNamespaces(t.Context(), ref, "app.kubernetes.io/instance"); err != nil {
+		t.Fatal(err)
+	}
+	request := server.requests[0]
+	if request.URL.Path != "/apis/apps/v1/deployments" || request.URL.Query().Get("labelSelector") != "app.kubernetes.io/instance" {
+		t.Fatalf("%s", request.URL)
+	}
+}

@@ -25,7 +25,7 @@ func scenario() kubetest.Answers {
 		Mismatched: observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "hello-staging", Name: "mismatched"},
 		Pods:       observe.Ref{APIVersion: "v1", Kind: "Pod", Namespace: "hello-staging"},
 		Selector:   "app.kubernetes.io/instance=hello",
-		Items:      [][]byte{[]byte(`{"kind":"Pod","metadata":{"name":"hello-main-1"}}`)},
+		Items:      [][]byte{[]byte(`{"apiVersion":"v1","kind":"Pod","metadata":{"name":"hello-main-1","namespace":"hello-staging"}}`)},
 	}
 }
 
@@ -61,4 +61,10 @@ func TestFakeRecordsTheCallAndCanFail(t *testing.T) {
 	if _, err := fake.Read(t.Context(), scenario().Object); err != errRefused {
 		t.Fatalf("a configured refusal was not returned: %v", err)
 	}
+}
+
+func TestCollectionContract(t *testing.T) {
+	kubetest.CollectionContract(t, func(t *testing.T, body []byte, reason string) kube.Reader {
+		return kubetest.New(kubetest.Answers{Pods: observe.Ref{APIVersion: "v1", Kind: "Pod", Namespace: "hello-staging"}, Collection: body, ListReason: reason})
+	})
 }

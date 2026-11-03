@@ -22,13 +22,15 @@ adapters/files: type Writer interface {Write(dir string, files []kernel.File) ([
 adapters/kube/kubetest: func (*Fake) Create(_ context.Context, ref observe.Ref, _ []byte) error
 adapters/kube/kubetest: func (*Fake) Delete(_ context.Context, ref observe.Ref) error
 adapters/kube/kubetest: func (*Fake) List(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
+adapters/kube/kubetest: func (*Fake) ListAllNamespaces(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube/kubetest: func (*Fake) Logs(_ context.Context, ref observe.Ref, _ int64) (string, error)
 adapters/kube/kubetest: func (*Fake) Patch(_ context.Context, ref observe.Ref, _ []byte) error
 adapters/kube/kubetest: func (*Fake) Read(_ context.Context, ref observe.Ref) (observe.Read, error)
+adapters/kube/kubetest: func CollectionContract(t *testing.T, open func(*testing.T, []byte, string) kube.Reader)
 adapters/kube/kubetest: func Contract(t *testing.T, answers Answers, open func(*testing.T, Answers) kube.Reader)
 adapters/kube/kubetest: func New(answers Answers) *Fake
 adapters/kube/kubetest: func WriteContract(t *testing.T, log string, open func(*testing.T, string) kube.Writer)
-adapters/kube/kubetest: type Answers struct {Object observe.Ref Document []byte Missing observe.Ref Failed observe.Ref Malformed observe.Ref Mismatched observe.Ref Pods observe.Ref Selector string Items [][]byte}
+adapters/kube/kubetest: type Answers struct {Object observe.Ref Document []byte Missing observe.Ref Failed observe.Ref Malformed observe.Ref Mismatched observe.Ref Pods observe.Ref Selector string Collection []byte ListReason string Items [][]byte}
 adapters/kube/kubetest: type Fake struct {Answers Answers Reads []observe.Ref Writes []observe.Ref ReadLogs []observe.Ref Log string Selectors []string Refuse error}
 adapters/kube: const BadCredentials = "credentials"
 adapters/kube: const Failed = "failed"
@@ -36,6 +38,7 @@ adapters/kube: const RefusedRequest = "refused_request"
 adapters/kube: func (*API) Create(ctx context.Context, ref observe.Ref, document []byte) error
 adapters/kube: func (*API) Delete(ctx context.Context, ref observe.Ref) error
 adapters/kube: func (*API) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
+adapters/kube: func (*API) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube: func (*API) Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)
 adapters/kube: func (*API) Patch(ctx context.Context, ref observe.Ref, patch []byte) error
 adapters/kube: func (*API) Read(ctx context.Context, ref observe.Ref) (observe.Read, error)
@@ -44,6 +47,7 @@ adapters/kube: func (Connection) Reader() (Reader, error)
 adapters/kube: func (Connection) Writer() (Writer, error)
 adapters/kube: func Client(credentials Credentials) (*http.Client, error)
 adapters/kube: func Connect(data []byte) (Connection, error)
+adapters/kube: func DecodeCollection(ref observe.Ref, selector string, body []byte) observe.List
 adapters/kube: func New(endpoint string, client *http.Client, token string) (Reader, error)
 adapters/kube: func RefOf(group, kind, namespace, name string) (observe.Ref, error)
 adapters/kube: func ServiceAccount(token, ca []byte, host, port string) (Connection, error)
@@ -52,7 +56,7 @@ adapters/kube: type API struct {}
 adapters/kube: type Connection struct {Endpoint string Credentials Credentials Token string Context string}
 adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
 adapters/kube: type Error struct {Code, Subject, Reason string}
-adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)}
+adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)}
 adapters/kube: type Writer interface {// Patch applies a JSON merge patch to one object: the shape the platform uses to suspend a release or // set a replica count. Patch(ctx context.Context, ref observe.Ref, patch []byte) error // Create creates one object from its document. Create(ctx context.Context, ref observe.Ref, document []byte) error // Delete removes one object. An object that is already gone is not an error. Delete(ctx context.Context, ref observe.Ref) error // Logs reads the last lines of one pod's log: the evidence a restore job leaves about what it did. Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)}
 adapters/registry/registrytest: func (*Fake) Describe(_ context.Context, reference string) (registry.Image, error)
 adapters/registry/registrytest: func (*Fake) Tags(context.Context) ([]string, error)
@@ -131,6 +135,7 @@ events: type Declaration struct {Application, Environment string Publishes []str
 events: type Error struct {Application, Environment, Field, Reason string}
 events: type Resolved struct {Connected []Subscription Pending []string}
 events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
+kernel: const AppRecordName = "app.json"
 kernel: const AppTree = "apps"
 kernel: const DataMount = "/data"
 kernel: const DatabasePath = DataMount + "/app.db"
@@ -142,10 +147,12 @@ kernel: const ImageAutomationUnit = "platform-image-automation"
 kernel: const ImageInterval = "1h"
 kernel: const ImagePolicyExtract = `$run`
 kernel: const ImagePolicyPattern = `^(?P<run>[0-9]+)-[0-9a-f]{7,40}$`
+kernel: const InstanceRecordName = "instance.json"
 kernel: const Invalid Code = "invalid"
 kernel: const ManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
 kernel: const OverQuota Code = "over_quota"
 kernel: const OwnershipConflict Code = "ownership_conflict"
+kernel: const ReleaseRecordName = "release.json"
 kernel: const RestoreDeadline = 15 * time.Minute
 kernel: const RestoreLabel = labelDomain + "restore"
 kernel: const RevisionLabel = "org.opencontainers.image.revision"
@@ -169,6 +176,7 @@ kernel: func (Reloader) Namespaces() ([]string, error)
 kernel: func (Telemetry) CollectorPort() (int32, bool)
 kernel: func AcceptDeclaration(declaration Declaration, spec InstanceSpec, current ReleaseBundle) error
 kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation, backupHost string) ([]EgressAllocation, error)
+kernel: func AppRecordPath(root, application string) string
 kernel: func AuthFileName(namespace string) string
 kernel: func CheckEncryptedSeed(document []byte, seed string) error
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
@@ -196,6 +204,7 @@ kernel: func NamespaceOf(application, environment string) string
 kernel: func NewUserKey(seed [32]byte) UserKey
 kernel: func NewestTag(tags []string) (ImageTag, bool)
 kernel: func Ownership(claims []Claim) []Conflict
+kernel: func RecordFolder(root, application, environment string) string
 kernel: func RenderAuth(namespaces []string, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderProxy(allocations []EgressAllocation, profile PlatformProfile) (ResourceSet, error)
@@ -338,6 +347,7 @@ observe: const ReasonContainers = "container_not_ready"
 observe: const ReasonDigest = "digest"
 observe: const ReasonFailed = "condition_failed"
 observe: const ReasonForbidden = "forbidden"
+observe: const ReasonIncomplete = "incomplete_list"
 observe: const ReasonMalformed = "malformed"
 observe: const ReasonMaxAge = "max_age_required"
 observe: const ReasonMetadataAbsent = "archive_metadata_absent"
@@ -398,16 +408,25 @@ observe: const StateStopped = "stopped"
 observe: const StateSuspended = "suspended"
 observe: const StateUnknown = "unknown"
 observe: const StateUpdating = "updating"
+observe: const Unaffected = "unaffected"
 observe: const Unavailable = "unavailable"
 observe: const Unknown Verdict = "unknown"
 observe: func (*Error) Error() string
+observe: func (Candidates) EvidenceFor(target Target) Evidence
+observe: func (Changes) Validate() error
 observe: func (RestorePlan) Ready() bool
 observe: func ArchiveMetadataOf(document []byte) (ArchiveMetadata, error)
 observe: func BackupTargetOf(cronJob []byte) (BackupTarget, error)
+observe: func BulkPlan(targets []Target) []ListRequest
+observe: func CurrentnessOf(expected, literal, availability string, scope ChangeScope, changes *Changes) (Currentness, error)
+observe: func DecodeChanges(data []byte) (Changes, error)
+observe: func EncodeCollection(collection Collection) ([]byte, error)
 observe: func EncodeReport(report Report) ([]byte, error)
 observe: func Explain(target Target, evidence Evidence) (Report, error)
+observe: func IndexCandidates(lists []List) (Candidates, error)
 observe: func IsPositive(outcome string) bool
 observe: func NewestRun(items [][]byte) (string, bool, error)
+observe: func PromotionReadiness(report Report, reviewedDigest string) PromotionDecision
 observe: func RestoreOf(input RestoreInput) RestorePlan
 observe: func RouteTargetOf(ingress []byte) (RouteTarget, error)
 observe: func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
@@ -422,23 +441,37 @@ observe: type ArchiveReport struct {State string Reason string Bucket string Pre
 observe: type BackupEvidence struct {CronJob Read Pods List Run *Read Archive *ArchiveList MaxAge time.Duration}
 observe: type BackupReport struct {State string Reason string Schedule string LastScheduledAt string LastSucceededAt string MaxAge time.Duration NewestRun *RunReport Archive ArchiveReport}
 observe: type BackupTarget struct {CronJob Ref Pods Ref Selector string Schedule string}
+observe: type Candidates struct {}
 observe: type Certificate struct {Name string Outcome string Reason string}
+observe: type ChangeScope struct {Files, Folders []string}
+observe: type Changes struct {Kind string `json:"kind"` Version int `json:"version"` Comparisons []Comparison `json:"comparisons"`}
+observe: type Collection struct {Source, ObservedAt, Revision string Instances []InstanceReport}
+observe: type Comparison struct {From string `json:"from"` To string `json:"to"` Status string `json:"status"` Paths []string `json:"paths"`}
+observe: type Condition struct {Type string `json:"type"` Status string `json:"status"` Reason string `json:"reason"` ObservedGeneration *int64 `json:"observedGeneration"`}
+observe: type Currentness struct {State string `json:"state"` Reason string `json:"reason"` AppliedRevision string `json:"appliedRevision"`}
 observe: type Error struct {Field, Reason string}
-observe: type Evidence struct {Source string ObservedAt string Objects []Read Pods []List Backup *BackupEvidence}
+observe: type Evidence struct {Source string ObservedAt string Objects []Read Pods []List Backup *BackupEvidence Changes *Changes}
 observe: type Finding struct {Field, Outcome, Reason string}
+observe: type FluxFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` Suspended *bool `json:"suspended"` Conditions []Condition `json:"conditions"`}
+observe: type InstanceReport struct {Application, Environment string Report Report}
 observe: type List struct {Ref Ref Selector string Status string Reason string Items [][]byte}
+observe: type ListRequest struct {Ref Ref Selector string}
+observe: type LiveFacts struct {Unit FluxFacts `json:"unit"` Release FluxFacts `json:"release"` Workload WorkloadFacts `json:"workload"` Running RunningFacts `json:"running"`}
 observe: type Problem struct {Pod, Container, Reason, Message string}
+observe: type PromotionDecision struct {Ready bool `json:"ready"` Reason string `json:"reason"`}
 observe: type Read struct {Ref Ref Status string Reason string Object []byte}
 observe: type Ref struct {APIVersion, Kind, Namespace, Name string}
-observe: type Report struct {Target Target Source string ObservedAt string Findings []Finding Verdict Verdict Backup BackupReport Problems []Problem Routes []Route Certificates []Certificate State State Assessed []string Unassessed []string NotCovered []string}
+observe: type Report struct {Target Target Currentness Currentness Live LiveFacts Source string ObservedAt string Findings []Finding Verdict Verdict Backup BackupReport Problems []Problem Routes []Route Certificates []Certificate State State Assessed []string Unassessed []string NotCovered []string}
 observe: type RestoreInput struct {Namespace, Application string Archive ArchiveReport Metadata *ArchiveMetadata Failure string}
 observe: type RestorePlan struct {State string Reason string Archive ArchiveReport Metadata ArchiveMetadata}
 observe: type Route struct {Name string Outcome string Reason string Hosts []string}
 observe: type RouteTarget struct {Ingress Ref Certificates []Ref}
 observe: type RunReport struct {Name string CreatedAt string CompletedAt string Outcome string}
+observe: type RunningFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` Digests []string `json:"digests"`}
 observe: type State struct {Name, Field, Reason string}
-observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string Backup *BackupTarget Route *RouteTarget}
+observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string Backup *BackupTarget Route *RouteTarget Scope *ChangeScope}
 observe: type Verdict string
+observe: type WorkloadFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` ReadyReplicas *int64 `json:"readyReplicas"`}
 orchestration: const AppRunning = "running"
 orchestration: const AppStopped = "stopped"
 orchestration: const AppUnknown = "unknown"
@@ -464,6 +497,7 @@ orchestration: func Remove(inputs RemovalInputs, destination string, writer file
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
 orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
 orchestration: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
+orchestration: func StatusAll(ctx context.Context, inputs StatusInputs, instances []Inputs) (observe.Collection, error)
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
@@ -491,7 +525,7 @@ orchestration: type RestoreJobOutcome struct {Name string State string Log strin
 orchestration: type RestoreOutcome struct {State string Reason string Steps []RestoreStep Job RestoreJobOutcome App RestoreApp BackupSuspended bool Started time.Time Finished time.Time}
 orchestration: type RestoreStep struct {Name string Outcome string Detail string}
 orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
-orchestration: type StatusInputs struct {Inputs Revision string Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)}
+orchestration: type StatusInputs struct {Inputs Revision string RecordsRoot string SharedPaths []string Changes *observe.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
 shadow: func (*Error) Error() string

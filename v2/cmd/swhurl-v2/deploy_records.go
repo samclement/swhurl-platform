@@ -17,9 +17,9 @@ import (
 
 const (
 	recordsKind  = "v2-deploy-records"
-	instanceFile = "instance.json"
-	releaseFile  = "release.json"
-	appFile      = "app.json"
+	instanceFile = kernel.InstanceRecordName
+	releaseFile  = kernel.ReleaseRecordName
+	appFile      = kernel.AppRecordName
 	stagingDir   = "staging"
 	offersFolder = "offers"
 )

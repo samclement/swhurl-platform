@@ -48,9 +48,9 @@ const usage = `usage:
   swhurl-v2 declaration --label FILE --app APPLICATION --team TEAM [--exposure GRANT]
   swhurl-v2 remove --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
       --calls CALLS.json --out DIR
-  swhurl-v2 status --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json --revision COMMIT \
+  swhurl-v2 status --records DIR (--app APPLICATION --env ENVIRONMENT | --all) --profile PROFILE.json --revision COMMIT \
       (--kubeconfig KUBECONFIG.json | --in-cluster) [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
-      [--max-age DURATION] [--archive [--region REGION]] [--json]
+      [--max-age DURATION] [--archive [--region REGION]] [--changes FILE [--repo-root DIR]] [--json]
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
       --committed HELMRELEASE.json --profile PROFILE.json
   swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json [--kubeconfig KUBECONFIG.json]
@@ -100,8 +100,14 @@ record's release. It reads only. A database instance's status also carries its p
 the runs its labels select, judged against --max-age (26h by default). With --archive it also lists the instance's
 own prefix in the object store, with the operator's AWS credentials from the environment, and says whether an
 archive exists and how old the newest one is; the region is discovered from the bucket unless --region states it.
---json prints the v2-observation document (version 3) instead of the text. An application and environment with no
-record under DIR is refused.
+--json prints the v2-observation document (version 4) instead of the text. An application and environment with no
+record under DIR is refused. --all is exclusive with --app/--env and returns a v2-observations collection (version 1)
+in stable application/environment order. Core lists are batched; each database adds at most one newest-owner Job GET.
+--changes FILE supplies strict v2-changes version 1 comparisons with exact from/to SHAs, status (complete,
+incomplete or unavailable), and paths (including previous rename paths). Only a complete matching comparison with
+no relevant changed path can exempt the revision check, never health or digest checks. --repo-root DIR (default .)
+identifies the extracted repository root for repository-relative relevance; it requires --changes. Records, profile,
+calls and egress must be inside that root. Shared profile/resolution/allocation changes conservatively require applying.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
@@ -340,10 +346,10 @@ type request struct {
 	app, settings, committed, snapshot, callFile       string
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
-	records                                            string
+	records, changes, repoRoot                         string
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
-	rotate, check, json, inCluster                     bool
+	rotate, check, json, inCluster, all                bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
@@ -498,6 +504,9 @@ func (r *request) registerDeliveryFlags(flags *flag.FlagSet, command string) boo
 func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
 	case "status":
+		flags.Var(&onceBool{value: &r.all}, "all", "observe all recorded instances; exclusive with --app/--env")
+		flags.Var(&once{value: &r.changes}, "changes", "complete, incomplete or unavailable revision comparisons")
+		flags.Var(&once{value: &r.repoRoot}, "repo-root", "repository root for changed paths (default .; requires --changes)")
 		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
 		flags.Var(&once{value: &r.app}, "app", "application")
 		flags.Var(&once{value: &r.env}, "env", "environment")
@@ -657,8 +666,14 @@ var requiredFlags = map[string]func(*request) []string{
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one
 // credential, a kubeconfig or the pod's own ServiceAccount. Neither or both is a usage error: nothing is detected.
 func (r *request) statusNamed() []string {
-	if (r.kubeconfig != "") == r.inCluster {
+	if (r.kubeconfig != "") == r.inCluster || (r.repoRoot != "" && r.changes == "") {
 		return []string{""}
+	}
+	if r.all {
+		if r.app != "" || r.env != "" {
+			return []string{""}
+		}
+		return []string{r.records, r.profile, r.revision}
 	}
 	return []string{r.records, r.app, r.env, r.profile, r.revision}
 }

@@ -6,7 +6,7 @@ import "testing"
 // outcome without classifying it would otherwise turn a negative fact into "unclear" and let an
 // instance read as unknown instead of not running, so the sets are asserted here rather than by eye.
 func TestEveryOutcomeHasASignedVerdict(t *testing.T) {
-	for _, outcome := range []string{Reconciled, Applied, Settled, Present, Running, Ready, AsIntended} {
+	for _, outcome := range []string{Reconciled, Applied, Unaffected, Settled, Present, Running, Ready, AsIntended} {
 		if outcomeSign(outcome) != positive {
 			t.Errorf("%s is not positive", outcome)
 		}

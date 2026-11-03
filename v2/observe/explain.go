@@ -36,6 +36,8 @@ type Target struct {
 	Backup *BackupTarget
 	// Route is the route the records expect; nil when the instance renders none.
 	Route *RouteTarget
+	// Scope is compiler/writer-derived repository relevance, empty when it is not known.
+	Scope *ChangeScope
 }
 
 // A read's status, and the outcomes a finding can have. The same word means the same thing wherever
@@ -51,6 +53,7 @@ const (
 	Reconciled    = "reconciled"
 	NotReconciled = "not_reconciled"
 	Applied       = "applied"
+	Unaffected    = "unaffected"
 	NotApplied    = "not_applied"
 	Settled       = "settled"
 	NotSettled    = "not_settled"
@@ -70,6 +73,7 @@ const (
 	ReasonStatus        = "status"
 	ReasonMalformed     = "malformed"
 	ReasonTooLarge      = "response_too_large"
+	ReasonIncomplete    = "incomplete_list"
 	ReasonSuspended     = "suspended"
 	ReasonNoCondition   = "condition_absent"
 	ReasonNotTrue       = "condition_not_ready"
@@ -120,7 +124,8 @@ type Evidence struct {
 	Pods       []List
 	// Backup is the protection's evidence; nil when the caller made no such read, which is reported as
 	// unassessed rather than assumed.
-	Backup *BackupEvidence
+	Backup  *BackupEvidence
+	Changes *Changes
 }
 
 // Finding is one fact: whether it was established, what was found, and why not.
@@ -141,11 +146,13 @@ const (
 // Report is one observation of one target. Every call owns its slices, and nothing the report
 // names as assessed was read from anywhere but the evidence it was given.
 type Report struct {
-	Target     Target
-	Source     string
-	ObservedAt string
-	Findings   []Finding // fixed order: unit, unit.revision, release, workload, image, ready, replicas
-	Verdict    Verdict
+	Target      Target
+	Currentness Currentness
+	Live        LiveFacts
+	Source      string
+	ObservedAt  string
+	Findings    []Finding // fixed order: unit, unit.revision, release, workload, image, ready, replicas
+	Verdict     Verdict
 	// Backup is the protection's own answer, which the verdict never uses.
 	Backup BackupReport
 	// Problems, Routes and Certificates are facts beside the findings: every container that is not ready and
@@ -180,7 +187,10 @@ func Explain(target Target, evidence Evidence) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	findings := findingsOf(target, facts)
+	findings, currentness, err := revisionFindings(target, facts, evidence.Changes)
+	if err != nil {
+		return Report{}, err
+	}
 	backup, err := backupOf(target, evidence)
 	if err != nil {
 		return Report{}, err
@@ -190,6 +200,7 @@ func Explain(target Target, evidence Evidence) (Report, error) {
 		return Report{}, err
 	}
 	report := Report{Target: target, Source: evidence.Source, ObservedAt: evidence.ObservedAt,
+		Currentness: currentness, Live: liveFacts(facts),
 		Findings: findings, Backup: backup, Problems: facts.pods.problems, Routes: routes, Certificates: certificates,
 		NotCovered: notCovered(), Assessed: []string{}, Unassessed: []string{}}
 	report.Verdict = verdict(findings)
@@ -202,6 +213,19 @@ func Explain(target Target, evidence Evidence) (Report, error) {
 	}
 	report.State = StateOf(report)
 	return report, nil
+}
+
+// revisionFindings changes only the revision finding; failures and missing evidence remain independent.
+func revisionFindings(target Target, facts facts, changes *Changes) ([]Finding, Currentness, error) {
+	currentness, err := CurrentnessOf(target.Revision, facts.unit.flux.lastAppliedRevision, facts.unit.read.Status, changeScopeOf(target), changes)
+	if err != nil {
+		return nil, Currentness{}, err
+	}
+	findings := findingsOf(target, facts)
+	if currentness.State == "unaffected" {
+		findings[1] = Finding{"unit.revision", Unaffected, "complete_comparison_unaffected"}
+	}
+	return findings, currentness, nil
 }
 
 // findingsOf reports the target's facts in fixed order. Each finding answers one question, so a
@@ -264,7 +288,7 @@ func fluxReadiness(field string, conditions []condition, generation int64, posit
 	switch {
 	case !found:
 		return Finding{field, negative, ReasonNoCondition}
-	case condition.ObservedGeneration != generation:
+	case condition.ObservedGeneration == nil || *condition.ObservedGeneration != generation:
 		return Finding{field, negative, ReasonStale}
 	case condition.Status != "True":
 		return Finding{field, negative, whenFalse}
@@ -463,13 +487,13 @@ const (
 	unclear
 )
 
-// IsPositive reports whether an outcome is one of the seven that make a report running. A caller that
+// IsPositive reports whether an outcome supports the intended workload running. A caller that
 // formats or filters a report needs the same table the verdict uses, not a copy of the words.
 func IsPositive(outcome string) bool { return outcomeSign(outcome) == positive }
 
 func outcomeSign(outcome string) int {
 	switch outcome {
-	case Reconciled, Applied, Settled, Present, Running, Ready, AsIntended:
+	case Reconciled, Applied, Unaffected, Settled, Present, Running, Ready, AsIntended:
 		return positive
 	case NotReconciled, NotApplied, NotSettled, Absent, Different, NotRunning, NotReady:
 		return negative
@@ -489,6 +513,11 @@ func (t Target) validate() error {
 	}
 	if err := validateRoles(t); err != nil {
 		return err
+	}
+	if t.Scope != nil {
+		if err := t.Scope.validate(); err != nil {
+			return err
+		}
 	}
 	return t.validateFacts()
 }

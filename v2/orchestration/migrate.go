@@ -208,15 +208,15 @@ func recordsOf(facts legacy.Migration, artifact kernel.Artifact,
 // reads them from the record rather than from the compiled copy a prune may remove.
 func recordFiles(root, application, environment string, app, release, instance, eventsSecret []byte,
 	offers []kernel.File) []kernel.File {
-	folder := root + "/" + application + "/" + environment
+	folder := kernel.RecordFolder(root, application, environment)
 	records := []kernel.File{
-		{Path: root + "/" + application + "/app.json", Document: app},
-		{Path: folder + "/release.json", Document: release},
+		{Path: kernel.AppRecordPath(root, application), Document: app},
+		{Path: folder + "/" + kernel.ReleaseRecordName, Document: release},
 	}
 	if len(eventsSecret) > 0 {
 		records = append(records, kernel.File{Path: folder + "/" + kernel.EventsSecretFile, Document: eventsSecret})
 	}
-	records = append(records, kernel.File{Path: folder + "/instance.json", Document: instance})
+	records = append(records, kernel.File{Path: folder + "/" + kernel.InstanceRecordName, Document: instance})
 	for _, document := range offers {
 		records = append(records, kernel.File{Path: folder + "/offers/" + document.Path,
 			Document: document.Document})

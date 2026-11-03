@@ -9,11 +9,12 @@ import (
 // EncodeReport is one observation as a versioned JSON document: the target it is about, the evidence's
 // source and time, the state, every finding in order, the containers that are not ready, the route and its
 // certificates, the protection's own answer, what was assessed, and what this slice never looks at. Identical
-// reports encode to identical bytes, and no list is ever null.
+// reports encode to identical bytes. Assessment lists are never null; live fields retain missing facts.
 func EncodeReport(report Report) ([]byte, error) {
 	document := reportDocument{
-		Kind:         "v2-observation",
-		Version:      3,
+		Kind:        "v2-observation",
+		Version:     4,
+		Currentness: report.Currentness, Live: report.Live,
 		Source:       report.Source,
 		ObservedAt:   report.ObservedAt,
 		State:        stateDocument(report.State),
@@ -56,6 +57,8 @@ type reportDocument struct {
 	Version      int                   `json:"version"`
 	Source       string                `json:"source"`
 	ObservedAt   string                `json:"observedAt"`
+	Currentness  Currentness           `json:"currentness"`
+	Live         LiveFacts             `json:"live"`
 	State        stateDocument         `json:"state"`
 	Verdict      Verdict               `json:"verdict"`
 	Backup       backupDocument        `json:"backup"`

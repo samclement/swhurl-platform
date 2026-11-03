@@ -29,10 +29,11 @@ import (
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
-// Reader is the port observation depends on. Neither method turns a failed request into absence.
+// Reader is the port observation depends on. No method turns a failed request into absence.
 type Reader interface {
 	Read(ctx context.Context, ref observe.Ref) (observe.Read, error)
 	List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
+	ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
 }
 
 // maxBytes bounds one response body, so a wrong endpoint or a wrong kind fails as a read instead of
@@ -143,19 +144,36 @@ func (a *API) List(ctx context.Context, ref observe.Ref, selector string) (obser
 	if err != nil {
 		return observe.List{}, err
 	}
-	answer := a.get(ctx, resource.listPath(ref), url.Values{"labelSelector": {selector}})
+	return a.list(ctx, ref, selector, resource.listPath(ref))
+}
+
+// ListAllNamespaces explicitly lists a namespaced kind across namespaces. Read and List still require
+// a namespace. A named ref or a nonempty namespace here is ambiguous and refused.
+func (a *API) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) {
+	if ref.Namespace != "" || ref.Name != "" {
+		return observe.List{}, &Error{RefusedRequest, "resource", "collection_required"}
+	}
+	if selector == "" {
+		return observe.List{}, &Error{RefusedRequest, "selector", "required"}
+	}
+	resource, err := kindOf(ref)
+	if err != nil {
+		return observe.List{}, err
+	}
+	if !resource.namespaced {
+		return observe.List{}, &Error{RefusedRequest, "resource", "namespaced_kind_required"}
+	}
+	return a.list(ctx, ref, selector, resource.prefix()+"/"+resource.collection)
+}
+
+func (a *API) list(ctx context.Context, ref observe.Ref, selector, path string) (observe.List, error) {
+	answer := a.get(ctx, path, url.Values{"labelSelector": {selector}})
 	list := observe.List{Ref: ref, Selector: selector}
 	if answer.status != http.StatusOK {
 		list.Status, list.Reason = observe.Unavailable, answer.reason()
 		return list, nil
 	}
-	items, ok := itemsOf(answer.body)
-	if !ok {
-		list.Status, list.Reason = observe.Unavailable, observe.ReasonMalformed
-		return list, nil
-	}
-	list.Status, list.Items = observe.Present, items
-	return list, nil
+	return DecodeCollection(ref, selector, answer.body), nil
 }
 
 // failedRead is evidence that the request did not produce the object.
@@ -255,6 +273,73 @@ func itemsOf(body []byte) ([][]byte, bool) {
 	return items, true
 }
 
+// DecodeCollection translates a successful API response into complete list evidence. A partial or
+// malformed document is unavailable, never a successful empty list. The fake shares this boundary.
+func DecodeCollection(ref observe.Ref, selector string, body []byte) observe.List {
+	list := observe.List{Ref: ref, Selector: selector}
+	items, reason := collectionItems(ref, body)
+	if reason != "" {
+		list.Status, list.Reason = observe.Unavailable, reason
+		return list
+	}
+	list.Status, list.Items = observe.Present, items
+	return list
+}
+
+// collectionItems refuses partial answers and validates every object's identity and namespace before
+// any dependent can infer absence. Pagination is deliberately unavailable, never silently truncated.
+func collectionItems(ref observe.Ref, body []byte) ([][]byte, string) {
+	var metadata struct {
+		Metadata struct {
+			Continue  string `json:"continue"`
+			Remaining *int64 `json:"remainingItemCount"`
+		} `json:"metadata"`
+	}
+	if json.Unmarshal(body, &metadata) != nil {
+		return nil, observe.ReasonMalformed
+	}
+	if metadata.Metadata.Continue != "" || (metadata.Metadata.Remaining != nil && *metadata.Metadata.Remaining > 0) {
+		return nil, observe.ReasonIncomplete
+	}
+	items, ok := itemsOf(body)
+	if !ok {
+		return nil, observe.ReasonMalformed
+	}
+	seen := map[observe.Ref]bool{}
+	for _, item := range items {
+		identity, ok := collectionIdentity(ref, item)
+		if !ok || seen[identity] {
+			return nil, observe.ReasonMalformed
+		}
+		seen[identity] = true
+	}
+	return items, ""
+}
+
+func collectionIdentity(ref observe.Ref, item []byte) (observe.Ref, bool) {
+	var document struct {
+		Metadata struct {
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
+		} `json:"metadata"`
+	}
+	if json.Unmarshal(item, &document) != nil {
+		return observe.Ref{}, false
+	}
+	identity := ref
+	identity.Name = document.Metadata.Name
+	if ref.Namespace == "" {
+		identity.Namespace = document.Metadata.Namespace
+	}
+	if identity.Name == "" {
+		return observe.Ref{}, false
+	}
+	if _, err := resourceOf(identity); err != nil {
+		return observe.Ref{}, false
+	}
+	return identity, identifies(identity, item)
+}
+
 // resource is where one supported kind lives: its API version, its collection, and whether it lives in
 // a namespace. Every kind is stated, never discovered.
 type resource struct {
@@ -295,7 +380,7 @@ func RefOf(group, kind, namespace, name string) (observe.Ref, error) {
 
 // resourceOf states the API group, version, collection and scope of one kind. An unsupported kind is a
 // refused request, not a discovery.
-func resourceOf(ref observe.Ref) (resource, error) {
+func kindOf(ref observe.Ref) (resource, error) {
 	group := ""
 	if before, _, hasGroup := strings.Cut(ref.APIVersion, "/"); hasGroup {
 		group = before
@@ -303,6 +388,14 @@ func resourceOf(ref observe.Ref) (resource, error) {
 	found, ok := kinds()[pathKey{group, ref.Kind}]
 	if !ok || found.apiVersion != ref.APIVersion {
 		return resource{}, &Error{RefusedRequest, "resource", "unsupported_kind"}
+	}
+	return found, nil
+}
+
+func resourceOf(ref observe.Ref) (resource, error) {
+	found, err := kindOf(ref)
+	if err != nil {
+		return resource{}, err
 	}
 	if found.namespaced && !namePattern.MatchString(ref.Namespace) {
 		return resource{}, &Error{RefusedRequest, "resource", "invalid_namespace"}

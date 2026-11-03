@@ -730,7 +730,8 @@ wins:
   ran itself.
 - `swhurl-v2 status --records DIR --app APP --env ENV` replaces `observe`'s entry point and keeps its live flags
   (`--profile`, `--calls`, `--egress`, `--revision`, `--kubeconfig`, `--archive`, `--max-age`, `--region`). Text
-  by default; `--json` prints `v2-observation` version 3 with `state` and the new facts. Exit 0 whenever a report
+  by default; `--json` prints `v2-observation` version 4 with state, currentness and observed facts (the
+  [bulk/currentness contract](#slice-two-the-console-reads-v2-status-approved-3-november-2026)). Exit 0 whenever a report
   is printed, whatever the state; 2 for usage, an instance with no record, or a refused request.
 - `make app-status APP= ENV=` is bash: it builds the binary into a throwaway folder and writes the kubeconfig's
   JSON form there, removed on exit. Its `commands.py` row loses its `run=`.
@@ -761,12 +762,13 @@ mounted token and CA and `KUBERNETES_SERVICE_HOST`/`PORT`, as `kubectl` uses the
 token and CA. Live, read-only: the records copied into the console pod's `/tmp` and `status --in-cluster` run
 there for one web and one database instance, matching `make app-status`, the backup readable.
 
-### Slice two: the console reads v2 status (proposed 3 November 2026)
+### Slice two: the console reads v2 status (approved 3 November 2026)
 
 **Outcome.** The app page, Apps list and promotion readiness check use the same Go decision. The existing
 Starlette server, HTMX markup and PR workflow stay; this is not a server port. The operator agreed the direction:
 records at main, v2 deciding whether unapplied commits matter, and one bulk observation for the Apps list.
-The contract below still needs approval before implementation.
+The operator approved this contract, including the submission-time readiness check, and chose to replace the
+old Python path rule here rather than patch Python separately.
 
 ```text
 GitHub main → one pinned commit → immutable input bundle ─┐
@@ -792,12 +794,24 @@ Kubernetes → applied revisions and live object evidence ─┘
 - The console already reads the units for its inventory and controls. Use those applied SHAs to ask GitHub's
   compare API once per distinct `(applied, pinned)` pair, then supply the results to status. There is no GitHub
   adapter in Go in this slice: Python supplies facts, Go decides what they mean.
-- Add an optional `--changes FILE` containing comparisons identified by exact `from` and `to` SHAs and complete
-  changed-path lists, including previous filenames for renames. A truncated, failed or non-ancestor comparison
-  is unavailable, never an empty list. The existing compare API's 300-file cutoff remains conservative.
+- Optional `--changes FILE` is a strict `{"kind":"v2-changes","version":1,"comparisons":[...]}` document.
+  Each comparison has exactly `from` and `to` (full lowercase 40-character SHAs), `status` (`complete`,
+  `incomplete` or `unavailable`) and `paths` (an array of repository-relative changed paths, including both
+  names of renames and removed paths). All fields are required; unknown, duplicate, null or malformed fields
+  and duplicate endpoint pairs are refused. Unavailable/incomplete comparisons may carry known partial paths
+  but never grant exemptions. A truncated, failed or non-ancestor comparison is not a complete empty diff.
+  The existing compare API's 300-file cutoff remains conservative.
+- `--repo-root DIR` (default `.`; requires `--changes`) names the immutable bundle's repository root, so
+  temporary extraction paths are never mistaken for changed paths. With comparisons, `--records`, `--profile`
+  and any supplied `--calls`/`--egress` must be inside that root. File arguments remain relative to the process
+  working directory, not to `--repo-root`. Without comparisons, existing single-status invocation is unchanged.
 - v2 derives each instance's relevant paths from its records and compiler/writer vocabulary: its app record,
   instance inputs, rendered instance folder and unit registration, including removed/renamed paths. Do not copy
-  v1 path patterns into Python or introduce a parallel path catalogue.
+  v1 path patterns into Python or introduce a parallel path catalogue. The record reader and writer share
+  `RecordFolder`/`AppRecordPath`; generated scopes use `InstanceFolder` and the compilation's registrations.
+  Supplied shared profile, calls and egress paths are conservatively relevant themselves: changing one requires
+  applying even if no own output change is listed. This avoids trusting stale committed rendering, at the cost
+  of sometimes holding an otherwise unaffected instance for a shared-document change.
 - An unapplied revision counts as unaffected only when the comparison is complete, its endpoints match the
   expected commit and the unit revision read by this invocation, and no relevant path changed. If the unit moves
   between the console's inventory read and v2's read, a nonmatching comparison grants no exemption. Exact revision
@@ -816,17 +830,37 @@ Kubernetes → applied revisions and live object evidence ─┘
   existing `Read`/`List`, and keep nonempty selectors mandatory. Contract-test real and fake adapters together.
 - Candidate selectors are existing metadata, not authority: Flux ownership labels for HelmReleases, Ingresses
   and Certificates; the app-instance label for Deployments and main pods; the backup label for CronJobs, backup
-  pods and Jobs. Read units in `flux-system`. Partition successful answers by namespace, name and target selector,
-  keeping only objects each compiled target names. Unrelated candidates neither create instances nor grant
-  ownership. No new workload labels or manifest changes are needed.
+  pods. Read units in `flux-system`, selected by existence of Flux's ownership-name label. Partition successful
+  answers by namespace, name and target selector, keeping only objects each compiled target names. Unrelated
+  candidates neither create instances nor grant ownership. No new workload labels or manifest changes are needed.
+- **Approved Job exception:** compiled CronJobs guarantee the backup label on pod templates, not on Job metadata.
+  Do not list Jobs broadly or rely on incidental live Job labels. After batched backup-pod discovery, GET at most
+  one newest Job per database target, using the selected newest pod's owner name and that target's namespace.
+  Missing owner evidence is unassessed; a failed pod list or Job GET is unavailable, never guessed absence.
 - List each required kind/selector once per request, rather than seven reads per instance. Complete list
   semantics are essential: pagination or a response exceeding the adapter's cap must not make unseen objects
   absent. An incomplete or failed list becomes unavailable evidence for every dependent instance. This slice
-  does not raise response limits or claim an atomic snapshot across Kubernetes resources.
-- Single status keeps `v2-observation`; bulk gets a versioned collection of those reports with explicit app/env
-  identity. Extend the individual report version for facts the console currently loses: observed applied
-  revision, unit/release suspension and conditions, ready replica count and running image digests. Preserve
-  absent, unreadable and empty distinctly. Python must not infer these from the selected state or invent values.
+  does not raise response limits or claim an atomic snapshot across Kubernetes resources. The core plan is four
+  lists (units, releases, Deployments, main pods), plus two for routes/certificates if needed and two for backup
+  CronJobs/pods if needed, independent of instance count, plus at most one newest-owner Job GET per database.
+  `--archive` retains its separate per-database object-store listing.
+- Single status is `v2-observation` version **4**; bulk is `v2-observations` version **1**, with `source`,
+  `observedAt`, `revision` and `instances:[{"application":"...","environment":"...","report":{...}}]`.
+  Each nested report is the unchanged single-report shape; an empty record tree yields `instances:[]` and no
+  Kubernetes reads. Both modes keep the same credential, source, revision, archive and JSON/text flags.
+- Each report adds `currentness:{state,reason,appliedRevision}` (the revision is literal, e.g.
+  `main@sha1:<sha>`), and `live:{unit,release,workload,running}`. Unit/release facts carry `status`, optional
+  failure `reason`, nullable `suspended`, and nullable `conditions:[{type,status,reason,observedGeneration}]`;
+  a missing observed generation is null. Workload facts carry `status`, optional `reason`, and nullable
+  `readyReplicas`. Running facts carry `status`, optional `reason`, and nullable sorted/distinct `digests`:
+  the selected main pods' pinned content with evidence of a started container, as used by the existing image
+  finding. Unavailable/absent/not-read is distinct from a present object omitting a field, and explicit empty
+  arrays/zero/false remain values. The ready count is not synthesized from available replicas. The
+  `unit.revision` finding says `unaffected`, not `applied`, when exempted. Python must not infer these facts
+  from the selected state or invent values.
+- The pure `observe.PromotionReadiness(report, reviewedDigest)` returns `{ready,reason}`; it requires currentness
+  applied/unaffected, healthy state, the reviewed digest still selected, and only that digest proved running.
+  No review flag or provider adapter is added yet; the next step can call this contract without a Python judge.
 
 **Console and promotion.**
 
@@ -846,8 +880,8 @@ Kubernetes → applied revisions and live object evidence ─┘
   when the PR clone is prepared; PRs remain held for manual review. This is a submission-time observation, not a
   guarantee that staging remains healthy until a later manual merge.
 - The current Python `touches` helper checks v1 paths and can mislabel an instance's own change as elsewhere.
-  This affects the page's promotion warning; it is not an automatic merge bypass. No separate Python fix is
-  included without the operator's answer to that outstanding choice.
+  This affects the page's promotion warning; it is not an automatic merge bypass. The operator chose to replace
+  this rule in Go as part of this slice, with no separate Python fix.
 
 **Delivery and acceptance.** Two implementation steps, no permanent dual judge: first bulk observation and
 revision evidence in Go, then switch the console consumers together and delete their Python status/readiness
@@ -857,7 +891,8 @@ adapter contract tests, `make check-v2`, `make check` and lint; test the console
 Required cases: unrelated change, own record/render/unit change, removed/renamed path, unavailable/truncated
 comparison, unit moving between reads, missing record versus failed GitHub read, failed/partial list versus an
 empty list, mixed healthy/failing instances, and a POST that refuses when staging changed or became unready.
-Assert list/detail agreement and list read counts independent of instance count. Measure cold and warm page reads
-against the current console before deployment; report the numbers, not a presumed speedup. Live: compare every
+Assert list/detail agreement and core list counts independent of instance count, plus no more than one known-owner
+Job GET per database (including unlabeled Jobs, missing owners, failed versus absent Jobs and namespace collisions).
+Measure cold and warm page reads against the current console before deployment; report the numbers, not a presumed speedup. Live: compare every
 instance, test signed-out redirects and signed-in pages/forms, and prove a promotion is refused while its own
 change is unapplied without merging a promotion or creating a repository as part of the test.

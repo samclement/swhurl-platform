@@ -283,7 +283,7 @@ def routes(ctx: Context) -> list[Route]:
                                                                   {name for name, _ in offered_events})
         except actions.ActionError as error:
             return page(request, 'error.html', status_code=400, error=str(error))
-        except CommandError as error:
+        except (CommandError, cluster.ReadError) as error:
             return page(request, 'error.html', status_code=502, error=str(error))
         return propose(request, action, app, env, commands, auto_merge=False)
 

@@ -97,3 +97,5 @@ class Context:
     connectable: Callable[..., tuple[list[cluster.AppRow], list[tuple[str, cluster.AppRow]], str]]
     propose: Callable[..., Response]
     resumable: Callable[[actions.Job], dict | None]
+    apps: Callable[[], list[cluster.AppRow]]
+    promotion_status: Callable[[str, str], dict]

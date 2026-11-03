@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
-import io
 import json
 import logging
 import re
@@ -28,7 +27,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from swhurl.console import merge
+from swhurl.console import bundle, merge, observation
 from swhurl.console.actions import ActionError, Job
 from swhurl.console.github import GitHub, GitHubAPI
 from swhurl.run import Runner
@@ -134,7 +133,7 @@ class Target:
         return self.records == other.records if self.pending or other.pending else self.hash == other.hash
 
 
-def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, Target]:
+def render_targets(runner: Runner, github: GitHub, revision: str, *, inputs: dict[str, bytes] | None = None) -> dict[str, Target]:
     """Immutable Git evidence, not a verdict: every v2-owned instance in one revision. The records are
     the change; the committed HelmRelease states the image it runs. v2 renders records and manifests in
     one commit, so a release whose image differs from its records is unrendered, not merely lagging a
@@ -145,28 +144,15 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
     size = instances = 0
     phase = 'download'
     try:
-        content = api.call('GET', f'/tarball/{revision}').content
-        size = len(content)
+        if inputs is None:
+            content = api.call('GET', f'/tarball/{revision}').content
+            inputs = bundle.filtered(content)
+        size = sum(len(value) for value in inputs.values())
         downloaded = time.monotonic()
         phase = 'extract'
         with tempfile.TemporaryDirectory(prefix='console-targets-') as tmp:
             root = Path(tmp)
-            with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
-                for member in archive.getmembers():
-                    path = Path(*Path(member.name).parts[1:])
-                    if path.is_absolute() or '..' in path.parts:
-                        raise ValueError('invalid archive path')
-                    wanted = (
-                        (len(path.parts) == 3 and path.parts[:2] == ('v2-records',) and path.name == 'app.json') or
-                        (len(path.parts) == 4 and path.parts[0] == 'v2-records'
-                         and path.name in ('instance.json', 'release.json')) or
-                        (len(path.parts) == 5 and path.parts[:2] == ('v2-apps', 'instances')
-                         and path.name == 'helmrelease.json'))
-                    if not wanted or not member.isfile():
-                        continue
-                    target = root / path
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(archive.extractfile(member).read())
+            bundle.extract(inputs, root)
             extracted = time.monotonic()
             phase = 'records'
             def digest(*parts: bytes) -> str:
@@ -277,8 +263,8 @@ def progress(action: str, merged: Target | None, main: Target | None, live: AppR
 
 
 def landing(action: str, live: AppRow | str | None, target: Target) -> Progress:
-    """
-    action = action_kind(action)How far the cluster has got to ``target``, main's render of the change."""
+    """How far the cluster has got to ``target``, main's render of the change."""
+    action = action_kind(action)
     if target.pending:
         return Progress('applying' if target.v2 else 'rendering',
                         'the HelmRelease does not match the records yet' if target.v2 else 'main has not rendered it yet')
@@ -288,22 +274,20 @@ def landing(action: str, live: AppRow | str | None, target: Target) -> Progress:
         return Progress('removed') if not target.records and live == ABSENT else Progress('removing')
     if live == ABSENT:
         return Progress('creating', 'not created yet')
-    if live.render_hash != target.hash:
-        return Progress('applying', 'the target render is not applied yet')
-    state, ready = live.render_state, live.render_ready
+    if live.report is None:
+        return Progress('unread', 'Go observation unavailable')
+    state = observation.state(live.report)
     if state.key == 'failing':
-        return Progress('failing', state.detail, applied=ready)
+        return Progress('failing', state.detail)
     if state.key == 'suspended':
-        return Progress('held', state.detail, applied=ready)
-    if not ready:
-        return Progress('applying', 'the HelmRelease is not Ready at its current generation')
+        return Progress('held', state.detail)
     if state.key == 'stopped':
         return Progress('zero', applied=True)
-    if state.key == 'healthy' and target.digest and live.image_matches and live.digest == target.digest:
+    if state.key == 'healthy':
         return Progress('live', applied=True)
     if state.key == 'unknown':
-        return Progress('unread', state.detail or 'the instance could not be read', applied=True)
-    return Progress('applying', state.detail or 'waiting for the target image to be Healthy', applied=True)
+        return Progress('unread', state.detail or 'the instance could not be read')
+    return Progress('applying', state.detail or 'waiting for Go status to be Healthy')
 
 
 # How a merged change's Progress reads, keyed by Progress.state: (the Track status, the sentence under it, the

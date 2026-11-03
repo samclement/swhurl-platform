@@ -5,9 +5,10 @@ import json
 import threading
 import unittest
 from contextlib import redirect_stderr
-from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
+from console_observation import install, report
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
@@ -35,18 +36,6 @@ def release(ns, name, tag='1.0', sqlite=False):
         container['env'] = {'DATABASE_PATH': '/data/app.db'}
     return {'metadata': {'namespace': ns, 'name': name}, 'spec': {'values': {'controllers': {'main': {
         'containers': {'main': container}}}}}, 'status': {'conditions': [{'type': 'Ready', 'status': 'True', 'message': 'ok'}]}}
-
-
-def running(releases):
-    """The pods and workloads of releases that run as asked: one ready replica each."""
-    def owned(item, **more):
-        meta = item['metadata']
-        return {'metadata': {'namespace': meta['namespace'], 'name': meta['name'],
-                             'labels': {'app.kubernetes.io/instance': meta['name']}}, **more}
-    pods = [owned(r, status={'containerStatuses': [{'name': 'main', 'ready': True, 'imageID': 'docker.io/x/web@sha256:abc'}]})
-            for r in releases]
-    workloads = [owned(r, kind='Deployment', spec={'replicas': 1}, status={'readyReplicas': 1}) for r in releases]
-    return {'items': pods}, {'items': workloads}
 
 
 UNITS = [unit('cluster-sources'), unit('infra-base'), unit('platform-oauth2-proxy', ['infra-base']),
@@ -84,17 +73,15 @@ def fake(units=UNITS, releases=RELEASES, **extra):
     runner.on(*cluster.RELEASES[:3], stdout=json.dumps({'items': releases}))
     for prefix, stdout in extra.items():
         runner.on(*prefix.split(), stdout=stdout)
-    # What an instance's state is judged from, unless the test says otherwise: everything runs as asked.
-    pods, workloads = running(releases)
-    runner.on(*cluster.SOURCE[:6], stdout=json.dumps({'status': {'artifact': {'revision': REV}}}))
-    runner.on(*cluster.PODS[:4], stdout=json.dumps(pods))
-    runner.on(*cluster.WORKLOADS[:4], stdout=json.dumps(workloads))
     runner.on(*cluster.INGRESSES[:4], stdout=json.dumps({'items': []}))
     runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
+    install(runner, units, releases)
     return runner
 
 
 def client(runner, **kwargs):
+    if not kwargs.get('documents') and (not kwargs.get('github') or kwargs['github'].transport is None):
+        kwargs['documents'] = getattr(runner, 'status_inputs', {}).get
     kwargs.setdefault('repo_opener', lambda request: ({}, b'version: 1\nkind: worker\nstack: typescript\n'))  # no test here reaches GitHub
     return TestClient(server.create_app(runner, **kwargs))
 
@@ -174,7 +161,8 @@ class ConnectionsTests(unittest.TestCase):
         self.assertIn('<strong>orders</strong>', payments)
         self.assertNotIn('<strong>reports</strong>', payments)
         self.assertTrue(all(call[:2] == ('kubectl', 'get') or call[:4] == ('kubectl', '-n', 'flux-system', 'get')
-                            or call[:6] == ('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards')
+                            or call[0] in ('git', 'swhurl-v2') or call[:3] == ('kubectl', 'config', 'view')
+                        or call[:6] == ('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards')
                             for call in runner.calls), 'the pages only read')
 
     def test_the_map_draws_calls_and_events_left_to_right(self):
@@ -521,7 +509,9 @@ class AppsTests(unittest.TestCase):
                  unit('app-wait-staging', ready='False', message="dependency 'flux-system/infra-base' is not ready")]
         releases = [release('web-staging', 'web'), release('fine-staging', 'fine'), release('wait-staging', 'wait'),
                     release('idle-staging', 'idle')]
-        text = client(fake(units=units, releases=releases)).get('/apps', headers=WHO).text
+        runner = fake(units=units, releases=releases)
+        runner.status_reports['wait', 'staging']['state'] = {'name': 'updating', 'reason': 'dependency_not_ready'}
+        text = client(runner).get('/apps', headers=WHO).text
         for app, opened in (('web', True), ('idle', True), ('fine', False), ('wait', False)):
             self.assertEqual(f'<details class="openrow" id="app-{app}" open>' in text, opened, app)
             self.assertIn(f'<details class="openrow" id="app-{app}"', text, 'every row can be opened, and stays open when the page is re-read')
@@ -529,11 +519,11 @@ class AppsTests(unittest.TestCase):
         self.assertIn('hx-post="/units/app-web-prod/reconcile"', text)
         self.assertIn('action="/units/app-idle-staging/resume"', text)
         self.assertNotIn('action="/units/app-idle-staging/reconcile"', text, 'a suspended instance is resumed, not reconciled')
-        shown = client(fake(units=units, releases=releases)).get('/apps?show=attention', headers=WHO).text
+        shown = client(runner).get('/apps?show=attention', headers=WHO).text
         self.assertIn('<strong>web</strong>', shown)
         self.assertIn('<strong>wait</strong>', shown)
         self.assertNotIn('<strong>fine</strong>', shown)
-        self.assertIn('Every environment is healthy', client(fake(units=[unit('app-fine-staging')], releases=releases)).get(
+        self.assertIn('Every environment is healthy', client(fake(units=[unit('app-fine-staging')], releases=[release('fine-staging', 'fine')])).get(
             '/apps?show=attention', headers=WHO).text)
 
     def test_database_is_visible_per_environment_and_unknown_without_a_release(self):
@@ -603,44 +593,21 @@ class AssetTests(unittest.TestCase):
 
 
 class StateTests(unittest.TestCase):
-    def status(self, **changes):
-        digest = 'sha256:' + 'a' * 64
-        status = cluster.ops.InstanceStatus(Instance('web', 'staging'), 'r', 'r', ('True', ''),
-                                            ('True', ''), f'x:1@{digest}', [f'x@{digest}'],
-                                            [cluster.ops.Replicas('Deployment/web', 1, 1)], [], [], [])
-        return replace(status, **changes)
-
-    def test_health_requires_release_revision_workloads_and_running_image(self):
-        cases = (({}, 'healthy'), ({'release': None}, 'unknown'),
-                 ({'desired_revision': '', 'applied_revision': ''}, 'unknown'),
-                 ({'replicas': []}, 'unknown'), ({'running_images': []}, 'unknown'),
-                 ({'replicas': [cluster.ops.Replicas('Deployment/web', 0, None)]}, 'unknown'),
-                 ({'replicas': [cluster.ops.Replicas('Deployment/web', 0, 1)]}, 'updating'),
-                 ({'replicas': [cluster.ops.Replicas('Deployment/web', 0, 0)], 'running_images': []}, 'stopped'),
-                 ({'unit_suspended': True}, 'suspended'), ({'release_suspended': True}, 'suspended'))
-        for overrides, expected in cases:
-            with self.subTest(overrides=overrides):
-                self.assertEqual(state.verdict(self.status(**overrides)).key, expected)
+    def test_all_go_states_are_displayed_without_rejudging(self):
+        from swhurl.console import observation
+        for name in ('healthy', 'unknown', 'updating', 'stopped', 'suspended', 'failing'):
+            self.assertEqual(observation.state(report(state=name)).key, name)
 
     def test_a_ready_unit_with_no_release_is_not_a_healthy_app(self):
-        row = cluster.apps(fake(units=[unit('app-web-prod')], releases=[]))[0]
+        runner = fake(units=[unit('app-web-prod')], releases=[])
+        from swhurl.console import status
+        row = status.rows(cluster.apps(runner), runner.status_reports)[0]
         self.assertEqual((row.state.key, row.image), ('unknown', 'no HelmRelease'))
 
     def test_the_list_and_the_page_give_one_verdict_from_the_same_facts(self):
         units, releases = [unit('app-web-prod')], [release('web-prod', 'web')]
-        pods, workloads = running(releases)
-        workloads['items'][0]['status']['readyReplicas'] = 0
-        runner = fake(units=units, releases=releases, **{
-            'kubectl get pods --all-namespaces': json.dumps(pods), 'kubectl -n web-prod get pods': json.dumps(pods),
-            'kubectl get deploy,statefulset,daemonset,cronjob --all-namespaces': json.dumps(workloads),
-            'kubectl -n web-prod get deploy,statefulset,daemonset,cronjob': json.dumps(workloads),
-            'kubectl -n flux-system get kustomization app-web-prod': json.dumps(units[0]),
-            'kubectl -n web-prod get helmrelease web': json.dumps(releases[0]),
-            'kubectl -n web-prod get ingress': '{}', 'kubectl -n web-prod get certificate': '{}'})
-        listed = cluster.apps(runner)[0].state
-        self.assertEqual(listed, state.State('updating', 'waiting for the requested replicas to be ready'),
-                         'a Ready unit is not a healthy app while its replicas are not ready')
-        self.assertEqual(state.verdict(cluster.ops.gather_status(runner, Instance('web', 'prod'))), listed)
+        runner = fake(units=units, releases=releases)
+        runner.status_reports['web', 'prod']['state'] = {'name': 'updating', 'reason': 'replicas_not_ready'}
         page = client(runner).get('/apps/web/prod', headers=WHO).text
         self.assertIn('<span class="state updating">Updating</span>', page)
         self.assertIn('<span class="state updating', client(runner).get('/apps', headers=WHO).text)
@@ -681,7 +648,7 @@ class StateTests(unittest.TestCase):
             self.assertTrue(runner.calls, path)
             for call in runner.calls:
                 with self.subTest(path=path, call=' '.join(call)):
-                    self.assertTrue(is_read(call) and kube.api_read(call))
+                    self.assertTrue(call[0] in ('git', 'swhurl-v2') or call[:3] == ('kubectl', 'config', 'view') or (is_read(call) and kube.api_read(call)))
 
     def test_a_dependency_wait_is_not_a_problem(self):
         waiting = unit('app-web-prod', ready='False', message="dependency 'flux-system/infra-base' is not ready")
@@ -755,9 +722,8 @@ class AppDetailTests(unittest.TestCase):
 
 
     def test_a_later_read_failure_does_not_show_partial_health(self):
-        runner = (FakeRunner().on('kubectl', '-n', 'flux-system', 'get', 'kustomization',
-                                  stdout=json.dumps(unit('app-web-prod')))
-                  .on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', returncode=1, stderr='Forbidden'))
+        runner = fake()
+        runner._rules.insert(0, (('swhurl-v2', 'status'), Result((), 1, '', 'Forbidden')))
         response = client(runner).get('/apps/web/prod', headers=WHO)
         self.assertEqual(response.status_code, 502)
         self.assertIn('Forbidden', response.text)
@@ -1151,11 +1117,13 @@ class ActionTests(unittest.TestCase):
                                     jobs.now(), url)
         jobs._jobs[4] = actions.Job(4, 'remove', 'gone/staging', 'sam@swhurl.com', jobs.now(), [], 'succeeded', jobs.now(), url)
         c = client(runner, jobs=jobs, github=gh.GitHub('samclement/swhurl-platform', 'tok', transport=httpx.MockTransport(handle)))
-        with mock.patch.object(gh, 'main_commit', return_value='main'), \
+        with mock.patch.object(server.Files, 'revision', return_value='a' * 40), \
+                mock.patch.object(server.Files, 'inputs', return_value=('a' * 40, Path('/unused'))), \
+                mock.patch('swhurl.console.status.read', return_value={('web', 'prod'): report()}), \
                 mock.patch.object(stages, 'render_targets',
                                   return_value={'web/prod': stages.Target('records-1', 'settings-1', 'sha256:x', 'h', 'sha256:x', 'h')}), \
                 mock.patch.object(cluster, 'apps', return_value=[cluster.AppRow(Instance('web', 'prod'), state.State('healthy'), False, 'x',
-                    digest='sha256:x', render_hash='h', render_ready=True, render_state=state.State('healthy'), image_matches=True)]):
+                    digest='sha256:x', render_hash='h', report=report())]):
             activity = c.get('/activity', headers=WHO).text
             page = c.get('/jobs/3', headers=WHO).text
         self.assertIn('<span class="state healthy">Live in prod</span>', activity, 'the job opened a pull request; the change ended in production')

@@ -8,13 +8,13 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
 import httpx
+from console_observation import archive
 from test_console import WHO, client, fake, release, unit
 
 from swhurl.apps.instance import Instance
 from swhurl.apps.state import State
 from swhurl.console import actions, cluster, reading, server
 from swhurl.console import github as gh
-from swhurl.console.routes import instance
 from swhurl.run import FakeRunner
 
 HEAD = 'a' * 40
@@ -219,7 +219,7 @@ class AppFileTests(unittest.TestCase):
     def test_page_and_related_apps_fetch_each_file_once_at_one_commit(self):
         documents = {
             'v2-records/web/app.json': '{"schemaVersion": 1, "application": "web", "team": "demo"}',
-            'v2-records/web/prod/instance.json': '{"schemaVersion": 1, "application": "web", "environment": "prod", "calls": ["other"], "allows": []}',
+            'v2-records/web/prod/instance.json': '{"schemaVersion": 1, "application": "web", "environment": "prod", "calls": ["other"], "allows": [], "configuration": {}, "grants": {"exposure":"private"}}',
             'v2-records/web/prod/release.json': OWNED_RELEASE,
             'v2-records/other/app.json': '{"schemaVersion": 1, "application": "other", "team": "demo"}',
             'v2-records/other/prod/instance.json': '{"schemaVersion": 1, "application": "other", "environment": "prod", "allows": ["web"]}',
@@ -229,10 +229,10 @@ class AppFileTests(unittest.TestCase):
         asked = []
         heads = []
         owned = []
-        factory = instance.Files
+        factory = server.Files
 
-        def owner(*args):
-            files = factory(*args)
+        def owner(*args, **kwargs):
+            files = factory(*args, **kwargs)
             owned.append(files)
             return files
 
@@ -241,26 +241,38 @@ class AppFileTests(unittest.TestCase):
                 head = chr(ord('a') + len(heads)) * 40
                 heads.append(head)
                 return httpx.Response(200, json={'object': {'sha': head}})
+            if '/tarball/' in request.url.path:
+                return httpx.Response(200, content=archive(documents))
             self.assertEqual(request.headers['Accept'], 'application/vnd.github.raw+json')
+            if '/tarball/' in request.url.path:
+                return httpx.Response(200, content=archive(documents))
             path = request.url.path.split('/contents/', 1)[1]
             asked.append((path, request.url.params['ref']))
             return httpx.Response(200, text=documents[path]) if path in documents else httpx.Response(404)
 
         github = gh.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle))
-        c = client(app_runner(), github=github)
-        with mock.patch.object(instance, 'Files', side_effect=owner):
+        runner = app_runner()
+        def observed(args, _input):
+            from console_observation import answer
+            revision = args[args.index('--revision') + 1]
+            for report in runner.status_reports.values():
+                report['target']['revision'] = revision
+            return answer(args, runner.status_reports)
+        runner._rules.insert(0, (('swhurl-v2', 'status'), observed))
+        c = client(runner, github=github)
+        with mock.patch.object(server, 'Files', side_effect=owner):
             for _ in range(2):
                 response = c.get('/apps/web/prod', headers=WHO)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('connected in Git, not yet observed live', response.text)
         self.assertEqual(len(heads), 2)
-        expected = set(documents)
+        expected = {'apps/teams.yaml'}  # JSON inputs are shared with Go from the one archive
         for head in heads:
             self.assertEqual(Counter(p for p, ref in asked if ref == head), Counter(dict.fromkeys(expected, 1)))
         self.assertEqual(len(owned), 2)
         self.assertTrue(all(files.api.client.is_closed for files in owned))
 
-    def test_failed_head_preserves_live_page_and_retries_on_next_request(self):
+    def test_failed_head_is_unavailable_and_retries_on_next_request(self):
         asked = []
 
         def handle(request):
@@ -270,8 +282,8 @@ class AppFileTests(unittest.TestCase):
         c = client(app_runner(), github=gh.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle)))
         for _ in range(2):
             response = c.get('/apps/web/prod', headers=WHO)
-            self.assertEqual(response.status_code, 200)
-            self.assertIn('its records could not be read', response.text)
+            self.assertEqual(response.status_code, 502)
+            self.assertIn('Go status unavailable', response.text)
             self.assertNotIn("The image's minimum", response.text)
         self.assertEqual(asked, ['/repos/x/y/git/ref/heads/main'] * 2)
 
@@ -293,8 +305,9 @@ class AppFileTests(unittest.TestCase):
 
             c = client(app_runner(), documents=source)
             response = c.get('/apps/web/prod', headers=WHO)
-            self.assertEqual(response.status_code, 200)
-            self.assertIn(expected, response.text)
+            self.assertEqual(response.status_code, 200 if settings is None else 502)
+            if settings is None:
+                self.assertIn(expected, response.text)
             # What Git does say is shown even when one of the three records is not there; a reader that fails
             # says nothing, so nothing is claimed.
             self.assertNotIn('memory request', response.text)
@@ -302,10 +315,10 @@ class AppFileTests(unittest.TestCase):
 
     def test_template_reads_use_the_same_scope_and_client_closes_on_template_failure(self):
         owned = []
-        factory = instance.Files
+        factory = server.Files
 
-        def owner(*args):
-            files = factory(*args)
+        def owner(*args, **kwargs):
+            files = factory(*args, **kwargs)
             owned.append(files)
             return files
 
@@ -319,6 +332,8 @@ class AppFileTests(unittest.TestCase):
         def handle(request):
             if '/git/ref/' in request.url.path:
                 return httpx.Response(200, json={'object': {'sha': HEAD}})
+            if '/tarball/' in request.url.path:
+                return httpx.Response(200, content=archive(documents))
             path = request.url.path.split('/contents/', 1)[1]
             asked.append((path, request.url.params['ref']))
             return httpx.Response(200, text=documents[path]) if path in documents else httpx.Response(404)
@@ -330,7 +345,7 @@ class AppFileTests(unittest.TestCase):
             raise ValueError('template failed')
 
         c = client(app_runner(), github=gh.GitHub('x/y', 'tok', transport=httpx.MockTransport(handle)))
-        with mock.patch.object(instance, 'Files', side_effect=owner), \
+        with mock.patch.object(server, 'Files', side_effect=owner), \
                 mock.patch.object(server.TEMPLATES, 'TemplateResponse', side_effect=render):
             with self.assertRaisesRegex(ValueError, 'template failed'):
                 c.get('/apps/web/prod', headers=WHO)

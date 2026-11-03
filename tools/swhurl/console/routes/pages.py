@@ -20,7 +20,7 @@ def routes(ctx: Context) -> list[Route]:
     def overview(request: Request) -> Response:
         def read():
             checks, found, (prs, prs_error), rows = runner.together(
-                lambda: cluster.platform_checks(runner), lambda: cluster.units(runner), open_prs, lambda: cluster.apps(runner))
+                lambda: cluster.platform_checks(runner), lambda: cluster.units(runner), open_prs, lambda: ctx.apps())
             return {'checks': checks, 'units': found, 'apps': rows, 'problems': cluster.problems(checks, found),
                     'updating': cluster.updating(found),
                     'prs': prs, 'prs_error': prs_error, 'recent': [j for j in jobs.recent() if j.state != 'running'][:5]}
@@ -33,7 +33,7 @@ def routes(ctx: Context) -> list[Route]:
         attention = request.query_params.get('show') == 'attention'
 
         def read():
-            rows = cluster.apps(runner)
+            rows = ctx.apps()
             summaries = cluster.summaries(rows)
             teams = sorted({summary.team for summary in summaries if summary.team})
             shown = [summary for summary in summaries if not team or summary.team == team]
@@ -59,7 +59,7 @@ def routes(ctx: Context) -> list[Route]:
         kind, team = request.query_params.get('kind', ''), request.query_params.get('team', '')
 
         def read():
-            rows = cluster.apps(runner, states=False)
+            rows = cluster.apps(runner)
             found = catalogue.entries(rows, env, described)
             shown = [e for e in found if (not kind or e.kind == kind) and (not team or e.team == team)]
             # An app that only uses is listed while no kind is chosen: it offers neither.
@@ -86,7 +86,7 @@ def routes(ctx: Context) -> list[Route]:
     def egress_page(request: Request) -> Response:
         """Every instance's port on the egress proxy and the hosts outside the cluster it is granted, by environment."""
         def read():
-            rows = cluster.apps(runner, states=False)
+            rows = cluster.apps(runner)
             by_env = [(env, [row for row in rows if row.instance.env == env]) for env in ENVIRONMENTS]
             granted = [row for row in rows if row.connections.egress]
             return {'by_env': [(env, found) for env, found in by_env if found], 'instances': len(rows),

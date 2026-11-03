@@ -3,13 +3,17 @@ from __future__ import annotations
 
 import contextvars
 import logging
+import tempfile
 import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import ExitStack
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from swhurl.console import bundle
 from swhurl.console.actions import ActionError
 from swhurl.console.github import GitHub, GitHubAPI
 from swhurl.run import Runner
@@ -21,15 +25,20 @@ FILE_WORKERS = 4
 class Files:
     """Request-owned file reader. None means absent; exceptions mean unavailable.
 
-    Even failures are shared within this page, never across pages. Only the GitHub
-    reader resolves main; injected/local readers retain their existing contract.
+    Even failures are shared within this page, never across pages. The GitHub reader resolves main;
+    the local reader pins committed HEAD. Injected file readers retain their contract.
     The owner must keep this scope open through template rendering.
     """
 
-    def __init__(self, runner: Runner, github: GitHub | None, source: Callable[[str], str | None] | None = None):
+    def __init__(self, runner: Runner, github: GitHub | None, source: Callable[[str], str | None] | None = None,
+                 *, local_root: Path | None = None, bundles: dict | None = None):
+        self.github = github
         self.api = GitHubAPI(runner, github) if github and source is None else None
+        self.runner, self.local_root = runner, local_root
+        self.bundles = bundles if bundles is not None else {}
+        self.cleanup = ExitStack()
         self.source = source
-        self.answers: dict[str | None, Future[str | None]] = {}
+        self.answers: dict[str | None, Future[Any]] = {}
         self.lock = threading.Lock()
         self.slots = threading.BoundedSemaphore(FILE_WORKERS)
         self.hits = self.failed = 0
@@ -41,6 +50,7 @@ class Files:
 
     def __exit__(self, *_exc) -> None:
         try:
+            self.cleanup.close()
             if self.api:
                 self.api.client.close()
         finally:
@@ -48,7 +58,7 @@ class Files:
                      len(self.answers) - (None in self.answers), self.hits, self.failed, self.resolve_ms, self.file_ms,
                      (time.monotonic() - self.started) * 1000)
 
-    def once(self, key: str | None, read: Callable[[], str | None]) -> str | None:
+    def once(self, key: str | None, read: Callable[[], Any]) -> Any:
         with self.lock:
             first = key not in self.answers
             if first:
@@ -70,10 +80,13 @@ class Files:
         def resolve() -> str:
             started = time.monotonic()
             try:
-                revision = self.api.json('GET', '/git/ref/heads/main')['object']['sha']
+                revision = (self.api.json('GET', '/git/ref/heads/main')['object']['sha'] if self.api else
+                            self.runner.output(['git', 'rev-parse', 'HEAD'], cwd=self.local_root).strip())
                 if not isinstance(revision, str) or len(revision) != 40 or any(c not in '0123456789abcdef' for c in revision):
                     raise ActionError('GitHub main did not name a commit')
                 return revision
+            except (KeyError, TypeError, ValueError):
+                raise ActionError('GitHub main did not name a commit') from None
             finally:
                 self.resolve_ms = (time.monotonic() - started) * 1000
         return self.once(None, resolve)
@@ -81,10 +94,22 @@ class Files:
     def __call__(self, path: str) -> str | None:
         def read() -> str | None:
             # Resolve before taking a slot: concurrent files may all wait for this one read.
-            revision = self.revision() if self.api else ''
+            revision = self.revision() if self.api or (self.local_root and not self.source) else ''
             with self.slots:
                 started = time.monotonic()
                 try:
+                    if (self.api or (self.local_root and not self.source)) and bundle.selected(Path(path)):
+                        _, root = self.inputs()
+                        target = root / path
+                        return target.read_text() if target.is_file() else None
+                    if self.local_root and not self.source:
+                        listed = self.runner.output(['git', 'ls-tree', '--name-only', revision, '--', path], cwd=self.local_root)
+                        if not listed.strip():
+                            return None
+                        result = self.runner.run(['git', 'show', f'{revision}:{path}'], cwd=self.local_root, check=False)
+                        if result.returncode:
+                            raise ActionError(f'cannot read {path} at {revision}')
+                        return result.stdout
                     if not self.api:
                         return self.source(path) if self.source else None
                     reply = self.api.call('GET', f'/contents/{quote(path, safe="/")}?ref={revision}', missing_ok=True,
@@ -94,6 +119,30 @@ class Files:
                     with self.lock:
                         self.file_ms += (time.monotonic() - started) * 1000
         return self.once(path, read)
+
+    def inputs(self) -> tuple[str, Path]:
+        """One request-owned extraction of immutable bytes; only successful bytes are cached by SHA."""
+        def read():
+            revision = self.revision()
+            root = Path(self.cleanup.enter_context(tempfile.TemporaryDirectory(prefix='console-status-')))
+            if revision not in self.bundles:
+                if self.api:
+                    content = self.api.call('GET', f'/tarball/{revision}').content
+                    inputs = bundle.filtered(content)
+                elif self.local_root:
+                    archive = root / 'input.tar'
+                    self.runner.run(['git', 'archive', '--format=tar', f'--output={archive}', revision], cwd=self.local_root)
+                    inputs = bundle.filtered(archive.read_bytes(), prefixed=False)
+                    archive.unlink()
+                else:
+                    raise ActionError('status inputs unavailable: no pinned repository reader')
+                if len(self.bundles) >= 60:
+                    self.bundles.pop(next(iter(self.bundles)))
+                self.bundles[revision] = inputs
+            bundle.extract(self.bundles[revision], root)
+            (root / 'v2-records').mkdir(exist_ok=True)
+            return revision, root
+        return self.once('@inputs', read)
 
     def together(self, *reads: Callable[[], Any]) -> list[Any]:
         """Bound the worker pool as well as simultaneous file reads; preserve result order."""

@@ -19,7 +19,8 @@
 <form class="wizard promotion-form" method="post" action="/apps/{{ review.app }}/staging/promote">
 <input type="hidden" name="image" value="{{ review.image }}">
 <p class="muted">This PR does not merge itself: it {{ review.held }}. You merge it on GitHub; it already carries what <code>swhurl-v2 render</code> derives, so Flux applies it when it is merged.</p>
-<button class="primary">Promote to production</button>
+{% if review.problem %}<p class="warn" role="alert">{{ review.problem }}</p>{% endif %}
+<button class="primary"{% if review.problem %} disabled{% endif %}>Promote to production</button>
 </form>
 {% else %}
 <p class="lead">{{ 'Create ' if review.outcome == 'create' else 'Update ' }}{{ review.app }}/prod with the staging image you reviewed.</p>

@@ -78,7 +78,8 @@ def running():
     answers['kubectl get namespaces -l platform.swhurl.com/app'] = json.dumps({'items': [
         {'metadata': {'name': 'hello-staging', 'labels': {'platform.swhurl.com/team': 'demo'}}}]})
     runner = fake(units=[unit('app-hello-staging')], releases=[helmrelease()], **answers)
-    runner.on(v2.BINARY, stdout='usage\n')
+    runner.status_reports['hello', 'staging']['routes'] = [{'name': 'hello', 'outcome': 'present', 'hosts': ['staging-hello.homelab.swhurl.com']}]
+    runner.on(v2.BINARY, '--help', stdout='usage\n')
     return runner
 
 
@@ -136,7 +137,7 @@ class CallerTests(unittest.TestCase):
             'SWHURL_SERVICE_HELLO_URL': 'http://hello.hello-staging.svc.cluster.local:8080'}
         runner = fake(units=[unit('app-hello-staging'), unit('app-caller-staging')],
                       releases=[helmrelease(), caller])
-        rows = {row.instance.app: row for row in cluster.apps(runner, states=False)}
+        rows = {row.instance.app: row for row in cluster.apps(runner)}
         self.assertEqual(rows['hello'].connections.callers, ('caller',))
         self.assertEqual(rows['caller'].connections.calls, ('hello',))
         self.assertNotIn('configmaps', ' '.join(' '.join(call) for call in runner.calls),

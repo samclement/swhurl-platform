@@ -253,5 +253,89 @@ elif 'secret' in argv:
                     self.assertNotIn(value, output)
                     self.assertNotIn(base64.b64encode(value.encode()).decode(), output)
 
+
+class OpsScriptTests(unittest.TestCase):
+    """host/ops.sh behind make app-logs, app-reconcile, suspend and resume: the argv each tool gets, and refusals
+    that call none. The fake kubectl answers ``get`` with ``GET_RC`` (0: the object exists)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.bin = Path(self.tmp.name)
+        self.calls = self.bin / 'calls'
+        for name in ('kubectl', 'flux'):
+            (self.bin / name).write_text('#!/usr/bin/env bash\n'
+                                         'printf "%s\\n" "$(basename "$0") $*" >> "$CALLS"\n'
+                                         '[[ $1 == -n && $3 == get ]] && exit "${GET_RC:-0}"\nexit 0\n')
+            (self.bin / name).chmod(0o700)
+        self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}', CALLS=str(self.calls))
+
+    def make(self, *argv, **env):
+        result = subprocess.run(['make', '-s', *argv], cwd=ROOT, env={**self.env, **env}, capture_output=True, text=True)
+        called = self.calls.read_text().splitlines() if self.calls.exists() else []
+        self.calls.unlink(missing_ok=True)
+        return result, called
+
+    def test_logs_passes_tail_previous_and_follow_and_has_no_dry_run(self):
+        _, called = self.make('app-logs', 'APP=web', 'ENV=prod')
+        self.assertEqual(called, ['kubectl -n web-prod logs deploy/web --all-containers --tail=100'])
+        _, called = self.make('app-logs', 'APP=web', 'ENV=prod', TAIL='5', PREVIOUS='true', FOLLOW='true')
+        self.assertEqual(called, ['kubectl -n web-prod logs deploy/web --all-containers --tail=5 --previous --follow'])
+        result, called = self.make('app-logs', 'APP=web', 'ENV=prod', 'DRY_RUN=true')
+        self.assertEqual((result.returncode, called), (2, []))
+        self.assertIn('make app-logs has no dry run', result.stderr)
+
+    def test_reconcile_fetches_git_then_the_one_unit_and_plans_without_a_call(self):
+        result, called = self.make('app-reconcile', 'APP=web', 'ENV=prod')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(called, ['flux reconcile source git swhurl-platform -n flux-system --timeout=5m',
+                                  'flux reconcile kustomization app-web-prod -n flux-system --timeout=10m'])
+        result, called = self.make('app-reconcile', 'APP=web', 'ENV=prod', 'DRY_RUN=true')
+        self.assertEqual((result.returncode, called), (0, []))
+        self.assertTrue(result.stdout.startswith('Plan (app-reconcile web/prod):\n  would run: flux reconcile source'))
+
+    def test_an_instance_that_is_not_one_is_refused_before_any_tool(self):
+        for app, env, message in (('web', '', 'Usage: make app-logs APP=<app> ENV=<env>'),
+                                  ('Web', 'prod', 'no instance Web/prod'), ('web', 'dev', 'no instance web/dev'),
+                                  ('-A', 'prod', 'no instance -A/prod'), ('web;id', 'prod', 'no instance web;id/prod')):
+            with self.subTest(app=app, env=env):
+                result, called = self.make('app-logs', f'APP={app}', f'ENV={env}')
+                self.assertEqual((result.returncode, called), (2, []))
+                self.assertIn(message, result.stderr)
+
+    def test_suspend_and_resume_check_the_target_then_call_flux(self):
+        result, called = self.make('suspend', 'TARGET=kustomization/homelab-a')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(called, ['kubectl -n flux-system get kustomization homelab-a',
+                                  'flux suspend kustomization homelab-a -n flux-system'])
+        self.assertIn('suspend them separately to freeze Helm', result.stdout)
+        result, called = self.make('resume', 'TARGET=helmrelease/ns/r')
+        self.assertEqual((result.returncode, result.stdout), (0, ''))
+        self.assertEqual(called[-1], 'flux resume helmrelease r -n ns')
+
+    def test_suspend_dry_run_reads_but_does_not_call_flux(self):
+        result, called = self.make('suspend', 'TARGET=kustomization/homelab-a', 'DRY_RUN=true')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(called, ['kubectl -n flux-system get kustomization homelab-a'])
+        self.assertEqual(result.stdout, 'Plan (suspend kustomization/homelab-a):\n'
+                                        '  would run: flux suspend kustomization homelab-a -n flux-system\n')
+
+    def test_a_missing_or_malformed_target_is_refused(self):
+        result, called = self.make('suspend', 'TARGET=kustomization/nope', GET_RC='1')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('kustomization flux-system/nope not found', result.stderr)
+        self.assertEqual(called, ['kubectl -n flux-system get kustomization nope'], 'no flux call')
+        for target, message in (('', 'Usage: make suspend TARGET='), ('pvc/ns/c', 'Usage: make suspend TARGET='),
+                                ('kustomization/a/b', 'Use kustomization/<name>'),
+                                ('kustomization/-A', 'Use kustomization/<name>'),
+                                ('helmrelease/r', 'Use helmrelease/<namespace>/<name>'),
+                                ('helmrelease/ns/r/x', 'Use helmrelease/<namespace>/<name>'),
+                                ('helmrelease//r', 'Use helmrelease/<namespace>/<name>')):
+            with self.subTest(target=target):
+                result, called = self.make('resume', f'TARGET={target}')
+                self.assertEqual((result.returncode, called), (2, []))
+                self.assertIn(message.replace('suspend', 'resume'), result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()

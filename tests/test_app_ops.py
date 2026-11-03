@@ -1,11 +1,10 @@
-"""app status/logs/reconcile/check: output and commands, offline, with FakeRunner."""
+"""app status: output and commands, offline, with FakeRunner (logs and reconcile: test_command_safety)."""
 import io
 import json
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
-from swhurl import ROOT
 from swhurl.apps import ops as app_ops
 from swhurl.apps.instance import Instance
 from swhurl.run import CommandError, FakeRunner, Result
@@ -267,46 +266,14 @@ class GatherStatusTests(unittest.TestCase):
         self.assertIsNone(found.release)
 
 
-class LogsAndReconcileTests(unittest.TestCase):
-    def test_logs_default_and_follow(self):
-        runner = cluster()
-        run(runner, 'logs', 'web', 'prod')
-        run(runner, 'logs', 'web', 'prod', env={'FOLLOW': 'true', 'TAIL': '5'})
-        self.assertEqual(runner.calls, [
-            ('kubectl', '-n', 'web-prod', 'logs', 'deploy/web', '--all-containers', '--tail=100'),
-            ('kubectl', '-n', 'web-prod', 'logs', 'deploy/web', '--all-containers', '--tail=5', '--follow'),
-        ])
-
-    def test_reconcile_fetches_git_then_the_one_unit(self):
-        runner = cluster()
-        self.assertEqual(run(runner, 'reconcile', 'web', 'prod')[0], 0)
-        self.assertEqual([c[:4] for c in runner.calls], [('flux', 'reconcile', 'source', 'git'),
-                                                        ('flux', 'reconcile', 'kustomization', 'app-web-prod')])
-
-    def test_reconcile_dry_run_changes_nothing(self):
-        runner = FakeRunner(dry_run=True)
-        self.assertEqual(run(runner, 'reconcile', 'web', 'prod')[0], 0)
-        self.assertEqual(runner.calls, [])
-        self.assertEqual(len(runner.planned), 2)
-
-    def test_reconcile_stops_at_first_failure(self):
-        runner = FakeRunner().on('flux', 'reconcile', 'source', returncode=1)
-        self.assertEqual(run(runner, 'reconcile', 'web', 'prod')[0], 1)
-        self.assertEqual(len(runner.calls), 1)
-
-
 class UsageTests(unittest.TestCase):
     def test_bad_usage_exits_2_without_cluster_calls(self):
-        for argv in ([], ['status', 'web'], ['delete', 'web', 'prod'], ['status', 'web', 'prod', 'extra']):
+        for argv in ([], ['status', 'web'], ['delete', 'web', 'prod'], ['status', 'web', 'prod', 'extra'],
+                     ['logs', 'web', 'prod'], ['check', 'web', 'prod']):
             with self.subTest(argv=argv):
                 runner = FakeRunner()
                 self.assertEqual(run(runner, *argv)[0], 2)
                 self.assertEqual(runner.calls, [])
-
-    def test_check_runs_the_policy_for_that_instance(self):
-        with mock.patch.object(app_ops.policy, 'main', return_value=0) as policy:
-            self.assertEqual(run(FakeRunner(), 'check', 'web', 'prod')[0], 0)
-        policy.assert_called_once_with([str(ROOT / 'apps/web/prod')])
 
 
 if __name__ == '__main__':

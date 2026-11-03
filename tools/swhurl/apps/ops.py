@@ -2,27 +2,25 @@
 ``app-<app>-<env>``, HelmRelease ``<app>``).
 
     app status    APP ENV   desired vs applied revision and image, replicas, route, failure reason
-    app logs      APP ENV   recent logs from the instance's workload (FOLLOW=true to stream, TAIL=N,
-                            PREVIOUS=true for the last crashed container)
-    app reconcile APP ENV   fetch Git and reconcile only this instance
-    app check     APP ENV   render and check this instance against the app contract (offline)
+
+The console, the promotion gate and the notification checker read the same status. Logs and a
+reconcile are one or two kubectl or flux calls: host/ops.sh runs them.
 """
 from __future__ import annotations
 
 import functools
-import os
 import sys
 from dataclasses import dataclass, field
 
 from swhurl import ROOT, interface
-from swhurl.apps import helmrelease, policy
+from swhurl.apps import helmrelease
 from swhurl.apps.contract import AUTH_MIDDLEWARE, SECRET_FILE, app_secret, declared_secrets, stored_secrets
 from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.state import ready_reason, verdict
 from swhurl.kube import ready_condition
 from swhurl.run import CommandError, Runner
 
-ACTIONS = ('status', 'logs', 'reconcile', 'check')
+ACTIONS = ('status',)
 WORKLOAD_KINDS = 'deploy,statefulset,daemonset,cronjob'
 SOURCE = 'swhurl-platform'  # the GitRepository every instance's unit applies
 INSTANCE_LABEL = 'app.kubernetes.io/instance'  # on an instance's pods and workloads: the app's name
@@ -411,43 +409,17 @@ def status(runner: Runner, instance: Instance) -> int:
     return 0
 
 
-def logs(runner: Runner, instance: Instance, *, tail: str = '100', follow: bool = False,
-         previous: bool = False) -> int:
-    """Recent logs; ``previous`` shows the last crashed container's output (for CrashLoopBackOff)."""
-    args = ['kubectl', '-n', instance.namespace, 'logs', f'deploy/{instance.app}', '--all-containers',
-            f'--tail={tail}', *(['--previous'] if previous else [])]
-    return runner.attached([*args, '--follow'] if follow else args)
-
-
-def reconcile(runner: Runner, instance: Instance) -> int:
-    for args in (['flux', 'reconcile', 'source', 'git', 'swhurl-platform', '-n', 'flux-system', '--timeout=5m'],
-                 ['flux', 'reconcile', 'kustomization', instance.unit, '-n', 'flux-system', '--timeout=10m']):
-        code = runner.attached(args, mutating=True)
-        if code:
-            return code
-    return 0
-
-
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     argv = argv or []
     if len(argv) != 3 or argv[0] not in ACTIONS:
         print(__doc__.split('\n\n', 1)[1].rstrip(), file=sys.stderr)
         return 2
-    action, instance = argv[0], Instance.named(argv[1], argv[2])
+    instance = Instance.named(argv[1], argv[2])
     if instance is None:
         print(f'[ERROR] no instance {argv[1]}/{argv[2]}: APP must be a DNS label and ENV one of {", ".join(ENVIRONMENTS)}', file=sys.stderr)
         return 2
-    if action == 'check':
-        return policy.main([str(instance.folder(ROOT))])
-    runner = runner or Runner.from_environment()
     try:
-        if action == 'status':
-            return status(runner, instance)
-        if action == 'logs':
-            return logs(runner, instance, tail=os.environ.get('TAIL', '100'),
-                        follow=os.environ.get('FOLLOW', 'false') == 'true',
-                        previous=os.environ.get('PREVIOUS', 'false') == 'true')
-        return reconcile(runner, instance)
+        return status(runner or Runner.from_environment(), instance)
     except CommandError as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 1

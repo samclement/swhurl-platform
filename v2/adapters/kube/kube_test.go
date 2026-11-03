@@ -447,6 +447,27 @@ func refused(err error, reason string) bool {
 	return errors.As(err, &failure) && failure.Code == kube.RefusedRequest && failure.Reason == reason
 }
 
+// A list's items are the collection's kind and the API server writes them without apiVersion or kind of
+// their own, so an item that states neither is this collection's. Only a stated contradiction is refused.
+func TestListItemsCarryTheCollectionsType(t *testing.T) {
+	untyped := []byte(`{"metadata":{"name":"hello-main-1","namespace":"hello-staging","labels":{"app.kubernetes.io/instance":"hello"}}}`)
+	scenario := answers(t)
+	scenario.Items = [][]byte{untyped}
+	reader, _ := readerWith(t, scenario)
+	list, err := reader.List(context.Background(), scenario.Pods, scenario.Selector)
+	if err != nil || list.Status != observe.Present || len(list.Items) != 1 {
+		t.Fatalf("an item with no type of its own: %+v %v", list, err)
+	}
+	conflicting := []byte(`{"apiVersion":"v1","kind":"Service","metadata":{"name":"hello-main-1","namespace":"hello-staging"}}`)
+	scenario = answers(t)
+	scenario.Items = [][]byte{conflicting}
+	reader, _ = readerWith(t, scenario)
+	list, err = reader.List(context.Background(), scenario.Pods, scenario.Selector)
+	if err != nil || list.Status != observe.Unavailable || list.Reason != observe.ReasonMalformed {
+		t.Fatalf("an item that states another kind: %+v %v", list, err)
+	}
+}
+
 // A collection read has no absent form, and an empty successful list is present with no items.
 func TestEmptyListIsPresent(t *testing.T) {
 	scenario := answers(t)

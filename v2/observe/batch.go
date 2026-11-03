@@ -120,17 +120,29 @@ func candidateOf(collection Ref, document []byte) (candidate, bool) {
 	if decodeDocument(document, &object, "candidate") != nil {
 		return candidate{}, false
 	}
-	ref := Ref{object.APIVersion, object.Kind, object.Metadata.Namespace, object.Metadata.Name}
-	if ref.APIVersion != collection.APIVersion || ref.Kind != collection.Kind || ref.Name == "" || ref.Namespace == "" {
-		return candidate{}, false
-	}
-	if validateRef("candidate", ref, true) != nil {
-		return candidate{}, false
-	}
-	if collection.Namespace != "" && ref.Namespace != collection.Namespace {
+	ref, ok := listedRef(collection, object.APIVersion, object.Kind, object.Metadata.Namespace, object.Metadata.Name)
+	if !ok {
 		return candidate{}, false
 	}
 	return candidate{ref, object.Metadata.Labels, document}, true
+}
+
+// listedRef is one listed item's identity, or false when it cannot belong to this collection. A list's
+// items are the collection's kind, and the API server omits their apiVersion and kind: only an item that
+// states another kind is refused. The identity it returns carries the collection's type, so a candidate
+// always compares equal to the target written from the records.
+func listedRef(collection Ref, apiVersion, kind, namespace, name string) (Ref, bool) {
+	if (apiVersion != "" && apiVersion != collection.APIVersion) || (kind != "" && kind != collection.Kind) {
+		return Ref{}, false
+	}
+	if name == "" || namespace == "" || (collection.Namespace != "" && namespace != collection.Namespace) {
+		return Ref{}, false
+	}
+	ref := Ref{collection.APIVersion, collection.Kind, namespace, name}
+	if validateRef("candidate", ref, true) != nil {
+		return Ref{}, false
+	}
+	return ref, true
 }
 
 // EvidenceFor partitions by expected namespace/name and labels. Extra candidates never create a

@@ -41,9 +41,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   instance unaffected. Relevance uses v2's own record/render folders and unit registrations, including removed
   and renamed paths; shared profile/calls/allocation changes are conservatively relevant. Incomplete, unavailable
   or mismatched comparisons never grant the exemption. Health and image checks are not bypassed.
-- **Contract:** individual reports are `v2-observation` version 4 with literal applied revision, currentness and
-  nullable live facts; bulk reports are `v2-observations` version 1. The new `ListAllNamespaces` operation leaves
-  namespace-scoped reads unchanged and treats partial/malformed lists as unavailable, never empty success.
+- **Contract:** individual reports are `v2-observation` version 5 with literal applied revision, currentness,
+  nullable live facts and Go's own `promotion:{ready,reason}`; bulk reports are `v2-observations` version 1. The
+  new `ListAllNamespaces` operation leaves namespace-scoped reads unchanged and treats partial/malformed lists as
+  unavailable, never empty success.
 - **Checked offline:** `make check-v2`, `make check`, lint and `git diff --check`; an independent read-only
   review found no issues. Tests cover list/detail agreement, fixed list counts, owner Job reads, namespace/name
   collisions, list failures, v2 paths, renames, revision races and conservative promotion readiness. The public-API
@@ -52,8 +53,16 @@ What has been verified on the live cluster, and when: current facts first, then 
   (no GitHub/NATS integration), HTTP 200: Apps list 2.959 s cold / 1.155 s warm with 8 kubectl calls each;
   demo-orders staging 1.989 / 2.133 s and demo-notifier staging 2.465 / 2.383 s, 15 kubectl calls each. These are
   single samples, not a production latency claim or an OAuth login test.
-- **Not yet live:** the new Go bulk/currentness path. The console still uses the old Python instance judge;
-  the next approved step switches its readers and submission-time promotion checks together, then deletes it.
+- **Listed objects carry no type of their own:** the first live run of this path reported every instance `unknown`
+  with `image not_assessed/pods_unavailable` and `backup unavailable/malformed`. The API server omits
+  `apiVersion` and `kind` from a list's items, and the records' fixtures had been captured through `kubectl`,
+  whose typed round-trip re-adds them, so both layers demanded a field the real server never sends.
+  `kube.collectionIdentity` and `observe.listedRef` now read an absent type as the collection's and still refuse an
+  item that states another kind or a foreign namespace; a test at each layer feeds the server's real shape.
+  Read-only host checks after the fix, at `98366214` plus it: `make app-status APP=demo-orders ENV=staging` reported
+  `image running` and `Backup current`, and `status --all` reported all 10 instances `healthy`.
+- **In progress:** the console image carrying this fix is being published; its own signed-in pages are the next
+  check, and the live platform was not otherwise changed by it.
 
 ## Status with the pod's ServiceAccount (3 November 2026)
 

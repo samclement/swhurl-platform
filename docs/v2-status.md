@@ -29,7 +29,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Backup and restore | done | [record](current-state.md#the-first-content-changing-restore-swhurl-try-10-staging-moved-back-a-day-27-october-2026) |
 | Promotion and rollback | done | [record](current-state.md#a-rollback-exercised-live-2-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
-| Bulk status and revision evidence | partial | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |
+| Bulk status and revision evidence | done | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |
 | Status with the pod's ServiceAccount | done | [record](current-state.md#status-with-the-pods-serviceaccount-3-november-2026) |
 | Status from the records | done | [record](current-state.md#swhurl-v2-status-replaces-make-app-status-3-november-2026) |
 | Every instance v2-owned | done | [record](current-state.md#the-ownership-milestone-every-instance-is-v2s-3-november-2026) |

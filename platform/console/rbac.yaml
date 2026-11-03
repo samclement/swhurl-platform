@@ -34,7 +34,7 @@ rules:
     resources: [namespaces]  # the team label on an app's namespace
     verbs: [get, list]
   - apiGroups: [batch]
-    resources: [cronjobs]
+    resources: [cronjobs, jobs]  # jobs: a database instance's newest backup, for swhurl-v2 status
     verbs: [get, list]
   - apiGroups: [apps]
     resources: [deployments, statefulsets, daemonsets]

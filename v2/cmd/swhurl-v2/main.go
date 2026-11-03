@@ -49,7 +49,7 @@ const usage = `usage:
   swhurl-v2 remove --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
       --calls CALLS.json --out DIR
   swhurl-v2 status --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json --revision COMMIT \
-      --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
+      (--kubeconfig KUBECONFIG.json | --in-cluster) [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
       [--max-age DURATION] [--archive [--region REGION]] [--json]
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
       --committed HELMRELEASE.json --profile PROFILE.json
@@ -91,6 +91,10 @@ DIR/APPLICATION/ENVIRONMENT, reads the unit, HelmRelease, Deployment, pods, rout
 documents name from the API server the kubeconfig names (the JSON form that "kubectl config view --raw -o json"
 prints), and prints the instance's state (suspended, failing, updating, stopped, unknown or healthy) with the fact
 that decided it, every finding, the route and its certificates and each container that is not ready and why.
+--in-cluster reads instead with the pod's own ServiceAccount: the token, ca.crt and namespace under
+/var/run/secrets/kubernetes.io/serviceaccount/ and KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT. Exactly one
+of --kubeconfig and --in-cluster is required, and the report's source is the context or "serviceaccount in
+NAMESPACE" unless --source names it.
 --revision is the commit the records were read at, which Flux should have applied, and the expected image is the
 record's release. It reads only. A database instance's status also carries its protection: the backup CronJob and
 the runs its labels select, judged against --max-age (26h by default). With --archive it also lists the instance's
@@ -237,7 +241,7 @@ func readInput(path string) ([]byte, error) {
 
 func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error), writer files.Writer) int {
 	return runWith(args, out, diagnostic, cli{readFile: readFile, writer: writer, archives: archiveReader,
-		registries: registryReader, seed: randomSeed, encrypter: sops.New()})
+		registries: registryReader, seed: randomSeed, encrypter: sops.New(), inCluster: podServiceAccount()})
 }
 
 // runWith runs one command with the cli a test assembled: the adapters a command needs supplied, everything else the
@@ -261,7 +265,7 @@ func runWith(args []string, out, diagnostic io.Writer, c cli) int {
 func runWithArchives(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error),
 	writer files.Writer, archives func(bucket, region string) (s3.Reader, error)) int {
 	return runWith(args, out, diagnostic, cli{readFile: readFile, writer: writer, archives: archives,
-		registries: registryReader, seed: randomSeed, encrypter: sops.New()})
+		registries: registryReader, seed: randomSeed, encrypter: sops.New(), inCluster: podServiceAccount()})
 }
 
 // runWithEncrypter runs one command with a supplied encrypter and seed, so a mint's test needs neither sops nor
@@ -269,7 +273,7 @@ func runWithArchives(args []string, out, diagnostic io.Writer, readFile func(str
 func runWithEncrypter(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error),
 	writer files.Writer, encrypter sops.Encrypter, seed func() ([32]byte, error)) int {
 	return runWith(args, out, diagnostic, cli{readFile: readFile, writer: writer, archives: archiveReader,
-		registries: registryReader, seed: seed, encrypter: encrypter})
+		registries: registryReader, seed: seed, encrypter: encrypter, inCluster: podServiceAccount()})
 }
 
 // runWithRegistry runs one command with a supplied image-registry reader, so a test can answer a tag and a
@@ -277,7 +281,7 @@ func runWithEncrypter(args []string, out, diagnostic io.Writer, readFile func(st
 func runWithRegistry(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error),
 	writer files.Writer, registries func(image string) (registry.Reader, error)) int {
 	return runWith(args, out, diagnostic, cli{readFile: readFile, writer: writer, archives: archiveReader,
-		registries: registries, seed: randomSeed, encrypter: sops.New()})
+		registries: registries, seed: randomSeed, encrypter: sops.New(), inCluster: podServiceAccount()})
 }
 
 // registryReader is the image-registry reader the command builds: public packages, anonymous, over the
@@ -339,7 +343,7 @@ type request struct {
 	records                                            string
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
-	rotate, check, json                                bool
+	rotate, check, json, inCluster                     bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
@@ -498,6 +502,7 @@ func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) boo
 		flags.Var(&once{value: &r.app}, "app", "application")
 		flags.Var(&once{value: &r.env}, "env", "environment")
 		r.registerLive(flags)
+		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
 		flags.Var(&onceBool{value: &r.archive}, "archive", "also read the newest archive from the object store (needs AWS credentials)")
 		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-observation document instead of the text")
 	case "restore":
@@ -641,15 +646,21 @@ var requiredFlags = map[string]func(*request) []string{
 	"create":         func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
 	"declaration":    func(r *request) []string { return []string{r.label, r.app, r.team} },
 	"remove":         func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
-	// A live read needs the instance's records, the profile, the revision to expect and a credential.
-	"status": func(r *request) []string {
-		return []string{r.records, r.app, r.env, r.profile, r.revision, r.kubeconfig}
-	},
-	"restore": func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
-	"migrate": (*request).appNamed,
-	"promote": (*request).appNamed,
-	"deploy":  (*request).deployNamed,
-	"edit":    (*request).editNamed,
+	"status":         (*request).statusNamed,
+	"restore":        func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
+	"migrate":        (*request).appNamed,
+	"promote":        (*request).appNamed,
+	"deploy":         (*request).deployNamed,
+	"edit":           (*request).editNamed,
+}
+
+// statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one
+// credential, a kubeconfig or the pod's own ServiceAccount. Neither or both is a usage error: nothing is detected.
+func (r *request) statusNamed() []string {
+	if (r.kubeconfig != "") == r.inCluster {
+		return []string{""}
+	}
+	return []string{r.records, r.app, r.env, r.profile, r.revision}
 }
 
 // appNamed is what a command that works on one app needs: migrate reads a snapshot, promote the records tree; both
@@ -774,6 +785,9 @@ type cli struct {
 	// nor sops. Commands that never mint are given the real ones too.
 	seed      func() ([32]byte, error)
 	encrypter sops.Encrypter
+	// inCluster is where status --in-cluster finds the pod's ServiceAccount; a test supplies a folder and an
+	// environment of its own.
+	inCluster inCluster
 }
 
 func (c cli) releaseID(path string) int {

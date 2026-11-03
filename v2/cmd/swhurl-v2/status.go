@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -97,23 +98,18 @@ func (c cli) sameInstance(r request, instance []byte) int {
 	return 0
 }
 
-// observeLive runs the status use case against the API server the kubeconfig names — and, when asked, the object
+// observeLive runs the status use case against the API server the credential names — and, when asked, the object
 // store's archive listing — and returns the observation.
 func (c cli) observeLive(r request, inputs orchestration.Inputs, maxAge time.Duration) (observe.Report, int) {
-	kubeconfig, status := c.read(r.kubeconfig, "kubeconfig")
+	connection, source, status := c.connection(r)
 	if status != 0 {
 		return observe.Report{}, status
-	}
-	connection, err := kube.Connect(kubeconfig)
-	if err != nil {
-		return observe.Report{}, fail(c.diagnostic, err)
 	}
 	reader, err := connection.Reader()
 	if err != nil {
 		return observe.Report{}, fail(c.diagnostic, err)
 	}
-	// The evidence's source is the context that answered, unless the operator names it.
-	source := connection.Context
+	// The evidence's source is the credential that answered, unless the operator names it.
 	if r.source != "" {
 		source = r.source
 	}
@@ -129,6 +125,84 @@ func (c cli) observeLive(r request, inputs orchestration.Inputs, maxAge time.Dur
 		return observe.Report{}, fail(c.diagnostic, err)
 	}
 	return report, 0
+}
+
+// connection is the API server and credential status was given, and the name of that evidence: the kubeconfig's
+// current context, or the pod's own ServiceAccount and its namespace.
+func (c cli) connection(r request) (kube.Connection, string, int) {
+	if r.inCluster {
+		return c.serviceAccount()
+	}
+	kubeconfig, status := c.read(r.kubeconfig, "kubeconfig")
+	if status != 0 {
+		return kube.Connection{}, "", status
+	}
+	connection, err := kube.Connect(kubeconfig)
+	if err != nil {
+		return kube.Connection{}, "", fail(c.diagnostic, err)
+	}
+	return connection, connection.Context, 0
+}
+
+// serviceAccountDir is where the kubelet mounts a pod's ServiceAccount token, the cluster's CA and the pod's namespace.
+const serviceAccountDir = "/var/run/secrets/kubernetes.io/serviceaccount"
+
+// inCluster is where a pod finds its ServiceAccount: the folder the kubelet mounts it in, and the environment that
+// names the API server's service.
+type inCluster struct {
+	dir    string
+	getenv func(string) string
+}
+
+// podServiceAccount is the binary's own: the kubelet's mount and the process environment.
+func podServiceAccount() inCluster {
+	return inCluster{dir: serviceAccountDir, getenv: os.Getenv}
+}
+
+// serviceAccount assembles the connection the pod's ServiceAccount gives. Each part is read once, here: the kubelet
+// rotates the token file, and every status is a new process. A missing part is named and refused.
+func (c cli) serviceAccount() (kube.Connection, string, int) {
+	var token, ca, namespace []byte
+	for _, part := range []struct {
+		name   string
+		target *[]byte
+	}{{"token", &token}, {"ca.crt", &ca}, {"namespace", &namespace}} {
+		data, status := c.mounted(filepath.Join(c.inCluster.dir, part.name))
+		if status != 0 {
+			return kube.Connection{}, "", status
+		}
+		*part.target = data
+	}
+	host, port := c.inCluster.getenv("KUBERNETES_SERVICE_HOST"), c.inCluster.getenv("KUBERNETES_SERVICE_PORT")
+	for _, variable := range [][2]string{{"KUBERNETES_SERVICE_HOST", host}, {"KUBERNETES_SERVICE_PORT", port}} {
+		if variable[1] == "" {
+			fmt.Fprintf(c.diagnostic, "invalid: in-cluster: %s is not set\n", variable[0])
+			return kube.Connection{}, "", 2
+		}
+	}
+	connection, err := kube.ServiceAccount(token, ca, host, port)
+	if err != nil {
+		return kube.Connection{}, "", fail(c.diagnostic, err)
+	}
+	return connection, "serviceaccount in " + strings.TrimSpace(string(namespace)), 0
+}
+
+// mounted is one file of the ServiceAccount's mount. A file that is not there, or holds nothing, is named: outside a
+// pod, or with the token's automount turned off, that is the answer the operator needs.
+func (c cli) mounted(path string) ([]byte, int) {
+	data, err := c.readFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		fmt.Fprintf(c.diagnostic, "invalid: in-cluster: %s is not mounted\n", path)
+		return nil, 2
+	case err != nil:
+		fmt.Fprintf(c.diagnostic, "io: in-cluster: cannot read %s\n", path)
+		return nil, 1
+	case len(bytes.TrimSpace(data)) == 0:
+		fmt.Fprintf(c.diagnostic, "invalid: in-cluster: %s is empty\n", path)
+		return nil, 2
+	}
+	return data, 0
 }
 
 // archiveLister lists the instance's own prefix in the object store: the credential is the operator's, the bucket

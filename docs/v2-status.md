@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the in-cluster credential's design
+Gate: the in-cluster credential live
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -29,6 +29,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Backup and restore | done | [record](current-state.md#the-first-content-changing-restore-swhurl-try-10-staging-moved-back-a-day-27-october-2026) |
 | Promotion and rollback | done | [record](current-state.md#a-rollback-exercised-live-2-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
+| Status with the pod's ServiceAccount | partial | [record](current-state.md#status-with-the-pods-serviceaccount-3-november-2026) |
 | Status from the records | done | [record](current-state.md#swhurl-v2-status-replaces-make-app-status-3-november-2026) |
 | Every instance v2-owned | done | [record](current-state.md#the-ownership-milestone-every-instance-is-v2s-3-november-2026) |
 | Cutover: one writer | done | [record](current-state.md#the-production-cutover-four-instances-31-october-2026) |
@@ -87,8 +88,9 @@ not migration.
 **B. Then the rest of the road.**
 
 2. **The console port: status, then its readers.** `swhurl-v2 status` replaced `make app-status`
-   ([slice one](iteration-2-plan.md#slice-one-swhurl-v2-status-approved-3-november-2026)). Next: the in-cluster
-   credential (a design for the operator's approval), then the console and promotion gate on it, retiring `gather_status`.
+   ([slice one](iteration-2-plan.md#slice-one-swhurl-v2-status-approved-3-november-2026)). The approved
+   [in-cluster credential](iteration-2-plan.md#slice-the-in-cluster-credential-approved-3-november-2026) is
+   implemented; its live proof comes next, then the console and promotion gate on it, retiring `gather_status`.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
@@ -102,7 +104,7 @@ operator decides against it.
 | Egress grants declared by an instance record | Only the platform's backup host; `edit --set egress=` is refused by name | An instance must reach an outside host of its own |
 | An instance that must not reach outside | Every instance that needs one gets a proxy port; nothing withholds one | A kind that must not egress |
 | The egress namespace's own egress | Not restricted (the rendered policy states Ingress only) | Default-deny for the platform's own namespaces |
-| Routes: `public`, a host override, route observation | `authenticated-web` and `private` only; no host is stored; observation checks no route | An instance needs a public route or an unusual host |
+| Routes: `public`, a host override | `authenticated-web` and `private` only; no host is stored; status reads the expected route and certificates by name | An instance needs a public route or an unusual host |
 | App kinds: `job` and a command override | Refused (`unsupported`); `worker` is modelled, and no app type is a job | An instance needs a schedule or a command override |
 | The kind or type of an existing app | Fixed by the image at creation; `deploy` refuses a changed `runtime.kind` and says "create a new app for another kind" | An instance must change kind without a new app |
 | A connection at creation | `create` takes the team and the exposure; calls and subscriptions are `edit`s, which the console's New app runs in the same pull request, and `allows` is always an edit afterwards | One command must create a connected app, or a new app must allow callers at creation |
@@ -117,7 +119,7 @@ operator decides against it.
 | The tag an instance was selected with | Not recorded; `verify-platform` resolves the tag through the index | A record-shape change carries it |
 | Complete release, source and build verification | Claims are stated, not verified; a migrated release's artifact is checked | Before claiming verified release semantics |
 | Observation breadth | The unit, release, workload, pods (readiness and failing containers), the expected Ingress and Certificates by name, and the backup; no foreign ownership, no other kind | A consumer needs them |
-| A credential source other than a kubeconfig in JSON | Kubeconfig JSON only; no in-cluster token, no YAML | v2 runs in the cluster, or YAML is approved |
+| A YAML kubeconfig | Kubeconfig JSON, or an explicit `status --in-cluster` using the pod's mounted ServiceAccount; no YAML | A consumer needs YAML |
 | Live ownership of foreign objects | The bridge reads the repository's own claims; another owner's objects are not read | A migration needs the wider inventory |
 | Console: repository creation, seed images, historical Activity | None | Later |
 | Feature-flag state in the records | Overrides only: the console writes one to NATS with an audit line, and no record holds a flag's state or renders it | A record must own a flag's state |
@@ -140,8 +142,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   the bucket, not the profile (26 October 2026).
 - The egress proxy renders only its generated objects; its deployment stays hand-written and grants are
   enforced (25 October 2026).
-- Delivery and observation use the operator's credentials from the host, not a new Secret or control plane
-  (25 October 2026).
+- Delivery uses the operator's credentials from the host; status uses either an explicit kubeconfig or the
+  pod's mounted ServiceAccount, without fallback or a new Secret (3 November 2026).
 - The declaration is label version 2: the image states its whole declaration, version 1 is refused, and a
   digest determines a release (1 November 2026).
 - `create` writes records only; the whole-tree render allocates the port and writes the files

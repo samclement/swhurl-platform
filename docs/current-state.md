@@ -32,6 +32,17 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## Status with the pod's ServiceAccount (3 November 2026)
+
+- **What changed:** `swhurl-v2 status --in-cluster` reads the mounted token, CA and namespace plus the API service
+  address. Exactly one of it and `--kubeconfig` is required; no detection or fallback. Only `status` accepts the
+  flag; write commands still require a kubeconfig. The source is `serviceaccount in <namespace>` and no token
+  is decoded or printed. The console's account gains `get,list` for backup Jobs, without new credentials.
+- **Offline:** `make check-v2` passes, including a fake TLS API server accepting the mounted token and CA,
+  missing-part errors, mutually exclusive flags and restore refusing the flag. The sole public-API baseline
+  addition is the intended `kube.ServiceAccount` constructor, which validates supplied material without I/O.
+- **Live proof:** pending deployment; the console still uses Python for its status reads.
+
 ## `swhurl-v2 status` replaces `make app-status` (3 November 2026)
 
 - **What changed (`2cfc7752`):** the console port's first slice. `make app-status` runs `swhurl-v2 status`, which

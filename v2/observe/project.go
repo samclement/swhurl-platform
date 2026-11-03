@@ -12,6 +12,7 @@ import (
 type condition struct {
 	Type               string `json:"type"`
 	Status             string `json:"status"`
+	Reason             string `json:"reason"`
 	ObservedGeneration int64  `json:"observedGeneration"`
 }
 
@@ -36,13 +37,15 @@ type deploymentObject struct {
 // podsFact is what the instance's own pods say about its running image. images holds the started
 // image of the target's container for each pod that has one; found is whether the selector selected
 // any pod; complete is whether every selected pod carries that container; pinned is whether every
-// such image is pinned to a digest rather than a tag.
+// such image is pinned to a digest rather than a tag; problems are the containers that are not ready
+// and say why.
 type podsFact struct {
 	list     List
 	found    bool
 	complete bool
 	pinned   bool
 	images   []string
+	problems []Problem
 }
 
 // fact is one Flux object read and, when it was present, its decoded document.
@@ -110,7 +113,10 @@ func listOf(target Target, lists []List) (List, error) {
 // owns reports whether the target asked for this single object. The pod collection is read as a list,
 // so an object read about it is not evidence the target asked for.
 func (t Target) owns(ref Ref) bool {
-	return ref == t.Unit || ref == t.Release || ref == t.Workload
+	if ref == t.Unit || ref == t.Release || ref == t.Workload {
+		return true
+	}
+	return t.Route != nil && t.Route.owns(ref)
 }
 
 // validateRead keeps absence, failure and presence apart, so a report cannot claim one from the other.
@@ -256,9 +262,23 @@ type podContainer struct {
 type podContainerStatus struct {
 	Name    string `json:"name"`
 	ImageID string `json:"imageID"`
+	Ready   bool   `json:"ready"`
+	State   struct {
+		Waiting    *containerState `json:"waiting"`
+		Terminated *containerState `json:"terminated"`
+	} `json:"state"`
+}
+
+// containerState is a waiting or terminated container's own account: the kubelet's reason and message.
+type containerState struct {
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
 }
 
 type podObject struct {
+	Metadata struct {
+		Name string `json:"name"`
+	} `json:"metadata"`
 	Spec struct {
 		Containers []podContainer `json:"containers"`
 	} `json:"spec"`
@@ -270,7 +290,7 @@ type podObject struct {
 // podsOf reads which image the target's container is running in each selected pod. A pod whose
 // container status carries no image ID has not pulled its image, so nothing of it is running.
 func podsOf(target Target, list List) (podsFact, error) {
-	fact := podsFact{list: list, complete: true, pinned: true, images: []string{}}
+	fact := podsFact{list: list, complete: true, pinned: true, images: []string{}, problems: []Problem{}}
 	if list.Status != Present {
 		return fact, nil
 	}
@@ -280,6 +300,7 @@ func podsOf(target Target, list List) (podsFact, error) {
 			return podsFact{}, err
 		}
 		fact.found = true
+		fact.problems = append(fact.problems, problemsOf(pod)...)
 		image, ok := specImage(pod, target.Container)
 		if !ok {
 			fact.complete = false
@@ -315,6 +336,41 @@ func started(pod podObject, name string) bool {
 		}
 	}
 	return false
+}
+
+// maxMessage is how much of a container's message a problem carries: enough to say what failed, never a
+// whole log.
+const maxMessage = 160
+
+// problemsOf is every container of one pod that is not ready and says why: a waiting or terminated
+// reason. A container that runs but is not ready yet carries neither, and is not a problem here; its
+// readiness is the workload's own fact.
+func problemsOf(pod podObject) []Problem {
+	var problems []Problem
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Ready {
+			continue
+		}
+		state := status.State.Waiting
+		if state == nil || state.Reason == "" {
+			state = status.State.Terminated
+		}
+		if state == nil || state.Reason == "" {
+			continue
+		}
+		problems = append(problems, Problem{Pod: pod.Metadata.Name, Container: status.Name, Reason: state.Reason,
+			Message: firstCharacters(state.Message, maxMessage)})
+	}
+	return problems
+}
+
+// firstCharacters is the start of a text counted in characters rather than bytes, so a cut never splits one.
+func firstCharacters(text string, limit int) string {
+	characters := []rune(text)
+	if len(characters) <= limit {
+		return text
+	}
+	return string(characters[:limit])
 }
 
 // pinnedImage reports whether an image reference names a digest, which is what makes the running

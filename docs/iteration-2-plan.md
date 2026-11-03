@@ -687,8 +687,8 @@ step after the [ownership milestone](current-state.md#the-ownership-milestone-ev
 
 Rejected: keeping the console in Python, which contradicts the [goal](v2-status.md) (one Go implementation).
 
-**Recommendation: option 3, starting with status.** `apps/ops.gather_status` is one function with four readers
-(the console, `make app-status`, the promotion gate and the notification checker). It reads eight kinds
+**Recommendation: option 3, starting with status.** `apps/ops.gather_status` is one function with three readers
+(the console, `make app-status` and the promotion gate; the notification checker reuses only its image helpers). It reads eight kinds
 (namespace, Flux unit, source, HelmRelease, pods, workloads, Ingress, Certificate); `observe` reads four with no
 pod-level facts, so slice one widens observation (a deferred feature) and adds `swhurl-v2 status` on the host
 (kubeconfig, no new adapter) in place of `make app-status`. Slice two adds the in-cluster credential and points the console at it. Later slices take the
@@ -702,3 +702,39 @@ read, where the console already starts `kubectl`. Option 2's modules stay worth 
 - The in-cluster credential is not approved: option 3 still takes the file-only reads (the catalogue, records,
   the merge gate's rules), and status stays Python until it is.
 - Page latency over the binary proves noticeable when measured live: port the server earlier.
+
+### Slice one: `swhurl-v2 status` (approved 3 November 2026)
+
+**Meaning.** Status compares the cluster with what v2's records say should run, not with what the cluster says it
+wants: the expected digest is the record's release, and the expected revision is the commit the records were read
+at (`make app-status` passes `HEAD` and prints it). `make app-status` leaves Python for it; `gather_status` stays
+for the console and the promotion gate until slice two.
+
+**State.** A pure function of the observation, the vocabulary the console shows, each with a reason; first match
+wins:
+
+| State | When |
+| --- | --- |
+| `suspended` | the unit or the release is suspended |
+| `failing` | a container is not ready with a waiting or terminated reason, the unit is absent, or Flux reports a failure |
+| `updating` | the revision is not applied yet, the release is reconciling, the image differs from the record, or fewer replicas are ready than wanted |
+| `stopped` | every wanted replica count is 0 |
+| `unknown` | anything not read or not established, naming it; a failed read is never absence |
+| `healthy` | otherwise |
+
+**Contracts.**
+
+- `observe` (pure) adds per-container problems (pod, container, reason, the message's first 160 characters),
+  routes (Ingress hosts without cert-manager's solver ingresses) and each certificate's Ready; they leave
+  `NotCovered`. `adapters/kube` gains one read-only kind, cert-manager's `Certificate`, with a recorded fixture.
+- `orchestration.Status` carries records → target → reads → observation → state: the flow the `observe` command
+  ran itself.
+- `swhurl-v2 status --records DIR --app APP --env ENV` replaces `observe`'s entry point and keeps its live flags
+  (`--profile`, `--calls`, `--egress`, `--revision`, `--kubeconfig`, `--archive`, `--max-age`, `--region`). Text
+  by default; `--json` prints `v2-observation` version 3 with `state` and the new facts. Exit 0 whenever a report
+  is printed, whatever the state; 2 for usage, an instance with no record, or a refused request.
+- `make app-status APP= ENV=` is bash: it builds the binary into a throwaway folder and writes the kubeconfig's
+  JSON form there, removed on exit. Its `commands.py` row loses its `run=`.
+- Dropped on purpose: settings, variables, the secret line, the team and exposure (the records hold them), job
+  runs (v2 has no job kind) and the GitRepository's revision. Right after any commit to `main` every instance is
+  `updating` until Flux applies it; the promotion gate's "a commit elsewhere" exception moves with slice two.

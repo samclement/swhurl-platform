@@ -9,6 +9,7 @@ package observe
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -33,6 +34,8 @@ type Target struct {
 	Revision  string // the source revision Flux should have applied; empty when it was not supplied
 	// Backup is a database instance's nightly protection; nil when the instance renders none.
 	Backup *BackupTarget
+	// Route is the route the records expect; nil when the instance renders none.
+	Route *RouteTarget
 }
 
 // A read's status, and the outcomes a finding can have. The same word means the same thing wherever
@@ -70,6 +73,7 @@ const (
 	ReasonSuspended     = "suspended"
 	ReasonNoCondition   = "condition_absent"
 	ReasonNotTrue       = "condition_not_ready"
+	ReasonFailed        = "condition_failed" // Flux states a failure, not work in progress
 	ReasonNotAvailable  = "condition_not_available"
 	ReasonStale         = "status_stale"
 	ReasonNotSupplied   = "revision_not_supplied"
@@ -87,6 +91,7 @@ const (
 	ReasonUnpinnedPod   = "unpinned_pod_image"
 	ReasonDigest        = "digest"
 	ReasonReplicas      = "available_replicas"
+	ReasonContainers    = "container_not_ready" // a container is not ready and says why
 )
 
 // Read is one object read: what the source answered, including that it could not be read.
@@ -142,7 +147,14 @@ type Report struct {
 	Findings   []Finding // fixed order: unit, unit.revision, release, workload, image, ready, replicas
 	Verdict    Verdict
 	// Backup is the protection's own answer, which the verdict never uses.
-	Backup     BackupReport
+	Backup BackupReport
+	// Problems, Routes and Certificates are facts beside the findings: every container that is not ready and
+	// says why, the route the records expect and each certificate it needs. Only problems decide the state.
+	Problems     []Problem
+	Routes       []Route
+	Certificates []Certificate
+	// State is the instance's state as the console shows it, decided from this report by StateOf.
+	State      State
 	Assessed   []string // findings this report established
 	Unassessed []string // findings it could not establish, and why is in the finding's reason
 	NotCovered []string // facts this slice never looks at, whatever the evidence says
@@ -173,8 +185,13 @@ func Explain(target Target, evidence Evidence) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	routes, certificates, err := routesOf(target, reads)
+	if err != nil {
+		return Report{}, err
+	}
 	report := Report{Target: target, Source: evidence.Source, ObservedAt: evidence.ObservedAt,
-		Findings: findings, Backup: backup, NotCovered: notCovered(), Assessed: []string{}, Unassessed: []string{}}
+		Findings: findings, Backup: backup, Problems: facts.pods.problems, Routes: routes, Certificates: certificates,
+		NotCovered: notCovered(), Assessed: []string{}, Unassessed: []string{}}
 	report.Verdict = verdict(findings)
 	for _, finding := range findings {
 		if finding.Outcome == NotAssessed {
@@ -183,6 +200,7 @@ func Explain(target Target, evidence Evidence) (Report, error) {
 			report.Assessed = append(report.Assessed, finding.Field)
 		}
 	}
+	report.State = StateOf(report)
 	return report, nil
 }
 
@@ -215,11 +233,32 @@ func fluxFinding(field string, f fact, positive, negative string) Finding {
 	if f.flux.suspended {
 		return Finding{field, negative, ReasonSuspended}
 	}
-	return fluxReadiness(field, f.flux.conditions, f.flux.generation, positive, negative, ReasonNotTrue)
+	finding := fluxReadiness(field, f.flux.conditions, f.flux.generation, positive, negative, ReasonNotTrue)
+	if finding.Reason == ReasonNotTrue && fluxFailed(f.flux.conditions) {
+		finding.Reason = ReasonFailed
+	}
+	return finding
 }
 
-// fluxReadiness judges a Flux object's Ready condition, which carries the generation it observed, so a
-// condition about an older spec is stale evidence rather than readiness.
+// fluxFailed reports whether Flux states a failure rather than work in progress: Ready is False for a reason
+// that is not one of its waiting reasons, and it is not reconciling again. Waiting for a dependency or applying
+// a change is not a failure: every push re-checks every unit, and dependents wait meanwhile.
+func fluxFailed(conditions []condition) bool {
+	ready, _ := statusOf(conditions, "Ready")
+	if ready.Status != "False" || ready.Reason == "" || slices.Contains(waitingReasons(), ready.Reason) {
+		return false
+	}
+	reconciling, found := statusOf(conditions, "Reconciling")
+	return !found || reconciling.Status != "True"
+}
+
+// waitingReasons are the Ready=False reasons by which Flux says "not yet" rather than "failed".
+func waitingReasons() []string {
+	return []string{"DependencyNotReady", "Progressing", "ProgressingWithRetry"}
+}
+
+// fluxReadiness judges an object's Ready condition — a Flux object's or a certificate's — which carries the
+// generation it observed, so a condition about an older spec is stale evidence rather than readiness.
 func fluxReadiness(field string, conditions []condition, generation int64, positive, negative, whenFalse string) Finding {
 	condition, found := statusOf(conditions, "Ready")
 	switch {
@@ -473,6 +512,9 @@ func validateRoles(t Target) error {
 	if t.Backup != nil {
 		roles = append(roles, role{"backup", t.Backup.CronJob, true, true})
 	}
+	if t.Route != nil {
+		roles = append(roles, t.Route.roles()...)
+	}
 	for i, role := range roles {
 		for _, other := range roles[:i] {
 			if other.ref == role.ref {
@@ -557,7 +599,7 @@ func validateRef(field string, ref Ref, named bool) error {
 
 // notCovered lists the facts this slice never looks at, so "running" cannot be read as parity.
 func notCovered() []string {
-	return []string{"history", "git_publication", "source_build", "pods", "routes", "storage", "secrets",
+	return []string{"history", "git_publication", "source_build", "storage", "secrets",
 		"calls", "events", "team", "quota", "backup_restore", "foreign_ownership"}
 }
 

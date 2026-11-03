@@ -271,10 +271,19 @@ func TestExplainReportsTheIntendedReleaseRunning(t *testing.T) {
 	if len(report.Unassessed) != 0 || len(report.NotCovered) == 0 {
 		t.Fatalf("assessed %v, not covered %v", report.Unassessed, report.NotCovered)
 	}
-	for _, fact := range []string{"history", "git_publication", "pods", "source_build"} {
+	for _, fact := range []string{"history", "git_publication", "source_build"} {
 		if !contains(report.NotCovered, fact) {
 			t.Errorf("%q is not named as not covered", fact)
 		}
+	}
+	// Pods and routes are covered now: their facts are the problems, routes and certificates.
+	for _, fact := range []string{"pods", "routes"} {
+		if contains(report.NotCovered, fact) {
+			t.Errorf("%q is named as not covered", fact)
+		}
+	}
+	if report.State != (observe.State{Name: observe.StateHealthy}) {
+		t.Errorf("state %+v", report.State)
 	}
 }
 

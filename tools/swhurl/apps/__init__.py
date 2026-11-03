@@ -3,5 +3,5 @@
     contract   rules both the generator and the policy check use
     policy     make check-apps: v2's records render to Git, and the teams, notify routes and template
                fixtures pass the contract
-    ops        make app-status / app-logs / app-reconcile
+    ops        an instance's live status, as the console and the promotion gate read it
 """

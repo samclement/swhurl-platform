@@ -13,7 +13,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 COMMANDS := help reconcile verify-platform notifications-check notifications-heartbeat verify-logs flux-install \
 	clickstack-bootstrap clickstack-dashboards \
 	app-repo app-hooks team-add team-edit team-remove team-channel channel-add channel-remove \
-	app-status console-image console-dev \
+	console-image console-dev \
 	platform-certs-staging platform-certs-prod destroy-data backup-mongodb backup-sqlite restore-sqlite \
 	check-repo check-apps check-templates check-otel check-secrets check-docs v2-snapshot \
 	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb live-test-restore-sqlite \
@@ -97,6 +97,18 @@ v2-reloader:
 .PHONY: v2-deploy
 v2-deploy:
 	@$(V2_BUILD); 	"$$work/swhurl-v2" deploy --records v2-records --profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json --out .
+
+# One instance's state from v2's records (swhurl-v2 status): what they say should run at HEAD, compared with the
+# cluster the caller's kubeconfig names. Its JSON form is written into the throwaway folder, readable by the caller
+# only, and removed on exit. Needs Go 1.26.0.
+.PHONY: app-status
+app-status:
+	@: "$${APP:?usage: make app-status APP=<app> ENV=<env>}" "$${ENV:?usage: make app-status APP=<app> ENV=<env>}"; \
+	$(V2_BUILD); \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	"$$work/swhurl-v2" status --records v2-records --app "$$APP" --env "$$ENV" --profile v2/testdata/profile.json \
+		--calls v2-records/calls.json --egress platform/egress/allocation.json --revision "$$(git rev-parse HEAD)" \
+		--kubeconfig "$$work/kubeconfig.json"
 
 .PHONY: v2-report
 v2-report:

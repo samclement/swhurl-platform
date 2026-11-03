@@ -1,8 +1,9 @@
 """An instance's live state (GLOSSARY.md): one verdict from the facts read off the cluster.
 
 ``ops.InstanceStatus`` holds the facts (the Flux unit, the Helm release, the Git revision, the image
-and the replicas); ``verdict`` judges them. The console's Apps list and app page, ``make app-status``
-and the promotion gate all ask here, so they cannot disagree about the same facts. ``unit_state`` is
+and the replicas); ``verdict`` judges them. The console's Apps list and app page and the promotion
+gate ask here, so they cannot disagree about the same facts (``make app-status`` is ``swhurl-v2
+status``, which judges v2's records with the same vocabulary). ``unit_state`` is
 the same vocabulary for one Flux unit on its own, which is all a shared unit has.
 """
 from __future__ import annotations

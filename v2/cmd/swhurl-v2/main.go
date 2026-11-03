@@ -48,9 +48,9 @@ const usage = `usage:
   swhurl-v2 declaration --label FILE --app APPLICATION --team TEAM [--exposure GRANT]
   swhurl-v2 remove --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
       --calls CALLS.json --out DIR
-  swhurl-v2 observe --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
-      --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
-      [--max-age DURATION] [--archive [--region REGION]]
+  swhurl-v2 status --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json --revision COMMIT \
+      --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
+      [--max-age DURATION] [--archive [--region REGION]] [--json]
   swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
       --committed HELMRELEASE.json --profile PROFILE.json
   swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json [--kubeconfig KUBECONFIG.json]
@@ -86,14 +86,18 @@ is written. With --out every compiled file is written under DIR, one "written PA
 signs in to the event service needs its seed with --events-secret: v2 copies that encrypted file beside the
 manifests, which list it, and never reads or decrypts it.
 
-observe compiles the instance, reads its unit, HelmRelease, Deployment and pods from the API server the
-kubeconfig names (the JSON form that "kubectl config view --raw -o json" prints), and writes the
-observation report to stdout with a one-line summary on stderr. It reads only, and --revision is the
-source revision Flux should have applied. A database instance's report also carries its protection: the
-backup CronJob and the runs its labels select, judged against --max-age (26h by default). It says whether
-the job runs and whether its last run finished. With --archive it also lists the instance's own prefix in
-the object store, with the operator's AWS credentials from the environment, and says whether an archive
-exists and how old the newest one is; the region is discovered from the bucket unless --region states it.
+status compares the cluster with what one instance's records say should run. It compiles the record pair under
+DIR/APPLICATION/ENVIRONMENT, reads the unit, HelmRelease, Deployment, pods, route and certificates the compiled
+documents name from the API server the kubeconfig names (the JSON form that "kubectl config view --raw -o json"
+prints), and prints the instance's state (suspended, failing, updating, stopped, unknown or healthy) with the fact
+that decided it, every finding, the route and its certificates and each container that is not ready and why.
+--revision is the commit the records were read at, which Flux should have applied, and the expected image is the
+record's release. It reads only. A database instance's status also carries its protection: the backup CronJob and
+the runs its labels select, judged against --max-age (26h by default). With --archive it also lists the instance's
+own prefix in the object store, with the operator's AWS credentials from the environment, and says whether an
+archive exists and how old the newest one is; the region is discovered from the bucket unless --region states it.
+--json prints the v2-observation document (version 3) instead of the text. An application and environment with no
+record under DIR is refused.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
@@ -204,7 +208,7 @@ backup image's restore job with a presigned read of that one archive and the age
 carries what each step did, the job's log as evidence, and the app's own state; the read URL is valid for
 --url-ttl (default 1h) and travels in a Secret this command creates and deletes.
 
-Exit 0: success/no-op (for observe: a report was produced, whatever its verdict; for restore --confirm: the
+Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
 started but did not complete, a render --check that found a difference, or file and output I/O failure.
 `
@@ -302,7 +306,7 @@ var commands = map[string]func(cli, request) int{
 	"deploy":            cli.deploy,
 	"promote":           cli.promote,
 	"compile":           cli.compile,
-	"observe":           cli.observe,
+	"status":            cli.status,
 	"preview":           cli.preview,
 	"shadow":            cli.shadow,
 	"resolve":           cli.resolve,
@@ -335,7 +339,7 @@ type request struct {
 	records                                            string
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
-	rotate, check                                      bool
+	rotate, check, json                                bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
@@ -383,7 +387,7 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 // registerInputs adds the file flags the v1-style commands share.
 func (r *request) registerInputs(flags *flag.FlagSet) {
 	switch r.command {
-	case "select-release", "deploy", "compile", "observe", "restore", "mint":
+	case "select-release", "deploy", "compile", "restore", "mint":
 		flags.Var(&once{value: &r.instance}, "instance", "instance file")
 		flags.Var(&once{value: &r.release}, "release", "release file")
 	case "preview":
@@ -489,9 +493,13 @@ func (r *request) registerDeliveryFlags(flags *flag.FlagSet, command string) boo
 // registerInstanceFlags is the flags of the live commands and of minting a broker identity.
 func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
-	case "observe":
+	case "status":
+		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
+		flags.Var(&once{value: &r.app}, "app", "application")
+		flags.Var(&once{value: &r.env}, "env", "environment")
 		r.registerLive(flags)
 		flags.Var(&onceBool{value: &r.archive}, "archive", "also read the newest archive from the object store (needs AWS credentials)")
+		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-observation document instead of the text")
 	case "restore":
 		r.registerLive(flags)
 		flags.Var(&once{value: &r.from}, "from", "the archive to restore (default: the newest)")
@@ -633,8 +641,10 @@ var requiredFlags = map[string]func(*request) []string{
 	"create":         func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
 	"declaration":    func(r *request) []string { return []string{r.label, r.app, r.team} },
 	"remove":         func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
-	// A live read needs the instance, its release, the profile, the revision to expect and a credential.
-	"observe": func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
+	// A live read needs the instance's records, the profile, the revision to expect and a credential.
+	"status": func(r *request) []string {
+		return []string{r.records, r.app, r.env, r.profile, r.revision, r.kubeconfig}
+	},
 	"restore": func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
 	"migrate": (*request).appNamed,
 	"promote": (*request).appNamed,

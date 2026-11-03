@@ -46,14 +46,12 @@ func runRestore(t *testing.T, archives func(bucket, region string) (s3.Reader, e
 	return status, out.String(), diagnostic.String()
 }
 
-// restoreArgs is the command line for the compiled database instance, over the test cluster: the same document
-// flags observe takes, with the command named restore.
+// restoreArgs is the command line for the compiled database instance, over the test cluster: its documents named by
+// flag.
 func restoreArgs(t *testing.T, kubeconfigPath string, extra ...string) []string {
 	t.Helper()
-	args := observeArgsOf(t, kubeconfigPath, "sqlite.json", "r43.json",
+	return instanceArgsOf(t, kubeconfigPath, "sqlite.json", "r43.json",
 		append([]string{"--egress", filepath.Join("..", "..", "..", "platform", "egress", "allocation.json")}, extra...)...)
-	args[0] = "restore"
-	return args
 }
 
 // The plan for a verifiable archive is ready, and states the instance, the archive, its metadata and the
@@ -142,8 +140,7 @@ func TestRestoreRefusesWhatItCannotVerify(t *testing.T) {
 		})
 	}
 	// An instance that keeps no database cannot be restored at all.
-	args := observeArgsOf(t, kubeconfig(t, server), "prod.json", "r41.json")
-	args[0] = "restore"
+	args := instanceArgsOf(t, kubeconfig(t, server), "prod.json", "r41.json")
 	if status, stdout, stderr := runRestore(t, func(string, string) (s3.Reader, error) {
 		return s3test.New(
 			restoreScenario(t, "sqlite-20261026T071500Z.json", readyMetadata)), nil

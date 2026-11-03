@@ -84,15 +84,21 @@ func itemsOf(t *testing.T, list []byte) [][]byte {
 // answer cannot be used.
 func answers(t *testing.T) kubetest.Answers {
 	t.Helper()
-	workload := document(t, "deployment.json")
+	return answersAbout(t, "deployment.json")
+}
+
+// answersAbout is the same scenario around another recorded object.
+func answersAbout(t *testing.T, fixture string) kubetest.Answers {
+	t.Helper()
+	object := document(t, fixture)
 	return kubetest.Answers{
-		Object:     refOf(t, workload),
-		Document:   workload,
-		Missing:    named(t, workload, "missing"),
-		Failed:     named(t, workload, "failed"),
-		Malformed:  named(t, workload, "malformed"),
-		Mismatched: named(t, workload, "mismatched"),
-		Pods:       observe.Ref{APIVersion: "v1", Kind: "Pod", Namespace: refOf(t, workload).Namespace},
+		Object:     refOf(t, object),
+		Document:   object,
+		Missing:    named(t, object, "missing"),
+		Failed:     named(t, object, "failed"),
+		Malformed:  named(t, object, "malformed"),
+		Mismatched: named(t, object, "mismatched"),
+		Pods:       observe.Ref{APIVersion: "v1", Kind: "Pod", Namespace: refOf(t, object).Namespace},
 		Selector:   "app.kubernetes.io/instance=hello,app.kubernetes.io/controller=main",
 		Items:      itemsOf(t, document(t, "pods.json")),
 	}
@@ -196,6 +202,7 @@ func fixtures(t *testing.T) map[string][]byte {
 		"helmreleases/hello":               document(t, "helmrelease.json"),
 		"cronjobs/hello-backup":            document(t, "cronjob.json"),
 		"jobs/hello-backup-29345678":       itemsOf(t, document(t, "jobs.json"))[0],
+		"certificates/hello-tls":           document(t, "certificate.json"),
 	}
 }
 
@@ -203,7 +210,8 @@ func fixtures(t *testing.T) map[string][]byte {
 func readerWith(t *testing.T, scenario kubetest.Answers) (kube.Reader, *apiServer) {
 	t.Helper()
 	documents := fixtures(t)
-	documents["deployments/"+scenario.Object.Name] = scenario.Document
+	// The scenario's object is a Deployment or a Certificate: both collections are the kind's plural.
+	documents[strings.ToLower(scenario.Object.Kind)+"s/"+scenario.Object.Name] = scenario.Document
 	server := &apiServer{answers: scenario, documents: documents}
 	reader, err := kube.New(endpoint, &http.Client{Transport: server}, "")
 	if err != nil {
@@ -217,6 +225,22 @@ func TestContract(t *testing.T) {
 		reader, _ := readerWith(t, scenario)
 		return reader
 	})
+}
+
+// A certificate is read the same way as every other kind: the contract runs again around the recorded
+// cert-manager Certificate, so its stated group, version and collection are the ones its document carries.
+func TestContractForACertificate(t *testing.T) {
+	kubetest.Contract(t, answersAbout(t, "certificate.json"), func(t *testing.T, scenario kubetest.Answers) kube.Reader {
+		reader, _ := readerWith(t, scenario)
+		return reader
+	})
+}
+
+// A certificate is read only: v2 neither creates nor deletes one, so the writable table refuses it.
+func TestACertificateIsNotWritable(t *testing.T) {
+	if _, err := kube.WritableRefOf("cert-manager.io", "Certificate", "hello-staging", "hello-tls"); !refused(err, "unsupported_kind") {
+		t.Fatalf("a writable certificate: %v", err)
+	}
 }
 
 // The path and query are what the API server documents for each supported kind: the kinds' group and
@@ -247,6 +271,10 @@ func TestPathsAreStatedPerKind(t *testing.T) {
 	if _, err := reader.Read(context.Background(), run); err != nil {
 		t.Fatal(err)
 	}
+	certificate := refOf(t, document(t, "certificate.json"))
+	if read, err := reader.Read(context.Background(), certificate); err != nil || read.Status != observe.Present {
+		t.Fatalf("the recorded certificate: %+v %v", read, err)
+	}
 	want := []string{
 		"/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/app-hello-staging",
 		"/apis/helm.toolkit.fluxcd.io/v2/namespaces/hello-staging/helmreleases/hello",
@@ -254,6 +282,7 @@ func TestPathsAreStatedPerKind(t *testing.T) {
 		"/api/v1/namespaces/hello-staging/pods",
 		"/apis/batch/v1/namespaces/hello-staging/cronjobs/hello-backup",
 		"/apis/batch/v1/namespaces/hello-staging/jobs/hello-backup-29345678",
+		"/apis/cert-manager.io/v1/namespaces/hello-staging/certificates/hello-tls",
 	}
 	if len(server.requests) != len(want) {
 		t.Fatalf("%d requests for %d refs", len(server.requests), len(want))
@@ -634,6 +663,8 @@ func TestRefOfStatesTheVersion(t *testing.T) {
 		{"kustomize.toolkit.fluxcd.io", "Kustomization", "kustomize.toolkit.fluxcd.io/v1"},
 		{"batch", "CronJob", "batch/v1"},
 		{"batch", "Job", "batch/v1"},
+		{"networking.k8s.io", "Ingress", "networking.k8s.io/v1"},
+		{"cert-manager.io", "Certificate", "cert-manager.io/v1"},
 	} {
 		ref, err := kube.RefOf(tt.group, tt.kind, "hello-staging", "hello")
 		if err != nil || ref.APIVersion != tt.apiVersion || ref.Kind != tt.kind {

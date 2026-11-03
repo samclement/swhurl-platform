@@ -49,7 +49,7 @@ it. The writer functions are in `tools/swhurl/apps/cli.py`, `new.py`, `offers.py
 | `app-deploy` | staging release | `swhurl-v2 deploy` | **delete** |
 | `app-promote` | production | `swhurl-v2 promote` | **delete** |
 | `app-sync` | derived instance files | `auth`, `users`, `reloader`, `egress`, `proxy`, `compile` | **delete** |
-| `app-check` | v1 render + policy | `compile` and `observe` | **delete** |
+| `app-check` | v1 render + policy | `compile` and `status` | **delete** |
 | `platform-signing-keys` | `apps/signing-keys.json` | `auth` (profile-owned) | **delete** |
 | `app-offers` | offered documents | v2 records/offers and `deploy` | **delete** |
 | `app-egress` | egress grants | none (v2 has no egress-grant field) | **delete** (inert, below) |
@@ -225,7 +225,7 @@ phase 3 (§2.3).
 - Tests: edit replicas, exposure, calls, allows, events, team; remove; promote; a refused edit carries v2's
   refusal; the console cannot write a v1 record.
 - Live: one change to a throwaway staging instance, then revert; a promotion of a staging release that already
-  exists in production (no new image), then confirm `observe`.
+  exists in production (no new image), then confirm `status`.
 - **Found before the port, 31 October 2026: the three commands are not enough.** `v2-records/calls.json` (the
   call and event resolution) came only from `resolve --snapshot`, and the snapshot is v1's YAML records: nothing
   derived it from `v2-records/`, so a `calls`/`allows`/`subscriptions` edit could not be completed — `edit` says so

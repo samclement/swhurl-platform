@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the status slice's design
+Gate: the status slice live
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -62,7 +62,7 @@ loses its `run=` function.
 | Platform checks (`check-apps`'s team, notify and fixture rules, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: `render --check` and `check-v2` are Go; the rest is Python. `apps/policy.py` is console-free; `verify` and `apps/checks` are reached by the console's platform page |
 | Recovery and backup tooling (`recovery.py`, `backup_job.py` with `backup-mongodb` and `backup-sqlite`, `sqlite_backup.py`, `sqlite_restore.py`, `backupset.py`) | `swhurl-v2 restore` covers an instance; the backup image's Go tool replaces the jobs; operator recovery remains | partial: `backup_job` and `sqlite_restore` are console-free; `recovery` and `backupset` are reached by `verify` |
 | The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | not started: the notify service is console-free, the checker's modules are reached by `verify`; about 1.5k lines that run every minute in the cluster or send alerts, so services rather than operator convenience |
-| Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `observe`, `mint`, `restore`); `app-logs`, `app-reconcile`, `suspend` and `resume` are bash ([`host/ops.sh`](../host/ops.sh)); `app-status` shares `ops.gather_status` with the console and leaves with it; `destroy-data` stays Python, a safety decision with its own tests |
+| Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend` and `resume` are bash ([`host/ops.sh`](../host/ops.sh)); `ops.gather_status` stays for the console and the promotion gate until the next slice; `destroy-data` stays Python, a safety decision with its own tests |
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
 | The v1 records model and its fixture oracle (`apps/model/*`) | delete; v2 judges the fixtures | bounded, not started: 1,547 lines, imported by 17 modules (11 under `apps/`, 3 under `console/`, `dashboards.py` and 2 live tests) and 5 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
 | The image-declaration producer (`image_declaration.py`) | a Go producer the app builds call | not started |
@@ -85,9 +85,9 @@ not migration.
 
 **B. Then the rest of the road.**
 
-2. **The console port's first slice: status.** Widen observation to the eight kinds `apps/ops.gather_status`
-   reads and add `swhurl-v2 status` on the host in place of `make app-status`; then the in-cluster credential
-   (its own approval) and the console, promotion gate and notification checker on it. The design comes first.
+2. **The console port: status, then its readers.** `swhurl-v2 status` replaces `make app-status`
+   ([slice one](iteration-2-plan.md#slice-one-swhurl-v2-status-approved-3-november-2026)), proved live next; then
+   the in-cluster credential (its own approval) and the console and promotion gate on it, retiring `gather_status`.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
@@ -115,7 +115,7 @@ operator decides against it.
 | Restore breadth | One live restore over the newest archive, and one that changes content; another instance's archive, a point in time and the failure paths are unexercised | A restore beyond the newest archive over itself |
 | The tag an instance was selected with | Not recorded; `verify-platform` resolves the tag through the index | A record-shape change carries it |
 | Complete release, source and build verification | Claims are stated, not verified; a migrated release's artifact is checked | Before claiming verified release semantics |
-| Observation breadth | Four kinds; no pod-level facts, no foreign ownership, no other kind | A consumer needs them |
+| Observation breadth | The unit, release, workload, pods (readiness and failing containers), the expected Ingress and Certificates by name, and the backup; no foreign ownership, no other kind | A consumer needs them |
 | A credential source other than a kubeconfig in JSON | Kubeconfig JSON only; no in-cluster token, no YAML | v2 runs in the cluster, or YAML is approved |
 | Live ownership of foreign objects | The bridge reads the repository's own claims; another owner's objects are not read | A migration needs the wider inventory |
 | Console: repository creation, seed images, historical Activity | None | Later |

@@ -7,24 +7,38 @@ import (
 )
 
 // EncodeReport is one observation as a versioned JSON document: the target it is about, the evidence's
-// source and time, every finding in order, the protection's own answer, what was assessed, and what this
-// slice never looks at. Identical reports encode to identical bytes, and no list is ever null.
+// source and time, the state, every finding in order, the containers that are not ready, the route and its
+// certificates, the protection's own answer, what was assessed, and what this slice never looks at. Identical
+// reports encode to identical bytes, and no list is ever null.
 func EncodeReport(report Report) ([]byte, error) {
 	document := reportDocument{
-		Kind:       "v2-observation",
-		Version:    2,
-		Source:     report.Source,
-		ObservedAt: report.ObservedAt,
-		Verdict:    report.Verdict,
-		Backup:     backupDocumentOf(report.Backup),
-		Findings:   make([]findingDocument, 0, len(report.Findings)),
-		Assessed:   nonNil(report.Assessed),
-		Unassessed: nonNil(report.Unassessed),
-		NotCovered: nonNil(report.NotCovered),
-		Target:     targetDocumentOf(report.Target),
+		Kind:         "v2-observation",
+		Version:      3,
+		Source:       report.Source,
+		ObservedAt:   report.ObservedAt,
+		State:        stateDocument(report.State),
+		Verdict:      report.Verdict,
+		Findings:     make([]findingDocument, 0, len(report.Findings)),
+		Problems:     make([]problemDocument, 0, len(report.Problems)),
+		Routes:       make([]routeDocument, 0, len(report.Routes)),
+		Certificates: make([]certificateDocument, 0, len(report.Certificates)),
+		Backup:       backupDocumentOf(report.Backup),
+		Assessed:     nonNil(report.Assessed),
+		Unassessed:   nonNil(report.Unassessed),
+		NotCovered:   nonNil(report.NotCovered),
+		Target:       targetDocumentOf(report.Target),
 	}
 	for _, finding := range report.Findings {
 		document.Findings = append(document.Findings, findingDocument{finding.Field, finding.Outcome, finding.Reason})
+	}
+	for _, problem := range report.Problems {
+		document.Problems = append(document.Problems, problemDocument(problem))
+	}
+	for _, route := range report.Routes {
+		document.Routes = append(document.Routes, routeDocument{route.Name, route.Outcome, route.Reason, nonNil(route.Hosts)})
+	}
+	for _, certificate := range report.Certificates {
+		document.Certificates = append(document.Certificates, certificateDocument(certificate))
 	}
 	var out bytes.Buffer
 	encoder := json.NewEncoder(&out)
@@ -38,17 +52,48 @@ func EncodeReport(report Report) ([]byte, error) {
 // reportDocument is the report's shape on stdout: field order is the document order, and a change to it
 // raises Version.
 type reportDocument struct {
-	Kind       string            `json:"kind"`
-	Version    int               `json:"version"`
-	Source     string            `json:"source"`
-	ObservedAt string            `json:"observedAt"`
-	Verdict    Verdict           `json:"verdict"`
-	Backup     backupDocument    `json:"backup"`
-	Findings   []findingDocument `json:"findings"`
-	Assessed   []string          `json:"assessed"`
-	Unassessed []string          `json:"unassessed"`
-	NotCovered []string          `json:"notCovered"`
-	Target     targetDocument    `json:"target"`
+	Kind         string                `json:"kind"`
+	Version      int                   `json:"version"`
+	Source       string                `json:"source"`
+	ObservedAt   string                `json:"observedAt"`
+	State        stateDocument         `json:"state"`
+	Verdict      Verdict               `json:"verdict"`
+	Backup       backupDocument        `json:"backup"`
+	Findings     []findingDocument     `json:"findings"`
+	Problems     []problemDocument     `json:"problems"`
+	Routes       []routeDocument       `json:"routes"`
+	Certificates []certificateDocument `json:"certificates"`
+	Assessed     []string              `json:"assessed"`
+	Unassessed   []string              `json:"unassessed"`
+	NotCovered   []string              `json:"notCovered"`
+	Target       targetDocument        `json:"target"`
+}
+
+// stateDocument is the instance's state and the fact that decided it; a healthy state names none.
+type stateDocument struct {
+	Name   string `json:"name"`
+	Field  string `json:"field,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type problemDocument struct {
+	Pod       string `json:"pod"`
+	Container string `json:"container"`
+	Reason    string `json:"reason"`
+	Message   string `json:"message,omitempty"`
+}
+
+type routeDocument struct {
+	Name    string   `json:"name"`
+	Outcome string   `json:"outcome"`
+	Reason  string   `json:"reason,omitempty"`
+	Hosts   []string `json:"hosts"`
+}
+
+type certificateDocument struct {
+	Name    string `json:"name"`
+	Outcome string `json:"outcome"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 // backupDocument is the protection's answer: its state and reason, the schedule's own facts, and the newest
@@ -113,6 +158,7 @@ type targetDocument struct {
 	Workload  refDocument           `json:"workload"`
 	Pods      refDocument           `json:"pods"`
 	Backup    *backupTargetDocument `json:"backup,omitempty"`
+	Route     *routeTargetDocument  `json:"route,omitempty"`
 	Selector  string                `json:"selector"`
 	Container string                `json:"container"`
 	Digest    string                `json:"digest"`
@@ -127,6 +173,12 @@ type backupTargetDocument struct {
 	Pods     refDocument `json:"pods"`
 	Selector string      `json:"selector"`
 	Schedule string      `json:"schedule"`
+}
+
+// routeTargetDocument is what a route observation read: the Ingress and each certificate it needs.
+type routeTargetDocument struct {
+	Ingress      refDocument   `json:"ingress"`
+	Certificates []refDocument `json:"certificates"`
 }
 
 type refDocument struct {
@@ -144,6 +196,7 @@ func targetDocumentOf(target Target) targetDocument {
 		Workload:  refDocumentOf(target.Workload),
 		Pods:      refDocumentOf(target.Pods),
 		Backup:    backupTargetDocumentOf(target.Backup),
+		Route:     routeTargetDocumentOf(target.Route),
 		Selector:  target.Selector,
 		Container: target.Container,
 		Digest:    target.Digest,
@@ -158,6 +211,17 @@ func backupTargetDocumentOf(target *BackupTarget) *backupTargetDocument {
 	}
 	return &backupTargetDocument{CronJob: refDocumentOf(target.CronJob), Pods: refDocumentOf(target.Pods),
 		Selector: target.Selector, Schedule: target.Schedule}
+}
+
+func routeTargetDocumentOf(target *RouteTarget) *routeTargetDocument {
+	if target == nil {
+		return nil
+	}
+	document := &routeTargetDocument{Ingress: refDocumentOf(target.Ingress), Certificates: []refDocument{}}
+	for _, certificate := range target.Certificates {
+		document.Certificates = append(document.Certificates, refDocumentOf(certificate))
+	}
+	return document
 }
 
 func refDocumentOf(ref Ref) refDocument {

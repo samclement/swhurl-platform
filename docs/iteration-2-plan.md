@@ -647,3 +647,55 @@ encrypted seed — the instance's grants and choices, which no image states.
 
 **Not modelled:** a repository read, OCI referrer artifacts, a private app repository, a first production,
 secrets, alerts, a `job` kind and instance-declared egress grants.
+
+## 11. The console port: decision brief (proposed 3 November 2026, not approved)
+
+**Decision.** How the console (`tools/swhurl/console`) leaves Python. It is the largest Python surface, and the
+step after the [ownership milestone](current-state.md#the-ownership-milestone-every-instance-is-v2s-3-november-2026).
+
+**Assumptions, measured 3 November 2026 by parsing `tools/swhurl`'s imports:**
+
+- Python is 119 modules, 19,792 lines. The console is 25 of them (4,993 lines) and 18 Jinja templates (1,360
+  lines) with HTMX, `console.css` and `console.js`. Through its imports it reaches **91 modules, 13,923 lines
+  (70%)**, among them `verify` (its platform page runs `verify_platform`), `apps/checks`, `recovery`,
+  `backupset`, `dashboards`, the notification checker's modules and the v1 model (`merge.py`, `proposal.py`,
+  `records.py`). What it does not reach is 28 modules, 5,869 lines: `apps/policy`, `apps/teams`, the docs,
+  secrets and template checks, `backup_job`, `sqlite_restore`, the notify service, `commands` and the live tests.
+- The console already writes only through the binary: [`console/v2.py`](../tools/swhurl/console/v2.py) runs
+  `swhurl-v2 edit`, `remove`, `promote` and `render`, and the image carries `swhurl-v2`. Its reads are 16
+  `kubectl` calls, and its pull requests and merge gate are 10 `gh` and 8 `git` calls.
+- v2 has no Git or GitHub adapter. [`adapters/kube`](../v2/adapters/kube/kube.go) already accepts a bearer token,
+  but only the host's kubeconfig resolves one; running in the console pod needs the service-account token read
+  as a credential source (a [deferred feature](v2-status.md#deferred-features) and an external-effect adapter,
+  so its own approval).
+- "Keep the same HTMX templates" holds for the markup, CSS, JS and HTMX attributes, not the templates: Jinja does
+  not run in Go's `html/template`, so all 18 are rewritten.
+
+**Options.**
+
+| | 1. Port it in one slice | 2. Console-free first, console last | 3. Strangle it from inside |
+| --- | --- | --- | --- |
+| What | A Go `net/http` server, templates rewritten, reads and the merge gate through new adapters, then cut over | Port the 5.9k lines the console does not reach; the console stays as it is until a later port (1 or 3) | Keep Starlette and the templates. Each slice moves one thing the console imports into a `swhurl-v2` subcommand it calls through `console/v2.py`, as writes already are, and deletes that Python. The last slice ports a thin server |
+| Python deleted per slice | ~14k lines once, at the end | 0.2–0.6k each; the 70% stays | 0.3–1.5k each, from the 70% |
+| Blast radius | The operator's whole UI switches at once | None on the console | One page or action at a time; a revert is one commit |
+| New adapters | Git, GitHub, in-cluster credential, before anything ships | None | One per slice, when that slice needs it |
+| Consistency | New | Current page order | The pattern the console's writes already use |
+| Testing | Go tests, plus a side-by-side live comparison of every page | Existing | `FakeRunner` on the console side, Go tests on the binary's, the existing console deploy |
+
+Rejected: keeping the console in Python, which contradicts the [goal](v2-status.md) (one Go implementation).
+
+**Recommendation: option 3, starting with status.** `apps/ops.gather_status` is one function with four readers
+(the console, `make app-status`, the promotion gate and the notification checker). It reads eight kinds
+(namespace, Flux unit, source, HelmRelease, pods, workloads, Ingress, Certificate); `observe` reads four with no
+pod-level facts, so slice one widens observation (a deferred feature) and adds `swhurl-v2 status` on the host
+(kubeconfig, no new adapter) in place of `make app-status`. Slice two adds the in-cluster credential and points the console at it. Later slices take the
+merge gate (with the v1 model's three console importers) and the checks; the server and templates go last. It
+costs a JSON contract per read that the final Go server calls as a function instead, and one process start per
+read, where the console already starts `kubectl`. Option 2's modules stay worth doing in between, as fillers.
+
+**What would change it.**
+
+- A redesigned console is wanted anyway: then option 1, because the templates are rewritten either way.
+- The in-cluster credential is not approved: option 3 still takes the file-only reads (the catalogue, records,
+  the merge gate's rules), and status stays Python until it is.
+- Page latency over the binary proves noticeable when measured live: port the server earlier.

@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: creation and editing agree, then the Python retired in bash
+Gate: the Python that is only operator convenience retired in bash
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -78,33 +78,26 @@ not migration.
    keep apps on 5.2.1, and drop `apps/` from `managerFilePatterns` only if a later bump shows it reads
    something there.
 
-**B. Make creation and editing agree.** No new record field and no new capability.
-
-2. **Decide whether `create` takes a connection.** `calls`, `allows` and `subscriptions` are edit-only, so a
-   new app is born unconnected. Either accept them at creation or say so where a new app is started.
-3. **`mint --rotate`, in the console or in words.** A broker identity can be rotated from the CLI only, and
-   nothing says so.
-
-**C. Retire the Python that is only operator convenience.** Bash, console-free, and the largest deletion per
+**B. Retire the Python that is only operator convenience.** Bash, console-free, and the largest deletion per
 unit of risk.
 
-4. **The v1-only commands become bash**: `app-status`, `app-logs`, `app-reconcile`, `suspend`/`resume`,
+2. **The v1-only commands become bash**: `app-status`, `app-logs`, `app-reconcile`, `suspend`/`resume`,
    `clickstack-dashboards`, `backup-mongodb`, `notifications-*`, `destroy-data`, then the checks
    (`check-docs`, `check-repo`, `verify-platform`, `check-templates`). Each keeps its `make` name; the slice
    passes when the target still runs and `commands.py` loses a row.
-5. **One S3 location, one source.** After item 6, because one `SQLITE_S3_URI` reader is
+3. **One S3 location, one source.** After item 4, because one `SQLITE_S3_URI` reader is
    `apps/model/backup.py`: read `BACKUP_S3_URI` from `platform/backup/mongodb.yaml`, and `SQLITE_S3_URI`
    from the profile, or check that the two agree. Neither value changes.
-6. **The v1 Python model.** Decide whether it stays bounded (a ratchet test) or goes with the fixtures'
+4. **The v1 Python model.** Decide whether it stays bounded (a ratchet test) or goes with the fixtures'
    policy. It reads no v2 record and is the last Python that touches an app's rendered files; the v1
    renderer's interface tests in `tests/test_interface.py` go or stay with it, and only the console port
    frees it.
 
-**D. Then the rest of the road.**
+**C. Then the rest of the road.**
 
-7. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and
+5. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and
    set the next gate: a decision brief for the console port, the largest Python surface.
-8. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
+6. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
 ## Deferred features
@@ -120,7 +113,7 @@ operator decides against it.
 | Routes: `public`, a host override, route observation | `authenticated-web` and `private` only; no host is stored; observation checks no route | An instance needs a public route or an unusual host |
 | App kinds: `job` and a command override | Refused (`unsupported`); `worker` is modelled, and no app type is a job | An instance needs a schedule or a command override |
 | The kind or type of an existing app | Fixed by the image at creation; `deploy` refuses a changed `runtime.kind` and says "create a new app for another kind" | An instance must change kind without a new app |
-| A connection at creation | `calls`, `allows` and `subscriptions` are `edit` only; a new app is born unconnected | A new app must arrive already connected |
+| A connection at creation | `create` takes the team and the exposure; calls and subscriptions are `edit`s, which the console's New app runs in the same pull request, and `allows` is always an edit afterwards | One command must create a connected app, or a new app must allow callers at creation |
 | A team rename relabelling its apps | `edit --set team=` (the app page's **Change team**) moves one app; `team-edit --rename` and `team-remove` refuse while a v2 record names the team or allows it | A team must be renamed across its apps in one change |
 | Secrets (`envFrom`, Reloader) and bindings | Non-empty `bindings` and `secrets` are refused | An app declares one |
 | Alerts | Not generated; `edit --set alerts=` is refused by name | An app needs an alert |

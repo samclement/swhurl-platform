@@ -7,11 +7,35 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl import recovery, sqlite_backup
+from swhurl import ROOT, platform, recovery, sqlite_backup
 from swhurl.backupset import BackupError, BackupSet, stamp
 from swhurl.run import FakeRunner, Result
 
 NOW = dt.datetime(2026, 10, 2, 12, 0, 0, tzinfo=dt.UTC)
+
+
+class PlatformLocationTests(unittest.TestCase):
+    """The platform states each backup location once, where the cluster reads it; no environment overrides it."""
+    def test_each_location_is_read_where_the_cluster_reads_it(self):
+        self.assertEqual(platform.backup_s3_uri(), 's3://swhurl-platform-backups-110927251694/clickstack-mongodb/')
+        self.assertEqual(platform.sqlite_s3_uri(), 's3://swhurl-platform-backups-110927251694/app-sqlite/')
+
+    def test_both_locations_name_one_bucket(self):
+        buckets = {uri.removeprefix('s3://').split('/')[0] for uri in (platform.backup_s3_uri(), platform.sqlite_s3_uri())}
+        self.assertEqual(len(buckets), 1, f'{platform.BACKUP_JOB} and {platform.PROFILE} name different buckets')
+
+    def test_a_missing_or_wrong_location_names_its_file(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        for read, path in ((platform.backup_s3_uri, platform.BACKUP_JOB), (platform.sqlite_s3_uri, platform.PROFILE)):
+            with self.subTest(str(path)), self.assertRaisesRegex(ValueError, f'^{path}: cannot read'):
+                read(root)
+        (root / platform.PROFILE).parent.mkdir(parents=True)
+        profile = json.loads((ROOT / platform.PROFILE).read_text())
+        profile['backup']['s3Uri'] = 's3://bucket/no-trailing-slash'
+        (root / platform.PROFILE).write_text(json.dumps(profile))
+        with self.assertRaisesRegex(ValueError, f'^{platform.PROFILE}: the backup location must be'):
+            platform.sqlite_s3_uri(root)
 
 
 class BackupSetTests(unittest.TestCase):

@@ -3,10 +3,10 @@
     live-test-restore-mongodb  restore the newest backup into a throwaway namespace and check it
 
 The backup itself is the ``backup-mongodb`` CronJob (``backup_job``). The restore test downloads the
-newest complete backup from BACKUP_S3_URI into a private temporary directory with the AWS CLI's own
+newest complete backup from the platform's location (``platform.backup_s3_uri``) into a private temporary directory with the AWS CLI's own
 credentials (or takes BACKUP_FILE, with its metadata beside it), then streams ``age -d`` straight
 into ``mongorestore`` through an OS pipe that Python never reads, so plaintext never touches disk.
-Settings come from the environment: BACKUP_S3_URI, BACKUP_FILE, AGE_KEY_FILE, RECOVERY_NAMESPACE,
+Settings come from the environment: BACKUP_FILE, AGE_KEY_FILE, RECOVERY_NAMESPACE,
 KEEP, MONGO_IMAGE.
 """
 from __future__ import annotations
@@ -63,7 +63,7 @@ class RestoreSettings:
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> RestoreSettings:
         return cls(
-            uri=env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI),
+            uri=platform.backup_s3_uri(),
             age_key=backupset.age_key(env),
             backup_file=Path(env['BACKUP_FILE']) if env.get('BACKUP_FILE') else None,
             namespace=env.get('RECOVERY_NAMESPACE') or 'recovery-test',
@@ -198,10 +198,14 @@ def restore_test_mongodb(argv: list[str] | None = None, runner: Runner | None = 
 
 
 def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
-                  now: dt.datetime | None = None) -> None:
+                  now: dt.datetime | None = None, root: Path = ROOT) -> None:
     """The newest MongoDB backup in S3 must be younger than BACKUP_MAX_AGE_HOURS (26)."""
     env = os.environ if env is None else env
     report.section('Backups')
-    backupset.check_backup_set(runner, report, backups(Path()),
-                     env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI), env=env, now=now, what='MongoDB',
+    try:
+        uri = platform.backup_s3_uri(root)
+    except ValueError as error:
+        report.bad(str(error))
+        return
+    backupset.check_backup_set(runner, report, backups(Path()), uri, env=env, now=now, what='MongoDB',
                      run='make backup-mongodb', hint=f'kubectl -n observability get jobs -l {interface.label("backup")}=true')

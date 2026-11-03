@@ -3,7 +3,7 @@ Prove an app's SQLite database restores from its backup job's archive in S3 (res
   - a throwaway HelmRelease of app-template in namespace sqlite-restore-test (label
     platform.swhurl.com/sqlite-restore-test=true) holds a WAL-mode database with rows one, two
   - the same backup job an app gets (suspended CronJob, started once as make backup-sqlite does) publishes
-    it to SQLITE_S3_URI sqlite-restore-test/ with the upload-only key from flux-system/backup-writer
+    it to the platform's SQLite location under sqlite-restore-test/ with the upload-only key from flux-system/backup-writer
   - the live data then changes (row three added, row one deleted)
   - restore-sqlite downloads the backup from S3 and brings back one, two; the replaced files are kept beside
     it and still read two, three

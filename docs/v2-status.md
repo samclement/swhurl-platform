@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: one S3 location, one source
+Gate: the ownership milestone
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -81,17 +81,11 @@ not migration.
    keep apps on 5.2.1, and drop `apps/` from `managerFilePatterns` only if a later bump shows it reads
    something there.
 
-**B. The v1 leftover outside the console.** It settles a question rather than porting a command.
+**B. Then the rest of the road.**
 
-2. **One S3 location, one source.** Read `BACKUP_S3_URI` from `platform/backup/mongodb.yaml`, and
-   `SQLITE_S3_URI` from the profile, or check that the two agree. Neither value changes. One
-   `SQLITE_S3_URI` reader is `apps/model/backup.py`, so the change may not grow the model.
-
-**C. Then the rest of the road.**
-
-3. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and
+2. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and
    set the next gate: a decision brief for the console port, the largest Python surface.
-4. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
+3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
 ## Deferred features
@@ -148,6 +142,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   digest determines a release (1 November 2026).
 - `create` writes records only; the whole-tree render allocates the port and writes the files
   (1 November 2026).
+- Each backup location is stated once, where its job reads it (MongoDB's in `platform/backup/mongodb.yaml`,
+  the apps' in the profile), and no environment variable overrides it (3 November 2026).
 - The v1 Python model is bounded, not ported: nothing new imports it and it only shrinks, with the v1
   renderer's interface tests in `tests/test_interface.py` (3 November 2026).
 

@@ -31,7 +31,7 @@ class CommandSafetyTests(unittest.TestCase):
         self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}',
                         CALLS=str(self.calls), KEY=KEY, OTHER_KEY=OTHER_KEY)
         stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')  # the fake bucket's backups are this fresh
-        self.env.update(BACKUP_S3_URI='s3://bucket/clickstack-mongodb/', STAMP=stamp)
+        self.env.update(STAMP=stamp)
         self.env['WEBHOOK_HOST'] = f'flux-webhook.{platform.base_domain()}'
         self.env.update(FLUX_VERSION=f'v{flux.pinned_version()}',
                         FLUX_ARGS=' '.join(flux.required_args()['kustomize-controller']))

@@ -30,7 +30,7 @@ def run(runner, **kwargs):
     report = Report(out)
     backups = Path(tempfile.mkdtemp())
     (backups / fresh_backup()).write_bytes(b'x')
-    env = {'BACKUP_DIR': str(backups), 'BACKUP_S3_URI': 's3://bucket/clickstack-mongodb/'}
+    env = {'BACKUP_DIR': str(backups)}
     try:
         with redirect_stderr(err), mock.patch.dict('os.environ', env):
             code = verify.verify_platform(runner, report, **kwargs)
@@ -532,11 +532,16 @@ class BackupAgeTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, folder)
         for name in local:
             (folder / name).write_bytes(b'x')
+        if uri is not None:  # the platform's backup job, stating only where it publishes
+            container = {'name': 'backup', 'env': [{'name': 'BACKUP_S3_URI', 'value': uri}]}
+            job = {'spec': {'jobTemplate': {'spec': {'template': {'spec': {'containers': [container]}}}}}}
+            (folder / platform.BACKUP_JOB).parent.mkdir(parents=True)
+            (folder / platform.BACKUP_JOB).write_text(json.dumps(job))
         runner = FakeRunner().on('aws', 's3api', 'list-objects-v2', returncode=remote_rc, stderr='AccessDenied',
                                  stdout=json.dumps([f'p/{n}' for n in remote]))
-        env = {'BACKUP_DIR': str(folder), 'BACKUP_S3_URI': uri, **({'BACKUP_MAX_AGE_HOURS': max_hours} if max_hours else {})}
+        env = {'BACKUP_DIR': str(folder), **({'BACKUP_MAX_AGE_HOURS': max_hours} if max_hours else {})}
         report = Report(io.StringIO())
-        recovery.check_backups(runner, report, env, now=self.NOW)
+        recovery.check_backups(runner, report, env, now=self.NOW, root=folder)
         return report, runner
 
     def test_fresh_backups_pass(self):
@@ -554,7 +559,8 @@ class BackupAgeTests(unittest.TestCase):
             'local only': ({'local': [f'{new}.archive.gz.age', f'{new}.json'], 'remote': []}, 'no MongoDB backup in s3'),
             'unlistable': ({'remote_rc': 255}, 'cannot list backups in s3://bucket/p/'),
             'tighter limit': ({'remote': [f'{new}.archive.gz.age', f'{new}.json'], 'max_hours': '6'}, 'is 8 h old'),
-            'no location': ({'uri': ''}, 'no S3 location'),
+            'no backup job': ({'uri': None}, "platform/backup/mongodb.yaml: cannot read the job's BACKUP_S3_URI"),
+            'no location': ({'uri': ''}, 'platform/backup/mongodb.yaml: the backup location must be'),
         }
         for label, (kwargs, message) in cases.items():
             with self.subTest(label):

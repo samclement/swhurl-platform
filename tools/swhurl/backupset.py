@@ -175,9 +175,6 @@ def check_backup_set(runner: Runner, report: Report, backups: BackupSet, uri: st
     """The set's newest complete backup under ``uri`` (S3) must be younger than BACKUP_MAX_AGE_HOURS (26)."""
     now = now or dt.datetime.now(dt.UTC)
     limit = dt.timedelta(hours=float(env.get('BACKUP_MAX_AGE_HOURS') or 26))
-    if not uri:
-        report.bad(f'{prefix}no S3 location to check {what} backups in (BACKUP_S3_URI, SQLITE_S3_URI)')
-        return
     try:
         age = backups.age(now, remote_names(runner, uri))
     except (CommandError, BackupError, TypeError) as error:

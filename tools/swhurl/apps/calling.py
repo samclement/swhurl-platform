@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from swhurl import ROOT, interface
+from swhurl import ROOT, interface, platform
 
 NOTIFY = 'notify'
 """The notify service (docs/services.md#notify-service): every instance gets its address and a token
@@ -24,7 +24,7 @@ TOKENS_VOLUME = 'tokens'
 TOKEN_SECONDS = 600  # the shortest the API server issues; the kubelet replaces the file at 80%
 ISSUER = 'https://kubernetes.default.svc.cluster.local'
 """This cluster's service-account token issuer (make verify-platform compares it with the live one)."""
-SIGNING_KEYS_FILE = Path('v2/testdata/profile.json')
+SIGNING_KEYS_FILE = platform.PROFILE
 """The platform profile: its ``auth`` block holds the token issuer and the cluster's public signing keys. v2 renders
 ``platform/auth`` from it, which is how every managed namespace gets them; apps cannot fetch them (the API refuses
 anonymous requests). One document, one writer: nothing writes a copy for the instances any more."""

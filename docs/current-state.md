@@ -32,6 +32,19 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## One source for each backup location (3 November 2026)
+
+- **What changed:** Python's two copies of the backup locations (`platform.BACKUP_S3_URI`, `platform.SQLITE_S3_URI`)
+  are gone. `platform.backup_s3_uri()` reads MongoDB's from the `backup-mongodb` CronJob's `BACKUP_S3_URI`
+  (`platform/backup/mongodb.yaml`), and `platform.sqlite_s3_uri()` the apps' from the profile's `backup.s3Uri`,
+  from which v2 renders each instance's job; a missing or malformed value fails naming its file. The operator chose
+  to drop the environment overrides: `restore-mongodb`, `restore-sqlite`, their live tests and `verify-platform`'s
+  backup checks read only those files (`BACKUP_FILE` still restores from a local archive), so the check's "no S3
+  location" branch went. Neither value changed. `calling.SIGNING_KEYS_FILE` now names `platform.PROFILE`.
+- **Checked:** tests pin both readers to today's URIs, a test fails if the two name different buckets, and the
+  freshness check reports a missing or malformed job location as bad; `make check` (721 tests), `make check-lint`,
+  `make check-docs`.
+
 ## The v1 model is bounded (3 November 2026)
 
 - **What changed:** the operator chose to bound the v1 Python model (`tools/swhurl/apps/model`) rather than port its

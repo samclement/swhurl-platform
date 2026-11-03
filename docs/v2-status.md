@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the in-cluster credential live
+Gate: approval of the console status-read contract
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -29,7 +29,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Backup and restore | done | [record](current-state.md#the-first-content-changing-restore-swhurl-try-10-staging-moved-back-a-day-27-october-2026) |
 | Promotion and rollback | done | [record](current-state.md#a-rollback-exercised-live-2-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
-| Status with the pod's ServiceAccount | partial | [record](current-state.md#status-with-the-pods-serviceaccount-3-november-2026) |
+| Status with the pod's ServiceAccount | done | [record](current-state.md#status-with-the-pods-serviceaccount-3-november-2026) |
 | Status from the records | done | [record](current-state.md#swhurl-v2-status-replaces-make-app-status-3-november-2026) |
 | Every instance v2-owned | done | [record](current-state.md#the-ownership-milestone-every-instance-is-v2s-3-november-2026) |
 | Cutover: one writer | done | [record](current-state.md#the-production-cutover-four-instances-31-october-2026) |
@@ -68,7 +68,7 @@ loses its `run=` function.
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
 | The v1 records model and its fixture oracle (`apps/model/*`) | delete; v2 judges the fixtures | bounded, not started: 1,547 lines, imported by 17 modules (11 under `apps/`, 3 under `console/`, `dashboards.py` and 2 live tests) and 5 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
 | The image-declaration producer (`image_declaration.py`) | a Go producer the app builds call | not started |
-| `console/` (Starlette and its templates) | a Go server that keeps the same HTMX templates | approved 3 November 2026, not started: each slice moves one thing the console imports into a `swhurl-v2` subcommand it calls, and the server and its 18 templates go last |
+| `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress: host status is Go and the pod credential is proved; console readers still use Python. The server and its 18 templates go last |
 
 ## Remaining work
 
@@ -88,9 +88,10 @@ not migration.
 **B. Then the rest of the road.**
 
 2. **The console port: status, then its readers.** `swhurl-v2 status` replaced `make app-status`
-   ([slice one](iteration-2-plan.md#slice-one-swhurl-v2-status-approved-3-november-2026)). The approved
-   [in-cluster credential](iteration-2-plan.md#slice-the-in-cluster-credential-approved-3-november-2026) is
-   implemented; its live proof comes next, then the console and promotion gate on it, retiring `gather_status`.
+   ([slice one](iteration-2-plan.md#slice-one-swhurl-v2-status-approved-3-november-2026)), and its pod credential
+   is proved live. The [console read contract](iteration-2-plan.md#slice-two-the-console-reads-v2-status-proposed-3-november-2026)
+   awaits approval: pinned main, bulk observations and a pure Go currentness decision, then the console readers
+   and promotion checks move together, retiring `gather_status`.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 

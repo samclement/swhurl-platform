@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Go replacement (v2) | main | in progress | the console port's slice one, 3 November 2026: `swhurl-v2 status` judges an instance against its records in the console's six states and replaces `make app-status` | the status slice live | a push and the live checks | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/` |
+| Go replacement (v2) | main | in progress | the console port's slice one, 3 November 2026: `swhurl-v2 status` judges an instance against its records in the console's six states and replaced `make app-status`, proved live on all 10 instances | the in-cluster credential's design | the operator | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/` |
 | Live platform | main | approved | the 24 open items in the plan index; the eight v1 app repositories stopped reusing a tested PR image, take the newest template and run Node.js 26 (30–31 October 2026), the two throwaways that could not take the template update were removed, with their namespaces, repositories and packages, and `make verify-platform`'s Image Automation check reads a v2-owned instance's own record (31 October 2026) | the next open plan item | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

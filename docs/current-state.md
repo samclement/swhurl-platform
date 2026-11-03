@@ -32,6 +32,17 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## Creation and editing agree (3 November 2026)
+
+- **Decided, no code:** `create` keeps taking only the team and the exposure. The console's New app already turns
+  each call and subscription chosen under **Connects to** into an `edit` in the same pull request (`merge.new_commands`),
+  so its app arrives connected; a CLI user runs `edit` after `create`, and `allows` is always an edit. A broker
+  identity's rotation stays `swhurl-v2 mint --rotate`, which [apps](apps.md#nats-identity-and-rotation) already
+  documented, including that the console has none. [Apps](apps.md) and the deferred row in
+  [v2 status](v2-status.md#deferred-features) now say this; the gate moves to retiring the Python that is only
+  operator convenience.
+- **Checked:** `make check-docs` and `make check` pass. Nothing changed on the cluster.
+
 ## The app page's Change team (2 November 2026)
 
 - **What changed (`a78aab58`):** the app page's Operate card has **Change team**, offering the teams in

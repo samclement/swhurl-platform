@@ -316,14 +316,25 @@ func collectionItems(ref observe.Ref, body []byte) ([][]byte, string) {
 	return items, ""
 }
 
+// collectionIdentity is one listed item's identity. A list's items are the collection's kind by
+// construction, and the API server omits their apiVersion and kind: an item may restate them, and one
+// that names another kind is not this collection's evidence.
 func collectionIdentity(ref observe.Ref, item []byte) (observe.Ref, bool) {
 	var document struct {
-		Metadata struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string `json:"kind"`
+		Metadata   struct {
 			Name      string `json:"name"`
 			Namespace string `json:"namespace"`
 		} `json:"metadata"`
 	}
 	if json.Unmarshal(item, &document) != nil {
+		return observe.Ref{}, false
+	}
+	if !statedType(ref, document.APIVersion, document.Kind) {
+		return observe.Ref{}, false
+	}
+	if ref.Namespace != "" && document.Metadata.Namespace != ref.Namespace {
 		return observe.Ref{}, false
 	}
 	identity := ref
@@ -337,7 +348,13 @@ func collectionIdentity(ref observe.Ref, item []byte) (observe.Ref, bool) {
 	if _, err := resourceOf(identity); err != nil {
 		return observe.Ref{}, false
 	}
-	return identity, identifies(identity, item)
+	return identity, true
+}
+
+// statedType reports whether a listed item's own apiVersion and kind, where it gives them, are the
+// collection's. Absent ones are the collection's: only a stated contradiction is refused.
+func statedType(ref observe.Ref, apiVersion, kind string) bool {
+	return (apiVersion == "" || apiVersion == ref.APIVersion) && (kind == "" || kind == ref.Kind)
 }
 
 // resource is where one supported kind lives: its API version, its collection, and whether it lives in

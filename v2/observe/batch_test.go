@@ -2,6 +2,7 @@ package observe_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -31,6 +32,39 @@ func TestCandidateIndexDoesNotTurnMalformedOrMissingListsIntoAbsence(t *testing.
 			if read.Status != observe.Unavailable {
 				t.Fatalf("malformed/missing list became %+v", read)
 			}
+		}
+	}
+}
+
+// A list's items inherit the collection's type, because the API server omits theirs. An item that states
+// the collection's own kind is read as present evidence, not as an invalid collection.
+func TestCandidatesReadItemsWithoutTheirOwnType(t *testing.T) {
+	base := target()
+	for _, query := range observe.BulkPlan([]observe.Target{base}) {
+		if query.Ref.Kind != "Pod" {
+			continue
+		}
+		item := func(candidate string) observe.List {
+			return observe.List{Ref: query.Ref, Selector: query.Selector, Status: observe.Present,
+				Items: [][]byte{[]byte(candidate)}}
+		}
+		pod := fmt.Sprintf(`{"metadata":{"name":"hello-main-1","namespace":%q,"labels":{%q:%q,%q:%q}}}`, base.Pods.Namespace,
+			"app.kubernetes.io/instance", "hello", "app.kubernetes.io/controller", "main")
+		candidates, err := observe.IndexCandidates([]observe.List{item(pod)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		evidence := candidates.EvidenceFor(base)
+		if len(evidence.Pods) != 1 || evidence.Pods[0].Status != observe.Present || len(evidence.Pods[0].Items) != 1 {
+			t.Fatalf("an item with no type of its own became %+v", evidence.Pods)
+		}
+		wrong := fmt.Sprintf(`{"apiVersion":"v1","kind":"Service","metadata":{"name":"hello-main-1","namespace":%q}}`, base.Pods.Namespace)
+		candidates, err = observe.IndexCandidates([]observe.List{item(wrong)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if found := candidates.EvidenceFor(base).Pods; len(found) != 1 || found[0].Status != observe.Unavailable || found[0].Reason != observe.ReasonMalformed {
+			t.Fatalf("an item that states another kind became %+v", found)
 		}
 	}
 }

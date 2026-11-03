@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the v1 model's decision, then one S3 location, one source
+Gate: one S3 location, one source
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -62,7 +62,7 @@ loses its `run=` function.
 | The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | not started: console-free, about 1.5k lines that run every minute in the cluster or send alerts, so services rather than operator convenience |
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `observe`, `mint`, `restore`); `app-logs`, `app-reconcile`, `suspend` and `resume` are bash ([`host/ops.sh`](../host/ops.sh)); `app-status` shares `ops.gather_status` with the console and leaves with it; `destroy-data` stays Python, a safety decision with its own tests |
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
-| The v1 records model and its fixture oracle (`apps/model/*`) | delete; v2 judges the fixtures | not started: 1,547 lines, and three console modules import it (`merge.py`, `proposal.py`, `records.py`), so it falls with the console port |
+| The v1 records model and its fixture oracle (`apps/model/*`) | delete; v2 judges the fixtures | bounded, not started: 1,547 lines, imported by 17 modules (11 under `apps/`, 3 under `console/`, `dashboards.py` and 2 live tests) and 5 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
 | The image-declaration producer (`image_declaration.py`) | a Go producer the app builds call | not started |
 | `console/` (Starlette and its templates) | a Go server that keeps the same HTMX templates | not started; not approved. 4,959 lines and 18 templates: the largest surface, and the one that keeps the six modules above alive |
 
@@ -81,21 +81,17 @@ not migration.
    keep apps on 5.2.1, and drop `apps/` from `managerFilePatterns` only if a later bump shows it reads
    something there.
 
-**B. The v1 leftovers outside the console.** Each settles a question rather than porting a command.
+**B. The v1 leftover outside the console.** It settles a question rather than porting a command.
 
-2. **One S3 location, one source.** After item 3, because one `SQLITE_S3_URI` reader is
-   `apps/model/backup.py`: read `BACKUP_S3_URI` from `platform/backup/mongodb.yaml`, and `SQLITE_S3_URI`
-   from the profile, or check that the two agree. Neither value changes.
-3. **The v1 Python model.** Decide whether it stays bounded (a ratchet test) or goes with the fixtures'
-   policy. It reads no v2 record and is the last Python that touches an app's rendered files; the v1
-   renderer's interface tests in `tests/test_interface.py` go or stay with it, and only the console port
-   frees it.
+2. **One S3 location, one source.** Read `BACKUP_S3_URI` from `platform/backup/mongodb.yaml`, and
+   `SQLITE_S3_URI` from the profile, or check that the two agree. Neither value changes. One
+   `SQLITE_S3_URI` reader is `apps/model/backup.py`, so the change may not grow the model.
 
 **C. Then the rest of the road.**
 
-4. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and
+3. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and
    set the next gate: a decision brief for the console port, the largest Python surface.
-5. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
+4. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
 ## Deferred features
@@ -152,6 +148,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   digest determines a release (1 November 2026).
 - `create` writes records only; the whole-tree render allocates the port and writes the files
   (1 November 2026).
+- The v1 Python model is bounded, not ported: nothing new imports it and it only shrinks, with the v1
+  renderer's interface tests in `tests/test_interface.py` (3 November 2026).
 
 ## How this page is kept
 

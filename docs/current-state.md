@@ -32,6 +32,18 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## The v1 model is bounded (3 November 2026)
+
+- **What changed:** the operator chose to bound the v1 Python model (`tools/swhurl/apps/model`) rather than port its
+  importers now. [`tests/test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins the 22 files that import it
+  (17 modules under `tools/` and 5 test files, found by parsing their imports, relative ones included) and its 1,547
+  lines, both exactly: a new importer or line fails, and one removed must lower the pin in the same commit. The
+  status page had said three console modules import it; most of `apps/` does, so it leaves as they are ported, not
+  with one slice. The gate moves to one S3 location.
+- **Checked:** the test passes, and fails on a probe module doing `from .apps.model import records` and on one line
+  added to the model; `make check`, `make check-docs`.
+- **Not exercised:** nothing on the cluster; no behaviour changed.
+
 ## The thin operator commands are bash (3 November 2026)
 
 - **What changed:** `make app-logs`, `app-reconcile`, `suspend` and `resume` run [`host/ops.sh`](../host/ops.sh)
@@ -115,8 +127,8 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Checked:** `make check-templates` passes at the pinned revisions and, with those two rows removed, fails every app
   type of both stacks naming them and the file that reads them; the tree check passes on all 128 compiled files, the
   backup job's own `platform.swhurl.com/backup` label excepted by name.
-- **Not exercised:** nothing on the cluster; the v1 renderer's interface tests stay until the v1 model's fate is
-  decided ([remaining work](v2-status.md#remaining-work)).
+- **Not exercised:** nothing on the cluster; the v1 renderer's interface tests stay with the v1 model, which is
+  bounded until its importers are ported ([remaining Python](v2-status.md#remaining-python)).
 
 ## One progress page, and the plan pruned (2 November 2026)
 

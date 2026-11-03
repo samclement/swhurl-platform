@@ -61,8 +61,15 @@ What has been verified on the live cluster, and when: current facts first, then 
   item that states another kind or a foreign namespace; a test at each layer feeds the server's real shape.
   Read-only host checks after the fix, at `98366214` plus it: `make app-status APP=demo-orders ENV=staging` reported
   `image running` and `Backup current`, and `status --all` reported all 10 instances `healthy`.
-- **In progress:** the console image carrying this fix is being published; its own signed-in pages are the next
-  check, and the live platform was not otherwise changed by it.
+- **The console reads it:** Validate published image `src-46a1d59853b839ef` (deploy `773dd697`), Flux reconciled it
+  and `make verify-platform` passed, its Console check reading that image as built from this tooling. Against the
+  running pod, carrying oauth2-proxy's identity header: Deployments, Activity, Teams, Catalogue, Overview and both
+  detail pages answered 200 with all 10 instances `healthy`; the list took 0.81 s and a detail page 1.08 s warm.
+  Signed out on the public host it still answers 302 to Google, and http redirects to https.
+- **Promotion submission, live:** the review page for `demo-orders/staging` showed both digests with an enabled
+  submit (Go ready: healthy, current, that digest running); a POST carrying an invented digest was refused 400 with
+  Go's own `reviewed digest changed` before any job or pull request existed. An unavailable report's 502 is proven
+  by test only, not by a live failure.
 
 ## Status with the pod's ServiceAccount (3 November 2026)
 

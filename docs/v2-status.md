@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the console readers on Go status
+Gate: the console-free Python that can leave first (`apps/policy`, `apps/teams`, `backup_job`, `sqlite_restore`)
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —

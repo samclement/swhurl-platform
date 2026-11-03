@@ -309,11 +309,31 @@ class PageAndPromotionTests(unittest.TestCase):
         args = self.captured[-1]
         self.assertEqual(args[args.index('--reviewed-digest') + 1], '')
 
-    def test_post_failed_evidence_cannot_reach_proposal(self):
+    def test_post_unreadable_records_never_reach_proposal(self):
         self.remote.fail = '/tarball/'
         with mock.patch.object(self.jobs, 'submit') as propose:
             reply = self.client.post('/apps/web/staging/promote', data={'image': f'ghcr.io/x/web@{DIGEST}'}, headers=ORIGIN)
             self.assertNotEqual(reply.status_code, 303)
+            propose.assert_not_called()
+
+    def test_post_failed_status_read_is_unavailable_not_a_refusal(self):
+        def unavailable(args, _input):
+            raise CommandError(args, 'no such file: swhurl-v2')
+        self.runner._rules.insert(0, (('swhurl-v2', 'status'), unavailable))
+        with mock.patch.object(self.jobs, 'submit') as propose:
+            reply = self.client.post('/apps/web/staging/promote', data={'image': f'ghcr.io/x/web@{DIGEST}'}, headers=ORIGIN)
+            self.assertEqual(reply.status_code, 502, 'a report that could not be produced is unavailable, not a refusal')
+            self.assertIn('Go promotion readiness unavailable', reply.text)
+            propose.assert_not_called()
+
+    def test_post_failed_units_read_is_unavailable_not_a_crash(self):
+        def unreadable(args, _input):
+            raise CommandError(args, 'flux-system is unreachable')
+        self.runner._rules.insert(0, (('kubectl', '-n', 'flux-system', 'get'), unreadable))
+        with mock.patch.object(self.jobs, 'submit') as propose:
+            reply = self.client.post('/apps/web/staging/promote', data={'image': f'ghcr.io/x/web@{DIGEST}'}, headers=ORIGIN)
+            self.assertEqual(reply.status_code, 502)
+            self.assertIn('Go promotion readiness unavailable', reply.text)
             propose.assert_not_called()
 
     def test_post_passes_only_on_go_ready_and_preserves_held_pr_flow(self):

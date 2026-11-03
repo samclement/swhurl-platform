@@ -232,12 +232,14 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return files.once('@rows', read)
 
     def promotion_status(app: str, digest: str) -> dict:
+        """Go's decision for one submitted review. A report it could not produce is a read failure (502), never a
+        refusal (400): only Go's own `promotion:{ready:false,reason}` is a refusal."""
         try:
             return status.read(runner, request_files.get(), cluster.items(runner, cluster.UNITS),
                                in_cluster=not bool(dev_identity) and bool(os.environ.get('KUBERNETES_SERVICE_HOST')),
                                app=app, reviewed_digest=digest)
-        except (actions.ActionError, CommandError, OSError, ValueError) as error:
-            raise actions.ActionError(f'Go promotion readiness unavailable: {error}') from None
+        except (cluster.ReadError, actions.ActionError, CommandError, OSError, ValueError) as error:
+            raise cluster.ReadError(f'Go promotion readiness unavailable: {error}') from None
 
     def offer_text(row: cluster.AppRow, event: str = '') -> str:
         """What an app's own documents say about its API, or about one of its events ('' if nothing)."""

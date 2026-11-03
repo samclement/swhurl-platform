@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the ownership milestone
+Gate: a decision brief for the console port
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -29,6 +29,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Backup and restore | done | [record](current-state.md#the-first-content-changing-restore-swhurl-try-10-staging-moved-back-a-day-27-october-2026) |
 | Promotion and rollback | done | [record](current-state.md#a-rollback-exercised-live-2-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
+| Every instance v2-owned | done | [record](current-state.md#the-ownership-milestone-every-instance-is-v2s-3-november-2026) |
 | Cutover: one writer | done | [record](current-state.md#the-production-cutover-four-instances-31-october-2026) |
 | Checks read v2's tree | done | [record](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
 | One render from the records | done | [record](current-state.md#the-derived-tree-comes-from-v2s-own-records-31-october-2026) |
@@ -83,8 +84,9 @@ not migration.
 
 **B. Then the rest of the road.**
 
-2. **The ownership milestone.** Record that v2 renders, writes and checks every instance, commit it, and
-   set the next gate: a decision brief for the console port, the largest Python surface.
+2. **A decision brief for the console port**, the largest Python surface and the one that keeps six modules
+   alive: what a Go server keeping the HTMX templates costs, against the console-free retirements first.
+   Docs only; the port itself needs the operator's approval.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 

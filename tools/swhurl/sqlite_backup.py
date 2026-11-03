@@ -1,7 +1,7 @@
 """App SQLite databases' backups (the ``--database sqlite`` capability): their names and freshness.
 
 Each instance's backup CronJob (``apps/model/backup.py``, ``backup_job``) publishes
-``sqlite-<UTC>.db.age`` and its metadata to SQLITE_S3_URI<namespace>/; ``sqlite_restore`` fetches one back.
+``sqlite-<UTC>.db.age`` and its metadata to ``uri``; ``sqlite_restore`` fetches one back.
 """
 from __future__ import annotations
 
@@ -23,10 +23,9 @@ def backups_in(directory: Path) -> BackupSet:
     return BackupSet(directory, 'sqlite', '.db.age')
 
 
-def uri(namespace: str, env: Mapping[str, str] | None = None) -> str:
-    """Where one instance's backups are published; empty when SQLITE_S3_URI is set empty."""
-    base = (os.environ if env is None else env).get('SQLITE_S3_URI', platform.SQLITE_S3_URI)
-    return f'{base}{namespace}/' if base else ''
+def uri(namespace: str, root: Path = ROOT) -> str:
+    """Where one instance's backups are published: its namespace's prefix in the platform's location."""
+    return f'{platform.sqlite_s3_uri(root)}{namespace}/'
 
 
 def expected(root: Path = ROOT) -> list[Instance]:
@@ -50,6 +49,7 @@ def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] 
     report.section('App SQLite backups')
     try:
         databases = expected(root)
+        base = platform.sqlite_s3_uri(root)
     except ValueError as error:
         report.bad(str(error))
         return
@@ -57,6 +57,6 @@ def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] 
         report.ok('no app has a SQLite database')
         return
     for each in databases:
-        backupset.check_backup_set(runner, report, backups_in(Path()), uri(each.namespace, env), env=env, now=now,
+        backupset.check_backup_set(runner, report, backups_in(Path()), f'{base}{each.namespace}/', env=env, now=now,
                                    what='SQLite', run='make backup-sqlite', prefix=f'{each.namespace}: ',
                                    hint=f'kubectl -n {each.namespace} get jobs -l {interface.label("backup")}=true')

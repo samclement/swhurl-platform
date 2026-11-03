@@ -144,9 +144,8 @@ class SqliteRestoreTests(unittest.TestCase):
         self.assertIn('@sha256:', IMAGE)
 
     def test_backups_are_fetched_from_the_instances_prefix(self):
-        self.assertEqual(sqlite_backup.uri('notes-staging', {'SQLITE_S3_URI': 's3://b/app-sqlite/'}),
-                         's3://b/app-sqlite/notes-staging/')
-        self.assertEqual(sqlite_backup.uri('notes-staging', {'SQLITE_S3_URI': ''}), '')
+        self.assertEqual(sqlite_backup.uri('notes-staging'),
+                         's3://swhurl-platform-backups-110927251694/app-sqlite/notes-staging/')
 
 
 def app_deployment(name='notes', path='/data/app.db', mount='/data', uid=65532):

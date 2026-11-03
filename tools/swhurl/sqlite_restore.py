@@ -1,8 +1,8 @@
 """Restore one app's SQLite database from its backup (the ``--database sqlite`` capability).
 
-    restore-sqlite <app> <env>   CONFIRM=<app>/<env>, optional BACKUP_FILE, AGE_KEY_FILE, SQLITE_S3_URI
+    restore-sqlite <app> <env>   CONFIRM=<app>/<env>, optional BACKUP_FILE, AGE_KEY_FILE
 
-Downloads the newest complete backup from ``SQLITE_S3_URI<app>-<env>/`` into a private temporary
+Downloads the newest complete backup from the instance's prefix (``sqlite_backup.uri``) into a private temporary
 directory with the AWS CLI's own credentials (S3 read access), or takes BACKUP_FILE (a local
 ``sqlite-*.db.age`` with its metadata beside it), checks its checksum and that it came from this
 instance, then:

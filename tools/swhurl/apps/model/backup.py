@@ -57,7 +57,7 @@ def manifests(app: str, namespace: str, uid: int, *, claim: str, proxy: dict, pa
               'stringData': {'AWS_ACCESS_KEY_ID': key[0], 'AWS_SECRET_ACCESS_KEY': key[1]}}
     container = {
         'name': 'backup', 'image': BACKUP_IMAGE, 'args': ['backup-job-sqlite'],
-        'env': variables({**proxy, 'AGE_RECIPIENT': BACKUP_RECIPIENT, 'BACKUP_S3_URI': f'{platform.SQLITE_S3_URI}{namespace}/',
+        'env': variables({**proxy, 'AGE_RECIPIENT': BACKUP_RECIPIENT, 'BACKUP_S3_URI': f'{platform.sqlite_s3_uri()}{namespace}/',
                           'BACKUP_SOURCE': f'{namespace}/{app}', interface.DATABASE_PATH_VARIABLE: path}),
         'envFrom': [{'secretRef': {'name': name}}],
         'resources': {'requests': {'cpu': '10m', 'memory': '64Mi'}, 'limits': {'memory': '256Mi'}},

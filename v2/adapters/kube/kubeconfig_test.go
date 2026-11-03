@@ -158,3 +158,63 @@ func TestConnectErrorsCarryNoMaterial(t *testing.T) {
 		t.Fatalf("an error echoed the kubeconfig: %v", err)
 	}
 }
+
+// A pod's ServiceAccount is a token, the cluster's CA and the service address: the token is carried trimmed of the
+// newline a file may end with, and the CA is the only authority the reader trusts.
+func TestServiceAccountAssemblesTheConnection(t *testing.T) {
+	ca, _ := testCertificate(t)
+	connection, err := kube.ServiceAccount([]byte("an-opaque-token\n"), ca, "10.43.0.1", "443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connection.Endpoint != "https://10.43.0.1:443" || connection.Token != "an-opaque-token" ||
+		string(connection.Credentials.CA) != string(ca) || connection.Context != "" {
+		t.Fatalf("connection %+v", connection)
+	}
+	if len(connection.Credentials.Certificate) != 0 || len(connection.Credentials.Key) != 0 {
+		t.Fatalf("a client certificate from a ServiceAccount: %+v", connection.Credentials)
+	}
+	if _, err := connection.Reader(); err != nil {
+		t.Fatalf("a reader for usable material: %v", err)
+	}
+}
+
+// An IPv6 service address is bracketed, so the port is not read as part of the address.
+func TestServiceAccountBracketsAnIPv6Host(t *testing.T) {
+	ca, _ := testCertificate(t)
+	connection, err := kube.ServiceAccount([]byte("an-opaque-token"), ca, "fd00:43::1", "443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connection.Endpoint != "https://[fd00:43::1]:443" {
+		t.Fatalf("endpoint %s", connection.Endpoint)
+	}
+	if _, err := connection.Reader(); err != nil {
+		t.Fatalf("a reader for an IPv6 endpoint: %v", err)
+	}
+}
+
+// Each missing part is refused by name; without a CA the client would trust the system roots instead.
+func TestServiceAccountRefusesAMissingPart(t *testing.T) {
+	ca, _ := testCertificate(t)
+	for _, tt := range []struct {
+		name, token string
+		ca          []byte
+		host, port  string
+		reason      string
+	}{
+		{"no token", "", ca, "10.43.0.1", "443", "token_required"},
+		{"a token of whitespace", " \n", ca, "10.43.0.1", "443", "token_required"},
+		{"no CA", "an-opaque-token", nil, "10.43.0.1", "443", "ca_required"},
+		{"a CA that is not PEM", "an-opaque-token", []byte("not pem"), "10.43.0.1", "443", "invalid_ca"},
+		{"no host", "an-opaque-token", ca, "", "443", "host_required"},
+		{"no port", "an-opaque-token", ca, "10.43.0.1", "", "port_required"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := kube.ServiceAccount([]byte(tt.token), tt.ca, tt.host, tt.port)
+			if !refused(err, tt.reason) || !strings.Contains(err.Error(), "serviceaccount") {
+				t.Fatalf("got %v, want a refusal with reason %s", err, tt.reason)
+			}
+		})
+	}
+}

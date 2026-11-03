@@ -668,9 +668,8 @@ step after the [ownership milestone](current-state.md#the-ownership-milestone-ev
   `swhurl-v2 edit`, `remove`, `promote` and `render`, and the image carries `swhurl-v2`. Its reads are 16
   `kubectl` calls, and its pull requests and merge gate are 10 `gh` and 8 `git` calls.
 - v2 has no Git or GitHub adapter. [`adapters/kube`](../v2/adapters/kube/kube.go) already accepts a bearer token,
-  but only the host's kubeconfig resolves one; running in the console pod needs the service-account token read
-  as a credential source (a [deferred feature](v2-status.md#deferred-features) and an external-effect adapter,
-  so its own approval).
+  and status now resolves either the host's JSON kubeconfig or the pod's mounted token through the
+  [approved credential slice](#slice-the-in-cluster-credential-approved-3-november-2026).
 - "Keep the same HTMX templates" holds for the markup, CSS, JS and HTMX attributes, not the templates: Jinja does
   not run in Go's `html/template`, so all 18 are rewritten.
 
@@ -699,8 +698,8 @@ read, where the console already starts `kubectl`. Option 2's modules stay worth 
 **What would change it.**
 
 - A redesigned console is wanted anyway: then option 1, because the templates are rewritten either way.
-- The in-cluster credential is not approved: option 3 still takes the file-only reads (the catalogue, records,
-  the merge gate's rules), and status stays Python until it is.
+- If the in-cluster credential cannot be used safely, take the file-only reads (the catalogue, records and
+  the merge gate's rules) first instead.
 - Page latency over the binary proves noticeable when measured live: port the server earlier.
 
 ### Slice one: `swhurl-v2 status` (approved 3 November 2026)
@@ -738,3 +737,26 @@ wins:
 - Dropped on purpose: settings, variables, the secret line, the team and exposure (the records hold them), job
   runs (v2 has no job kind) and the GitRepository's revision. Right after any commit to `main` every instance is
   `updating` until Flux applies it; the promotion gate's "a commit elsewhere" exception moves with slice two.
+
+### Slice: the in-cluster credential (approved 3 November 2026)
+
+**Purpose.** `swhurl-v2 status` runs in the console pod, which has no kubeconfig: it has its ServiceAccount's
+mounted token and CA and `KUBERNETES_SERVICE_HOST`/`PORT`, as `kubectl` uses there.
+
+**Contracts.**
+
+- `swhurl-v2 status --in-cluster` reads the token, `ca.crt` and `namespace` under
+  `/var/run/secrets/kubernetes.io/serviceaccount/` and the two variables. `--in-cluster` and `--kubeconfig` are
+  mutually exclusive and exactly one is required: no detection, no fallback. Only `status` accepts it; commands
+  that write keep `--kubeconfig`.
+- A missing token, CA, namespace or variable is exit 2 naming it. The token is read once per process; the
+  kubelet rotates the file and every call is a new process.
+- `adapters/kube.ServiceAccount(token, ca, host, port)` validates and assembles a `Connection`, and reads no
+  file: the command reads them, as it reads a kubeconfig for `Connect`.
+- The report's source is `serviceaccount in <namespace>`; the token is never decoded.
+- The console's read ClusterRole (`platform/console/rbac.yaml`) gains `batch/jobs` `get` and `list`, the one
+  kind status reads that it could not: a database instance's newest backup Job.
+
+**Proof.** Offline: each missing part, the exclusive flags, a run against the fake API server with a temporary
+token and CA. Live, read-only: the records copied into the console pod's `/tmp` and `status --in-cluster` run
+there for one web and one database instance, matching `make app-status`, the backup readable.

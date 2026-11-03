@@ -3,6 +3,9 @@ package kube
 import (
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
+	"net"
+	"strings"
 )
 
 // Connection is what one kubeconfig names: the endpoint to reach and the material for reaching it. The
@@ -92,6 +95,31 @@ func Connect(data []byte) (Connection, error) {
 	return connection, nil
 }
 
+// ServiceAccount assembles the connection a pod's ServiceAccount gives it: the mounted token, the CA that signs the
+// API server's certificate, and the service address the pod's environment names. It reads no file and no variable;
+// the caller reads them, as it reads a kubeconfig for Connect. It refuses a missing part rather than sending a
+// request it knows will fail: without a CA the client would trust the system roots instead of the cluster's own.
+// The token is carried, never decoded.
+func ServiceAccount(token, ca []byte, host, port string) (Connection, error) {
+	bearer := strings.TrimSpace(string(token))
+	switch {
+	case bearer == "":
+		return Connection{}, serviceAccountError("token_required")
+	case len(ca) == 0:
+		return Connection{}, serviceAccountError("ca_required")
+	case host == "":
+		return Connection{}, serviceAccountError("host_required")
+	case port == "":
+		return Connection{}, serviceAccountError("port_required")
+	}
+	if block, _ := pem.Decode(ca); block == nil {
+		return Connection{}, serviceAccountError("invalid_ca")
+	}
+	// JoinHostPort brackets an IPv6 address, as the service's ClusterIP can be.
+	endpoint := "https://" + net.JoinHostPort(host, port)
+	return Connection{Endpoint: endpoint, Credentials: Credentials{CA: ca}, Token: bearer}, nil
+}
+
 // credentialOf decodes one user's material and refuses what this adapter cannot use: a plugin would run
 // something else, and no credential at all would be an anonymous request the server refuses anyway.
 func credentialOf(user kubeUser) (Credentials, string, error) {
@@ -178,4 +206,8 @@ func decoded(field, value string) ([]byte, error) {
 
 func configError(reason string) *Error {
 	return &Error{RefusedRequest, "kubeconfig", reason}
+}
+
+func serviceAccountError(reason string) *Error {
+	return &Error{RefusedRequest, "serviceaccount", reason}
 }

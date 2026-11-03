@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3/s3test"
+	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
@@ -785,5 +787,151 @@ func TestStatusRefusesAnInstanceWithNoRecord(t *testing.T) {
 	}
 	if len(api.requests) != 0 {
 		t.Fatalf("%d requests for a refused instance", len(api.requests))
+	}
+}
+
+// serviceAccountMount is a pod's ServiceAccount for the test server: the kubelet's three files in a folder of the
+// test's own, and the environment naming the server's address. Nothing here reads the real mount.
+func serviceAccountMount(t *testing.T, server *httptest.Server) (inCluster, map[string]string) {
+	t.Helper()
+	dir := t.TempDir()
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	for name, data := range map[string][]byte{"token": []byte("test-token\n"), "ca.crt": certificate,
+		"namespace": []byte("console\n")} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	host, port, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "https://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment := map[string]string{"KUBERNETES_SERVICE_HOST": host, "KUBERNETES_SERVICE_PORT": port}
+	return inCluster{dir: dir, getenv: func(name string) string { return environment[name] }}, environment
+}
+
+// runInCluster runs the command with the given ServiceAccount mount; everything else is what the binary does.
+func runInCluster(t *testing.T, mount inCluster, args ...string) (int, string, string) {
+	t.Helper()
+	var out, diagnostic bytes.Buffer
+	status := runWith(args, &out, &diagnostic, cli{readFile: os.ReadFile, writer: files.New(), archives: archiveReader,
+		registries: registryReader, seed: randomSeed, encrypter: sops.New(), inCluster: mount})
+	return status, out.String(), diagnostic.String()
+}
+
+// inClusterArgs is a status command line for the prod instance's records with --in-cluster instead of a kubeconfig.
+func inClusterArgs(t *testing.T, extra ...string) []string {
+	t.Helper()
+	args := statusArgsWith(t, "unused", fixture(t, "prod.json"), "r41.json")
+	for i, arg := range args {
+		if arg == "--kubeconfig" {
+			args = append(args[:i], args[i+2:]...)
+			break
+		}
+	}
+	return append(append(args, "--in-cluster"), extra...)
+}
+
+// In a pod, status reads with its ServiceAccount: the token reaches the server, the CA is the one trusted, and the
+// report names the ServiceAccount's namespace as its source unless the operator names another.
+func TestStatusReadsWithThePodServiceAccount(t *testing.T) {
+	api := &api{}
+	server := api.serve(t)
+	mount, _ := serviceAccountMount(t, server)
+	status, stdout, stderr := runInCluster(t, mount, inClusterArgs(t, "--json")...)
+	if status != 0 || stderr != "" {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	report := document(t, stdout)
+	if state := report["state"].(map[string]any); state["name"] != observe.StateHealthy {
+		t.Fatalf("state %v, findings %v", state, report["findings"])
+	}
+	if report["source"] != "serviceaccount in console" {
+		t.Fatalf("source %v", report["source"])
+	}
+	if len(api.requests) != 4 {
+		t.Fatalf("%d requests", len(api.requests))
+	}
+	status, stdout, _ = runInCluster(t, mount, inClusterArgs(t)...)
+	if status != 0 || !strings.Contains(stdout, "\nObserved   serviceaccount in console at ") {
+		t.Fatalf("exit %d, text:\n%s", status, stdout)
+	}
+	_, stdout, stderr = runInCluster(t, mount, inClusterArgs(t, "--json", "--source", "console-pod")...)
+	if document(t, stdout)["source"] != "console-pod" {
+		t.Fatalf("source: %v; %s", document(t, stdout)["source"], stderr)
+	}
+}
+
+// Each part of the ServiceAccount a pod may lack is named, and refused before any request: outside a pod, or with
+// the token's automount off, there is nothing to read with.
+func TestStatusInClusterNamesAMissingPart(t *testing.T) {
+	for _, tt := range []struct {
+		name, want string
+		change     func(dir string, environment map[string]string) error
+	}{
+		{"token", "token is not mounted", func(dir string, _ map[string]string) error {
+			return os.Remove(filepath.Join(dir, "token"))
+		}},
+		{"ca.crt", "ca.crt is not mounted", func(dir string, _ map[string]string) error {
+			return os.Remove(filepath.Join(dir, "ca.crt"))
+		}},
+		{"namespace", "namespace is not mounted", func(dir string, _ map[string]string) error {
+			return os.Remove(filepath.Join(dir, "namespace"))
+		}},
+		{"an empty token", "token is empty", func(dir string, _ map[string]string) error {
+			return os.WriteFile(filepath.Join(dir, "token"), []byte("\n"), 0o600)
+		}},
+		{"KUBERNETES_SERVICE_HOST", "KUBERNETES_SERVICE_HOST is not set", func(_ string, environment map[string]string) error {
+			delete(environment, "KUBERNETES_SERVICE_HOST")
+			return nil
+		}},
+		{"KUBERNETES_SERVICE_PORT", "KUBERNETES_SERVICE_PORT is not set", func(_ string, environment map[string]string) error {
+			delete(environment, "KUBERNETES_SERVICE_PORT")
+			return nil
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			api := &api{}
+			server := api.serve(t)
+			mount, environment := serviceAccountMount(t, server)
+			if err := tt.change(mount.dir, environment); err != nil {
+				t.Fatal(err)
+			}
+			status, stdout, stderr := runInCluster(t, mount, inClusterArgs(t)...)
+			if status != 2 || stdout != "" || !strings.Contains(stderr, "invalid: in-cluster: ") ||
+				!strings.Contains(stderr, tt.want) {
+				t.Fatalf("exit %d, stdout %q, stderr %q", status, stdout, stderr)
+			}
+			if len(api.requests) != 0 {
+				t.Fatalf("%d requests without a credential", len(api.requests))
+			}
+		})
+	}
+}
+
+// The credential is exactly one of a kubeconfig and the pod's ServiceAccount: neither or both is a usage error,
+// and nothing is detected.
+func TestStatusTakesExactlyOneCredential(t *testing.T) {
+	server := (&api{}).serve(t)
+	mount, _ := serviceAccountMount(t, server)
+	both := append(statusArgs(t, kubeconfig(t, server)), "--in-cluster")
+	neither := inClusterArgs(t)
+	neither = neither[:len(neither)-1]
+	for name, args := range map[string][]string{"both": both, "neither": neither} {
+		status, stdout, stderr := runInCluster(t, mount, args...)
+		if status != 2 || stdout != "" || !strings.Contains(stderr, "(--kubeconfig KUBECONFIG.json | --in-cluster)") {
+			t.Fatalf("%s: exit %d, stdout %q, stderr %q", name, status, stdout, stderr)
+		}
+	}
+}
+
+// Only status reads with the pod's ServiceAccount: a restore writes, and takes no such flag.
+func TestRestoreRefusesInCluster(t *testing.T) {
+	args := instanceArgsOf(t, "kubeconfig.json", "sqlite.json", "r43.json")
+	if _, outcome := parse(args); outcome != parsed {
+		t.Fatalf("the restore line without the flag: outcome %d", outcome)
+	}
+	if _, outcome := parse(append(args, "--in-cluster")); outcome != misuse {
+		t.Fatalf("restore --in-cluster: outcome %d", outcome)
 	}
 }

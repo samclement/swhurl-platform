@@ -42,12 +42,14 @@ type api struct {
 	scaledTo   *int32         // what a patch last set the Deployment's replica count to
 	jobFailed  bool           // whether a restore's own Job reports Failed instead of Complete
 	restoreJob bool           // whether a restore's Job (and so its pod) exists
+	crashing   bool           // whether the app's container is crashing instead of ready
 }
 
 // change is one request that changes something, with its body: what a restore's own objects are created from.
 type change struct{ method, path, body string }
 
-// serve answers the four paths one observation reads, in the shape the API server writes them.
+// serve answers the paths one observation reads — the four every instance has, and an exposed instance's route
+// and certificate — in the shape the API server writes them.
 func (a *api) serve(t *testing.T) *httptest.Server {
 	t.Helper()
 	namespace := a.namespace
@@ -146,6 +148,9 @@ func (a *api) serve(t *testing.T) *httptest.Server {
 				// The app's own pods: gone once the restore has scaled the Deployment to zero, which is what
 				// the pods-gone wait is for.
 				items := []any{pod(namespace, "docker.io/example/demo-orders@"+digest)}
+				if a.crashing {
+					items = []any{crashingPod(namespace, "docker.io/example/demo-orders@"+digest)}
+				}
 				if a.scaledTo != nil && *a.scaledTo == 0 {
 					items = []any{}
 				}
@@ -156,6 +161,15 @@ func (a *api) serve(t *testing.T) *httptest.Server {
 			default:
 				w.WriteHeader(http.StatusBadRequest)
 			}
+		case "/apis/networking.k8s.io/v1/namespaces/" + namespace + "/ingresses/demo-orders":
+			writeDocument(t, w, map[string]any{"apiVersion": "networking.k8s.io/v1", "kind": "Ingress",
+				"metadata": map[string]any{"name": "demo-orders", "namespace": namespace},
+				"spec":     map[string]any{"rules": []any{map[string]any{"host": "demo-orders.homelab.swhurl.com"}}}})
+		case "/apis/cert-manager.io/v1/namespaces/" + namespace + "/certificates/demo-orders-tls":
+			writeDocument(t, w, map[string]any{"apiVersion": "cert-manager.io/v1", "kind": "Certificate",
+				"metadata": map[string]any{"name": "demo-orders-tls", "namespace": namespace, "generation": 1},
+				"status": map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": "True",
+					"reason": "Ready", "observedGeneration": 1}}}})
 		case "/apis/batch/v1/namespaces/" + namespace + "/cronjobs/demo-orders-backup":
 			if !a.backup {
 				w.WriteHeader(http.StatusNotFound)
@@ -245,6 +259,15 @@ func pod(namespace, image string) map[string]any {
 	}
 }
 
+// crashingPod is the app's pod with its container in a crash loop: started once, not ready, and saying why.
+func crashingPod(namespace, image string) map[string]any {
+	document := pod(namespace, image)
+	document["status"] = map[string]any{"containerStatuses": []any{map[string]any{"name": "main", "image": image,
+		"imageID": "docker-pullable://" + image, "ready": false, "state": map[string]any{"waiting": map[string]any{
+			"reason": "CrashLoopBackOff", "message": "back-off 5m0s restarting failed container=main"}}}}}
+	return document
+}
+
 // writeDocument answers with one JSON document, as the API server does.
 func writeDocument(t *testing.T, w http.ResponseWriter, document map[string]any) {
 	t.Helper()
@@ -279,14 +302,48 @@ func kubeconfig(t *testing.T, server *httptest.Server) string {
 	return path
 }
 
-// observeArgs is the command line for the compiled prod instance.
-func observeArgs(t *testing.T, kubeconfigPath string, extra ...string) []string {
-	return observeArgsOf(t, kubeconfigPath, "prod.json", "r41.json", extra...)
+// statusArgs is the command line for the prod instance's records.
+func statusArgs(t *testing.T, kubeconfigPath string, extra ...string) []string {
+	return statusArgsOf(t, kubeconfigPath, "prod.json", "r41.json", extra...)
 }
 
-// observeArgsOf is the command line for one compiled fixture instance, with its documents written beside
-// each other.
-func observeArgsOf(t *testing.T, kubeconfigPath, instance, release string, extra ...string) []string {
+// statusArgsOf is the command line for one fixture instance, with its record pair and the app record written into
+// a records tree as v2-records holds them, asking for the JSON document.
+func statusArgsOf(t *testing.T, kubeconfigPath, instance, release string, extra ...string) []string {
+	t.Helper()
+	return statusArgsWith(t, kubeconfigPath, fixture(t, instance), release, append([]string{"--json"}, extra...)...)
+}
+
+// statusArgsWith writes the given instance record into a records tree and names it on the command line.
+func statusArgsWith(t *testing.T, kubeconfigPath string, instance []byte, release string, extra ...string) []string {
+	t.Helper()
+	records := t.TempDir()
+	var spec struct{ Application, Environment string }
+	if err := json.Unmarshal(instance, &spec); err != nil {
+		t.Fatal(err)
+	}
+	folder := filepath.Join(records, spec.Application, spec.Environment)
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, data := range map[string][]byte{
+		filepath.Join(folder, instanceFile):               instance,
+		filepath.Join(folder, releaseFile):                fixture(t, release),
+		filepath.Join(records, spec.Application, appFile): fixture(t, "app.json"),
+		filepath.Join(records, "profile.json"):            fixture(t, "profile.json"),
+	} {
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	args := []string{"status", "--records", records, "--app", spec.Application, "--env", spec.Environment,
+		"--profile", filepath.Join(records, "profile.json"), "--revision", observedRevision, "--kubeconfig", kubeconfigPath}
+	return append(args, extra...)
+}
+
+// instanceArgsOf is the command line restore takes: one compiled fixture instance, with its documents written beside
+// each other and named by flag.
+func instanceArgsOf(t *testing.T, kubeconfigPath, instance, release string, extra ...string) []string {
 	t.Helper()
 	dir := t.TempDir()
 	paths := map[string][]byte{
@@ -301,13 +358,13 @@ func observeArgsOf(t *testing.T, kubeconfigPath, instance, release string, extra
 			t.Fatal(err)
 		}
 	}
-	args := []string{"observe", "--instance", written["instance.json"], "--release", written["release.json"],
+	args := []string{"restore", "--instance", written["instance.json"], "--release", written["release.json"],
 		"--profile", written["profile.json"], "--revision", observedRevision, "--kubeconfig", kubeconfigPath}
 	return append(args, extra...)
 }
 
-// runObserve runs the command and returns its exit status and streams.
-func runObserve(t *testing.T, args ...string) (int, string, string) {
+// runStatus runs the command and returns its exit status and streams.
+func runStatus(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var out, diagnostic bytes.Buffer
 	status := run(args, &out, &diagnostic, os.ReadFile, files.New())
@@ -337,20 +394,21 @@ func finding(t *testing.T, report map[string]any, field string) map[string]any {
 	return nil
 }
 
-// The recorded instance is running: every fact positive, and the report says what it read and when.
-func TestObserveReportsTheRunningInstance(t *testing.T) {
+// The recorded instance is running: every fact positive, the state healthy, and the report says what it read and
+// when.
+func TestStatusReportsTheRunningInstance(t *testing.T) {
 	api := &api{}
 	server := api.serve(t)
-	status, stdout, stderr := runObserve(t, observeArgs(t, kubeconfig(t, server))...)
-	if status != 0 {
+	status, stdout, stderr := runStatus(t, statusArgs(t, kubeconfig(t, server))...)
+	if status != 0 || stderr != "" {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
 	report := document(t, stdout)
-	if report["kind"] != "v2-observation" || report["version"] != float64(2) {
+	if report["kind"] != "v2-observation" || report["version"] != float64(3) {
 		t.Fatalf("the report envelope is %v/%v", report["kind"], report["version"])
 	}
-	if report["verdict"] != string(observe.IsRunning) {
-		t.Fatalf("verdict %v, findings %v", report["verdict"], report["findings"])
+	if report["verdict"] != string(observe.IsRunning) || report["state"].(map[string]any)["name"] != observe.StateHealthy {
+		t.Fatalf("verdict %v, state %v, findings %v", report["verdict"], report["state"], report["findings"])
 	}
 	if report["source"] != "homelab" || report["observedAt"] == "" || len(report["notCovered"].([]any)) == 0 {
 		t.Fatalf("the report does not identify its evidence: %v", report)
@@ -362,8 +420,9 @@ func TestObserveReportsTheRunningInstance(t *testing.T) {
 	if target["namespace"] != "demo-orders-prod" || target["digest"] != compiledDigest {
 		t.Fatalf("target %v", target)
 	}
-	if !strings.Contains(stderr, "verdict running") {
-		t.Fatalf("summary %q", stderr)
+	// A private instance's records expose no route, so none is read and the lists are empty, not missing.
+	if len(report["routes"].([]any)) != 0 || len(report["certificates"].([]any)) != 0 || len(report["problems"].([]any)) != 0 {
+		t.Fatalf("routes %v, certificates %v, problems %v", report["routes"], report["certificates"], report["problems"])
 	}
 	// A stateless instance renders no backup, and the report says so rather than leaving a gap.
 	if backup := report["backup"].(map[string]any); backup["state"] != observe.BackupNotApplicable {
@@ -383,18 +442,22 @@ func TestObserveReportsTheRunningInstance(t *testing.T) {
 
 // A read that fails leaves the fact it answers unassessed, not absent: the verdict is unknown, and the
 // command still produced a report.
-func TestObserveLeavesAFailedReadUnknown(t *testing.T) {
+func TestStatusLeavesAFailedReadUnknown(t *testing.T) {
 	api := &api{status: map[string]int{
 		"/apis/apps/v1/namespaces/demo-orders-prod/deployments/demo-orders": http.StatusForbidden,
 	}}
 	server := api.serve(t)
-	status, stdout, stderr := runObserve(t, observeArgs(t, kubeconfig(t, server))...)
+	status, stdout, stderr := runStatus(t, statusArgs(t, kubeconfig(t, server))...)
 	if status != 0 {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
 	report := document(t, stdout)
 	if report["verdict"] != string(observe.Unknown) {
 		t.Fatalf("verdict %v", report["verdict"])
+	}
+	if state := report["state"].(map[string]any); state["name"] != observe.StateUnknown || state["field"] != "workload" ||
+		state["reason"] != observe.ReasonForbidden {
+		t.Fatalf("state %v", state)
 	}
 	for _, field := range []string{"workload", "ready", "replicas"} {
 		entry := finding(t, report, field)
@@ -408,12 +471,12 @@ func TestObserveLeavesAFailedReadUnknown(t *testing.T) {
 }
 
 // A successful answer that the object is not there is absence, and it decides the verdict.
-func TestObserveReportsAbsence(t *testing.T) {
+func TestStatusReportsAbsence(t *testing.T) {
 	api := &api{status: map[string]int{
 		"/apis/apps/v1/namespaces/demo-orders-prod/deployments/demo-orders": http.StatusNotFound,
 	}}
 	server := api.serve(t)
-	status, stdout, stderr := runObserve(t, observeArgs(t, kubeconfig(t, server))...)
+	status, stdout, stderr := runStatus(t, statusArgs(t, kubeconfig(t, server))...)
 	if status != 0 {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
@@ -427,37 +490,37 @@ func TestObserveReportsAbsence(t *testing.T) {
 }
 
 // A source can be named explicitly, so a report says which evidence it is talking about.
-func TestObserveNamesTheSource(t *testing.T) {
+func TestStatusNamesTheSource(t *testing.T) {
 	server := (&api{}).serve(t)
-	_, stdout, stderr := runObserve(t, observeArgs(t, kubeconfig(t, server), "--source", "homelab-prod")...)
+	_, stdout, stderr := runStatus(t, statusArgs(t, kubeconfig(t, server), "--source", "homelab-prod")...)
 	if document(t, stdout)["source"] != "homelab-prod" {
 		t.Fatalf("source: %v; %s", document(t, stdout)["source"], stderr)
 	}
 }
 
 // A kubeconfig the adapter cannot use is refused before any request, as a usage/validation error.
-func TestObserveRefusesAnUnusableKubeconfig(t *testing.T) {
+func TestStatusRefusesAnUnusableKubeconfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kubeconfig.json")
 	if err := os.WriteFile(path, []byte("not a kubeconfig"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	status, stdout, stderr := runObserve(t, observeArgs(t, path)...)
+	status, stdout, stderr := runStatus(t, statusArgs(t, path)...)
 	if status != 2 || stdout != "" || !strings.Contains(stderr, "kubeconfig") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", status, stdout, stderr)
 	}
 }
 
-// The command needs the revision Flux should be at: without it the fact cannot be assessed, so a
-// usage error is clearer than a report that can never be running.
-func TestObserveRequiresARevision(t *testing.T) {
-	args := observeArgs(t, "/nonexistent")
+// The command needs the commit the records were read at: without it the revision cannot be assessed, so a
+// usage error is clearer than a report that can never be healthy.
+func TestStatusRequiresARevision(t *testing.T) {
+	args := statusArgs(t, "/nonexistent")
 	for i, arg := range args {
 		if arg == "--revision" {
 			args = append(args[:i], args[i+2:]...)
 			break
 		}
 	}
-	if status, stdout, _ := runObserve(t, args...); status != 2 || stdout != "" {
+	if status, stdout, _ := runStatus(t, args...); status != 2 || stdout != "" {
 		t.Fatalf("exit %d, stdout %q", status, stdout)
 	}
 }
@@ -487,12 +550,12 @@ func digestOf(t *testing.T, release string) string {
 
 // A database instance's report also answers whether its backup job runs: current under the default
 // threshold, stale under one the operator states, and the running verdict is unchanged by either.
-func TestObserveReportsTheBackupOfADatabaseInstance(t *testing.T) {
+func TestStatusReportsTheBackupOfADatabaseInstance(t *testing.T) {
 	api := &api{namespace: "demo-orders-staging", digest: digestOf(t, "r43.json"), backup: true}
 	server := api.serve(t)
-	args := observeArgsOf(t, kubeconfig(t, server), "sqlite.json", "r43.json",
+	args := statusArgsOf(t, kubeconfig(t, server), "sqlite.json", "r43.json",
 		"--egress", filepath.Join("..", "..", "..", "platform", "egress", "allocation.json"))
-	status, stdout, stderr := runObserve(t, args...)
+	status, stdout, stderr := runStatus(t, args...)
 	if status != 0 {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
@@ -513,8 +576,8 @@ func TestObserveReportsTheBackupOfADatabaseInstance(t *testing.T) {
 		target["pods"].(map[string]any)["kind"] != "Pod" || target["selector"] != backupSelector {
 		t.Fatalf("the target's protection %v", target)
 	}
-	if !strings.Contains(stderr, "backup current") {
-		t.Fatalf("summary %q", stderr)
+	if report["state"].(map[string]any)["name"] != observe.StateHealthy {
+		t.Fatalf("state %v", report["state"])
 	}
 	// Without --archive the object store is not read, and the report says so rather than implying it was.
 	if archive := backup["archive"].(map[string]any); archive["state"] != observe.BackupNotAssessed ||
@@ -522,7 +585,7 @@ func TestObserveReportsTheBackupOfADatabaseInstance(t *testing.T) {
 		t.Fatalf("archive %v", archive)
 	}
 	// The last success is two hours old, so an hour's threshold is not met — and the verdict is untouched.
-	status, stdout, stderr = runObserve(t, append(args, "--max-age", "1h")...)
+	status, stdout, stderr = runStatus(t, append(args, "--max-age", "1h")...)
 	if status != 0 {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
@@ -531,11 +594,11 @@ func TestObserveReportsTheBackupOfADatabaseInstance(t *testing.T) {
 	if backup["state"] != observe.BackupStale || backup["reason"] != observe.ReasonTooOld {
 		t.Fatalf("one hour: %v", backup)
 	}
-	if report["verdict"] != string(observe.IsRunning) || !strings.Contains(stderr, "backup stale/last_success_too_old") {
-		t.Fatalf("verdict %v, summary %q", report["verdict"], stderr)
+	if report["verdict"] != string(observe.IsRunning) || report["state"].(map[string]any)["name"] != observe.StateHealthy {
+		t.Fatalf("verdict %v, state %v", report["verdict"], report["state"])
 	}
 	// A threshold the command cannot parse is a usage error, not a report judged by nothing.
-	if status, stdout, _ := runObserve(t, append(args, "--max-age", "soon")...); status != 2 || stdout != "" {
+	if status, stdout, _ := runStatus(t, append(args, "--max-age", "soon")...); status != 2 || stdout != "" {
 		t.Fatalf("an unreadable threshold: exit %d, stdout %q", status, stdout)
 	}
 }
@@ -550,7 +613,7 @@ func runObserveArchive(t *testing.T, archives func(bucket, region string) (s3.Re
 
 // With --archive the report carries the object store's answer: the newest archive under the instance's own
 // prefix, and how old it is.
-func TestObserveReadsTheArchiveWhenAsked(t *testing.T) {
+func TestStatusReadsTheArchiveWhenAsked(t *testing.T) {
 	api := &api{namespace: "demo-orders-staging", digest: digestOf(t, "r43.json"), backup: true}
 	server := api.serve(t)
 	prefix := "app-sqlite/demo-orders-staging/"
@@ -561,7 +624,7 @@ func TestObserveReadsTheArchiveWhenAsked(t *testing.T) {
 		Forbidden: observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "app-sqlite/refused/"},
 	}
 	fake := s3test.New(snapshot)
-	args := observeArgsOf(t, kubeconfig(t, server), "sqlite.json", "r43.json",
+	args := statusArgsOf(t, kubeconfig(t, server), "sqlite.json", "r43.json",
 		"--egress", filepath.Join("..", "..", "..", "platform", "egress", "allocation.json"), "--archive")
 	status, stdout, stderr := runObserveArchive(t, func(string, string) (s3.Reader, error) { return fake, nil }, args...)
 	if status != 0 {
@@ -582,19 +645,19 @@ func TestObserveReadsTheArchiveWhenAsked(t *testing.T) {
 	if len(fake.Lists) != 1 || fake.Lists[0] != snapshot.Query {
 		t.Fatalf("the listing was asked for %v", fake.Lists)
 	}
-	if !strings.Contains(stderr, "archive current") {
-		t.Fatalf("summary %q", stderr)
+	if stderr != "" {
+		t.Fatalf("stderr %q", stderr)
 	}
 }
 
 // Without --archive the report says the archive was not read, and no object-store reader is built; without
 // credentials the command refuses before listing anything.
-func TestObserveWithoutArchiveOrCredentials(t *testing.T) {
+func TestStatusWithoutArchiveOrCredentials(t *testing.T) {
 	api := &api{namespace: "demo-orders-staging", digest: digestOf(t, "r43.json"), backup: true}
 	server := api.serve(t)
-	args := observeArgsOf(t, kubeconfig(t, server), "sqlite.json", "r43.json",
+	args := statusArgsOf(t, kubeconfig(t, server), "sqlite.json", "r43.json",
 		"--egress", filepath.Join("..", "..", "..", "platform", "egress", "allocation.json"))
-	status, stdout, stderr := runObserve(t, args...)
+	status, stdout, stderr := runStatus(t, args...)
 	if status != 0 {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
@@ -607,8 +670,120 @@ func TestObserveWithoutArchiveOrCredentials(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 	t.Setenv("AWS_SESSION_TOKEN", "")
-	if status, stdout, stderr := runObserve(t, append(args, "--archive")...); status != 2 || stdout != "" ||
+	if status, stdout, stderr := runStatus(t, append(args, "--archive")...); status != 2 || stdout != "" ||
 		!strings.Contains(stderr, "invalid: credentials: aws_credentials_are_not_set") {
 		t.Fatalf("no credentials: exit %d, stdout %q, stderr %q", status, stdout, stderr)
+	}
+}
+
+// The default output is text for a person: the state and what decided it, the commit and image the records expect,
+// every finding, and the route. It is a reading of the same report, so the state agrees with the document's.
+func TestStatusPrintsTextByDefault(t *testing.T) {
+	server := (&api{}).serve(t)
+	status, stdout, stderr := runStatus(t, statusArgsWith(t, kubeconfig(t, server), fixture(t, "prod.json"), "r41.json")...)
+	if status != 0 || stderr != "" {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	want := []string{
+		"Instance   demo-orders/prod (namespace demo-orders-prod)",
+		"State      healthy",
+		"Revision   " + observedRevision + ", the commit the records were read at",
+		"Image      " + compiledDigest,
+		"Replicas   1 wanted",
+		"Findings   unit           reconciled",
+		"           unit.revision  applied",
+		"           release        settled",
+		"           workload       present",
+		"           image          running",
+		"           ready          ready",
+		"           replicas       as_intended",
+		"Route      none: the records expose no route",
+	}
+	lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+	if len(lines) != len(want)+1 || !strings.HasPrefix(lines[len(want)], "Observed   homelab at ") {
+		t.Fatalf("output:\n%s", stdout)
+	}
+	for i := range want {
+		if lines[i] != want[i] {
+			t.Errorf("line %d is %q, want %q", i, lines[i], want[i])
+		}
+	}
+}
+
+// An exposed instance's route is the compiled Ingress and its certificate, read by the names the records give them;
+// a crashing container is failing, with the container and its reason printed.
+func TestStatusReadsTheRouteAndNamesAFailingContainer(t *testing.T) {
+	api := &api{crashing: true}
+	server := api.serve(t)
+	exposed := []byte(strings.Replace(string(fixture(t, "prod.json")), `"private"`, `"authenticated-web"`, 1))
+	status, stdout, stderr := runStatus(t, statusArgsWith(t, kubeconfig(t, server), exposed, "r41.json")...)
+	if status != 0 || stderr != "" {
+		t.Fatalf("exit %d: %s", status, stderr)
+	}
+	for _, line := range []string{
+		"State      failing: containers " + observe.ReasonContainers,
+		"Route      https://demo-orders.homelab.swhurl.com",
+		"TLS        demo-orders-tls: ready",
+		"Problems   demo-orders-abc/main: CrashLoopBackOff back-off 5m0s restarting failed container=main",
+	} {
+		if !strings.Contains(stdout, line+"\n") {
+			t.Errorf("missing %q in:\n%s", line, stdout)
+		}
+	}
+	paths := map[string]bool{}
+	for _, request := range api.requests {
+		paths[request.URL.Path] = true
+	}
+	for _, path := range []string{"/apis/networking.k8s.io/v1/namespaces/demo-orders-prod/ingresses/demo-orders",
+		"/apis/cert-manager.io/v1/namespaces/demo-orders-prod/certificates/demo-orders-tls"} {
+		if !paths[path] {
+			t.Errorf("%s was not read: %v", path, paths)
+		}
+	}
+	// The same failure in the document: the state, and the container as a problem.
+	status, stdout, _ = runStatus(t, statusArgsWith(t, kubeconfig(t, server), exposed, "r41.json", "--json")...)
+	report := document(t, stdout)
+	problems := report["problems"].([]any)
+	if status != 0 || len(problems) != 1 || problems[0].(map[string]any)["reason"] != "CrashLoopBackOff" ||
+		report["state"].(map[string]any)["name"] != observe.StateFailing {
+		t.Fatalf("exit %d, state %v, problems %v", status, report["state"], problems)
+	}
+	if routes := report["routes"].([]any); len(routes) != 1 || routes[0].(map[string]any)["outcome"] != observe.Present {
+		t.Fatalf("routes %v", routes)
+	}
+}
+
+// An application and environment with no record under the tree is refused before anything is read, and so is a
+// record that names another instance.
+func TestStatusRefusesAnInstanceWithNoRecord(t *testing.T) {
+	api := &api{}
+	server := api.serve(t)
+	args := statusArgs(t, kubeconfig(t, server))
+	for i, arg := range args {
+		if arg == "--env" {
+			args[i+1] = "staging"
+		}
+	}
+	status, stdout, stderr := runStatus(t, args...)
+	if status != 2 || stdout != "" || !strings.Contains(stderr, "invalid: records: no instance record for demo-orders/staging") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", status, stdout, stderr)
+	}
+	other := []byte(strings.Replace(string(fixture(t, "prod.json")), `"prod"`, `"staging"`, 1))
+	args = statusArgsWith(t, kubeconfig(t, server), other, "r41.json")
+	records := args[2]
+	if err := os.Rename(filepath.Join(records, "demo-orders", "staging"), filepath.Join(records, "demo-orders", "prod")); err != nil {
+		t.Fatal(err)
+	}
+	for i, arg := range args {
+		if arg == "--env" {
+			args[i+1] = "prod"
+		}
+	}
+	status, stdout, stderr = runStatus(t, args...)
+	if status != 2 || stdout != "" || !strings.Contains(stderr, "names demo-orders/staging") {
+		t.Fatalf("another instance's record: exit %d, stdout %q, stderr %q", status, stdout, stderr)
+	}
+	if len(api.requests) != 0 {
+		t.Fatalf("%d requests for a refused instance", len(api.requests))
 	}
 }

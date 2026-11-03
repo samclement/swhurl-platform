@@ -1,26 +1,21 @@
-"""Operate one generated app instance (namespace ``<app>-<env>``, Flux unit
-``app-<app>-<env>``, HelmRelease ``<app>``).
-
-    app status    APP ENV   desired vs applied revision and image, replicas, route, failure reason
-
-The console, the promotion gate and the notification checker read the same status. Logs and a
-reconcile are one or two kubectl or flux calls: host/ops.sh runs them.
+"""One generated app instance's live status (namespace ``<app>-<env>``, Flux unit
+``app-<app>-<env>``, HelmRelease ``<app>``), read for the console, the promotion gate and the
+notification checker. ``make app-status`` is ``swhurl-v2 status``; logs and a reconcile are one
+or two kubectl or flux calls: host/ops.sh runs them.
 """
 from __future__ import annotations
 
 import functools
-import sys
 from dataclasses import dataclass, field
 
-from swhurl import ROOT, interface
+from swhurl import interface
 from swhurl.apps import helmrelease
-from swhurl.apps.contract import AUTH_MIDDLEWARE, SECRET_FILE, app_secret, declared_secrets, stored_secrets
-from swhurl.apps.instance import ENVIRONMENTS, Instance
-from swhurl.apps.state import ready_reason, verdict
+from swhurl.apps.contract import AUTH_MIDDLEWARE, app_secret, declared_secrets
+from swhurl.apps.instance import Instance
+from swhurl.apps.state import ready_reason
 from swhurl.kube import ready_condition
 from swhurl.run import CommandError, Runner
 
-ACTIONS = ('status',)
 WORKLOAD_KINDS = 'deploy,statefulset,daemonset,cronjob'
 SOURCE = 'swhurl-platform'  # the GitRepository every instance's unit applies
 INSTANCE_LABEL = 'app.kubernetes.io/instance'  # on an instance's pods and workloads: the app's name
@@ -110,7 +105,7 @@ class Problem:
 
 @dataclass(frozen=True)
 class InstanceStatus:
-    """What ``app status`` shows, gathered once so the CLI and the console read the same facts."""
+    """An instance's live facts, gathered once so the console and the promotion gate read the same ones."""
     instance: Instance
     desired_revision: str
     applied_revision: str
@@ -332,94 +327,3 @@ def status_of(instance: Instance, unit: dict, source: dict, release: dict | None
         job=job,
         runs=runs_of(cronjob) if job else None,
     )
-
-
-SET, MISSING, UNUSED = 'set', 'value missing', 'unused'
-
-
-def secret_states(declared: list[str], stored: list[str]) -> dict[str, str]:
-    """Each secret name, in the image's order then the Secret's: set, value missing (the image needs it,
-    the Secret has no value) or unused (a value no name of the image asks for)."""
-    states = {name: SET if name in stored else MISSING for name in declared}
-    return states | {name: UNUSED for name in stored if name not in states}
-
-
-def stored_in_checkout(instance: Instance, root=ROOT) -> list[str] | None:
-    """The keys the instance's Secret holds values for in this checkout; None without one (the console image)."""
-    if not (root / 'apps').is_dir():
-        return None
-    path = root / 'apps' / instance.app / instance.env / SECRET_FILE
-    return stored_secrets(path.read_text()) if path.is_file() else []
-
-
-def status_lines(found: InstanceStatus, team: str = '', stored: list[str] | None = None) -> list[str]:
-    instance = found.instance
-    note = '' if found.at_newest else '  <- not yet applied'
-    lines = [
-        f'Instance   {instance.app}/{instance.env} (namespace {instance.namespace})',
-        'State      ' + ': '.join(filter(None, (verdict(found).label, verdict(found).detail))),
-        f"Git        desired {found.desired_revision.split(':')[-1]}, "
-        f"applied {found.applied_revision.split(':')[-1]}{note}",
-        f'Flux unit  {found.unit[0]}: {found.unit[1]}',
-        'Release    ' + (f'{found.release[0]}: {found.release[1]}' if found.release else 'Unknown: not found'),
-    ]
-    if found.image_state == 'matches':
-        lines += [f'Image      {found.desired_image}', '           running: matches desired']
-    else:
-        note = {'different': '  <- different image (rollout in progress or failing)',
-                'unpinned': '  (Git pins no digest, so this cannot be compared)'}.get(found.image_state, '')
-        lines += [f'Image      desired {found.desired_image}',
-                  f"           running {', '.join(found.running_images) or 'none'}{note}"]
-    lines += [f'Replicas   {r.workload}: {r.ready}/{r.wanted} ready' for r in found.replicas]
-    if found.runs:
-        lines += [f"Schedule   {found.runs.schedule} (Etc/UTC){' (suspended)' if found.runs.suspended else ''}",
-                  f"Last run   {found.runs.last_schedule or 'none yet'}"
-                  + (' (running)' if found.runs.active else ' (failed)' if found.runs.failed else ''),
-                  f"Succeeded  {found.runs.last_success or 'never'}"]
-    if team:
-        lines.append(f'Team       {team}')
-    lines.append(f'Exposure   {EXPOSURE_LABELS.get(found.exposure, found.exposure)}')
-    lines += [f'Route      https://{host}' for host in found.routes]
-    lines += [f'TLS        {name}: {ready}' for name, ready in found.certificates]
-    if found.variables:
-        lines.append(f"Env        set by the platform: {', '.join(found.variables)}")
-    if found.secret:
-        lines.append(f'Secrets    every key of Secret {found.secret} (values not shown)')
-    if stored is not None and (states := secret_states(found.secret_names, stored)):
-        lines.append('           ' + ', '.join(f'{name} ({state})' for name, state in states.items()))
-        if MISSING in states.values():
-            i = found.instance
-            lines.append(f'           set a missing value by hand in {i.app}/{i.env} secret.sops.yaml')
-    if found.problems:
-        lines.append('Problems')
-        for p in found.problems:
-            lines.append(f'  {p.pod}: {p.reason} {p.message}'.rstrip())
-            if p.hint:
-                lines.append(f'    fix: {p.hint}')
-    return lines
-
-
-def status(runner: Runner, instance: Instance) -> int:
-    found = gather_status(runner, instance)
-    if found is None:
-        print(f'[ERROR] Flux unit {instance.unit} not found', file=sys.stderr)
-        return 1
-    for line in status_lines(found, team_of(runner, instance), stored_in_checkout(instance)):
-        print(line)
-    return 0
-
-
-def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
-    argv = argv or []
-    if len(argv) != 3 or argv[0] not in ACTIONS:
-        print(__doc__.split('\n\n', 1)[1].rstrip(), file=sys.stderr)
-        return 2
-    instance = Instance.named(argv[1], argv[2])
-    if instance is None:
-        print(f'[ERROR] no instance {argv[1]}/{argv[2]}: APP must be a DNS label and ENV one of {", ".join(ENVIRONMENTS)}', file=sys.stderr)
-        return 2
-    try:
-        return status(runner or Runner.from_environment(), instance)
-    except CommandError as error:
-        print(f'[ERROR] {error}', file=sys.stderr)
-        return 1

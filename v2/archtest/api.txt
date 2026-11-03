@@ -333,7 +333,9 @@ observe: const ReasonAnotherInstance = "metadata_names_another_instance"
 observe: const ReasonArchiveMissing = "chosen_archive_absent"
 observe: const ReasonArchiveOld = "last_archive_too_old"
 observe: const ReasonConfined = "not_confined_to_the_instance"
+observe: const ReasonContainers = "container_not_ready"
 observe: const ReasonDigest = "digest"
+observe: const ReasonFailed = "condition_failed"
 observe: const ReasonForbidden = "forbidden"
 observe: const ReasonMalformed = "malformed"
 observe: const ReasonMaxAge = "max_age_required"
@@ -389,6 +391,12 @@ observe: const RunRunning = "running"
 observe: const RunUnknown = "unknown"
 observe: const Running = "running"
 observe: const Settled = "settled"
+observe: const StateFailing = "failing"
+observe: const StateHealthy = "healthy"
+observe: const StateStopped = "stopped"
+observe: const StateSuspended = "suspended"
+observe: const StateUnknown = "unknown"
+observe: const StateUpdating = "updating"
 observe: const Unavailable = "unavailable"
 observe: const Unknown Verdict = "unknown"
 observe: func (*Error) Error() string
@@ -400,7 +408,9 @@ observe: func Explain(target Target, evidence Evidence) (Report, error)
 observe: func IsPositive(outcome string) bool
 observe: func NewestRun(items [][]byte) (string, bool, error)
 observe: func RestoreOf(input RestoreInput) RestorePlan
+observe: func RouteTargetOf(ingress []byte) (RouteTarget, error)
 observe: func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
+observe: func StateOf(report Report) State
 observe: func TargetOf(helmRelease []byte, unit Ref, revision string) (Target, error)
 observe: func UnitRef(unit []byte) (Ref, error)
 observe: type Archive struct {Key string LastModified time.Time}
@@ -411,17 +421,22 @@ observe: type ArchiveReport struct {State string Reason string Bucket string Pre
 observe: type BackupEvidence struct {CronJob Read Pods List Run *Read Archive *ArchiveList MaxAge time.Duration}
 observe: type BackupReport struct {State string Reason string Schedule string LastScheduledAt string LastSucceededAt string MaxAge time.Duration NewestRun *RunReport Archive ArchiveReport}
 observe: type BackupTarget struct {CronJob Ref Pods Ref Selector string Schedule string}
+observe: type Certificate struct {Name string Outcome string Reason string}
 observe: type Error struct {Field, Reason string}
 observe: type Evidence struct {Source string ObservedAt string Objects []Read Pods []List Backup *BackupEvidence}
 observe: type Finding struct {Field, Outcome, Reason string}
 observe: type List struct {Ref Ref Selector string Status string Reason string Items [][]byte}
+observe: type Problem struct {Pod, Container, Reason, Message string}
 observe: type Read struct {Ref Ref Status string Reason string Object []byte}
 observe: type Ref struct {APIVersion, Kind, Namespace, Name string}
-observe: type Report struct {Target Target Source string ObservedAt string Findings []Finding Verdict Verdict Backup BackupReport Assessed []string Unassessed []string NotCovered []string}
+observe: type Report struct {Target Target Source string ObservedAt string Findings []Finding Verdict Verdict Backup BackupReport Problems []Problem Routes []Route Certificates []Certificate State State Assessed []string Unassessed []string NotCovered []string}
 observe: type RestoreInput struct {Namespace, Application string Archive ArchiveReport Metadata *ArchiveMetadata Failure string}
 observe: type RestorePlan struct {State string Reason string Archive ArchiveReport Metadata ArchiveMetadata}
+observe: type Route struct {Name string Outcome string Reason string Hosts []string}
+observe: type RouteTarget struct {Ingress Ref Certificates []Ref}
 observe: type RunReport struct {Name string CreatedAt string CompletedAt string Outcome string}
-observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string Backup *BackupTarget}
+observe: type State struct {Name, Field, Reason string}
+observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string Backup *BackupTarget Route *RouteTarget}
 observe: type Verdict string
 orchestration: const AppRunning = "running"
 orchestration: const AppStopped = "stopped"
@@ -447,6 +462,7 @@ orchestration: func Promote(inputs PromoteInputs, destination string, writer fil
 orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
 orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
+orchestration: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
@@ -474,6 +490,7 @@ orchestration: type RestoreJobOutcome struct {Name string State string Log strin
 orchestration: type RestoreOutcome struct {State string Reason string Steps []RestoreStep Job RestoreJobOutcome App RestoreApp BackupSuspended bool Started time.Time Finished time.Time}
 orchestration: type RestoreStep struct {Name string Outcome string Detail string}
 orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
+orchestration: type StatusInputs struct {Inputs Revision string Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
 shadow: func (*Error) Error() string

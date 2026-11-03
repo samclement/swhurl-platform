@@ -42,7 +42,7 @@ const (
 // Without --confirm nothing is stopped or changed; with it, the use case stops the app, restores the archive
 // and puts the app back, and this command reports what it did.
 func (c cli) restore(r request) int {
-	target, status := c.observationTarget(r)
+	inputs, status := c.inputs(r)
 	if status != 0 {
 		return status
 	}
@@ -50,10 +50,11 @@ func (c cli) restore(r request) int {
 	if status != 0 {
 		return status
 	}
-	report, status := c.observeLive(r, target, maxAge)
+	report, status := c.observeLive(r, inputs, maxAge)
 	if status != 0 {
 		return status
 	}
+	target := report.Target
 	if report.Backup.State == observe.BackupNotApplicable {
 		return fail(c.diagnostic, errors.New("unsupported: instance: it keeps no database to restore"))
 	}

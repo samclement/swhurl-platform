@@ -30,7 +30,7 @@ func TestEncodeReportIsStableAndComplete(t *testing.T) {
 	if err := json.Unmarshal(first, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document["kind"] != "v2-observation" || document["version"] != float64(2) {
+	if document["kind"] != "v2-observation" || document["version"] != float64(3) {
 		t.Fatalf("envelope: %v %v", document["kind"], document["version"])
 	}
 	if document["verdict"] != string(observe.IsRunning) || document["source"] != report.Source {
@@ -65,7 +65,7 @@ func TestEncodeReportKeepsEmptyLists(t *testing.T) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"findings", "assessed", "unassessed", "notCovered"} {
+	for _, field := range []string{"findings", "problems", "routes", "certificates", "assessed", "unassessed", "notCovered"} {
 		if _, ok := document[field].([]any); !ok {
 			t.Errorf("%s is %v, not a list", field, document[field])
 		}

@@ -1,9 +1,6 @@
-"""app status: output and commands, offline, with FakeRunner (logs and reconcile: test_command_safety)."""
-import io
+"""An instance's live status as the console and the promotion gate gather it, offline, with FakeRunner."""
 import json
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
-from unittest import mock
 
 from swhurl.apps import ops as app_ops
 from swhurl.apps.instance import Instance
@@ -50,77 +47,35 @@ def cluster(**overrides):
     return fake.on('kubectl', '-n', 'flux-system', 'logs').on('kubectl', '-n', 'web-prod', 'logs').on('flux')
 
 
-def run(runner, *argv, env=None):
-    out, err = io.StringIO(), io.StringIO()
-    with mock.patch.dict('os.environ', env or {}), redirect_stdout(out), redirect_stderr(err):
-        code = app_ops.main(list(argv), runner)
-    return code, out.getvalue(), err.getvalue()
-
-
-class StatusTests(unittest.TestCase):
-    def test_healthy_instance(self):
-        code, out, _ = run(cluster(), 'status', 'web', 'prod')
-        self.assertEqual(code, 0)
-        self.assertEqual(out.splitlines(), [
-            'Instance   web/prod (namespace web-prod)',
-            'State      Healthy',
-            'Git        desired abc123, applied abc123',
-            f'Flux unit  True: Applied revision: {REV}',
-            'Release    True: Helm upgrade succeeded',
-            f'Image      docker.io/x/web:1.0@{DIGEST}',
-            '           running: matches desired',
-            'Replicas   Deployment/web: 1/1 ready',
-            'Team       payments',
-            'Exposure   signed-in (Google sign-in)',
-            'Route      https://web.homelab.swhurl.com',
-            'TLS        web-tls: True',
-        ])
-
-    def test_unapplied_revision_and_failing_container(self):
+class GatheredFactsTests(unittest.TestCase):
+    def test_an_unapplied_revision_and_a_failing_container(self):
         runner = cluster(
             gitrepository={'status': {'artifact': {'revision': 'main@sha1:def456'}}},
             pods={'items': [{'metadata': {'name': 'web-2'}, 'status': {'containerStatuses': [{
                 'ready': False, 'state': {'waiting': {'reason': 'ImagePullBackOff', 'message': 'not found ' * 40}}}]}}]})
-        _, out, _ = run(runner, 'status', 'web', 'prod')
-        self.assertIn('Git        desired def456, applied abc123  <- not yet applied', out)
-        self.assertIn('           running none', out)
-        problem = out.split('Problems\n')[1].splitlines()[0]
-        self.assertTrue(problem.startswith('  web-2: ImagePullBackOff not found'))
-        self.assertLessEqual(len(problem), len('  web-2: ImagePullBackOff ') + 160)
+        found = app_ops.gather_status(runner, Instance('web', 'prod'))
+        self.assertFalse(found.at_newest)
+        self.assertEqual(found.running_images, [])
+        (problem,) = found.problems
+        self.assertEqual((problem.pod, problem.reason), ('web-2', 'ImagePullBackOff'))
+        self.assertEqual(len(problem.message), 160)
 
-    def test_an_unreadable_namespace_only_drops_the_team_line(self):
-        code, out, _ = run(cluster(namespace=None), 'status', 'web', 'prod')
-        self.assertEqual(code, 0)
-        self.assertNotIn('Team', out)
-        self.assertIn('Exposure   signed-in', out)
-
-    def test_missing_release_is_reported_not_fatal(self):
-        code, out, _ = run(cluster(helmrelease=None), 'status', 'web', 'prod')
-        self.assertEqual(code, 0)
-        self.assertIn('Release    Unknown: not found', out)
-
-    def test_missing_unit_fails(self):
-        code, _, err = run(cluster(kustomization=None), 'status', 'web', 'prod')
-        self.assertEqual(code, 1)
-        self.assertIn('Flux unit app-web-prod not found', err)
+    def test_an_unreadable_namespace_has_no_team(self):
+        self.assertEqual(app_ops.team_of(cluster(), Instance('web', 'prod')), 'payments')
+        self.assertEqual(app_ops.team_of(cluster(namespace=None), Instance('web', 'prod')), '')
 
     def test_read_failures_are_errors_not_absence(self):
         for detail in ('Forbidden', 'connection refused', 'missing required command: kubectl'):
             with self.subTest(detail=detail):
                 runner = FakeRunner().on('kubectl', returncode=1, stderr=detail)
-                code, out, err = run(runner, 'status', 'web', 'prod')
-                self.assertEqual(code, 1)
-                self.assertIn(detail, err)
-                self.assertNotIn('not found', err)
-                self.assertEqual(out, '')
+                with self.assertRaises(CommandError):
+                    app_ops.gather_status(runner, Instance('web', 'prod'))
                 with self.assertRaises(CommandError):
                     app_ops.get(runner, 'get', 'pods')
 
-    def test_secondary_read_failure_does_not_print_partial_success(self):
-        runner = cluster(pods=Result((), 1, '', 'Forbidden'))
-        code, out, err = run(runner, 'status', 'web', 'prod')
-        self.assertEqual((code, out), (1, ''))
-        self.assertIn('Forbidden', err)
+    def test_a_secondary_read_failure_is_an_error_not_a_partial_status(self):
+        with self.assertRaises(CommandError):
+            app_ops.gather_status(cluster(pods=Result((), 1, '', 'Forbidden')), Instance('web', 'prod'))
 
 
 class ImageStateTests(unittest.TestCase):
@@ -140,16 +95,6 @@ class ImageStateTests(unittest.TestCase):
         for state, (desired, running) in cases.items():
             with self.subTest(state=state):
                 self.assertEqual(self.found(desired, running).image_state, state)
-
-    def test_lines_say_it_plainly(self):
-        want = f'docker.io/x/web:1.0@{DIGEST}'
-        same = app_ops.status_lines(self.found(want, [f'docker.io/x/web@{DIGEST}']))
-        self.assertIn(f'Image      {want}', same)
-        self.assertIn('           running: matches desired', same)
-        other = 'sha256:' + 'f' * 64
-        moved = app_ops.status_lines(self.found(want, [f'docker.io/x/web@{other}']))
-        self.assertIn(f'Image      desired {want}', moved)
-        self.assertTrue(any('different image' in line for line in moved))
 
 
 class RunningImagesTests(unittest.TestCase):
@@ -218,12 +163,8 @@ class HintTests(unittest.TestCase):
                     self.assertIn(text, found.hint)
         self.assertEqual(cases['oom'][0].message, 'last exit: OOMKilled')
 
-    def test_unknown_reasons_have_no_hint_and_status_prints_hints(self):
+    def test_unknown_reasons_have_no_hint(self):
         self.assertEqual(self.problem({'waiting': {'reason': 'SomethingNew'}}).hint, '')
-        instance = Instance('web', 'prod')
-        found = app_ops.InstanceStatus(instance, REV, REV, ('True', ''), None, 'x:1', [], [], [], [],
-                                       [self.problem({'waiting': {'reason': 'ImagePullBackOff'}})])
-        self.assertTrue(any(line.startswith('    fix: The node cannot pull') for line in app_ops.status_lines(found)))
 
 
 class LiveExposureTests(unittest.TestCase):
@@ -264,16 +205,6 @@ class GatherStatusTests(unittest.TestCase):
         self.assertIsNone(app_ops.gather_status(cluster(kustomization=None), Instance('web', 'prod')))
         found = app_ops.gather_status(cluster(helmrelease=None), Instance('web', 'prod'))
         self.assertIsNone(found.release)
-
-
-class UsageTests(unittest.TestCase):
-    def test_bad_usage_exits_2_without_cluster_calls(self):
-        for argv in ([], ['status', 'web'], ['delete', 'web', 'prod'], ['status', 'web', 'prod', 'extra'],
-                     ['logs', 'web', 'prod'], ['check', 'web', 'prod']):
-            with self.subTest(argv=argv):
-                runner = FakeRunner()
-                self.assertEqual(run(runner, *argv)[0], 2)
-                self.assertEqual(runner.calls, [])
 
 
 if __name__ == '__main__':

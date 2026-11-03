@@ -32,6 +32,22 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## The ownership milestone: every instance is v2's (3 November 2026)
+
+- **What it records:** v2 renders, writes and checks every app instance, and the
+  [acceptance](iteration-2-plan.md#8-the-cutover-one-writer-v1s-writer-deleted-approved-31-october-2026) holds. `v2-records/` holds 10 instances
+  (`demo-shop`, `demo-orders`, `swhurl-try-10` and `swhurl-try-30` in staging and prod; `demo-shopper` and
+  `demo-notifier` in staging), and the cluster runs exactly 10 `app-*` Flux units and 10 app HelmReleases, one for
+  each. No v1 record exists, `swhurl-v2 resolve` refuses an instance whose format is not `v2`, and
+  `verify-platform` has no v1 branch. The gate moves to a decision brief for the console port.
+- **Checked:** `make check-v2` (no differences), `make check-apps` (v2's records render to the files Git holds,
+  every app record states a registered team; its "3 instance(s)" are the v1 fixtures the v1 model still judges) and
+  `make verify-platform` (passed: 10 instances, each with a port of its own) all passed.
+- **Left as they are:** the `swhurl-try-6-staging` and `-prod` namespaces hold only a retained volume each, kept
+  for their data when the app was removed; they are not instances. `declaredSubscriptions` in
+  `v2/cmd/swhurl-v2/users.go` still reads v1's top-level `subscriptions`, which no record states: dead code for a
+  later v2 change.
+
 ## One source for each backup location (3 November 2026)
 
 - **What changed:** Python's two copies of the backup locations (`platform.BACKUP_S3_URI`, `platform.SQLITE_S3_URI`)

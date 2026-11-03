@@ -66,7 +66,7 @@ Browser → useful page shell → independently loaded status sections
 
 Return useful content before optional integrations finish; refresh only relevant sections; avoid duplicate expensive reads across fragments; show loading/unavailable/stale evidence honestly. Preserve ordinary links/forms, backend authentication/authorisation and CSRF protections. Polling is sufficient initially; use SSE only where streaming adds value.
 
-HTMX does not make server work fast, and fragmenting one expensive request into many can increase work. The existing [read-performance documentation](console.md#read-performance) and architecture review identify remote historical-evidence work as a major cost. Simplifying that promise and sharing immutable reads matter more than changing template engines. No console port belongs in the current gate.
+HTMX does not make server work fast, and fragmenting one expensive request into many can increase work. The existing [read-performance documentation](console.md#read-performance) and architecture review identify remote historical-evidence work as a major cost. Simplifying that promise and sharing immutable reads matter more than changing template engines. The port itself is [section 11](#11-the-console-port-strangled-from-inside-approved-3-november-2026).
 
 ## 2. Phase-1 model and contract
 
@@ -648,7 +648,10 @@ encrypted seed — the instance's grants and choices, which no image states.
 **Not modelled:** a repository read, OCI referrer artifacts, a private app repository, a first production,
 secrets, alerts, a `job` kind and instance-declared egress grants.
 
-## 11. The console port: decision brief (proposed 3 November 2026, not approved)
+## 11. The console port: strangled from inside (approved 3 November 2026)
+
+**Decided 3 November 2026: option 3, status first.** The brief below is kept as the reasons and what would
+reopen it. Each slice is still its own approved design.
 
 **Decision.** How the console (`tools/swhurl/console`) leaves Python. It is the largest Python surface, and the
 step after the [ownership milestone](current-state.md#the-ownership-milestone-every-instance-is-v2s-3-november-2026).

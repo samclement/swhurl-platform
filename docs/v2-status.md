@@ -1,14 +1,14 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the operator's choice on the console port brief
+Gate: the status slice's design
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
 kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl`
 (Python) is retired. Bash stays for host glue. v2 already owns every instance and the live loop; the
-Python surfaces below are the rest of the road. Each retirement is its own approved slice, and the
-console port is not approved.
+Python surfaces below are the rest of the road. Each retirement is its own approved slice; the console
+leaves by the [approved strangling](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026).
 
 This page is the one place v2's progress, remaining work and deferred features live. Contracts are in
 [iteration 2](iteration-2-plan.md); dated evidence in [current state](current-state.md); the registry in
@@ -52,7 +52,7 @@ goal; each row is its own approved slice. **Order matters here.** Through its im
 of 119 modules (13.9k of 19.8k lines), including `verify`, `apps/checks`, `recovery`, `dashboards` and the
 notification checker, so those leave with or through the console port, not with a command; `apps/policy`,
 `apps/teams`, the docs and template checks, `backup_job`, `sqlite_restore` and the notify service are
-console-free and can go first ([the brief](iteration-2-plan.md#11-the-console-port-decision-brief-proposed-3-november-2026-not-approved)). Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
+console-free and can go first ([the brief](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026)). Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
 calls are bash ([`host/ops.sh`](../host/ops.sh)), and the rest makes a safety decision, runs in the cluster or
 is shared with the console, so Go replaces it. A target that becomes bash keeps its row in `commands.py` and
 loses its `run=` function.
@@ -66,7 +66,7 @@ loses its `run=` function.
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
 | The v1 records model and its fixture oracle (`apps/model/*`) | delete; v2 judges the fixtures | bounded, not started: 1,547 lines, imported by 17 modules (11 under `apps/`, 3 under `console/`, `dashboards.py` and 2 live tests) and 5 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
 | The image-declaration producer (`image_declaration.py`) | a Go producer the app builds call | not started |
-| `console/` (Starlette and its templates) | a Go server that keeps the same HTMX templates | not started; not approved. 4,959 lines and 18 templates: the largest surface, and the one that keeps the six modules above alive |
+| `console/` (Starlette and its templates) | a Go server that keeps the same HTMX templates | approved 3 November 2026, not started: each slice moves one thing the console imports into a `swhurl-v2` subcommand it calls, and the server and its 18 templates go last |
 
 ## Remaining work
 
@@ -85,9 +85,9 @@ not migration.
 
 **B. Then the rest of the road.**
 
-2. **The operator's choice on the console port.** The
-   [brief](iteration-2-plan.md#11-the-console-port-decision-brief-proposed-3-november-2026-not-approved)
-   recommends strangling it from inside, status first; the port needs the operator's approval.
+2. **The console port's first slice: status.** Widen observation to the eight kinds `apps/ops.gather_status`
+   reads and add `swhurl-v2 status` on the host in place of `make app-status`; then the in-cluster credential
+   (its own approval) and the console, promotion gate and notification checker on it. The design comes first.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
@@ -147,6 +147,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   (1 November 2026).
 - Each backup location is stated once, where its job reads it (MongoDB's in `platform/backup/mongodb.yaml`,
   the apps' in the profile), and no environment variable overrides it (3 November 2026).
+- The console leaves by strangling: one `swhurl-v2` subcommand per slice, called through `console/v2.py` and
+  deleting that Python; its server and templates go last (3 November 2026).
 - The v1 Python model is bounded, not ported: nothing new imports it and it only shrinks, with the v1
   renderer's interface tests in `tests/test_interface.py` (3 November 2026).
 

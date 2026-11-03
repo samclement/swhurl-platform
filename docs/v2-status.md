@@ -150,6 +150,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   the apps' in the profile), and no environment variable overrides it (3 November 2026).
 - The console leaves by strangling: one `swhurl-v2` subcommand per slice, called through `console/v2.py` and
   deleting that Python; its server and templates go last (3 November 2026).
+- The binary is built, never committed: make targets build it into a throwaway folder, and a local build in
+  `v2/` is ignored (3 November 2026).
 - The v1 Python model is bounded, not ported: nothing new imports it and it only shrinks, with the v1
   renderer's interface tests in `tests/test_interface.py` (3 November 2026).
 

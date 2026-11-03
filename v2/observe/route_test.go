@@ -190,7 +190,7 @@ func TestEncodeReportCarriesTheStatusFacts(t *testing.T) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.Version != 3 || document.State.Name != observe.StateFailing || document.State.Field != "containers" ||
+	if document.Version != 4 || document.State.Name != observe.StateFailing || document.State.Field != "containers" ||
 		document.State.Reason != observe.ReasonContainers {
 		t.Fatalf("version %d, state %+v", document.Version, document.State)
 	}

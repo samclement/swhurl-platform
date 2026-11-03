@@ -30,6 +30,9 @@ const defaultMaxAge = 26 * time.Hour
 // state in text, or the v2-observation document with --json. It reads only, and a report is exit 0 whatever the
 // state says.
 func (c cli) status(r request) int {
+	if r.all {
+		return c.statusAll(r)
+	}
 	inputs, status := c.statusInputs(r)
 	if status != 0 {
 		return status
@@ -101,23 +104,11 @@ func (c cli) sameInstance(r request, instance []byte) int {
 // observeLive runs the status use case against the API server the credential names — and, when asked, the object
 // store's archive listing — and returns the observation.
 func (c cli) observeLive(r request, inputs orchestration.Inputs, maxAge time.Duration) (observe.Report, int) {
-	connection, source, status := c.connection(r)
+	request, status := c.liveStatusInputs(r, inputs.Profile, maxAge)
 	if status != 0 {
 		return observe.Report{}, status
 	}
-	reader, err := connection.Reader()
-	if err != nil {
-		return observe.Report{}, fail(c.diagnostic, err)
-	}
-	// The evidence's source is the credential that answered, unless the operator names it.
-	if r.source != "" {
-		source = r.source
-	}
-	request := orchestration.StatusInputs{Inputs: inputs, Revision: r.revision, Reader: reader, Source: source,
-		Now: time.Now, MaxAge: maxAge}
-	if r.archive {
-		request.Archive = c.archiveLister(r, inputs.Profile)
-	}
+	request.Inputs = inputs
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
 	report, err := orchestration.Status(ctx, request)
@@ -268,6 +259,8 @@ func statusText(app, env string, report observe.Report) string {
 		fmt.Sprintf("Instance   %s/%s (namespace %s)", app, env, target.Namespace),
 		"State      " + stateText(report.State),
 		fmt.Sprintf("Revision   %s, the commit the records were read at", target.Revision),
+		"Applied    " + report.Currentness.AppliedRevision,
+		"Current    " + outcomeText(report.Currentness.State, report.Currentness.Reason),
 		"Image      " + target.Digest,
 		fmt.Sprintf("Replicas   %d wanted", target.Replicas),
 	}

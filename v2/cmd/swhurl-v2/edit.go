@@ -319,6 +319,8 @@ func appEnvironments(root, application string) ([]string, error) {
 		}
 		if _, err := os.Stat(filepath.Join(root, application, entry.Name(), instanceFile)); err == nil {
 			names = append(names, entry.Name())
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
 		}
 	}
 	return names, nil

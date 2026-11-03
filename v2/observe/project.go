@@ -13,7 +13,7 @@ type condition struct {
 	Type               string `json:"type"`
 	Status             string `json:"status"`
 	Reason             string `json:"reason"`
-	ObservedGeneration int64  `json:"observedGeneration"`
+	ObservedGeneration *int64 `json:"observedGeneration"`
 }
 
 // fluxObject is the part of a Flux object's document this slice reads. It is valid only when the
@@ -23,6 +23,7 @@ type fluxObject struct {
 	suspended           bool
 	conditions          []condition
 	lastAppliedRevision string
+	suspendValue        *bool
 }
 
 // deploymentObject is the part of a Deployment's document this slice reads. A Deployment reports the
@@ -32,6 +33,7 @@ type deploymentObject struct {
 	observed          int64
 	availableReplicas int64
 	conditions        []condition
+	readyReplicas     *int64
 }
 
 // podsFact is what the instance's own pods say about its running image. images holds the started
@@ -160,7 +162,7 @@ func validateList(list List) error {
 // failureReasons are the fixed names a failed read may carry. The adapter owns them; the pure layer
 // refuses anything else rather than copying arbitrary text into a report.
 func failureReasons() []string {
-	return []string{ReasonForbidden, ReasonTimedOut, ReasonTransport, ReasonStatus, ReasonMalformed, ReasonTooLarge}
+	return []string{ReasonForbidden, ReasonTimedOut, ReasonTransport, ReasonStatus, ReasonMalformed, ReasonTooLarge, ReasonIncomplete}
 }
 
 // factsOf decodes each read the target supplied. A malformed present object is invalid input and
@@ -214,7 +216,7 @@ func fluxOf(field string, data []byte) (fluxObject, error) {
 			Generation int64 `json:"generation"`
 		} `json:"metadata"`
 		Spec struct {
-			Suspend bool `json:"suspend"`
+			Suspend *bool `json:"suspend"`
 		} `json:"spec"`
 		Status struct {
 			LastAppliedRevision string      `json:"lastAppliedRevision"`
@@ -227,8 +229,8 @@ func fluxOf(field string, data []byte) (fluxObject, error) {
 	if document.Metadata.Generation < 1 {
 		return fluxObject{}, invalid(field, "missing_generation")
 	}
-	return fluxObject{document.Metadata.Generation, document.Spec.Suspend, document.Status.Conditions,
-		document.Status.LastAppliedRevision}, nil
+	return fluxObject{generation: document.Metadata.Generation, suspended: document.Spec.Suspend != nil && *document.Spec.Suspend,
+		conditions: document.Status.Conditions, lastAppliedRevision: document.Status.LastAppliedRevision, suspendValue: document.Spec.Suspend}, nil
 }
 
 func deploymentOf(data []byte) (deploymentObject, error) {
@@ -239,6 +241,7 @@ func deploymentOf(data []byte) (deploymentObject, error) {
 		Status struct {
 			ObservedGeneration int64       `json:"observedGeneration"`
 			AvailableReplicas  int64       `json:"availableReplicas"`
+			ReadyReplicas      *int64      `json:"readyReplicas"`
 			Conditions         []condition `json:"conditions"`
 		} `json:"status"`
 	}
@@ -249,7 +252,7 @@ func deploymentOf(data []byte) (deploymentObject, error) {
 		return deploymentObject{}, invalid("workload", "missing_generation")
 	}
 	return deploymentObject{document.Metadata.Generation, document.Status.ObservedGeneration,
-		document.Status.AvailableReplicas, document.Status.Conditions}, nil
+		document.Status.AvailableReplicas, document.Status.Conditions, document.Status.ReadyReplicas}, nil
 }
 
 // podContainer and podContainerStatus are the two container views a pod document carries: the image

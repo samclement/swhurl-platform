@@ -17,7 +17,11 @@ type StatusInputs struct {
 	Inputs
 	// Revision is the commit the records were read at: the revision Flux should have applied.
 	Revision string
-	Reader   kube.Reader
+	// RecordsRoot and SharedPaths are repository-relative, not temporary extraction paths.
+	RecordsRoot string
+	SharedPaths []string
+	Changes     *observe.Changes
+	Reader      kube.Reader
 	// Source names the evidence's source, and Now is the clock its time is read from: both are the caller's.
 	Source string
 	Now    func() time.Time
@@ -33,7 +37,7 @@ type StatusInputs struct {
 // only. A read the cluster answers with a failure is evidence; a request the adapter refuses to make, a record the
 // compiler refuses and a failed archive listing are errors, and no report is made.
 func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error) {
-	target, err := statusTarget(inputs.Inputs, inputs.Revision)
+	target, err := statusScopedTarget(inputs)
 	if err != nil {
 		return observe.Report{}, err
 	}
@@ -41,15 +45,7 @@ func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error) {
 	if err != nil {
 		return observe.Report{}, err
 	}
-	evidence.Source, evidence.ObservedAt = inputs.Source, inputs.Now().UTC().Format(time.RFC3339)
-	if inputs.Archive != nil && evidence.Backup != nil {
-		listed, err := inputs.Archive(ctx, target.Namespace)
-		if err != nil {
-			return observe.Report{}, err
-		}
-		evidence.Backup.Archive = &listed
-	}
-	return observe.Explain(target, evidence)
+	return statusReport(ctx, inputs, target, evidence, inputs.Now().UTC().Format(time.RFC3339))
 }
 
 // compiledInstance is the documents among a compilation's files that the target is derived from. The backup and
@@ -65,6 +61,10 @@ func statusTarget(inputs Inputs, revision string) (observe.Target, error) {
 	if err != nil {
 		return observe.Target{}, err
 	}
+	return targetFromCompilation(compiled, revision)
+}
+
+func targetFromCompilation(compiled kernel.Compilation, revision string) (observe.Target, error) {
 	documents, err := compiledDocuments(compiled)
 	if err != nil {
 		return observe.Target{}, err
@@ -149,9 +149,8 @@ func readEvidence(ctx context.Context, reader kube.Reader, target observe.Target
 	return evidence, err
 }
 
-// backupEvidence reads a database instance's protection: its job, the pods its runs create, and — through the
-// newest pod's owner reference — the run itself. A Job carries no label the job's selector could find, so its name
-// comes from the pod the job created, never from a naming convention.
+// backupEvidence reads a database instance's schedule and selected run pods. The shared statusReport
+// assembly reads the newest pod's owner Job, never a guessed name or an assumed Job label.
 func backupEvidence(ctx context.Context, reader kube.Reader, target observe.Target, maxAge time.Duration) (*observe.BackupEvidence, error) {
 	cronJob, err := reader.Read(ctx, target.Backup.CronJob)
 	if err != nil {
@@ -161,11 +160,7 @@ func backupEvidence(ctx context.Context, reader kube.Reader, target observe.Targ
 	if protection.Pods, err = reader.List(ctx, target.Backup.Pods, target.Backup.Selector); err != nil {
 		return nil, err
 	}
-	if protection.Pods.Status == observe.Present {
-		if protection.Run, err = runEvidence(ctx, reader, target, protection.Pods); err != nil {
-			return nil, err
-		}
-	}
+
 	return protection, nil
 }
 

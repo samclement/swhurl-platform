@@ -28,8 +28,9 @@ type State struct {
 //	unknown    any fact not read or not established, named
 //	healthy    otherwise
 //
-// The expected revision and digest are the records', so a commit the unit has not applied yet is updating
-// whatever it touched. Routes, certificates and the backup are reported beside the state, never decide it.
+// The expected revision and digest are the records'. An unapplied commit stays updating unless a
+// complete matching comparison proves it unaffected. That exemption changes only the revision finding.
+// Routes, certificates and the backup are reported beside the state, never decide it.
 func StateOf(report Report) State {
 	for _, rule := range []func(Report) (State, bool){suspendedState, failingState, updatingState, stoppedState,
 		unknownState} {

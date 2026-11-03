@@ -35,16 +35,17 @@ const (
 
 // api is the server-side scenario: the documents for one instance, and the requests that were made.
 type api struct {
-	requests   []*http.Request
-	changes    []change       // every request that is not a read, in order
-	status     map[string]int // path → status override, for the failure cases
-	namespace  string         // the instance's namespace; prod's by default
-	digest     string         // the artifact the compiled release pins; the prod fixture's by default
-	backup     bool           // whether the instance renders a backup CronJob
-	scaledTo   *int32         // what a patch last set the Deployment's replica count to
-	jobFailed  bool           // whether a restore's own Job reports Failed instead of Complete
-	restoreJob bool           // whether a restore's Job (and so its pod) exists
-	crashing   bool           // whether the app's container is crashing instead of ready
+	requests        []*http.Request
+	changes         []change       // every request that is not a read, in order
+	status          map[string]int // path → status override, for the failure cases
+	namespace       string         // the instance's namespace; prod's by default
+	digest          string         // the artifact the compiled release pins; the prod fixture's by default
+	backup          bool           // whether the instance renders a backup CronJob
+	scaledTo        *int32         // what a patch last set the Deployment's replica count to
+	jobFailed       bool           // whether a restore's own Job reports Failed instead of Complete
+	restoreJob      bool           // whether a restore's Job (and so its pod) exists
+	appliedRevision string         // optional literal revision override for compare/currentness tests
+	crashing        bool           // whether the app's container is crashing instead of ready
 }
 
 // change is one request that changes something, with its body: what a restore's own objects are created from.
@@ -117,7 +118,7 @@ func (a *api) serve(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/app-" + namespace:
 			writeDocument(t, w, flux("kustomize.toolkit.fluxcd.io/v1", "Kustomization", "app-"+namespace, "flux-system", map[string]any{
-				"lastAppliedRevision": "main@sha1:" + observedRevision,
+				"lastAppliedRevision": apiAppliedRevision(a),
 			}))
 		case "/apis/helm.toolkit.fluxcd.io/v2/namespaces/" + namespace + "/helmreleases/demo-orders":
 			writeDocument(t, w, flux("helm.toolkit.fluxcd.io/v2", "HelmRelease", "demo-orders", namespace, nil))
@@ -406,7 +407,7 @@ func TestStatusReportsTheRunningInstance(t *testing.T) {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
 	report := document(t, stdout)
-	if report["kind"] != "v2-observation" || report["version"] != float64(3) {
+	if report["kind"] != "v2-observation" || report["version"] != float64(4) {
 		t.Fatalf("the report envelope is %v/%v", report["kind"], report["version"])
 	}
 	if report["verdict"] != string(observe.IsRunning) || report["state"].(map[string]any)["name"] != observe.StateHealthy {
@@ -690,6 +691,8 @@ func TestStatusPrintsTextByDefault(t *testing.T) {
 		"Instance   demo-orders/prod (namespace demo-orders-prod)",
 		"State      healthy",
 		"Revision   " + observedRevision + ", the commit the records were read at",
+		"Applied    main@sha1:" + observedRevision,
+		"Current    applied/revision_matches",
 		"Image      " + compiledDigest,
 		"Replicas   1 wanted",
 		"Findings   unit           reconciled",
@@ -934,4 +937,11 @@ func TestRestoreRefusesInCluster(t *testing.T) {
 	if _, outcome := parse(append(args, "--in-cluster")); outcome != misuse {
 		t.Fatalf("restore --in-cluster: outcome %d", outcome)
 	}
+}
+
+func apiAppliedRevision(a *api) string {
+	if a.appliedRevision != "" {
+		return a.appliedRevision
+	}
+	return "main@sha1:" + observedRevision
 }

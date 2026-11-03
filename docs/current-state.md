@@ -32,6 +32,29 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## Bulk status and revision evidence in Go (3 November 2026)
+
+- **What changed:** `status --all` shares single-instance observation decisions and batches the required lists.
+  It reads each database's newest Job by the owner name from selected backup pods (the approved exception:
+  fixed core lists plus at most one Job GET per database), without relying on missing Job-template labels.
+- **Currentness:** complete comparisons matching the expected and observed applied commits can prove an
+  instance unaffected. Relevance uses v2's own record/render folders and unit registrations, including removed
+  and renamed paths; shared profile/calls/allocation changes are conservatively relevant. Incomplete, unavailable
+  or mismatched comparisons never grant the exemption. Health and image checks are not bypassed.
+- **Contract:** individual reports are `v2-observation` version 4 with literal applied revision, currentness and
+  nullable live facts; bulk reports are `v2-observations` version 1. The new `ListAllNamespaces` operation leaves
+  namespace-scoped reads unchanged and treats partial/malformed lists as unavailable, never empty success.
+- **Checked offline:** `make check-v2`, `make check`, lint and `git diff --check`; an independent read-only
+  review found no issues. Tests cover list/detail agreement, fixed list counts, owner Job reads, namespace/name
+  collisions, list failures, v2 paths, renames, revision races and conservative promotion readiness. The public-API
+  snapshot changes are intentional additions for these contracts; complexity/line limits are unchanged.
+- **Baseline before the console switch:** development-identity requests with local files and the live cluster
+  (no GitHub/NATS integration), HTTP 200: Apps list 2.959 s cold / 1.155 s warm with 8 kubectl calls each;
+  demo-orders staging 1.989 / 2.133 s and demo-notifier staging 2.465 / 2.383 s, 15 kubectl calls each. These are
+  single samples, not a production latency claim or an OAuth login test.
+- **Not yet live:** the new Go bulk/currentness path. The console still uses the old Python instance judge;
+  the next approved step switches its readers and submission-time promotion checks together, then deletes it.
+
 ## Status with the pod's ServiceAccount (3 November 2026)
 
 - **What changed:** `swhurl-v2 status --in-cluster` reads the mounted token, CA and namespace plus the API service

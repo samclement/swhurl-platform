@@ -86,6 +86,7 @@ type RunReport struct {
 // name. It reports no name when there is no run yet, and refuses a pod it cannot order.
 func NewestRun(items [][]byte) (string, bool, error) {
 	newest, found := "", false
+	selected := false
 	var at time.Time
 	for _, item := range items {
 		var pod struct {
@@ -104,9 +105,10 @@ func NewestRun(items [][]byte) (string, bool, error) {
 		if err != nil {
 			return "", false, err
 		}
-		if found && !created.After(at) {
+		if selected && !created.After(at) {
 			continue
 		}
+		at, selected, newest, found = created, true, "", false
 		for _, owner := range pod.Metadata.OwnerReferences {
 			if owner.Kind != "Job" || owner.Name == "" {
 				continue

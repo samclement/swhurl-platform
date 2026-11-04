@@ -63,10 +63,14 @@ test:
 check-codegraph:
 	PYTHONPATH=$(CURDIR)/devtools/codegraph python3 -m unittest discover -s $(CURDIR)/devtools/codegraph/tests -t $(CURDIR)/devtools/codegraph
 
-# v2's toolchain: the Go v2/go.mod states, and nothing fetched (the module is standard library only).
+# Bootstrap is explicit; all builds/checks stay offline after the pinned dependency is downloaded.
 V2_GO_ENV = GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0
 # Starts a recipe that runs v2's own CLI: builds "$$work/swhurl-v2" into a throwaway folder removed on exit.
 V2_BUILD = set -Eeuo pipefail; work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; (cd v2 && $(V2_GO_ENV) go build -o "$$work/swhurl-v2" ./cmd/swhurl-v2)
+
+.PHONY: v2-deps
+v2-deps:
+	cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org go mod download go.yaml.in/yaml/v3
 
 .PHONY: check-v2
 check-v2:

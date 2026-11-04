@@ -354,6 +354,120 @@ An adapter owns one external dependency and speaks domain terms ("read workload 
 | Identity | Authenticate a request, establish who is acting | Explicit test principals | Proxy header trust, sign-in integration |
 | Clock, randomness, environment | Time, sleep, identifiers, configuration | Explicit timestamps, deterministic generators, supplied config | Selected adapter checks |
 
+### Helm: local chart rendering only
+
+[`adapters/helm`](../v2/adapters/helm) implements `Renderer`: an explicit existing chart directory,
+expected chart metadata name/version, release name, namespace and JSON values in; every rendered object as owned JSON bytes in document order,
+or `refused_render` with a fixed reason and no objects out. It runs only `helm template` with
+`--include-crds`, no kind filter, chart patch, dependency acquisition or cluster read. Callers acquire the
+profile-pinned chart outside v2; the adapter reads `Chart.yaml` (at most 64 KiB) and refuses a name/version mismatch, regardless of directory name. It writes values privately (0700 directory, 0600 file), removes them on
+success and failure, and never returns subprocess or parser diagnostics. Values are limited to 1 MiB,
+stdout to 16 MiB, stderr to 64 KiB (discarded), subprocess duration to 30 seconds and inherited-pipe waits
+to another second. A missing executable, timeout, nonzero exit, oversized stream or malformed later
+document returns no partial result.
+
+The operator approved one maintained YAML parser, `go.yaml.in/yaml/v3` v3.0.6, confined to this adapter.
+Its [README](https://github.com/yaml/go-yaml/blob/v3.0.6/README.md) identifies YAML-organization maintenance
+after the original repository became unmaintained; the [tag changes](https://github.com/yaml/go-yaml/compare/v3.0.5...v3.0.6)
+include removing its upstream test dependency (there is no GitHub release-note entry for the tag).
+**The numeric guarantee starts at Helm stdout, not the input values.** Helm may already round a value
+or template expression; the adapter cannot recover its earlier spelling and is not a replacement values
+engine. A real chart test demonstrates Helm rounding an explicit float conversion. JSON values are
+validated with stdlib JSON tokens/`UseNumber`, not YAML: decoded duplicate keys, non-object roots,
+excess depth and out-of-range integers are refused. Validated values are then decoded with `UseNumber`
+and marshalled before the private file is written, so JSON surrogate pairs never reach Helm's YAML values
+reader. Input and normalized values are each bounded to 1 MiB. Real renderer tests (Helm 3.19 and 4.2)
+compare escaped/literal emoji output; validator acceptance alone is not the rendering guarantee.
+
+Stdout nodes are decoded without a float64 intermediary: signed/unsigned 64-bit integers remain exact and
+decimal/exponent values keep their decimal precision as JSON numbers. Implicit plain numeric lexemes are classified independently of the YAML
+resolver (which can label overflow `!!str`); quoted and explicitly tagged strings remain strings. Integers outside that range,
+nonfinite numbers, timestamps, binary/custom tags, aliases/merges, non-string keys, duplicate keys,
+invalid identity/type shapes, excessive nesting and malformed streams are refused. Truly empty/comment
+documents are ignored, but an empty stream is a failed render. No namespace or missing object field is
+invented. Identity validation is the common object/path-segment shape, not guessed per-kind Kubernetes schemas (RBAC names may contain colons). A nonempty stream with no workload is left to policy to refuse, not a successful policy check.
+
+The fake and real adapter run one contract suite. Raw stream tests cover conversion and atomic failures;
+a tiny local chart proves integer retention, unfamiliar kinds and CRD inclusion; the unmodified pinned
+app-template renders compiled production values. `REQUIRE_HELM=1` turns missing Helm or chart into a
+failure. Helm 3.19 and the built console image also exercise the real boundary ([evidence](current-state.md#app-policy-go-gate-4-november-2026)).
+
+### App policy: all compiled instances
+
+`swhurl-v2 policy --records DIR --profile PROFILE.json --out ROOT --chart LOCAL_DIR` is read-only.
+`--out` is the checkout used for team/channel availability, not a write destination. The command reuses
+`renderTree`, `renderFolders`, `withNotify` and orchestration `Inputs`/`Compile`, not another records reader.
+It validates the entire input tree before invoking Helm, then checks every instance, including production,
+in application/environment order. The chart is explicit and its metadata must match both profile and
+compiled HelmRelease. No chart acquisition, Kubernetes access or writer is used.
+
+`policy` is layer 0 and stdlib-only. Its small `Platform` projection contains policy limits and route/storage
+constraints from the validated profile; its other inputs are existing compiled documents and complete
+chart-rendered objects, not another instance model. It emits sorted, distinct `{rule,object,detail}` findings
+without environment/Secret values. `orchestration.CheckPolicy` wires compilation, the Helm adapter and those
+pure decisions. `v2-policy` version 1 reports each application/environment with `findings:[]` and optional
+`renderFailure`; subprocess diagnostics are never included. Render failure is not a policy violation, and
+one failed render does not skip later instances. Exit 0 means every instance passed; 1 means a render or
+rule failed; 2 means usage/input validation refused. Invalid input or malformed object evaluation prints
+no partial report. Empty input and a chart with no application Deployment cannot pass.
+
+| Contract | Owner and check |
+| --- | --- |
+| Records, teams, channels, grants, connected calls and source intent | Existing decoder/resolver/compiler and `render --check`; no Python records compiler added |
+| Actual workloads, including init containers and compiler-owned backup | Go policy checks effective non-root context, capabilities/escalation, image pins, resources, token/host access, exact runtime image/replicas/resources/UID/probes (HTTP defaults, scheme, connection host and headers) and Service ports |
+| Identity, calls and events | Actual main environment/ordering and seed references match compiled resolved facts; verification/token directories are read-only whole mounts (no subPath/subPathExpr), projected audiences/paths/lifetimes exact; backup is identified by compiled CronJob identity, never a label exemption; no additional streams/consumers |
+| Routes, storage and isolation | Known instance resources and main/backup relationships stay in the compiled namespace; omitted known namespaces use the Helm target without rewriting objects. Compiler-owned Flux automation may live in flux-system, and unknown kind scopes are not guessed. Chart output cannot name a foreign namespace. Services have no external IPs and their nonempty selector must select the intended main pods; profile-domain sign-in and TLS, compiled host/backend/class/issuer; profile storage and compiled claim size/mount; RWO replica/rollout rules; app labels match compiled selectors and chart-added policies cannot widen access or select all pods |
+| Quota | Exactly one profile-sized quota; actual workload totals include rolling surge, regular sums, init maxima/restartable sidecars and the compiled backup; CronJobs must forbid overlap and unbounded DaemonSets fail. The v1 blanket solver/restore reserve remains a legacy-fixture rule, not an invented v2 profile field |
+| Unsupported legacy settings | Public/host-override exposure, per-instance exceptions, provenance/platform-image policy and alerts remain legacy-only; v2 refuses unsupported records rather than porting settings it does not model |
+
+`check-apps` retains mutable Python legacy fixtures and shared chart helpers (including OTel/ClickStack),
+fetches the pinned chart outside Go, and asks `check-rendered.sh --chart DIR` for render equality followed
+by the Go policy. The helper stops on either failure. Duplicate Python decisions are explicit remaining
+work: decide the legacy fixture/API scope, then retire its Python decisions and relocate shared helpers
+without losing the OTel/ClickStack callers' coverage ([handoff](v2-status.md#remaining-work)).
+
+### Legacy policy retirement probe (not approved)
+
+No retirement implementation has been made. The three authoritative mutable fixtures were kustomized
+and chart-rendered through the existing reader and passed as JSON to the unchanged `policy.Check`:
+
+| Fixture | Unchanged Go result | Scratch-only diagnostic adjustments |
+| --- | --- | --- |
+| smoke-data/prod | one runtime image mismatch: chart emits repository:tag@digest, Go expects repository@digest | accept the source's tag as well as digest |
+| smoke-web/staging | invalid_policy_compilation: tag-only image | accept tag-only source pins; honor omitted replica count as chart default 1 |
+| smoke-worker/staging | invalid_policy_compilation: tag-only image | same adjustments |
+
+Those two small source-fact adjustments made **all three baselines pass in a scratch copy**, not this tree.
+That does not establish behavior parity. Additional source/render mutation probes found: legacy quota
+headroom and unregistered teams fail Python but pass that scratch Go checker; reviewed image exceptions
+suppress Python findings but not Go's; public routes inside the cookie domain and invalid alert settings
+fail Python but pass Go; the other supported legacy storage class passes Python but fails Go. The fixtures
+are deliberately exempt from platform-image provenance (directly invoking its checker reports 1/2/2
+findings), so their baselines cannot prove that contract has been retired safely.
+
+**Retirement alternatives, not approved:** retire the legacy checker and explicit-path API, keeping the v1
+model oracle and Go policy tests (recommended: no new v1 compatibility surface); or preserve the legacy API
+with the JSON bridge below. Retirement drops legacy-only fixture policy semantics, not policy over any live
+instance, because every live instance is v2-owned. The model fixtures still serve their existing oracle tests;
+Go policy mutation tests own the supported v2 contracts. Move shared chart helpers for OTel/ClickStack in
+either option. Neither option is implemented; the existing mutable fixture checks remain intact.
+
+**Bridge candidate:** retain the existing Python legacy decoder, kustomize/chart acquisition,
+generated and offers checks; have it send only source JSON and explicit constraints/context to one Go
+single-instance input command. Go uses the existing Helm renderer and `policy.Check`; Python does not
+translate records, manufacture expected manifests, filter findings or own exceptions. Keep the current
+helper callers rather than introduce a chart framework. Go-only authoritative YAML fixture reading is not
+smaller under the parser-import boundary; static JSON snapshots would not preserve mutable fixture coverage.
+
+Before that reshape, approve the exact policy inputs/ownership: tag/default-replica source facts;
+**separate quota hard limits and reserved headroom** (subtracting headroom from Platform also breaks the
+hard-quota equality check); allowed storage classes; registered-team context; public exposure, alert and
+reasoned exception semantics; and the provenance rule/fixture exemption or explicit retirement of the
+general legacy manifest API. Preserve these contracts in Go mutation tests rather than silently deleting
+them. Existing generated checks can continue to own legacy source intent until model retirement; no second
+v1 compiler or compatibility mode is proposed. Probe evidence is summarized in the
+[current record](current-state.md#app-policy-go-gate-4-november-2026); retirement waits for the operator's choice.
+
 ### Kubernetes: the API server, not `kubectl`
 
 **Decided:** v2 reads and changes Kubernetes and Flux objects through the API server. It does not start `kubectl` or `flux` processes. v1 measured the reason: one API request from the console takes 4 to 16 ms where starting `kubectl` takes 50 to 120 ms, and each `kubectl` process uses about 56 MB, which is why v1 runs at most three reads at once ([v1 tooling](contributing.md#operator-tooling)). v1 only translates the console's reads; v2 has no `kubectl` path at all.
@@ -364,7 +478,7 @@ An adapter owns one external dependency and speaks domain terms ("read workload 
 - A failed request (forbidden, unavailable, timeout) is unavailable evidence; only a successful `404` means absent.
 - Raw fixtures are API JSON. That is the shape `kubectl get -o json` prints, so recorded v1 outputs can be reused.
 
-**Decided 25 October 2026: a thin `net/http` client, not `client-go`.** It is the reader [`adapters/kube`](../v2/adapters/kube/kube.go), keeps the module free of third-party dependencies (`stdlib-only`), and takes the k3s material it needs as arguments: a CA bundle, a client certificate or key, and a bearer token. `client-go` would be complete but adds a large dependency tree and binary size for four kinds and two verbs. Resolving a kubeconfig or an in-cluster service-account token is **not** in that adapter: a kubeconfig is YAML, so reading one needs the dependency or parser decision this slice did not take; the `observe` command resolves it and hands the adapter its ingredients.
+**Decided 25 October 2026: a thin `net/http` client, not `client-go`.** It is the reader [`adapters/kube`](../v2/adapters/kube/kube.go), uses only the standard library (`stdlib-only` outside the approved Helm parser boundary), and takes the k3s material it needs as arguments: a CA bundle, a client certificate or key, and a bearer token. `client-go` would be complete but adds a large dependency tree and binary size for four kinds and two verbs. Resolving a kubeconfig or an in-cluster service-account token is **not** in that adapter: the YAML parser approval is confined to Helm, not kubeconfig reading; the `observe` command resolves it and hands the adapter its ingredients.
 
 ### Fixtures and fakes
 
@@ -445,10 +559,10 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 
 | Rule | What it enforces |
 | --- | --- |
-| `stdlib-only` | v2 imports only the standard library and its own packages; `go.mod` requires nothing ([why](#kubernetes-the-api-server-not-kubectl)). A dependency needs the operator's approval first. |
+| `stdlib-only` | v2 imports only the standard library and its own packages except `go.yaml.in/yaml/v3` **v3.0.6**, approved 4 November 2026, imported only by `adapters/helm` (including its tests). The check refuses other imports, modules, versions and module replacement directives. Pure packages remain standard-library-only; this does not approve YAML kubeconfigs. |
 | `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
 | `pure` | Pure packages import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments: `time` is allowed for parsing and comparing a *supplied* timestamp, and its clock functions (`time.Now`, `time.Since`, `time.Until`, timers and ticks) are refused by call. |
-| `no-subprocess` | v2 code (not its tests) starts processes only in the encryption adapter `adapters/sops` and the approved chart-rendering adapter `adapters/helm`, and names no `kubectl` or `flux` command anywhere ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine. The Helm exception, approved 4 November 2026, is only `helm template` for app-policy checks: explicit chart and values in, rendered objects or a failed render out; no cluster reads, install, upgrade, dependency fetching or arbitrary command runner. The policy slice must update the checked allowlist and test this boundary before using it. |
+| `no-subprocess` | v2 code (not its tests) starts processes only in the encryption adapter `adapters/sops` and the approved chart-rendering adapter `adapters/helm`, and names no `kubectl` or `flux` command anywhere ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine. The Helm exception, approved 4 November 2026, is only `helm template` for app-policy checks: explicit chart and values in, rendered objects or a failed render out; no cluster reads, install, upgrade, dependency fetching or arbitrary command runner. The checked allowlist admits exactly the two adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm invocation. |
 | `public-api` | The exported API of every library package matches `archtest/api.txt`, so an interface change is a deliberate, reviewed diff. |
 | `budgets` | No function exceeds complexity 10 or 60 lines unless `archtest/budgets.json` lists it with a reason; a listed function may shrink but not grow, and its entry goes once it fits. |
 | `places` | A package's place matches its layer: layer 0 is listed in `Pure`, layer 1 is under `adapters/`, layer 2 is `orchestration`, layer 3 is a `main` package under `cmd/` ([why](#extension-recipes)). |
@@ -469,7 +583,7 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 
 **Verification (24 October 2026, working tree before commit):** each rule has a test on a small module written to a temporary directory, showing what it catches and what it leaves alone (a parameter that shadows a package variable, a test that starts a process); breaking a check on purpose makes those tests fail. On v2 the code rules pass; two phase-1 functions are over budget and listed. End to end, three runs of pi (Haiku 5.5, a throwaway copy of the repository, the extension loaded with `-e`): an agent asked to add a counter to the kernel got the `pure` failure on its edit, reverted it, re-ran the check and offered compliant alternatives without touching a baseline; a change made through the shell, which the edit hook does not see, was caught when the agent tried to finish, handed back once, and fixed; an agent told never to fix it got two attempts and then a message for the operator, after which the run ended. Not exercised: interactive mode after `/trust`.
 
-**CI (24 October 2026):** Validate's tooling job sets up Go with `actions/setup-go@v7` from `v2/go.mod` (no cache: there is no `go.sum`) and runs `make check-v2` after the code graph tests, with `REQUIRE_HELM=1` and the chart the v2 profile pins fetched into the chart cache first, so the [compiler's](#2-phase-1-model-and-contract) manifest check runs; a failure there holds the console deploy like any other check. First run on the push of `be041cf4` ([current state](current-state.md#v2-and-code-graph-push-24-october-2026)): `go1.26.0 linux/amd64`, all four packages passed; Go setup took 7 s and the check 11 s. `actionlint` was not run (not installed here).
+**CI (dependency bootstrap updated 4 November 2026):** Validate's tooling job sets up Go with `actions/setup-go@v7` from `v2/go.mod` (module cache keyed by `v2/go.sum`), explicitly runs `make v2-deps` to download the pinned parser with checksum verification and runs `make check-v2` after the code graph tests, with `REQUIRE_HELM=1` and the chart the v2 profile pins fetched into the chart cache first, so the [compiler's](#2-phase-1-model-and-contract) manifest check runs; a failure there holds the console deploy like any other check. First run on the push of `be041cf4` ([current state](current-state.md#v2-and-code-graph-push-24-october-2026)): `go1.26.0 linux/amd64`, all four packages passed; Go setup took 7 s and the check 11 s. `actionlint` was not run (not installed here).
 
 #### Change report
 
@@ -533,7 +647,7 @@ An external-effect adapter needs separate approval; a read-only integration is c
 
 ### Offline CLI and build
 
-Prerequisite: Go **1.26.0** already installed. `make check-v2` runs the format, vet and test steps below, [guardrails](#guardrails) included. The following disables automatic dependency access and C dependencies. There is no `go.sum`: the module has no third-party dependencies. CI runs them through `make check-v2`; `make check` does **not** include them.
+Prerequisites: Go **1.26.0** and the pinned parser downloaded with **`make v2-deps`** from the repository root (network access to the Go proxy and checksum database). `make check-v2` runs the format, vet and test steps below, [guardrails](#guardrails) included. The following disables automatic dependency access and C dependencies. `go.mod` and `go.sum` pin the one approved parser. Bootstrap downloads it explicitly with `GOTOOLCHAIN=go1.26.0`, `GOPROXY=https://proxy.golang.org` and `GOSUMDB=sum.golang.org`; missing cached dependencies fail offline builds/checks rather than enabling a network fallback. Every v2 CI job and the console image build bootstrap before an offline build; the image caches the module download separately from source. CI runs them through `make check-v2`; `make check` does **not** include them.
 
 **Run with `!`**, from the repository root:
 

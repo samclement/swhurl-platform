@@ -7,6 +7,14 @@
 set -Eeuo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
+chart=""
+if [ "$#" -ne 0 ]; then
+  if [ "$#" -ne 2 ] || [ "$1" != --chart ] || [ -z "$2" ]; then
+    echo 'usage: check-rendered.sh [--chart LOCAL_DIR]' >&2
+    exit 2
+  fi
+  chart="$2"
+fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
@@ -15,4 +23,9 @@ if ! "$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile
   echo "not what the records render (docs/services.md#egress-proxy): render them from the working tree, review"
   echo "the diff and commit it; do not edit a derived file by hand."
   exit 1
+fi
+
+# check-apps acquires the profile-pinned chart outside Go and asks this same build for the policy pass.
+if [ -n "$chart" ]; then
+  "$work/swhurl-v2" policy --records v2-records --profile v2/testdata/profile.json --out . --chart "$chart"
 fi

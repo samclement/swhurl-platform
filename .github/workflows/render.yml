@@ -56,6 +56,10 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: v2/go.mod
+          cache-dependency-path: v2/go.sum
+
+      - name: Download pinned v2 dependencies
+        run: make v2-deps
 
       # Most pushes are already rendered: those end here, before the check tools are installed.
       - name: Is anything to render

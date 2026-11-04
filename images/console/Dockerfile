@@ -11,8 +11,10 @@ FROM ghcr.io/astral-sh/uv:0.10.9@sha256:10902f58a1606787602f303954cea099626a4adb
 # (docs/v2-deletion-plan.md section 5, decision 2). The pinned toolchain is the one images/backup/Dockerfile uses.
 FROM docker.io/library/golang:1.26.0-bookworm@sha256:2a0ba12e116687098780d3ce700f9ce3cb340783779646aafbabed748fa6677c AS v2
 WORKDIR /src
+COPY v2/go.mod v2/go.sum ./
+RUN GOTOOLCHAIN=go1.26.0 GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org go mod download go.yaml.in/yaml/v3
 COPY v2/ ./
-RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/swhurl-v2 ./cmd/swhurl-v2
+RUN GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/swhurl-v2 ./cmd/swhurl-v2
 
 FROM docker.io/library/python:3.12-slim-bookworm@sha256:1aaa65a85fda306ffb8b910824d4e93bdce61e212c7e87168123ea3073b41a1a AS tools
 ARG KUBECTL_VERSION=v1.34.4

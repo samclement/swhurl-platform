@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/helm"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
@@ -33,6 +34,7 @@ const usage = `usage:
   swhurl-v2 resolve --snapshot SNAPSHOT.json
   swhurl-v2 render --records DIR --profile PROFILE.json --out DIR [--revision REVISION] [--previous EGRESS.json] \
       [--check]
+  swhurl-v2 policy --records DIR --profile PROFILE.json --out ROOT --chart LOCAL_DIR
   swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
   swhurl-v2 deploy --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json \
@@ -120,6 +122,12 @@ predecessor already declares is reported rather than assumed away. It reads only
 The snapshot is the JSON document "make v2-snapshot REVISION= OUT=" writes. With --kubeconfig it also
 reads every object a preview would create from that API server, read-only, and reports each as present,
 absent or unavailable; a failed read is never reported as absence.
+
+policy is read-only: it validates the complete records tree and team/channel availability under --out,
+then templates the explicit local --chart for every compiled instance, production included. Chart metadata
+must match the profile and compiled release. It reports sorted accumulated findings and separate redacted
+render failures, never environment/Secret values. Any instance failing makes the command nonzero; invalid
+inputs print no partial report. No chart acquisition, cluster access or file writes occur.
 
 egress allocates one proxy port per instance, keeping every port the previous document gave and giving a
 new instance the lowest free one. Every instance whose release keeps a database is granted the
@@ -235,7 +243,7 @@ nothing lists it. A change that leaves the registry as it was writes nothing new
 
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
-started but did not complete, a render --check that found a difference, or file and output I/O failure.
+started but did not complete, a render --check that found a difference, a policy render/rule failure, or file and output I/O failure.
 `
 
 func main() {
@@ -337,6 +345,7 @@ var commands = map[string]func(cli, request) int{
 	"shadow":            cli.shadow,
 	"resolve":           cli.resolve,
 	"render":            cli.render,
+	"policy":            cli.policy,
 	"egress":            cli.egress,
 	"proxy":             cli.proxy,
 	"auth":              cli.auth,
@@ -365,6 +374,7 @@ type request struct {
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
 	records, changes, repoRoot, reviewedDigest         string
+	chart                                              string
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
 	action, description, rename, transport             string
@@ -571,6 +581,11 @@ func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON (enables the live ownership check)")
 	case "resolve":
 		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
+	case "policy":
+		flags.Var(&once{value: &r.records}, "records", "the complete v2 records tree")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.chart}, "chart", "explicit local chart directory, matching the profile name/version")
+		r.registerOut(flags)
 	case "render":
 		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
@@ -679,6 +694,7 @@ func (r *request) named() []string {
 // requiredFlags is what each command that names its inputs requires. A command that is not listed takes one file
 // argument instead, which is why the table is also the list of the two commands that do.
 var requiredFlags = map[string]func(*request) []string{
+	"policy":         func(r *request) []string { return []string{r.records, r.profile, r.out, r.chart} },
 	"compile":        func(r *request) []string { return []string{r.instance, r.release, r.app, r.profile} },
 	"preview":        func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
 	"select-release": func(r *request) []string { return []string{r.instance, r.release, r.expected} },
@@ -821,6 +837,7 @@ func (o *onceDuration) Set(value string) error {
 // cli runs one parsed command. Each step returns 0 or the exit status after its diagnostic.
 type cli struct {
 	out, diagnostic io.Writer
+	charts          helm.Renderer
 	readFile        func(string) ([]byte, error)
 	writer          files.Writer
 	// archives builds the object-store reader; a test supplies one that answers without a network.

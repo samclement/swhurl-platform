@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: blocked
-Gate: the app policy in Go (`apps/policy`): approve the YAML parser boundary, then check every compiled instance
+Gate: decide whether to retire or preserve the legacy fixture policy and explicit-path API
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -20,6 +20,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | --- | --- | --- |
 | Release selection and identity | done | [contract](iteration-2-plan.md#2-phase-1-model-and-contract) |
 | Deterministic compiler | done | [kernel](../v2/kernel) |
+| App policy over compiled v2 instances | done | [record](current-state.md#app-policy-go-gate-4-november-2026) |
 | Git delivery and units | done | [record](current-state.md#first-v2-instance-live-25-october-2026) |
 | Observation | done | [record](current-state.md#first-v2-observation-of-a-live-instance-25-october-2026) |
 | Shadow bridge | done | [shadow](../v2/shadow) |
@@ -64,7 +65,7 @@ loses its `run=` function.
 
 | Python surface | What replaces it | State |
 | --- | --- | --- |
-| Platform checks (`check-apps`'s team, notify and fixture rules, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: `render --check` and `check-v2` are Go, and so are the team and notification-channel rules (`render` refuses them); the rest is Python. `apps/policy.py` is console-free; `verify` and `apps/checks` are reached by the console's platform page |
+| Platform checks (`check-apps`'s team, notify and fixture rules, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2` and team/channel validation; Python still owns the legacy fixture policy/API, entrypoint and chart helpers. `apps/policy.py` is console-free; `verify` and `apps/checks` are reached by the console's platform page |
 | Recovery and backup tooling (`recovery.py`, `sqlite_backup.py`, `backupset.py`) | `make restore-sqlite` is `swhurl-v2 restore`, the backup image's Go tool runs the jobs and `backup-mongodb` and `backup-sqlite` are bash; MongoDB's restore test and the freshness checks remain | partial: what remains is reached by `verify` |
 | The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | not started: the notify service is console-free, the checker's modules are reached by `verify`; about 1.5k lines that run every minute in the cluster or send alerts, so services rather than operator convenience |
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team targets are bash over `swhurl-v2 team`; `destroy-data` stays Python, a safety decision with its own tests |
@@ -90,17 +91,14 @@ not migration.
 
 **B. Then the rest of the road.**
 
-2. **The console-free Python, first.** The backup and restore commands and the team registry left Python on 4
-   November 2026. `apps/policy` (the app policy's rules on rendered objects) is next, decided on 4 November 2026: a Go
-   policy over every compiled instance in `v2-apps/`, which `check-apps` does not render today, so only the three
-   template fixtures are judged. It renders each instance's chart with `helm template`, a second process beside `sops`,
-   approved by the operator on 4 November 2026. The exception is only local chart rendering in `adapters/helm`,
-   not cluster access or Helm mutations ([guardrails](iteration-2-plan.md#guardrails)). A Helm-only JSON projection
-   matched today's ten instances but silently rounded large integers in broader probes ([evidence](current-state.md#app-policy-helm-boundary-approved-4-november-2026));
-   do not adopt it as a lossless renderer. The next decision is a YAML parser dependency confined to the adapter
-   (recommended), or explicitly restricted projection semantics. `stdlib-only` is unchanged. Then capture the
-   retained rules, check every compiled instance in Go, and retire Python without dropping fixture coverage or
-   the chart helpers used by OTel and ClickStack.
+2. **The console-free Python, first.** Go now judges actual chart output for every compiled v2 instance;
+   independent review cleared the parser and all-instance policy fixes ([evidence](current-state.md#app-policy-go-gate-4-november-2026)).
+   **Python retirement remains.** The operator must choose whether to retire the legacy fixture checker and
+   explicit-path API (recommended: keep the model oracle and Go policy tests, not obsolete v1 policy settings),
+   or preserve that API through a thin JSON reader and additional explicit Go constraints. The
+   [probe and alternatives](iteration-2-plan.md#legacy-policy-retirement-probe-not-approved) identify the
+   contracts at stake; neither retirement option is implemented. Python still owns legacy fixture decisions,
+   the entrypoint and shared OTel/ClickStack chart helpers. Do not claim a complete Python policy retirement.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
@@ -122,7 +120,7 @@ operator decides against it.
 | Secrets (`envFrom`, Reloader) and bindings | Non-empty `bindings` and `secrets` are refused | An app declares one |
 | Alerts | Not generated; `edit --set alerts=` is refused by name | An app needs an alert |
 | A per-instance memory or CPU choice | CPU from the profile; one memory value for request and limit | An app needs more |
-| Quota headroom for other pods | The backup pod is counted; no other second workload exists | A feature adds pods |
+| Quota reserve for transient platform pods | Rendered workloads, surge/init and backup are counted; no profile reserve for HTTP-01 solver or restore pods. The legacy fixture reserve remains Python-only | An explicit v2 reserve contract is approved |
 | Image automation: auto-merge and a production path | Staging follows its images; production follows a promotion | An unattended production update is wanted |
 | A first production (creating it) | `promote` refuses an environment with no record | A first promotion must not need a person |
 | Restore breadth | One live restore over the newest archive, and one that changes content; another instance's archive, a point in time and the failure paths are unexercised, and no live test repeats a restore | A restore beyond the newest archive over itself |
@@ -169,6 +167,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   does not hold (4 November 2026).
 - `helm template` is the second approved subprocess, beside SOPS: one chart-rendering adapter for app-policy
   checks, no cluster reads or Helm mutations (4 November 2026).
+- The only third-party v2 dependency is `go.yaml.in/yaml/v3` v3.0.6, confined to `adapters/helm`;
+  `make v2-deps` bootstraps with checksums and builds/checks stay offline (4 November 2026).
 - The v1 Python model is bounded, not ported: nothing new imports it and it only shrinks, with the v1
   renderer's interface tests in `tests/test_interface.py` (3 November 2026).
 

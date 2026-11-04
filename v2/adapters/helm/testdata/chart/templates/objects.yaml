@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+data:
+  retained: {{ .Values.retained | quote }}
+---
+apiVersion: example.test/v1
+kind: Unfamiliar
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  # Helm/Sprig can round before stdout; the adapter preserves what is emitted, not the earlier expression.
+  upstreamFloat: {{ float64 9007199254740993 | printf "%.0f" }}
+  exact: 9007199254740993
+  signed: 9223372036854775807
+  unsigned: 18446744073709551615
+  negative: -9223372036854775808
+  nested: [true, null, "unchanged"]

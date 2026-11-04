@@ -28,8 +28,8 @@ type Rule struct {
 }
 
 var Rules = []Rule{
-	{"stdlib-only", "v2 imports only the Go standard library and its own packages, and go.mod requires nothing",
-		"remove the import; a third-party dependency needs the operator's approval first",
+	{"stdlib-only", "v2 imports only the Go standard library and its own packages except pinned YAML in adapters/helm",
+		"remove the import; only adapters/helm may import go.yaml.in/yaml/v3 v3.0.6",
 		"kubernetes-the-api-server-not-kubectl"},
 	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers",
 		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down",
@@ -37,8 +37,8 @@ var Rules = []Rule{
 	{"pure", "pure packages import only allowlisted standard packages, print nothing and keep no mutable package state",
 		"pass the value in as a parameter (time, identifiers, snapshots) or move the effect into an adapter",
 		"the-pure-model"},
-	{"no-subprocess", "v2 code starts no process except the encryption adapter adapters/sops, and names no kubectl or flux command",
-		"read or change Kubernetes through the API server, in an adapter; encrypt through the one approved command",
+	{"no-subprocess", "v2 code starts processes only in adapters/sops and adapters/helm, and names no kubectl or flux command",
+		"read or change Kubernetes through the API server; only SOPS encryption and local helm template are approved",
 		"kubernetes-the-api-server-not-kubectl"},
 	{"public-api", "the exported API of every library package matches archtest/api.txt",
 		"if the change is intended, run `go test ./archtest -run TestPublicAPI -update` and say why in the change",
@@ -68,7 +68,10 @@ var Layers = map[string]int{
 	"kernel":                         0,
 	"legacy":                         0,
 	"observe":                        0,
+	"policy":                         0,
 	"shadow":                         0,
+	"adapters/helm":                  1,
+	"adapters/helm/helmtest":         1,
 	"adapters/files":                 1,
 	"adapters/files/filestest":       1,
 	"adapters/kube":                  1,
@@ -93,7 +96,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"calls", "events", "kernel", "legacy", "observe", "shadow"}
+var Pure = []string{"calls", "events", "kernel", "legacy", "observe", "policy", "shadow"}
 
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
 // environment, files, network or processes. `crypto/ed25519` derives a key pair from a seed the caller supplies
@@ -119,10 +122,9 @@ var subprocessImports = []string{"os/exec", "syscall"}
 var subprocessCalls = []string{"os.StartProcess"}
 var commandNames = []string{"kubectl", "flux"}
 
-// subprocessAllowed is the one package that may start a process: encryption is a command the platform already
-// relies on, and a second implementation of age and the SOPS envelope here would be a hand-built cipher. The
-// exception is the package, not the rule: it may name no kubectl or flux command and reads no cluster.
-var subprocessAllowed = []string{"adapters/sops/"}
+// subprocessAllowed is restricted to the two approved adapter directories, never their fakes or subpackages.
+// SOPS encrypts; Helm renders a local chart. Neither exception permits cluster access.
+var subprocessAllowed = []string{"adapters/sops", "adapters/helm"}
 
 // ---- Loading ----
 
@@ -263,19 +265,50 @@ func selector(call *ast.CallExpr) string {
 
 func checkStdlibOnly(m *Module) []Violation {
 	var found []Violation
-	for _, line := range strings.Split(m.GoMod, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "require") {
-			found = append(found, Violation{"stdlib-only", "go.mod", "requires a module"})
-		}
-	}
+	found = append(found, checkModuleRequirements(m.GoMod)...)
 	for _, dir := range m.Dirs() {
 		for _, file := range m.Packages[dir].Files {
 			for _, spec := range file.AST.Imports {
-				if path := importPath(spec); !isStd(path) && m.local(path) == "" {
+				if path := importPath(spec); !isStd(path) && m.local(path) == "" && !(dir == "adapters/helm" && path == "go.yaml.in/yaml/v3") {
 					found = append(found, Violation{"stdlib-only", m.at(file, spec.Pos()), "imports " + path})
 				}
 			}
 		}
+	}
+	return found
+}
+
+// Keep this deliberately small: one exact approved module/version, with no replace/exclude/tool escape hatch.
+func checkModuleRequirements(text string) []Violation {
+	var found []Violation
+	inRequire, seen := false, false
+	for _, line := range strings.Split(text, "\n") {
+		line, _, _ = strings.Cut(line, "//")
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if fields[0] == "module" || fields[0] == "go" {
+			continue
+		}
+		if line = strings.Join(fields, " "); line == "require (" {
+			inRequire = true
+			continue
+		}
+		if line == ")" && inRequire {
+			inRequire = false
+			continue
+		}
+		if fields[0] == "require" {
+			fields = fields[1:]
+		} else if !inRequire {
+			found = append(found, Violation{"stdlib-only", "go.mod", "unapproved module directive"})
+			continue
+		}
+		if len(fields) != 2 || fields[0] != "go.yaml.in/yaml/v3" || fields[1] != "v3.0.6" || seen {
+			found = append(found, Violation{"stdlib-only", "go.mod", "requires an unapproved module or version"})
+		}
+		seen = true
 	}
 	return found
 }
@@ -456,9 +489,7 @@ func checkNoSubprocess(m *Module) []Violation {
 	var found []Violation
 	for _, dir := range m.Dirs() {
 		for _, file := range m.Packages[dir].Source() {
-			allowed := slices.ContainsFunc(subprocessAllowed, func(prefix string) bool {
-				return strings.HasPrefix(file.Path, prefix)
-			})
+			allowed := slices.Contains(subprocessAllowed, dir)
 			for _, spec := range file.AST.Imports {
 				if path := importPath(spec); !allowed && slices.Contains(subprocessImports, path) {
 					found = append(found, Violation{"no-subprocess", m.at(file, spec.Pos()), "imports " + path})

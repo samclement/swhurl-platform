@@ -1,5 +1,5 @@
 // Package sops encrypts one document with SOPS to a public age recipient, by running the `sops` command with the
-// plaintext on its standard input. It is the one process v2 starts (see the `no-subprocess` rule and
+// plaintext on its standard input. It is one of the two approved subprocess adapters (see the `no-subprocess` rule and
 // docs/iteration-2-plan.md#guardrails): the format — age for the data key, AES-GCM for the values, the SOPS
 // envelope — has a maintained implementation, and a second one written here would be a hand-built cipher.
 //

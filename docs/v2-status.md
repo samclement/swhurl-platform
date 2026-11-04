@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: in progress
-Gate: the app policy in Go (`apps/policy`): its rules over every compiled instance
+Status: blocked
+Gate: the app policy in Go (`apps/policy`): approve the YAML parser boundary, then check every compiled instance
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -94,7 +94,13 @@ not migration.
    November 2026. `apps/policy` (the app policy's rules on rendered objects) is next, decided on 4 November 2026: a Go
    policy over every compiled instance in `v2-apps/`, which `check-apps` does not render today, so only the three
    template fixtures are judged. It renders each instance's chart with `helm template`, a second process beside `sops`,
-   which the `no-subprocess` rule must admit by the operator's approval before code.
+   approved by the operator on 4 November 2026. The exception is only local chart rendering in `adapters/helm`,
+   not cluster access or Helm mutations ([guardrails](iteration-2-plan.md#guardrails)). A Helm-only JSON projection
+   matched today's ten instances but silently rounded large integers in broader probes ([evidence](current-state.md#app-policy-helm-boundary-approved-4-november-2026));
+   do not adopt it as a lossless renderer. The next decision is a YAML parser dependency confined to the adapter
+   (recommended), or explicitly restricted projection semantics. `stdlib-only` is unchanged. Then capture the
+   retained rules, check every compiled instance in Go, and retire Python without dropping fixture coverage or
+   the chart helpers used by OTel and ClickStack.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
@@ -161,6 +167,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
 - The team registry is a v2 record (`v2-records/teams.json`): a team has at most one channel and a channel one
   team, `swhurl-v2 team` writes it and its channel Secrets, and `render` refuses a record or grant naming a team it
   does not hold (4 November 2026).
+- `helm template` is the second approved subprocess, beside SOPS: one chart-rendering adapter for app-policy
+  checks, no cluster reads or Helm mutations (4 November 2026).
 - The v1 Python model is bounded, not ported: nothing new imports it and it only shrinks, with the v1
   renderer's interface tests in `tests/test_interface.py` (3 November 2026).
 

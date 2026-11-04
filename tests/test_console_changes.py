@@ -18,7 +18,7 @@ from starlette.testclient import TestClient
 from swhurl import ROOT
 from swhurl.apps import calling, channels
 from swhurl.apps.model import write as model_sync
-from swhurl.console import actions, cluster, server
+from swhurl.console import actions, cluster, server, v2
 from swhurl.console import github as gh
 from swhurl.run import FakeRunner, Result
 
@@ -63,9 +63,10 @@ PROMOTION = {'image': IMAGE}  # what the review page submits
 
 
 
-ROUTES = channels.routes_configmap({'channels': {'payments-phone': 'ntfy', 'spare': 'ntfy'},
-                                    'teams': {'payments': ['payments-phone']}})
-"""The generated routes on main: two channels, one of them notified by team payments."""
+ROUTES = json.dumps({'apiVersion': 'v1', 'kind': 'ConfigMap', 'metadata': {'name': channels.ROUTES_NAME, 'namespace': 'notify'},
+                     'data': {channels.ROUTES_KEY: json.dumps({'channels': {'payments-phone': 'ntfy'},
+                                                               'teams': {'payments': ['payments-phone']}})}})
+"""The routes v2 rendered on main: team payments notifies its channel."""
 
 
 class FakeGitHub:
@@ -100,9 +101,9 @@ class FakeGitHub:
             'POST /git/trees': {'sha': 'tree1'},
             'POST /git/commits': {'sha': 'def5678' + '0' * 33},
             'POST /git/refs': {'ref': 'x'},
-            'GET /contents/apps/teams.yaml': {'content': base64.b64encode(
-                b'teams:\n  platform: {description: The platform itself}\n  payments: {}\n').decode()},
-            'GET /contents/platform/notify/routes.yaml': {'content': base64.b64encode(ROUTES.encode()).decode()},
+            'GET /contents/v2-records/teams.json': {'content': base64.b64encode(json.dumps({'schemaVersion': 1, 'teams': {
+                'platform': {'description': 'The platform itself'}, 'payments': {}}}).encode()).decode()},
+            'GET /contents/platform/notify/routes.json': {'content': base64.b64encode(ROUTES.encode()).decode()},
             'POST /pulls': {'html_url': 'https://github.com/x/pull/7', 'number': 7},
             'POST /issues/7/labels': [{'name': 'auto-merge'}],
             'GET /pulls': [{'number': 7, 'title': '[console] apps: add weather-api staging', 'html_url': 'https://github.com/x/pull/7',
@@ -169,6 +170,10 @@ class TreeRunner(FakeRunner):
             elif command == 'render':
                 for found in sorted((tree / 'v2-records').glob('*/app.json')):
                     v2_render(tree, found.parent.name)
+            elif command == 'team':  # the registry changes; what it renders is v2's own test
+                path = tree / 'v2-records/teams.json'
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text((path.read_text() if path.is_file() else '') + f'{argv[2:]}\n')
             elif command == 'edit':
                 path = tree / 'v2-records' / app / 'staging/instance.json'
                 doc = yaml.safe_load(path.read_text())
@@ -185,9 +190,6 @@ class TreeRunner(FakeRunner):
                 settings_edit(Path(cwd), argv[3:])
             elif argv[3:4] == ('app-remove',):
                 shutil.rmtree(Path(cwd) / 'apps' / argv[4] / argv[5])
-            elif argv[3].startswith('team-'):
-                path = Path(cwd) / 'apps/teams.yaml'
-                path.write_text((path.read_text() if path.is_file() else 'teams: {}\n') + f'# {argv[3:]}\n')
             else:
                 (Path(cwd) / 'apps/x').mkdir(parents=True, exist_ok=True)
                 (Path(cwd) / 'apps/x/helmrelease.yaml').write_text('new\n')
@@ -615,24 +617,25 @@ class TeamsPageTests(unittest.TestCase):
         c.get('/teams', headers=WHO)
         self.assertEqual(len(asked), 2, 'kept: an app does not change language')
 
-    def test_changes_run_the_clones_team_commands_and_wait_for_review(self):
+    def test_changes_run_v2s_team_command_and_wait_for_review(self):
         cases = (
             ('add', {'name': 'billing', 'description': ' Invoices  and\nrefunds '},
-             ('team-add', 'billing', '--description=Invoices and refunds'), '[console] teams: add billing'),
+             [v2.team_argv('billing', 'add', '--description=Invoices and refunds')], '[console] teams: add billing'),
             ('edit', {'name': 'payments', 'description': 'Orders', 'rename': 'orders'},
-             ('team-edit', 'payments', '--description=Orders', '--rename=orders'), '[console] teams: change payments'),
+             [v2.team_argv('payments', 'describe', '--description=Orders'),
+              v2.team_argv('payments', 'rename', '--rename=orders')], '[console] teams: change payments'),
             ('edit', {'name': 'payments', 'description': '', 'rename': ''},
-             ('team-edit', 'payments', '--description='), '[console] teams: change payments'),
+             [v2.team_argv('payments', 'describe', '--description=')], '[console] teams: change payments'),
             ('remove', {'name': 'payments'},
-             ('team-remove', 'payments'), '[console] teams: remove payments'),
+             [v2.team_argv('payments', 'remove')], '[console] teams: remove payments'),
         )
-        for action, form, command, title in cases:
+        for action, form, commands, title in cases:
             with self.subTest(action=action, form=form):
                 c = self.client()
                 response = c.post(f'/teams/{action}', data=form, headers=WHO, follow_redirects=False)
                 self.assertEqual(response.status_code, 303, response.text)
-                tool = next(call for call in self.runner.calls if call[1:3] == ('-m', 'swhurl'))
-                self.assertEqual(tool[3:], command)
+                ran = [list(call[1:]) for call in self.runner.calls if call[:2] == ('swhurl-v2', 'team')]
+                self.assertEqual(ran, commands)
                 job = self.jobs.get(1)
                 self.assertEqual((job.state, job.link), ('succeeded', 'https://github.com/x/pull/7'))
                 self.assertEqual(self.api.sent('POST /pulls')[0]['title'], title)
@@ -652,7 +655,7 @@ class TeamsPageTests(unittest.TestCase):
         self.assertNotIn('payments-phone', page, 'a channel has no name to manage: it is the team\'s')
         self.assertNotIn('name="notify"', page)
         self.assertNotIn('ntfy.sh/', page.replace('https://ntfy.sh/your-topic', ''), 'no address is ever on the page')
-        unreadable = FakeGitHub(fail={'GET /contents/platform/notify/routes.yaml': (404, 'Not Found')})
+        unreadable = FakeGitHub(fail={'GET /contents/platform/notify/routes.json': (404, 'Not Found')})
         page = TestClient(app_under_test(self.runner, jobs=self.jobs, github=unreadable.github)).get('/teams', headers=WHO).text
         self.assertEqual(page.count('No notification channel'), 2, 'unreadable routes: no channel is claimed')
 
@@ -660,14 +663,14 @@ class TeamsPageTests(unittest.TestCase):
         address = 'https://ntfy.sh/swhurl-0123456789abcdef01234567'
         c = self.client()
         received = []
-        self.runner._rules.insert(0, ((sys.executable, '-m', 'swhurl', 'team-channel'), lambda args, text: (
-            received.append(text), Result(args, 0, '[OK] channel payments (ntfy) added; its address is not shown again\n'))[1]))
+        self.runner._rules.insert(0, (('swhurl-v2', 'team'), lambda args, text: (
+            received.append(text), Result(args, 0, '{"kind": "v2-team"}\n'))[1]))
         response = c.post('/team-channel/set', data={'name': 'payments', 'transport': 'ntfy', 'address': f' {address} '},
                           headers=WHO, follow_redirects=False)
         self.assertEqual(response.status_code, 303, response.text)
         self.assertEqual(received, [address + '\n'])
-        tool = next(call for call in self.runner.calls if call[1:3] == ('-m', 'swhurl'))
-        self.assertEqual(tool[3:], ('team-channel', 'payments', '--transport=ntfy'))
+        tool = next(call for call in self.runner.calls if call[:2] == ('swhurl-v2', 'team'))
+        self.assertEqual(list(tool[1:]), v2.team_argv('payments', 'channel', '--transport=ntfy'))
         job = self.jobs.get(1)
         self.assertEqual((job.state, cluster.target(job.unit)), ('succeeded', ('team payments', '/teams#payments')))
         self.assertEqual(self.api.sent('POST /pulls')[0]['title'], '[console] teams: set the notification channel of payments')
@@ -679,38 +682,34 @@ class TeamsPageTests(unittest.TestCase):
         self.assertIn('<redacted>', self.runner.redact(f'posting to {address}'))
         c = self.client()
         self.assertEqual(c.post('/team-channel/remove', data={'name': 'payments'}, headers=WHO, follow_redirects=False).status_code, 303)
-        tool = next(call for call in self.runner.calls if call[1:3] == ('-m', 'swhurl'))
-        self.assertEqual(tool[3:], ('team-channel', 'payments', '--remove'))
+        tool = next(call for call in self.runner.calls if call[:2] == ('swhurl-v2', 'team'))
+        self.assertEqual(list(tool[1:]), v2.team_argv('payments', 'drop-channel'))
         self.assertEqual(self.api.sent('POST /pulls')[0]['title'], '[console] teams: remove the notification channel of payments')
 
     def test_a_malformed_channel_opens_nothing_and_never_echoes_the_address(self):
         c = self.client()
+        # A malformed address is v2's to refuse, in the job, and v2 never repeats it (v2/cmd/swhurl-v2/team_test.go).
         cases = (('set', {'name': 'Bad Name', 'address': 'https://ntfy.sh/private-topic'}),
-                 ('set', {'name': 'x', 'address': 'http://ntfy.sh/private-topic'}),
-                 ('set', {'name': 'x', 'address': 'https://ntfy.sh/private-topic?x=1'}),
-                 ('set', {'name': 'x', 'address': ''}), ('set', {'name': 'x', 'transport': 'pigeon', 'address': 'https://ntfy.sh/t'}),
                  ('remove', {'name': '--root=/'}), ('explode', {'name': 'x', 'address': 'https://ntfy.sh/private-topic'}))
         for action, form in cases:
             with self.subTest(action=action, form=form):
                 response = c.post(f'/team-channel/{action}', data=form, headers=WHO)
                 self.assertEqual(response.status_code, 400)
                 self.assertNotIn('private-topic', response.text)
-        self.assertFalse(any(call[1:3] == ('-m', 'swhurl') for call in self.runner.calls))
+        self.assertFalse(any(call[:1] == ('swhurl-v2',) and 'team' in call for call in self.runner.calls))
         without_token = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), audit=lambda line: None, inline=True)))
         self.assertEqual(without_token.post('/team-channel/set', data={'name': 'x', 'address': 'https://ntfy.sh/t'}, headers=WHO).status_code, 409)
 
     def test_malformed_input_opens_nothing_and_a_refused_command_shows_its_words(self):
         c = self.client()
         for action, form in (('add', {'name': 'Bad Name'}), ('add', {'name': ''}), ('edit', {'name': 'a', 'rename': '--root=/'}),
-                             ('remove', {'name': ''}), ('add', {'name': 'a', 'description': 'd' * 201}),
-                             ('explode', {'name': 'a'})):
+                             ('remove', {'name': ''}), ('explode', {'name': 'a'})):
             with self.subTest(action=action, form=form):
                 self.assertEqual(c.post(f'/teams/{action}', data=form, headers=WHO).status_code, 400)
-        self.assertFalse(any(call[1:3] == ('-m', 'swhurl') for call in self.runner.calls))
-        message = ('[ERROR] team payments is named by billing, orders in v2-records: move them first with '
-                   'swhurl-v2 edit --set team=<another team>, then remove it')
+        self.assertFalse(any(call[:2] == ('swhurl-v2', 'team') for call in self.runner.calls))
+        message = 'team_in_use: team: an app record names the team: move it first with edit --set team='
         c = self.client()
-        self.runner._rules.insert(0, ((sys.executable, '-m', 'swhurl'), Result((), 2, '', message + '\n')))
+        self.runner._rules.insert(0, (('swhurl-v2', 'team'), Result((), 2, '', message + '\n')))
         c.post('/teams/remove', data={'name': 'payments'}, headers=WHO)
         job = self.jobs.get(1)
         self.assertEqual(job.state, 'failed')
@@ -722,7 +721,7 @@ class TeamsPageTests(unittest.TestCase):
 
     def test_an_unreadable_registry_is_said_so_and_raises_no_false_alarm(self):
         self.client()
-        unreadable = FakeGitHub(fail={'GET /contents/apps/teams.yaml': (404, 'Not Found')})
+        unreadable = FakeGitHub(fail={'GET /contents/v2-records/teams.json': (404, 'Not Found')})
         page = TestClient(app_under_test(self.runner, jobs=self.jobs, github=unreadable.github)).get('/teams', headers=WHO).text
         self.assertIn('no app can be called unregistered', page)
         self.assertNotIn('Apps without a registered team', page)

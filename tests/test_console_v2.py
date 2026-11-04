@@ -38,13 +38,13 @@ OTHER_APP = json.dumps({**json.loads(APP), 'application': 'other', 'team': 'paym
 PROD_INSTANCE = json.dumps({**json.loads(INSTANCE), 'environment': 'prod'})
 PROD_RELEASE = json.dumps({**json.loads(RELEASE), 'artifact': {'image': 'ghcr.io/x/hello', 'digest': 'sha256:0'}})
 
-TEAMS = 'teams:\n  demo:\n    description: The demo apps\n  payments: {}\n'
+TEAMS = '{"schemaVersion": 1, "teams": {"demo": {"description": "The demo apps"}, "payments": {}}}'
 
 RECORDS = {'v2-records/hello/app.json': APP, 'v2-records/hello/staging/instance.json': INSTANCE,
            'v2-records/hello/staging/release.json': RELEASE, 'v2-records/hello/prod/instance.json': PROD_INSTANCE,
            'v2-records/hello/prod/release.json': PROD_RELEASE, 'v2-records/other/app.json': OTHER_APP,
            'v2-records/other/staging/instance.json': OTHER, 'v2-records/other/staging/release.json': OTHER_RELEASE,
-           'apps/teams.yaml': TEAMS}
+           'v2-records/teams.json': TEAMS}
 
 
 def records(extra=None):
@@ -104,8 +104,8 @@ class PageTests(unittest.TestCase):
         self.assertIn('action="/apps/hello/staging/team"', text)
         self.assertIn('value="payments" required >', text)
         self.assertIn('value="demo" required checked disabled>', text)
-        text = client(running(), documents=records({'apps/teams.yaml': None})).get('/apps/hello/staging', headers=WHO).text
-        self.assertIn('apps/teams.yaml is not in Git', text)
+        text = client(running(), documents=records({'v2-records/teams.json': None})).get('/apps/hello/staging', headers=WHO).text
+        self.assertIn('v2-records/teams.json is not in Git', text)
 
     def test_what_it_declares_is_a_row_with_why_it_is_not_connected_yet(self):
         text = self.page()

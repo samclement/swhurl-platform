@@ -8,7 +8,6 @@ header of those requests, never in a command line, and is redacted from every me
 from __future__ import annotations
 
 import base64
-import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -16,9 +15,8 @@ from dataclasses import field as dataclass_field
 from typing import Any
 
 import httpx
-import yaml
 
-from swhurl import platform, yamlio
+from swhurl import platform
 from swhurl.apps import channels
 from swhurl.apps.contract import TEAMS_FILE, registered_teams
 from swhurl.console import merge
@@ -41,7 +39,7 @@ def platform_teams(runner: Runner, github: GitHub) -> dict[str, str]:
     try:
         listing = api.json('GET', f'/contents/{TEAMS_FILE.as_posix()}?ref={BASE}')
         return registered_teams(base64.b64decode(listing.get('content', '')))
-    except (ValueError, AttributeError, yaml.YAMLError) as error:
+    except (ValueError, AttributeError) as error:
         raise ActionError(f'cannot read {TEAMS_FILE}: {error}') from None
     finally:
         api.client.close()
@@ -219,11 +217,10 @@ def platform_channels(runner: Runner, github: GitHub) -> tuple[dict[str, str], d
     api = GitHubAPI(runner, github)
     try:
         listing = api.json('GET', f'/contents/{channels.ROUTES_FILE.as_posix()}?ref={BASE}')
-        configmap = yamlio.load(base64.b64decode(listing.get('content', ''))) or {}
-        routes = json.loads(configmap['data'][channels.ROUTES_KEY])
+        routes = channels.routes_text(base64.b64decode(listing.get('content', '')))
         return ({str(name): str(transport) for name, transport in routes.get('channels', {}).items()},
                 {str(team): [str(name) for name in names] for team, names in routes.get('teams', {}).items()})
-    except (ValueError, AttributeError, KeyError, TypeError, yaml.YAMLError) as error:
+    except (ValueError, AttributeError, KeyError, TypeError) as error:
         raise ActionError(f'cannot read {channels.ROUTES_FILE}: {type(error).__name__}') from None
     finally:
         api.client.close()

@@ -122,14 +122,8 @@ def encrypted_reason(action: str, app: str, env: str, statuses: Mapping[str, str
 
 
 def team_inputs(path: str) -> bool:
-    """A team change's inputs: the registry, and the App and Settings records that name the team."""
-    return path == str(TEAMS_FILE) or Path(path).match('apps/*/app.yaml') or Path(path).match('apps/*/*/instance.yaml')
-
-
-def channel_inputs(path: str) -> bool:
-    """A channel change's inputs: the registry, the encrypted channel and its kustomization; not the generated routes."""
-    return path in (str(TEAMS_FILE), str(channels.UNIT_FILE), str(channels.NOTIFY_DIR / 'kustomization.yaml')) or (
-        Path(path).parent == channels.NOTIFY_DIR and Path(path).match('channel-*.sops.yaml'))
+    """A team or channel change's files: the registry, what v2 renders from it and a channel's encrypted Secret."""
+    return path in (str(TEAMS_FILE), str(channels.ROUTES_FILE)) or Path(path).parent == channels.CHANNELS_DIR
 
 
 @dataclass(frozen=True)
@@ -145,17 +139,6 @@ class Command:
         """The change as the operator would type it, never including a credential."""
         if self.tool == 'v2':
             return ' '.join((v2.BINARY, *self.argv))
-        name, *args = self.argv
-        if self.name == 'team-channel':
-            suffix = ' ARGS=--remove' if '--remove' in args else '    # the address was entered on the console and is only in the encrypted file'
-            return f'make team-channel NAME={name}{suffix}'
-        if self.name.startswith('team-'):
-            if self.name == 'team-add':
-                return f"make team-add NAME={name} DESCRIPTION='{args[0].removeprefix('--description=')}'"
-            if self.name == 'team-remove':
-                suffix = f' ARGS="--move-apps-to {args[0].split("=", 1)[1]}"' if args else ''
-                return f'make team-remove NAME={name}{suffix}'
-            return f'make {self.name} NAME={name} ARGS="{" ".join(args)}"'
         flags = f' ARGS="{" ".join(self.argv[2:])}"' if self.argv[2:] else ''
         return f'make {self.name} APP={self.argv[0]} ENV={self.argv[1]}{flags}'
 
@@ -236,30 +219,32 @@ class Connections:
 
 
 def team_commands(action: str, name: str, form: Mapping[str, str]) -> tuple[Command, ...]:
-    """One command for the form's action. A team that apps or grants name is not renamed or removed: the
-    command refuses, and the refusal says to move them with swhurl-v2 edit, which writes the records."""
+    """v2's team change for the form's action; v2 judges the registry and the description. An edit states the
+    description and then any new name: a team that apps or grants name is not renamed, and v2's refusal says to move
+    them with swhurl-v2 edit. The names are checked here too because the branch is named after the team."""
     description = ' '.join(form.get('description', '').split())
     rename = form.get('rename', '').strip()
     for label, value in (('team name', name), ('new name', rename)):
         if (value or label == 'team name') and not records.NAME_RE.fullmatch(value):
             raise ActionError(f'{label}: lowercase letters, digits and hyphens, at most 40 characters')
-    if len(description) > 200:
-        raise ActionError('a description is one line of at most 200 characters')
-    flags = [] if action == 'remove' else [f'--description={description}']
+    if action == 'remove':
+        return (Command('team', tuple(v2.team_argv(name, 'remove')), tool='v2'),)
+    commands = [Command('team', tuple(v2.team_argv(name, 'add' if action == 'add' else 'describe',
+                                                   f'--description={description}')), tool='v2')]
     if action == 'edit' and rename and rename != name:
-        flags.append(f'--rename={rename}')
-    return (Command(f'team-{action}', (name, *flags)),)
+        commands.append(Command('team', tuple(v2.team_argv(name, 'rename', f'--rename={rename}')), tool='v2'))
+    return tuple(commands)
 
 
 def channel_commands(name: str, form: Mapping[str, str], *, remove: bool = False) -> tuple[Command, ...]:
+    """Give a team its channel, the address on v2's standard input, or remove it; v2 judges the address."""
     if not records.NAME_RE.fullmatch(name):
         raise ActionError('team name: lowercase letters, digits and hyphens, at most 40 characters')
     if remove:
-        return (Command('team-channel', (name, '--remove')),)
+        return (Command('team', tuple(v2.team_argv(name, 'drop-channel')), tool='v2'),)
     transport, address = form.get('transport', 'ntfy').strip(), form.get('address', '').strip()
-    if problem := channels.address_problem(transport, address):
-        raise ActionError(f'channel address: {problem}')
-    return (Command('team-channel', (name, f'--transport={transport}'), input=address + '\n'),)
+    return (Command('team', tuple(v2.team_argv(name, 'channel', f'--transport={transport}')), input=address + '\n',
+                    tool='v2'),)
 
 
 def new_commands(name: str, _env: str, form: Mapping) -> tuple[Command, ...]:
@@ -467,7 +452,7 @@ ACTIONS: dict[str, Action] = {
                               lambda name, _env, form, action=action: team_commands(action, name, form),
                               manual_inputs, manual_held, f'teams: {verb} {{name}}', job=f'team {action}', gated=False)
        for action, verb in (('add', 'add'), ('edit', 'change'), ('remove', 'remove'))},
-    **{f'team-channel-{action}': Action((), lambda _name, _env, path: channel_inputs(path),
+    **{f'team-channel-{action}': Action((), lambda _name, _env, path: team_inputs(path),
                                       lambda name, _env, form, action=action: channel_commands(name, form, remove=action == 'remove'),
                                       manual_inputs, manual_held, f'teams: {action} the notification channel of {{name}}',
                                       job=f'channel {action}', gated=False)

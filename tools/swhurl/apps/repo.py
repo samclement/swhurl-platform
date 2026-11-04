@@ -253,7 +253,7 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
         image = f'{req.image}:{tag}@{image_digest(req.image, tag, opener)}'
         out(f'[OK] First image: {image}')
     out('Next, create its staging instance with v2 (a Git edit: commit it, push, then `make v2-render`). '
-        '<team> is the team that owns it, a name in apps/teams.yaml:')
+        '<team> is the team that owns it, a name in v2-records/teams.json:')
     kind = req.answers.get('kind', 'web')
     out(f' {create_command(req.name, image, req.exposure if kind == "web" else "")}')
     return image

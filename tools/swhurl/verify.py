@@ -68,7 +68,7 @@ CHECKS = (
     Check.of('ingress', 'cluster', check_ingress, 'Traefik redirects HTTP to HTTPS'),
     Check.of('image-automation', 'cluster host', apps.check_image_automation,  # reads v2-records/<app>/staging
              "Every app's ImagePolicy is Ready and staging runs the image its record states (warns otherwise)"),
-    Check.of('isolation', 'cluster host', apps.check_isolation,  # reads v2-apps/ and apps/teams.yaml
+    Check.of('isolation', 'cluster host', apps.check_isolation,  # reads v2-apps/ and v2-records/teams.json
              'Every instance v2 compiled has its namespace, a registered team, the platform quota and a NetworkPolicy'),
     Check.of('signing-keys', 'cluster host', apps.check_signing_keys,  # reads the profile's auth block
              "The signing keys and token issuer apps were given are the cluster's"),
@@ -77,7 +77,7 @@ CHECKS = (
     Check.of('egress', 'cluster host', apps.check_egress,  # reads platform/egress/allocation.json
              'The egress proxy runs both replicas, with a port of its own for every instance v2 compiled'),
     Check.of('alerts', 'cluster', flux.check_alerts, 'The Flux failure Alert exists and its provider does (a missing Alert warns)'),
-    Check.of('channels', 'cluster host', notifications.check_channels,  # reads apps/teams.yaml and platform/notify
+    Check.of('channels', 'cluster host', notifications.check_channels,  # reads platform/notify/routes.json
              "The team routes are Git's and every channel has its Secret (a team without a channel warns)"),
     Check.of('notify-service', 'cluster', notifications.check_notify_service,
              "The notify service runs, on the console's image (another image warns)"),

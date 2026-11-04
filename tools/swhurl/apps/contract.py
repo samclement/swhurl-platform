@@ -4,6 +4,7 @@ Both sides import these, so generated output and the check cannot drift apart.
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,12 +43,12 @@ STORAGE_CLASSES = {'local-path', RETAINED_STORAGE_CLASS}
 
 # Teams: an app belongs to one team, a name registered in TEAMS_FILE; there is no default, so every app names one. The team is a Namespace label,
 # the same in every environment of the app; telemetry carries it as swhurl.team (platform/otel).
-TEAMS_FILE = Path('apps/teams.yaml')
+TEAMS_FILE = Path('v2-records/teams.json')  # v2's record: swhurl-v2 team writes it, and v2's render refuses an unknown team
 
 
 def registered_teams(text: str | bytes) -> dict[str, str]:
     """Team names and descriptions from the text of TEAMS_FILE."""
-    registered = (yamlio.load(text) or {}).get('teams') or {}
+    registered = json.loads(text).get('teams') or {}
     return {str(name): (entry or {}).get('description', '') for name, entry in registered.items()}
 
 

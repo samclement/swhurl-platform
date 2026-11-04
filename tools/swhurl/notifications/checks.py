@@ -20,8 +20,8 @@ from .heartbeat import CRONJOB_NAME, CRONJOB_NAMESPACE
 def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
     """The team routes in the cluster are Git's and every channel has its Secret (names only, never an address)."""
     report.section('Notification channels')
-    wanted = channels.routes_file(root)
-    if not wanted:
+    wanted = channels.routes(root)
+    if wanted is None:
         return
     get = ['kubectl', '-n', channels.NAMESPACE, 'get']
     try:
@@ -32,13 +32,13 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
     except (CommandError, KeyError, TypeError, ValueError):
         report.bad('could not read the notification routes and channels (make reconcile UNIT=platform-notify)')
         return
-    routes = channels.team_channels(root)
-    if live != channels.routes(root):
-        report.bad('the team routes in the cluster are not those of apps/teams.yaml: a team or channel change '
+    routes = wanted.get('teams') or {}
+    if live != wanted:
+        report.bad(f'the team routes in the cluster are not those of {channels.ROUTES_FILE}: a team or channel change '
                    'rewrites them, so commit, push and make flux-reconcile')
     else:
         report.ok(f'{len(routes)} team(s) notify a channel, as in Git')
-    known = channels.channels(root)
+    known = wanted.get('channels') or {}
     missing = [name for name in known if f'secret/{channels.SECRET_PREFIX}{name}' not in secrets]
     if missing:
         report.bad(f'channel {", ".join(missing)} has no Secret in the cluster: its teams get no notifications '

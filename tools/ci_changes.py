@@ -13,9 +13,9 @@ REGISTRY = "clusters/home/kustomization.yaml"
 RECORD = re.compile(r"apps/[^/]+/app\.yaml"
                     r"|apps/[^/]+/(staging|prod)/(release\.yaml|instance\.yaml|[^/]+\.sops\.yaml|offers/.+)")
 
-SHARED_INPUTS = frozenset({'apps/teams.yaml', 'platform/notify/kustomization.yaml',
-                           'clusters/home/platform-notify.yaml'})
-CHANNEL = re.compile(r'platform/notify/channel-[a-z]([a-z0-9-]{0,38}[a-z0-9])?\.sops\.yaml')
+# The team registry and a channel's Secret, which swhurl-v2 team writes; v2-render writes the routes from them.
+SHARED_INPUTS = frozenset({'v2-records/teams.json'})
+CHANNEL = re.compile(r'platform/notify/channels/channel-[a-z]([a-z0-9-]{0,38}[a-z0-9])?\.sops\.yaml')
 
 
 def classify(paths: list[str]) -> tuple[bool, bool]:

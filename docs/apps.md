@@ -183,7 +183,7 @@ Production is created by the first [promotion](#promote-to-production) from revi
 | --- | --- |
 | `--app <name>` | Required: a DNS label — lowercase letters, digits and hyphens, at most 40 characters — and the app must have no records yet |
 | `--image ghcr.io/<owner>/<name>:<tag>@sha256:…` | Required: as `make app-repo` prints it. v2 reads the image's `linux/amd64` manifest and its declaration label through the registry, and states them in the release |
-| `--team <team>` | Required: the owning team, a name in `apps/teams.yaml` ([teams and isolation](#teams-and-isolation)) |
+| `--team <team>` | Required: the owning team, a name in `v2-records/teams.json` ([teams and isolation](#teams-and-isolation)) |
 | `--exposure` | `private` (the default) or `authenticated-web` ([who can reach it](#who-can-reach-it)); a worker or a job is private |
 | `--records`, `--profile`, `--out` | Where the records go (`v2-records`), the platform profile every render shares (`v2/testdata/profile.json`), and the repository root |
 
@@ -363,22 +363,23 @@ Set it with `--exposure` at creation, and change it later with the app page's **
 
 ## Teams and isolation
 
-Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, or the console's team choice, where none is preselected), or `create` refuses; change it for every environment at once with the app page's **Change team** (a held pull request, offering only the registered teams) or `swhurl-v2 edit --set team=<team>` (it names no environment). A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
+Every app belongs to one **team**: a name registered in v2's team registry, [`v2-records/teams.json`](../v2-records/teams.json), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, or the console's team choice, where none is preselected), or `create` refuses; change it for every environment at once with the app page's **Change team** (a held pull request, offering only the registered teams) or `swhurl-v2 edit --set team=<team>` (it names no environment). A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
 
-Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`. The registry and the apps that name a team must agree (`make check-apps` rule `team` fails when an app names a team that is gone), and v2 writes an app's records, so these commands cannot move an app or rewrite a grant: they refuse while one names the team, and the refusal names the v2 edit that does it.
+Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`; both run `swhurl-v2 team`. The registry and the apps that name a team must agree (`swhurl-v2 render`, and so `make check-v2`, refuses an app record or a `team:` grant naming a team that is not registered), and a team change does not move an app or rewrite a grant: it refuses while one names the team, and the refusal names the v2 edit that does it.
 
 | Change | What keeps apps from being orphaned |
 | --- | --- |
 | Rename a team | Refused while a v2 app record names it or an `allows` grants `team:<name>`: a rename relabels nothing, so move them first with each app's **Change team** (or remove those grants) |
 | Remove a team that owns apps | Refused while a v2 app record names it: move them first with each app's **Change team** |
-| Remove a team an `allows` names | Refused, listing the instances; remove those grants first (`swhurl-v2 edit --set allows=…`) |
+| Remove a team an `allows` names | Refused; remove those grants first (`swhurl-v2 edit --set allows=…`) |
+| Remove a team that has a channel | Refused; remove its channel first (`make team-channel NAME=<team> REMOVE=true`), which deletes the channel's Secret |
 | An app already naming an unregistered team | Listed first on the Teams page; register the team or move the app with its **Change team** |
 
-Team changes validate the registry and plan the [notification routes](services.md#notification-channels) before writing. Console PRs carry the registry and its generated routes, and nothing else ([PR contents](console.md#removals-teams-and-channels)).
+A team change decides the registry and the [notification routes](services.md#notification-channels) rendered from it before writing. Console PRs carry the registry, what v2 renders from it and a channel's encrypted Secret, and nothing else ([PR contents](console.md#removals-teams-and-channels)).
 
 Logs and traces already stored keep the team name they were written with; only new data carries a new name.
 
-A team can name one [notification channel](services.md#notification-channels) (`make team-edit NAME=payments ARGS="--notify payments-phone"`): it gets a copy of the deployment and health messages of every app the team owns. Choosing a team for a new app is therefore also choosing where its messages go; the chosen team's channel receives them.
+A team can have one [notification channel](services.md#notification-channels) (`make team-channel NAME=payments`): it gets a copy of the deployment and health messages of every app the team owns. Choosing a team for a new app is therefore also choosing where its messages go; the chosen team's channel receives them.
 
 Each instance carries two generated files beside its HelmRelease:
 
@@ -411,7 +412,7 @@ Both are kept in each instance's record:
 "calls": ["demo-orders"]
 ```
 
-An app's own team is never implicit; a `team:` entry must name a team registered in `apps/teams.yaml`.
+An app's own team is never implicit; a `team:` entry must name a team registered in `v2-records/teams.json`.
 
 | State | What renders |
 | --- | --- |
@@ -1002,7 +1003,7 @@ Removal refuses, before writing anything, while **any other instance in the same
 
 ## The app policy
 
-The platform's instances are v2's, so `make check-apps` checks v2's own tree first: it runs v2's comparison, [`render --check`](../v2/check-rendered.sh) (the one `make check-v2` runs), so every instance folder and unit, the resolution, the egress allocation and the proxy's objects, the auth folder, NATS's user list and Reloader's watch list must be exactly what `v2-records/` renders from the working tree — a record change that leaves its compiled output behind fails here, before a push. It then checks the rules no compiler can decide: every `v2-records/<app>/app.json` states a team registered in `apps/teams.yaml`, `platform/notify/routes.yaml` is what the registry generates, and the template fixtures still pass the app policy. It needs Go (`v2/check-rendered.sh` builds `swhurl-v2`).
+The platform's instances are v2's, so `make check-apps` checks v2's own tree first: it runs v2's comparison, [`render --check`](../v2/check-rendered.sh) (the one `make check-v2` runs), so every instance folder and unit, the resolution, the egress allocation and the proxy's objects, the auth folder, NATS's user list and Reloader's watch list must be exactly what `v2-records/` renders from the working tree — a record change that leaves its compiled output behind fails here, before a push. The same comparison refuses an app record or a `team:` grant naming a team `v2-records/teams.json` does not register, and a notification channel without its Secret. It then checks the rule no compiler can decide yet: the template fixtures still pass the app policy. It needs Go (`v2/check-rendered.sh` builds `swhurl-v2`).
 
 The policy below renders an instance folder with Helm and checks its Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), `HOST_IP` defined before an OTLP endpoint uses it, a registered team, the platform quota with room for the app's replicas, the platform NetworkPolicy on the app's pods only ([teams and isolation](#teams-and-isolation)), its identity, declared calls and their tokens ([calling another app](#calling-another-app)), and the stream, consumers and NATS user that follow from its declared [events](#events). It runs on the instances under `apps/` (none today) and on the template fixtures under `tests/fixtures/apps`, which `check-templates` builds every app type into, so an app type is held to this contract before v2 compiles anything. A v2 instance's objects are v2's to check: its compiler renders them, `make check-v2` (and so `make check-apps`) compares them with the files Git holds, and `make verify-platform` compares them with the cluster. Where an earlier section says `make check-apps` enforces a rule on an instance, that is what enforces it for a v2 instance; the Helm policy below is what the fixture and `apps/` paths still get. Every instance under `apps/` must also be an app made from a stack template (rule `platform-image`, no exceptions): its image is `ghcr.io/samclement/<app>` and its staging has `image-automation.yaml` with its ImagePolicy. The rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py); an explicit `check-apps <instance-path> ...` checks the selected instances' manifests too.
 

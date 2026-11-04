@@ -60,6 +60,8 @@ const usage = `usage:
       --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] \
       [--max-age DURATION] [--from KEY] [--region REGION] \
       [--confirm APPLICATION/ENVIRONMENT [--age-key-file FILE] [--url-ttl DURATION]]
+  swhurl-v2 team --records DIR --team TEAM --action ACTION --profile PROFILE.json --out DIR \
+      [--description TEXT] [--rename NEW] [--transport ntfy]
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
 platform's tag policy, and writes the record pair and the compiled files under --out. With --records it reads
@@ -221,6 +223,16 @@ backup image's restore job with a presigned read of that one archive and the age
 carries what each step did, the job's log as evidence, and the app's own state; the read URL is valid for
 --url-ttl (default 1h) and travels in a Secret this command creates and deletes.
 
+team changes the team registry, DIR/teams.json, and writes it with what is rendered from it: the notification
+routes (platform/notify/routes.json) and the kustomization listing each channel's Secret. The actions are add and
+describe (with --description, one line; describe without it clears it), rename (--rename), remove, channel and
+drop-channel. Renaming or removing a team is refused while an app record names it or an instance allows it: edit
+moves them. A team is removed only once its channel has gone. channel gives the team its notification channel,
+named after the team, or a new address for the one it has: the address is the first line of standard input, never
+an argument, and is encrypted with sops to the profile's recipient into platform/notify/channels/channel-NAME.sops.yaml
+before anything else is written; it is never printed. drop-channel removes the channel and deletes its Secret once
+nothing lists it. A change that leaves the registry as it was writes nothing new.
+
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
 started but did not complete, a render --check that found a difference, or file and output I/O failure.
@@ -250,7 +262,8 @@ func readInput(path string) ([]byte, error) {
 
 func run(args []string, out, diagnostic io.Writer, readFile func(string) ([]byte, error), writer files.Writer) int {
 	return runWith(args, out, diagnostic, cli{readFile: readFile, writer: writer, archives: archiveReader,
-		registries: registryReader, seed: randomSeed, encrypter: sops.New(), inCluster: podServiceAccount()})
+		registries: registryReader, seed: randomSeed, encrypter: sops.New(), stdin: os.Stdin,
+		inCluster: podServiceAccount()})
 }
 
 // runWith runs one command with the cli a test assembled: the adapters a command needs supplied, everything else the
@@ -336,6 +349,7 @@ var commands = map[string]func(cli, request) int{
 	"edit":              cli.edit,
 	"remove":            cli.remove,
 	"restore":           cli.restore,
+	"team":              cli.team,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -353,11 +367,13 @@ type request struct {
 	records, changes, repoRoot, reviewedDigest         string
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
+	action, description, rename, transport             string
 	rotate, check, json, inCluster, all                bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
 	outFlag                                            *once
+	descriptionFlag                                    *once
 }
 
 type outcome int
@@ -417,6 +433,10 @@ func (r *request) registerInputs(flags *flag.FlagSet) {
 
 // registerExtras adds what each command alone takes: its remaining inputs, and where a command writes.
 func (r *request) registerExtras(flags *flag.FlagSet, command string) {
+	if command == "team" {
+		r.registerTeamFlags(flags)
+		return
+	}
 	if r.registerRecordFlags(flags, command) {
 		return
 	}
@@ -672,6 +692,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"promote":        (*request).appNamed,
 	"deploy":         (*request).deployNamed,
 	"edit":           (*request).editNamed,
+	"team":           (*request).teamNamed,
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one
@@ -811,6 +832,8 @@ type cli struct {
 	// nor sops. Commands that never mint are given the real ones too.
 	seed      func() ([32]byte, error)
 	encrypter sops.Encrypter
+	// stdin is where a channel's address is read from; a test supplies its own.
+	stdin io.Reader
 	// inCluster is where status --in-cluster finds the pod's ServiceAccount; a test supplies a folder and an
 	// environment of its own.
 	inCluster inCluster

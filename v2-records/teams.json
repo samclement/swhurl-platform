@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "teams": {
+    "demo": {
+      "description": "Apps that show how to use the platform: calling an API securely, events, a database, notifications",
+      "channel": {
+        "name": "platform",
+        "transport": "ntfy"
+      }
+    },
+    "insights": {
+      "description": "Reporting (team platform scenario)",
+      "channel": {
+        "name": "insights",
+        "transport": "ntfy"
+      }
+    },
+    "payments": {
+      "description": "Orders and payments (team platform scenario)",
+      "channel": {
+        "name": "payments",
+        "transport": "ntfy"
+      }
+    }
+  }
+}

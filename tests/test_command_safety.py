@@ -39,7 +39,7 @@ class CommandSafetyTests(unittest.TestCase):
         self.env['CONSOLE_TAG'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True,
                                                  text=True, check=True).stdout.strip()
         self.env['ROUTES'] = json.dumps(channels.routes(ROOT))
-        self.env['CHANNEL_SECRETS'] = '\n'.join(f'secret/channel-{name}' for name in channels.channels(ROOT))
+        self.env['CHANNEL_SECRETS'] = '\n'.join(f'secret/channel-{name}' for name in channels.routes(ROOT)['channels'])
         self.env['REPO'], self.env['ISSUER'] = str(ROOT), calling.ISSUER
         for name in ('kubectl', 'flux', 'aws', 'curl', 'gh', 'systemctl'):
             path = self.bin / name

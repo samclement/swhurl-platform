@@ -220,27 +220,28 @@ A team's apps can also notify the team. A **channel** is a named destination, an
 make team-channel NAME=payments          # prompts for https://ntfy.sh/<topic>, not shown
 ```
 
-On the console's [Teams page](console.md#use-it), **Channel** on the team's card does the same as a pull request; its **Generate** button makes a random topic in your browser and shows the link to subscribe with before you submit. The same command and button give a team that has a channel a new address, and `ARGS=--remove` or **Remove the channel** takes it away. The channel is named after the team, so there is nothing to name or pick. The parts underneath can also be handled one by one (`make channel-add`, `make team-edit --notify`, `make channel-remove`), for example to let two teams share a channel.
+On the console's [Teams page](console.md#use-it), **Channel** on the team's card does the same as a pull request; its **Generate** button makes a random topic in your browser and shows the link to subscribe with before you submit. The same command and button give a team that has a channel a new address, and `REMOVE=true` or **Remove the channel** takes it away. The channel is named after the team, so there is nothing to name or pick, and a channel belongs to one team. Both run `swhurl-v2 team`, which owns the registry and everything rendered from it.
 
 ```mermaid
 flowchart LR
-    teams[apps/teams.yaml<br/>payments: notify payments-phone] -->|generated| routes[notify/notification-routes]
-    add[make channel-add] -->|encrypts| secret[notify/channel-payments-phone]
+    teams[v2-records/teams.json<br/>payments: channel payments] -->|swhurl-v2 render| routes[notify/notification-routes]
+    cmd[swhurl-v2 team --action channel] -->|encrypts| secret[notify/channel-payments]
+    cmd -->|writes| teams
     checker[Notification checker] -->|every message| platform[platform topic]
     checker -->|"copy, about orders/staging"| notify[Notify service]
     routes --> notify
     secret --> notify
     ns[App namespace<br/>team label] --> notify
-    notify --> phone[payments-phone topic]
+    notify --> phone[payments topic]
 ```
 
 | Part | Where | Notes |
 | --- | --- | --- |
-| Channel | [`platform/notify/channel-<name>.sops.yaml`](../platform/notify): Secret `notify/channel-<name>` | Its transport is a plain label (`ntfy` is the only one); its address is the credential and is encrypted. One file per channel, so adding one decrypts nothing |
-| Team's channel | `notify:` on the team in [`apps/teams.yaml`](../apps/teams.yaml) | One channel per team (the commands and rule `notify-channels` refuse a second), for every app of the team in every environment. A team without `notify` gets no copy. Two teams may name the same channel |
-| Routes | [`platform/notify/routes.yaml`](../platform/notify/routes.yaml): ConfigMap `notify/notification-routes` | Generated from the channel files and the registry by the same shared-file plan as app edits, names only: never edit it. Team/channel commands plan against their proposed inputs before writing; console PRs [carry those inputs, not routes](console.md#removals-teams-and-channels). the team and channel commands rewrite it and `make check-apps` (rule `notify-channels`) fails when it, a team's list or the channel files disagree |
+| Channel | [`platform/notify/channels/channel-<name>.sops.yaml`](../platform/notify/channels): Secret `notify/channel-<name>` | Its transport is a plain label (`ntfy` is the only one); its address is the credential and is encrypted, to the profile's SOPS recipient. One file per channel, so adding one decrypts nothing. v2 writes it before anything that lists it and deletes it after nothing does |
+| Team's channel | `channel` on the team in [`v2-records/teams.json`](../v2-records/teams.json) | At most one per team, for every app of the team in every environment, and a channel belongs to one team (v2 refuses a second). A team without a channel gets no copy |
+| Routes | [`platform/notify/routes.json`](../platform/notify/routes.json): ConfigMap `notify/notification-routes`, and [`channels/kustomization.yaml`](../platform/notify/channels/kustomization.yaml) | Rendered by v2 from the registry, names only: never edit them. `swhurl-v2 render --check` (what `make check-v2` runs) fails when they differ from the registry, when a registered channel has no Secret file or a Secret file is no team's channel, and when an app record or a `team:` grant names a team the registry does not hold |
 
-**Channels are write-only.** Whoever creates a channel supplies its address and subscribes to it themselves; the platform stores it and never shows it again, in the tooling, the console or a log. A new app in a team gets the team's channels, so nothing secret changes hands. A lost or leaked address is replaced by running `make team-channel NAME=<team>` again (or **Channel** on the console); `make channel-remove` is refused while a team notifies the channel.
+**Channels are write-only.** Whoever creates a channel supplies its address and subscribes to it themselves; the platform stores it and never shows it again, in the tooling, the console or a log. A new app in a team gets the team's channel, so nothing secret changes hands. A lost or leaked address is replaced by running `make team-channel NAME=<team>` again (or **Channel** on the console).
 
 **What a channel receives.** A copy of each message about the team's apps, with the same title, priority and link. The platform topic still receives every message, and the console's own messages, the notification monitor and the [Flux failure Alert](#current-notification-behavior) go only there. The [notify service](#notify-service) reads each app's team from its namespace label and the channel addresses from the `notify` namespace, whose only other Secret is Helm's record of the service's own release (chart values, no credential).
 

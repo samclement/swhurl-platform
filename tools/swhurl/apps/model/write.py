@@ -14,7 +14,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import interface, yamlio
-from swhurl.apps import channels, egress, events, nkeys, offers
+from swhurl.apps import egress, events, nkeys, offers
 from swhurl.apps.contract import RETAINED_STORAGE_CLASS, SECRET_FILE
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import ENVIRONMENTS, UNITS, Instance
@@ -124,7 +124,7 @@ def removals(root: Path, world: World, platform: Platform) -> frozenset[Instance
 
 
 def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance] = frozenset(), *,
-         routes: dict | None = None, removed: frozenset[Instance] = frozenset()) -> Prepared:
+         removed: frozenset[Instance] = frozenset()) -> Prepared:
     """Complete writes and managed deletions, by absolute path. Plan everything before applying anything.
     Scratch roots (no registry) keep existing units; creates always get a unit. With a registry, sync repairs missing units."""
     writes: dict[Path, str] = {}
@@ -166,12 +166,6 @@ def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance
         current.extend(sorted(shared.units - set(current)))
         if list(current) != before:
             keep(REGISTRY_FILE, document.render())
-    try:
-        if (root / channels.NOTIFY_DIR).is_dir():
-            keep(channels.ROUTES_FILE, channels.routes_configmap(channels.routes(root) if routes is None else routes))
-    except (OSError, UnicodeError, yaml.YAMLError, AttributeError, TypeError) as error:
-        # Parser details can include Secret contents: report the input boundary, never their text.
-        raise EditError(f'cannot plan notification routes: invalid team/channel inputs ({type(error).__name__})') from None
     # A merged record-only removal leaves old outputs behind. Only platform-owned names are removed;
     # unrelated YAML, encrypted files, notes and data in the same directories are not ours.
     for each in sorted(removed, key=str):
@@ -262,7 +256,7 @@ class Rotate(Update):
 
 
 def prepare(root: Path, operations: dict[Instance, Create | Update | Remove], base: Path = Path('apps'), *,
-            routes: dict | None = None, runner: Runner | None = None) -> Prepared:
+            runner: Runner | None = None) -> Prepared:
     """Validate all targets, transform their records, then plan every output before writing.
     Updates (rotations included) guard generated files against unrepresentable hand edits; a rotation also
     needs a complete identity, and something that still needs one. Removal needs only valid records:
@@ -303,7 +297,7 @@ def prepare(root: Path, operations: dict[Instance, Create | Update | Remove], ba
     for each, operation in operations.items():
         if isinstance(operation, Rotate) and not world[each].settings.allocations.events_key:
             raise EditError(f'{each}: nothing needs a NATS identity (no NATS, no events), so there is none to rotate')
-    return plan(root, world, platform, added, routes=routes, removed=removed)
+    return plan(root, world, platform, added, removed=removed)
 
 
 def change(root: Path, targets: Instance | list[Instance], update: Callable[[Entry], Entry],

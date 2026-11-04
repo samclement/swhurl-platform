@@ -26,6 +26,11 @@ def edit_argv(app: str, env: str, setting: str) -> list[str]:
             '--set', setting, '--profile', PROFILE, '--out', OUT, '--calls', CALLS, '--egress', EGRESS]
 
 
+def team_argv(team: str, action: str, *flags: str) -> list[str]:
+    """One change to the team registry; a channel's address goes to standard input, never here."""
+    return ['team', '--records', RECORDS, '--team', team, '--action', action, *flags, '--profile', PROFILE, '--out', OUT]
+
+
 def remove_argv(app: str, env: str) -> list[str]:
     return ['remove', '--records', RECORDS, '--app', app, f'--env={env}',
             '--profile', PROFILE, '--calls', CALLS, '--out', OUT]

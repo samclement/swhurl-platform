@@ -224,7 +224,7 @@ class AppFileTests(unittest.TestCase):
             'v2-records/other/app.json': '{"schemaVersion": 1, "application": "other", "team": "demo"}',
             'v2-records/other/prod/instance.json': '{"schemaVersion": 1, "application": "other", "environment": "prod", "allows": ["web"]}',
             'v2-records/other/prod/release.json': OWNED_RELEASE,
-            'apps/teams.yaml': 'teams:\n  demo: {}\n',  # the Change team form's choices
+            'v2-records/teams.json': '{"schemaVersion": 1, "teams": {"demo": {}}}',  # the Change team form's choices
         }
         asked = []
         heads = []
@@ -266,7 +266,7 @@ class AppFileTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('connected in Git, not yet observed live', response.text)
         self.assertEqual(len(heads), 2)
-        expected = {'apps/teams.yaml'}  # JSON inputs are shared with Go from the one archive
+        expected = set()  # every input, the team registry too, comes from the one archive Go reads
         for head in heads:
             self.assertEqual(Counter(p for p, ref in asked if ref == head), Counter(dict.fromkeys(expected, 1)))
         self.assertEqual(len(owned), 2)

@@ -97,7 +97,7 @@ Rotate the image webhook token ([what it is](services.md#image-webhook)); until 
 2. `make check-secrets` (the two copies must match), commit, push, `make flux-reconcile` (Reloader restarts the console).
 3. `make app-hooks` repoints every app repository's webhook; `make verify-platform` shows them under Image Webhooks after each repository's next publish.
 
-Replace a [notification channel](services.md#notification-channels)'s address when it may have leaked or was lost: in your own terminal, `make team-channel NAME=<team>` (it prompts without showing the address), then `make check-apps`, commit, push and `make flux-reconcile`; subscribe to the new topic and unsubscribe from the old.
+Replace a [notification channel](services.md#notification-channels)'s address when it may have leaked or was lost: in your own terminal, `make team-channel NAME=<team>` (it prompts without showing the address), then `make check-v2`, commit, push and `make flux-reconcile`; subscribe to the new topic and unsubscribe from the old.
 
 Rotate the ntfy topic ([alerts](services.md#alerts)) when it may have leaked: in your own terminal, `sops platform/alerts/secret-platform.sops.yaml` and replace the topic (`swhurl-` and 24 hex characters, for example from `openssl rand -hex 12`) in `address`. In `platform/console/notification-secret.sops.yaml`, set `NTFY_PLATFORM_URL` to the same topic URL without the rendering query string. Then `make check-secrets`, commit, push, `make flux-reconcile` (both consumers must update) and wait for the next successful dashboard job (or run `make clickstack-dashboards`); subscribe to the new topic in the ntfy app and unsubscribe from the old.
 

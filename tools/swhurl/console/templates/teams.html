@@ -22,7 +22,7 @@
 
 {% if unregistered %}
 <h2 class="bad">Apps without a registered team</h2>
-<p class="muted">These apps name a team that is not in <code>apps/teams.yaml</code> (or none). <code>make check-apps</code> fails until each is fixed: register the team below, or move the app with its page's <strong>Change team</strong>.</p>
+<p class="muted">These apps name a team that is not in <code>v2-records/teams.json</code> (or none). <code>make check-v2</code> fails until each is fixed: register the team below, or move the app with its page's <strong>Change team</strong>.</p>
 <table class="compact">
   <tr><th>Team named</th><th>Apps</th></tr>
   {% for team, apps in unregistered.items() %}<tr><td>{{ team or 'none' }}</td><td>{{ apps_of(team) }}</td></tr>{% endfor %}
@@ -42,7 +42,7 @@
           {{ ui.text_field('new-name', 'Name', '', 'billing', 'Lowercase letters, digits and hyphens; at most 40 characters.', name='name') }}
           {{ ui.text_field('new-description', 'Description', '', 'What the team owns', 'Optional. One line.', name='description') }}
         </fieldset>
-        {{ ui.submit('Open new team PR', 'Changes apps/teams.yaml only. Once merged, the team can be chosen on New app and with Change team on an app page.') }}
+        {{ ui.submit('Open new team PR', 'Changes v2-records/teams.json only. Once merged, the team can be chosen on New app and with Change team on an app page.') }}
       </form>
     </details>
   </div>

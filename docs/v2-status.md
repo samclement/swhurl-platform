@@ -92,7 +92,8 @@ not migration.
 **B. Then the rest of the road.**
 
 2. **The console-free Python, first.** Go now judges actual chart output for every compiled v2 instance;
-   independent review cleared the parser and all-instance policy fixes ([evidence](current-state.md#app-policy-go-gate-4-november-2026)).
+   independent review and CI passed, and the deployed console and all ten instances are verified
+   ([evidence](current-state.md#app-policy-go-gate-4-november-2026)).
    **Python retirement remains.** The operator must choose whether to retire the legacy fixture checker and
    explicit-path API (recommended: keep the model oracle and Go policy tests, not obsolete v1 policy settings),
    or preserve that API through a thin JSON reader and additional explicit Go constraints. The

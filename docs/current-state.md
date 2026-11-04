@@ -62,7 +62,7 @@ What has been verified on the live cluster, and when: current facts first, then 
 
 ## App-policy Go gate (4 November 2026)
 
-**All-instance Go policy implemented; Python legacy policy retirement remains incomplete.**
+**Implemented in `ea09e2c0`; console deployed by `f357f4ba`. Python legacy policy retirement remains incomplete.**
 
 - Addressed six independent-review P1s with observed failing-before regressions. JSON surrogate-pair values
   failed **real** Helm 3.19/4.2 rendering despite passing the validator; validated values now use stdlib
@@ -108,7 +108,20 @@ Logs: `/tmp/swhurl-policy-p1-{v2,check,image}.log`; current runtime report:
 `/tmp/swhurl-policy-p1-container.json`. Existing OTel and Starlette deprecation warnings remain.
 Independent read-only rereview reproduced the six original failures against the fixes and found no remaining
 issues in this checkpoint; it also passed both Helm versions' focused suites, `make check-v2`, all three legacy
-fixtures and the all-instance Go gate. No CI, deployment or live verification is claimed by these offline checks.
+fixtures and the all-instance Go gate. Final validation passed `REQUIRE_HELM=1 make check-v2`, `make check`,
+`make check-templates`, shell syntax and whitespace checks. An initial push lost to demo-shop's independent
+deploy (`a310c292`); the implementation rebased without conflicts and `make check-v2` and `make check` passed
+again on the newer records before the push.
+
+**CI and live (4 November 2026; checker completion verified at 14:44 UTC):** [Validate 41849820153](https://github.com/samclement/swhurl-platform/actions/runs/41849820153)
+passed on `ea09e2c0` and deployed console/notify image `src-17dcd208bf825a3b` in `f357f4ba`.
+`make flux-reconcile` applied that revision; `make verify-platform` passed and all ten explicit `make app-status`
+checks reported Healthy with the matching applied revision. Both console CronJobs scheduled at 14:44 UTC
+completed successfully on the new image (`console-dashboards-29896724`, `console-notifications-29896724`).
+The implementation changes no app records, workload manifests, credentials or backup destinations. Live effects
+were the normal console/notify image deployment; policy itself is read-only and is not cluster admission.
+No console PR submission or deliberately failing live app was exercised. GitHub's existing Node.js action-runtime
+and ubuntu-latest migration warnings remain; no unrelated workflow-version upgrade was included.
 
 **Next gate:** choose the legacy retirement scope in the [single handoff](v2-status.md#remaining-work): retire
 the obsolete fixture policy/API (recommended), retaining the v1 model oracle and Go policy tests, or preserve

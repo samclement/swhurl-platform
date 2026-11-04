@@ -54,10 +54,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   adapter, subprocess allowlist change or Go policy has been implemented. Keep the Python checks until the
   Go policy covers every compiled instance and its retained rules are tested. OTel and ClickStack also use
   Python policy's chart helpers, so their callers must be preserved when that module is retired.
-- **Validation:** the approval documentation passed `make check`; the prototype checks above are offline
-  evidence only, not validation of an implemented Go adapter or policy.
-- **Live:** nothing changed by the prototype. The team-registry verification below remains the latest live
-  capability evidence.
+- **Validation:** final `make check`, `make check-v2` and `git diff --check` passed before documentation commit
+  `a9bf3180`. The prototype checks above are offline evidence only, not validation of an implemented Go adapter
+  or policy.
+- **Live, after the documentation push:** `make flux-reconcile` applied `a9bf3180` to all 31 units;
+  `make verify-platform` passed, and explicit `make app-status` checks for all ten instances reported Healthy,
+  with that applied revision (4 November 2026, 08:17–08:18 UTC). No workload manifests, images, records or
+  credentials changed; the team-registry verification below remains the latest live capability evidence.
 
 ## The team registry leaves Python (4 November 2026)
 

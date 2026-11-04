@@ -10,14 +10,12 @@ import unittest
 from swhurl import ROOT
 
 MODEL = ROOT / 'tools/swhurl/apps/model'
-LINES = 1547
+LINES = 1541
 IMPORTERS = {
     'tests/full_settings.py',
     'tests/test_app_relations.py',
     'tests/test_console_changes.py',
     'tests/test_interface.py',
-    'tests/test_teams.py',
-    'tools/swhurl/apps/channels.py',
     'tools/swhurl/apps/connections.py',
     'tools/swhurl/apps/declaration.py',
     'tools/swhurl/apps/hooks.py',
@@ -27,7 +25,6 @@ IMPORTERS = {
     'tools/swhurl/apps/promotion.py',
     'tools/swhurl/apps/release.py',
     'tools/swhurl/apps/repo.py',
-    'tools/swhurl/apps/teams.py',
     'tools/swhurl/console/merge.py',
     'tools/swhurl/console/proposal.py',
     'tools/swhurl/console/records.py',

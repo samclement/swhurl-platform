@@ -38,14 +38,13 @@ class CIChangeClassificationTests(unittest.TestCase):
                 self.assertTrue(records_only(paths))
 
     def test_team_and_channel_inputs_are_records_only_but_generated_routes_are_not(self):
-        paths = ['apps/teams.yaml', 'apps/weather/app.yaml', 'apps/weather/staging/instance.yaml',
-                 'platform/notify/channel-payments-phone.sops.yaml', 'platform/notify/kustomization.yaml',
-                 'clusters/home/platform-notify.yaml']
+        paths = ['v2-records/teams.json', 'apps/weather/app.yaml', 'apps/weather/staging/instance.yaml',
+                 'platform/notify/channels/channel-payments-phone.sops.yaml']
         self.assertTrue(records_only(paths))
         self.assertEqual(classify(paths), (False, True), 'shared inputs still need the full tooling checks')
-        for extra in ('platform/notify/routes.yaml', 'platform/notify/namespace.yaml',
-                      'platform/notify/other.sops.yaml', 'platform/notify/sub/channel-phone.sops.yaml',
-                      'clusters/home/platform.yaml', 'apps/teams.yml'):
+        for extra in ('platform/notify/routes.json', 'platform/notify/namespace.yaml',
+                      'platform/notify/channels/kustomization.yaml', 'platform/notify/channel-phone.sops.yaml',
+                      'platform/notify/channels/other.sops.yaml', 'clusters/home/platform.yaml', 'apps/teams.yaml'):
             with self.subTest(extra=extra):
                 self.assertFalse(records_only([*paths, extra]))
 

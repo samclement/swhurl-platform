@@ -75,6 +75,9 @@ func renderTree(t *testing.T) (string, string) {
 	renderInstance(t, records, kernel.InstanceSpec{Application: "demo-shop", Environment: "staging",
 		Configuration: kernel.Configuration{Replicas: 1, MemoryMiB: 128},
 		Grants:        kernel.Grants{Exposure: "private"}, Calls: []string{"demo-orders"}}, shop)
+	writeRecord(t, filepath.Join(records, kernel.TeamsRecordName), func() ([]byte, error) {
+		return kernel.EncodeTeams(kernel.TeamRegistry{SchemaVersion: 1, Teams: map[string]kernel.Team{"demo": {}}})
+	})
 	return out, records
 }
 
@@ -146,7 +149,8 @@ func TestRenderWritesEveryDerivedFile(t *testing.T) {
 	want := []string{"v2-records/calls.json", "platform/egress/allocation.json", "platform/egress/configmap.json",
 		"platform/egress/networkpolicy.json", "platform/auth/kustomization.yaml",
 		"platform/auth/swhurl-auth-demo-orders-prod.json", "platform/auth/swhurl-auth-demo-orders-staging.json",
-		"platform/auth/swhurl-auth-demo-shop-staging.json", "platform/nats/users.json", "platform/reloader/values.json"}
+		"platform/auth/swhurl-auth-demo-shop-staging.json", "platform/nats/users.json", "platform/reloader/values.json",
+		"platform/notify/routes.json", "platform/notify/channels/kustomization.yaml"}
 	// Nothing calls production, so its folder renders no callers.
 	want = append(want, instance("demo-orders", "prod", manifests...)...)
 	want = append(want, instance("demo-orders", "staging", append(slices.Clone(manifests), "callers.json",

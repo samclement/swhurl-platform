@@ -302,8 +302,8 @@ class ConsoleTokenTests(unittest.TestCase):
             document = json.loads((folder / name).read_text())
             document['metadata'] = {**document['metadata'], 'name': 'w', 'namespace': 'w-staging'}
             (folder / name).write_text(json.dumps(document))
-        (root / 'apps').mkdir(parents=True, exist_ok=True)
-        (root / 'apps/teams.yaml').write_text(f'teams:\n  {team}:\n    description: ours\n')
+        (root / 'v2-records').mkdir(parents=True, exist_ok=True)
+        (root / 'v2-records/teams.json').write_text(json.dumps({'schemaVersion': 1, 'teams': {team: {'description': 'ours'}}}))
         return folder
 
     def test_isolation_problems(self):
@@ -328,14 +328,14 @@ class ConsoleTokenTests(unittest.TestCase):
         lines = isolation(**{'app-namespaces': {'items': []}})
         self.assertTrue(any(line.startswith('[BAD] w-staging: the namespace does not exist, so the instance is not running')
                             for line in lines), lines)
-        (root / 'apps/teams.yaml').write_text('teams: {}\n')
+        (root / 'v2-records/teams.json').write_text('{"schemaVersion": 1, "teams": {}}')
         moved = isolation(**{'network-policies': {'items': []}, 'quotas': {'items': []}})
-        self.assertTrue(any(line.startswith("[BAD] w-staging: team 'demo' is not in apps/teams.yaml")
+        self.assertTrue(any(line.startswith("[BAD] w-staging: team 'demo' is not in v2-records/teams.json")
                             and 'no ResourceQuota as Git declares it' in line
                             and "no NetworkPolicy on the app's pods" in line
                             and 'make check-apps, then make app-reconcile APP=w ENV=staging' in line for line in moved),
                         moved)
-        (root / 'apps/teams.yaml').write_text('teams:\n  demo:\n    description: ours\n')
+        (root / 'v2-records/teams.json').write_text(json.dumps({'schemaVersion': 1, 'teams': {'demo': {}}}))
         labels = isolation(**{'app-namespaces': {'items': [{'metadata': {'name': 'w-staging', 'labels': {
             interface.APP: 'w'}}}]}})
         self.assertTrue(any(line.startswith('[BAD] w-staging: the namespace labels differ from Git') for line in labels),
@@ -398,10 +398,10 @@ class ConsoleTokenTests(unittest.TestCase):
 
     def test_channel_problems(self):
         _, report, text = run(healthy())
-        self.assertIn(f'[OK] {len(channels.team_channels(ROOT))} team(s) notify a channel, as in Git', report.lines, text)
+        self.assertIn(f'[OK] {len(channels.routes(ROOT)["teams"])} team(s) notify a channel, as in Git', report.lines, text)
         _, report, text = run(healthy(routes={'items': [{'metadata': {'name': channels.ROUTES_NAME}, 'data': {
             channels.ROUTES_KEY: json.dumps({'teams': {'ghosts': ['nowhere']}})}}]}))
-        self.assertIn('[BAD] the team routes in the cluster are not those of apps/teams.yaml: a team or channel change '
+        self.assertIn('[BAD] the team routes in the cluster are not those of platform/notify/routes.json: a team or channel change '
                       'rewrites them, so commit, push and make flux-reconcile', report.lines, text)
         _, report, text = run(healthy(routes={'items': []}))
         self.assertTrue(any('team routes in the cluster are not' in line for line in report.lines), text)
@@ -409,7 +409,7 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn('[BAD] could not read the notification routes and channels (make reconcile UNIT=platform-notify)',
                       report.lines, text)
         cluster = healthy()  # no channel Secret in the cluster
-        with mock.patch.object(channels, 'channels', return_value={'payments-phone': 'ntfy'}):
+        with mock.patch.object(channels, 'routes', return_value={**channels.routes(ROOT), 'channels': {'payments-phone': 'ntfy'}}):
             _, report, text = run(cluster)
         self.assertIn('[BAD] channel payments-phone has no Secret in the cluster: its teams get no notifications '
                       '(make reconcile UNIT=platform-notify)', report.lines, text)
@@ -419,13 +419,13 @@ class ConsoleTokenTests(unittest.TestCase):
         owned = {}
         for record in sorted((ROOT / 'v2-records').glob('*/app.json')):
             owned.setdefault(json.loads(record.read_text())['team'], set()).add(record.parent.name)
-        routes = channels.team_channels(ROOT)
+        routes = channels.routes(ROOT)['teams']
         for team, apps in owned.items():
             line = (f'[WARN] team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '
                     f'reach nobody (make team-channel NAME={team})')
             (self.assertNotIn if routes.get(team) else self.assertIn)(line, report.lines, text)
         cluster = healthy()
-        with mock.patch.object(channels, 'team_channels', return_value={team: [team] for team in owned}):
+        with mock.patch.object(channels, 'routes', return_value={**channels.routes(ROOT), 'teams': {team: [team] for team in owned}}):
             _, report, text = run(cluster)
         self.assertFalse([line for line in report.lines if 'has no notification channel' in line], text)
 

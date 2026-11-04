@@ -135,13 +135,19 @@ events: type Declaration struct {Application, Environment string Publishes []str
 events: type Error struct {Application, Environment, Field, Reason string}
 events: type Resolved struct {Connected []Subscription Pending []string}
 events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
+kernel: const AddTeam TeamAction = "add"
 kernel: const AppRecordName = "app.json"
 kernel: const AppTree = "apps"
+kernel: const ChannelTaken Code = "channel_taken"
+kernel: const ChannelsFolder = NotifyFolder + "/channels"
 kernel: const DataMount = "/data"
 kernel: const DatabasePath = DataMount + "/app.db"
 kernel: const DeclarationLabel = "platform.swhurl.com/declaration"
+kernel: const DescribeTeam TeamAction = "describe"
+kernel: const DropChannel TeamAction = "drop-channel"
 kernel: const EventsSecretFile = "events.sops.yaml"
 kernel: const FirstPort int32 = 30101
+kernel: const GiveChannel TeamAction = "channel"
 kernel: const IdentityMismatch Code = "identity_mismatch"
 kernel: const ImageAutomationUnit = "platform-image-automation"
 kernel: const ImageInterval = "1h"
@@ -150,13 +156,20 @@ kernel: const ImagePolicyPattern = `^(?P<run>[0-9]+)-[0-9a-f]{7,40}$`
 kernel: const InstanceRecordName = "instance.json"
 kernel: const Invalid Code = "invalid"
 kernel: const ManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
+kernel: const NoTeam Code = "no_team"
+kernel: const NotifyFolder = "notify"
 kernel: const OverQuota Code = "over_quota"
 kernel: const OwnershipConflict Code = "ownership_conflict"
 kernel: const ReleaseRecordName = "release.json"
+kernel: const RemoveTeam TeamAction = "remove"
+kernel: const RenameTeam TeamAction = "rename"
 kernel: const RestoreDeadline = 15 * time.Minute
 kernel: const RestoreLabel = labelDomain + "restore"
 kernel: const RevisionLabel = "org.opencontainers.image.revision"
 kernel: const StaleInstance Code = "stale_instance"
+kernel: const TeamExists Code = "team_exists"
+kernel: const TeamInUse Code = "team_in_use"
+kernel: const TeamsRecordName = "teams.json"
 kernel: const Unsupported Code = "unsupported"
 kernel: const WrongApplication Code = "wrong_application"
 kernel: const WrongRelease Code = "wrong_release"
@@ -173,13 +186,19 @@ kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
 kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
 kernel: func (Reloader) Namespaces() ([]string, error)
+kernel: func (TeamRegistry) Channels() []Channel
 kernel: func (Telemetry) CollectorPort() (int32, bool)
 kernel: func AcceptDeclaration(declaration Declaration, spec InstanceSpec, current ReleaseBundle) error
 kernel: func Allocate(facts []EgressFacts, previous []EgressAllocation, backupHost string) ([]EgressAllocation, error)
 kernel: func AppRecordPath(root, application string) string
 kernel: func AuthFileName(namespace string) string
+kernel: func ChangeTeams(registry TeamRegistry, change TeamChange, apps []AppSpec, instances []InstanceSpec) (TeamRegistry, error)
+kernel: func ChannelSecret(channel Channel, address string) ([]byte, error)
+kernel: func ChannelSecretPath(name string) string
+kernel: func CheckEncryptedAddress(document []byte, address string) error
 kernel: func CheckEncryptedSeed(document []byte, seed string) error
 kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
+kernel: func CheckTeams(registry TeamRegistry, apps []AppSpec, instances []InstanceSpec) error
 kernel: func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error)
 kernel: func CompileWith(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile, connections Connections, egress *Egress) (Compilation, error)
 kernel: func ConnectionsOf(data []byte, application, environment string) (Connections, error)
@@ -189,11 +208,13 @@ kernel: func DecodeEgressDocument(data []byte) (EgressDocument, error)
 kernel: func DecodeInstance(data []byte) (InstanceSpec, error)
 kernel: func DecodeProfile(data []byte) (PlatformProfile, error)
 kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
+kernel: func DecodeTeams(data []byte) (TeamRegistry, error)
 kernel: func EncodeApp(app AppSpec) ([]byte, error)
 kernel: func EncodeCompilation(c Compilation) []byte
 kernel: func EncodeEgressDocument(document EgressDocument) ([]byte, error)
 kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
 kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
+kernel: func EncodeTeams(registry TeamRegistry) ([]byte, error)
 kernel: func EventsSecret(spec InstanceSpec, pair UserKey) ([]byte, error)
 kernel: func ImageParts(image string) (host, repository string, err error)
 kernel: func ImagePolicyName(application string) string
@@ -207,6 +228,7 @@ kernel: func Ownership(claims []Claim) []Conflict
 kernel: func RecordFolder(root, application, environment string) string
 kernel: func RenderAuth(namespaces []string, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) (ResourceSet, error)
+kernel: func RenderNotify(registry TeamRegistry) (ResourceSet, error)
 kernel: func RenderProxy(allocations []EgressAllocation, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderReloader(namespaces []string) (ResourceSet, error)
 kernel: func RenderRestore(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile, egress *Egress, job RestoreJob) (RestoreObjects, error)
@@ -237,6 +259,7 @@ kernel: type Backup struct {Image string `json:"image"` Digest string `json:"dig
 kernel: type Bindings struct {}
 kernel: type BrokerIdentity struct {Key string Connected []EventSubscription}
 kernel: type Call struct {Callee string Port int32}
+kernel: type Channel struct {Name string `json:"name"` Transport string `json:"transport"`}
 kernel: type Chart struct {Name string `json:"name"` Version string `json:"version"` Repository string `json:"repository"` RepositoryNamespace string `json:"repositoryNamespace"`}
 kernel: type Claim struct {Object Owner string `json:"owner"`}
 kernel: type Code string
@@ -295,6 +318,10 @@ kernel: type Runtime struct {Kind string `json:"kind"` Port int32 `json:"port"` 
 kernel: type SOPS struct {Recipient string `json:"recipient"`}
 kernel: type Source struct {Repository string `json:"repository"` Commit string `json:"commit"`}
 kernel: type Storage struct {SizeMiB int32 `json:"sizeMiB,omitempty"` ClaimName string `json:"claimName,omitempty"`}
+kernel: type Team struct {Description string `json:"description,omitempty"` Channel *Channel `json:"channel,omitempty"`}
+kernel: type TeamAction string
+kernel: type TeamChange struct {Action TeamAction Team, Description, Rename, Transport string}
+kernel: type TeamRegistry struct {SchemaVersion int32 `json:"schemaVersion"` Teams map[string]Team `json:"teams"`}
 kernel: type Telemetry struct {Endpoint string `json:"endpoint"` Protocol string `json:"protocol"` NodeCIDR string `json:"nodeCIDR"`}
 kernel: type UserKey struct {Seed string Public string}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
@@ -486,6 +513,7 @@ orchestration: const StepDone = "done"
 orchestration: const StepFailed = "failed"
 orchestration: const StepNotRead = "not_read"
 orchestration: func (*Refusal) Error() string
+orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
 orchestration: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
@@ -518,6 +546,8 @@ orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte
 orchestration: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
 orchestration: type Refusal struct {Subject, Reason string}
 orchestration: type Registration struct {Path string Document []byte}
+orchestration: type RegistryInputs struct {Registry []byte RegistryPath string Apps, Instances [][]byte Profile []byte Change kernel.TeamChange Address string}
+orchestration: type RegistryOutcome struct {Team string Action kernel.TeamAction Channel string Written []files.Outcome}
 orchestration: type Removal struct {Application, Environment string Written []files.Outcome Removed []files.Outcome Notes []string}
 orchestration: type RemovalInputs struct {Instance, Release []byte Calls [][]byte Records, Compiled, Unit string AppRecord string LastEnvironment bool AuthFile string UnitRegistration Registration AuthRegistration Registration}
 orchestration: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}

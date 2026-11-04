@@ -12,7 +12,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help reconcile verify-platform notifications-check notifications-heartbeat verify-logs flux-install \
 	clickstack-bootstrap clickstack-dashboards \
-	app-repo app-hooks team-add team-edit team-remove team-channel channel-add channel-remove \
+	app-repo app-hooks \
 	console-image console-dev \
 	platform-certs-staging platform-certs-prod destroy-data \
 	check-repo check-apps check-templates check-otel check-secrets check-docs v2-snapshot \
@@ -133,6 +133,28 @@ restore-sqlite:
 		--profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json \
 		--revision "$$(git rev-parse HEAD)" --kubeconfig "$$work/kubeconfig.json" \
 		$${FROM:+--from "$$FROM"} $${MAX_AGE:+--max-age "$$MAX_AGE"} "$${perform[@]}"
+
+# The team registry, v2-records/teams.json, and the notification files v2 renders from it (swhurl-v2 team). Each
+# recipe edits files only: commit and push them. team-channel reads the address without showing it on a terminal,
+# else one line of standard input, and hands it to v2 on standard input, never as an argument. Needs Go 1.26.0.
+V2_TEAM = "$$work/swhurl-v2" team --records v2-records --profile v2/testdata/profile.json --out . --team "$$NAME"
+.PHONY: team-add team-edit team-remove team-channel
+team-add:
+	@: "$${NAME:?usage: make team-add NAME=<team> [DESCRIPTION=\"what it owns\"]}"; \
+	$(V2_BUILD); $(V2_TEAM) --action add $${DESCRIPTION:+--description "$$DESCRIPTION"}
+team-edit:
+	@: "$${NAME:?usage: make team-edit NAME=<team> DESCRIPTION=\"...\" and/or RENAME=<new>}"; \
+	[ -n "$${DESCRIPTION+set}$${RENAME:-}" ] || { echo "usage: make team-edit NAME=<team> DESCRIPTION=\"...\" and/or RENAME=<new>" >&2; exit 2; }; \
+	$(V2_BUILD); \
+	if [ -n "$${DESCRIPTION+set}" ]; then $(V2_TEAM) --action describe --description "$$DESCRIPTION"; fi; \
+	if [ -n "$${RENAME:-}" ]; then $(V2_TEAM) --action rename --rename "$$RENAME"; fi
+team-remove:
+	@: "$${NAME:?usage: make team-remove NAME=<team>}"; $(V2_BUILD); $(V2_TEAM) --action remove
+team-channel:
+	@: "$${NAME:?usage: make team-channel NAME=<team> [REMOVE=true]}"; $(V2_BUILD); \
+	if [ "$${REMOVE:-}" = true ]; then $(V2_TEAM) --action drop-channel; exit; fi; \
+	if [ -t 0 ]; then read -rsp 'Channel address (not shown): ' address; echo >&2; else read -r address || true; fi; \
+	printf '%s\n' "$$address" | $(V2_TEAM) --action channel
 
 .PHONY: v2-report
 v2-report:

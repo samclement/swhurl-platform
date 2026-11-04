@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: where the team registry and the app policy live in Go (`apps/teams`, `apps/policy`)
+Gate: the app policy in Go (`apps/policy`): its rules over every compiled instance
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -33,6 +33,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Status with the pod's ServiceAccount | done | [record](current-state.md#status-with-the-pods-serviceaccount-3-november-2026) |
 | Status from the records | done | [record](current-state.md#swhurl-v2-status-replaces-make-app-status-3-november-2026) |
 | Console reads Go status | done | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |
+| Team registry and notification routes | done | [kernel](../v2/kernel/teams.go) |
 | Backup and restore commands without Python | done | [record](current-state.md#the-backup-and-restore-commands-leave-python-4-november-2026) |
 | Every instance v2-owned | done | [record](current-state.md#the-ownership-milestone-every-instance-is-v2s-3-november-2026) |
 | Cutover: one writer | done | [record](current-state.md#the-production-cutover-four-instances-31-october-2026) |
@@ -56,20 +57,19 @@ What still runs Python, what replaces it, and where that port stands. This table
 goal; each row is its own approved slice. **Order matters here.** Through its imports the console reaches 91
 of 119 modules (13.9k of 19.8k lines), including `verify`, `apps/checks`, `recovery`, `dashboards` and the
 notification checker, so those leave with or through the console port, not with a command; `apps/policy`,
-`apps/teams`, the docs and template checks and the notify service are
-console-free and can go first ([the brief](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026)). Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
+the docs and template checks and the notify service are console-free and can go first ([the brief](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026)). Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
 calls are bash ([`host/ops.sh`](../host/ops.sh)), and the rest makes a safety decision, runs in the cluster or
 is shared with the console, so Go replaces it. A target that becomes bash keeps its row in `commands.py` and
 loses its `run=` function.
 
 | Python surface | What replaces it | State |
 | --- | --- | --- |
-| Platform checks (`check-apps`'s team, notify and fixture rules, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: `render --check` and `check-v2` are Go; the rest is Python. `apps/policy.py` is console-free; `verify` and `apps/checks` are reached by the console's platform page |
+| Platform checks (`check-apps`'s team, notify and fixture rules, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: `render --check` and `check-v2` are Go, and so are the team and notification-channel rules (`render` refuses them); the rest is Python. `apps/policy.py` is console-free; `verify` and `apps/checks` are reached by the console's platform page |
 | Recovery and backup tooling (`recovery.py`, `sqlite_backup.py`, `backupset.py`) | `make restore-sqlite` is `swhurl-v2 restore`, the backup image's Go tool runs the jobs and `backup-mongodb` and `backup-sqlite` are bash; MongoDB's restore test and the freshness checks remain | partial: what remains is reached by `verify` |
 | The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | not started: the notify service is console-free, the checker's modules are reached by `verify`; about 1.5k lines that run every minute in the cluster or send alerts, so services rather than operator convenience |
-| Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team commands are Python; `destroy-data` stays Python, a safety decision with its own tests |
+| Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team targets are bash over `swhurl-v2 team`; `destroy-data` stays Python, a safety decision with its own tests |
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
-| The v1 records model and its fixture oracle (`apps/model/*`) | delete; v2 judges the fixtures | bounded, not started: 1,547 lines, imported by 17 modules (11 under `apps/`, 3 under `console/`, `dashboards.py` and 2 live tests) and 5 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
+| The v1 records model and its fixture oracle (`apps/model/*`) | delete; v2 judges the fixtures | bounded, not started: 1,541 lines, imported by 14 modules (9 under `apps/`, 3 under `console/`, `dashboards.py` and 1 live test) and 4 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
 | The image-declaration producer (`image_declaration.py`) | a Go producer the app builds call | not started |
 | `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress: its readers and its promotion submission read `swhurl-v2 status` with the pod's credential. The server and its 18 templates go last |
 
@@ -90,10 +90,11 @@ not migration.
 
 **B. Then the rest of the road.**
 
-2. **The console-free Python, first.** The backup and restore commands left Python on 4 November 2026. `apps/teams`
-   (the team registry, the channels and their commands) and `apps/policy` (`check-apps`'s team, notify and fixture
-   rules) are next. v2 reads neither the registry nor the channels, and no Go code checks a rendered object against
-   the app policy, so each needs a choice of where it lives in Go before code.
+2. **The console-free Python, first.** The backup and restore commands and the team registry left Python on 4
+   November 2026. `apps/policy` (the app policy's rules on rendered objects) is next, decided on 4 November 2026: a Go
+   policy over every compiled instance in `v2-apps/`, which `check-apps` does not render today, so only the three
+   template fixtures are judged. It renders each instance's chart with `helm template`, a second process beside `sops`,
+   which the `no-subprocess` rule must admit by the operator's approval before code.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
@@ -111,7 +112,7 @@ operator decides against it.
 | App kinds: `job` and a command override | Refused (`unsupported`); `worker` is modelled, and no app type is a job | An instance needs a schedule or a command override |
 | The kind or type of an existing app | Fixed by the image at creation; `deploy` refuses a changed `runtime.kind` and says "create a new app for another kind" | An instance must change kind without a new app |
 | A connection at creation | `create` takes the team and the exposure; calls and subscriptions are `edit`s, which the console's New app runs in the same pull request, and `allows` is always an edit afterwards | One command must create a connected app, or a new app must allow callers at creation |
-| A team rename relabelling its apps | `edit --set team=` (the app page's **Change team**) moves one app; `team-edit --rename` and `team-remove` refuse while a v2 record names the team or allows it | A team must be renamed across its apps in one change |
+| A team rename relabelling its apps | `edit --set team=` (the app page's **Change team**) moves one app; `swhurl-v2 team --action rename` and `remove` refuse while a v2 record names the team or allows it | A team must be renamed across its apps in one change |
 | Secrets (`envFrom`, Reloader) and bindings | Non-empty `bindings` and `secrets` are refused | An app declares one |
 | Alerts | Not generated; `edit --set alerts=` is refused by name | An app needs an alert |
 | A per-instance memory or CPU choice | CPU from the profile; one memory value for request and limit | An app needs more |
@@ -157,6 +158,9 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   deleting that Python; its server and templates go last (3 November 2026).
 - The binary is built, never committed: make targets build it into a throwaway folder, and a local build in
   `v2/` is ignored (3 November 2026).
+- The team registry is a v2 record (`v2-records/teams.json`): a team has at most one channel and a channel one
+  team, `swhurl-v2 team` writes it and its channel Secrets, and `render` refuses a record or grant naming a team it
+  does not hold (4 November 2026).
 - The v1 Python model is bounded, not ported: nothing new imports it and it only shrinks, with the v1
   renderer's interface tests in `tests/test_interface.py` (3 November 2026).
 

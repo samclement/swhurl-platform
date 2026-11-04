@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from swhurl import interface
-from swhurl.apps.channels import address_problem
 from swhurl.run import CommandError, Runner
 
 from .errors import NotificationError
@@ -70,11 +69,14 @@ Sender = Callable[[str, Notice], None]
 
 
 def ntfy_target(address: str) -> tuple[str, str]:
-    """An ntfy address as its server and topic. The error never repeats the address: it is the credential."""
-    problem = address_problem('ntfy', address)
-    if problem:
-        raise NotificationError(problem)
+    """An ntfy address as its server and topic. The error never repeats the address: it is the credential.
+    swhurl-v2 team refuses such an address before it is encrypted; this is the sender's own guard."""
     parts = urlsplit(address)
+    topic = parts.path.strip('/')
+    if (parts.scheme != 'https' or not parts.netloc or not topic or '/' in topic
+            or parts.query or parts.fragment or parts.username or parts.password):
+        raise NotificationError('an ntfy address is an HTTPS topic URL without a query or fragment, '
+                                'such as https://ntfy.sh/<topic>')
     return f'{parts.scheme}://{parts.netloc}', parts.path.strip('/')
 
 

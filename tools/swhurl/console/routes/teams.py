@@ -45,7 +45,7 @@ def routes(ctx: Context) -> list[Route]:
         return reading(request, 'teams.html', read, status_code=status_code)
 
     async def change_team(request: Request) -> Response:
-        """Add, edit or remove a team: a PR made by the clone's team-* command, which refuses anything
+        """Add, edit or remove a team: a PR made by swhurl-v2 team, which refuses anything
         that would leave an app without a registered team."""
         action = request.path_params['action']
         if github is None:
@@ -62,7 +62,7 @@ def routes(ctx: Context) -> list[Route]:
 
     async def change_channel(request: Request) -> Response:
         """Give a team its notification channel (or a new address for it), or remove it: a PR made by
-        the clone's team-channel command. The address goes to that command's standard input and is
+        swhurl-v2 team --action channel. The address goes to that command's standard input and is
         redacted from every message; it is never rendered back, logged or put in the pull request."""
         action = request.path_params['action']
         if github is None:

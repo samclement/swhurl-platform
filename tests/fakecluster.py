@@ -162,7 +162,7 @@ def notification_answers():
         'notifications': recent_job(),
         'routes': {'items': [{'metadata': {'name': channels.ROUTES_NAME}, 'data': {channels.ROUTES_KEY: json.dumps(
             channels.routes(ROOT))}}]},
-        'channel-secrets': Result((), 0, ''.join(f'secret/channel-{name}\n' for name in channels.channels(ROOT))),
+        'channel-secrets': Result((), 0, ''.join(f'secret/channel-{name}\n' for name in channels.routes(ROOT)['channels'])),
         'notify': {'spec': {'template': {'spec': {'containers': [
             {'image': f'ghcr.io/samclement/swhurl-console:{CONSOLE_TAG}@sha256:abc'}]}}}, 'status': {'readyReplicas': 1}},
     }

@@ -101,10 +101,6 @@ class Command:
         return [word for item in self.takes for word in ([item] if isinstance(item, str) else item.arguments(env))]
 
 
-def _edit(name: str, function: str, help: str, *takes: Var | str) -> Command:
-    return Command(name, help, GIT, f'swhurl.apps.{function}', takes=takes, uv=True)
-
-
 def _live_test(name: str, module: str, help: str, *takes: Var, touches: str = THROWAWAY) -> Command:
     return Command(f'live-test-{name}', help, touches, f'swhurl.{module}', takes=takes, dry_run=PLAN)
 
@@ -139,17 +135,13 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 'swhurl.apps.repo:main', takes=(Var('NAME', '<app>'),), dry_run=READS),
         Command('app-hooks', "Create or repoint the image webhook on every auto-deploy app's repository (idempotent)", GITHUB,
                 'swhurl.apps.hooks:main', dry_run=READS),
-        _edit('team-add', 'teams:main_add', 'Register a team in apps/teams.yaml',
-              Var('NAME', '<team>'), Var('DESCRIPTION', '"what it owns"', required=False, flag='--description')),
-        _edit('team-edit', 'teams:main_edit', 'Change a team; a rename is refused while an app names it',
-              Var('NAME', '<team>'), args('"--description TEXT | --rename NEW | --notify CHANNEL"')),
-        _edit('team-remove', 'teams:main_remove', 'Remove a team nothing names',
-              Var('NAME', '<team>')),
-        _edit('team-channel', 'teams:main_team_channel', 'Give a team its notification channel or a new address; prompts without showing it',
-              Var('NAME', '<team>'), args('--remove', required=False)),
-        _edit('channel-add', 'teams:main_channel_add', 'Add a notification channel; prompts for its address without showing it',
-              Var('NAME', '<channel>'), args('--replace', required=False)),
-        _edit('channel-remove', 'teams:main_channel_remove', 'Remove a notification channel no team notifies', Var('NAME', '<channel>')),
+        Command('team-add', 'Register a team in v2-records/teams.json (swhurl-v2 team; needs Go 1.26.0)', GIT,
+                takes=(Var('NAME', '<team>'), Var('DESCRIPTION', '"what it owns"', required=False))),
+        Command('team-edit', "Change a team's description and/or name; a rename is refused while an app names it", GIT,
+                takes=(Var('NAME', '<team>'), Var('DESCRIPTION', '"..."', required=False), Var('RENAME', '<new>', required=False))),
+        Command('team-remove', 'Remove a team nothing names and that has no channel', GIT, takes=(Var('NAME', '<team>'),)),
+        Command('team-channel', 'Give a team its notification channel or a new address (prompts without showing it); REMOVE=true takes it away',
+                GIT, takes=(Var('NAME', '<team>'), Var('REMOVE', 'true', required=False))),
         Command('app-status', "Its state against v2's records at HEAD: Git applied, the image, replicas, route, certificate, failing containers (needs Go 1.26.0)",
                 READ, takes=(APP, ENV)),
         Command('app-logs', 'Recent workload logs (FOLLOW=true, TAIL=N, PREVIOUS=true)', READ, takes=(APP, ENV)),

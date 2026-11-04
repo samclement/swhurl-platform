@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
@@ -70,6 +72,9 @@ func (c cli) render(r request) int {
 	}
 	rendered, status := c.renderTree(r, revision)
 	if status != 0 {
+		return status
+	}
+	if rendered, status = c.withNotify(r, rendered); status != 0 {
 		return status
 	}
 	rendered.callsPath = callsPath
@@ -229,6 +234,81 @@ func renderPlatform(pinned snapshot, previous kernel.EgressDocument, profile ker
 		}
 	}
 	return rendered, nil
+}
+
+// withNotify adds what the team registry renders to the platform's files, once every app record and every grant
+// names a registered team and each registered channel, and no other, has its Secret: render writes the list of
+// channel Secrets and never a Secret, so a list naming a missing file, or a file nothing lists, is refused here.
+func (c cli) withNotify(r request, rendered rendering) (rendering, int) {
+	data, status := c.read(filepath.Join(r.records, kernel.TeamsRecordName), "teams")
+	if status != 0 {
+		return rendering{}, status
+	}
+	registry, err := kernel.DecodeTeams(data)
+	if err != nil {
+		return rendering{}, fail(c.diagnostic, fmt.Errorf("%s: %w", kernel.TeamsRecordName, err))
+	}
+	for _, inputs := range rendered.instances {
+		if err := teamsOf(registry, inputs); err != nil {
+			return rendering{}, fail(c.diagnostic, err)
+		}
+	}
+	if err := channelSecretsAgree(r.out, registry); err != nil {
+		return rendering{}, fail(c.diagnostic, err)
+	}
+	notify, err := kernel.RenderNotify(registry)
+	if err != nil {
+		return rendering{}, fail(c.diagnostic, err)
+	}
+	for _, file := range notify.Files {
+		rendered.platform = append(rendered.platform, kernel.File{Path: platformFolder + "/" + file.Path,
+			Document: file.Document})
+	}
+	return rendered, 0
+}
+
+// teamsOf refuses an instance whose app names, or whose grants admit, a team the registry does not hold, naming it.
+func teamsOf(registry kernel.TeamRegistry, inputs orchestration.Inputs) error {
+	app, err := kernel.DecodeApp(inputs.App)
+	if err != nil {
+		return err
+	}
+	spec, err := kernel.DecodeInstance(inputs.Instance)
+	if err != nil {
+		return err
+	}
+	if err := kernel.CheckTeams(registry, []kernel.AppSpec{app}, []kernel.InstanceSpec{spec}); err != nil {
+		return fmt.Errorf("%s/%s: %w (register it with swhurl-v2 team --action add)", spec.Application,
+			spec.Environment, err)
+	}
+	return nil
+}
+
+// channelSecretsAgree is whether the channels folder holds exactly one Secret file per registered channel.
+func channelSecretsAgree(out string, registry kernel.TeamRegistry) error {
+	folder := platformFolder + "/" + kernel.ChannelsFolder
+	entries, err := os.ReadDir(filepath.Join(out, filepath.FromSlash(folder)))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return &files.Error{Code: files.IO, Path: folder, Reason: "cannot read the channels folder"}
+	}
+	present := map[string]bool{}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".sops.yaml") {
+			present[folder+"/"+entry.Name()] = true
+		}
+	}
+	for _, channel := range registry.Channels() {
+		path := platformFolder + "/" + kernel.ChannelSecretPath(channel.Name)
+		if !present[path] {
+			return fmt.Errorf("invalid: channels: %s is missing: give the team its channel with swhurl-v2 team "+
+				"--action channel", path)
+		}
+		delete(present, path)
+	}
+	if len(present) > 0 {
+		return fmt.Errorf("invalid: channels: %s is no team's channel: remove it", slices.Sorted(maps.Keys(present))[0])
+	}
+	return nil
 }
 
 // instanceRender is the files one instance's folder holds once compiled: the compilation with its seed and the

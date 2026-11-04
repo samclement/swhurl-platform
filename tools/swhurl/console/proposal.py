@@ -100,7 +100,7 @@ def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str
     one way in (never an argument, never in the job's lines). A python tool leaves no bytecode: every file it
     writes in the clone becomes part of the commit. A v2 refusal is shown in v2's own words."""
     if tool == 'v2':
-        result = runner.run([v2.BINARY, *argv], cwd=clone, check=False)
+        result = runner.run([v2.BINARY, *argv], cwd=clone, check=False, input=input)
         job.lines += (result.stdout + result.stderr).splitlines()
         if result.returncode:
             raise ActionError(v2.refusal(result))

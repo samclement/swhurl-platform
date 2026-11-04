@@ -13,12 +13,10 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT, interface, validate, yamlio
-from swhurl.apps import calling, teams
+from swhurl.apps import calling
 from swhurl.apps.defaults import secret_key_problem
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import draft, records, render, write
-from swhurl.console import merge
-from swhurl.console.actions import ActionError
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -244,16 +242,10 @@ class InterfaceTests(unittest.TestCase):
                 self.assertEqual(bool(records.NAME_RE.fullmatch(name)), bool(old_name.fullmatch(name)))
                 self.assertEqual(Instance.named(name, 'staging') is not None, valid)
                 if valid:
-                    self.assertEqual(teams.checked_name(name), name)
                     self.assertEqual(records.App.parse({'version': 1, 'team': name}).team, name)
                 else:
                     with self.assertRaisesRegex(ValueError, 'team must be a team name'):
                         records.App.parse({'version': 1, 'team': name})
-                if old_name.fullmatch(name):
-                    merge.team_commands('add', name, {})
-                else:
-                    with self.assertRaisesRegex(ActionError, 'team name: lowercase'):
-                        merge.team_commands('add', name, {})
         for app, event in itertools.product(names, repeat=2):
             text = f'{app}.{event}'
             self.assertEqual(bool(records.SUBSCRIPTION_RE.match(text)), bool(old_subscription.match(text)), text)

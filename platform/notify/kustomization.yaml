@@ -1,15 +1,13 @@
-# Channel Secrets (channel-<name>.sops.yaml) are added and removed by make channel-add and
-# make channel-remove; routes.yaml is generated (docs/services.md#notification-channels).
+# routes.json and channels/ are rendered by v2 from v2-records/teams.json; each channel's encrypted Secret is written
+# by swhurl-v2 team --action channel (docs/services.md#notification-channels).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespace.yaml
   - rbac.yaml
-  - routes.yaml
+  - routes.json
   - outbox.yaml
   - secret-alerts.sops.yaml
   - networkpolicy.yaml
   - helmrelease.yaml
-  - channel-payments.sops.yaml
-  - channel-platform.sops.yaml
-  - channel-insights.sops.yaml
+  - channels

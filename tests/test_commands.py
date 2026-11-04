@@ -123,8 +123,7 @@ class MakeTests(unittest.TestCase):
     def test_a_missing_variable_is_refused_with_the_usage_line(self):
         for target, env, usage in (
                 ('destroy-data', {}, 'Usage: make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>'),
-                ('reconcile', {'UNIT': ''}, 'Usage: make reconcile UNIT=<name>'),
-                ('team-remove', {}, 'Usage: make team-remove NAME=<team>')):
+                ('reconcile', {'UNIT': ''}, 'Usage: make reconcile UNIT=<name>')):
             with self.subTest(target=target):
                 code, out, err, executed = run_make(target, env)
                 self.assertEqual((code, out, executed), (2, '', []))
@@ -144,9 +143,6 @@ class MakeTests(unittest.TestCase):
 
     def test_variables_become_arguments(self):
         for target, env, expected in (
-                ('team-edit', {'NAME': 'a', 'ARGS': '--notify ""'}, ['a', '--notify', '']),
-                ('team-add', {'NAME': 'a', 'DESCRIPTION': 'what it owns'}, ['a', '--description', 'what it owns']),
-                ('team-add', {'NAME': 'a'}, ['a']),
                 ('verify-logs', {}, ['--minutes', '15']),
                 ('verify-logs', {'MINUTES': '60'}, ['--minutes', '60']),
                 ('notifications-check', {}, ['--dry-run']),

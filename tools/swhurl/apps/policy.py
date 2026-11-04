@@ -19,7 +19,7 @@ with Helm) and checks the resulting Kubernetes objects:
                       two processes must never write one volume (a SQLite file, for example)
   otlp-host-ip        a container that uses $(HOST_IP) (the OTLP endpoint) defines HOST_IP
                       from status.hostIP before it; otherwise the SDK gets the literal text
-  team                the Namespace names a team registered in apps/teams.yaml
+  team                the Namespace names a team registered in v2-records/teams.json
   quota               the namespace has the platform ResourceQuota, and the app's replicas (plus one
                       during a rolling update) fit in it beside a backup pod and a certificate solver
   network-policy      the app's pods, and only those, carry the platform NetworkPolicy: Traefik is
@@ -44,9 +44,8 @@ and, for the whole tree:
   v2's records        v2 compiles every record into its instance folder and unit, and renders the platform's
                       documents from them: `v2/check-rendered.sh` (what `make check-v2` runs) says whether Git
                       holds them. The comparison is v2's, not a second reader's
-  team                every app record states a team registered in apps/teams.yaml (`v2-records/<app>/app.json`)
-  notify-channels     every channel a team notifies exists as a listed Secret in platform/notify, and
-                      routes.yaml is what apps/teams.yaml generates
+                      (v2's render also refuses an app record or a grant naming a team v2-records/teams.json
+                      does not register, and a channel without its Secret, so those are checked there)
 
   app records         App, Release and Settings parse strictly; every committed manifest must be
                       exactly what its instance's records render. Settings belong to each environment;
@@ -64,7 +63,6 @@ do not edit that annotation by hand. Exceptions without a reason are rejected.
 """
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -73,7 +71,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, app_alerts, interface, platform, yamlio
-from swhurl.apps import channels, events, helmrelease, offers
+from swhurl.apps import events, helmrelease, offers
 from swhurl.apps.calling import (
     TOKEN_SECONDS,
     allowed_callers,
@@ -193,7 +191,7 @@ def check_isolation(docs: list[dict], labels: dict, known_teams: dict[str, str])
         except ValueError as error:
             violations.append(('alerts', f'{interface.ALERTS_ANNOTATION}: {error}; nothing writes it now (v2 models no alert setting)'))
     if labels.get(interface.TEAM) not in known_teams:
-        violations.append(('team', f'Namespace team {labels.get(interface.TEAM)!r} is not registered in apps/teams.yaml '
+        violations.append(('team', f'Namespace team {labels.get(interface.TEAM)!r} is not registered in {TEAMS_FILE} '
                                    f'({", ".join(known_teams)}); set it with swhurl-v2 edit --set team=… or the console'))
     releases = [d for d in docs if d['kind'] == 'HelmRelease']
     if not releases:
@@ -471,27 +469,6 @@ def records_rendered(runner: Runner | None = None, root: Path = ROOT) -> str | N
     return ((result.stdout or '') + (result.stderr or '')).strip() or f'{RENDERED} exited {result.returncode}'
 
 
-def team_problems(root: Path = ROOT) -> list[str]:
-    """Every app record states a team registered in apps/teams.yaml (rule team).
-
-    v2 reads the namespace's team label from the app record, and a team nobody registered has no channel and no
-    description; the registry stays v1's file because ``team-*`` still writes it.
-    """
-    known = teams(root)
-    found = []
-    for path in sorted((root / RECORDS).glob('*/app.json')):
-        app = path.parent.name
-        try:
-            name = json.loads(path.read_text()).get('team')
-        except (OSError, ValueError, AttributeError) as error:
-            found.append(f'{path.relative_to(root)} cannot be read ({error}), so its team is unchecked')
-            continue
-        if name not in known:
-            found.append(f'{app} states team {name!r}, which is not in {TEAMS_FILE} '
-                         f'(make team-add NAME={name} DESCRIPTION="...")')
-    return found
-
-
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     paths = [Path(a).resolve() for a in argv or []] or instances()
     failed = 0
@@ -517,7 +494,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 print(f'[BAD] app records: {root}')
                 for problem in problems:
                     print(f'       {problem}')
-    else:  # the whole tree: v2's own comparison, then the registry its records name
+    else:  # the whole tree: v2's own comparison, which also judges the teams its records name
         problems = records_rendered(runner)
         if problems:
             failed += 1
@@ -526,20 +503,6 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 print(f'       {problem}')
         else:
             print('[OK] v2\'s records render to the files Git holds')
-        problems = team_problems()
-        if problems:
-            failed += 1
-            print('[BAD] app teams')
-            for problem in problems:
-                print(f'       {problem}')
-        else:
-            print('[OK] every app record states a registered team')
-        problems = channels.problems(ROOT)
-        if problems:
-            failed += 1
-            print(f'[BAD] {channels.NOTIFY_DIR}')
-            for problem in problems:
-                print(f'       {problem}')
     if failed:
         print(f'\n{failed} instance(s) or app(s) violate the app contract.')
         return 1

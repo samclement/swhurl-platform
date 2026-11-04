@@ -32,6 +32,33 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## App-policy Helm boundary approved (4 November 2026)
+
+- **Operator decision:** proceed with the Go app-policy gate and admit `helm template` as v2's second subprocess
+  beside SOPS. The [guardrails contract](iteration-2-plan.md#guardrails) limits it to `adapters/helm`: explicit
+  chart and values in, rendered objects or a render failure out. No cluster access, install, upgrade, dependency
+  fetching or generic process runner is approved.
+- **Offline boundary proof:** with Helm `4.2.2` and cached app-template `5.2.1`, a temporary chart copy retained
+  its initialization/defaults and projected the generator's YAML through Helm's `fromYaml` and `mustToJson`.
+  All ten committed instances (26 objects) and seven synthetic cases (19 objects, including init containers,
+  storage and routes) matched the original chart as full objects. Go decoder tests, 39 framing/parser cases
+  and extra-template/changed-entrypoint refusal probes passed. All 171 cached chart files were unchanged.
+- **Why that is not the production boundary:** direct numeric probes silently changed `9007199254740993` to
+  `9007199254740992`, `9223372036854775807` to `9223372036854776000`, and `18446744073709551615` to
+  `18446744073709552000`. Duplicate YAML keys were accepted last-wins; reproducing Helm's removal of literal
+  `<no value>` required special handling. Corpus parity does not establish a lossless parser contract.
+  Prototype source and retained results are in `/tmp/app-template-json-projection.06tzlh/REPORT.md` on the
+  operator's host, not a committed implementation or a durable test suite.
+- **Next decision:** approve a YAML parser dependency confined to the Helm adapter (recommended), or explicitly
+  accept the chart-specific projection's restricted semantics. The `stdlib-only` rule is unchanged; no parser,
+  adapter, subprocess allowlist change or Go policy has been implemented. Keep the Python checks until the
+  Go policy covers every compiled instance and its retained rules are tested. OTel and ClickStack also use
+  Python policy's chart helpers, so their callers must be preserved when that module is retired.
+- **Validation:** the approval documentation passed `make check`; the prototype checks above are offline
+  evidence only, not validation of an implemented Go adapter or policy.
+- **Live:** nothing changed by the prototype. The team-registry verification below remains the latest live
+  capability evidence.
+
 ## The team registry leaves Python (4 November 2026)
 
 - **What changed:** `816ae5bc`. The registry is v2's record, `v2-records/teams.json`, written by `swhurl-v2 team`

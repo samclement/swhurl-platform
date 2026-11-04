@@ -32,6 +32,29 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## The team registry leaves Python (4 November 2026)
+
+- **What changed:** `816ae5bc`. The registry is v2's record, `v2-records/teams.json`, written by `swhurl-v2 team`
+  (add, describe, rename, remove, channel, drop-channel); a team has at most one channel and a channel one team.
+  `render` refuses an app record or a `team:` grant naming an unregistered team and a channel without its Secret,
+  and renders the routes (`platform/notify/routes.json`) and `platform/notify/channels/kustomization.yaml`; the three
+  channel Secrets moved there unchanged. `make team-*` are bash over the command; `channel-add` and `channel-remove`
+  are gone. Deleted: `tools/swhurl/apps/teams.py`, `test_teams.py`, `channels.py`'s rendering and rules, and
+  `check-apps`' team and notify-channels rules.
+- **Checked offline:** `make check`, `make check-v2`, and every make recipe on the real tree: a throwaway team added,
+  given a channel with real `sops` (encrypted, decrypting to an ntfy address with the platform key, address never
+  printed), refused removal while it had one, renamed, its channel dropped and the team removed, `render --check`
+  passing after each step and the tree byte-identical at the end; `team-remove NAME=demo` refused (`team_in_use`).
+- **Live, at `816ae5bc` after `make flux-reconcile`:** `platform-notify` applied the revision with the same three
+  channel Secrets and `notification-routes` holding the same channels and teams. `make verify-platform` passed:
+  three teams notify a channel as in Git, three channels have their Secret, ten namespaces carry a registered team.
+  After Validate deployed `src-29c01873c1183204` (`797da3f3`), the console's `/teams` answered 401 without an
+  identity and, with one, listed demo, insights and payments, each with its channel and no read error; New app
+  offered the same three teams.
+- **Not exercised:** a team or channel change opened as a pull request from the console (it now runs
+  `swhurl-v2 team` in the downloaded tree, with the address on its standard input), and a notification delivered
+  through a channel after the move.
+
 ## The backup and restore commands leave Python (4 November 2026)
 
 - **What changed:** `make restore-sqlite` runs `swhurl-v2 restore` on the instance's records at `HEAD` (a recipe

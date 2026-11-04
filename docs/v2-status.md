@@ -33,7 +33,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Status with the pod's ServiceAccount | done | [record](current-state.md#status-with-the-pods-serviceaccount-3-november-2026) |
 | Status from the records | done | [record](current-state.md#swhurl-v2-status-replaces-make-app-status-3-november-2026) |
 | Console reads Go status | done | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |
-| Team registry and notification routes | done | [kernel](../v2/kernel/teams.go) |
+| Team registry and notification routes | done | [record](current-state.md#the-team-registry-leaves-python-4-november-2026) |
 | Backup and restore commands without Python | done | [record](current-state.md#the-backup-and-restore-commands-leave-python-4-november-2026) |
 | Every instance v2-owned | done | [record](current-state.md#the-ownership-milestone-every-instance-is-v2s-3-november-2026) |
 | Cutover: one writer | done | [record](current-state.md#the-production-cutover-four-instances-31-october-2026) |

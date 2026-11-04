@@ -212,7 +212,7 @@ a pinned revision of the whole tree, so they are regenerated after the removal i
 
 restore writes a v2-restore plan for one instance: the archive it would be restored from (the newest, or
 --from KEY), what the bucket records beside it (both checksums, table count, source instance), the
-instance's own claim, path and user, the observation it was decided from, and the v1 command that performs
+instance's own claim, path and user, the observation it was decided from, and the make target that performs
 the restore. It reads only, and restores nothing. Its state is ready, stale (older than --max-age),
 incomplete (no metadata, or metadata that does not verify), no_archive or unavailable. With --confirm
 APPLICATION/ENVIRONMENT it performs the restore instead: v2 suspends the release, stops the app, runs the

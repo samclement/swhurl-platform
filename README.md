@@ -12,7 +12,7 @@ The cluster is live. [Current state](docs/current-state.md) records what has bee
 | Apps | One GitHub repository per app, made from a TypeScript or Kotlin template, with a staging and a production instance. The app's `swhurl.yaml` says what the image needs (port, database, telemetry, secret names) and what it offers (its API, events and feature flags); its team, access, calls and subscriptions are granted on the platform. | [Apps](#apps) |
 | Shared services | Google sign-in, logs, metrics and traces in ClickStack, events and feature flags on NATS, notifications to phones through ntfy, and restarts when a Secret changes. | [Shared services](#shared-services) |
 | Delivery | Git is the only way in. Flux applies `main`, each new staging build deploys itself (Flux starts the v2 Deploy workflow), and the console and Renovate open pull requests. | [Delivery](#delivery) |
-| Cluster and host | k3s with cert-manager, Let's Encrypt, Traefik and retained local storage, plus host timers for dynamic DNS, backups and a heartbeat. | [Cluster and host](#cluster-and-host) |
+| Cluster and host | k3s with cert-manager, Let's Encrypt, Traefik and retained local storage, plus host timers for dynamic DNS and a heartbeat; backups are nightly jobs in the cluster. | [Cluster and host](#cluster-and-host) |
 
 ```mermaid
 flowchart LR
@@ -119,7 +119,7 @@ One machine runs k3s. cert-manager gets certificates from Let's Encrypt, the pac
 | `v2-records/` | What each app instance is, as records; `v2-apps/` holds what they compile to, and `v2/` is the compiler ([apps](docs/apps.md)) |
 | `images/` | Container images built from this repo (the console) |
 | `tools/swhurl/` | Python operator tooling behind every `make` target, and the console's code |
-| `host/` | Host systemd timers for dynamic DNS, backups and the heartbeat |
+| `host/` | Host systemd timers for dynamic DNS and the heartbeat, and the bash operator commands (`ops.sh`) |
 | `tests/` | Offline tests and fixtures |
 
 </details>

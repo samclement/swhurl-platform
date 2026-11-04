@@ -4,8 +4,10 @@
 #   ops.sh logs <app> <env>          make app-logs      (TAIL=N, FOLLOW=true, PREVIOUS=true)
 #   ops.sh reconcile <app> <env>     make app-reconcile
 #   ops.sh suspend|resume <target>   make suspend|resume TARGET=kustomization/<name>|helmrelease/<ns>/<name>
+#   ops.sh backup mongodb|sqlite     make backup-mongodb, make backup-sqlite
 #
-# DRY_RUN=true prints what reconcile, suspend and resume would change and changes nothing; logs has no dry run.
+# DRY_RUN=true prints what reconcile, suspend, resume and backup would change and changes nothing; logs has no
+# dry run.
 set -Eeuo pipefail
 
 NAME='[a-z0-9]([-a-z0-9.]*[a-z0-9])?'  # a Kubernetes object name, so none reads as a flag
@@ -63,8 +65,72 @@ suspend_resume() {  # <suspend|resume> <target>
   return 0
 }
 
+BACKUP_LABEL='platform.swhurl.com/backup=true'
+MONGODB='observability/backup-mongodb'
+BACKUP_WAIT=960  # seconds: the jobs' own activeDeadlineSeconds (900) and a minute to report it
+
+backup() {  # <mongodb|sqlite>: a Job from each backup CronJob, run now; waits for them all and shows their logs
+  local which=$1 targets=() target listed
+  if [[ $which == mongodb ]]; then
+    targets=("$MONGODB")
+  else
+    listed=$(kubectl get cronjobs --all-namespaces -l "$BACKUP_LABEL" \
+      -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}')
+    while IFS= read -r target; do
+      [[ -n $target && $target != "$MONGODB" ]] && targets+=("$target")
+    done <<<"$listed"
+  fi
+  if ((${#targets[@]} == 0)); then
+    echo '[INFO] No app SQLite backup job: nothing to run.'
+    return 0
+  fi
+  local suffix
+  suffix=manual-$(date -u +%Y%m%dt%H%M%Sz)
+  job() { local name="${1#*/}-$suffix"; echo "${name:0:63}"; }  # <namespace>/<cronjob>: its Job's name
+  if dry; then
+    echo 'Plan (backup jobs):'
+    for target in "${targets[@]}"; do
+      echo "  - kubectl -n ${target%%/*} create job $(job "$target") --from=cronjob/${target#*/}, wait, show its log"
+    done
+    return 0
+  fi
+  for target in "${targets[@]}"; do
+    kubectl -n "${target%%/*}" create job "$(job "$target")" "--from=cronjob/${target#*/}"
+  done
+  local waiting=("${targets[@]}") failed=() still state deadline=$((SECONDS + BACKUP_WAIT))
+  while ((${#waiting[@]})); do
+    still=()
+    for target in "${waiting[@]}"; do
+      # Complete or Failed once the Job has finished; nothing while it runs (or while a read fails).
+      state=$(kubectl -n "${target%%/*}" get job "$(job "$target")" \
+        -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}{"\n"}{end}' | grep -xE 'Complete|Failed' || true)
+      if [[ -z $state ]] && ((SECONDS < deadline)); then
+        still+=("$target")
+        continue
+      fi
+      kubectl -n "${target%%/*}" logs "job/$(job "$target")" --tail=20 2>&1 | sed "s|^|  ${target%%/*}: |" || true
+      if [[ $state == Complete ]]; then
+        echo "[OK] ${target%%/*}/$(job "$target")"
+      elif [[ $state == Failed ]]; then
+        failed+=("${target%%/*}/$(job "$target")")
+        echo "[ERROR] ${target%%/*}/$(job "$target") failed"
+      else
+        failed+=("${target%%/*}/$(job "$target")")
+        echo "[ERROR] ${target%%/*}/$(job "$target") did not finish in $BACKUP_WAIT s"
+      fi
+    done
+    waiting=("${still[@]}")
+    if ((${#waiting[@]})); then sleep 5; fi
+  done
+  if ((${#failed[@]})); then
+    echo "[ERROR] backup failed for ${failed[*]}" >&2
+    return 1
+  fi
+}
+
 case ${1:-} in
   logs | reconcile) "$1" "${2:-}" "${3:-}" ;;
   suspend | resume) suspend_resume "$1" "${2:-}" ;;
-  *) echo "usage: $0 logs|reconcile <app> <env> | suspend|resume <target>" >&2; exit 2 ;;
+  backup) [[ ${2:-} =~ ^(mongodb|sqlite)$ ]] || usage 'backup-mongodb | make backup-sqlite'; backup "$2" ;;
+  *) echo "usage: $0 logs|reconcile <app> <env> | suspend|resume <target> | backup mongodb|sqlite" >&2; exit 2 ;;
 esac

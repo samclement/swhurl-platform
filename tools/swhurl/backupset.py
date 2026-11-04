@@ -4,22 +4,20 @@
     <prefix>-<UTC stamp>.json      its metadata: when it was taken, its SHA-256 and what its producer adds
 
 A set owns its file names, which archive is the newest (by the stamp in the name), how old that one
-is, the checksum, publishing to S3 and fetching back from it. A backup counts only when its metadata
-is beside it: a job publishes the metadata last. The backup jobs (``backup_job``) fill archives in a
-private scratch directory; the restores (``recovery`` for MongoDB, ``sqlite_restore`` for app
-databases) fetch one from S3 into a private directory of their own. Retention is the bucket's
-lifecycle rule (docs/operations.md#backups-and-recovery).
+is, the checksum and fetching back from S3. A backup counts only when its metadata is beside it: the
+backup image's jobs (images/backup/tool) publish the metadata last. MongoDB's restore test
+(``recovery``) fetches one into a private directory of its own; an app database is restored by
+``swhurl-v2 restore``. Retention is the bucket's lifecycle rule (docs/operations.md#backups-and-recovery).
 """
 from __future__ import annotations
 
-import base64
 import contextlib
 import datetime as dt
 import hashlib
 import json
 import os
 import re
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,11 +30,6 @@ STAMP = '%Y%m%dT%H%M%SZ'
 
 class BackupError(Exception):
     pass
-
-
-def stamp(now: dt.datetime | None = None) -> str:
-    """The UTC time that names a backup, to the second."""
-    return (now or dt.datetime.now(dt.UTC)).strftime(STAMP)
 
 
 def age_key(env: Mapping[str, str]) -> Path:
@@ -121,29 +114,6 @@ class BackupSet:
                 runner.run(['aws', 's3', 'cp', '--only-show-errors', uri + path.name, path])
         return archive
 
-    @contextlib.contextmanager
-    def writing(self, stamp: str) -> Iterator[Path]:
-        """A private ``.partial`` file to fill, which becomes the archive when the block ends without an error."""
-        archive = self.path(stamp)
-        partial = archive.with_name(archive.name + '.partial')
-        with private_files():
-            self.directory.mkdir(parents=True, exist_ok=True)
-            try:
-                yield partial
-                partial.replace(archive)
-            finally:
-                partial.unlink(missing_ok=True)
-
-    def record(self, archive: Path, facts: Mapping[str, object]) -> Path:
-        """Write the archive's metadata: its stamp, the producer's ``facts`` and its SHA-256."""
-        taken = self.taken(archive.name)
-        if taken is None:
-            raise BackupError(f'{archive.name} is not named like a backup in {self.directory}')
-        metadata = self.metadata_path(archive)
-        with private_files():
-            metadata.write_text(json.dumps({'created': stamp(taken), **facts, 'sha256': sha256(archive)}) + '\n')
-        return metadata
-
     def read(self, archive: Path) -> dict:
         """An archive's metadata, after checking the archive is the file the metadata describes."""
         if not archive.is_file():
@@ -155,19 +125,6 @@ class BackupSet:
         if sha256(archive) != metadata.get('sha256'):
             raise BackupError(f'{archive.name}: checksum does not match its metadata')
         return metadata
-
-
-def publish(runner: Runner, backups: BackupSet, archive: Path, uri: str, out: Callable[[str], None] = print) -> None:
-    """Upload one archive, then its metadata: a backup counts only once its metadata is there. S3 checks
-    each file's SHA-256 as it arrives (an upload-only key cannot read back, so this is the verification)
-    and refuses to replace an object that exists."""
-    bucket, prefix = s3_location(uri)
-    for path in (archive, backups.metadata_path(archive)):
-        checksum = base64.b64encode(bytes.fromhex(sha256(path))).decode()
-        runner.run(['aws', 's3api', 'put-object', '--bucket', bucket, '--key', prefix + path.name, '--body', path,
-                    '--checksum-algorithm', 'SHA256', '--checksum-sha256', checksum, '--if-none-match', '*',
-                    '--output', 'json'], mutating=True)
-    out(f'[OK] Published {archive.name} and its metadata to {uri}')
 
 
 def check_backup_set(runner: Runner, report: Report, backups: BackupSet, uri: str, *, env: Mapping[str, str],

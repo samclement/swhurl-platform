@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the console-free Python that can leave first (`apps/policy`, `apps/teams`, `backup_job`, `sqlite_restore`)
+Gate: where the team registry and the app policy live in Go (`apps/teams`, `apps/policy`)
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -32,6 +32,8 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Bulk status and revision evidence | done | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |
 | Status with the pod's ServiceAccount | done | [record](current-state.md#status-with-the-pods-serviceaccount-3-november-2026) |
 | Status from the records | done | [record](current-state.md#swhurl-v2-status-replaces-make-app-status-3-november-2026) |
+| Console reads Go status | done | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |
+| Backup and restore commands without Python | done | [record](current-state.md#the-backup-and-restore-commands-leave-python-4-november-2026) |
 | Every instance v2-owned | done | [record](current-state.md#the-ownership-milestone-every-instance-is-v2s-3-november-2026) |
 | Cutover: one writer | done | [record](current-state.md#the-production-cutover-four-instances-31-october-2026) |
 | Checks read v2's tree | done | [record](current-state.md#the-checks-read-v2s-tree-31-october-2026) |
@@ -54,7 +56,7 @@ What still runs Python, what replaces it, and where that port stands. This table
 goal; each row is its own approved slice. **Order matters here.** Through its imports the console reaches 91
 of 119 modules (13.9k of 19.8k lines), including `verify`, `apps/checks`, `recovery`, `dashboards` and the
 notification checker, so those leave with or through the console port, not with a command; `apps/policy`,
-`apps/teams`, the docs and template checks, `backup_job`, `sqlite_restore` and the notify service are
+`apps/teams`, the docs and template checks and the notify service are
 console-free and can go first ([the brief](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026)). Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
 calls are bash ([`host/ops.sh`](../host/ops.sh)), and the rest makes a safety decision, runs in the cluster or
 is shared with the console, so Go replaces it. A target that becomes bash keeps its row in `commands.py` and
@@ -63,13 +65,13 @@ loses its `run=` function.
 | Python surface | What replaces it | State |
 | --- | --- | --- |
 | Platform checks (`check-apps`'s team, notify and fixture rules, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: `render --check` and `check-v2` are Go; the rest is Python. `apps/policy.py` is console-free; `verify` and `apps/checks` are reached by the console's platform page |
-| Recovery and backup tooling (`recovery.py`, `backup_job.py` with `backup-mongodb` and `backup-sqlite`, `sqlite_backup.py`, `sqlite_restore.py`, `backupset.py`) | `swhurl-v2 restore` covers an instance; the backup image's Go tool replaces the jobs; operator recovery remains | partial: `backup_job` and `sqlite_restore` are console-free; `recovery` and `backupset` are reached by `verify` |
+| Recovery and backup tooling (`recovery.py`, `sqlite_backup.py`, `backupset.py`) | `make restore-sqlite` is `swhurl-v2 restore`, the backup image's Go tool runs the jobs and `backup-mongodb` and `backup-sqlite` are bash; MongoDB's restore test and the freshness checks remain | partial: what remains is reached by `verify` |
 | The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | not started: the notify service is console-free, the checker's modules are reached by `verify`; about 1.5k lines that run every minute in the cluster or send alerts, so services rather than operator convenience |
-| Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend` and `resume` are bash ([`host/ops.sh`](../host/ops.sh)); `ops.gather_status` stays for the console and the promotion gate until the next slice; `destroy-data` stays Python, a safety decision with its own tests |
+| Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team commands are Python; `destroy-data` stays Python, a safety decision with its own tests |
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
 | The v1 records model and its fixture oracle (`apps/model/*`) | delete; v2 judges the fixtures | bounded, not started: 1,547 lines, imported by 17 modules (11 under `apps/`, 3 under `console/`, `dashboards.py` and 2 live tests) and 5 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
 | The image-declaration producer (`image_declaration.py`) | a Go producer the app builds call | not started |
-| `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress: host status is Go and the pod credential is proved; console readers still use Python. The server and its 18 templates go last |
+| `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress: its readers and its promotion submission read `swhurl-v2 status` with the pod's credential. The server and its 18 templates go last |
 
 ## Remaining work
 
@@ -88,12 +90,10 @@ not migration.
 
 **B. Then the rest of the road.**
 
-2. **The console port: status, then its readers.** `swhurl-v2 status` replaced `make app-status`
-   ([slice one](iteration-2-plan.md#slice-one-swhurl-v2-status-approved-3-november-2026)), and its pod credential
-   is proved live. The approved [console read contract](iteration-2-plan.md#slice-two-the-console-reads-v2-status-approved-3-november-2026)
-   has bulk observations and pure Go currentness implemented and checked offline. Next the console readers
-   and submission-time promotion checks move together, retiring `gather_status`. The v1 path rule is replaced
-   there, not patched separately in Python.
+2. **The console-free Python, first.** The backup and restore commands left Python on 4 November 2026. `apps/teams`
+   (the team registry, the channels and their commands) and `apps/policy` (`check-apps`'s team, notify and fixture
+   rules) are next. v2 reads neither the registry nor the channels, and no Go code checks a rendered object against
+   the app policy, so each needs a choice of where it lives in Go before code.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
@@ -118,7 +118,7 @@ operator decides against it.
 | Quota headroom for other pods | The backup pod is counted; no other second workload exists | A feature adds pods |
 | Image automation: auto-merge and a production path | Staging follows its images; production follows a promotion | An unattended production update is wanted |
 | A first production (creating it) | `promote` refuses an environment with no record | A first promotion must not need a person |
-| Restore breadth | One live restore over the newest archive, and one that changes content; another instance's archive, a point in time and the failure paths are unexercised | A restore beyond the newest archive over itself |
+| Restore breadth | One live restore over the newest archive, and one that changes content; another instance's archive, a point in time and the failure paths are unexercised, and no live test repeats a restore | A restore beyond the newest archive over itself |
 | The tag an instance was selected with | Not recorded; `verify-platform` resolves the tag through the index | A record-shape change carries it |
 | Complete release, source and build verification | Claims are stated, not verified; a migrated release's artifact is checked | Before claiming verified release semantics |
 | Observation breadth | The unit, release, workload, pods (readiness and failing containers), the expected Ingress and Certificates by name, and the backup; no foreign ownership, no other kind | A consumer needs them |

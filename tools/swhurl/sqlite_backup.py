@@ -1,7 +1,7 @@
 """App SQLite databases' backups (the ``--database sqlite`` capability): their names and freshness.
 
-Each instance's backup CronJob (``apps/model/backup.py``, ``backup_job``) publishes
-``sqlite-<UTC>.db.age`` and its metadata to ``uri``; ``sqlite_restore`` fetches one back.
+Each instance's backup CronJob (rendered by v2) publishes ``sqlite-<UTC>.db.age`` and its metadata to its
+namespace's prefix in the platform's location; ``swhurl-v2 restore`` restores one.
 """
 from __future__ import annotations
 
@@ -21,11 +21,6 @@ from swhurl.run import Runner
 def backups_in(directory: Path) -> BackupSet:
     """The database backups in one directory: ``sqlite-<UTC>.db.age``."""
     return BackupSet(directory, 'sqlite', '.db.age')
-
-
-def uri(namespace: str, root: Path = ROOT) -> str:
-    """Where one instance's backups are published: its namespace's prefix in the platform's location."""
-    return f'{platform.sqlite_s3_uri(root)}{namespace}/'
 
 
 def expected(root: Path = ROOT) -> list[Instance]:

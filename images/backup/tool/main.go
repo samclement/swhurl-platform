@@ -1,7 +1,7 @@
 // swhurl-backup runs the platform's database backup jobs inside the backup image: one command per database.
-// It is the Go replacement for `python -m swhurl backup-job-sqlite` and keeps that job's contract — the same
-// archive names, the same metadata keys, the same S3 upload semantics — so archives written by either are
-// restorable by either.
+// It replaced the Python jobs (`python -m swhurl backup-job-sqlite`, since deleted) and kept their contract —
+// the same archive names, the same metadata keys, the same S3 upload semantics — so archives written by either
+// are restorable by either.
 package main
 
 import (

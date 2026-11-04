@@ -67,8 +67,8 @@ NETWORK_POLICY_FILE = 'networkpolicy.yaml'
 ISOLATION_FILES = (QUOTA_FILE, NETWORK_POLICY_FILE)
 # One size for every instance namespace: room for Scale's maximum replicas at template sizes.
 QUOTA = {'pods': '14', 'requests.cpu': '2', 'requests.memory': '2Gi', 'limits.memory': '4Gi'}
-# What else runs in an instance's namespace beside the app: the SQLite backup job (apps/model/backup.py) or restore pod
-# (sqlite_restore.pod_manifest) and cert-manager's HTTP-01 solver. The quota check leaves this free.
+# What else runs in an instance's namespace beside the app: the SQLite backup job (apps/model/backup.py) or v2's restore
+# job, and cert-manager's HTTP-01 solver. The quota check leaves this free.
 QUOTA_HEADROOM = {'pods': '2', 'requests.cpu': '20m', 'requests.memory': '96Mi', 'limits.memory': '320Mi'}
 TRAEFIK = {'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'kube-system'}},
            'podSelector': {'matchLabels': {'app.kubernetes.io/name': 'traefik'}}}

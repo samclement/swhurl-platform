@@ -14,9 +14,9 @@ COMMANDS := help reconcile verify-platform notifications-check notifications-hea
 	clickstack-bootstrap clickstack-dashboards \
 	app-repo app-hooks team-add team-edit team-remove team-channel channel-add channel-remove \
 	console-image console-dev \
-	platform-certs-staging platform-certs-prod destroy-data backup-mongodb backup-sqlite restore-sqlite \
+	platform-certs-staging platform-certs-prod destroy-data \
 	check-repo check-apps check-templates check-otel check-secrets check-docs v2-snapshot \
-	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb live-test-restore-sqlite \
+	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb \
 	live-test-call-identity live-test-network-policy live-test-team-scenario
 
 .PHONY: $(COMMANDS)
@@ -29,6 +29,9 @@ app-logs app-reconcile:
 	@DRY_RUN=$(DRY_RUN) ./host/ops.sh $(@:app-%=%) "$$APP" "$$ENV"
 suspend resume:
 	@DRY_RUN=$(DRY_RUN) ./host/ops.sh $@ "$$TARGET"
+.PHONY: backup-mongodb backup-sqlite
+backup-mongodb backup-sqlite:
+	@DRY_RUN=$(DRY_RUN) ./host/ops.sh backup $(@:backup-%=%)
 
 # Sequencing --------------------------------------------------------------------
 
@@ -109,6 +112,24 @@ app-status:
 	"$$work/swhurl-v2" status --records v2-records --app "$$APP" --env "$$ENV" --profile v2/testdata/profile.json \
 		--calls v2-records/calls.json --egress platform/egress/allocation.json --revision "$$(git rev-parse HEAD)" \
 		--kubeconfig "$$work/kubeconfig.json"
+
+# Restore one instance's SQLite database with v2 (swhurl-v2 restore): DRY_RUN=true writes the plan and changes
+# nothing, CONFIRM=<app>/<env> performs it. FROM=<key> restores an older archive (MAX_AGE=<duration> admits it);
+# AGE_KEY_FILE names the age identity (else SOPS_AGE_KEY_FILE, else ./age.agekey). Refused before anything is built or read.
+.PHONY: restore-sqlite
+restore-sqlite:
+	@: "$${APP:?usage: make restore-sqlite APP=<app> ENV=<env> CONFIRM=<app>/<env>}" "$${ENV:?usage: make restore-sqlite APP=<app> ENV=<env> CONFIRM=<app>/<env>}"; \
+	perform=(); \
+	if [ "$(DRY_RUN)" != true ]; then \
+		[ "$${CONFIRM:-}" = "$$APP/$$ENV" ] || { echo "[ERROR] restore-sqlite replaces the live database of $$APP/$$ENV and stops the app meanwhile. Re-run with CONFIRM=$$APP/$$ENV, or with DRY_RUN=true for the plan" >&2; exit 2; }; \
+		perform=(--confirm "$$APP/$$ENV" --age-key-file "$${AGE_KEY_FILE:-$${SOPS_AGE_KEY_FILE:-./age.agekey}}"); \
+	fi; \
+	$(V2_BUILD); \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	"$$work/swhurl-v2" restore --instance "v2-records/$$APP/$$ENV/instance.json" --release "v2-records/$$APP/$$ENV/release.json" \
+		--profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json \
+		--revision "$$(git rev-parse HEAD)" --kubeconfig "$$work/kubeconfig.json" \
+		$${FROM:+--from "$$FROM"} $${MAX_AGE:+--max-age "$$MAX_AGE"} "$${perform[@]}"
 
 .PHONY: v2-report
 v2-report:

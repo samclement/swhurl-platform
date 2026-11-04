@@ -74,7 +74,7 @@ func (c cli) restore(r request) int {
 	// was decided from rather than a separate one.
 	report.Backup.Archive = plan.Archive
 	if r.confirm == "" {
-		document, err := encodeRestore(target, spec, release, report, plan, nil)
+		document, err := encodeRestore(target, spec, release, report, plan, nil, r.maxAge)
 		if err != nil {
 			return fail(c.diagnostic, err)
 		}
@@ -134,7 +134,7 @@ func (c cli) performRestore(r request, target observe.Target, spec kernel.Instan
 // reportRestore writes the document and the one human line, and returns the status.
 func (c cli) reportRestore(target observe.Target, spec kernel.InstanceSpec, release kernel.ReleaseBundle,
 	report observe.Report, plan observe.RestorePlan, outcome *orchestration.RestoreOutcome, status int) int {
-	document, err := encodeRestore(target, spec, release, report, plan, outcome)
+	document, err := encodeRestore(target, spec, release, report, plan, outcome, "")
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -402,15 +402,17 @@ type restoreAppDocument struct {
 	State     string `json:"state"`
 }
 
-// restoreStep is the command that performs a restore in v1; it is only in a plan, never in a run v2 performed.
+// restoreStep is the operator command that performs the planned restore; it is only in a plan, never in a run
+// v2 performed.
 type restoreStep struct {
 	Command     string   `json:"command"`
 	Environment []string `json:"environment"`
 }
 
 // encodeRestore is the document: the plan, and the run when there was one (nil for a plan-only invocation).
+// maxAge is the --max-age the operator stated, empty for the default, which the plan's step repeats.
 func encodeRestore(target observe.Target, spec kernel.InstanceSpec, release kernel.ReleaseBundle,
-	report observe.Report, plan observe.RestorePlan, outcome *orchestration.RestoreOutcome) ([]byte, error) {
+	report observe.Report, plan observe.RestorePlan, outcome *orchestration.RestoreOutcome, maxAge string) ([]byte, error) {
 	claim := spec.Storage.ClaimName
 	if claim == "" {
 		// An instance that creates its own volume has no claim name in its record: the pinned chart names
@@ -452,7 +454,8 @@ func encodeRestore(target observe.Target, spec kernel.InstanceSpec, release kern
 			"the log names before-restore-<UTC>/ beside the database; delete it once you are happy",
 		}
 	} else {
-		document.Steps = []restoreStep{{Command: restoreCommand(spec), Environment: []string{"AGE_KEY_FILE=" + defaultAgeKey}}}
+		document.Steps = []restoreStep{{Command: restoreCommand(spec, plan.Archive.Newest, maxAge),
+			Environment: []string{"AGE_KEY_FILE=" + defaultAgeKey}}}
 	}
 	return marshalDocument(document)
 }
@@ -480,10 +483,19 @@ func restorePerformedAction(outcome orchestration.RestoreOutcome) restoreActionD
 	return action
 }
 
-// restoreCommand is the v1 command that performs the restore, with the instance it is for.
-func restoreCommand(spec kernel.InstanceSpec) string {
-	return fmt.Sprintf("make restore-sqlite APP=%s ENV=%s CONFIRM=%s/%s",
+// restoreCommand is the make target that performs the restore (this command with --confirm), with its instance
+// and the archive the plan chose, so performing it restores what was planned even after a newer backup; the
+// stated --max-age is repeated, since the archive is judged again when the restore is performed.
+func restoreCommand(spec kernel.InstanceSpec, archive, maxAge string) string {
+	command := fmt.Sprintf("make restore-sqlite APP=%s ENV=%s CONFIRM=%s/%s",
 		spec.Application, spec.Environment, spec.Application, spec.Environment)
+	if archive != "" {
+		command += " FROM=" + archive
+	}
+	if maxAge != "" {
+		command += " MAX_AGE=" + maxAge
+	}
+	return command
 }
 
 // marshalDocument is the document's bytes: indented, no HTML escaping, one trailing newline trimmed.

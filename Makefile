@@ -115,7 +115,9 @@ app-status:
 
 # Restore one instance's SQLite database with v2 (swhurl-v2 restore): DRY_RUN=true writes the plan and changes
 # nothing, CONFIRM=<app>/<env> performs it. FROM=<key> restores an older archive (MAX_AGE=<duration> admits it);
-# AGE_KEY_FILE names the age identity (else SOPS_AGE_KEY_FILE, else ./age.agekey). Refused before anything is built or read.
+# AGE_KEY_FILE names the age identity (else SOPS_AGE_KEY_FILE, else ./age.agekey). v2 reads S3 credentials from the
+# environment only: unless AWS_ACCESS_KEY_ID is set, the AWS CLI's own are exported into this recipe's shell.
+# Refused before anything is built or read.
 .PHONY: restore-sqlite
 restore-sqlite:
 	@: "$${APP:?usage: make restore-sqlite APP=<app> ENV=<env> CONFIRM=<app>/<env>}" "$${ENV:?usage: make restore-sqlite APP=<app> ENV=<env> CONFIRM=<app>/<env>}"; \
@@ -126,6 +128,7 @@ restore-sqlite:
 	fi; \
 	$(V2_BUILD); \
 	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	if [ -z "$${AWS_ACCESS_KEY_ID:-}" ]; then credentials=$$(aws configure export-credentials --format env); eval "$$credentials"; fi; \
 	"$$work/swhurl-v2" restore --instance "v2-records/$$APP/$$ENV/instance.json" --release "v2-records/$$APP/$$ENV/release.json" \
 		--profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json \
 		--revision "$$(git rev-parse HEAD)" --kubeconfig "$$work/kubeconfig.json" \

@@ -45,7 +45,17 @@ What has been verified on the live cluster, and when: current facts first, then 
   against `src-92042b331d76ba64`, the image the platform pins (this change does not rebuild it).
 - **Checked offline:** `make check`, `make check-v2` and the ops script's new tests (a fake `kubectl`: MongoDB's job
   is not `backup-sqlite`'s, a failed Job fails the target after its log, the plans read at most the CronJob list).
-- **Live:** not yet run.
+- **Live, at `2379859d` after `make flux-reconcile`:** `make backup-mongodb` published
+  `clickstack-mongodb-20261104T063109Z` (14 collections) in 11 s, and `make backup-sqlite` ran the six app jobs at
+  once and published each (`demo-orders` and `demo-shop` 3 tables, `swhurl-try-10` 2, integrity ok) in 18 s, every
+  log prefixed by its namespace; both dry runs planned, `backup-sqlite`'s after reading only the CronJob list.
+  `make restore-sqlite APP=demo-orders ENV=staging` without `CONFIRM` was refused with exit 2. Its first
+  `DRY_RUN=true` failed with `credentials: aws_credentials_are_not_set`: v2 reads S3 credentials from the
+  environment only, and the old target used the AWS CLI's own. The recipe now exports those into its shell
+  unless `AWS_ACCESS_KEY_ID` is set, and the plan was `ready` from `sqlite-20261104T041301Z.db.age`, observation
+  `running` and `current`, its step naming `FROM=` that key.
+- **Not exercised:** a confirmed restore through the new target (it is `swhurl-v2 restore --confirm`, last
+  performed live on 27 October), `FROM` with `MAX_AGE`, and a backup Job that fails or outlives its deadline.
 
 ## Bulk status and revision evidence in Go (3 November 2026)
 

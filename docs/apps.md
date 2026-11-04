@@ -932,7 +932,7 @@ On **later promotions**, production already exists, so the reviewed PR changes i
 make app-status APP=demo-orders ENV=prod     # state against the records at HEAD, Git applied?, the record's image running?, replicas, route, TLS, failing containers
 make app-logs APP=demo-orders ENV=prod       # FOLLOW=true, TAIL=N, PREVIOUS=true (last crashed container)
 make app-reconcile APP=demo-orders ENV=prod  # fetch Git and reconcile this instance's unit now
-make check-apps                              # v2's records render to the files Git holds; the app policy, offline
+make check-apps                              # render equality, Go policy for all v2 instances, legacy fixtures
 swhurl-v2 edit --records v2-records --app demo-shopper --env staging --set replicas=2 \
   --profile v2/testdata/profile.json --out .   # a Git edit: commit and push
 ```
@@ -1003,11 +1003,39 @@ Removal refuses, before writing anything, while **any other instance in the same
 
 ## The app policy
 
-The platform's instances are v2's, so `make check-apps` checks v2's own tree first: it runs v2's comparison, [`render --check`](../v2/check-rendered.sh) (the one `make check-v2` runs), so every instance folder and unit, the resolution, the egress allocation and the proxy's objects, the auth folder, NATS's user list and Reloader's watch list must be exactly what `v2-records/` renders from the working tree — a record change that leaves its compiled output behind fails here, before a push. The same comparison refuses an app record or a `team:` grant naming a team `v2-records/teams.json` does not register, and a notification channel without its Secret. It then checks the rule no compiler can decide yet: the template fixtures still pass the app policy. It needs Go (`v2/check-rendered.sh` builds `swhurl-v2`).
+`make check-apps` checks both the three mutable legacy template fixtures and **every compiled v2
+instance, staging and production**. The default entrypoint remains Python: it checks the legacy fixtures,
+acquires the profile-pinned chart with the existing chart helper, then runs Go's `render --check` and
+`swhurl-v2 policy`. Go acquires no chart and writes nothing. An explicit `check-apps <instance-path> ...`
+still selects the legacy manifest checker only; use the default command for the complete v2 gate.
 
-The policy below renders an instance folder with Helm and checks its Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), `HOST_IP` defined before an OTLP endpoint uses it, a registered team, the platform quota with room for the app's replicas, the platform NetworkPolicy on the app's pods only ([teams and isolation](#teams-and-isolation)), its identity, declared calls and their tokens ([calling another app](#calling-another-app)), and the stream, consumers and NATS user that follow from its declared [events](#events). It runs on the instances under `apps/` (none today) and on the template fixtures under `tests/fixtures/apps`, which `check-templates` builds every app type into, so an app type is held to this contract before v2 compiles anything. A v2 instance's objects are v2's to check: its compiler renders them, `make check-v2` (and so `make check-apps`) compares them with the files Git holds, and `make verify-platform` compares them with the cluster. Where an earlier section says `make check-apps` enforces a rule on an instance, that is what enforces it for a v2 instance; the Helm policy below is what the fixture and `apps/` paths still get. Every instance under `apps/` must also be an app made from a stack template (rule `platform-image`, no exceptions): its image is `ghcr.io/samclement/<app>` and its staging has `image-automation.yaml` with its ImagePolicy. The rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py); an explicit `check-apps <instance-path> ...` checks the selected instances' manifests too.
+`render --check` requires every instance folder and unit, the resolution, egress allocation and proxy
+objects, auth folder, NATS users and Reloader watch list to be exactly what the working-tree records render.
+It also refuses unregistered teams/grants and notification channels without their encrypted file. The
+separate Go policy then templates the **unmodified local chart**, checks its metadata against the compiled
+release/profile, and judges the actual Kubernetes objects together with the compiler-owned resources.
+Source equality alone is not a chart-output policy check.
 
-A reviewed exception goes in the instance's record, with a reason, and the render turns it into the HelmRelease's `platform.swhurl.com/policy-exceptions` annotation:
+Go checks regular and init-container image/security/resources, pod token/host access, runtime image,
+replicas, UID, HTTP probe request semantics and Service ports/selectors (no external IPs), environment
+values/order, read-only whole-directory verification and token mounts,
+exact call audiences/lifetimes, events and seed references, exposure/TLS, storage class/size and single-writer
+rollouts, namespace-bound workloads/resource relationships and labels/network policies, profile quota sizes and rendered workload fit (surge, init
+maxima and the compiled backup included). Missing app workloads fail. Findings accumulate deterministically;
+render failures are distinct and any failed instance makes the command nonzero. Invalid inputs print no
+partial policy report. The [contract and rule ownership](iteration-2-plan.md#app-policy-all-compiled-instances)
+state the boundary, including the legacy-only quota reserve. Helm stdout's numeric precision is preserved;
+Helm's own values/template processing can round before that boundary.
+
+**Python retirement is not complete.** [`policy.py`](../tools/swhurl/apps/policy.py) still owns the legacy
+fixture checker/API, chart acquisition and helpers also used by OTel and ClickStack; some decisions remain
+duplicated until that final retirement. Legacy policy includes `public` routes, reviewed exceptions and
+`platform-image` provenance under `apps/` (none today), which v2 does not model. A v2 release's repository
+and image provenance are still claims for review, not verified provenance. `check-templates` checks image
+declarations through v2, not Kubernetes policy. The [remaining gate](v2-status.md#remaining-work) is
+independent review followed by fixture/helper retirement without losing those consumers' coverage.
+
+A reviewed exception for a legacy fixture goes in the instance's record, with a reason, and the render turns it into the HelmRelease's `platform.swhurl.com/policy-exceptions` annotation:
 
 ```yaml
 exceptions: no-escalation=needs raw sockets for ICMP

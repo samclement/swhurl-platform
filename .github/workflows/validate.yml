@@ -82,6 +82,15 @@ jobs:
           python3 -m pip install --upgrade 'pip>=25.1'
           python3 -m pip install --group check
 
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: v2/go.mod
+          cache-dependency-path: v2/go.sum
+
+      - name: Download pinned v2 dependencies
+        run: make v2-deps
+
       - name: Lint Python tooling
         run: pipx run ruff==0.16.9 check tools tests devtools
 
@@ -95,12 +104,6 @@ jobs:
 
       - name: Test the code graph development aid
         run: make check-codegraph
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: v2/go.mod
-          cache: false # no go.sum: v2 has no dependencies
 
       # The tests also check that the repository renders as committed (a records-only push: see repo).
       - name: Render the records
@@ -187,7 +190,10 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: v2/go.mod
-          cache: false
+          cache-dependency-path: v2/go.sum
+
+      - name: Download pinned v2 dependencies
+        run: make v2-deps
 
       - name: Install validation dependencies and flux-schema
         run: |
@@ -237,7 +243,10 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: v2/go.mod
-          cache: false # no go.sum: v2 has no dependencies
+          cache-dependency-path: v2/go.sum
+
+      - name: Download pinned v2 dependencies
+        run: make v2-deps
 
       - name: Install validation dependencies
         run: python3 -m pip install --group check
@@ -287,13 +296,16 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: v2/go.mod
-          cache: false # no go.sum: v2 has no dependencies
+          cache-dependency-path: v2/go.sum
+
+      - name: Download pinned v2 dependencies
+        run: make v2-deps
 
       - name: Check every stack template combination against the app contract
         env:
           SWHURL_V2: /tmp/swhurl-v2
         run: |
-          (cd v2 && go build -o "$SWHURL_V2" ./cmd/swhurl-v2)
+          (cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go build -o "$SWHURL_V2" ./cmd/swhurl-v2)
           make check-templates
 
   collector:
@@ -531,7 +543,10 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: v2/go.mod
-          cache: false
+          cache-dependency-path: v2/go.sum
+
+      - name: Download pinned v2 dependencies
+        run: make v2-deps
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4

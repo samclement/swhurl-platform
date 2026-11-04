@@ -57,7 +57,10 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: v2/go.mod
-          cache: false # no go.sum: v2 has no dependencies
+          cache-dependency-path: v2/go.sum
+
+      - name: Download pinned v2 dependencies
+        run: make v2-deps
 
       - name: Setup Helm
         uses: azure/setup-helm@v4

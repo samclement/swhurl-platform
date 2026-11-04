@@ -1,6 +1,6 @@
-"""Check rendered app instances against the platform's app contract.
+"""Legacy fixture policy and the entrypoint for Go policy over every compiled v2 instance.
 
-Renders each instance directory (kustomize, then any app-template HelmRelease
+Python renders each legacy instance directory (kustomize, then any app-template HelmRelease
 with Helm) and checks the resulting Kubernetes objects:
 
   image-pinned        every image has a version tag (not latest) or digest
@@ -51,7 +51,8 @@ and, for the whole tree:
                       exactly what its instance's records render. Settings belong to each environment;
                       a release may be ahead in staging, but its kind and command agree across
                       environments. Encrypted Secrets are never compared. Only the template fixtures still
-                      hold an instance folder, so those are the instances this renders
+                      hold a legacy instance folder, so those are the instances Python renders; the
+                      default entrypoint also runs Go policy on every compiled v2 instance
 
 A reviewed exception goes in Settings.exceptions in instance.yaml as
   exceptions: "rule-id=reason; other-rule=reason"
@@ -63,6 +64,7 @@ do not edit that annotation by hand. Exceptions without a reason are rejected.
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -456,14 +458,22 @@ RENDERED = Path('v2/check-rendered.sh')
 
 
 def records_rendered(runner: Runner | None = None, root: Path = ROOT) -> str | None:
-    """Why v2's tree is not what its records render, or None when it is.
+    """Why the v2 render comparison or all-instance Go policy failed; None when both pass.
 
     v2 compiles every record into its instance folder and unit and renders the platform's documents from them.
     The comparison is v2's own script (``v2/check-rendered.sh``, which ``make check-v2`` also runs), so this
     module owns no second compiler; it renders the working tree, so an uncommitted record counts.
+    Chart acquisition stays in this existing external helper; Go only templates an explicitly supplied
+    local chart and judges its actual workloads, including production. Python still judges legacy fixtures.
     """
     runner = runner or Runner.from_environment(cwd=root)
-    result = runner.run(['bash', str(root / RENDERED)], cwd=root, check=False)
+    try:
+        chart = json.loads((root / platform.PROFILE).read_text())['chart']
+        name, version, repository = chart['name'], chart['version'], helm_repositories()[chart['repository']]
+    except (OSError, ValueError, KeyError, TypeError):
+        return f'{platform.PROFILE}: invalid or unreadable pinned chart metadata'
+    local_chart = chart_dir(name, version, repository, runner)
+    result = runner.run(['bash', str(root / RENDERED), '--chart', str(local_chart)], cwd=root, check=False)
     if not result.returncode:
         return None
     return ((result.stdout or '') + (result.stderr or '')).strip() or f'{RENDERED} exited {result.returncode}'
@@ -502,9 +512,9 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
             for problem in problems.splitlines():
                 print(f'       {problem}')
         else:
-            print('[OK] v2\'s records render to the files Git holds')
+            print('[OK] v2\'s records render to Git and every compiled instance passes Go Kubernetes policy')
     if failed:
         print(f'\n{failed} instance(s) or app(s) violate the app contract.')
         return 1
-    print(f'\nApp policy passed for {len(paths)} instance(s).')
+    print(f'\nApp policy passed for {len(paths)} legacy instance(s)' + ('.' if argv else ' and all compiled v2 instances.'))
     return 0

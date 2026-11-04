@@ -1,0 +1,1194 @@
+{
+  "Source": [
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "annotations": {
+          "kustomize.toolkit.fluxcd.io/prune": "disabled"
+        },
+        "labels": {
+          "platform.swhurl.com/app": "demo-orders",
+          "platform.swhurl.com/environment": "prod",
+          "platform.swhurl.com/exposure": "authenticated-web",
+          "platform.swhurl.com/managed": "true",
+          "platform.swhurl.com/team": "demo"
+        },
+        "name": "demo-orders-prod"
+      }
+    },
+    {
+      "apiVersion": "helm.toolkit.fluxcd.io/v2",
+      "kind": "HelmRelease",
+      "metadata": {
+        "annotations": {
+          "platform.swhurl.com/egress": "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443",
+          "platform.swhurl.com/offers": "aaaaaaa"
+        },
+        "name": "demo-orders",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "chart": {
+          "spec": {
+            "chart": "app-template",
+            "interval": "30m",
+            "sourceRef": {
+              "kind": "HelmRepository",
+              "name": "bjw-s",
+              "namespace": "flux-system"
+            },
+            "version": "5.2.1"
+          }
+        },
+        "install": {
+          "remediation": {
+            "retries": 1
+          }
+        },
+        "interval": "30m",
+        "timeout": "3m",
+        "upgrade": {
+          "remediation": {
+            "retries": 1
+          }
+        },
+        "values": {
+          "controllers": {
+            "main": {
+              "annotations": {
+                "secret.reloader.stakater.com/reload": "demo-orders-events"
+              },
+              "containers": {
+                "main": {
+                  "env": {
+                    "DATABASE_PATH": "/data/app.db",
+                    "HOST_IP": {
+                      "valueFrom": {
+                        "fieldRef": {
+                          "fieldPath": "status.hostIP"
+                        }
+                      }
+                    },
+                    "HTTPS_PROXY": "http://egress.egress.svc.cluster.local:30101",
+                    "HTTP_PROXY": "http://egress.egress.svc.cluster.local:30101",
+                    "JAVA_TOOL_OPTIONS": "-Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30101 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30101 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)",
+                    "NODE_USE_ENV_PROXY": "1",
+                    "NO_PROXY": "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)",
+                    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://$(HOST_IP):4318",
+                    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+                    "OTEL_SERVICE_NAME": "demo-orders",
+                    "SWHURL_ALLOWED_CALLERS_FILE": "/var/run/swhurl/callers/SWHURL_ALLOWED_CALLERS",
+                    "SWHURL_APP": "demo-orders",
+                    "SWHURL_AUTH_ISSUER_FILE": "/var/run/swhurl/auth/SWHURL_AUTH_ISSUER",
+                    "SWHURL_AUTH_KEYS_FILE": "/var/run/swhurl/auth/SWHURL_AUTH_KEYS",
+                    "SWHURL_ENV": "prod",
+                    "SWHURL_EVENTS_NKEY": "UCEW5BT5FDDXPO475VJV6NYYS2GJ66C67KQJY6UAXIAFQOAJRHQTWMAP",
+                    "SWHURL_EVENTS_PUBLISH": "created",
+                    "SWHURL_EVENTS_SUBSCRIBE": "billing.paid",
+                    "SWHURL_EVENTS_URL": "nats://nats.messaging.svc.cluster.local:4222",
+                    "SWHURL_NOTIFY_URL": "http://notify.notify.svc.cluster.local:8080",
+                    "SWHURL_SERVICE_BILLING_URL": "http://billing.billing-prod.svc.cluster.local:8080"
+                  },
+                  "envFrom": [
+                    {
+                      "configMapRef": {
+                        "name": "swhurl-auth"
+                      }
+                    },
+                    {
+                      "configMapRef": {
+                        "name": "demo-orders-callers"
+                      }
+                    },
+                    {
+                      "secretRef": {
+                        "name": "demo-orders-events"
+                      }
+                    }
+                  ],
+                  "image": {
+                    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "repository": "ghcr.io/samclement/demo-orders"
+                  },
+                  "probes": {
+                    "liveness": {
+                      "custom": true,
+                      "enabled": true,
+                      "spec": {
+                        "httpGet": {
+                          "path": "/healthz",
+                          "port": 8080
+                        }
+                      }
+                    },
+                    "readiness": {
+                      "custom": true,
+                      "enabled": true,
+                      "spec": {
+                        "httpGet": {
+                          "path": "/healthz",
+                          "port": 8080
+                        }
+                      }
+                    },
+                    "startup": {
+                      "custom": true,
+                      "enabled": true,
+                      "spec": {
+                        "failureThreshold": 24,
+                        "httpGet": {
+                          "path": "/healthz",
+                          "port": 8080
+                        },
+                        "periodSeconds": 5
+                      }
+                    }
+                  },
+                  "resources": {
+                    "limits": {
+                      "memory": "256Mi"
+                    },
+                    "requests": {
+                      "cpu": "10m",
+                      "memory": "256Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    },
+                    "readOnlyRootFilesystem": true
+                  }
+                }
+              },
+              "replicas": 1,
+              "strategy": "Recreate"
+            }
+          },
+          "defaultPodOptions": {
+            "automountServiceAccountToken": false,
+            "securityContext": {
+              "fsGroup": 65532,
+              "runAsGroup": 65532,
+              "runAsNonRoot": true,
+              "runAsUser": 65532,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            }
+          },
+          "persistence": {
+            "auth": {
+              "globalMounts": [
+                {
+                  "path": "/var/run/swhurl/auth",
+                  "readOnly": true
+                }
+              ],
+              "name": "swhurl-auth",
+              "type": "configMap"
+            },
+            "callers": {
+              "globalMounts": [
+                {
+                  "path": "/var/run/swhurl/callers",
+                  "readOnly": true
+                }
+              ],
+              "name": "demo-orders-callers",
+              "type": "configMap"
+            },
+            "data": {
+              "accessMode": "ReadWriteOnce",
+              "globalMounts": [
+                {
+                  "path": "/data"
+                }
+              ],
+              "retain": true,
+              "size": "1024Mi",
+              "storageClass": "local-path-retain",
+              "type": "persistentVolumeClaim"
+            },
+            "tmp": {
+              "globalMounts": [
+                {
+                  "path": "/tmp"
+                }
+              ],
+              "type": "emptyDir"
+            },
+            "tokens": {
+              "globalMounts": [
+                {
+                  "path": "/var/run/swhurl/tokens",
+                  "readOnly": true
+                }
+              ],
+              "sources": [
+                {
+                  "serviceAccountToken": {
+                    "audience": "billing",
+                    "expirationSeconds": 600,
+                    "path": "billing/token"
+                  }
+                },
+                {
+                  "serviceAccountToken": {
+                    "audience": "notify",
+                    "expirationSeconds": 600,
+                    "path": "notify/token"
+                  }
+                }
+              ],
+              "type": "projected"
+            }
+          },
+          "service": {
+            "main": {
+              "controller": "main",
+              "ports": {
+                "http": {
+                  "port": 8080
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "demo-orders",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "hard": {
+          "limits.memory": "4Gi",
+          "pods": "14",
+          "requests.cpu": "2",
+          "requests.memory": "2Gi"
+        }
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "demo-orders",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "egress": [
+          {
+            "ports": [
+              {
+                "port": 8080,
+                "protocol": "TCP"
+              }
+            ],
+            "to": [
+              {
+                "ipBlock": {
+                  "cidr": "10.42.0.0/16"
+                }
+              }
+            ]
+          },
+          {
+            "ports": [
+              {
+                "port": 53,
+                "protocol": "UDP"
+              },
+              {
+                "port": 53,
+                "protocol": "TCP"
+              }
+            ],
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "k8s-app": "kube-dns"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "ports": [
+              {
+                "port": 30101,
+                "protocol": "TCP"
+              }
+            ],
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "egress"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "egress"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "ports": [
+              {
+                "port": 4318,
+                "protocol": "TCP"
+              }
+            ],
+            "to": [
+              {
+                "ipBlock": {
+                  "cidr": "192.168.1.200/32"
+                }
+              }
+            ]
+          },
+          {
+            "ports": [
+              {
+                "port": 4222,
+                "protocol": "TCP"
+              }
+            ],
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "messaging"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "nats"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "traefik"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "port": 8080,
+                "protocol": "TCP"
+              }
+            ]
+          },
+          {
+            "from": [
+              {
+                "ipBlock": {
+                  "cidr": "10.42.0.0/16"
+                }
+              }
+            ],
+            "ports": [
+              {
+                "port": 8080,
+                "protocol": "TCP"
+              }
+            ]
+          }
+        ],
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/instance": "demo-orders"
+          }
+        },
+        "policyTypes": [
+          "Ingress",
+          "Egress"
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "Ingress",
+      "metadata": {
+        "annotations": {
+          "cert-manager.io/cluster-issuer": "letsencrypt-prod",
+          "traefik.ingress.kubernetes.io/router.middlewares": "ingress-oauth-auth-shared@kubernetescrd"
+        },
+        "name": "demo-orders",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "ingressClassName": "traefik",
+        "rules": [
+          {
+            "host": "demo-orders.homelab.swhurl.com",
+            "http": {
+              "paths": [
+                {
+                  "backend": {
+                    "service": {
+                      "name": "demo-orders",
+                      "port": {
+                        "number": 8080
+                      }
+                    }
+                  },
+                  "path": "/",
+                  "pathType": "Prefix"
+                }
+              ]
+            }
+          }
+        ],
+        "tls": [
+          {
+            "hosts": [
+              "demo-orders.homelab.swhurl.com"
+            ],
+            "secretName": "demo-orders-tls"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "data": {
+        "SWHURL_ALLOWED_CALLERS": "reader"
+      },
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "demo-orders-callers",
+        "namespace": "demo-orders-prod"
+      }
+    },
+    {
+      "apiVersion": "jetstream.nats.io/v1beta2",
+      "kind": "Stream",
+      "metadata": {
+        "name": "prod-demo-orders",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "discard": "old",
+        "maxAge": "168h",
+        "maxBytes": 67108864,
+        "name": "prod-demo-orders",
+        "preventDelete": true,
+        "replicas": 1,
+        "retention": "limits",
+        "storage": "file",
+        "subjects": [
+          "prod.demo-orders.\u003e"
+        ]
+      }
+    },
+    {
+      "apiVersion": "jetstream.nats.io/v1beta2",
+      "kind": "Consumer",
+      "metadata": {
+        "name": "demo-orders-billing-paid",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "ackPolicy": "explicit",
+        "ackWait": "30s",
+        "deliverPolicy": "all",
+        "durableName": "demo-orders_paid",
+        "filterSubject": "prod.billing.paid",
+        "maxDeliver": 5,
+        "streamName": "prod-billing"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Secret",
+      "metadata": {
+        "name": "demo-orders-backup",
+        "namespace": "demo-orders-prod"
+      },
+      "stringData": {
+        "AWS_ACCESS_KEY_ID": "${BACKUP_AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY": "${BACKUP_AWS_SECRET_ACCESS_KEY}"
+      },
+      "type": "Opaque"
+    },
+    {
+      "apiVersion": "batch/v1",
+      "kind": "CronJob",
+      "metadata": {
+        "labels": {
+          "platform.swhurl.com/backup": "true"
+        },
+        "name": "demo-orders-backup",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "concurrencyPolicy": "Forbid",
+        "failedJobsHistoryLimit": 3,
+        "jobTemplate": {
+          "spec": {
+            "activeDeadlineSeconds": 900,
+            "backoffLimit": 2,
+            "template": {
+              "metadata": {
+                "labels": {
+                  "platform.swhurl.com/backup": "true"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "args": [
+                      "backup-job-sqlite"
+                    ],
+                    "env": [
+                      {
+                        "name": "HOST_IP",
+                        "valueFrom": {
+                          "fieldRef": {
+                            "fieldPath": "status.hostIP"
+                          }
+                        }
+                      },
+                      {
+                        "name": "HTTP_PROXY",
+                        "value": "http://egress.egress.svc.cluster.local:30101"
+                      },
+                      {
+                        "name": "HTTPS_PROXY",
+                        "value": "http://egress.egress.svc.cluster.local:30101"
+                      },
+                      {
+                        "name": "NO_PROXY",
+                        "value": "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)"
+                      },
+                      {
+                        "name": "AGE_RECIPIENT",
+                        "value": "age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h"
+                      },
+                      {
+                        "name": "BACKUP_S3_URI",
+                        "value": "s3://swhurl-platform-backups-110927251694/app-sqlite/demo-orders-prod/"
+                      },
+                      {
+                        "name": "BACKUP_SOURCE",
+                        "value": "demo-orders-prod/demo-orders"
+                      },
+                      {
+                        "name": "DATABASE_PATH",
+                        "value": "/data/app.db"
+                      }
+                    ],
+                    "envFrom": [
+                      {
+                        "secretRef": {
+                          "name": "demo-orders-backup"
+                        }
+                      }
+                    ],
+                    "image": "ghcr.io/samclement/swhurl-backup@sha256:b730422b4789b6377ca1b39705cedef61d0c64a0a8161ccb64652dbc7b1db74a",
+                    "name": "backup",
+                    "resources": {
+                      "limits": {
+                        "memory": "256Mi"
+                      },
+                      "requests": {
+                        "cpu": "10m",
+                        "memory": "64Mi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/data",
+                        "name": "data"
+                      },
+                      {
+                        "mountPath": "/scratch",
+                        "name": "scratch"
+                      },
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      }
+                    ]
+                  }
+                ],
+                "restartPolicy": "Never",
+                "securityContext": {
+                  "fsGroup": 65532,
+                  "runAsGroup": 65532,
+                  "runAsNonRoot": true,
+                  "runAsUser": 65532,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "volumes": [
+                  {
+                    "name": "data",
+                    "persistentVolumeClaim": {
+                      "claimName": "demo-orders"
+                    }
+                  },
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "1Gi"
+                    },
+                    "name": "scratch"
+                  },
+                  {
+                    "emptyDir": {},
+                    "name": "tmp"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "schedule": "42 3 * * *",
+        "startingDeadlineSeconds": 3600,
+        "successfulJobsHistoryLimit": 1,
+        "suspend": false,
+        "timeZone": "Etc/UTC"
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "demo-orders-backup",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "egress": [
+          {
+            "ports": [
+              {
+                "port": 53,
+                "protocol": "UDP"
+              },
+              {
+                "port": 53,
+                "protocol": "TCP"
+              }
+            ],
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "k8s-app": "kube-dns"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "ports": [
+              {
+                "port": 30101,
+                "protocol": "TCP"
+              }
+            ],
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "egress"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "egress"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "ingress": [],
+        "podSelector": {
+          "matchLabels": {
+            "platform.swhurl.com/backup": "true"
+          }
+        },
+        "policyTypes": [
+          "Ingress",
+          "Egress"
+        ]
+      }
+    },
+    {
+      "apiVersion": "kustomize.config.k8s.io/v1beta1",
+      "kind": "Kustomization",
+      "resources": [
+        "namespace.json",
+        "helmrelease.json",
+        "resourcequota.json",
+        "networkpolicy.json",
+        "ingress.json",
+        "callers.json",
+        "stream.json",
+        "consumer-demo-orders-billing-paid.json",
+        "backup-secret.json",
+        "backup-cronjob.json",
+        "backup-networkpolicy.json",
+        "events.sops.yaml"
+      ]
+    },
+    {
+      "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+      "kind": "Kustomization",
+      "metadata": {
+        "name": "app-demo-orders-prod",
+        "namespace": "flux-system"
+      },
+      "spec": {
+        "decryption": {
+          "provider": "sops",
+          "secretRef": {
+            "name": "sops-age"
+          }
+        },
+        "dependsOn": [
+          {
+            "name": "infra-base"
+          },
+          {
+            "name": "platform-nats"
+          },
+          {
+            "name": "platform-backup"
+          }
+        ],
+        "interval": "10m",
+        "path": "./v2-apps/instances/demo-orders/prod",
+        "postBuild": {
+          "substituteFrom": [
+            {
+              "kind": "Secret",
+              "name": "backup-writer",
+              "optional": false
+            }
+          ]
+        },
+        "prune": true,
+        "sourceRef": {
+          "kind": "GitRepository",
+          "name": "swhurl-platform"
+        },
+        "timeout": "3m",
+        "wait": true
+      }
+    }
+  ],
+  "Rendered": [
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/instance": "demo-orders",
+          "app.kubernetes.io/managed-by": "Helm",
+          "app.kubernetes.io/name": "demo-orders",
+          "helm.sh/chart": "app-template-5.2.1"
+        },
+        "name": "demo-orders",
+        "namespace": "demo-orders-prod"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "annotations": {
+          "helm.sh/resource-policy": "keep"
+        },
+        "labels": {
+          "app.kubernetes.io/instance": "demo-orders",
+          "app.kubernetes.io/managed-by": "Helm",
+          "app.kubernetes.io/name": "demo-orders",
+          "helm.sh/chart": "app-template-5.2.1"
+        },
+        "name": "demo-orders",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "resources": {
+          "requests": {
+            "storage": "1024Mi"
+          }
+        },
+        "storageClassName": "local-path-retain"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/instance": "demo-orders",
+          "app.kubernetes.io/managed-by": "Helm",
+          "app.kubernetes.io/name": "demo-orders",
+          "app.kubernetes.io/service": "demo-orders",
+          "helm.sh/chart": "app-template-5.2.1"
+        },
+        "name": "demo-orders",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "ports": [
+          {
+            "name": "http",
+            "port": 8080,
+            "protocol": "TCP",
+            "targetPort": 8080
+          }
+        ],
+        "selector": {
+          "app.kubernetes.io/controller": "main",
+          "app.kubernetes.io/instance": "demo-orders",
+          "app.kubernetes.io/name": "demo-orders"
+        },
+        "type": "ClusterIP"
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "annotations": {
+          "secret.reloader.stakater.com/reload": "demo-orders-events"
+        },
+        "labels": {
+          "app.kubernetes.io/controller": "main",
+          "app.kubernetes.io/instance": "demo-orders",
+          "app.kubernetes.io/managed-by": "Helm",
+          "app.kubernetes.io/name": "demo-orders",
+          "helm.sh/chart": "app-template-5.2.1"
+        },
+        "name": "demo-orders",
+        "namespace": "demo-orders-prod"
+      },
+      "spec": {
+        "replicas": 1,
+        "revisionHistoryLimit": 3,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/controller": "main",
+            "app.kubernetes.io/instance": "demo-orders",
+            "app.kubernetes.io/name": "demo-orders"
+          }
+        },
+        "strategy": {
+          "type": "Recreate"
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/controller": "main",
+              "app.kubernetes.io/instance": "demo-orders",
+              "app.kubernetes.io/name": "demo-orders"
+            }
+          },
+          "spec": {
+            "automountServiceAccountToken": false,
+            "containers": [
+              {
+                "env": [
+                  {
+                    "name": "DATABASE_PATH",
+                    "value": "/data/app.db"
+                  },
+                  {
+                    "name": "HOST_IP",
+                    "valueFrom": {
+                      "fieldRef": {
+                        "fieldPath": "status.hostIP"
+                      }
+                    }
+                  },
+                  {
+                    "name": "HTTPS_PROXY",
+                    "value": "http://egress.egress.svc.cluster.local:30101"
+                  },
+                  {
+                    "name": "HTTP_PROXY",
+                    "value": "http://egress.egress.svc.cluster.local:30101"
+                  },
+                  {
+                    "name": "JAVA_TOOL_OPTIONS",
+                    "value": "-Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30101 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30101 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)"
+                  },
+                  {
+                    "name": "NODE_USE_ENV_PROXY",
+                    "value": "1"
+                  },
+                  {
+                    "name": "NO_PROXY",
+                    "value": "localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)"
+                  },
+                  {
+                    "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+                    "value": "http://$(HOST_IP):4318"
+                  },
+                  {
+                    "name": "OTEL_EXPORTER_OTLP_PROTOCOL",
+                    "value": "http/protobuf"
+                  },
+                  {
+                    "name": "OTEL_SERVICE_NAME",
+                    "value": "demo-orders"
+                  },
+                  {
+                    "name": "SWHURL_ALLOWED_CALLERS_FILE",
+                    "value": "/var/run/swhurl/callers/SWHURL_ALLOWED_CALLERS"
+                  },
+                  {
+                    "name": "SWHURL_APP",
+                    "value": "demo-orders"
+                  },
+                  {
+                    "name": "SWHURL_AUTH_ISSUER_FILE",
+                    "value": "/var/run/swhurl/auth/SWHURL_AUTH_ISSUER"
+                  },
+                  {
+                    "name": "SWHURL_AUTH_KEYS_FILE",
+                    "value": "/var/run/swhurl/auth/SWHURL_AUTH_KEYS"
+                  },
+                  {
+                    "name": "SWHURL_ENV",
+                    "value": "prod"
+                  },
+                  {
+                    "name": "SWHURL_EVENTS_NKEY",
+                    "value": "UCEW5BT5FDDXPO475VJV6NYYS2GJ66C67KQJY6UAXIAFQOAJRHQTWMAP"
+                  },
+                  {
+                    "name": "SWHURL_EVENTS_PUBLISH",
+                    "value": "created"
+                  },
+                  {
+                    "name": "SWHURL_EVENTS_SUBSCRIBE",
+                    "value": "billing.paid"
+                  },
+                  {
+                    "name": "SWHURL_EVENTS_URL",
+                    "value": "nats://nats.messaging.svc.cluster.local:4222"
+                  },
+                  {
+                    "name": "SWHURL_NOTIFY_URL",
+                    "value": "http://notify.notify.svc.cluster.local:8080"
+                  },
+                  {
+                    "name": "SWHURL_SERVICE_BILLING_URL",
+                    "value": "http://billing.billing-prod.svc.cluster.local:8080"
+                  }
+                ],
+                "envFrom": [
+                  {
+                    "configMapRef": {
+                      "name": "swhurl-auth"
+                    }
+                  },
+                  {
+                    "configMapRef": {
+                      "name": "demo-orders-callers"
+                    }
+                  },
+                  {
+                    "secretRef": {
+                      "name": "demo-orders-events"
+                    }
+                  }
+                ],
+                "image": "ghcr.io/samclement/demo-orders@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/healthz",
+                    "port": 8080
+                  }
+                },
+                "name": "main",
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/healthz",
+                    "port": 8080
+                  }
+                },
+                "resources": {
+                  "limits": {
+                    "memory": "256Mi"
+                  },
+                  "requests": {
+                    "cpu": "10m",
+                    "memory": "256Mi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "readOnlyRootFilesystem": true
+                },
+                "startupProbe": {
+                  "failureThreshold": 24,
+                  "httpGet": {
+                    "path": "/healthz",
+                    "port": 8080
+                  },
+                  "periodSeconds": 5
+                },
+                "volumeMounts": [
+                  {
+                    "mountPath": "/var/run/swhurl/auth",
+                    "name": "auth",
+                    "readOnly": true
+                  },
+                  {
+                    "mountPath": "/var/run/swhurl/callers",
+                    "name": "callers",
+                    "readOnly": true
+                  },
+                  {
+                    "mountPath": "/data",
+                    "name": "data"
+                  },
+                  {
+                    "mountPath": "/tmp",
+                    "name": "tmp"
+                  },
+                  {
+                    "mountPath": "/var/run/swhurl/tokens",
+                    "name": "tokens",
+                    "readOnly": true
+                  }
+                ]
+              }
+            ],
+            "dnsPolicy": "ClusterFirst",
+            "enableServiceLinks": false,
+            "hostIPC": false,
+            "hostNetwork": false,
+            "hostPID": false,
+            "securityContext": {
+              "fsGroup": 65532,
+              "runAsGroup": 65532,
+              "runAsNonRoot": true,
+              "runAsUser": 65532,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "serviceAccountName": "demo-orders",
+            "volumes": [
+              {
+                "configMap": {
+                  "name": "swhurl-auth"
+                },
+                "name": "auth"
+              },
+              {
+                "configMap": {
+                  "name": "demo-orders-callers"
+                },
+                "name": "callers"
+              },
+              {
+                "name": "data",
+                "persistentVolumeClaim": {
+                  "claimName": "demo-orders"
+                }
+              },
+              {
+                "emptyDir": {},
+                "name": "tmp"
+              },
+              {
+                "name": "tokens",
+                "projected": {
+                  "sources": [
+                    {
+                      "serviceAccountToken": {
+                        "audience": "billing",
+                        "expirationSeconds": 600,
+                        "path": "billing/token"
+                      }
+                    },
+                    {
+                      "serviceAccountToken": {
+                        "audience": "notify",
+                        "expirationSeconds": 600,
+                        "path": "notify/token"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "Platform": {
+    "Pods": 14,
+    "RequestsCPUMilli": 2000,
+    "RequestsMemoryMiB": 2048,
+    "LimitsMemoryMiB": 4096,
+    "StorageClass": "local-path-retain",
+    "CookieDomain": "homelab.swhurl.com",
+    "Middleware": "ingress-oauth-auth-shared@kubernetescrd"
+  }
+}

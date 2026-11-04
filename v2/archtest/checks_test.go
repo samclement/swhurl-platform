@@ -60,7 +60,7 @@ func TestCheckStdlibOnly(t *testing.T) {
 	})
 	m.GoMod += "require github.com/x/assert v1.0.0\n"
 	expect(t, checkStdlibOnly(m),
-		"stdlib-only go.mod: requires a module",
+		"stdlib-only go.mod: requires an unapproved module or version",
 		"stdlib-only kernel/a_test.go:3: imports github.com/x/assert")
 }
 
@@ -103,6 +103,7 @@ func f(count int) int {
 		"events/events.go":   "package events\n",
 		"legacy/legacy.go":   "package legacy\n",
 		"observe/explain.go": "package observe\n",
+		"policy/policy.go":   "package policy\n",
 		"shadow/http.go":     "package shadow\n",
 	})
 	expect(t, checkPure(m),
@@ -295,5 +296,41 @@ func TestCheckDocumented(t *testing.T) {
 	}
 	if !anchors("## 4. Development layers and adapters\n### Kubernetes: the API server, not `kubectl`\n")["kubernetes-the-api-server-not-kubectl"] {
 		t.Error("anchor of a heading with punctuation")
+	}
+}
+
+func TestYAMLApprovalIsNarrow(t *testing.T) {
+	for _, dir := range []string{"kernel", "adapters/kube", "adapters/helm/helmtest", "cmd/swhurl-v2"} {
+		m := fixture(t, map[string]string{dir + "/a.go": "package probe\nimport \"go.yaml.in/yaml/v3\"\n"})
+		if len(checkStdlibOnly(m)) != 1 {
+			t.Errorf("YAML escaped into %s", dir)
+		}
+	}
+	m := fixture(t, map[string]string{"adapters/helm/a.go": "package helm\nimport \"go.yaml.in/yaml/v3\"\n"})
+	m.GoMod += "require go.yaml.in/yaml/v3 v3.0.6\n"
+	expect(t, checkStdlibOnly(m))
+	for _, requirement := range []string{
+		"require go.yaml.in/yaml/v3 v3.0.5", "require example.com/other v1.0.0",
+		"require (\n go.yaml.in/yaml/v3 v3.0.6\n example.com/other v1.0.0\n)",
+		"replace go.yaml.in/yaml/v3 => example.com/fork v3.0.6", "exclude go.yaml.in/yaml/v3 v3.0.6",
+		"require go.yaml.in/yaml/v3 v3.0.6\nrequire go.yaml.in/yaml/v3 v3.0.6",
+	} {
+		if len(checkModuleRequirements(requirement)) == 0 {
+			t.Errorf("accepted %s", requirement)
+		}
+	}
+	expect(t, checkModuleRequirements("require (\n go.yaml.in/yaml/v3 v3.0.6\n)\n"))
+}
+
+func TestHelmSubprocessApprovalDoesNotLeak(t *testing.T) {
+	for _, dir := range []string{"adapters/helm", "adapters/helm/helmtest", "adapters/helm/other", "orchestration"} {
+		m := fixture(t, map[string]string{dir + "/a.go": "package probe\nimport \"os/exec\"\n"})
+		want := 1
+		if dir == "adapters/helm" {
+			want = 0
+		}
+		if got := len(checkNoSubprocess(m)); got != want {
+			t.Errorf("%s: got %d want %d", dir, got, want)
+		}
 	}
 }

@@ -1,0 +1,22 @@
+# Empty documents are not objects.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boundary
+  namespace: staging
+data:
+  retained: unchanged
+---
+apiVersion: example.test/v1
+kind: Unfamiliar
+metadata:
+  name: boundary
+spec:
+  exact: 9007199254740993
+  signed: 9223372036854775807
+  unsigned: 18446744073709551615
+  negative: -9223372036854775808
+  nested: [true, null, "unchanged"]
+---
+# trailing empty document

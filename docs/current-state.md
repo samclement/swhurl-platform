@@ -49,11 +49,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   `<no value>` required special handling. Corpus parity does not establish a lossless parser contract.
   Prototype source and retained results are in `/tmp/app-template-json-projection.06tzlh/REPORT.md` on the
   operator's host, not a committed implementation or a durable test suite.
-- **Next decision:** approve a YAML parser dependency confined to the Helm adapter (recommended), or explicitly
-  accept the chart-specific projection's restricted semantics. The `stdlib-only` rule is unchanged; no parser,
-  adapter, subprocess allowlist change or Go policy has been implemented. Keep the Python checks until the
-  Go policy covers every compiled instance and its retained rules are tested. OTel and ClickStack also use
-  Python policy's chart helpers, so their callers must be preserved when that module is retired.
+- **Follow-up:** the operator approved one pinned YAML parser confined to the adapter; the
+  [implemented boundary](#app-policy-go-gate-4-november-2026) replaces this prototype. Python checks
+  remain until Go covers every compiled instance and OTel/ClickStack retain their shared chart helpers.
 - **Validation:** final `make check`, `make check-v2` and `git diff --check` passed before documentation commit
   `a9bf3180`. The prototype checks above are offline evidence only, not validation of an implemented Go adapter
   or policy.
@@ -61,6 +59,62 @@ What has been verified on the live cluster, and when: current facts first, then 
   `make verify-platform` passed, and explicit `make app-status` checks for all ten instances reported Healthy,
   with that applied revision (4 November 2026, 08:17–08:18 UTC). No workload manifests, images, records or
   credentials changed; the team-registry verification below remains the latest live capability evidence.
+
+## App-policy Go gate (4 November 2026)
+
+**All-instance Go policy implemented; Python legacy policy retirement remains incomplete.**
+
+- Addressed six independent-review P1s with observed failing-before regressions. JSON surrogate-pair values
+  failed **real** Helm 3.19/4.2 rendering despite passing the validator; validated values now use stdlib
+  UseNumber/Marshal before the private write. Real escaped/literal emoji outputs compare equal and numeric
+  normalization tests retain exact integer/decimal/exponent spelling. Duplicate/root/depth/range checks remain.
+  The numeric guarantee still starts at Helm stdout, not at earlier Helm values/template processing.
+- Namespace mutations of Deployment, backup CronJob, Service, PVC, NetworkPolicy, Ingress, ResourceQuota and
+  ConfigMap previously produced zero findings. Known instance resources and relationships are now bound
+  to the compiled namespace; chart output cannot name a foreign namespace. Omitted namespaces on known
+  relationships use the target without changing objects; unknown scopes are not guessed. Compiler-owned
+  ImagePolicy/ImageRepository resources in flux-system remain valid (including staging CLI coverage).
+- Service external IPs and missing/wrong selectors now fail. Required verification/token mounts reject
+  subPath and subPathExpr. HTTP probe checks include scheme (omitted means HTTP), connection host and
+  case-insensitive headers, including kubelet's default Accept and version-dependent User-Agent semantics.
+  Individual negative mutations and unchanged/equivalent-default positives cover these cases.
+- The Go command still checks every compiled instance, staging and production, using existing whole-tree
+  resolution/Inputs/Compile and the explicit metadata-verified chart. Findings accumulate, render failures
+  are separate, malformed input/evaluation produces no partial policy report and no-workload output fails.
+  `check-apps` retains source render equality, the mutable Python fixtures and external chart acquisition.
+  The YAML dependency/API/layer declarations remain as approved; no API or complexity-baseline expansion
+  was needed for these six fixes.
+- **Retirement investigation only:** unchanged Go rejects smoke-web/staging and smoke-worker/staging's
+  tag-only images and reports smoke-data/prod's repository:tag@digest as a runtime mismatch. A scratch copy
+  allowing source tag/digest pins and defaulting omitted replicas to 1 passes all three authoritative
+  baselines, with no repository retirement edits. Mutation probes still demonstrate headroom, team, public
+  exposure and alerts missed by Go, exceptions not honored, and the other allowed storage class rejected.
+  Provenance has no baseline proof: fixtures are exempt, while direct legacy provenance checks report 1/2/2
+  findings. The [unapproved candidate and residual contracts](iteration-2-plan.md#legacy-policy-retirement-probe-not-approved)
+  require the operator's scope decision; no compatibility mode, source compiler, fixture replacement or Python deletion
+  was introduced. Probe scripts/results: `/tmp/swhurl-policy-retirement-probe/` and `/tmp/probe-legacy-policy*`;
+  stored input excludes Secret data/stringData, and output contains only rule counts/fixed diagnostics.
+
+**Validation:** focused adapter/policy/orchestration/CLI/guardrail suites and the real Unicode/policy
+regressions passed on Helm 3.19 and 4.2. `REQUIRE_HELM=1 make check-v2` passed with Helm 3.19 (157 files,
+zero differences); `make check` passed 721 Python tests, 98 code-graph tests, all three legacy fixtures,
+the all-instance Go gate, 32 schema entrypoints, lint and docs. Shell syntax checks covered `host/*.sh`,
+`tests/fixtures/*.sh` and `v2/*.sh`; `git diff --check` passed. The actual console image rebuilt with
+`podman build --pull=never -f images/console/Dockerfile -t localhost/swhurl-console:policy-review .`
+(image `c6c5bd9d36c4`). Its non-root, read-only, network-disabled policy run passed all 10 instances and
+matched the current host Helm 4.2 report and Helm 3.19 report byte-for-byte: SHA-256
+`d6ed7f765cb238c38a146456906f02dfbabff3169761fc306073cc4c65a64b94`.
+Logs: `/tmp/swhurl-policy-p1-{v2,check,image}.log`; current runtime report:
+`/tmp/swhurl-policy-p1-container.json`. Existing OTel and Starlette deprecation warnings remain.
+Independent read-only rereview reproduced the six original failures against the fixes and found no remaining
+issues in this checkpoint; it also passed both Helm versions' focused suites, `make check-v2`, all three legacy
+fixtures and the all-instance Go gate. No CI, deployment or live verification is claimed by these offline checks.
+
+**Next gate:** choose the legacy retirement scope in the [single handoff](v2-status.md#remaining-work): retire
+the obsolete fixture policy/API (recommended), retaining the v1 model oracle and Go policy tests, or preserve
+its contracts in Go through a thin JSON reader. Python fixture decisions/API and shared OTel/ClickStack chart
+helpers remain until that choice is implemented. Do not call this a complete Python retirement or live
+admission enforcement.
 
 ## The team registry leaves Python (4 November 2026)
 

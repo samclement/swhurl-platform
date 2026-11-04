@@ -173,12 +173,10 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 takes=(Var('TARGET', 'kustomization/<name>|helmrelease/<ns>/<name>'),), dry_run=READS),
         Command('destroy-data', 'Delete a released claim or volume and its host data', CLUSTER, 'swhurl.lifecycle:main', ('destroy-data',),
                 (Var('TARGET', 'pvc/<ns>/<name>|pv/<name>'), Var('CONFIRM', '<TARGET>', env=True)), dry_run=READS),
-        Command('backup-mongodb', "Run ClickStack MongoDB's backup job now and show its result", CLUSTER,
-                'swhurl.backup_job:run_mongodb_main', dry_run=PLAN),
-        Command('backup-sqlite', "Run every app SQLite database's backup job now and show the results", CLUSTER,
-                'swhurl.backup_job:run_sqlite_main', dry_run=READS),
-        Command('restore-sqlite', "Restore an app's SQLite database from its newest backup (stops the app meanwhile)", CLUSTER,
-                'swhurl.sqlite_restore:main', takes=(APP, ENV, Var('CONFIRM', '<app>/<env>', env=True)), dry_run=READS),
+        Command('backup-mongodb', "Run ClickStack MongoDB's backup job now and show its result", CLUSTER, dry_run=PLAN),
+        Command('backup-sqlite', "Run every app SQLite database's backup job now and show the results", CLUSTER, dry_run=READS),
+        Command('restore-sqlite', "Restore an app's SQLite database with swhurl-v2 restore from its newest backup (stops the app meanwhile; needs Go 1.26.0)",
+                CLUSTER, takes=(APP, ENV, Var('CONFIRM', '<app>/<env>', env=True)), dry_run=READS),
     )),
     ('Offline checks', (
         Command('check', 'The offline checks in parallel; CI also renders the templates (check-templates)', LOCAL),
@@ -211,7 +209,6 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         _live_test('reloader', 'livetests.reloader:main', 'Prove Reloader restarts only opted-in workloads in watched namespaces'),
         _live_test('app-template', 'livetests.app_template:main', 'Deploy the generated app fixtures through Flux, check, remove'),
         _live_test('restore-mongodb', 'recovery:restore_test_mongodb', 'Restore the latest MongoDB backup into a throwaway namespace and check it'),
-        _live_test('restore-sqlite', 'livetests.restore_sqlite:main', "Back up a throwaway app's SQLite database, change it, restore it and check it"),
         _live_test('call-identity', 'livetests.call_identity:main',
                    "Prove a callee with no API token can verify a caller's audience-bound token (SKIP_ROTATION=true)"),
         _live_test('network-policy', 'livetests.network_policy:main',
@@ -242,10 +239,6 @@ INTERNAL = (
             run='swhurl.notifications.service:main', internal=True),
     Command('flux-wait', 'Wait for every Flux unit to apply the fetched Git revision (flux-reconcile ends with it)',
             run='swhurl.flux:main', internal=True),
-    Command('backup-job-sqlite', "The backup job's pod: copy, check, encrypt and publish one app's SQLite database",
-            run='swhurl.backup_job:sqlite_main', internal=True),
-    Command('backup-job-mongodb', "The backup job's pod: dump, encrypt and publish ClickStack's MongoDB",
-            run='swhurl.backup_job:mongodb_main', internal=True),
 )
 
 COMMANDS: dict[str, Command] = {command.name: command for commands in (*(found for _, found in SECTIONS), INTERNAL) for command in commands}

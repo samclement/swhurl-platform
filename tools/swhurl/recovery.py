@@ -2,7 +2,7 @@
 
     live-test-restore-mongodb  restore the newest backup into a throwaway namespace and check it
 
-The backup itself is the ``backup-mongodb`` CronJob (``backup_job``). The restore test downloads the
+The backup itself is the ``backup-mongodb`` CronJob (the backup image, images/backup/tool). The restore test downloads the
 newest complete backup from the platform's location (``platform.backup_s3_uri``) into a private temporary directory with the AWS CLI's own
 credentials (or takes BACKUP_FILE, with its metadata beside it), then streams ``age -d`` straight
 into ``mongorestore`` through an OS pipe that Python never reads, so plaintext never touches disk.

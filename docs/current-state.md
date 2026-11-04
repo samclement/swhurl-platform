@@ -32,6 +32,21 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## The backup and restore commands leave Python (4 November 2026)
+
+- **What changed:** `make restore-sqlite` runs `swhurl-v2 restore` on the instance's records at `HEAD` (a recipe
+  like `app-status`): `CONFIRM=<app>/<env>` is still checked before anything is built or read, `DRY_RUN=true` prints
+  v2's plan, and `FROM=<key>` with `MAX_AGE` replaces `BACKUP_FILE`. `make backup-mongodb` and `backup-sqlite` are
+  [`host/ops.sh`](../host/ops.sh) with the same jobs, waits, logs and dry runs. Deleted: `backup_job.py` (its pod
+  half had been dead since the backup image became Go), `sqlite_restore.py`, `live-test-restore-sqlite` (it drove
+  the Python restore through a v1-rendered throwaway) and the backup set's writing and publishing. Validate's
+  backup-image check called `age`, `aws` and Python, which the Go image no longer has; it failed on `3838cefa`
+  (27 October, after the push) and now checks `mongodump` and the binary's usage, both passing under podman
+  against `src-92042b331d76ba64`, the image the platform pins (this change does not rebuild it).
+- **Checked offline:** `make check`, `make check-v2` and the ops script's new tests (a fake `kubectl`: MongoDB's job
+  is not `backup-sqlite`'s, a failed Job fails the target after its log, the plans read at most the CronJob list).
+- **Live:** not yet run.
+
 ## Bulk status and revision evidence in Go (3 November 2026)
 
 - **What changed:** `status --all` shares single-instance observation decisions and batches the required lists.

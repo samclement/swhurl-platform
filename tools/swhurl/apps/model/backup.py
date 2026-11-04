@@ -1,5 +1,5 @@
 """Backups: an instance with a SQLite database gets a CronJob in its namespace that copies the database,
-encrypts it and publishes it to S3 (tools/swhurl/backup_job.py), and a Secret with the upload-only key,
+encrypts it and publishes it to S3 (the backup image, images/backup/tool), and a Secret with the upload-only key,
 which its unit substitutes from platform-backup's flux-system Secret. The job runs as the app's user with
 the app's claim mounted, no service-account token, and the instance's egress proxy port. Each runs
 every night at a minute its namespace picks (docs/operations.md#backups-and-recovery)."""

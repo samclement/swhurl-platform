@@ -32,7 +32,6 @@ IMPORTERS = {
     'tools/swhurl/console/proposal.py',
     'tools/swhurl/console/records.py',
     'tools/swhurl/dashboards.py',
-    'tools/swhurl/livetests/restore_sqlite.py',
     'tools/swhurl/livetests/team_scenario.py',
 }
 

@@ -486,7 +486,13 @@ jobs:
         run: |
           set -Eeuo pipefail
           image="$IMAGE@${{ steps.build.outputs.digest }}"
-          docker run --rm --entrypoint sh "$image" -c 'age --version && mongodump --version | head -1 && aws --version && python -c "import pymongo, swhurl.backup_job"'
+          # The image is one Go binary beside mongodump: no Python, AWS CLI or age CLI to call.
+          docker run --rm --entrypoint mongodump "$image" --version >"$RUNNER_TEMP/mongodump"
+          head -1 "$RUNNER_TEMP/mongodump"
+          if docker run --rm "$image" >/dev/null 2>"$RUNNER_TEMP/usage"; then
+            echo "swhurl-backup without a job ran instead of refusing" >&2; exit 1
+          fi
+          grep -q 'swhurl-backup backup-job-sqlite' "$RUNNER_TEMP/usage"
           {
             echo "### Published backup image"
             echo

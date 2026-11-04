@@ -69,7 +69,7 @@ func TestRestorePlanForAVerifiableArchive(t *testing.T) {
 	if report["kind"] != "v2-restore" || report["version"] != float64(2) {
 		t.Fatalf("envelope %v/%v", report["kind"], report["version"])
 	}
-	// A plan states that nothing ran, and keeps the v1 command that would.
+	// A plan states that nothing ran, and names the make target that would.
 	action := report["action"].(map[string]any)
 	if action["state"] != "not_attempted" || len(action["steps"].([]any)) != 0 || action["job"] != nil {
 		t.Fatalf("the action block of a plan is %v", action)
@@ -100,7 +100,8 @@ func TestRestorePlanForAVerifiableArchive(t *testing.T) {
 	}
 	steps := report["steps"].([]any)
 	command := steps[0].(map[string]any)["command"].(string)
-	if !strings.Contains(command, "make restore-sqlite APP=demo-orders ENV=staging CONFIRM=demo-orders/staging") {
+	if command != "make restore-sqlite APP=demo-orders ENV=staging CONFIRM=demo-orders/staging"+
+		" FROM=app-sqlite/demo-orders-staging/sqlite-20261026T071500Z.db.age" {
 		t.Fatalf("step %q", command)
 	}
 	if !strings.Contains(stderr, "restore: ready") {
@@ -110,6 +111,23 @@ func TestRestorePlanForAVerifiableArchive(t *testing.T) {
 
 // An archive without its metadata is not restorable, and a named archive older than the threshold is stale:
 // neither is silently traded for the newest.
+// TestRestoreStepRestoresWhatWasPlanned: the plan's step names the archive it chose and repeats a stated
+// --max-age, so running the step restores that archive even after a newer backup, and admits it again.
+func TestRestoreStepRestoresWhatWasPlanned(t *testing.T) {
+	spec := kernel.InstanceSpec{Application: "notes", Environment: "prod"}
+	for _, c := range []struct{ archive, maxAge, want string }{
+		{"", "", "make restore-sqlite APP=notes ENV=prod CONFIRM=notes/prod"},
+		{"app-sqlite/notes-prod/sqlite-20261026T071500Z.db.age", "",
+			"make restore-sqlite APP=notes ENV=prod CONFIRM=notes/prod FROM=app-sqlite/notes-prod/sqlite-20261026T071500Z.db.age"},
+		{"app-sqlite/notes-prod/sqlite-20261020T071500Z.db.age", "200h",
+			"make restore-sqlite APP=notes ENV=prod CONFIRM=notes/prod FROM=app-sqlite/notes-prod/sqlite-20261020T071500Z.db.age MAX_AGE=200h"},
+	} {
+		if got := restoreCommand(spec, c.archive, c.maxAge); got != c.want {
+			t.Errorf("restoreCommand(%q, %q) = %q, want %q", c.archive, c.maxAge, got, c.want)
+		}
+	}
+}
+
 func TestRestoreRefusesWhatItCannotVerify(t *testing.T) {
 	api := &api{namespace: "demo-orders-staging", digest: digestOf(t, "r43.json"), backup: true}
 	server := api.serve(t)
@@ -203,7 +221,7 @@ func TestRestorePerformsItWhenConfirmed(t *testing.T) {
 		steps[len(steps)-1].(map[string]any)["name"] != "available" {
 		t.Fatalf("the steps are %v", steps)
 	}
-	// The plan's v1 command is not in a document v2 performed.
+	// The plan's make target is not in a document v2 performed.
 	if report["steps"] != nil || report["note"] != restorePerformedNote {
 		t.Fatalf("a performed document still plans: %v", report["steps"])
 	}

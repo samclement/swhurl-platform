@@ -173,7 +173,7 @@ elif 'secret' in argv:
         """Every target whose DRY_RUN=true only prints a plan (commands.PLAN), so CI keeps no list of them."""
         targets = [name for name, command in commands.TARGETS.items()
                    if command.dry_run == commands.PLAN and not command.missing({})]
-        self.assertGreater(len(targets), 15)
+        self.assertGreater(len(targets), 14)
 
         def plan(target):
             return subprocess.run(['make', target, 'DRY_RUN=true'], cwd=ROOT, capture_output=True, text=True, env=self.env)
@@ -255,8 +255,9 @@ elif 'secret' in argv:
 
 
 class OpsScriptTests(unittest.TestCase):
-    """host/ops.sh behind make app-logs, app-reconcile, suspend and resume: the argv each tool gets, and refusals
-    that call none. The fake kubectl answers ``get`` with ``GET_RC`` (0: the object exists)."""
+    """host/ops.sh behind make app-logs, app-reconcile, suspend, resume, backup-mongodb and backup-sqlite: the argv
+    each tool gets, and refusals that call none. The fake kubectl answers ``get`` with ``GET_RC`` (0: the object
+    exists), lists ``CRONJOBS`` as the backup CronJobs and states ``JOB_STATE`` as a Job's true conditions."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -266,6 +267,9 @@ class OpsScriptTests(unittest.TestCase):
         for name in ('kubectl', 'flux'):
             (self.bin / name).write_text('#!/usr/bin/env bash\n'
                                          'printf "%s\\n" "$(basename "$0") $*" >> "$CALLS"\n'
+                                         '[[ $1 == get && $2 == cronjobs ]] && printf "%s\\n" ${CRONJOBS:-}\n'
+                                         '[[ $3 == get && $4 == job ]] && printf "%b\\n" "${JOB_STATE:-}"\n'
+                                         '[[ $3 == logs ]] && echo "[OK] published"\n'
                                          '[[ $1 == -n && $3 == get ]] && exit "${GET_RC:-0}"\nexit 0\n')
             (self.bin / name).chmod(0o700)
         self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}', CALLS=str(self.calls))
@@ -335,6 +339,40 @@ class OpsScriptTests(unittest.TestCase):
                 result, called = self.make('resume', f'TARGET={target}')
                 self.assertEqual((result.returncode, called), (2, []))
                 self.assertIn(message.replace('suspend', 'resume'), result.stderr)
+
+    def test_backup_sqlite_runs_every_app_job_but_mongodbs_and_shows_each_log(self):
+        cronjobs = 'notes-staging/notes-backup observability/backup-mongodb'
+        result, called = self.make('backup-sqlite', CRONJOBS=cronjobs, JOB_STATE='SuccessCriteriaMet\\nComplete')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(called[0], 'kubectl get cronjobs --all-namespaces -l platform.swhurl.com/backup=true -o '
+                                    'jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name}{"\\n"}{end}')
+        self.assertRegex(called[1], r'^kubectl -n notes-staging create job notes-backup-manual-\d{8}t\d{6}z '
+                                    r'--from=cronjob/notes-backup$')
+        self.assertEqual([call.split()[:5] for call in called[2:]],
+                         [['kubectl', '-n', 'notes-staging', 'get', 'job'], ['kubectl', '-n', 'notes-staging', 'logs',
+                                                                              called[1].split()[5].join(('job/', ''))]])
+        self.assertIn('  notes-staging: [OK] published\n[OK] notes-staging/notes-backup-manual-', result.stdout)
+        self.assertNotIn('backup-mongodb', ' '.join(called[1:]), "MongoDB's job is make backup-mongodb's")
+
+    def test_a_failed_backup_job_fails_the_target_after_its_log(self):
+        result, called = self.make('backup-mongodb', JOB_STATE='FailureTarget\\nFailed')
+        self.assertEqual(result.returncode, 2, 'make reports a failed recipe as 2')
+        self.assertRegex(called[0], '^kubectl -n observability create job backup-mongodb-manual-')
+        self.assertIn('  observability: [OK] published\n[ERROR] observability/backup-mongodb-manual-', result.stdout)
+        self.assertIn('failed\n', result.stdout)
+        self.assertIn('[ERROR] backup failed for observability/backup-mongodb-manual-', result.stderr)
+
+    def test_backup_plans_read_at_most_the_list_of_jobs(self):
+        result, called = self.make('backup-mongodb', 'DRY_RUN=true')
+        self.assertEqual((result.returncode, called), (0, []))
+        self.assertRegex(result.stdout, r'^Plan \(backup jobs\):\n  - kubectl -n observability create job '
+                                        r'backup-mongodb-manual-\d{8}t\d{6}z --from=cronjob/backup-mongodb, wait, show its log\n$')
+        result, called = self.make('backup-sqlite', 'DRY_RUN=true', CRONJOBS='a-prod/a-backup')
+        self.assertEqual((result.returncode, len(called)), (0, 1), 'only the list of CronJobs is read')
+        self.assertIn('--from=cronjob/a-backup, wait', result.stdout)
+        result, called = self.make('backup-sqlite', CRONJOBS='observability/backup-mongodb')
+        self.assertEqual((result.returncode, len(called)), (0, 1))
+        self.assertEqual(result.stdout, '[INFO] No app SQLite backup job: nothing to run.\n')
 
 
 if __name__ == '__main__':

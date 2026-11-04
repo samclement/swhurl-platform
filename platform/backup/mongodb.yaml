@@ -1,5 +1,5 @@
 # ClickStack's MongoDB, dumped, encrypted and published to S3 each night by the backup image
-# (tools/swhurl/backup_job.py). Running beside the host timer during the pilot (docs/plan.md section 25, H3).
+# (images/backup/tool).
 apiVersion: batch/v1
 kind: CronJob
 metadata:

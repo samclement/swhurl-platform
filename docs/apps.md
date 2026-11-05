@@ -761,8 +761,9 @@ It carries the runtime, telemetry, database, publications, secret names, minimum
 API path and document bytes; flags are generated with their identity-preserving JSON format. Absent
 optional facts are left out. The producer states `job` and secret names truthfully even though deployment
 refuses them. Its 120 KiB limit counts UTF-8 encoded JSON bytes; a refusal prints no label and names the
-source or documents. Existing pinned external build workflows still use the historical Python helper in
-the platform revision they pin: this platform-only retirement does not upgrade those workflows or pins.
+source or documents. The template workflows build `swhurl-v2` from an immutable platform revision and
+produce the declaration with it in every image build ([contract](iteration-2-plan.md#go-producer-adoption-by-template-workflows-approved-5-november-2026));
+apps made before those releases keep their pinned workflow until Copier updates it.
 Beside it the build states the commit it built from,
 in the standard `org.opencontainers.image.revision` label: the tag carries an abbreviation and a release states a
 full commit, so v2 refuses an image whose tag does not abbreviate the revision it states. Both labels come from the

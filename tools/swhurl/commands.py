@@ -227,8 +227,6 @@ INTERNAL = (
             run='swhurl.bots:main_deploy_v2', internal=True),
     Command('image-declaration', "CI: print the config label an image build writes from the app's swhurl.yaml",
             run='swhurl.apps.image_declaration:main', internal=True),
-    Command('notify-serve', "Serve the notify service: accept messages about apps and deliver them to their team's channels",
-            run='swhurl.notifications.service:main', internal=True),
     Command('flux-wait', 'Wait for every Flux unit to apply the fetched Git revision (flux-reconcile ends with it)',
             run='swhurl.flux:main', internal=True),
 )

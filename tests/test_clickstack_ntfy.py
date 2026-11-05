@@ -9,7 +9,6 @@ from test_clickstack import b64
 from test_dashboards import TOPIC, credentials
 
 from swhurl import ROOT, clickstack_ntfy
-from swhurl.notifications import service
 from swhurl.notifications.notice import Notice
 from swhurl.run import FakeRunner
 
@@ -32,16 +31,14 @@ class TemplateTests(unittest.TestCase):
         runner = credentials(FakeRunner())
         runner.on('kubectl', '-n', 'notify', 'get', 'secret', clickstack_ntfy.ALERT_SECRET,
                   stdout=json.dumps({'data': {'secret': b64('private-alert-secret')}}))
-        runner.on('kubectl', '-n', 'notify', 'get', 'secrets', stdout=json.dumps({'items': [
-            {'metadata': {'name': service.ALERT_SECRET}, 'data': {'secret': b64('private-alert-secret')}}]}))
         template = clickstack_ntfy.notify_destination(runner)['body']
-        for state, title, high in (('ALERT', 'orders/staging alert: error logs', True),
-                                   ('OK', 'orders/staging recovered: error logs', False)):
-            with self.subTest(state=state):
-                wanted = service.alert(runner, filled(template, state=state, **self.FIRED).encode())
-                self.assertEqual((wanted['app'], wanted['env']), ('orders', 'staging'))
-                self.assertEqual(wanted['notice'], Notice(
-                    title, '16 meets or exceeds 5\nTime Range (UTC): [Oct 11 5:58:00 PM - Oct 11 5:59:00 PM)', high, self.FIRED['link']))
+        # Go's TestClickStackWebhookBodiesAreReadAsMessages consumes the same fixed bodies.
+        bodies = json.loads((ROOT / 'v2/notify/testdata/clickstack-alerts.json').read_text())
+        self.assertEqual([body['state'] for body in bodies], ['ALERT', 'OK'])
+        for expected in bodies:
+            with self.subTest(state=expected['state']):
+                sent = json.loads(filled(template, state=expected['state'], **self.FIRED))
+                self.assertEqual(sent, expected)
 
     def test_the_platform_webhook_sends_what_a_notice_sends(self):
         template = clickstack_ntfy.destination(credentials(FakeRunner()))['body']

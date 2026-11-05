@@ -6,7 +6,7 @@ import subprocess
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
-from swhurl import ROOT, __main__, commands
+from swhurl import ROOT, __main__, commands, yamlio
 from swhurl.commands import COMMANDS, TARGETS, Command, Var
 from swhurl.run import CommandError
 
@@ -54,6 +54,18 @@ class SpecTests(unittest.TestCase):
         for module in ('cli', 'edit', 'keys', 'transitions'):
             with self.subTest(module=module):
                 self.assertFalse((ROOT / 'tools/swhurl/apps' / f'{module}.py').exists())
+
+    def test_notify_service_has_only_the_go_entrypoint(self):
+        self.assertNotIn('notify-serve', COMMANDS)
+        self.assertNotIn('notify-serve', TARGETS)
+        self.assertFalse((ROOT / 'tools/swhurl/notifications/service.py').exists())
+        manifest = yamlio.load((ROOT / 'platform/notify/helmrelease.yaml').read_text())
+        main = manifest['spec']['values']['controllers']['main']['containers']['main']
+        self.assertEqual(main['command'], ['swhurl-v2', 'notify-serve'])
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertEqual(__main__.main(['notify-serve']), 2)
+        self.assertIn('unknown command: notify-serve', err.getvalue())
 
     def test_platform_webhooks_have_only_the_dashboard_command_path(self):
         for obsolete in ('clickstack-notify-webhook', 'clickstack-ntfy-webhook'):

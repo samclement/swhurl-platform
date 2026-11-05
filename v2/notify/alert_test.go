@@ -3,6 +3,8 @@ package notify_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -16,6 +18,34 @@ var alert = map[string]any{"secret": secret, "state": "ALERT", "title": "🚨 sw
 	"link": "https://clickstack.example.test/dashboards/d1?from=1",
 	"body": "Group: \"arrayElement(ResourceAttributes, 'k8s.namespace.name'):orders-staging\"\n16 meets or exceeds 5\n" +
 		"Time Range (UTC): [Oct 11 5:58:00 PM - Oct 11 5:59:00 PM)\n"}
+
+// Python's test_clickstack_ntfy.py checks that the actual webhook template produces these same bodies.
+func TestClickStackWebhookBodiesAreReadAsMessages(t *testing.T) {
+	raw, err := os.ReadFile("testdata/clickstack-alerts.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bodies []json.RawMessage
+	if err := json.Unmarshal(raw, &bodies); err != nil || len(bodies) != 2 {
+		t.Fatalf("need firing and recovered webhook bodies: %v", err)
+	}
+	for i, body := range bodies {
+		decoded, err := notify.DecodeAlert(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request, err := decoded.Request("private-alert-secret")
+		if err != nil {
+			t.Fatal(err)
+		}
+		title := []string{"orders/staging alert: error logs", "orders/staging recovered: error logs"}[i]
+		want := notify.Notice{Title: title, High: i == 0, Link: alert["link"].(string),
+			Message: "16 meets or exceeds 5\nTime Range (UTC): [Oct 11 5:58:00 PM - Oct 11 5:59:00 PM)"}
+		if request.Instance != (notify.Instance{App: "orders", Env: "staging"}) || request.Notice != want {
+			t.Fatalf("webhook %d: %+v", i, request)
+		}
+	}
+}
 
 const notAnAppsAlert = "not an alert of an app: its name is swhurl:<app>:<preset> and its group the app's namespace"
 

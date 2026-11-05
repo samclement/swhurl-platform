@@ -14,7 +14,7 @@ from swhurl.run import Runner
 
 NAME = 'ntfy: platform'
 DESCRIPTION = 'ClickStack alerts to the platform ntfy topic'
-ALERT_SECRET = 'notify-alerts'  # the notify service compares against the same Secret (notifications/service.py)
+ALERT_SECRET = 'notify-alerts'  # the Go notify service compares against the same Secret (v2/notify/alert.go)
 
 
 def destination(runner: Runner) -> dict:

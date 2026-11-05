@@ -32,11 +32,33 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## The Python notify service is retired (5 November 2026)
+
+- **Approved scope:** deleted the unused 375-line Python service, its two-line internal command entry and its
+  311-line service-only test file after the live Go cutover. The Go service retains all 17 original test cases.
+  The checker, heartbeat and their shared notice/delivery modules and tests remain unchanged.
+- **Boundary checks:** the new command-inventory regression test was first observed failing against the Python
+  entry, then passed after deletion; it checks that the module and internal command are absent, the obsolete
+  Python CLI refuses `notify-serve`, and the HelmRelease selects Go. The existing ClickStack webhook-template
+  test now compares the producer's firing/recovered output with a [shared fixture](../v2/notify/testdata/clickstack-alerts.json);
+  [Go tests](../v2/notify/alert_test.go) consume those same bodies and verify the resulting messages. No Python
+  service parser or replacement public CLI was kept just for that test.
+- **Offline verification:** `make check` passed (671 tooling tests, 98 codegraph tests; docs zero errors and
+  warnings); `make check-v2`, host/fixture shell syntax and `git diff HEAD --check` passed. Focused command,
+  webhook and shared checker suites passed (19, 3 and 43 tests). Independent read-only review found no issues.
+  No exported Go API or complexity-budget change is part of this retirement.
+- **Delivery:** deletion is implemented and validated; CI, the rebuilt console image and post-rebuild live
+  verification are pending. The application protocol, RBAC, routes, Secrets and version-1 outbox are unchanged.
+- **Rollback:** after an image built from this deletion is deployed, reverting only the Go command is not a
+  Python rollback: that image no longer contains the service. Restore both a pre-retirement image such as
+  `src-043f8c6e6233b3ab` and `[python, -m, swhurl, notify-serve]` through Git. No state migration/reset is needed.
+
 ## The notify service switches to Go (5 November 2026)
 
 - **Approved cutover:** the HelmRelease selects `[swhurl-v2, notify-serve]` in the already-built console image
   `src-043f8c6e6233b3ab`. The command is the only manifest change: replicas, `Recreate` strategy, RBAC, routes,
-  Secrets, health checks and version-1 outbox are unchanged. The unused Python service stays for rollback.
+  Secrets, health checks and version-1 outbox were unchanged. Python was retained at cutover; the
+  [subsequent retirement](#the-python-notify-service-is-retired-5-november-2026) changes the rollback prerequisite.
 - **Implementation delivery:** `10b90c44` passed every Validate job and Render; `9603766d` pinned the new image.
   Reconciliation and `make verify-platform` passed before the command switch while Python was still serving.
 - **Live:** `6285d4a9` switched the command; Validate `42085207060` and Render `42085207088` passed.
@@ -54,11 +76,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   APP=demo-shop ENV=staging` passed; `swhurl-v2 status --all` reported all ten instances healthy. The 18:36 UTC
   scheduled checker and dashboard jobs succeeded on `src-043f8c6e6233b3ab`. Go JSON logs showed four accepted
   requests (two retries), two deliveries, three expected refusals and zero delivery-pass failures.
-- **Rollback and remaining gate:** revert `6285d4a9` to restore Python without resetting the outbox or rotating
-  a Secret. The [approved contract](iteration-2-plan.md#12-the-notify-service-in-go-approved-5-november-2026)
-  keeps Python deletion separate. SIGTERM interruption with an in-flight copy, forced projected-token rotation,
+- **Rollback at cutover:** the then-current image still included Python, so reverting the `6285d4a9` command
+  switch could restore it without resetting the outbox or rotating a Secret. After the
+  [subsequent retirement](#the-python-notify-service-is-retired-5-november-2026), rollback requires the old image
+  as well. The [approved contract](iteration-2-plan.md#12-the-notify-service-in-go-approved-5-november-2026)
+  keeps these steps separate. SIGTERM interruption with an in-flight copy, forced projected-token rotation,
   a real correctly signed ClickStack webhook and a new spontaneous checker incident were not induced; their
-  corresponding offline tests remain. The next gate is approval of the unused Python service's deletion.
+  corresponding Go tests remain; the checker’s shared Python delivery tests also remain.
 
 ## The notify service in Go, offline (5 November 2026)
 

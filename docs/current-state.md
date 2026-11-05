@@ -61,9 +61,21 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Independent review:** no code regressions found; 76 focused tests, the real whole-tree command,
   explicit-path refusal and Go policy/adapter tests passed. Two stale fixture-policy promises in console
   and operations documentation were corrected to link to the canonical app-policy contract.
-- **Delivery:** deployment and live verification remain to be recorded. No cluster or credentials changed
-  during implementation. The next gate after delivery is to approve the next console-free Python retirement
-  slice; no implementation scope for it is chosen here.
+- **Final delivery validation:** `make check` and `REQUIRE_HELM=1 make check-v2` passed again after
+  fast-forwarding the independent demo-notifier deployment (`69eda2bf`); no app records were overwritten.
+  The staged whitespace check caught an extra trailing blank line in the relocated helper; it was removed
+  before committing. `make check-docs` passed on the clean committed tree.
+- **CI and live (5 November 2026, verified at 02:18 UTC):** implementation `d5c844c8` passed
+  [Validate 41953882490](https://github.com/samclement/swhurl-platform/actions/runs/41953882490).
+  The deploy job pinned console/notify image `src-481e18f9707cee5e` in `93f8887b`.
+  `make flux-reconcile` applied that revision, `make verify-platform` passed, and all ten explicit
+  `make app-status` checks reported Healthy with matching applied revisions. Both new-image checker Jobs
+  succeeded: `console-dashboards-29897418` and `console-notifications-29897418`, completed at 02:18:17 UTC.
+  Live effects were the ordinary console/notify rollout; no credentials, backup destinations or app records
+  changed in this slice. No console PR submission or deliberately failing live app was exercised.
+  Existing GitHub Node.js action-runtime and runner-image migration warnings remain outside this scope.
+- **Next gate:** approve the next console-free Python retirement slice; no implementation scope for it
+  is chosen here. Go owns policy decisions, but Python entrypoint and chart-acquisition glue remain.
 
 ## App-policy Helm boundary approved (4 November 2026)
 

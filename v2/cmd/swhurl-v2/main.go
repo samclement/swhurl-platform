@@ -67,6 +67,7 @@ const usage = `usage:
   swhurl-v2 team --records DIR --team TEAM --action ACTION --profile PROFILE.json --out DIR \
       [--description TEXT] [--rename NEW] [--transport ntfy]
   swhurl-v2 workstreams --repo-root DIR
+  swhurl-v2 notify-serve [--listen ADDR]
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
 platform's tag policy, and writes the record pair and the compiled files under --out. With --records it reads
@@ -379,6 +380,7 @@ var commands = map[string]func(cli, request) int{
 	"restore":           cli.restore,
 	"team":              cli.team,
 	"workstreams":       cli.workstreams,
+	"notify-serve":      cli.notifyServe,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -398,6 +400,7 @@ type request struct {
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
 	action, description, rename, transport             string
+	listen                                             string
 	rotate, check, json, inCluster, all                bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
@@ -475,6 +478,11 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 	}
 	if command == "workstreams" {
 		flags.Var(&once{value: &r.repoRoot}, "repo-root", "the top of the checkout whose workstream record is checked")
+		return
+	}
+	if command == "notify-serve" {
+		r.listen = defaultListen
+		flags.Var(&once{value: &r.listen}, "listen", "the address to serve on (default "+defaultListen+")")
 		return
 	}
 	if r.registerRecordFlags(flags, command) {
@@ -741,6 +749,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"edit":           (*request).editNamed,
 	"team":           (*request).teamNamed,
 	"workstreams":    func(r *request) []string { return []string{r.repoRoot} },
+	"notify-serve":   func(r *request) []string { return []string{r.listen} },
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one

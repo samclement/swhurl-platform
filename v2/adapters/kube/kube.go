@@ -88,6 +88,16 @@ func Client(credentials Credentials) (*http.Client, error) {
 // A non-empty token is sent with every request as a bearer token. The endpoint must be https, so a
 // token is never sent in the clear; an endpoint without one is refused rather than downgraded.
 func New(endpoint string, client *http.Client, token string) (Reader, error) {
+	api, err := NewAPI(endpoint, client, token)
+	if err != nil {
+		return nil, err
+	}
+	return api, nil
+}
+
+// NewAPI builds one adapter implementing Reader, Writer, Reviewer and Data over the supplied client.
+// The caller owns the client's timeout and transport lifecycle; endpoint validation and redirect refusal match New.
+func NewAPI(endpoint string, client *http.Client, token string) (*API, error) {
 	base, err := url.Parse(endpoint)
 	if err != nil || base.Host == "" {
 		return nil, &Error{RefusedRequest, "endpoint", "not_a_url"}
@@ -203,6 +213,11 @@ func (a answer) reason() string {
 // get performs one GET. Only the server's answer, or the failure to get one, is reported: this
 // adapter makes no decision about what the answer means.
 func (a *API) get(ctx context.Context, path string, query url.Values) answer {
+	return a.getBounded(ctx, path, query, maxBytes)
+}
+
+// getBounded is get with its own bound on the answer's size.
+func (a *API) getBounded(ctx context.Context, path string, query url.Values, limit int) answer {
 	address := *a.base
 	address.Path = strings.TrimSuffix(address.Path, "/") + path
 	address.RawQuery = query.Encode()
@@ -219,11 +234,11 @@ func (a *API) get(ctx context.Context, path string, query url.Values) answer {
 		return answer{why: failureReason(err)}
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
+	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
 	if err != nil {
 		return answer{why: failureReason(err)}
 	}
-	if len(body) > maxBytes {
+	if len(body) > limit {
 		return answer{why: observe.ReasonTooLarge}
 	}
 	return answer{status: response.StatusCode, body: body}

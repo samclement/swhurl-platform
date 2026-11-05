@@ -1053,3 +1053,72 @@ Job GET per database (including unlabeled Jobs, missing owners, failed versus ab
 Measure cold and warm page reads against the current console before deployment; report the numbers, not a presumed speedup. Live: compare every
 instance, test signed-out redirects and signed-in pages/forms, and prove a promotion is refused while its own
 change is unapplied without merging a promotion or creating a repository as part of the test.
+
+## 12. The notify service in Go (approved 5 November 2026)
+
+The operator approved porting the [notify service](services.md#notify-service) to `swhurl-v2 notify-serve`, run from
+the console image it already uses. **Its wire contract and its outbox stay as they are**: the checker, every app and
+ClickStack's webhook keep calling it unchanged, and the Go service sends what the Python one accepted. Everything else
+is v2's design.
+
+**Kept exactly** (each case of the Python service's tests is a Go test):
+
+- `POST /v1/notify` and `POST /v1/alert`, `GET /healthz` (`ok`); every status, `{"error": ...}` reason and
+  `{"channels": [...]}` answer; the 16 KiB body, 250-character title, 3,500-character message, 300-character key and
+  500-character `https://` click limits, counted in characters; the field order of validation, so the same input
+  gets the same reason.
+- Who a caller is: a `TokenReview` for the audience `notify` and nothing from the body; the checker
+  (`system:serviceaccount:console:notification-check`) names the app, and an app's own service account sends as
+  itself, with `<app>/<env>: ` on its title and a random key when it gives none, at most 30 accepted an hour per
+  instance (in memory: a restart forgets). Anyone else is 403 and logged by name.
+- Alerts: the secret in the body, compared in constant time with `notify/notify-alerts`; the app from
+  `swhurl:<app>:<preset>` and the environment from the alert's namespace group; the preset's label; the same key.
+- The outbox: `notify/notify-outbox` key `state.json`, version 1, written before 202 and before any send; one entry
+  per channel, each queued once per key; at most 500 pending and 700,000 bytes; a delivered or abandoned key
+  remembered two hours; a channel that fails is retried for two hours without holding up the others; a delivery pass
+  on every accept and every 30 seconds; at least once. An outbox of another version is refused, never reset.
+- Routes, a namespace's team label, channel addresses and the webhook secret are read when they are used, never
+  cached; the service's RBAC is unchanged.
+
+**Boundaries.**
+
+| Layer | Owns |
+| --- | --- |
+| `notify` (pure) | Decoding and validating a message or an alert, the sender rule, the rate limit over supplied times, the outbox's state and its transitions (accept, expire, delivered, failed), the ntfy message. Time and the random key are arguments |
+| `adapters/kube` | Two new ports beside `Reader` and `Writer`. `Reviewer` asks whose token a caller presented. `Data` lists ConfigMaps and Secrets by field or label selector in one namespace and sets one ConfigMap key under a field manager. `Reader` still never reads a Secret, so an observing use case cannot reach one |
+| `adapters/ntfy` | Publishes one message to one HTTPS topic address: a JSON post, a 10-second limit, no redirect, and an error that never names the address or the answer, since the address is the credential |
+| `orchestration` | The service's use cases over those ports: accept a message, accept an alert, run one delivery pass. It holds the loaded outbox and its lock, not package state |
+| `cmd/swhurl-v2` | `notify-serve [--listen ADDR]`: the HTTP server, JSON log lines, the delivery loop, and a new API connection from the pod's mounted ServiceAccount for each request and pass, so the kubelet's token rotation is followed |
+
+What the service reads is narrower than the Python one: Secrets by label (`platform.swhurl.com/notify-transport=ntfy`)
+or by name (`notify-alerts`), so Helm's release record is never fetched. A `SIGTERM` ends the process without a
+graceful drain (v2 code may not name `syscall`); a cut-off request was not answered 202 and is retried by its caller,
+and a send cut off before its save is sent again, which at least once allows.
+
+**Step 1 is implemented offline:** the pure [`notify`](../v2/notify) package, Kubernetes
+`Reviewer`/`Data` ports, [`ntfy`](../v2/adapters/ntfy) publisher with real/fake contract suites, use cases and
+[`notify-serve`](../v2/cmd/swhurl-v2/notify.go) command exist. The Python service remains unchanged and live.
+[Handler tests](../v2/cmd/swhurl-v2/notify_test.go) exercise the Python service's acceptance and delivery cases;
+[use-case tests](../v2/orchestration/notify_test.go) verify persistence before sending, retry and restart.
+The API baseline intentionally includes these ports, pure types and use cases, not budget exceptions.
+`kube.NewAPI` lets the command supply one owned client for all three ports without casting a `Reader` to a
+secret-reading port. The service gives that client a ten-second round-trip timeout and disables idle connection
+retention; credentials are still read anew for each request/pass. ConfigMap-key writes use the Data port's
+4 MiB response bound because JSON escaping can make a legal 700,000-byte outbox exceed the writer's 1 MiB bound;
+other writes keep that original bound.
+
+**Deliberate differences:** Go refuses newline-suffixed app names that Python's regex accidentally admitted;
+refusal log lines replace uvicorn's access log; Go's standard handler supplies wrong-method/path answers.
+A successful empty channel-Secret list is read once per pass rather than once per copy. Unlike Python's
+pass-local retry list, Go keeps failed copies in every subsequent saved checkpoint, so a mid-pass stop cannot
+lose an earlier retry. Real TokenReview,
+RBAC, ntfy delivery, the existing live outbox and SIGTERM remain for the live gate.
+
+**Remaining delivery, separate commits.** The operator approved delivery of step 1 and the live cutover on
+5 November 2026; Python deletion remains a separate step. After the offline implementation's image is built,
+the cutover sets the
+HelmRelease's command to `[swhurl-v2, notify-serve]`, then runs a live acceptance test through a port-forward: no
+token and a forged one get 401; a checker token (`kubectl create token`, ten minutes) is accepted for a team with a
+channel, a repeat of its key gets no channel, and the copy arrives; a wrong webhook secret gets 401; the outbox
+empties; the checker's next real messages are accepted. A revert of this commit is the rollback. (3) The Python
+service, its command entry and its tests are deleted.

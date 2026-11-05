@@ -141,8 +141,14 @@ func (a *API) writableResourceOf(ref observe.Ref, method string) (resource, erro
 // writer's, not a reader's: a write has no absence.
 func (a *API) exchange(ctx context.Context, method, path string, query url.Values, body []byte,
 	contentType string) ([]byte, *Error) {
+	return a.exchangeBounded(ctx, method, path, query, body, contentType, maxBytes)
+}
+
+// exchangeBounded is exchange with an operation-specific bound on the response body.
+func (a *API) exchangeBounded(ctx context.Context, method, path string, query url.Values, body []byte,
+	contentType string, limit int) ([]byte, *Error) {
 	address := *a.base
-	address.Path = path
+	address.Path = strings.TrimSuffix(address.Path, "/") + path
 	address.RawQuery = query.Encode()
 	request, err := http.NewRequestWithContext(ctx, method, address.String(), bytes.NewReader(body))
 	if err != nil {
@@ -159,11 +165,11 @@ func (a *API) exchange(ctx context.Context, method, path string, query url.Value
 		return nil, &Error{Failed, "write", failureReason(err)}
 	}
 	defer response.Body.Close()
-	answer, err := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
+	answer, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
 	if err != nil {
 		return nil, &Error{Failed, "write", failureReason(err)}
 	}
-	if len(answer) > maxBytes {
+	if len(answer) > limit {
 		return nil, &Error{Failed, "write", observe.ReasonTooLarge}
 	}
 	if response.StatusCode >= 200 && response.StatusCode < 300 {

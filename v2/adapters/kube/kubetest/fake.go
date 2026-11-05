@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
@@ -39,10 +40,25 @@ type Fake struct {
 	Log       string
 	Selectors []string // the selectors it was asked for
 	Refuse    error    // returned instead of an answer, after the call is recorded
+	// Objects are further objects Read answers as present. With Objects set, any other object of a kind the adapter
+	// reads, and the scenario does not name, is absent, as the API server's 404 says.
+	Objects map[observe.Ref][]byte
+	// Tokens is what Review answers for each token; the API server vouches for no other.
+	Tokens map[string]kube.TokenReview
+	// ConfigMapData and SecretData are each namespace's ConfigMaps and Secrets; SetConfigMapKey changes the first.
+	ConfigMapData map[string][]kube.ConfigMap
+	SecretData    map[string][]kube.Secret
+	// Failing makes one operation fail, after it is recorded: "review", "configmaps <selector>",
+	// "secrets <selector>" or "set <name>", where a selector is its Name or its Labels.
+	Failing map[string]error
+	// Calls is every Review, list and key set, as its operation.
+	Calls []string
 }
 
 var _ kube.Reader = (*Fake)(nil)
 var _ kube.Writer = (*Fake)(nil)
+var _ kube.Reviewer = (*Fake)(nil)
+var _ kube.Data = (*Fake)(nil)
 
 // New returns a fake that answers from the scenario.
 func New(answers Answers) *Fake { return &Fake{Answers: answers} }
@@ -115,17 +131,41 @@ func (f *Fake) Read(_ context.Context, ref observe.Ref) (observe.Read, error) {
 	if ref.Name == "" {
 		return observe.Read{}, &kube.Error{Code: kube.RefusedRequest, Subject: "resource", Reason: "name_required"}
 	}
-	switch ref {
-	case f.Answers.Object:
-		return observe.Read{Ref: ref, Status: observe.Present, Object: bytes.Clone(f.Answers.Document)}, nil
-	case f.Answers.Missing:
+	if document, ok := f.Objects[ref]; ok {
+		return observe.Read{Ref: ref, Status: observe.Present, Object: bytes.Clone(document)}, nil
+	}
+	if read, ok := f.scripted(ref); ok {
+		return read, nil
+	}
+	if f.Objects != nil && readable(ref) {
 		return observe.Read{Ref: ref, Status: observe.Absent, Reason: observe.ReasonNotFound}, nil
-	case f.Answers.Failed:
-		return observe.Read{Ref: ref, Status: observe.Unavailable, Reason: observe.ReasonForbidden}, nil
-	case f.Answers.Malformed, f.Answers.Mismatched:
-		return observe.Read{Ref: ref, Status: observe.Unavailable, Reason: observe.ReasonMalformed}, nil
 	}
 	return observe.Read{}, &kube.Error{Code: kube.RefusedRequest, Subject: "resource", Reason: "unsupported_kind"}
+}
+
+// readable is whether the adapter reads an object of this kind.
+func readable(ref observe.Ref) bool {
+	group, _, grouped := strings.Cut(ref.APIVersion, "/")
+	if !grouped {
+		group = ""
+	}
+	stated, err := kube.RefOf(group, ref.Kind, ref.Namespace, ref.Name)
+	return err == nil && stated.APIVersion == ref.APIVersion
+}
+
+// scripted is the scenario's answer about one object, if it names it.
+func (f *Fake) scripted(ref observe.Ref) (observe.Read, bool) {
+	switch ref {
+	case f.Answers.Object:
+		return observe.Read{Ref: ref, Status: observe.Present, Object: bytes.Clone(f.Answers.Document)}, true
+	case f.Answers.Missing:
+		return observe.Read{Ref: ref, Status: observe.Absent, Reason: observe.ReasonNotFound}, true
+	case f.Answers.Failed:
+		return observe.Read{Ref: ref, Status: observe.Unavailable, Reason: observe.ReasonForbidden}, true
+	case f.Answers.Malformed, f.Answers.Mismatched:
+		return observe.Read{Ref: ref, Status: observe.Unavailable, Reason: observe.ReasonMalformed}, true
+	}
+	return observe.Read{}, false
 }
 
 // List answers the pod list, and refuses a request the real adapter would also refuse.

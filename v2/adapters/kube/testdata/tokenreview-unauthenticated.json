@@ -1,0 +1,7 @@
+{
+  "kind": "TokenReview",
+  "apiVersion": "authentication.k8s.io/v1",
+  "metadata": {"creationTimestamp": null},
+  "spec": {"token": "forged-token", "audiences": ["notify"]},
+  "status": {"user": {}, "error": "[invalid bearer token, square/go-jose: error in cryptographic primitive]"}
+}

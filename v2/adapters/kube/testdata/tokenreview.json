@@ -1,0 +1,19 @@
+{
+  "kind": "TokenReview",
+  "apiVersion": "authentication.k8s.io/v1",
+  "metadata": {"creationTimestamp": null},
+  "spec": {"token": "checker-token", "audiences": ["notify"]},
+  "status": {
+    "authenticated": true,
+    "user": {
+      "username": "system:serviceaccount:console:notification-check",
+      "uid": "8d6f4b2a-0c1e-4f3a-9b5d-7e9f1a3c5e7a",
+      "groups": ["system:serviceaccounts", "system:serviceaccounts:console", "system:authenticated"],
+      "extra": {
+        "authentication.kubernetes.io/pod-name": ["console-notifications-29372040-x7k2p"],
+        "authentication.kubernetes.io/pod-uid": ["2b4d6f8a-1c3e-4a5b-9d7f-0e2c4a6b8d0f"]
+      }
+    },
+    "audiences": ["notify"]
+  }
+}

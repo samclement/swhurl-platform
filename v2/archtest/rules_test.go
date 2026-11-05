@@ -67,6 +67,7 @@ var Layers = map[string]int{
 	"events":                         0,
 	"kernel":                         0,
 	"legacy":                         0,
+	"notify":                         0,
 	"observe":                        0,
 	"policy":                         0,
 	"shadow":                         0,
@@ -79,6 +80,8 @@ var Layers = map[string]int{
 	"adapters/files/filestest":       1,
 	"adapters/kube":                  1,
 	"adapters/kube/kubetest":         1,
+	"adapters/ntfy":                  1,
+	"adapters/ntfy/ntfytest":         1,
 	"adapters/registry":              1,
 	"adapters/registry/registrytest": 1,
 	"adapters/s3":                    1,
@@ -99,16 +102,17 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"calls", "events", "kernel", "legacy", "observe", "policy", "shadow", "workstreams"}
+var Pure = []string{"calls", "events", "kernel", "legacy", "notify", "observe", "policy", "shadow", "workstreams"}
 
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
 // environment, files, network or processes. `crypto/ed25519` derives a key pair from a seed the caller supplies
 // (its own key generation, which draws randomness, is never called), and `encoding/base32` and
-// `encoding/binary` state the nkeys text form. `time` is here for the timestamps a caller supplies — parsing,
+// `encoding/binary` state the nkeys text form. `crypto/subtle` compares the notify webhook's secret with the one the
+// caller read, in constant time. `time` is here for the timestamps a caller supplies — parsing,
 // formatting and comparing them — not for the clock, which pureBannedCalls still refuses. Adding one is a
 // reviewed change to this list.
 var PureImports = []string{
-	"bytes", "crypto/ed25519", "crypto/sha256", "encoding/base32", "encoding/binary", "encoding/hex",
+	"bytes", "crypto/ed25519", "crypto/sha256", "crypto/subtle", "encoding/base32", "encoding/binary", "encoding/hex",
 	"encoding/json", "errors", "fmt", "maps", "math", "regexp", "slices", "sort", "strconv", "strings", "time",
 	"unicode", "unicode/utf8",
 }

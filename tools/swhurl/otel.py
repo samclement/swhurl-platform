@@ -24,8 +24,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, logs, yamlio
-from swhurl.apps import policy
+from swhurl import ROOT, charts, logs, yamlio
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
@@ -65,7 +64,7 @@ def collector(runner: Runner, version: str, cache: Path = CACHE) -> Path:
 def render(runner: Runner, release: dict) -> tuple[dict, dict[str, str], str]:
     """``(collector config, the pod's environment for validation, image tag)`` for one HelmRelease."""
     spec = release['spec']['chart']['spec']
-    chart = policy.chart_dir(spec['chart'], spec['version'], policy.helm_repositories()[spec['sourceRef']['name']], runner)
+    chart = charts.chart_dir(spec['chart'], spec['version'], charts.helm_repositories()[spec['sourceRef']['name']], runner)
     with tempfile.NamedTemporaryFile('w', suffix='.yaml') as values:
         yaml.safe_dump(release['spec'].get('values', {}), values)
         values.flush()

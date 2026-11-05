@@ -217,13 +217,12 @@ class RelationTests(unittest.TestCase):
         self.save(world)
         self.assertIn(f'{each}: has no NATS key; a render creates it', generated.problems(self.root))
 
-    def test_evaluator_is_standard_library_only_and_policy_keeps_no_ruamel_boundary(self):
-        for imports, forbidden in (('from swhurl.apps.model import relations', '("yaml", "ruamel")'),
-                                   ('from swhurl.apps import policy', '("ruamel",)')):
-            result = subprocess.run([sys.executable, *(['-S'] if 'relations' in imports else []), '-c',
-                                     f'import sys; {imports}; assert not any(n.startswith({forbidden}) for n in sys.modules)'],
-                                    capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
+    def test_evaluator_is_standard_library_only(self):
+        result = subprocess.run([sys.executable, '-S', '-c',
+                                 'import sys; from swhurl.apps.model import relations; '
+                                 'assert not any(n.startswith(("yaml", "ruamel")) for n in sys.modules)'],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class IntentTests(unittest.TestCase):

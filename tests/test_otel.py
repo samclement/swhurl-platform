@@ -34,7 +34,7 @@ class OtelCheckTests(unittest.TestCase):
         runner = FakeRunner().on('helm', 'template', stdout=rendered())
         release = {'metadata': {'name': 'otel', 'namespace': 'logging'}, 'spec': {'values': {}, 'chart': {'spec': {
             'chart': 'opentelemetry-collector', 'version': '0.174.0', 'sourceRef': {'name': 'open-telemetry'}}}}}
-        with mock.patch.object(otel.policy, 'chart_dir', return_value=Path('/chart')):
+        with mock.patch.object(otel.charts, 'chart_dir', return_value=Path('/chart')):
             config, env, version = otel.render(runner, release)
         self.assertEqual((config, version), (CONFIG, '0.161.0'))
         self.assertEqual(env, {'GOMEMLIMIT': '152MiB', 'MY_POD_IP': otel.PLACEHOLDER})

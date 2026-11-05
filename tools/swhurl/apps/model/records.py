@@ -1,6 +1,6 @@
 """App, Release and Settings: plain values, parsed strictly from the documents that will hold them.
 
-Standard library only (no ruamel.yaml, no I/O), so the offline policy check may import it. ``parse``
+Standard library only (no ruamel.yaml, no I/O), so the pure fixture evaluator may import it. ``parse``
 takes the document as loaded YAML and refuses an unknown version or field; ``document`` gives it
 back. Optional fields are left out of a document when empty, so a record and its document round-trip.
 """
@@ -217,7 +217,7 @@ class Grants:
     allows: tuple[str, ...] = ()  # <app> or team:<team>, this environment only
     subscriptions: tuple[str, ...] = ()  # <app>.<event>
     egress: tuple[str, ...] = ()  # host:port grants
-    exceptions: str = ''  # reviewed '<rule>=<reason>', comma-separated (docs/apps.md#the-app-policy)
+    exceptions: str = ''  # legacy reviewed '<rule>=<reason>'; retained by the fixture oracle
 
 
 @dataclass(frozen=True)

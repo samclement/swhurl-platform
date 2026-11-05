@@ -2,8 +2,8 @@
 result with what is committed, byte for byte (``same``, which the v1 record writer also uses). Where they
 differ, the parsed documents show where.
 
-A difference is a hand edit, or a record changed without rendering: make check-apps fails on it, and
-the v1 record writer writes what the records render.
+A difference is a hand edit, or a record changed without rendering: the fixture oracle tests catch it,
+and the v1 record writer writes what the records render.
 """
 from __future__ import annotations
 

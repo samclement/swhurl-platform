@@ -1,6 +1,6 @@
-"""The app contract: rules the generator writes and the policy check enforces.
+"""Shared v1 generator and sizing rules for the retained model and Python consumers.
 
-Both sides import these, so generated output and the check cannot drift apart.
+App-policy decisions over compiled v2 instances belong to Go, not this module.
 """
 from __future__ import annotations
 
@@ -61,15 +61,14 @@ def teams(root: Path = ROOT) -> dict[str, str]:
     return {}
 
 
-# Isolation: every instance carries a ResourceQuota and a NetworkPolicy, generated here so the
-# generator, the edit commands and the policy check agree.
+# Legacy isolation primitives shared by the v1 generator, sizing helpers and model oracle.
 QUOTA_FILE = 'resourcequota.yaml'
 NETWORK_POLICY_FILE = 'networkpolicy.yaml'
 ISOLATION_FILES = (QUOTA_FILE, NETWORK_POLICY_FILE)
 # One size for every instance namespace: room for Scale's maximum replicas at template sizes.
 QUOTA = {'pods': '14', 'requests.cpu': '2', 'requests.memory': '2Gi', 'limits.memory': '4Gi'}
 # What else runs in an instance's namespace beside the app: the SQLite backup job (apps/model/backup.py) or v2's restore
-# job, and cert-manager's HTTP-01 solver. The quota check leaves this free.
+# job, and cert-manager's HTTP-01 solver. The retained v1 sizing helpers leave this free.
 QUOTA_HEADROOM = {'pods': '2', 'requests.cpu': '20m', 'requests.memory': '96Mi', 'limits.memory': '320Mi'}
 TRAEFIK = {'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'kube-system'}},
            'podSelector': {'matchLabels': {'app.kubernetes.io/name': 'traefik'}}}

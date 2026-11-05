@@ -1,0 +1,46 @@
+{
+  "kind": "ConfigMapList",
+  "apiVersion": "v1",
+  "metadata": {"resourceVersion": "48211907"},
+  "items": [
+    {
+      "metadata": {
+        "name": "notification-routes",
+        "namespace": "notify",
+        "uid": "6f1d2c1e-9a0b-4c55-8d0e-2b7f4a9c1e01",
+        "resourceVersion": "48190233",
+        "creationTimestamp": "2026-10-11T09:12:40Z",
+        "labels": {
+          "kustomize.toolkit.fluxcd.io/name": "platform-notify",
+          "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+        }
+      },
+      "data": {"routes.json": "{\"channels\":{\"payments\":{\"transport\":\"ntfy\"}},\"teams\":{\"payments\":[\"payments\"]}}"}
+    },
+    {
+      "metadata": {
+        "name": "notify-outbox",
+        "namespace": "notify",
+        "uid": "0b9e7c55-31d2-4e8f-a6c4-77d0e1f2a3b4",
+        "resourceVersion": "48211880",
+        "creationTimestamp": "2026-10-11T09:12:40Z",
+        "labels": {
+          "kustomize.toolkit.fluxcd.io/name": "platform-notify",
+          "kustomize.toolkit.fluxcd.io/namespace": "flux-system"
+        },
+        "annotations": {"kustomize.toolkit.fluxcd.io/ssa": "Merge"}
+      },
+      "data": {"state.json": "{\"version\":1,\"seen\":{},\"pending\":[]}"}
+    },
+    {
+      "metadata": {
+        "name": "kube-root-ca.crt",
+        "namespace": "notify",
+        "uid": "c3a1f0de-5b6e-4f7a-9c8d-1e2f3a4b5c6d",
+        "resourceVersion": "112",
+        "creationTimestamp": "2026-10-11T09:12:39Z"
+      },
+      "data": {"ca.crt": "-----BEGIN CERTIFICATE-----\nMIIBdzCCAR2gAwIBAgIBADAKBggqhkjOPQQDAjAjMSEwHwYDVQQDDBhrM3Mtc2Vy\n-----END CERTIFICATE-----\n"}
+    }
+  ]
+}

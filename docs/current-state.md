@@ -32,6 +32,36 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## The notify service in Go, offline (5 November 2026)
+
+- **Scope:** the Go implementation exists offline. Python still runs the live notify service;
+  no HelmRelease, RBAC, Secret or cluster state changed in this implementation slice. The operator approved
+  delivery and the separate live cutover on 5 November, with the acceptance and rollback contract in [section 12](iteration-2-plan.md#12-the-notify-service-in-go-approved-5-november-2026).
+- **Implemented:** the pure message/alert rules and version-1 outbox; Kubernetes TokenReview and namespaced
+  ConfigMap/Secret ports; the HTTPS ntfy publisher; locked acceptance/delivery use cases; and
+  `swhurl-v2 notify-serve` with HTTP handlers, JSON logs and the 30-second delivery loop. Each request and pass
+  opens a fresh ServiceAccount connection. Routes, team labels and Secrets are not retained between uses.
+- **Evidence:** [pure tests](../v2/notify/notify_test.go), [outbox tests](../v2/notify/outbox_test.go),
+  [handler tests](../v2/cmd/swhurl-v2/notify_test.go) and [delivery tests](../v2/orchestration/notify_test.go)
+  port the Python service's cases. Kubernetes Reviewer/Data and ntfy contracts run against both httptest
+  adapters and their fakes. The API baseline deliberately adds the notify domain, those adapters and their
+  contract helpers, the orchestration entry points and `kube.NewAPI` for a single owned service client;
+  no complexity budget exception was added.
+- **Independent review:** four findings were reproduced and fixed: earlier retries missing from later
+  checkpoints; a large legal outbox exceeding the PATCH response cap; unbounded API calls holding the outbox
+  lock; and unused keep-alive clients accumulating connections. A focused re-review found all four resolved.
+  Regression tests cover checkpoint failure plus restart, 85 heavily escaped copies, timeout/cancellation and
+  connection closure. The service now bounds API round trips at ten seconds without retaining idle connections;
+  it still rereads the mounted credentials. Other Kubernetes writer response bounds are unchanged. The follow-up
+  constructor nil-interface regression was fixed and tested too.
+- **Final verification:** `make check-v2` passed with no rendered differences; `make check` passed (687 tooling
+  tests, 98 codegraph tests; docs reported zero errors and warnings). The race detector passed with `-count=1`
+  over `notify`, `orchestration`, `cmd/swhurl-v2`, `adapters/kube/...` and `adapters/ntfy/...`, including the new
+  regression tests. All host/fixture shell scripts passed `bash -n`; `git diff --check` was clean.
+- **Still unverified:** real API TokenReview/RBAC, actual ntfy delivery, loading and draining the live outbox,
+  the running checker's next requests and SIGTERM. These belong to the confirmed live acceptance test; this
+  entry is not live evidence.
+
 ## Check-apps leaves Python (5 November 2026)
 
 - **Approved scope, delivered:** `make check-apps` is `v2/check-apps.sh`: `swhurl-v2 chart` acquires the

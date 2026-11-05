@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: approved
-Gate: resume the notify service port, step 1
+Status: in progress
+Gate: switch notify to Go and verify live delivery
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -23,6 +23,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | App policy: Go decisions, legacy checker/API retired | done | [record](current-state.md#legacy-app-policy-retirement-4-november-2026) |
 | Workstream check (`check-docs`) in Go | done | [record](current-state.md#the-workstream-check-leaves-python-5-november-2026) |
 | Python-free `check-apps` and explicit chart acquisition | done | [record](current-state.md#check-apps-leaves-python-5-november-2026) |
+| Notify service in Go, offline; Python still serves live | partial | [offline evidence](current-state.md#the-notify-service-in-go-offline-5-november-2026), [contract](iteration-2-plan.md#12-the-notify-service-in-go-approved-5-november-2026) |
 | Git delivery and units | done | [record](current-state.md#first-v2-instance-live-25-october-2026) |
 | Observation | done | [record](current-state.md#first-v2-observation-of-a-live-instance-25-october-2026) |
 | Shadow bridge | done | [shadow](../v2/shadow) |
@@ -69,7 +70,7 @@ loses its `run=` function.
 | --- | --- | --- |
 | Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2`, team/channel validation and all of `check-docs` (`swhurl-v2 workstreams`); the legacy fixture checker/API retirement is independently reviewed and live-verified, with the v1 model oracle and Go tests kept. `check-apps` runs no Python: explicit Go chart acquisition and shell sequencing replace its entrypoint glue and the CI fetch recipes. Python chart acquisition remains for OTel and ClickStack, not policy decisions; `verify` and `apps/checks` are reached by the console's platform page |
 | Recovery and backup tooling (`recovery.py`, `sqlite_backup.py`, `backupset.py`) | `make restore-sqlite` is `swhurl-v2 restore`, the backup image's Go tool runs the jobs and `backup-mongodb` and `backup-sqlite` are bash; MongoDB's restore test and the freshness checks remain | partial: what remains is reached by `verify` |
-| The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | not started: the notify service is console-free, the checker's modules are reached by `verify`; about 1.5k lines that run every minute in the cluster or send alerts, so services rather than operator convenience |
+| The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | partial: `swhurl-v2 notify-serve`, its pure rules, Kubernetes ports and ntfy sender exist offline with the Python service's cases ported to Go tests; Python still serves live, pending confirmed cutover and then deletion. The checker, dashboards, heartbeat and bootstrap remain Python; the checker's modules are reached by `verify` |
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team targets are bash over `swhurl-v2 team`; `destroy-data` stays Python, a safety decision with its own tests |
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
 | The v1 records model and its fixture oracle (`apps/model/*`) | delete as importers leave; keep the fixture oracle until then | bounded, not started: 1,541 lines, imported by 13 modules (8 under `apps/`, 3 under `console/`, `dashboards.py` and 1 live test) and 4 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
@@ -99,9 +100,11 @@ not migration.
    ([evidence](current-state.md#the-workstream-check-leaves-python-5-november-2026)), delivered and
    checked in CI on every push. **Delivered 5 November: `check-apps` runs no Python**, with explicit Go chart acquisition shared by the two
    CI fetch steps ([contract](iteration-2-plan.md#chart-acquisition-approved-5-november-2026),
-   [evidence](current-state.md#check-apps-leaves-python-5-november-2026)). **Next: the approved notify service
-   port**, step 1 offline (the Go service beside the running Python one), then the cutover and the deletion of
-   the Python service. The template checks remain unchosen.
+   [evidence](current-state.md#check-apps-leaves-python-5-november-2026)). **The notify service exists offline**
+   ([contract](iteration-2-plan.md#12-the-notify-service-in-go-approved-5-november-2026)); Python still runs.
+   Next: switch the live command and run the acceptance test, then delete the Python service in a separate
+   change. The live cutover is approved; its command change, delivery acceptance test and then a separate Python
+   deletion remain. The template checks remain unchosen.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 

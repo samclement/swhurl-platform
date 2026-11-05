@@ -154,6 +154,33 @@ func (c Connection) Writer() (Writer, error) {
 	return api.(Writer), nil
 }
 
+// Reviewer asks the same API server whose token a caller presented.
+func (c Connection) Reviewer() (Reviewer, error) {
+	api, err := c.api()
+	if err != nil {
+		return nil, err
+	}
+	return api, nil
+}
+
+// Data reads and sets a service's own ConfigMaps and Secrets on the same API server.
+func (c Connection) Data() (Data, error) {
+	api, err := c.api()
+	if err != nil {
+		return nil, err
+	}
+	return api, nil
+}
+
+// api is the adapter over this connection's API server.
+func (c Connection) api() (*API, error) {
+	reader, err := c.Reader()
+	if err != nil {
+		return nil, err
+	}
+	return reader.(*API), nil
+}
+
 func (c Connection) Reader() (Reader, error) {
 	client, err := Client(c.Credentials)
 	if err != nil {

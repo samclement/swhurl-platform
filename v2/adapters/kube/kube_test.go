@@ -498,7 +498,10 @@ func TestNewRefusals(t *testing.T) {
 		{"api.swhurl.test:6443", client, "not_a_url"},
 		{endpoint, nil, "required"},
 	} {
-		_, err := kube.New(tt.endpoint, tt.client, "")
+		reader, err := kube.New(tt.endpoint, tt.client, "")
+		if err == nil || reader != nil {
+			t.Errorf("endpoint %q: refusal returned reader %T, error %v", tt.endpoint, reader, err)
+		}
 		var refusal *kube.Error
 		if !errors.As(err, &refusal) || refusal.Code != kube.RefusedRequest || refusal.Reason != tt.reason {
 			t.Errorf("endpoint %q: %v", tt.endpoint, err)

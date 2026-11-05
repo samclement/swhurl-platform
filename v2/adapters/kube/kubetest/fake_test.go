@@ -2,6 +2,7 @@ package kubetest_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
@@ -67,4 +68,53 @@ func TestCollectionContract(t *testing.T) {
 	kubetest.CollectionContract(t, func(t *testing.T, body []byte, reason string) kube.Reader {
 		return kubetest.New(kubetest.Answers{Pods: observe.Ref{APIVersion: "v1", Kind: "Pod", Namespace: "hello-staging"}, Collection: body, ListReason: reason})
 	})
+}
+
+func TestReviewContract(t *testing.T) {
+	answers := kubetest.ReviewAnswers{Token: "checker-token", Audience: "notify",
+		Username: "system:serviceaccount:console:notification-check"}
+	kubetest.ReviewContract(t, answers, func(t *testing.T, answers kubetest.ReviewAnswers) kube.Reviewer {
+		fake := kubetest.New(kubetest.Answers{})
+		fake.Tokens = map[string]kube.TokenReview{answers.Token: {Authenticated: true,
+			Audiences: []string{answers.Audience}, Username: answers.Username}}
+		return fake
+	})
+}
+
+func TestDataContract(t *testing.T) {
+	answers := kubetest.DataAnswers{
+		Namespace: "notify",
+		Labels:    "platform.swhurl.com/notify-transport=ntfy",
+		ConfigMap: kube.ConfigMap{Name: "notify-outbox", Data: map[string]string{"state.json": `{"version":1,"seen":{},"pending":[]}`}},
+		Secret: kube.Secret{Name: "channel-payments", Labels: map[string]string{"platform.swhurl.com/notify-transport": "ntfy"},
+			Data: map[string][]byte{"address": []byte("https://ntfy.example/private-topic-0123")}},
+		Other: "notify-alerts",
+	}
+	kubetest.DataContract(t, answers, func(t *testing.T, answers kubetest.DataAnswers) kube.Data {
+		fake := kubetest.New(kubetest.Answers{})
+		fake.ConfigMapData = map[string][]kube.ConfigMap{answers.Namespace: {answers.ConfigMap}}
+		fake.SecretData = map[string][]kube.Secret{answers.Namespace: {answers.Secret,
+			{Name: answers.Other, Data: map[string][]byte{"secret": []byte("webhook-secret")}}}}
+		return fake
+	})
+}
+
+// The fake records each review, list and change as its operation, and a failure the scenario names is returned
+// after the call is recorded.
+func TestDataFakeRecordsAndCanFail(t *testing.T) {
+	fake := kubetest.New(kubetest.Answers{})
+	fake.ConfigMapData = map[string][]kube.ConfigMap{"notify": {{Name: "notify-outbox"}}}
+	fake.Failing = map[string]error{"set notify-outbox": errRefused, "secrets notify-alerts": errRefused}
+	if err := fake.SetConfigMapKey(t.Context(), "notify", "notify-outbox", "state.json", "{}", "notify"); err != errRefused {
+		t.Fatalf("a failing change: %v", err)
+	}
+	if _, err := fake.Secrets(t.Context(), "notify", kube.Selector{Name: "notify-alerts"}); err != errRefused {
+		t.Fatalf("a failing list: %v", err)
+	}
+	if _, err := fake.Review(t.Context(), "token", "notify"); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"set notify-outbox", "secrets notify-alerts", "review"}; !slices.Equal(fake.Calls, want) {
+		t.Fatalf("calls %v, want %v", fake.Calls, want)
+	}
 }

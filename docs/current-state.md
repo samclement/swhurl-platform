@@ -4704,3 +4704,11 @@ On 25 October, pushed `2eaeaea4`, then `1262960f` and `ad334338` (the backup tes
   and the command), host/fixture/v2 shell syntax, ShellCheck on the script, `git diff --check` and the real `make check-templates` (8 s) passed. The kernel's
   exported API grew by `NameCatalogue`, `DecodeNameCatalogue` and `Unlisted`; the console-image guard admits exactly
   `v2/contract/`.
+- **Live delivery:** `f1c701d1` (GitHub refused every ref update for a few minutes with `fatal error in
+  commit_refs_rules`, for a commit already on the remote as well; the push went through two minutes later). Validate
+  `42129480809` passed every job, its template job running the shell check in CI, and Render passed; `6d1d8077`
+  pinned console image `src-45d56b6fa83547bb`. `make flux-reconcile` applied all 31 units and the console rolled out.
+  In the running pod `/app/v2/contract/` holds both files and the tooling read 46 names, both stacks and the three
+  types from them; the New app page (a port-forward with a set sign-in header) rendered the three types and both
+  stack descriptions. `make verify-platform` passed with 84 OK lines and no BAD or WARN, and `swhurl-v2 status --all`
+  reported all 10 instances healthy. No template pin, app record, credential or retained data changed.

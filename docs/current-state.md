@@ -4623,7 +4623,18 @@ On 25 October, pushed `2eaeaea4`, then `1262960f` and `ad334338` (the backup tes
   A clean staged-tree snapshot also passed `make check`. Staging exposed the intentional CRLF events
   fixture as whitespace; its exact path is now marked `-text whitespace=cr-at-eol` so Git preserves
   the test bytes and the staged whitespace check passes.
-- **Delivery gate:** local validation and independent review are complete; commit/push and live platform
-  verification follow. No sibling-repository edit, template pin or external build-workflow upgrade is
-  included. Already pinned external workflows retain the old helper at their historical platform revision;
-  their rollout remains a separate approval.
+- **CI and live delivery:** implementation `4bc88efe`; [Validate](https://github.com/samclement/swhurl-platform/actions/runs/42110111458)
+  and [Render](https://github.com/samclement/swhurl-platform/actions/runs/42110111585) passed, including
+  every app type through Go production and declaration acceptance. Validate pinned console/notify image
+  `src-1579f0d672c17966` in `500655ba`. After pulling that bot commit, `make flux-reconcile` applied it
+  to all 31 units. `make verify-platform` passed with 84 OK lines and no BAD/WARN; `make app-status`
+  reported all 10 instances healthy at that revision. The console pod had zero restarts, and scheduled
+  jobs `console-dashboards-29898553` and `console-notifications-29898553` both succeeded on the new image.
+  `swhurl-v2 image-declaration --help` succeeded inside the deployed console: this proves the binary is
+  shipped, not that an external app workflow has adopted it.
+- **Limits and next gate:** no sibling-repository edit, template pin or external build-workflow upgrade
+  was included. Already pinned external workflows retain the old helper at their historical platform
+  revision; their rollout remains a separate approval. No app image or declaration, credential, retained
+  data or backup destination was changed, and no signed-in browser exercise was performed. The status
+  map now records the implemented/reviewed producer with external adoption partial, and the registry
+  waits for the operator to choose the next producer rollout or Python retirement slice.

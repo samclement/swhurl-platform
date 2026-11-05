@@ -22,7 +22,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Deterministic compiler | done | [kernel](../v2/kernel) |
 | App policy: Go decisions, legacy checker/API retired | done | [record](current-state.md#legacy-app-policy-retirement-4-november-2026) |
 | Workstream check (`check-docs`) in Go | done | [record](current-state.md#the-workstream-check-leaves-python-5-november-2026) |
-| Python-free `check-apps` and explicit chart acquisition | partial | [record](current-state.md#check-apps-leaves-python-5-november-2026) |
+| Python-free `check-apps` and explicit chart acquisition | done | [record](current-state.md#check-apps-leaves-python-5-november-2026) |
 | Git delivery and units | done | [record](current-state.md#first-v2-instance-live-25-october-2026) |
 | Observation | done | [record](current-state.md#first-v2-observation-of-a-live-instance-25-october-2026) |
 | Shadow bridge | done | [shadow](../v2/shadow) |

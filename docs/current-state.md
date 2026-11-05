@@ -41,6 +41,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   merge and 6 an `asynchronous_metric_log` one (`part_log` does not record system tables). Both ran on the default
   7.5 s flush, and today's `metric_log` part was at level 244. The HelmRelease now flushes both every 60 s
   (`collect_interval_milliseconds` stays 1 s, so the HyperDX ClickHouse page keeps its resolution).
+- **60 s flush live (`88a01e0d`):** the operator recreated the ClickHouse pod at 22:52:26 UTC to apply the config.
+  New level-0 parts of both tables came 7 to 8 s apart before it and exactly 60 s apart after; neither table was
+  renamed (no new `metric_log_N`). Four minutes later `otel_logs` and `otel_metrics_sum` held rows 25 s old, the
+  ClickStack collector had logged no errors or dropped data across the restart, no container had restarted, and
+  `make verify-platform` passed (one warning: GitHub's latest push delivery to the Flux webhook had failed to
+  connect, while the receiver answered and logged requests in the same half hour). Its effect on a day is not
+  measured yet.
 
 ## The Python notify service is retired (5 November 2026)
 

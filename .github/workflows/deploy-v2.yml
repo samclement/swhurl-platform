@@ -69,18 +69,7 @@ jobs:
 
       # check-v2's chart test reads the chart the profile pins, from the cache make check-apps keeps.
       - name: Fetch the chart v2 compiles for
-        run: |
-          set -Eeuo pipefail
-          chart=$(python3 -c 'import json; c = json.load(open("v2/testdata/profile.json"))["chart"]; print(c["name"], c["version"])')
-          read -r name version <<< "$chart"
-          charts="${XDG_CACHE_HOME:-$HOME/.cache}/swhurl-platform/charts"
-          if [ ! -f "$charts/$name-$version/Chart.yaml" ]; then
-            mkdir -p "$charts"
-            tmp=$(mktemp -d "$charts/pull.XXXXXX")
-            helm pull "$name" --repo https://bjw-s-labs.github.io/helm-charts --version "$version" --untar --untardir "$tmp"
-            mv "$tmp/$name" "$charts/$name-$version"
-            rm -rf "$tmp"
-          fi
+        run: bash v2/chart.sh
 
       # v2's sops adapter contract runs the real command, which the runner image does not carry.
       - name: Install sops for v2's encryption contract

@@ -15,7 +15,7 @@ COMMANDS := help reconcile verify-platform notifications-check notifications-hea
 	app-repo app-hooks \
 	console-image console-dev \
 	platform-certs-staging platform-certs-prod destroy-data \
-	check-repo check-apps check-templates check-otel check-secrets v2-snapshot \
+	check-repo check-templates check-otel check-secrets v2-snapshot \
 	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb \
 	live-test-call-identity live-test-network-policy live-test-team-scenario
 
@@ -76,6 +76,10 @@ v2-deps:
 .PHONY: check-docs
 check-docs:
 	@$(V2_BUILD); "$$work/swhurl-v2" workstreams --repo-root .
+
+.PHONY: check-apps
+check-apps:
+	@bash v2/check-apps.sh
 
 .PHONY: check-v2
 check-v2:

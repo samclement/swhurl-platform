@@ -32,6 +32,28 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## Check-apps leaves Python (5 November 2026)
+
+- **Approved scope, delivered:** `make check-apps` is `v2/check-apps.sh`: `swhurl-v2 chart` acquires the
+  profile-pinned chart, then `check-rendered.sh --chart` runs render equality and Go policy. Validate and
+  Deploy-v2 fetch through the same `v2/chart.sh`. `apps/validation.py` (45 lines) and the command's run
+  function are deleted; `charts.py` stays for OTel and ClickStack. [Contract](iteration-2-plan.md#chart-acquisition-approved-5-november-2026).
+- **API baseline:** eight intended `api.txt` lines, generated against a snapshot of `ae34779a`: `helm.Acquirer`,
+  `Pin`, `Repository`, `Command.Acquire`, the `helmtest.Acquisition` fake and its contract, and
+  `orchestration.AcquireChart`. Rendering stays local-only; acquisition is a separate port.
+- **Offline evidence:** the replaced wrapper's 10 tests passed before editing. The committed tree, without the
+  operator's uncommitted notify work, passed `REQUIRE_HELM=1 make check-v2`, `make check` (687 tests), shell
+  syntax and `git diff --check`; a real cold `helm pull` and a cached repeat passed in a temporary cache.
+  `check-v2` caught a decoder over the complexity budget (split, no exception); the cold pull caught Helm
+  reading the operator's repository list (now a private config and index cache per pull).
+- **Review:** independent read-only review found no blockers; its findings (a stale `AGENTS.md` line, fixed
+  failure reasons, untested script arguments and registry) are fixed. Kept as they were: name-only repository
+  matching, and the CI apps job's now-redundant Python setup (an adjacent cleanup).
+- **Not in this commit:** the notify service port's paused step 1 (`v2/notify/`, the kube `Data`/`Reviewer`
+  ports, their archtest entries and plan section 12) stays uncommitted in the operator's checkout, so its
+  untested API is not admitted to the baseline. There, local `make check-v2` and `check-docs` report it until
+  it is finished.
+
 ## The workstream check leaves Python (5 November 2026)
 
 - **Approved scope, implemented:** `make check-docs` is `swhurl-v2 workstreams --repo-root .`

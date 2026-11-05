@@ -25,7 +25,7 @@ if ! "$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile
   exit 1
 fi
 
-# check-apps acquires the profile-pinned chart outside Go and asks this same build for the policy pass.
+# check-apps acquires the profile-pinned chart with the explicit Go chart command, then requests policy.
 if [ -n "$chart" ]; then
   "$work/swhurl-v2" policy --records v2-records --profile v2/testdata/profile.json --out . --chart "$chart"
 fi

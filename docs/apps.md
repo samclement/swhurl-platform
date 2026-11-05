@@ -1003,12 +1003,13 @@ Removal refuses, before writing anything, while **any other instance in the same
 
 ## The app policy
 
-`make check-apps` (or `python3 -m swhurl check-apps`) checks **every compiled v2 instance,
-staging and production**. It accepts no arguments: an explicit legacy path or any flag is refused with
-exit 2 before reading files, acquiring charts or running commands. There is no selected-instance mode.
-The small Python entrypoint resolves the profile-pinned chart through the shared
-[`charts.py`](../tools/swhurl/charts.py) acquisition helper, then runs Go's `render --check` and
-`swhurl-v2 policy`. Go acquires no chart and writes nothing.
+`make check-apps` checks **every compiled v2 instance, staging and production** without Python.
+Its script, [`v2/check-apps.sh`](../v2/check-apps.sh), accepts no arguments: an explicit legacy path or
+any flag is refused with exit 2 before reading files, acquiring charts or running commands. There is no
+selected-instance mode. It resolves/acquires the profile-pinned chart with the explicit Go `chart`
+command, then runs Go's `render --check` and `policy`. Only chart acquisition writes its local cache;
+the equality and policy checks acquire nothing and write nothing. Validate and Deploy-v2 populate
+the same cache through [`v2/chart.sh`](../v2/chart.sh).
 
 `render --check` requires every instance folder and unit, the resolution, egress allocation and proxy
 objects, auth folder, NATS users and Reloader watch list to be exactly what the working-tree records render.
@@ -1038,15 +1039,15 @@ remain refused; no rule filtering or compatibility bridge is added. A v2 release
 provenance are still claims for review, not verified provenance. `check-templates` checks image declarations
 through v2, not Kubernetes policy.
 
-Python remains for [entrypoint glue](../tools/swhurl/apps/validation.py) and shared chart acquisition
-(also used by OTel and ClickStack), not policy decisions. The [next gate](v2-status.md#remaining-work)
-is to approve the next console-free Python retirement slice.
+Python's shared chart acquisition remains for OTel and ClickStack checks, not for `check-apps` or
+policy decisions. The acquisition and cache [contract](iteration-2-plan.md#chart-acquisition-approved-5-november-2026)
+keeps rendering local-only; the [remaining retirements](v2-status.md#remaining-python) are separate slices.
 
 **Test it yourself** (run in your own terminal, from this checkout; offline checks, nothing applied):
 
 ```bash
 make check-apps
-PYTHONPATH=tools python3 -m swhurl check-apps tests/fixtures/apps/smoke-web/staging
+bash v2/check-apps.sh tests/fixtures/apps/smoke-web/staging
 # The second command must print usage and exit 2; paths are no longer accepted.
 ```
 

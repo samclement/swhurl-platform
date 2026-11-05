@@ -39,10 +39,26 @@ What has been verified on the live cluster, and when: current facts first, then 
   Secrets, health checks and version-1 outbox are unchanged. The unused Python service stays for rollback.
 - **Implementation delivery:** `10b90c44` passed every Validate job and Render; `9603766d` pinned the new image.
   Reconciliation and `make verify-platform` passed before the command switch while Python was still serving.
-- **Acceptance:** the command change is ready for reconciliation; live TokenReview, delivery/readback, duplicate
-  suppression and outbox checks are not yet recorded. The [approved test and rollback](iteration-2-plan.md#12-the-notify-service-in-go-approved-5-november-2026)
-  must pass before the Python deletion step. Revert the command-switch commit to restore Python; no outbox reset
-  or Secret rotation is involved.
+- **Live:** `6285d4a9` switched the command; Validate `42085207060` and Render `42085207088` passed.
+  `make flux-reconcile` and the notify Deployment rollout succeeded: one ready Go replica on the pinned image.
+  `/healthz` answered `200 ok`. No token and a forged token got 401; a wrong nonempty alert secret got 401,
+  exercising the live named-Secret read and comparison. A ten-minute checker token for audience `notify`
+  got 202 for `demo-shop/staging` and one team channel; the same key got `202 {"channels":[]}`. The message
+  was read back from ntfy and the version-1 outbox drained to zero pending.
+- **Caller compatibility:** the unchanged Python checker's actual `forward()` client sent a second unique notice
+  through the port-forward with a checker token file; both the original request and its retry were accepted.
+  Its copy was independently read back from ntfy, with zero pending copies. No fake transport, induced app
+  failure or Secret change was used; credentials and topic addresses were never printed. This proves the real
+  client/TokenReview/transport path, not a newly generated lifecycle incident from a scheduled job.
+- **Platform evidence:** `make verify-platform` reported 84 OK, no BAD or WARN; `make app-status
+  APP=demo-shop ENV=staging` passed; `swhurl-v2 status --all` reported all ten instances healthy. The 18:36 UTC
+  scheduled checker and dashboard jobs succeeded on `src-043f8c6e6233b3ab`. Go JSON logs showed four accepted
+  requests (two retries), two deliveries, three expected refusals and zero delivery-pass failures.
+- **Rollback and remaining gate:** revert `6285d4a9` to restore Python without resetting the outbox or rotating
+  a Secret. The [approved contract](iteration-2-plan.md#12-the-notify-service-in-go-approved-5-november-2026)
+  keeps Python deletion separate. SIGTERM interruption with an in-flight copy, forced projected-token rotation,
+  a real correctly signed ClickStack webhook and a new spontaneous checker incident were not induced; their
+  corresponding offline tests remain. The next gate is approval of the unused Python service's deletion.
 
 ## The notify service in Go, offline (5 November 2026)
 

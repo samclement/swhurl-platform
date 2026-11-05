@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Go replacement (v2) | main | in progress | the Go notify service is implemented and selected by the HelmRelease; live acceptance is pending | switch notify to Go and verify live delivery | the new console image, command cutover and live acceptance evidence | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/`, `tools/swhurl/`, `tests/` |
+| Go replacement (v2) | main | blocked | notify serves in Go and passed live acceptance; its unused Python implementation is retained for the separate deletion | approve deletion of the unused Python notify service | operator approval of step 3, after the live cutover | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/`, `tools/swhurl/`, `tests/` |
 | Live platform | main | approved | the 24 open items in the plan index; the eight v1 app repositories stopped reusing a tested PR image, take the newest template and run Node.js 26 (30–31 October 2026), the two throwaways that could not take the template update were removed, with their namespaces, repositories and packages, and `make verify-platform`'s Image Automation check reads a v2-owned instance's own record (31 October 2026) | the next open plan item | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

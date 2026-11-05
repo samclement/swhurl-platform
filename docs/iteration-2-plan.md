@@ -1097,8 +1097,9 @@ and a send cut off before its save is sent again, which at least once allows.
 
 **Step 1 was implemented and delivered before the cutover:** the pure [`notify`](../v2/notify) package, Kubernetes
 `Reviewer`/`Data` ports, [`ntfy`](../v2/adapters/ntfy) publisher with real/fake contract suites, use cases and
-[`notify-serve`](../v2/cmd/swhurl-v2/notify.go) command exist. The HelmRelease now selects Go; the Python service
-is retained unchanged for rollback until the separate deletion step. [Live acceptance passed](current-state.md#the-notify-service-switches-to-go-5-november-2026).
+[`notify-serve`](../v2/cmd/swhurl-v2/notify.go) command exist. The HelmRelease selects Go and the Python
+implementation, internal command and service-only tests are deleted. [Live acceptance passed](current-state.md#the-notify-service-switches-to-go-5-november-2026);
+[retirement evidence](current-state.md#the-python-notify-service-is-retired-5-november-2026) records the deletion.
 [Handler tests](../v2/cmd/swhurl-v2/notify_test.go) exercise the Python service's acceptance and delivery cases;
 [use-case tests](../v2/orchestration/notify_test.go) verify persistence before sending, retry and restart.
 The API baseline intentionally includes these ports, pure types and use cases, not budget exceptions.
@@ -1122,6 +1123,10 @@ port-forward: no token and a forged token get 401; a checker token (`kubectl cre
 accepted for a team with a channel, a repeat of its key gets no channel, and the copy is read back from ntfy;
 a wrong webhook secret gets 401 and the outbox empties. The unchanged checker's real `forward()` client also
 sent and retried a separate notice, with delivery/readback verified; scheduled checker runs succeeded, but no
-new lifecycle incident was induced. Reverting the command-switch commit restores Python without an outbox
-migration or reset. **Step 3 remains separate:** delete the unused Python service, its command entry and its
-service tests after operator approval; keep the checker and shared delivery code it still imports.
+new lifecycle incident was induced. **Step 3 is implemented after operator approval:** the unused Python
+service, its internal command and service-only tests are deleted. The checker and shared delivery code it still
+imports remain. The Go tests retain the retired cases; `9766d4c5:tests/test_notify_service.py` is their historical
+source. Python rollback now requires an image from before retirement containing the old service (for example
+`src-043f8c6e6233b3ab`) **and** its former command `[python, -m, swhurl, notify-serve]`, through Git as usual.
+Reverting only the command on a post-retirement image cannot work. Neither direction migrates or resets the
+version-1 outbox. The [status page](v2-status.md#remaining-work) names the next gate.

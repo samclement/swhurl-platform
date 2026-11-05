@@ -1,0 +1,16 @@
+[
+  {
+    "secret": "private-alert-secret",
+    "title": "🚨 swhurl:orders:error-logs",
+    "link": "https://clickstack.example.test/dashboards/d1?from=1",
+    "body": "Group: \"arrayElement(ResourceAttributes, 'k8s.namespace.name'):orders-staging\"\n16 meets or exceeds 5\nTime Range (UTC): [Oct 11 5:58:00 PM - Oct 11 5:59:00 PM)\n",
+    "state": "ALERT"
+  },
+  {
+    "secret": "private-alert-secret",
+    "title": "🚨 swhurl:orders:error-logs",
+    "link": "https://clickstack.example.test/dashboards/d1?from=1",
+    "body": "Group: \"arrayElement(ResourceAttributes, 'k8s.namespace.name'):orders-staging\"\n16 meets or exceeds 5\nTime Range (UTC): [Oct 11 5:58:00 PM - Oct 11 5:59:00 PM)\n",
+    "state": "OK"
+  }
+]

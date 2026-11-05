@@ -10,9 +10,9 @@ import (
 	"github.com/samclement/swhurl-platform/v2/notify"
 )
 
-// The Python service's tests (tests/test_notify_service.py) are the contract: each case keeps its input and its
-// expected status, reason or outbox entry. What they check of HTTP, Kubernetes or the delivery loop is the
-// orchestration's and the command's.
+// The retired Python service's tests (9766d4c5:tests/test_notify_service.py) supplied these cases: each keeps its
+// input and expected status, reason or outbox entry. HTTP, Kubernetes and delivery-loop cases live in the
+// orchestration and command tests.
 
 const (
 	now       = 1_800_000_000.0

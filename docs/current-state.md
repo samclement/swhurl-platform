@@ -47,8 +47,19 @@ What has been verified on the live cluster, and when: current facts first, then 
   warnings); `make check-v2`, host/fixture shell syntax and `git diff HEAD --check` passed. Focused command,
   webhook and shared checker suites passed (19, 3 and 43 tests). Independent read-only review found no issues.
   No exported Go API or complexity-budget change is part of this retirement.
-- **Delivery:** deletion is implemented and validated; CI, the rebuilt console image and post-rebuild live
-  verification are pending. The application protocol, RBAC, routes, Secrets and version-1 outbox are unchanged.
+- **Delivered:** `c3602352` passed Validate `42092566503` (every job) and Render `42092566496`;
+  `172352d3` pinned rebuilt image `src-ee45793094788457`. `make flux-reconcile` and the notify rollout
+  succeeded. A shell-only check in the running container confirmed the Python service file is absent and the
+  Go binary present; its command remains `[swhurl-v2, notify-serve]`. The application protocol, RBAC, routes,
+  Secrets and version-1 outbox are unchanged.
+- **Post-rebuild acceptance:** health was `200 ok`; no token and a forged token got 401; a wrong nonempty alert
+  secret got 401. A checker token queued one copy and repeating the key queued none. The unchanged Python
+  checker's real `forward()` client also sent and retried a separate notice. Both messages were read back from
+  ntfy and the outbox drained to zero pending. The rebuilt service loaded the version-1 outbox with two
+  remembered keys before these tests.
+- **Post-rebuild health:** `make verify-platform` reported 84 OK with no BAD or WARN; `make app-status
+  APP=demo-shop ENV=staging` passed; `swhurl-v2 status --all` reported all ten instances healthy. Both scheduled
+  console jobs succeeded on the new image at 19:22 UTC. No credentials or topic addresses were printed.
 - **Rollback:** after an image built from this deletion is deployed, reverting only the Go command is not a
   Python rollback: that image no longer contains the service. Restore both a pre-retirement image such as
   `src-043f8c6e6233b3ab` and `[python, -m, swhurl, notify-serve]` through Git. No state migration/reset is needed.

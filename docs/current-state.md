@@ -30,7 +30,17 @@ What has been verified on the live cluster, and when: current facts first, then 
   rolled the StatefulSet; the container's cgroup reads 1073741824, the resource is `Running`, `mongod` used 117Mi,
   `make verify-platform` passed (a team exists, the newest backup 0.1 h old) and the ClickStack host returned 301
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
-- **Not yet measured:** the effect over a full day against the figures above.
+- **Measured 5 November (22:44 UTC), `system.metric_log` per day:** average CPU 0.333 and 0.292 cores on 1 and
+  2 November, 0.124, 0.125 and 0.142 on 3 to 5 November; 1-second p99 1.9 to 1.05 to 1.26 cores; merge-seconds an
+  hour 1,022 to 1,197 before, 413 to 481 after; inserts an hour 2,626 to 3,013 before, 600 after. The kubelet's
+  `k8s.pod.cpu.usage` for the ClickHouse pod: 0.35 to 0.41 cores a day before, 0.19 to 0.21 after. On 4 November the
+  `otel_metrics_*` tables merged for 604 to 684 s each (5,331, 4,407 and 5,381 s in the 24 hours first measured),
+  all `otel_*` tables about 2,200 s of the server's ~10,000, and merge time no longer rose through the day. No
+  ClickStack container restarted; `mongod`'s working set peaked at 272 MiB in 60-second samples.
+- **Next cost, ClickHouse's own logs:** of 40 samples of `system.merges` 3 s apart, 23 found a `system.metric_log`
+  merge and 6 an `asynchronous_metric_log` one (`part_log` does not record system tables). Both ran on the default
+  7.5 s flush, and today's `metric_log` part was at level 244. The HelmRelease now flushes both every 60 s
+  (`collect_interval_milliseconds` stays 1 s, so the HyperDX ClickHouse page keeps its resolution).
 
 ## The Python notify service is retired (5 November 2026)
 

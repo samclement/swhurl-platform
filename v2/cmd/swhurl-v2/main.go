@@ -36,6 +36,7 @@ const usage = `usage:
   swhurl-v2 render --records DIR --profile PROFILE.json --out DIR [--revision REVISION] [--previous EGRESS.json] \
       [--check]
   swhurl-v2 policy --records DIR --profile PROFILE.json --out ROOT --chart LOCAL_DIR
+  swhurl-v2 chart --profile PROFILE.json --repositories HELMREPOSITORIES.yaml --cache DIR
   swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
   swhurl-v2 deploy --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json \
@@ -130,6 +131,13 @@ then templates the explicit local --chart for every compiled instance, productio
 must match the profile and compiled release. It reports sorted accumulated findings and separate redacted
 render failures, never environment/Secret values. Any instance failing makes the command nonzero; invalid
 inputs print no partial report. No chart acquisition, cluster access or file writes occur.
+
+chart resolves the profile's chart name/version and named HelmRepository from the explicit YAML stream,
+then returns its absolute local directory under --cache. A missing chart is pulled with Helm into a private
+temporary directory, checked against the pin and published by rename. Cached and concurrently published
+charts must have matching Chart.yaml metadata. Helm's repository config/index cache are isolated inside
+the private pull directory, so only --cache is written. No cluster access or installation occurs. Resolution
+or acquisition failures exit 1 with fixed diagnostics, not Helm output. The renderer still accepts only an explicit local chart.
 
 egress allocates one proxy port per instance, keeping every port the previous document gave and giving a
 new instance the lowest free one. Every instance whose release keeps a database is granted the
@@ -253,7 +261,7 @@ line per check and exits 1 when any problem is found or a read fails, and 2 when
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
 started but did not complete, a render --check that found a difference, a policy render/rule failure, a workstream
-record that disagrees with its checkout, or file and output I/O failure.
+record that disagrees with its checkout, chart dependency resolution/acquisition failure, or file and output I/O failure.
 `
 
 func main() {
@@ -356,6 +364,7 @@ var commands = map[string]func(cli, request) int{
 	"resolve":           cli.resolve,
 	"render":            cli.render,
 	"policy":            cli.policy,
+	"chart":             cli.acquireChart,
 	"egress":            cli.egress,
 	"proxy":             cli.proxy,
 	"auth":              cli.auth,
@@ -385,7 +394,7 @@ type request struct {
 	env, sourceRepository, sourceCommit, maxAge        string
 	previous, egressFile, allocation                   string
 	records, changes, repoRoot, reviewedDigest         string
-	chart                                              string
+	chart, repositories, cache                         string
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
 	action, description, rename, transport             string
@@ -456,6 +465,12 @@ func (r *request) registerInputs(flags *flag.FlagSet) {
 func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 	if command == "team" {
 		r.registerTeamFlags(flags)
+		return
+	}
+	if command == "chart" {
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile")
+		flags.Var(&once{value: &r.repositories}, "repositories", "HelmRepository YAML stream")
+		flags.Var(&once{value: &r.cache}, "cache", "local chart cache")
 		return
 	}
 	if command == "workstreams" {
@@ -710,6 +725,7 @@ func (r *request) named() []string {
 // argument instead, which is why the table is also the list of the two commands that do.
 var requiredFlags = map[string]func(*request) []string{
 	"policy":         func(r *request) []string { return []string{r.records, r.profile, r.out, r.chart} },
+	"chart":          func(r *request) []string { return []string{r.profile, r.repositories, r.cache} },
 	"compile":        func(r *request) []string { return []string{r.instance, r.release, r.app, r.profile} },
 	"preview":        func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
 	"select-release": func(r *request) []string { return []string{r.instance, r.release, r.expected} },
@@ -854,6 +870,7 @@ func (o *onceDuration) Set(value string) error {
 type cli struct {
 	out, diagnostic io.Writer
 	charts          helm.Renderer
+	acquirer        helm.Acquirer
 	readFile        func(string) ([]byte, error)
 	writer          files.Writer
 	// archives builds the object-store reader; a test supplies one that answers without a network.

@@ -117,19 +117,7 @@ jobs:
         run: make -s v2-render
 
       - name: Fetch the chart v2 compiles for
-        run: |
-          set -Eeuo pipefail
-          # The chart v2's profile pins, into the cache make check-apps keeps (v2/cmd/swhurl-v2/chart_test.go reads it).
-          chart=$(python3 -c 'import json; c = json.load(open("v2/testdata/profile.json"))["chart"]; print(c["name"], c["version"])')
-          read -r name version <<< "$chart"
-          charts="${XDG_CACHE_HOME:-$HOME/.cache}/swhurl-platform/charts"
-          if [ ! -f "$charts/$name-$version/Chart.yaml" ]; then
-            mkdir -p "$charts"
-            tmp=$(mktemp -d "$charts/pull.XXXXXX")
-            helm pull "$name" --repo https://bjw-s-labs.github.io/helm-charts --version "$version" --untar --untardir "$tmp"
-            mv "$tmp/$name" "$charts/$name-$version"
-            rm -rf "$tmp"
-          fi
+        run: bash v2/chart.sh
 
       # v2's mint encrypts through sops and its adapter contract runs the real command, which the runner image
       # does not carry. The release is pinned and checked against its published checksum before it is used.

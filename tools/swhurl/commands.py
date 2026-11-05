@@ -176,7 +176,7 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 'swhurl.validate:main'),
         Command('test', 'Unit tests for the tooling, console, manifests and command safety; K= runs only matching classes (needs uv)', LOCAL,
                 takes=(Var('K', '<pattern>', required=False, flag='-k'),)),
-        Command('check-apps', "v2's records match Git and every compiled instance passes Go Kubernetes policy (needs Go and Helm; no arguments)", LOCAL, 'swhurl.apps.validation:main'),
+        Command('check-apps', "v2's records match Git and every compiled instance passes Go Kubernetes policy (needs Go and Helm; no arguments)", LOCAL),
         Command('check-templates', 'Render each app type from its stack template; the label the app build writes must pass swhurl-v2 declaration (needs network; builds swhurl-v2 unless SWHURL_V2 names one)',
                 LOCAL, 'swhurl.apps.templates_check:main', uv=True),
         Command('check-otel', 'Render the OTel collectors and validate their config with that exact otelcol-k8s release', LOCAL, 'swhurl.otel:main'),

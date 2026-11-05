@@ -38,7 +38,7 @@ var Rules = []Rule{
 		"pass the value in as a parameter (time, identifiers, snapshots) or move the effect into an adapter",
 		"the-pure-model"},
 	{"no-subprocess", "v2 code starts processes only in adapters/sops, adapters/helm and adapters/git, and names no kubectl or flux command",
-		"read or change Kubernetes through the API server; only SOPS encryption, local helm template and read-only git are approved",
+		"read or change Kubernetes through the API server; only SOPS encryption, explicit Helm pull/local template and read-only git are approved",
 		"kubernetes-the-api-server-not-kubectl"},
 	{"public-api", "the exported API of every library package matches archtest/api.txt",
 		"if the change is intended, run `go test ./archtest -run TestPublicAPI -update` and say why in the change",
@@ -126,7 +126,8 @@ var subprocessCalls = []string{"os.StartProcess"}
 var commandNames = []string{"kubectl", "flux"}
 
 // subprocessAllowed is restricted to the three approved adapter directories, never their fakes or subpackages.
-// SOPS encrypts; Helm renders a local chart; Git reads one checkout. No exception permits cluster access or a write.
+// SOPS encrypts; Helm explicitly acquires a pinned chart or renders a local chart; Git reads one checkout.
+// No exception permits subprocess cluster access or arbitrary commands.
 var subprocessAllowed = []string{"adapters/sops", "adapters/helm", "adapters/git"}
 
 // ---- Loading ----

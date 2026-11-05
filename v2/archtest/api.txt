@@ -36,19 +36,26 @@ adapters/git: type Checkout struct {Tracked []string Present []string Uncommitte
 adapters/git: type Command struct {Binary string}
 adapters/git: type Error struct {Reason, Detail string}
 adapters/git: type Reader interface {Read(root string) (Checkout, error)}
+adapters/helm/helmtest: func (*Acquisition) Acquire(pin helm.Pin, cache string) (string, error)
 adapters/helm/helmtest: func (*Fake) Render(request helm.Request) ([]json.RawMessage, error)
+adapters/helm/helmtest: func AcquisitionContract(t *testing.T, open func(*testing.T) (helm.Acquirer, string))
 adapters/helm/helmtest: func Contract(t *testing.T, open func(*testing.T) helm.Renderer, request helm.Request)
+adapters/helm/helmtest: type Acquisition struct {Pins []helm.Pin Caches []string Err error}
 adapters/helm/helmtest: type Fake struct {Output []json.RawMessage Err error Calls []helm.Request}
 adapters/helm: const MaxOutput = 16 << 20
 adapters/helm: const MaxStderr = 64 << 10
 adapters/helm: const MaxValues = 1 << 20
 adapters/helm: const RefusedRender = "refused_render"
 adapters/helm: const RenderTimeout = 30 * time.Second
+adapters/helm: func (*Command) Acquire(pin Pin, cache string) (string, error)
 adapters/helm: func (*Command) Render(request Request) ([]json.RawMessage, error)
 adapters/helm: func (*Error) Error() string
 adapters/helm: func New() *Command
+adapters/helm: func Repository(data []byte, name string) (string, error)
+adapters/helm: type Acquirer interface {Acquire(Pin, string) (string, error)}
 adapters/helm: type Command struct {Binary string}
 adapters/helm: type Error struct {Reason string}
+adapters/helm: type Pin struct {Name, Version, Repository string}
 adapters/helm: type Renderer interface {Render(Request) ([]json.RawMessage, error)}
 adapters/helm: type Request struct {Chart, Release, Namespace string ChartName, ChartVersion string Values json.RawMessage}
 adapters/kube/kubetest: func (*Fake) Create(_ context.Context, ref observe.Ref, _ []byte) error
@@ -545,6 +552,7 @@ orchestration: const StepDone = "done"
 orchestration: const StepFailed = "failed"
 orchestration: const StepNotRead = "not_read"
 orchestration: func (*Refusal) Error() string
+orchestration: func AcquireChart(profile kernel.PlatformProfile, repositories []byte, cache string, acquirer helm.Acquirer) (string, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
 orchestration: func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
 orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)

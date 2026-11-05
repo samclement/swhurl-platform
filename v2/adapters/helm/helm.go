@@ -1,5 +1,6 @@
-// Package helm renders one explicit local chart. It never acquires charts, changes them, or talks to a cluster.
-// YAML is a dependency format only here: callers receive complete JSON objects, not parser values.
+// Package helm acquires explicit pinned charts and renders explicit local charts as separate operations.
+// Rendering never acquires dependencies; neither operation talks to a cluster.
+// YAML is a dependency format only here: callers receive facts or complete JSON objects, not parser values.
 package helm
 
 import (

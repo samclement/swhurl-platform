@@ -354,13 +354,13 @@ An adapter owns one external dependency and speaks domain terms ("read workload 
 | Identity | Authenticate a request, establish who is acting | Explicit test principals | Proxy header trust, sign-in integration |
 | Clock, randomness, environment | Time, sleep, identifiers, configuration | Explicit timestamps, deterministic generators, supplied config | Selected adapter checks |
 
-### Helm: local chart rendering only
+### Helm: explicit chart acquisition and local rendering
 
 [`adapters/helm`](../v2/adapters/helm) implements `Renderer`: an explicit existing chart directory,
 expected chart metadata name/version, release name, namespace and JSON values in; every rendered object as owned JSON bytes in document order,
 or `refused_render` with a fixed reason and no objects out. It runs only `helm template` with
-`--include-crds`, no kind filter, chart patch, dependency acquisition or cluster read. Callers acquire the
-profile-pinned chart outside v2; the adapter reads `Chart.yaml` (at most 64 KiB) and refuses a name/version mismatch, regardless of directory name. It writes values privately (0700 directory, 0600 file), removes them on
+`--include-crds`, no kind filter, chart patch, dependency acquisition or cluster read. Acquisition is a separate operation (`swhurl-v2 chart`); rendering never fetches a dependency.
+The adapter reads `Chart.yaml` (at most 64 KiB) and refuses a name/version mismatch, regardless of directory name. It writes values privately (0700 directory, 0600 file), removes them on
 success and failure, and never returns subprocess or parser diagnostics. Values are limited to 1 MiB,
 stdout to 16 MiB, stderr to 64 KiB (discarded), subprocess duration to 30 seconds and inherited-pipe waits
 to another second. A missing executable, timeout, nonzero exit, oversized stream or malformed later
@@ -420,14 +420,41 @@ no partial report. Empty input and a chart with no application Deployment cannot
 | Quota | Exactly one profile-sized quota; actual workload totals include rolling surge, regular sums, init maxima/restartable sidecars and the compiled backup; CronJobs must forbid overlap and unbounded DaemonSets fail. The retired v1 blanket solver/restore reserve is not a v2 profile field |
 | Unsupported legacy settings | Public/host-override exposure, per-instance exceptions, provenance/platform-image policy and alerts are not ported; v2 refuses unsupported records rather than modelling legacy settings |
 
-`check-apps` is a zero-argument whole-tree gate. Its Python entrypoint
-[`apps/validation.py`](../tools/swhurl/apps/validation.py) owns usage validation, profile and chart resolution,
-and calling `check-rendered.sh --chart DIR` through Runner. The script stops on render-equality failure
-before policy, and propagates policy failure. The entrypoint preserves the Go JSON report and diagnostics,
-returns the gate's nonzero status, and never treats chart acquisition failure as success. Explicit legacy
-paths and flags exit 2 before file reads or Runner calls. Both profile and HelmRepository reads use the
-requested checkout root. Shared cache/pull behavior lives in [`charts.py`](../tools/swhurl/charts.py), also
-used by OTel and ClickStack; it owns dependency acquisition, not policy decisions.
+`check-apps` is a zero-argument whole-tree gate, [`v2/check-apps.sh`](../v2/check-apps.sh),
+with no Python execution path. Explicit paths or flags exit 2 before file reads or subprocesses. It
+acquires the chart through [`v2/chart.sh`](../v2/chart.sh), then runs `check-rendered.sh --chart DIR`.
+Render-equality failure stops before policy; the gate preserves Go's report, diagnostics and nonzero
+status. Validate and Deploy-v2 use the same acquisition script to populate the cache before Go tests.
+Python's [`charts.py`](../tools/swhurl/charts.py) remains only for OTel and ClickStack checks.
+
+#### Chart acquisition (approved 5 November 2026)
+
+`swhurl-v2 chart --profile PROFILE.json --repositories HELMREPOSITORIES.yaml --cache DIR` resolves
+one profile pin against exactly one named HelmRepository and prints only its absolute local directory.
+The command reads bounded explicit files; orchestration resolves the repository through the Helm
+adapter's existing YAML boundary, then calls the separate `Acquirer`. Neither the renderer nor policy
+acquires implicitly. The profile owns name/version/repository name; the registry owns its URL; the shell
+owns the cache location (`${XDG_CACHE_HOME:-$HOME/.cache}/swhurl-platform/charts`). No new parser dependency.
+
+A cached chart whose `Chart.yaml` matches is reused without Helm. Otherwise `helm pull NAME --repo URL
+--version VERSION --untar --untardir TEMP --repository-cache TEMP/repository --repository-config
+TEMP/repositories.yaml` extracts inside a private cache temporary directory, validates metadata and
+publishes by rename. Helm's repository-index cache is private to that pull; the operator's Helm
+configuration and repository cache are not used. A concurrent winner is accepted only if its chart
+metadata matches; a failed pull or mismatched result publishes nothing and cleans its temporary
+directory. Existing mismatched cache entries are refused, not silently overwritten. Names/versions
+must be safe path segments and repository URLs HTTP(S) without userinfo. Resolution matches the
+repository name, as the retired helper did; duplicate names refuse even across namespaces. Helm
+output is discarded and bounded (16 MiB stdout, 64 KiB stderr), with a two-minute timeout and one-second
+inherited-pipe wait. Fixed reasons distinguish timeout, missing Helm, failed pull, mismatched metadata
+and cache-publication failure, without tool output. Chart/repository resolution and acquisition failures
+exit 1; invalid CLI usage/profile exits 2. Only the cache is written; no credentials, cluster operation
+or Helm install/upgrade.
+
+This slice deletes the 45-line `apps/validation.py`, its command run function and both inline CI fetch
+recipes. It deliberately retains Python chart acquisition for its remaining callers rather than porting
+OTel/ClickStack or template checks. Contract suites cover cold/cache/concurrent pulls and failures; shell
+tests prove argument refusal, acquisition → equality → policy ordering and Python-free execution.
 
 ### Legacy policy retirement (approved 4 November 2026)
 
@@ -569,7 +596,7 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 | `stdlib-only` | v2 imports only the standard library and its own packages except `go.yaml.in/yaml/v3` **v3.0.6**, approved 4 November 2026, imported only by `adapters/helm` (including its tests). The check refuses other imports, modules, versions and module replacement directives. Pure packages remain standard-library-only; this does not approve YAML kubeconfigs. |
 | `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
 | `pure` | Pure packages import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments: `time` is allowed for parsing and comparing a *supplied* timestamp, and its clock functions (`time.Now`, `time.Since`, `time.Until`, timers and ticks) are refused by call. |
-| `no-subprocess` | v2 code (not its tests) starts processes only in the encryption adapter `adapters/sops`, the approved chart-rendering adapter `adapters/helm` and the read-only checkout adapter `adapters/git`, and names no `kubectl` or `flux` command anywhere ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine; Git avoids a second reader of its index and object store. The Git exception, approved 5 November 2026, is [four fixed reads of one checkout](#the-workstream-check-in-go-approved-5-november-2026), with no write, fetch or general command runner. The Helm exception, approved 4 November 2026, is only `helm template` for app-policy checks: explicit chart and values in, rendered objects or a failed render out; no cluster reads, install, upgrade, dependency fetching or arbitrary command runner. The checked allowlist admits exactly the three adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm invocation. |
+| `no-subprocess` | v2 code (not its tests) starts processes only in the encryption adapter `adapters/sops`, the approved chart-rendering adapter `adapters/helm` and the read-only checkout adapter `adapters/git`, and names no `kubectl` or `flux` command anywhere ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine; Git avoids a second reader of its index and object store. The Git exception, approved 5 November 2026, is [four fixed reads of one checkout](#the-workstream-check-in-go-approved-5-november-2026), with no write, fetch or general command runner. The Helm exception, approved 4 November 2026, is `helm template` for app-policy checks and, approved 5 November 2026, explicit profile-pinned `helm pull` for the check cache ([contract](#chart-acquisition-approved-5-november-2026)): no cluster reads, install, upgrade, implicit dependency fetching or arbitrary command runner. The checked allowlist admits exactly the three adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm invocation. |
 | `public-api` | The exported API of every library package matches `archtest/api.txt`, so an interface change is a deliberate, reviewed diff. |
 | `budgets` | No function exceeds complexity 10 or 60 lines unless `archtest/budgets.json` lists it with a reason; a listed function may shrink but not grow, and its entry goes once it fits. |
 | `places` | A package's place matches its layer: layer 0 is listed in `Pure`, layer 1 is under `adapters/`, layer 2 is `orchestration`, layer 3 is a `main` package under `cmd/` ([why](#extension-recipes)). |

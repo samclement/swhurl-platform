@@ -49,6 +49,13 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Review:** independent read-only review found no blockers; its findings (a stale `AGENTS.md` line, fixed
   failure reasons, untested script arguments and registry) are fixed. Kept as they were: name-only repository
   matching, and the CI apps job's now-redundant Python setup (an adjacent cleanup).
+- **Live (5 November 2026):** pushed `d7613afe`; Validate run `42049085336` passed every job, its tooling job
+  fetching the chart with `bash v2/chart.sh` on a cold runner, and Render run `42049085143` passed. Validate
+  pinned console image `src-ab4735e51aabbf11` (`eaf06d51`). `make flux-reconcile` applied it; `make
+  verify-platform` reported 84 OK with no BAD or WARN; `swhurl-v2 status --all` read all **10 instances
+  healthy**; the console runs the new image and both scheduled jobs (`console-dashboards`,
+  `console-notifications`) succeeded on it at 14:58 UTC. Nothing else on the cluster changed: this slice
+  moves only offline checks.
 - **Not in this commit:** the notify service port's paused step 1 (`v2/notify/`, the kube `Data`/`Reviewer`
   ports, their archtest entries and plan section 12) stays uncommitted in the operator's checkout, so its
   untested API is not admitted to the baseline. There, local `make check-v2` and `check-docs` report it until

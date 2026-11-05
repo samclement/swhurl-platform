@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: in progress
-Gate: push the workstream-check port, then verify CI and the console redeploy
+Status: blocked
+Gate: approve the next console-free Python retirement slice
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -95,10 +95,9 @@ not migration.
 2. **The console-free Python, first.** Go owns all app-policy decisions
    ([evidence](current-state.md#legacy-app-policy-retirement-4-november-2026)), and `check-docs` is
    `swhurl-v2 workstreams` with the Python checker deleted
-   ([evidence](current-state.md#the-workstream-check-leaves-python-5-november-2026)). **Push it, then
-   verify CI's new Check the workstream record step and the console redeploy** that deleting from `tools/`
-   starts. After that, approve the next console-free slice: the check-apps glue, the template checks or the
-   notify service; none is chosen here.
+   ([evidence](current-state.md#the-workstream-check-leaves-python-5-november-2026)), delivered and
+   checked in CI on every push. **Approve the next console-free Python retirement slice:** the check-apps glue,
+   the template checks or the notify service; none is chosen here.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 

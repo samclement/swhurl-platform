@@ -1,0 +1,2 @@
+# The adapter contract proves that offered event-document bytes retain CRLF exactly.
+v2/adapters/appsource/testdata/asyncapi.yaml -text whitespace=cr-at-eol

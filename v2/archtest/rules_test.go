@@ -28,8 +28,8 @@ type Rule struct {
 }
 
 var Rules = []Rule{
-	{"stdlib-only", "v2 imports only the Go standard library and its own packages except pinned YAML in adapters/helm",
-		"remove the import; only adapters/helm may import go.yaml.in/yaml/v3 v3.0.6",
+	{"stdlib-only", "v2 imports only the Go standard library and its own packages except pinned YAML in adapters/helm and adapters/appsource",
+		"remove the import; only adapters/helm and adapters/appsource may import go.yaml.in/yaml/v3 v3.0.6",
 		"kubernetes-the-api-server-not-kubectl"},
 	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers",
 		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down",
@@ -63,33 +63,36 @@ var Rules = []Rule{
 // Layers: a package may import v2 packages only from lower layers. 0 is the pure model, 1 adapters
 // (one per external dependency, speaking domain terms), 2 commands that wire adapters to the model.
 var Layers = map[string]int{
-	"calls":                          0,
-	"events":                         0,
-	"kernel":                         0,
-	"legacy":                         0,
-	"notify":                         0,
-	"observe":                        0,
-	"policy":                         0,
-	"shadow":                         0,
-	"workstreams":                    0,
-	"adapters/git":                   1,
-	"adapters/git/gittest":           1,
-	"adapters/helm":                  1,
-	"adapters/helm/helmtest":         1,
-	"adapters/files":                 1,
-	"adapters/files/filestest":       1,
-	"adapters/kube":                  1,
-	"adapters/kube/kubetest":         1,
-	"adapters/ntfy":                  1,
-	"adapters/ntfy/ntfytest":         1,
-	"adapters/registry":              1,
-	"adapters/registry/registrytest": 1,
-	"adapters/s3":                    1,
-	"adapters/s3/s3test":             1,
-	"adapters/sops":                  1,
-	"adapters/sops/sopstest":         1,
-	"orchestration":                  2,
-	"cmd/swhurl-v2":                  3,
+	"calls":                            0,
+	"events":                           0,
+	"kernel":                           0,
+	"legacy":                           0,
+	"notify":                           0,
+	"observe":                          0,
+	"policy":                           0,
+	"producer":                         0,
+	"shadow":                           0,
+	"workstreams":                      0,
+	"adapters/appsource":               1,
+	"adapters/appsource/appsourcetest": 1,
+	"adapters/git":                     1,
+	"adapters/git/gittest":             1,
+	"adapters/helm":                    1,
+	"adapters/helm/helmtest":           1,
+	"adapters/files":                   1,
+	"adapters/files/filestest":         1,
+	"adapters/kube":                    1,
+	"adapters/kube/kubetest":           1,
+	"adapters/ntfy":                    1,
+	"adapters/ntfy/ntfytest":           1,
+	"adapters/registry":                1,
+	"adapters/registry/registrytest":   1,
+	"adapters/s3":                      1,
+	"adapters/s3/s3test":               1,
+	"adapters/sops":                    1,
+	"adapters/sops/sopstest":           1,
+	"orchestration":                    2,
+	"cmd/swhurl-v2":                    3,
 }
 
 // Orchestration is the published list of packages that run use cases: they sequence pure decisions and the
@@ -102,8 +105,9 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"calls", "events", "kernel", "legacy", "notify", "observe", "policy", "shadow", "workstreams"}
+var Pure = []string{"calls", "events", "kernel", "legacy", "notify", "observe", "policy", "producer", "shadow", "workstreams"}
 
+// encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
 // environment, files, network or processes. `crypto/ed25519` derives a key pair from a seed the caller supplies
 // (its own key generation, which draws randomness, is never called), and `encoding/base32` and
@@ -112,8 +116,8 @@ var Pure = []string{"calls", "events", "kernel", "legacy", "notify", "observe", 
 // formatting and comparing them — not for the clock, which pureBannedCalls still refuses. Adding one is a
 // reviewed change to this list.
 var PureImports = []string{
-	"bytes", "crypto/ed25519", "crypto/sha256", "crypto/subtle", "encoding/base32", "encoding/binary", "encoding/hex",
-	"encoding/json", "errors", "fmt", "maps", "math", "regexp", "slices", "sort", "strconv", "strings", "time",
+	"bytes", "crypto/ed25519", "crypto/sha256", "crypto/subtle", "encoding/base32", "encoding/base64", "encoding/binary", "encoding/hex",
+	"encoding/json", "errors", "fmt", "maps", "math", "math/big", "regexp", "slices", "sort", "strconv", "strings", "time",
 	"unicode", "unicode/utf8",
 }
 
@@ -277,7 +281,7 @@ func checkStdlibOnly(m *Module) []Violation {
 	for _, dir := range m.Dirs() {
 		for _, file := range m.Packages[dir].Files {
 			for _, spec := range file.AST.Imports {
-				if path := importPath(spec); !isStd(path) && m.local(path) == "" && !(dir == "adapters/helm" && path == "go.yaml.in/yaml/v3") {
+				if path := importPath(spec); !isStd(path) && m.local(path) == "" && !((dir == "adapters/helm" || dir == "adapters/appsource") && path == "go.yaml.in/yaml/v3") {
 					found = append(found, Violation{"stdlib-only", m.at(file, spec.Pos()), "imports " + path})
 				}
 			}

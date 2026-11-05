@@ -1,0 +1,263 @@
+[
+  {
+    "name": "web",
+    "files": {
+      "asyncapi.yaml": "asyncapi: 3.0.0\ninfo:\n  title: app\n  version: 0.1.0\nchannels:\n  visited:\n    address: visited\n    messages:\n      visited:\n        $ref: '#/components/messages/visited'\noperations:\n  publishVisited:\n    action: send\n    channel:\n      $ref: '#/channels/visited'\ncomponents:\n  messages:\n    visited:\n      payload:\n        type: object\n",
+      "openapi.json": "{\"openapi\":\"3.0.0\"}\n",
+      "swhurl.yaml": "version: 1\nstack: typescript\nkind: web\ndescription: an app\nport: 8080\nhealthPath: /healthz\nuid: 65532\ntelemetry: otlp\ndatabase: sqlite\nprovides:\n  api: /openapi.json\n  apiFile: openapi.json\n  eventsFile: asyncapi.yaml\nflags:\n  shout:\n    type: boolean\n    default: false\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"uid\":65532,\"port\":8080,\"healthPath\":\"/healthz\"},\"telemetry\":true,\"database\":\"sqlite\",\"databaseSizeMiB\":1024,\"publishes\":[\"visited\"],\"memoryMiB\":128,\"description\":\"an app\",\"apiPath\":\"/openapi.json\",\"documents\":{\"api\":\"eyJvcGVuYXBpIjoiMy4wLjAifQo=\",\"events\":\"YXN5bmNhcGk6IDMuMC4wCmluZm86CiAgdGl0bGU6IGFwcAogIHZlcnNpb246IDAuMS4wCmNoYW5uZWxzOgogIHZpc2l0ZWQ6CiAgICBhZGRyZXNzOiB2aXNpdGVkCiAgICBtZXNzYWdlczoKICAgICAgdmlzaXRlZDoKICAgICAgICAkcmVmOiAnIy9jb21wb25lbnRzL21lc3NhZ2VzL3Zpc2l0ZWQnCm9wZXJhdGlvbnM6CiAgcHVibGlzaFZpc2l0ZWQ6CiAgICBhY3Rpb246IHNlbmQKICAgIGNoYW5uZWw6CiAgICAgICRyZWY6ICcjL2NoYW5uZWxzL3Zpc2l0ZWQnCmNvbXBvbmVudHM6CiAgbWVzc2FnZXM6CiAgICB2aXNpdGVkOgogICAgICBwYXlsb2FkOgogICAgICAgIHR5cGU6IG9iamVjdAo=\",\"flags\":\"ewogICJzaG91dCI6IHsKICAgICJ0eXBlIjogImJvb2xlYW4iLAogICAgImRlZmF1bHQiOiBmYWxzZQogIH0KfQo=\"}}\n"
+  },
+  {
+    "name": "worker",
+    "files": {
+      "swhurl.yaml": "version: 1\nstack: kotlin\nkind: worker\nuid: 65532\ntelemetry: otlp\nresources:\n  cpu: 100m\n  memory: 192Mi\n  memoryLimit: 384Mi\nprovides:\n  eventsFile: src/main/resources/asyncapi.yaml\n",
+      "src/main/resources/asyncapi.yaml": "asyncapi: 3.0.0\ninfo:\n  title: app\n  version: 0.1.0\nchannels:\n  visited:\n    address: visited\n    messages:\n      visited:\n        $ref: '#/components/messages/visited'\noperations:\n  publishVisited:\n    action: send\n    channel:\n      $ref: '#/channels/visited'\ncomponents:\n  messages:\n    visited:\n      payload:\n        type: object\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"telemetry\":true,\"publishes\":[\"visited\"],\"memoryMiB\":192,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmluZm86CiAgdGl0bGU6IGFwcAogIHZlcnNpb246IDAuMS4wCmNoYW5uZWxzOgogIHZpc2l0ZWQ6CiAgICBhZGRyZXNzOiB2aXNpdGVkCiAgICBtZXNzYWdlczoKICAgICAgdmlzaXRlZDoKICAgICAgICAkcmVmOiAnIy9jb21wb25lbnRzL21lc3NhZ2VzL3Zpc2l0ZWQnCm9wZXJhdGlvbnM6CiAgcHVibGlzaFZpc2l0ZWQ6CiAgICBhY3Rpb246IHNlbmQKICAgIGNoYW5uZWw6CiAgICAgICRyZWY6ICcjL2NoYW5uZWxzL3Zpc2l0ZWQnCmNvbXBvbmVudHM6CiAgbWVzc2FnZXM6CiAgICB2aXNpdGVkOgogICAgICBwYXlsb2FkOgogICAgICAgIHR5cGU6IG9iamVjdAo=\"}}\n"
+  },
+  {
+    "name": "job",
+    "files": {
+      "asyncapi.yaml": "asyncapi: 3.0.0\ninfo:\n  title: app\n  version: 0.1.0\nchannels:\n  visited:\n    address: visited\n    messages:\n      visited:\n        $ref: '#/components/messages/visited'\noperations:\n  publishVisited:\n    action: send\n    channel:\n      $ref: '#/channels/visited'\ncomponents:\n  messages:\n    visited:\n      payload:\n        type: object\n",
+      "swhurl.yaml": "version: 1\nstack: typescript\nkind: job\nuid: 65532\ntelemetry: otlp\nprovides:\n  eventsFile: asyncapi.yaml\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"job\",\"uid\":65532},\"telemetry\":true,\"publishes\":[\"visited\"],\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmluZm86CiAgdGl0bGU6IGFwcAogIHZlcnNpb246IDAuMS4wCmNoYW5uZWxzOgogIHZpc2l0ZWQ6CiAgICBhZGRyZXNzOiB2aXNpdGVkCiAgICBtZXNzYWdlczoKICAgICAgdmlzaXRlZDoKICAgICAgICAkcmVmOiAnIy9jb21wb25lbnRzL21lc3NhZ2VzL3Zpc2l0ZWQnCm9wZXJhdGlvbnM6CiAgcHVibGlzaFZpc2l0ZWQ6CiAgICBhY3Rpb246IHNlbmQKICAgIGNoYW5uZWw6CiAgICAgICRyZWY6ICcjL2NoYW5uZWxzL3Zpc2l0ZWQnCmNvbXBvbmVudHM6CiAgbWVzc2FnZXM6CiAgICB2aXNpdGVkOgogICAgICBwYXlsb2FkOgogICAgICAgIHR5cGU6IG9iamVjdAo=\"}}\n"
+  },
+  {
+    "name": "quiet",
+    "files": {
+      "swhurl.yaml": "version: 1\nstack: typescript\nkind: worker\nuid: 1000\ntelemetry: none\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":1000},\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "no-events",
+    "files": {
+      "openapi.json": "{\"openapi\":\"3.0.0\"}\n",
+      "swhurl.yaml": "version: 1\nstack: typescript\nkind: web\nport: 8080\nhealthPath: /healthz\nuid: 65532\ntelemetry: otlp\nautoDeploy: true\nprovides:\n  api: /openapi.json\n  apiFile: openapi.json\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"uid\":65532,\"port\":8080,\"healthPath\":\"/healthz\"},\"telemetry\":true,\"memoryMiB\":128,\"apiPath\":\"/openapi.json\",\"documents\":{\"api\":\"eyJvcGVuYXBpIjoiMy4wLjAifQo=\"}}\n"
+  },
+  {
+    "name": "secrets",
+    "files": {
+      "swhurl.yaml": "version: 1\nstack: typescript\nkind: web\nport: 8080\nhealthPath: /healthz\nuid: 65532\nsecrets:\n  - SOME_TOKEN\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"uid\":65532,\"port\":8080,\"healthPath\":\"/healthz\"},\"secrets\":[\"SOME_TOKEN\"],\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "channels-only",
+    "files": {
+      "swhurl.yaml": "version: 1\nstack: kotlin\nkind: worker\nuid: 65532\ntelemetry: otlp\nresources:\n  cpu: 100m\n  memory: 192Mi\n  memoryLimit: 384Mi\nprovides:\n  eventsFile: src/main/resources/asyncapi.yaml\n",
+      "src/main/resources/asyncapi.yaml": "asyncapi: 3.0.0\ninfo:\n  title: app\n  version: 0.1.0\nchannels:\n  visited:\n    address: visited\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"telemetry\":true,\"memoryMiB\":192,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmluZm86CiAgdGl0bGU6IGFwcAogIHZlcnNpb246IDAuMS4wCmNoYW5uZWxzOgogIHZpc2l0ZWQ6CiAgICBhZGRyZXNzOiB2aXNpdGVkCg==\"}}\n"
+  },
+  {
+    "name": "flags-identity",
+    "files": {
+      "swhurl.yaml": "version: 1\nstack: typescript\nkind: worker\nuid: 1000\ntelemetry: none\nflags:\n  zed:\n    description: \"\u00e9 \ud83d\ude00 <>& \\u007f\"\n    type: number\n    default: 1.0\n    min: -0.0\n    max: 1.0e+20\n    staging: 0.00001\n    prod: 1000000000000000.0\n  alpha:\n    type: string\n    default: caf\u00e9\n    enum: [caf\u00e9, tea]\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":1000},\"memoryMiB\":128,\"documents\":{\"flags\":\"ewogICJ6ZWQiOiB7CiAgICAiZGVzY3JpcHRpb24iOiAiXHUwMGU5IFx1ZDgzZFx1ZGUwMCA8PiYgXHUwMDdmIiwKICAgICJ0eXBlIjogIm51bWJlciIsCiAgICAiZGVmYXVsdCI6IDEuMCwKICAgICJtaW4iOiAtMC4wLAogICAgIm1heCI6IDFlKzIwLAogICAgInN0YWdpbmciOiAxZS0wNSwKICAgICJwcm9kIjogMTAwMDAwMDAwMDAwMDAwMC4wCiAgfSwKICAiYWxwaGEiOiB7CiAgICAidHlwZSI6ICJzdHJpbmciLAogICAgImRlZmF1bHQiOiAiY2FmXHUwMGU5IiwKICAgICJlbnVtIjogWwogICAgICAiY2FmXHUwMGU5IiwKICAgICAgInRlYSIKICAgIF0KICB9Cn0K\"}}\n"
+  },
+  {
+    "name": "numeric-identity",
+    "files": {
+      "swhurl.yaml": "version: 1\nstack: typescript\nkind: worker\nuid: 1000\ntelemetry: none\nflags:\n  small:\n    type: number\n    default: 1.0e-7\n    staging: -0.0\n    prod: 1.0e+16\n  huge:\n    type: number\n    default: 123456789012345678901234567890\n    min: 123456789012345678901234567889\n    max: .inf\n  base-sixty:\n    type: integer\n    default: 1:20\n  octal:\n    type: integer\n    default: 012\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":1000},\"memoryMiB\":128,\"documents\":{\"flags\":\"ewogICJzbWFsbCI6IHsKICAgICJ0eXBlIjogIm51bWJlciIsCiAgICAiZGVmYXVsdCI6IDFlLTA3LAogICAgInN0YWdpbmciOiAtMC4wLAogICAgInByb2QiOiAxZSsxNgogIH0sCiAgImh1Z2UiOiB7CiAgICAidHlwZSI6ICJudW1iZXIiLAogICAgImRlZmF1bHQiOiAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAsCiAgICAibWluIjogMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODg5LAogICAgIm1heCI6IEluZmluaXR5CiAgfSwKICAiYmFzZS1zaXh0eSI6IHsKICAgICJ0eXBlIjogImludGVnZXIiLAogICAgImRlZmF1bHQiOiA4MAogIH0sCiAgIm9jdGFsIjogewogICAgInR5cGUiOiAiaW50ZWdlciIsCiAgICAiZGVmYXVsdCI6IDEwCiAgfQp9Cg==\"}}\n"
+  },
+  {
+    "name": "source-defaults",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nuid: 0\ntelemetry: none\nstack: \"\"\nautoDeploy: false\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "noncreation-web",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: web\nhealthPath: relative\nport: -1\nuid: -7\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"uid\":-7,\"port\":-1,\"healthPath\":\"relative\"},\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "scalar-alias",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags:\n  count:\n    type: integer\n    default: &default 1\n    staging: *default\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"flags\":\"ewogICJjb3VudCI6IHsKICAgICJ0eXBlIjogImludGVnZXIiLAogICAgImRlZmF1bHQiOiAxLAogICAgInN0YWdpbmciOiAxCiAgfQp9Cg==\"}}\n"
+  },
+  {
+    "name": "flags-mapping-merge",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags:\n  count: &count\n    type: integer\n    default: 1\n    description: first\n  other:\n    description: local\n    <<: *count\n    default: 2\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"flags\":\"ewogICJjb3VudCI6IHsKICAgICJ0eXBlIjogImludGVnZXIiLAogICAgImRlZmF1bHQiOiAxLAogICAgImRlc2NyaXB0aW9uIjogImZpcnN0IgogIH0sCiAgIm90aGVyIjogewogICAgInR5cGUiOiAiaW50ZWdlciIsCiAgICAiZGVmYXVsdCI6IDIsCiAgICAiZGVzY3JpcHRpb24iOiAibG9jYWwiCiAgfQp9Cg==\"}}\n"
+  },
+  {
+    "name": "flags-sequence-merge",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags:\n  first: &first {type: integer, default: 1, staging: 3}\n  second: &second {description: second, type: integer, default: 2, prod: 4}\n  combined:\n    prod: 9\n    <<: [*first, *second]\n    default: 5\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"flags\":\"ewogICJmaXJzdCI6IHsKICAgICJ0eXBlIjogImludGVnZXIiLAogICAgImRlZmF1bHQiOiAxLAogICAgInN0YWdpbmciOiAzCiAgfSwKICAic2Vjb25kIjogewogICAgImRlc2NyaXB0aW9uIjogInNlY29uZCIsCiAgICAidHlwZSI6ICJpbnRlZ2VyIiwKICAgICJkZWZhdWx0IjogMiwKICAgICJwcm9kIjogNAogIH0sCiAgImNvbWJpbmVkIjogewogICAgImRlc2NyaXB0aW9uIjogInNlY29uZCIsCiAgICAidHlwZSI6ICJpbnRlZ2VyIiwKICAgICJkZWZhdWx0IjogNSwKICAgICJwcm9kIjogOSwKICAgICJzdGFnaW5nIjogMwogIH0KfQo=\"}}\n"
+  },
+  {
+    "name": "duplicate-uid",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nuid: 1\nuid: 65532\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "duplicate-flags-fields",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags:\n  count:\n    default: 1\n    description: original\n    type: integer\n    default: 2\n    description: final\n  other: {type: boolean, default: false}\n  count:\n    staging: 4\n    type: integer\n    default: 3\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"flags\":\"ewogICJjb3VudCI6IHsKICAgICJzdGFnaW5nIjogNCwKICAgICJ0eXBlIjogImludGVnZXIiLAogICAgImRlZmF1bHQiOiAzCiAgfSwKICAib3RoZXIiOiB7CiAgICAidHlwZSI6ICJib29sZWFuIiwKICAgICJkZWZhdWx0IjogZmFsc2UKICB9Cn0K\"}}\n"
+  },
+  {
+    "name": "nested-repeated-merges",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags:\n  original: &original {type: integer, default: 1}\n  nested: &nested\n    <<: *original\n    staging: 2\n  repeated:\n    <<: *nested\n    <<: {description: extra, default: 3}\n    prod: 4\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"flags\":\"ewogICJvcmlnaW5hbCI6IHsKICAgICJ0eXBlIjogImludGVnZXIiLAogICAgImRlZmF1bHQiOiAxCiAgfSwKICAibmVzdGVkIjogewogICAgInR5cGUiOiAiaW50ZWdlciIsCiAgICAiZGVmYXVsdCI6IDEsCiAgICAic3RhZ2luZyI6IDIKICB9LAogICJyZXBlYXRlZCI6IHsKICAgICJ0eXBlIjogImludGVnZXIiLAogICAgImRlZmF1bHQiOiAzLAogICAgInN0YWdpbmciOiAyLAogICAgImRlc2NyaXB0aW9uIjogImV4dHJhIiwKICAgICJwcm9kIjogNAogIH0KfQo=\"}}\n"
+  },
+  {
+    "name": "duplicate-flag-declaration-fields",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags:\n  count:\n    default: 1\n    description: original\n    type: integer\n    default: 2\n    description: final\n  other: {type: boolean, default: false}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"flags\":\"ewogICJjb3VudCI6IHsKICAgICJkZWZhdWx0IjogMiwKICAgICJkZXNjcmlwdGlvbiI6ICJmaW5hbCIsCiAgICAidHlwZSI6ICJpbnRlZ2VyIgogIH0sCiAgIm90aGVyIjogewogICAgInR5cGUiOiAiYm9vbGVhbiIsCiAgICAiZGVmYXVsdCI6IGZhbHNlCiAgfQp9Cg==\"}}\n"
+  },
+  {
+    "name": "resolver-strings",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags:\n  case-a:\n    type: string\n    default: -.5\n  case-b:\n    type: string\n    default: +.5\n  case-c:\n    type: string\n    default: -.5e+2\n  case-d:\n    type: string\n    default: 2026-1-1\n  case-e:\n    type: string\n    default: 2026-1-1Tnope\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"flags\":\"ewogICJjYXNlLWEiOiB7CiAgICAidHlwZSI6ICJzdHJpbmciLAogICAgImRlZmF1bHQiOiAiLS41IgogIH0sCiAgImNhc2UtYiI6IHsKICAgICJ0eXBlIjogInN0cmluZyIsCiAgICAiZGVmYXVsdCI6ICIrLjUiCiAgfSwKICAiY2FzZS1jIjogewogICAgInR5cGUiOiAic3RyaW5nIiwKICAgICJkZWZhdWx0IjogIi0uNWUrMiIKICB9LAogICJjYXNlLWQiOiB7CiAgICAidHlwZSI6ICJzdHJpbmciLAogICAgImRlZmF1bHQiOiAiMjAyNi0xLTEiCiAgfSwKICAiY2FzZS1lIjogewogICAgInR5cGUiOiAic3RyaW5nIiwKICAgICJkZWZhdWx0IjogIjIwMjYtMS0xVG5vcGUiCiAgfQp9Cg==\"}}\n"
+  },
+  {
+    "name": "unused-timestamp",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\ncomponents: {schemas: {at: {example: 2026-01-01}}}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmNvbXBvbmVudHM6IHtzY2hlbWFzOiB7YXQ6IHtleGFtcGxlOiAyMDI2LTAxLTAxfX19Cg==\"}}\n"
+  },
+  {
+    "name": "unused-datetime",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\ncomponents: {schemas: {at: {example: 2026-1-1T12:34:56Z}}}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmNvbXBvbmVudHM6IHtzY2hlbWFzOiB7YXQ6IHtleGFtcGxlOiAyMDI2LTEtMVQxMjozNDo1Nlp9fX0K\"}}\n"
+  },
+  {
+    "name": "unused-binary",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\ncomponents: {schemas: {at: {example: !!binary SGVsbG8=}}}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmNvbXBvbmVudHM6IHtzY2hlbWFzOiB7YXQ6IHtleGFtcGxlOiAhIWJpbmFyeSBTR1ZzYkc4PX19fQo=\"}}\n"
+  },
+  {
+    "name": "database-size-source-0",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: web\nhealthPath: /h\ndatabase: sqlite\ndatabaseSize: \"+1Gi\"\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"uid\":65532,\"port\":8080,\"healthPath\":\"/h\"},\"database\":\"sqlite\",\"databaseSizeMiB\":1024,\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "database-size-source-1",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: web\nhealthPath: /h\ndatabase: sqlite\ndatabaseSize: \"1_000Mi\"\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"uid\":65532,\"port\":8080,\"healthPath\":\"/h\"},\"database\":\"sqlite\",\"databaseSizeMiB\":1000,\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "database-size-source-2",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: web\nhealthPath: /h\ndatabase: sqlite\ndatabaseSize: \" 1Gi\"\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"uid\":65532,\"port\":8080,\"healthPath\":\"/h\"},\"database\":\"sqlite\",\"databaseSizeMiB\":1024,\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "database-size-source-3",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: web\nhealthPath: /h\ndatabase: sqlite\ndatabaseSize: \"-1Gi\"\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"uid\":65532,\"port\":8080,\"healthPath\":\"/h\"},\"database\":\"sqlite\",\"databaseSizeMiB\":-1024,\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "database-size-source-4",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: web\nhealthPath: /h\ndatabase: sqlite\ndatabaseSize: \"-1536Ki\"\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"uid\":65532,\"port\":8080,\"healthPath\":\"/h\"},\"database\":\"sqlite\",\"databaseSizeMiB\":-1,\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "database-size-source-5",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: web\nhealthPath: /h\ndatabase: sqlite\ndatabaseSize: \"\u0661Gi\"\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"web\",\"uid\":65532,\"port\":8080,\"healthPath\":\"/h\"},\"database\":\"sqlite\",\"databaseSizeMiB\":1024,\"memoryMiB\":128}\n"
+  },
+  {
+    "name": "unused-timestamp-offset",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\ncomponents: {schemas: {at: {example: 2001-12-14 21:59:43.10 -5}}}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmNvbXBvbmVudHM6IHtzY2hlbWFzOiB7YXQ6IHtleGFtcGxlOiAyMDAxLTEyLTE0IDIxOjU5OjQzLjEwIC01fX19Cg==\"}}\n"
+  },
+  {
+    "name": "unused-numeric-example-keys",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\ncomponents: {schemas: {things: {example: {1: first}}}}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmNvbXBvbmVudHM6IHtzY2hlbWFzOiB7dGhpbmdzOiB7ZXhhbXBsZTogezE6IGZpcnN0fX19fQo=\"}}\n"
+  },
+  {
+    "name": "numeric-channel-key",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\nchannels:\n  123: {address: created}\noperations:\n  send: {action: send, channel: {$ref: '#/channels/123'}}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"publishes\":[\"created\"],\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmNoYW5uZWxzOgogIDEyMzoge2FkZHJlc3M6IGNyZWF0ZWR9Cm9wZXJhdGlvbnM6CiAgc2VuZDoge2FjdGlvbjogc2VuZCwgY2hhbm5lbDogeyRyZWY6ICcjL2NoYW5uZWxzLzEyMyd9fQo=\"}}\n"
+  },
+  {
+    "name": "mixed-channel-reference-collision",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\nchannels:\n  123: {address: numeric}\n  '123': {address: text}\noperations:\n  send: {action: send, channel: {$ref: '#/channels/123'}}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"publishes\":[\"text\"],\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmNoYW5uZWxzOgogIDEyMzoge2FkZHJlc3M6IG51bWVyaWN9CiAgJzEyMyc6IHthZGRyZXNzOiB0ZXh0fQpvcGVyYXRpb25zOgogIHNlbmQ6IHthY3Rpb246IHNlbmQsIGNoYW5uZWw6IHskcmVmOiAnIy9jaGFubmVscy8xMjMnfX0K\"}}\n"
+  },
+  {
+    "name": "mixed-channel-reference-collision-reversed",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\nchannels:\n  '123': {address: text}\n  123: {address: numeric}\noperations:\n  send: {action: send, channel: {$ref: '#/channels/123'}}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"publishes\":[\"numeric\"],\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmNoYW5uZWxzOgogICcxMjMnOiB7YWRkcmVzczogdGV4dH0KICAxMjM6IHthZGRyZXNzOiBudW1lcmljfQpvcGVyYXRpb25zOgogIHNlbmQ6IHthY3Rpb246IHNlbmQsIGNoYW5uZWw6IHskcmVmOiAnIy9jaGFubmVscy8xMjMnfX0K\"}}\n"
+  },
+  {
+    "name": "bool-int-channel-key-equality",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\nchannels:\n  true: {address: first}\n  1: {address: replaced}\n  '1': {address: text}\noperations:\n  boolean: {action: send, channel: {$ref: '#/channels/True'}}\n  text: {action: send, channel: {$ref: '#/channels/1'}}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"publishes\":[\"replaced\",\"text\"],\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmNoYW5uZWxzOgogIHRydWU6IHthZGRyZXNzOiBmaXJzdH0KICAxOiB7YWRkcmVzczogcmVwbGFjZWR9CiAgJzEnOiB7YWRkcmVzczogdGV4dH0Kb3BlcmF0aW9uczoKICBib29sZWFuOiB7YWN0aW9uOiBzZW5kLCBjaGFubmVsOiB7JHJlZjogJyMvY2hhbm5lbHMvVHJ1ZSd9fQogIHRleHQ6IHthY3Rpb246IHNlbmQsIGNoYW5uZWw6IHskcmVmOiAnIy9jaGFubmVscy8xJ319Cg==\"}}\n"
+  },
+  {
+    "name": "float-int-channel-key-equality",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\nchannels:\n  1.0: {address: first}\n  1: {address: replaced}\n  false: {address: zero}\n  0: {address: replaced-zero}\noperations:\n  numeric: {action: send, channel: {$ref: '#/channels/1.0'}}\n  zero: {action: send, channel: {$ref: '#/channels/False'}}\n"
+    },
+    "label": "platform.swhurl.com/declaration={\"schemaVersion\":2,\"runtime\":{\"kind\":\"worker\",\"uid\":65532},\"publishes\":[\"replaced\",\"replaced-zero\"],\"memoryMiB\":128,\"documents\":{\"events\":\"YXN5bmNhcGk6IDMuMC4wCmNoYW5uZWxzOgogIDEuMDoge2FkZHJlc3M6IGZpcnN0fQogIDE6IHthZGRyZXNzOiByZXBsYWNlZH0KICBmYWxzZToge2FkZHJlc3M6IHplcm99CiAgMDoge2FkZHJlc3M6IHJlcGxhY2VkLXplcm99Cm9wZXJhdGlvbnM6CiAgbnVtZXJpYzoge2FjdGlvbjogc2VuZCwgY2hhbm5lbDogeyRyZWY6ICcjL2NoYW5uZWxzLzEuMCd9fQogIHplcm86IHthY3Rpb246IHNlbmQsIGNoYW5uZWw6IHskcmVmOiAnIy9jaGFubmVscy9GYWxzZSd9fQo=\"}}\n"
+  }
+]

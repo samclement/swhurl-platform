@@ -225,8 +225,6 @@ INTERNAL = (
     Command('bot-render', 'CI (Render): render the newest main from its records, check it and push it', run='swhurl.bots:main_render', internal=True),
     Command('bot-deploy-v2', 'CI (Deploy v2): bring every v2-owned staging instance to its newest image, check it and push it',
             run='swhurl.bots:main_deploy_v2', internal=True),
-    Command('image-declaration', "CI: print the config label an image build writes from the app's swhurl.yaml",
-            run='swhurl.apps.image_declaration:main', internal=True),
     Command('flux-wait', 'Wait for every Flux unit to apply the fetched Git revision (flux-reconcile ends with it)',
             run='swhurl.flux:main', internal=True),
 )

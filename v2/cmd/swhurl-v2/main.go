@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/appsource"
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/git"
 	"github.com/samclement/swhurl-platform/v2/adapters/helm"
@@ -49,6 +50,7 @@ const usage = `usage:
       --out DIR [--calls CALLS.json] [--egress EGRESS.json]
   swhurl-v2 create --records DIR --app APPLICATION --team TEAM --image REPO:<run>-<commit> --profile PROFILE.json \
       --out DIR [--exposure GRANT]
+  swhurl-v2 image-declaration [--app-dir DIR]
   swhurl-v2 declaration --label FILE --app APPLICATION --team TEAM [--exposure GRANT]
   swhurl-v2 remove --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
       --calls CALLS.json --out DIR
@@ -374,6 +376,7 @@ var commands = map[string]func(cli, request) int{
 	"mint":              cli.mint,
 	"create":            cli.create,
 	"declaration":       cli.declaration,
+	"image-declaration": cli.imageDeclaration,
 	"migrate":           cli.migrate,
 	"edit":              cli.edit,
 	"remove":            cli.remove,
@@ -400,7 +403,7 @@ type request struct {
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
 	action, description, rename, transport             string
-	listen                                             string
+	listen, appDir                                     string
 	rotate, check, json, inCluster, all                bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
@@ -518,6 +521,9 @@ func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool 
 	case "create":
 		r.registerCreateFlags(flags)
 		r.registerOut(flags)
+	case "image-declaration":
+		r.appDir = "."
+		flags.Var(&once{value: &r.appDir}, "app-dir", "app checkout (default: working directory)")
 	case "declaration":
 		flags.Var(&once{value: &r.label}, "label", "a file holding the declaration label an image build printed")
 		flags.Var(&once{value: &r.app}, "app", "the application the label would create")
@@ -732,24 +738,25 @@ func (r *request) named() []string {
 // requiredFlags is what each command that names its inputs requires. A command that is not listed takes one file
 // argument instead, which is why the table is also the list of the two commands that do.
 var requiredFlags = map[string]func(*request) []string{
-	"policy":         func(r *request) []string { return []string{r.records, r.profile, r.out, r.chart} },
-	"chart":          func(r *request) []string { return []string{r.profile, r.repositories, r.cache} },
-	"compile":        func(r *request) []string { return []string{r.instance, r.release, r.app, r.profile} },
-	"preview":        func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
-	"select-release": func(r *request) []string { return []string{r.instance, r.release, r.expected} },
-	"mint":           func(r *request) []string { return []string{r.instance, r.profile, r.out} },
-	"create":         func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
-	"declaration":    func(r *request) []string { return []string{r.label, r.app, r.team} },
-	"remove":         func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
-	"status":         (*request).statusNamed,
-	"restore":        func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
-	"migrate":        (*request).appNamed,
-	"promote":        (*request).appNamed,
-	"deploy":         (*request).deployNamed,
-	"edit":           (*request).editNamed,
-	"team":           (*request).teamNamed,
-	"workstreams":    func(r *request) []string { return []string{r.repoRoot} },
-	"notify-serve":   func(r *request) []string { return []string{r.listen} },
+	"policy":            func(r *request) []string { return []string{r.records, r.profile, r.out, r.chart} },
+	"chart":             func(r *request) []string { return []string{r.profile, r.repositories, r.cache} },
+	"compile":           func(r *request) []string { return []string{r.instance, r.release, r.app, r.profile} },
+	"preview":           func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
+	"select-release":    func(r *request) []string { return []string{r.instance, r.release, r.expected} },
+	"mint":              func(r *request) []string { return []string{r.instance, r.profile, r.out} },
+	"create":            func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
+	"image-declaration": func(r *request) []string { return []string{r.appDir} },
+	"declaration":       func(r *request) []string { return []string{r.label, r.app, r.team} },
+	"remove":            func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
+	"status":            (*request).statusNamed,
+	"restore":           func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
+	"migrate":           (*request).appNamed,
+	"promote":           (*request).appNamed,
+	"deploy":            (*request).deployNamed,
+	"edit":              (*request).editNamed,
+	"team":              (*request).teamNamed,
+	"workstreams":       func(r *request) []string { return []string{r.repoRoot} },
+	"notify-serve":      func(r *request) []string { return []string{r.listen} },
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one
@@ -897,7 +904,8 @@ type cli struct {
 	// environment of its own.
 	inCluster inCluster
 	// git reads a checkout for the workstream check; nil is the git command on PATH.
-	git git.Reader
+	git       git.Reader
+	appSource appsource.Reader
 }
 
 func (c cli) releaseID(path string) int {

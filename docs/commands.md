@@ -67,7 +67,7 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 | `v2-snapshot REVISION= OUT=` † | Export one **pinned revision** of this checkout as the JSON snapshot v2's shadow report reads: each instance's records and the identities of the objects its committed manifests declare, plus units whose output no record explains. Every document comes from that revision through `git show`, so a dirty tree or a later commit changes nothing; SOPS-encrypted files are skipped and no manifest body is written. Writes only `OUT` ([v2 status](v2-status.md)) | Local |
 | `test [K=<pattern>]` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules, and every dry run that plans without touching anything (runs in `uv`'s locked environment, tests in parallel; a class with `setUpClass` stays together), then the slowest classes. `K` runs only the classes whose dotted name contains it (`K=test_console` while working on the console); `check` always runs them all | Local |
 | `check-apps` | Without Python, acquire the profile-pinned local chart with `swhurl-v2 chart`, compare every v2 record's compiled files with Git (`render --check`) and run read-only Go Kubernetes policy over **all instances including production**; any acquisition/render/rule failure fails. The script accepts no arguments: explicit legacy paths and flags exit 2 before reads or commands. Needs Go and Helm; [policy and acquisition](apps.md#the-app-policy) | Local |
-| `check-templates` | Render each app type from its stack's pinned template, run the image-declaration producer over it, and hand the label to `swhurl-v2 declaration`, which applies the creation rules with no image and no write; the template must refuse answers no type has, and a kind v2 does not model yet (the job kind) is a warning; one process per CPU, about 15 s ([apps](apps.md#stacks-and-features)) | Local (reads GitHub; builds `swhurl-v2` unless `SWHURL_V2` names one) |
+| `check-templates` | Render each app type from its stack's pinned template, run `swhurl-v2 image-declaration --app-dir DIR` over it, and hand the label to `swhurl-v2 declaration`, which applies the creation rules with no image and no write; the template must refuse answers no type has, and a kind v2 does not model yet (the job kind) is a warning; one process per CPU, about 15 s ([apps](apps.md#stacks-and-features)) | Local (reads GitHub; builds `swhurl-v2` unless `SWHURL_V2` names one) |
 | `check-otel` | Render both collectors and validate with the exact `otelcol-k8s` release and feature gates (binary cached and SHA-256 checked); run log fixtures through their actual processors and container framing; warn on deprecated component names | Local |
 | `check-lint` | Ruff on the Python tooling (including `devtools`) and ShellCheck on the remaining bash (needs `uv`) | Local |
 | `check-codegraph` | Unit tests for the [code graph](visual-change-tool.md) development aid in `devtools/codegraph` (standard library only) | Local |
@@ -104,3 +104,20 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 All three use [`host/install-timer.sh`](../host/install-timer.sh): a system unit that runs a script from this checkout as you, so edits to the script or `host/dns.env` apply at the next run; only unit template changes need a reinstall. All ask for `sudo`, so run them in your own terminal. Output goes to `/var/log/swhurl-platform/<unit>.log` and ClickStack.
 
 Environment variables the targets read: `DRY_RUN`, `SKIP_VERIFY`, and the per-target ones in the tables. Host DNS records are in [`host/dns.env`](../host/dns.env). Cluster settings live in Git, not here ([services](services.md#settings)).
+
+## Offline image declaration
+
+Run in your own terminal, from an app checkout, with a built `swhurl-v2` on `PATH`:
+
+```sh
+swhurl-v2 image-declaration                 # cwd is the app directory
+swhurl-v2 image-declaration --app-dir DIR   # an explicit checkout
+```
+
+Prints exactly one `platform.swhurl.com/declaration=<compact JSON>` line. It reads only `swhurl.yaml`
+and the documents that file explicitly names, with no image build, registry, GitHub, credential or
+cluster access and no writes. Exit 0 is a label, 2 is usage/input refusal (diagnostic only), and 1 is an
+output-write failure, following the Go CLI's standard I/O conventions. See the
+[producer contract](iteration-2-plan.md#producer-first-python-retirement-approved-5-november-2026)
+for byte identity, limits and the distinction between producing a declaration and accepting deployment.
+The Python command no longer exists in this checkout; historical pinned workflows are not upgraded.

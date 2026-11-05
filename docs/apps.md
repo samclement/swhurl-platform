@@ -159,7 +159,7 @@ Either way the app listens on 8080 (web), runs as UID 65532 writing only to `/tm
 **How templates are tested.** Two halves, so neither grows with the other:
 
 - **The template's own CI** (its Template workflow) renders each [app type](#app-types) built with that stack (TypeScript 4, Kotlin 3) and, for each, type-checks, tests, builds the image and smoke-tests it; on `main` each one's image is a [seed](#first-builds-of-new-apps). Each type keeps its own image build cache. SQLite runtime checks apply migrations and write through the actual image, restart with the same data directory, then verify migration history and previous rows are preserved and new writes work. Database inspection uses a disposable copy including WAL files. Both stacks use the same conformance assertions; each retains its own compiler, tests and build.
-- **This repo's `make check-templates`** (in CI on every push, not in `make check`; needs network and the v2 binary; about 15 s) clones each template at its pinned commit, renders each app type with Copier, runs the image-declaration producer over the rendered app — the same producer the image build calls — and hands the label to `swhurl-v2 declaration`, which decodes it and applies the rules a `create` would apply, with no image, no registry and no write. It also renders one set of answers no type has (a worker with a database), which the template must refuse. A `job` label is a warning: v2 does not model that kind yet, so the check names the gap instead of failing the template. It builds nothing and runs in parallel (one process per CPU). It catches a template declaring something the platform refuses before anyone creates an app from it.
+- **This repo's `make check-templates`** (in CI on every push, not in `make check`; needs network and the v2 binary; about 15 s) clones each template at its pinned commit, renders each app type with Copier, runs `swhurl-v2 image-declaration` over the rendered app and hands the label to `swhurl-v2 declaration`, which decodes it and applies the rules a `create` would apply, with no image, no registry and no write. It also renders one set of answers no type has (a worker with a database), which the template must refuse. A `job` label is a warning: v2 does not model that kind yet, so the check names the gap instead of failing the template. It builds no image and runs in parallel (one process per CPU). It catches a template declaring something the platform refuses before anyone creates an app from it.
 
 Adding a feature to a type changes that type's answers in `APP_TYPES`, in each template's validator and in its Template workflow matrix.
 
@@ -754,12 +754,16 @@ The [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) also runs hourly an
 
 **A v2-owned staging instance** follows the same trigger: its unit carries the same `ImageRepository` and
 `ImagePolicy`, and the image states what it needs in a declaration its build writes into the image's config
-labels. Its producer is the internal `image-declaration` command
-([`image_declaration.py`](../tools/swhurl/apps/image_declaration.py)), which prints one line from the app's
-`swhurl.yaml` and the events document it names, holding the runtime, telemetry, database, publications, secret
-names and minimum memory, with every absent fact left out. It states that contract and nothing else — `description`, offers and flags travel through the
-release — and it states `secrets` and `memoryMiB` so v2 holds an image that adds one rather than running it
-without. Beside it the build states the commit it built from,
+labels. The offline producer is `swhurl-v2 image-declaration [--app-dir DIR]`
+([contract](iteration-2-plan.md#producer-first-python-retirement-approved-5-november-2026)),
+which prints one compact label line from `swhurl.yaml` and its explicitly named API/events documents.
+It carries the runtime, telemetry, database, publications, secret names, minimum memory, description,
+API path and document bytes; flags are generated with their identity-preserving JSON format. Absent
+optional facts are left out. The producer states `job` and secret names truthfully even though deployment
+refuses them. Its 120 KiB limit counts UTF-8 encoded JSON bytes; a refusal prints no label and names the
+source or documents. Existing pinned external build workflows still use the historical Python helper in
+the platform revision they pin: this platform-only retirement does not upgrade those workflows or pins.
+Beside it the build states the commit it built from,
 in the standard `org.opencontainers.image.revision` label: the tag carries an abbreviation and a release states a
 full commit, so v2 refuses an image whose tag does not abbreviate the revision it states. Both labels come from the
 templates' shared build (TypeScript `v0.2.21`, Kotlin `v0.2.20`), and the seed a new app copies carries them too.

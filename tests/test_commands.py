@@ -55,6 +55,15 @@ class SpecTests(unittest.TestCase):
             with self.subTest(module=module):
                 self.assertFalse((ROOT / 'tools/swhurl/apps' / f'{module}.py').exists())
 
+    def test_image_declaration_has_only_the_go_entrypoint(self):
+        self.assertNotIn('image-declaration', COMMANDS)
+        self.assertNotIn('image-declaration', TARGETS)
+        self.assertFalse((ROOT / 'tools/swhurl/apps/image_declaration.py').exists())
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertEqual(__main__.main(['image-declaration']), 2)
+        self.assertIn('unknown command: image-declaration', err.getvalue())
+
     def test_notify_service_has_only_the_go_entrypoint(self):
         self.assertNotIn('notify-serve', COMMANDS)
         self.assertNotIn('notify-serve', TARGETS)

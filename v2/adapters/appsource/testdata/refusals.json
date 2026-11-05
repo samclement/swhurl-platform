@@ -1,0 +1,61 @@
+[
+  {
+    "name": "binary-float-min",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags:\n  sample:\n    type: number\n    default: 1.0e+23\n    min: 100000000000000000000000\n"
+    },
+    "originalError": "/tmp/tmpz3yt13ba/swhurl.yaml: flags.sample.default is outside min and max",
+    "says": "outside min and max"
+  },
+  {
+    "name": "binary-float-max",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags:\n  sample:\n    type: number\n    default: 99999999999999999999999\n    max: 1.0e+23\n"
+    },
+    "originalError": "/tmp/tmpccd183wb/swhurl.yaml: flags.sample.default is outside min and max",
+    "says": "outside min and max"
+  },
+  {
+    "name": "event-address-9223372036854775808",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\nchannels: {original: {address: 9223372036854775808}}\noperations: {s: {action: send, channel: {$ref: \"#/channels/original\"}}}\n"
+    },
+    "originalError": "/tmp/tmpj7tndw_6/events.yaml: channel original has the address '9223372036854775808'; an event is a lowercase name such as created",
+    "says": "9223372036854775808"
+  },
+  {
+    "name": "event-address-yes",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\nchannels: {original: {address: yes}}\noperations: {s: {action: send, channel: {$ref: \"#/channels/original\"}}}\n"
+    },
+    "originalError": "/tmp/tmpivjohwep/events.yaml: channel original has the address 'True'; an event is a lowercase name such as created",
+    "says": "True"
+  },
+  {
+    "name": "event-address-true",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nprovides: {eventsFile: events.yaml}\n",
+      "events.yaml": "asyncapi: 3.0.0\nchannels: {original: {address: true}}\noperations: {s: {action: send, channel: {$ref: \"#/channels/original\"}}}\n"
+    },
+    "originalError": "/tmp/tmpkc5gbfj3/events.yaml: channel original has the address 'True'; an event is a lowercase name such as created",
+    "says": "True"
+  },
+  {
+    "name": "numeric-flag-name",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags: {1: {type: boolean, default: false}}\n"
+    },
+    "originalError": "/tmp/tmp89nwz_ql/swhurl.yaml: flag name 1 must be kebab case, each part starting with a letter (new-checkout), at most 40 characters",
+    "says": "kebab case"
+  },
+  {
+    "name": "boolean-flag-name",
+    "files": {
+      "swhurl.yaml": "version: 1\nkind: worker\nflags: {on: {type: boolean, default: false}}\n"
+    },
+    "originalError": "/tmp/tmpjk1oscid/swhurl.yaml: flag name True must be kebab case, each part starting with a letter (new-checkout), at most 40 characters",
+    "says": "kebab case"
+  }
+]

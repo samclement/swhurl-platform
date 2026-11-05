@@ -15,7 +15,7 @@ COMMANDS := help reconcile verify-platform notifications-check notifications-hea
 	app-repo app-hooks \
 	console-image console-dev \
 	platform-certs-staging platform-certs-prod destroy-data \
-	check-repo check-apps check-templates check-otel check-secrets check-docs v2-snapshot \
+	check-repo check-apps check-templates check-otel check-secrets v2-snapshot \
 	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb \
 	live-test-call-identity live-test-network-policy live-test-team-scenario
 
@@ -71,6 +71,11 @@ V2_BUILD = set -Eeuo pipefail; work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 
 .PHONY: v2-deps
 v2-deps:
 	cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org go mod download go.yaml.in/yaml/v3
+
+# The workstream record against Git (docs/workstreams.md#what-make-check-docs-enforces): swhurl-v2 reads this checkout.
+.PHONY: check-docs
+check-docs:
+	@$(V2_BUILD); "$$work/swhurl-v2" workstreams --repo-root .
 
 .PHONY: check-v2
 check-v2:

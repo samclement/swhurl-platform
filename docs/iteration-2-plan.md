@@ -445,6 +445,36 @@ behavior parity with unchanged Go policy; its observations remain in the
 The [retirement record](current-state.md#legacy-app-policy-retirement-4-november-2026) distinguishes offline
 validation from deployment; remaining Python entrypoint/chart glue is not policy ownership.
 
+### The workstream check in Go (approved 5 November 2026)
+
+`make check-docs` is `swhurl-v2 workstreams --repo-root .`; the Python checker and its tests are deleted. The rules
+are the [registry's](workstreams.md#what-make-check-docs-enforces), unchanged but for one deliberate tightening: a
+change is anything `git status` reports, so a new untracked file under a workstream's paths also needs its page.
+
+- **Facts and owners:** Git owns what the checkout holds (`adapters/git`: tracked files, present files, uncommitted
+  paths, whether the clone is shallow, every commit a ref reaches); the Markdown files own the record. Existence means
+  present as Git sees it: tracked and not deleted, or untracked and not ignored, so an ignored file is absent, as on a
+  fresh clone.
+- **Pure core:** `workstreams.Check` takes those facts and the text of the Markdown files it uses and returns one
+  result per check: an okay line, its problems, or a warning when it could not run (a shallow clone skips the
+  citation check). `workstreams.Needs` names those files round by round: the registry, its pages, then the Markdown
+  files status-page evidence names a heading of. An absent file is never needed; it is a finding.
+- **Orchestration:** `orchestration.CheckWorkstreams` reads the checkout, then what `Needs` names until it names
+  nothing, then calls the check. A Markdown file nothing uses is never opened, so a stray symlink cannot stop it. The
+  command opens files through `os.Root`, so no path or symlink leaves the checkout, and bounds each to 16 MiB.
+- **The Git adapter** runs `rev-parse --show-prefix --is-shallow-repository`, `ls-files -z`,
+  `status --porcelain=v1 -z --untracked-files=all` and `rev-list --all`, each with `--no-optional-locks` and
+  `core.fsmonitor=false`, so not even the index is refreshed, and with no `GIT_*` variable from the environment, so
+  only the root names the repository. Each command has a one-minute limit, 64 MiB of output and 200 bytes of
+  stderr, kept as the refusal's detail; the commands list names, never contents. Renames and copies are read in
+  either status column, and an unmerged file stays present. A root that is not the top of a working tree is
+  refused (`not_a_repository`, `not_the_top_level`). Its contract runs on a temporary repository built from
+  `testdata/checkout` and on the fake; a test proves a read leaves every file under the checkout, `.git` included,
+  byte-identical.
+- **Exit status:** 0 when nothing is found; 1 for a finding, a failing Git command or an unreadable file; 2 for
+  usage or a root Git refuses. CI runs it in Validate's tooling job on the full-history checkout, before any step
+  that writes into it.
+
 ### Kubernetes: the API server, not `kubectl`
 
 **Decided:** v2 reads and changes Kubernetes and Flux objects through the API server. It does not start `kubectl` or `flux` processes. v1 measured the reason: one API request from the console takes 4 to 16 ms where starting `kubectl` takes 50 to 120 ms, and each `kubectl` process uses about 56 MB, which is why v1 runs at most three reads at once ([v1 tooling](contributing.md#operator-tooling)). v1 only translates the console's reads; v2 has no `kubectl` path at all.
@@ -539,7 +569,7 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 | `stdlib-only` | v2 imports only the standard library and its own packages except `go.yaml.in/yaml/v3` **v3.0.6**, approved 4 November 2026, imported only by `adapters/helm` (including its tests). The check refuses other imports, modules, versions and module replacement directives. Pure packages remain standard-library-only; this does not approve YAML kubeconfigs. |
 | `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
 | `pure` | Pure packages import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments: `time` is allowed for parsing and comparing a *supplied* timestamp, and its clock functions (`time.Now`, `time.Since`, `time.Until`, timers and ticks) are refused by call. |
-| `no-subprocess` | v2 code (not its tests) starts processes only in the encryption adapter `adapters/sops` and the approved chart-rendering adapter `adapters/helm`, and names no `kubectl` or `flux` command anywhere ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine. The Helm exception, approved 4 November 2026, is only `helm template` for app-policy checks: explicit chart and values in, rendered objects or a failed render out; no cluster reads, install, upgrade, dependency fetching or arbitrary command runner. The checked allowlist admits exactly the two adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm invocation. |
+| `no-subprocess` | v2 code (not its tests) starts processes only in the encryption adapter `adapters/sops`, the approved chart-rendering adapter `adapters/helm` and the read-only checkout adapter `adapters/git`, and names no `kubectl` or `flux` command anywhere ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine; Git avoids a second reader of its index and object store. The Git exception, approved 5 November 2026, is [four fixed reads of one checkout](#the-workstream-check-in-go-approved-5-november-2026), with no write, fetch or general command runner. The Helm exception, approved 4 November 2026, is only `helm template` for app-policy checks: explicit chart and values in, rendered objects or a failed render out; no cluster reads, install, upgrade, dependency fetching or arbitrary command runner. The checked allowlist admits exactly the three adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm invocation. |
 | `public-api` | The exported API of every library package matches `archtest/api.txt`, so an interface change is a deliberate, reviewed diff. |
 | `budgets` | No function exceeds complexity 10 or 60 lines unless `archtest/budgets.json` lists it with a reason; a listed function may shrink but not grow, and its entry goes once it fits. |
 | `places` | A package's place matches its layer: layer 0 is listed in `Pure`, layer 1 is under `adapters/`, layer 2 is `orchestration`, layer 3 is a `main` package under `cmd/` ([why](#extension-recipes)). |

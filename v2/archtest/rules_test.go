@@ -37,8 +37,8 @@ var Rules = []Rule{
 	{"pure", "pure packages import only allowlisted standard packages, print nothing and keep no mutable package state",
 		"pass the value in as a parameter (time, identifiers, snapshots) or move the effect into an adapter",
 		"the-pure-model"},
-	{"no-subprocess", "v2 code starts processes only in adapters/sops and adapters/helm, and names no kubectl or flux command",
-		"read or change Kubernetes through the API server; only SOPS encryption and local helm template are approved",
+	{"no-subprocess", "v2 code starts processes only in adapters/sops, adapters/helm and adapters/git, and names no kubectl or flux command",
+		"read or change Kubernetes through the API server; only SOPS encryption, local helm template and read-only git are approved",
 		"kubernetes-the-api-server-not-kubectl"},
 	{"public-api", "the exported API of every library package matches archtest/api.txt",
 		"if the change is intended, run `go test ./archtest -run TestPublicAPI -update` and say why in the change",
@@ -70,6 +70,9 @@ var Layers = map[string]int{
 	"observe":                        0,
 	"policy":                         0,
 	"shadow":                         0,
+	"workstreams":                    0,
+	"adapters/git":                   1,
+	"adapters/git/gittest":           1,
 	"adapters/helm":                  1,
 	"adapters/helm/helmtest":         1,
 	"adapters/files":                 1,
@@ -96,7 +99,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"calls", "events", "kernel", "legacy", "observe", "policy", "shadow"}
+var Pure = []string{"calls", "events", "kernel", "legacy", "observe", "policy", "shadow", "workstreams"}
 
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
 // environment, files, network or processes. `crypto/ed25519` derives a key pair from a seed the caller supplies
@@ -122,9 +125,9 @@ var subprocessImports = []string{"os/exec", "syscall"}
 var subprocessCalls = []string{"os.StartProcess"}
 var commandNames = []string{"kubectl", "flux"}
 
-// subprocessAllowed is restricted to the two approved adapter directories, never their fakes or subpackages.
-// SOPS encrypts; Helm renders a local chart. Neither exception permits cluster access.
-var subprocessAllowed = []string{"adapters/sops", "adapters/helm"}
+// subprocessAllowed is restricted to the three approved adapter directories, never their fakes or subpackages.
+// SOPS encrypts; Helm renders a local chart; Git reads one checkout. No exception permits cluster access or a write.
+var subprocessAllowed = []string{"adapters/sops", "adapters/helm", "adapters/git"}
 
 // ---- Loading ----
 

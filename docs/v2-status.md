@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: blocked
-Gate: approve the next console-free Python retirement slice
+Status: in progress
+Gate: push the workstream-check port, then verify CI and the console redeploy
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -21,6 +21,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Release selection and identity | done | [contract](iteration-2-plan.md#2-phase-1-model-and-contract) |
 | Deterministic compiler | done | [kernel](../v2/kernel) |
 | App policy: Go decisions, legacy checker/API retired | done | [record](current-state.md#legacy-app-policy-retirement-4-november-2026) |
+| Workstream check (`check-docs`) in Go | done | [record](current-state.md#the-workstream-check-leaves-python-5-november-2026) |
 | Git delivery and units | done | [record](current-state.md#first-v2-instance-live-25-october-2026) |
 | Observation | done | [record](current-state.md#first-v2-observation-of-a-live-instance-25-october-2026) |
 | Shadow bridge | done | [shadow](../v2/shadow) |
@@ -58,14 +59,14 @@ What still runs Python, what replaces it, and where that port stands. This table
 goal; each row is its own approved slice. **Order matters here.** The 3 November import inventory found
 most Python reachable through the console, including `verify`, `apps/checks`, `recovery`, `dashboards` and
 the notification checker, so those leave with or through the console port, not with a command; the remaining
-check-apps glue, docs and template checks and the notify service are console-free ([the brief](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026)). Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
+check-apps glue, the template checks and the notify service are console-free ([the brief](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026)). Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
 calls are bash ([`host/ops.sh`](../host/ops.sh)), and the rest makes a safety decision, runs in the cluster or
 is shared with the console, so Go replaces it. A target that becomes bash keeps its row in `commands.py` and
 loses its `run=` function.
 
 | Python surface | What replaces it | State |
 | --- | --- | --- |
-| Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2` and team/channel validation; the legacy fixture checker/API retirement is independently reviewed and live-verified, with the v1 model oracle and Go tests kept. Python retains only check-apps entrypoint glue and shared chart acquisition, not policy decisions; `verify` and `apps/checks` are reached by the console's platform page |
+| Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2`, team/channel validation and all of `check-docs` (`swhurl-v2 workstreams`); the legacy fixture checker/API retirement is independently reviewed and live-verified, with the v1 model oracle and Go tests kept. Python retains only check-apps entrypoint glue and shared chart acquisition, not policy decisions; `verify` and `apps/checks` are reached by the console's platform page |
 | Recovery and backup tooling (`recovery.py`, `sqlite_backup.py`, `backupset.py`) | `make restore-sqlite` is `swhurl-v2 restore`, the backup image's Go tool runs the jobs and `backup-mongodb` and `backup-sqlite` are bash; MongoDB's restore test and the freshness checks remain | partial: what remains is reached by `verify` |
 | The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | not started: the notify service is console-free, the checker's modules are reached by `verify`; about 1.5k lines that run every minute in the cluster or send alerts, so services rather than operator convenience |
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team targets are bash over `swhurl-v2 team`; `destroy-data` stays Python, a safety decision with its own tests |
@@ -91,13 +92,13 @@ not migration.
 
 **B. Then the rest of the road.**
 
-2. **The console-free Python, first.** Go owns all app-policy decisions; the approved legacy fixture
-   checker/API retirement is committed, independently reviewed and live-verified
-   ([evidence](current-state.md#legacy-app-policy-retirement-4-november-2026)). The v1 model oracle
-   and existing Go policy tests remain; OTel/ClickStack share relocated chart helpers. Minimal Python
-   entrypoint and dependency-acquisition glue remains, with no compatibility bridge or new Go contracts.
-   The normal console/notify rollout is verified. **Approve the next
-   console-free Python retirement slice**; no next implementation scope is chosen here.
+2. **The console-free Python, first.** Go owns all app-policy decisions
+   ([evidence](current-state.md#legacy-app-policy-retirement-4-november-2026)), and `check-docs` is
+   `swhurl-v2 workstreams` with the Python checker deleted
+   ([evidence](current-state.md#the-workstream-check-leaves-python-5-november-2026)). **Push it, then
+   verify CI's new Check the workstream record step and the console redeploy** that deleting from `tools/`
+   starts. After that, approve the next console-free slice: the check-apps glue, the template checks or the
+   notify service; none is chosen here.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.
 
@@ -166,6 +167,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   does not hold (4 November 2026).
 - `helm template` is the second approved subprocess, beside SOPS: one chart-rendering adapter for app-policy
   checks, no cluster reads or Helm mutations (4 November 2026).
+- Read-only `git` is the third: four fixed reads of one checkout for the workstream check, with no write,
+  fetch or general command runner (5 November 2026).
 - The only third-party v2 dependency is `go.yaml.in/yaml/v3` v3.0.6, confined to `adapters/helm`;
   `make v2-deps` bootstraps with checksums and builds/checks stay offline (4 November 2026).
 - The v1 Python model is bounded, not ported: nothing new imports it and it only shrinks, with the v1

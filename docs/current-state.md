@@ -32,6 +32,33 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## The workstream check leaves Python (5 November 2026)
+
+- **Approved scope, implemented:** `make check-docs` is `swhurl-v2 workstreams --repo-root .`
+  ([contract](iteration-2-plan.md#the-workstream-check-in-go-approved-5-november-2026)); `tools/swhurl/docs.py`
+  and `tests/test_docs.py` are deleted, and `check-docs` is a Makefile recipe, listed in `commands.py` without a run
+  function. The operator
+  approved the third subprocess adapter, `adapters/git`, for four fixed read-only Git commands; the
+  `no-subprocess` allowlist names it, and its fake is still refused. No dependency, network access or Git write
+  was added. One deliberate tightening: a change is anything `git status` reports, so a new untracked file under a
+  workstream's paths needs its page too.
+- **Retained behaviour, shown by parity:** a throwaway clone checked by both the Python checker and the Go command
+  gave identical findings in eleven cases: clean, a Status mismatch, a broken evidence anchor, a missing evidence
+  file, an unreachable cited commit, code changed without its page, a named but clean Uncommitted path, a missing
+  section, an orphan status page, two workstreams in progress and a page over 250 lines. The parity script was
+  a throwaway and is not kept.
+- **Offline validation:** every Python test case is ported in `v2/workstreams` (passing and failing variants), with
+  use-case and command tests (usage, shallow warning, refused roots, a symlink out of the checkout refused). The
+  adapter's contract runs on a temporary repository and the fake; removing `--no-optional-locks` made the
+  write-nothing test fail on a stale index entry, so that test detects an index refresh.
+- **Independent review** (read-only): no blockers. It found, and this change fixes, a rename only in the working tree
+  stopping the read, a stray untracked Markdown symlink stopping the check (the check now reads only what it uses), a
+  refused root exiting 1 rather than the CLI's 2, the CI step running after the records render could write into the
+  tree, and one stale "two adapter directories" line; also unmerged files, inherited `GIT_*` variables, unbounded
+  output and two rules no test caught. Each fix has a test that fails without it.
+- **CI:** Validate's tooling job gains a "Check the workstream record" step right after `make v2-deps`; until now the
+  real tree was checked only through `tests/test_docs.py` inside `make test`.
+
 ## Legacy app-policy retirement (4 November 2026)
 
 - **Approved scope, implemented:** delete `apps/policy.py` and its Python-only

@@ -162,19 +162,14 @@ def stored_secrets(text: str | None) -> list[str]:
 
 
 # Stacks: one Copier template repository each (docs/plan.md section 8). make app-repo renders one into a
-# new repository; the template's own CI renders it and runs the shared app checks on the result.
-STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',
-          'kotlin': 'samclement/swhurl-app-template-kotlin'}
+# new repository; the template's own CI renders it and runs the shared app checks on the result. The catalogue is
+# v2's file (v2/contract/stacks.json), which v2/check-templates.sh also reads: one writer for both languages.
+STACKS_FILE = ROOT / 'v2' / 'contract' / 'stacks.json'
+_CATALOGUE = json.loads(STACKS_FILE.read_text())
+STACKS = {stack: found['repository'] for stack, found in _CATALOGUE['stacks'].items()}
 # Questions, rendering and contract checks use the same reviewed catalogue commit.
-STACK_REVISIONS = {
-    'typescript': 'c28c7a0d1b08353f5238a150ef6950efe287077b',
-    'kotlin': '9c786b5c5c94bffc307d681a28e1011473d0cec6',
-}
-STACK_DESCRIPTIONS = {
-    'typescript': 'Node 24 and TypeScript: starts in a second, about 60 MB of memory.',
-    'kotlin': 'Kotlin on Micronaut, Java 25 (a trimmed runtime, about 150 MB image): about 10 s to start, '
-              'about 200 MB of memory.',
-}
+STACK_REVISIONS = {stack: found['revision'] for stack, found in _CATALOGUE['stacks'].items()}
+STACK_DESCRIPTIONS = {stack: found['description'] for stack, found in _CATALOGUE['stacks'].items()}
 """One line per stack for the New app form."""
 
 
@@ -182,7 +177,7 @@ STACK_DESCRIPTIONS = {
 class AppType:
     """What a team is building. A new app is created by type: the type sets every template answer and the
     exposure staging starts with (docs/apps.md#app-types). The templates accept only these answers (each
-    one's validator lists them): changing a type here needs its new answers there too, and the old ones
+    one's validator lists them): changing a type in v2/contract/stacks.json needs its new answers there too, and the old ones
     kept there until no app records them. Each app's .copier-answers.yml keeps the answers it was made with."""
     title: str
     text: str
@@ -191,20 +186,8 @@ class AppType:
     exposure: str  # what staging starts with; changed later with swhurl-v2 edit --set exposure=…
 
 
-APP_TYPES = {
-    'web-app': AppType('Web app', 'A site people use in a browser: a Vite+ page at / and its own API under /api. '
-                       'Its data belongs in an API it calls; its own SQLite keeps what only it uses.', ('typescript',),
-                       {'kind': 'web', 'database': 'sqlite', 'api': 'openapi',
-                        'frontend': 'vite'},
-                       'authenticated-web'),
-    'api': AppType('API', 'Data and operations other apps call; private: browsers reach it through a web app.',
-                   ('typescript', 'kotlin'),
-                   {'kind': 'web', 'database': 'sqlite', 'api': 'openapi'},
-                   'private'),
-    'worker': AppType('Worker', 'Reacts to events, or works in a steady loop; no web address.', ('typescript', 'kotlin'),
-                      {'kind': 'worker', 'database': 'none', 'api': 'none'},
-                      'private'),
-}
+APP_TYPES = {key: AppType(found['title'], found['text'], tuple(found['stacks']), found['answers'], found['exposure'])
+             for key, found in _CATALOGUE['types'].items()}
 
 # No type is a job: v2 refuses the job kind (docs/apps.md#scheduled-jobs), so a scheduled-job type could not be
 # created. A job type returns with the kind.
@@ -260,7 +243,7 @@ def type_answers(app_type: str, stack: str) -> dict[str, str]:
     if stack not in found.stacks:
         raise ValueError(f'a {found.title} is built with {" or ".join(found.stacks)}, not {stack}')
     return dict(found.answers)
-COPIER = 'copier@9.18.2'
+COPIER = _CATALOGUE['copier']
 APP_OWNER = 'samclement'
 APP_WORKFLOW = 'Container'
 """The workflow in every app repository that checks and publishes its image (calls the template's app.yml)."""

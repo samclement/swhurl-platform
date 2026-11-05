@@ -261,11 +261,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
+      # Copier, the one Python tool left on this path, runs through uvx (v2/check-templates.sh); git and jq are the
+      # runner's.
       - name: Setup uv
         uses: astral-sh/setup-uv@v6
         with:
@@ -273,20 +270,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: 'v1.34.4'
-
-      - name: Setup Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: 'v3.19.0'
-
-      - name: Install validation dependencies
-        run: python3 -m pip install --group check
-
-      # The check runs the producer and hands the label to v2's own creation rules, so it needs the binary.
+      # The check runs the names check, the producer and v2's own creation rules, so it needs the binary.
       - uses: actions/setup-go@v7
         with:
           go-version-file: v2/go.mod

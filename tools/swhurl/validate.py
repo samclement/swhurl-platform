@@ -225,11 +225,11 @@ def check_interface_table(report: Report, root: Path = ROOT) -> None:
     section = doc.read_text().partition('<!-- app-interface -->')[2].partition('<!-- /app-interface -->')[0]
     rows = re.findall(r'^\| `([^`]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$', section, re.M)
     names = [row[0] for row in rows]
-    problems = [f'{name}: missing' for name in interface.ENTRIES.keys() - set(names)]
-    problems += [f'{name}: extra' for name in set(names) - interface.ENTRIES.keys()]
+    problems = [f'{name}: missing' for name in interface.entries().keys() - set(names)]
+    problems += [f'{name}: extra' for name in set(names) - interface.entries().keys()]
     problems += [f'{name}: duplicate' for name in set(names) if names.count(name) > 1]
     problems += [f'{name}: description differs' for name, *fields in rows
-                 if name in interface.ENTRIES and tuple(fields) != interface.ENTRIES[name]]
+                 if name in interface.entries() and tuple(fields) != interface.entries()[name]]
     if problems:
         fail('docs/apps.md app interface table differs from registry:\n  ' + '\n  '.join(sorted(problems)))
     report.ok(f'docs/apps.md lists the {len(names)} app interface entries')

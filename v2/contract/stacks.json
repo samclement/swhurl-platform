@@ -1,0 +1,61 @@
+{
+  "kind": "platform-stacks",
+  "version": 1,
+  "copier": "copier@9.18.2",
+  "stacks": {
+    "typescript": {
+      "repository": "samclement/swhurl-app-template-typescript",
+      "revision": "c28c7a0d1b08353f5238a150ef6950efe287077b",
+      "description": "Node 24 and TypeScript: starts in a second, about 60 MB of memory."
+    },
+    "kotlin": {
+      "repository": "samclement/swhurl-app-template-kotlin",
+      "revision": "9c786b5c5c94bffc307d681a28e1011473d0cec6",
+      "description": "Kotlin on Micronaut, Java 25 (a trimmed runtime, about 150 MB image): about 10 s to start, about 200 MB of memory."
+    }
+  },
+  "types": {
+    "web-app": {
+      "title": "Web app",
+      "text": "A site people use in a browser: a Vite+ page at / and its own API under /api. Its data belongs in an API it calls; its own SQLite keeps what only it uses.",
+      "stacks": [
+        "typescript"
+      ],
+      "answers": {
+        "kind": "web",
+        "database": "sqlite",
+        "api": "openapi",
+        "frontend": "vite"
+      },
+      "exposure": "authenticated-web"
+    },
+    "api": {
+      "title": "API",
+      "text": "Data and operations other apps call; private: browsers reach it through a web app.",
+      "stacks": [
+        "typescript",
+        "kotlin"
+      ],
+      "answers": {
+        "kind": "web",
+        "database": "sqlite",
+        "api": "openapi"
+      },
+      "exposure": "private"
+    },
+    "worker": {
+      "title": "Worker",
+      "text": "Reacts to events, or works in a steady loop; no web address.",
+      "stacks": [
+        "typescript",
+        "kotlin"
+      ],
+      "answers": {
+        "kind": "worker",
+        "database": "none",
+        "api": "none"
+      },
+      "exposure": "private"
+    }
+  }
+}

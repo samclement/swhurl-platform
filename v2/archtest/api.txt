@@ -270,6 +270,7 @@ kernel: func (Declaration) Release(application, repository, commit, image, diges
 kernel: func (EgressDocument) EgressOf(application, environment string) (*Egress, error)
 kernel: func (EgressFacts) NeedsEgress() bool
 kernel: func (InstanceSpec) Revision() (InstanceRevision, error)
+kernel: func (NameCatalogue) Unlisted(text []byte) []string
 kernel: func (PlatformProfile) ID() (ProfileID, error)
 kernel: func (ReleaseBundle) ID() (ReleaseID, error)
 kernel: func (Reloader) Namespaces() ([]string, error)
@@ -293,6 +294,7 @@ kernel: func DecodeApp(data []byte) (AppSpec, error)
 kernel: func DecodeDeclaration(data []byte) (Declaration, error)
 kernel: func DecodeEgressDocument(data []byte) (EgressDocument, error)
 kernel: func DecodeInstance(data []byte) (InstanceSpec, error)
+kernel: func DecodeNameCatalogue(data []byte) (NameCatalogue, error)
 kernel: func DecodeProfile(data []byte) (PlatformProfile, error)
 kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
 kernel: func DecodeTeams(data []byte) (TeamRegistry, error)
@@ -383,6 +385,7 @@ kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` App
 kernel: type NATS struct {URL string `json:"url"` Namespace string `json:"namespace"` Port int32 `json:"port"` Labels map[string]string `json:"labels"` DecryptionSecret string `json:"decryptionSecret"` ControllerKey string `json:"controllerKey"` ConsoleKey string `json:"consoleKey"`}
 kernel: type NATSUser struct {Application, Environment, NKey string Publishes bool Subscriptions []EventSubscription}
 kernel: type NATSUsers struct {ControllerKey, ConsoleKey string Instances []NATSUser}
+kernel: type NameCatalogue struct {}
 kernel: type Network struct {PodCIDR string `json:"podCIDR"`}
 kernel: type Notify struct {Address string `json:"address"`}
 kernel: type Object struct {Group string `json:"group"` Kind string `json:"kind"` Namespace string `json:"namespace"` Name string `json:"name"`}

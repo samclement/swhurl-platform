@@ -132,7 +132,7 @@ class InterfaceTests(unittest.TestCase):
                 if telemetry or egress:
                     self.assertLess(list(env).index('HOST_IP'), list(env).index('NO_PROXY') if egress else list(env).index('OTEL_EXPORTER_OTLP_ENDPOINT'))
                 observed.update(env)
-        self.assertLessEqual(observed, interface.ENTRIES.keys())
+        self.assertLessEqual(observed, interface.entries().keys())
 
     def prepared_seed_names(self):
         def encrypt(args, text):
@@ -192,7 +192,7 @@ class InterfaceTests(unittest.TestCase):
         # The v1 renderer emits every name in the registry except the inputs it leaves to the reader
         # (`env override`) and the names v2 renders alone, which state that in their availability: the table is
         # the interface, and this render is v1's share of it.
-        self.assertEqual(observed, {name for name, (surface, _, availability) in interface.ENTRIES.items()
+        self.assertEqual(observed, {name for name, (surface, _, availability) in interface.entries().items()
                                     if surface != 'env override' and '(v2-rendered)' not in availability})
         self.assertNotIn(interface.NOTIFY_TOKEN_VARIABLE, observed, 'the reader override is not injected')
 
@@ -219,7 +219,7 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(pending, output(each, world, platform)[0])
 
     def test_every_environment_entry_is_reserved_and_refusals_keep_their_order(self):
-        for name, (surface, _, _) in interface.ENTRIES.items():
+        for name, (surface, _, _) in interface.entries().items():
             if surface in ('env', 'Secret env', 'env family', 'env override'):
                 concrete = interface.callee_variable('orders-api') if surface == 'env family' else name
                 self.assertIn('reserved for the platform:', secret_key_problem([concrete]))

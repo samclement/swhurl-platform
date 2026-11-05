@@ -2,7 +2,7 @@
 
 For each stack in ``contract.STACKS``: clone its template at the pinned revision, render each app type
 built with it (``contract.APP_TYPES``, the only answers the template accepts) with Copier, as ``make
-app-repo`` does, run the image-declaration producer over the rendered app, and hand the label to
+app-repo`` does, run ``swhurl-v2 image-declaration`` over the rendered app, and hand the label to
 ``swhurl-v2 declaration``. That command decodes the label and applies the creation rules an instance of it
 would face, so what a build will produce is proved with no image, no registry and no write. Every
 ``SWHURL_*`` or ``platform.swhurl.com/*`` name in the rendered app must be one ``interface.py`` lists. One set
@@ -27,7 +27,7 @@ from io import StringIO
 from pathlib import Path
 
 from swhurl import ROOT, interface
-from swhurl.apps import declaration, image_declaration, repo
+from swhurl.apps import declaration, repo
 from swhurl.apps.contract import (
     APP_TYPES,
     STACK_REVISIONS,
@@ -51,7 +51,7 @@ def binary() -> str:
 
 
 # What v2's build pins, as the make targets and CI give it: the toolchain v2/go.mod states, and nothing
-# fetched over the network (the module is standard library only).
+# fetched over the network (run make v2-deps first for the pinned YAML parser).
 V2_BUILD_ENV = {'GOTOOLCHAIN': 'go1.26.0', 'GOPROXY': 'off', 'GOSUMDB': 'off', 'CGO_ENABLED': '0'}
 
 
@@ -68,11 +68,6 @@ def named_binary(runner: Runner, build_dir: Path) -> None:
     print('[INFO] no swhurl-v2 named or on PATH: building one from v2/ (SWHURL_V2 names the one CI builds)')
     runner.run(['go', 'build', '-o', str(built), './cmd/swhurl-v2'], cwd=ROOT / 'v2', env=V2_BUILD_ENV)
     os.environ['SWHURL_V2'] = str(built)
-
-
-def declaration_label(rendered: Path) -> str:
-    """The label a build of this rendered app writes, from the producer the templates call."""
-    return image_declaration.label_of(rendered)
 
 
 def label_of(stack: str, answers: dict[str, str]) -> str:
@@ -118,15 +113,15 @@ def check_manifest(runner: Runner, report: Report, label: str, rendered: Path, w
     if unlisted := unlisted_names(rendered):
         report.bad(f'{label}: interface.py does not list ' +
                    ', '.join(f'{name} ({path})' for name, path in sorted(unlisted.items())))
-    try:
-        text = declaration_label(rendered)
-    except image_declaration.LabelError as error:
-        report.bad(f'{label}: the image-declaration producer refused the app: {error}')
+    produced = runner.run([binary(), 'image-declaration', '--app-dir', str(rendered)], check=False)
+    if produced.returncode:
+        said = (produced.stderr or produced.stdout or '').strip()
+        report.bad(f'{label}: the image-declaration producer refused the app: {said}')
         return False
     label_path = work / 'label.txt'
     shutil.rmtree(work / 'root', ignore_errors=True)
     work.mkdir(parents=True, exist_ok=True)
-    label_path.write_text(text + '\n')
+    label_path.write_text(produced.stdout)
     # A template names no team (the creator chooses one): any registered team serves the check.
     result = runner.run([binary(), 'declaration', '--label', str(label_path), '--app', NAME,
                          '--team', next(iter(teams()), ''), '--exposure', 'private'], check=False)

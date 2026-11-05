@@ -1,9 +1,8 @@
 """What a declaration falls back to, and a Secret key's rule: the app contract's own constants.
 
-They live apart from ``contract.py`` because reading an app's files must not need the platform's
-deployment: ``contract`` reads the cluster's settings manifest when it is imported, and the stack
-templates call ``swhurl image-declaration`` from an app repository, with this package on PYTHONPATH and
-nothing else to read. A fact here is one an image or a new instance takes a default from.
+They live apart from ``contract.py`` so the retained shared declaration readers do not import the
+platform's deployment settings. The Go image producer owns its own source defaults; these remain for
+Python's catalogue, repository creation and fixture oracle.
 """
 from __future__ import annotations
 
@@ -13,10 +12,6 @@ from swhurl import interface
 
 DEFAULT_DATABASE_SIZE = '1Gi'
 """A new database's volume, unless the image's declaration states another."""
-
-DEFAULT_MEMORY_MIB = 128
-"""The memory an image that states no `resources.memory` runs in: the platform's default limit, so every image's
-declaration states the memory a new instance is created with (docs/apps.md)."""
 
 # What the stack templates (samclement/swhurl-app-template-*) use; swhurl.yaml's defaults.
 TEMPLATE_PORT = 8080

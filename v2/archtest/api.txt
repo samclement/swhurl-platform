@@ -1,3 +1,15 @@
+adapters/appsource/appsourcetest: func (*Fake) API(root, name string) ([]byte, error)
+adapters/appsource/appsourcetest: func (*Fake) Declaration(root string) (producer.Object, error)
+adapters/appsource/appsourcetest: func (*Fake) Events(root, name string) (producer.Object, []byte, error)
+adapters/appsource/appsourcetest: func Contract(t *testing.T, open func(*testing.T) (appsource.Reader, string))
+adapters/appsource/appsourcetest: func EventScenario() producer.Object
+adapters/appsource/appsourcetest: func Scenario() producer.Object
+adapters/appsource/appsourcetest: type Fake struct {Root string Source producer.Object EventMappings map[string]producer.Object Files map[string][]byte Err error Reads []string}
+adapters/appsource: func (Local) API(root, name string) ([]byte, error)
+adapters/appsource: func (Local) Declaration(root string) (producer.Object, error)
+adapters/appsource: func (Local) Events(root, name string) (producer.Object, []byte, error)
+adapters/appsource: type Local struct {}
+adapters/appsource: type Reader interface {Declaration(root string) (producer.Object, error) API(root, name string) ([]byte, error) Events(root, name string) (producer.Object, []byte, error)}
 adapters/files/filestest: func (*Fake) Prune(dir, folder string, rendered []string) ([]files.Outcome, error)
 adapters/files/filestest: func (*Fake) Remove(dir, path string) ([]files.Outcome, error)
 adapters/files/filestest: func (*Fake) Write(dir string, docs []kernel.File) ([]files.Outcome, error)
@@ -668,6 +680,7 @@ orchestration: func CompileInto(inputs Inputs, destination string, writer files.
 orchestration: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
 orchestration: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 orchestration: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
+orchestration: func ImageDeclaration(reader appsource.Reader, root string) (string, error)
 orchestration: func Migrate(ctx context.Context, inputs MigrationInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer) (Migration, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewNotifier(publisher ntfy.Publisher) *Notifier
@@ -718,6 +731,17 @@ orchestration: type TeamInputs struct {App []byte AppPath string Team string Ins
 policy: func Check(source []json.RawMessage, platform Platform, rendered []json.RawMessage) ([]Finding, error)
 policy: type Finding struct {Rule string `json:"rule"` Object string `json:"object"` Detail string `json:"detail"`}
 policy: type Platform struct {Pods, RequestsCPUMilli, RequestsMemoryMiB, LimitsMemoryMiB int64 StorageClass, CookieDomain, Middleware string}
+producer: const LabelKey = "platform.swhurl.com/declaration"
+producer: const MaxLabelBytes = 120 * 1024
+producer: func (Object) Get(name string) any
+producer: func FlagsDocument(flags Object) []byte
+producer: func Label(s Source, publications []string, documents []Document) (string, error)
+producer: func Parse(o Object) (Source, error)
+producer: func Publications(doc Object, name string) ([]string, error)
+producer: type Document struct {Role string Bytes []byte}
+producer: type Field struct {Name any Value any}
+producer: type Object []Field
+producer: type Source struct {Runtime Object Telemetry bool Database string DatabaseSizeMiB, MemoryMiB json.Number Secrets []any Description, APIPath, APIFile, EventsFile string Flags Object}
 shadow: func (*Error) Error() string
 shadow: func CompareHTTP(before, after []byte, choices ResourceChoices) (HTTPComparison, error)
 shadow: type Error struct {Field, Reason string}

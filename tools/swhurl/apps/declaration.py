@@ -15,13 +15,12 @@ with every new staging image (edit.deploy_staging); offers are read at that imag
 
 ``autoDeploy`` is accepted and ignored: staging always follows new images.
 
-Every reader goes through ``read`` (GitHub, at a ref) or ``parse`` (text in hand), so the file has
+Every retained Python reader goes through ``read`` (GitHub, at a ref) or ``parse`` (text in hand), so the file has
 one fetcher and one validation: unknown fields and other versions are refused wherever it is read.
 The name, environment, image and host belong to each instance and are never in the file.
 """
 from __future__ import annotations
 
-import base64
 import dataclasses
 import math
 import re
@@ -35,7 +34,6 @@ import yaml
 from swhurl import yamlio
 from swhurl.apps.defaults import (
     DEFAULT_DATABASE_SIZE,
-    DEFAULT_MEMORY_MIB,
     TEMPLATE_PORT,
     TEMPLATE_UID,
     secret_key_problem,
@@ -49,12 +47,6 @@ TELEMETRY = ('otlp', 'none')
 MAX_BYTES = 512 * 1024
 MAX_DESCRIPTION = 200
 """One line, as the New app form and make app-repo take it."""
-IMAGE_LABEL = 'platform.swhurl.com/declaration'
-"""Where an image states what it needs: one JSON document in its config labels, the key v2's kernel reads.
-The build passes `<key>=<document>` to the image build; the document's shape is v2's contract, not this file's."""
-IMAGE_LABEL_VERSION = 2
-"""The document's version: v2 reads this one and refuses another. Version 2 carries the documents themselves, so a
-digest determines a release; an image that states version 1 is not this platform's."""
 LIVE, IGNORED, REFUSED = 'live', 'ignored', 'refused'
 IDENTITY, NEED, OFFER, GRANT, DROPPED = 'identity', 'need', 'offer', 'grant', 'dropped'
 WITH_IMAGE = 'with every new staging image (the Deploy workflow)'
@@ -140,52 +132,6 @@ class Declaration:
                      {key: seed[key] for key in RESOURCES if key in seed}, seed.get('database') or '',
                      seed.get('database_size') or (DEFAULT_DATABASE_SIZE if seed.get('database') else ''),
                      tuple(seed.get('secret_keys') or ()))
-
-    def image_label(self, publishes: tuple[str, ...] = (), documents: dict[str, bytes] | None = None) -> dict:
-        """What this image states about itself: the declaration v2 reads from the image's config labels.
-
-        The needs are this file's, the publications its events document's, and the documents are the
-        files it offers, by role, base64-encoded so the record's copy is byte-identical. A fact the image
-        does not have is left out (v2 refuses nulls and unknown fields); `memoryMiB` is always stated,
-        because a create takes the memory it runs in from the image, and `secrets` is stated so v2 holds
-        an image that adds one rather than running it without. A job's kind is stated as it is: v2 refuses
-        a kind it does not model instead of being told the image is a worker.
-        """
-        needs = self.needs
-        runtime = {'kind': needs.kind, 'uid': needs.uid}
-        if needs.kind == 'web':
-            runtime |= {'port': needs.port, 'healthPath': needs.health_path}
-        label = {'schemaVersion': IMAGE_LABEL_VERSION, 'runtime': runtime}
-        if needs.otlp:
-            label['telemetry'] = True
-        if needs.database:
-            label['database'] = needs.database
-            label['databaseSizeMiB'] = mebibytes(needs.database_size)
-        if publishes:
-            label['publishes'] = list(publishes)
-        if needs.secrets:
-            label['secrets'] = list(needs.secrets)
-        label['memoryMiB'] = mebibytes(needs.minimum['memory']) if needs.minimum.get('memory') else DEFAULT_MEMORY_MIB
-        if self.description:
-            label['description'] = self.description
-        documents = documents or {}
-        if documents:
-            # v2 refuses apiPath without the api document and the document without the path, so both or neither.
-            if 'api' in documents and self.api_path:
-                label['apiPath'] = self.api_path
-            label['documents'] = {role: base64.b64encode(data).decode('ascii') for role, data in documents.items()}
-        return label
-
-
-QUANTITY_KIB = {'Ki': 1, 'Mi': 1024, 'Gi': 1024 * 1024}
-"""A memory quantity's unit in KiB: whole MiB is an exact division of it, rounded up."""
-
-
-def mebibytes(quantity: str) -> int:
-    """A memory quantity as swhurl.yaml states it (`192Mi`) in whole MiB, rounded up so a need is never
-    understated. Only the units its own check accepts are read."""
-    value, unit = int(quantity[:-2]), quantity[-2:]
-    return -(-value * QUANTITY_KIB[unit] // 1024)
 
 
 RESOURCES = {'cpu': 'cpu', 'memory': 'memory', 'memory_limit': 'memoryLimit'}

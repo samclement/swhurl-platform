@@ -4561,3 +4561,69 @@ On 25 October, pushed `2eaeaea4`, then `1262960f` and `ad334338` (the backup tes
 **Removed the same way, at the operator's confirmation (25 October 2026):** deleting the five instance files, the unit file and its line in `clusters/home/kustomization.yaml`, then pushing, was the whole removal — no command, no `kubectl`, no v1 record. `make flux-reconcile` completed its wait for the first time in this exercise, with every unit Ready. Flux pruned the namespace `swhurl-try-v2-1-staging`, the unit, the HelmRelease (`True: Helm upgrade succeeded`, three Helm release Secrets), the ResourceQuota and the NetworkPolicy; no object anywhere carries the name, managed namespaces went from 29 to 28, the units from 39 to 37 (`check-repo` entrypoints 39 to 38), and all 37 remaining units are Ready. `make verify-platform` passed. `demo-orders/staging` stayed `Healthy` on its own newer digest (`sha256:e2a5b5cf…`), so no v1 instance moved.
 
 **CI caught what local checks could not:** both pushes failed Validate, so the console was not deployed. `test_docs.test_this_repository_passes` failed on the runner because the status page cited `354aae1e`, a hash my rebase had rewritten: `git cat-file` says it exists locally (the reflog keeps it) but no ref reaches it. The check now requires the cited commit to be reachable from `git rev-list --all`, which is what a reader of the repository has, and the page cites the current hash. That fix then failed for the opposite reason: the tooling job checked out with a depth of 1, so no citation could resolve; it now fetches full history and a shallow clone warns instead of failing. The next run (`795c1176`) passed every job and deployed console image `src-597131bf01433b14` as `6483d6f8`; `make verify-platform` then passed with no WARN.
+
+## The image-declaration producer leaves Python, offline (5 November 2026)
+
+- **Implemented and independently reviewed:** `swhurl-v2 image-declaration [--app-dir DIR]` now reads only the app's
+  declaration and named documents. The pure producer owns source rules and encoding; the app-source
+  adapter owns explicit YAML/file reads; orchestration wires them. Jobs and secret names are emitted
+  truthfully, without weakening deployment refusal. The existing pinned YAML dependency is allowed in
+  exactly this new adapter and Helm, not generally across v2.
+- **Before replacement:** the 23 producer and 8 checker tests passed. Full-label goldens were frozen from
+  Python before deletion, including exact generated flags bytes, Unicode, floats, large integers and
+  source defaults. Go real/fake contract, pure, orchestration and CLI tests cover failures, YAML semantics,
+  explicit named-file reads, opaque API/events bytes, publication order/references, standard I/O and the corrected
+  120 KiB **UTF-8 byte** cap. The command-retirement invariant failed before deletion, as expected.
+- **Deletion:** the 115-line Python producer, 357-line producer-only tests and two-line internal command
+  entry are gone, plus the shared declaration's unused image-label method/constants and quantity helper
+  and the now-unused `DEFAULT_MEMORY_MIB` constant in shared defaults.
+  Shared declaration/offers/defaults/contract code stays for remaining importers. Python's template checker
+  now calls the Go producer through Runner and then unchanged Go acceptance; coordinator, Copier and
+  catalogue remain Python. No claim is made that all of `check-templates` is Python-free.
+- **Offline verification:** `make check-v2` passed (format, vet, all Go tests/guardrails and 157-file
+  render equality); focused producer, adapter/fake, orchestration and CLI suites passed. `make check`
+  passed (649 tooling tests, 98 codegraph tests, app policy, repo/schema validation, Ruff/ShellCheck,
+  OTel and workstream checks). OTel reported its existing component-name deprecations for k8sobjects,
+  hostmetrics and kubeletstats. `make check-templates` passed all five current app types across the two
+  pinned stacks; host/fixture shell syntax and `git diff --check` passed. Focused Python checker,
+  command and repository suites passed (36 tests), with existing ResourceWarnings in repository tests.
+  An earlier invocation named nonexistent `test_declaration` (28 tests passed, one loader error), then
+  was rerun with the actual modules. Initial Go development failures (format, API inventory and function
+  budgets) were resolved; no complexity budget was raised. The API inventory adds only the producer,
+  app-source/fake and use-case boundary. A newly considered per-file read cap was removed to preserve
+  source behavior; regressions prove a >1 MiB comment-heavy source still fits and an oversized document
+  retains the encoded-cap diagnostic with its role and full byte size.
+- **Independent review corrections:** the original source contract is restored for aliases/merges and
+  duplicate-key final-value/first-insertion ordering, with safe cycle refusal. Python-compatible scalar
+  resolution retains the reviewed signed fractional/date-like strings, safe timestamps/binary content,
+  and boolean/arbitrary-integer address semantics. Mixed bounds now compare exact integers against the
+  actual binary float, not its encoded decimal spelling. Database-size integer-prefix conversion is
+  separate from resource grammar. The added root-confinement/regular-file restrictions were removed:
+  only explicit paths are read, with original named-symlink behavior, including external targets.
+  The archived HEAD producer generated 35 full-label success fixtures and seven refusal fixtures; added
+  regressions were observed failing before fixes. A rebuilt Go CLI was compared directly with the archived
+  original after the final correction: all 35 success labels were byte-identical and all seven original
+  refusals retained no stdout.
+  A full externally targeted symlink label is independently frozen in its Go regression. Documentation
+  no longer claims the narrowed YAML/read restrictions were approved; the deletion inventory is
+  explicitly historical. Final rereview also caught the blanket non-string-key ban: ordered fields now
+  retain typed scalar keys, source/flag naming remains a domain rule, and channel sends use positions so
+  numeric/string keys stay distinct while reference-string collisions remain last-wins. Numeric key
+  assignment retains Python bool/int/float equality and first-key identity. Six new HEAD success labels
+  cover unused numeric examples, numeric channels, both collision orders and numeric-key coalescing;
+  two original flag-name refusals and direct adapter identity/domain checks cover the other boundary.
+  After this correction, focused Go suites and `make check-v2` passed, including the intentional
+  `Field.Name` API widening and all guardrails with no budget increases. `make check` passed (649
+  tooling/98 codegraph tests), real `make check-templates` passed all five stack/type combinations, and
+  host/fixture shell syntax plus `git diff --check` passed.
+- **Final independent review:** a fresh reviewer build matched all 35 full-label success fixtures and
+  seven refusals against archived HEAD Python with zero mismatches; focused suites and whitespace checks
+  passed, with no remaining finding. The parent independently repeated the 35-label comparison and all
+  three full gates (`make check-v2`, `make check`, real `make check-templates`) after the corrections.
+  A clean staged-tree snapshot also passed `make check`. Staging exposed the intentional CRLF events
+  fixture as whitespace; its exact path is now marked `-text whitespace=cr-at-eol` so Git preserves
+  the test bytes and the staged whitespace check passes.
+- **Delivery gate:** local validation and independent review are complete; commit/push and live platform
+  verification follow. No sibling-repository edit, template pin or external build-workflow upgrade is
+  included. Already pinned external workflows retain the old helper at their historical platform revision;
+  their rollout remains a separate approval.

@@ -366,7 +366,7 @@ stdout to 16 MiB, stderr to 64 KiB (discarded), subprocess duration to 30 second
 to another second. A missing executable, timeout, nonzero exit, oversized stream or malformed later
 document returns no partial result.
 
-The operator approved one maintained YAML parser, `go.yaml.in/yaml/v3` v3.0.6, confined to this adapter.
+The operator approved one maintained YAML parser, `go.yaml.in/yaml/v3` v3.0.6, confined to Helm and the explicitly approved [app-source adapter](#producer-first-python-retirement-approved-5-november-2026).
 Its [README](https://github.com/yaml/go-yaml/blob/v3.0.6/README.md) identifies YAML-organization maintenance
 after the original repository became unmaintained; the [tag changes](https://github.com/yaml/go-yaml/compare/v3.0.5...v3.0.6)
 include removing its upstream test dependency (there is no GitHub release-note entry for the tag).
@@ -512,7 +512,7 @@ change is anything `git status` reports, so a new untracked file under a workstr
 - A failed request (forbidden, unavailable, timeout) is unavailable evidence; only a successful `404` means absent.
 - Raw fixtures are API JSON. That is the shape `kubectl get -o json` prints, so recorded v1 outputs can be reused.
 
-**Decided 25 October 2026: a thin `net/http` client, not `client-go`.** It is the reader [`adapters/kube`](../v2/adapters/kube/kube.go), uses only the standard library (`stdlib-only` outside the approved Helm parser boundary), and takes the k3s material it needs as arguments: a CA bundle, a client certificate or key, and a bearer token. `client-go` would be complete but adds a large dependency tree and binary size for four kinds and two verbs. Resolving a kubeconfig or an in-cluster service-account token is **not** in that adapter: the YAML parser approval is confined to Helm, not kubeconfig reading; the `observe` command resolves it and hands the adapter its ingredients.
+**Decided 25 October 2026: a thin `net/http` client, not `client-go`.** It is the reader [`adapters/kube`](../v2/adapters/kube/kube.go), uses only the standard library (`stdlib-only` outside the approved Helm/app-source parser boundaries), and takes the k3s material it needs as arguments: a CA bundle, a client certificate or key, and a bearer token. `client-go` would be complete but adds a large dependency tree and binary size for four kinds and two verbs. Resolving a kubeconfig or an in-cluster service-account token is **not** in that adapter: the YAML parser approval is confined to Helm and app-source reading, not kubeconfig reading; the `observe` command resolves it and hands the adapter its ingredients.
 
 ### Fixtures and fakes
 
@@ -593,7 +593,7 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 
 | Rule | What it enforces |
 | --- | --- |
-| `stdlib-only` | v2 imports only the standard library and its own packages except `go.yaml.in/yaml/v3` **v3.0.6**, approved 4 November 2026, imported only by `adapters/helm` (including its tests). The check refuses other imports, modules, versions and module replacement directives. Pure packages remain standard-library-only; this does not approve YAML kubeconfigs. |
+| `stdlib-only` | v2 imports only the standard library and its own packages except `go.yaml.in/yaml/v3` **v3.0.6**, approved 4 November 2026, imported only by `adapters/helm` and `adapters/appsource` (including their tests; the latter approved 5 November 2026). The check refuses other imports, modules, versions and module replacement directives. Pure packages remain standard-library-only; this does not approve YAML kubeconfigs. |
 | `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
 | `pure` | Pure packages import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments: `time` is allowed for parsing and comparing a *supplied* timestamp, and its clock functions (`time.Now`, `time.Since`, `time.Until`, timers and ticks) are refused by call. |
 | `no-subprocess` | v2 code (not its tests) starts processes only in the encryption adapter `adapters/sops`, the approved chart-rendering adapter `adapters/helm` and the read-only checkout adapter `adapters/git`, and names no `kubectl` or `flux` command anywhere ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine; Git avoids a second reader of its index and object store. The Git exception, approved 5 November 2026, is [four fixed reads of one checkout](#the-workstream-check-in-go-approved-5-november-2026), with no write, fetch or general command runner. The Helm exception, approved 4 November 2026, is `helm template` for app-policy checks and, approved 5 November 2026, explicit profile-pinned `helm pull` for the check cache ([contract](#chart-acquisition-approved-5-november-2026)): no cluster reads, install, upgrade, implicit dependency fetching or arbitrary command runner. The checked allowlist admits exactly the three adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm invocation. |
@@ -763,7 +763,7 @@ digest that names the release. A digest and an app name determine one release.
 | `runtime` | `kind` `web` or `worker` (`job` unsupported), non-root `uid`, `port` and `healthPath` for a `web` image only |
 | `telemetry` | Optional boolean: the image reports to the platform collector |
 | `database` | Optional `sqlite` |
-| `publishes` | Optional event names, each at most once: what the `events` document sends. The producer computes it and the platform check ties the two, because v2 reads no YAML |
+| `publishes` | Optional event names, each at most once: what the `events` document sends. The producer computes it and the platform check ties the two, because the deployment decoder reads no YAML |
 | `secrets` | Optional names, refused when non-empty: v2 models no secret |
 | `memoryMiB` | Required, integer at least 1: the memory the image runs in |
 | `databaseSizeMiB` | Required when `database` is set, and refused when it is not: the volume a new database is created with |
@@ -771,7 +771,7 @@ digest that names the release. A digest and an app name determine one release.
 | `apiPath` | Optional absolute path where a `web` image serves its API description. Required with the `api` document, and refused without it |
 | `documents` | Optional object of at most `api`, `events` and `flags`, each the file's bytes base64-encoded, so the record's copy is byte-identical. `events` is required when `publishes` is non-empty |
 
-**Size.** The producer refuses a declaration whose encoded JSON exceeds 120 KiB, naming the documents and
+**Size.** The producer refuses a declaration whose UTF-8 encoded JSON exceeds 120 KiB, naming the documents and
 their sizes, because the value reaches buildx as one argument (the kernel's `MAX_ARG_STRLEN` is 131,071
 bytes; measured, not assumed). The adapter's 1 MiB body cap is the hard ceiling and is not approached.
 
@@ -795,6 +795,62 @@ encrypted seed — the instance's grants and choices, which no image states.
 
 **Not modelled:** a repository read, OCI referrer artifacts, a private app repository, a first production,
 secrets, alerts, a `job` kind and instance-declared egress grants.
+
+### Producer-first Python retirement (approved 5 November 2026)
+
+`swhurl-v2 image-declaration --app-dir DIR` (DIR defaults to the working
+directory) reads only the app's `swhurl.yaml` and explicitly named documents and prints one compact,
+deterministic `platform.swhurl.com/declaration=<JSON>` line. The source adapter owns YAML and explicit
+checkout reads; the pure producer owns source rules, defaults, publications and encoding; orchestration
+wires them and the CLI owns usage, standard I/O and exit status. No registry, image build, GitHub,
+credentials, subprocess or cluster operation belongs to this command.
+
+The implementation preserves the source contract, including truthful `job` and `secrets` output even
+though deployment refuses them, channel/publication order, raw API/events bytes and **exact** Python `json.dumps(indent=2)`
+flags bytes plus newline (insertion order, ASCII escaping and number formatting affect release identity).
+The 120 KiB encoded JSON limit counts **UTF-8 bytes**, correcting Python's character count. Malformed
+YAML, unknown fields/types, missing named files and invalid declared file paths are named refusals with no
+stdout. The existing YAML v3.0.6 exception extends to exactly `adapters/appsource`, not the pure layer,
+kubeconfigs or other adapters; no dependency or general rule relaxation is approved. `encoding/base64`
+and `math/big` are pure stdlib primitives for document encoding and exact integer/flag-bound arithmetic; no complexity budget grows.
+
+The ordered source mapping is YAML-independent and retains flag/channel insertion order. Source defaults
+remain uid 65532, web port 8080, memory 128 MiB and SQLite volume 1 GiB (quantities round up to whole MiB).
+`autoDeploy` is checked as a boolean and ignored; grants are refused. Source validation does not acquire
+creation's non-root UID, probe-path or memory constraints. API bytes are opaque. AsyncAPI 3 send operations
+reference existing channels, receive operations are validated without publishing, and the source's one-hop
+local references and channel ordering remain unchanged. Flags retain YAML 1.1 scalar types, arbitrary-size
+integers and Python float spelling, ASCII/surrogate escaping, indentation and final newline.
+
+The adapter reads only `swhurl.yaml` and the paths the source explicitly names, with the existing declared
+path grammar. It follows named symlinks, including external targets, like the original producer; it adds
+no root-confinement or blanket regular-file restriction. YAML retains the original source semantics:
+scalar/mapping aliases, mapping merges (including sequences), and duplicate keys are accepted. Merges precede explicit fields; the first mapping in a merge sequence wins,
+and explicit or later duplicate assignments keep the key's first insertion position while replacing its
+value. This order is part of flags identity. Standard safe timestamp/binary scalars remain typed in unused
+AsyncAPI content. Mixed integer/float bounds compare the exact integer with the actual binary float, not
+its display spelling; database-size conversion retains Python integer-prefix syntax independently of
+resources' stricter quantity grammar. Ordered mappings retain typed scalar keys: event maps may use
+non-string keys, numeric and string keys remain distinct, and bool/int/float equality follows Python
+assignment while retaining the first key. Source/flag field names are checked by their own domain rules.
+Event send membership uses channel positions, not stringified keys; colliding reference strings resolve
+to the last channel, like the original reference dictionary. Cyclic aliases, unhashable keys, unsupported tags,
+invalid YAML and multiple documents are named refusals, never partial output. API/events raw bytes are
+not reserialized. Local files have no added per-file size cap: a large comment-only source can
+still produce a fitting label; oversized declarations name every document role and size. The producer has
+exit 0 on success, 2 on usage/input refusal and the CLI's exit 1 on output failure. Python's checker remains
+the coordinator, calling the already named Go binary twice:
+producer first, then unchanged declaration acceptance. Existing pinned external workflows continue to use
+the helper in their old platform revision; rollout/pin upgrades are explicitly outside this slice.
+
+Acceptance gates: freeze current producer cases as Go fixtures/goldens before replacement; add pure,
+real/fake adapter-contract, orchestration and CLI regressions, including byte cap, source defaults,
+YAML semantics, named-file reads, send references and flags identity. Switch only the producer in Python's
+existing template checker to its already named Go binary, then keep Go declaration acceptance. Delete
+the Python producer/internal command and producer-only tests/dead helpers, retaining shared modules.
+Run focused tests, `make check-v2`, `make check`, `make check-templates`, host/fixture shell syntax and
+diff whitespace checks. Independent parent review, commit/push and live verification are later gates;
+no template pin/workflow rollout, sibling repository or live change is part of this implementation.
 
 ## 11. The console port: strangled from inside (approved 3 November 2026)
 

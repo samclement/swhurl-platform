@@ -138,10 +138,12 @@ records**; its SHA-256 is `778b60a82a7be41051e200426afb6af387ed4bf74c70cb877d196
 records change from here, and the pin is the commit, so a later comparison regenerates it with
 `make v2-snapshot REVISION=dfe4dafa OUT=…`.
 
-**Commands:** 79 in `tools/swhurl/commands.py`, plus 11 internal ones (`make`, `console`, `console-merge`,
+**Commands at the frozen revision (not the current inventory):** 79 in `tools/swhurl/commands.py`, plus 11 internal ones (`make`, `console`, `console-merge`,
 `bot-render`, `bot-deploy`, `bot-deploy-v2`, `image-declaration`, `notify-serve`, `flux-wait`,
-`backup-job-sqlite`, `backup-job-mongodb`). `docs/commands.md` and the Makefile's `COMMANDS` are checked against that
-list, so a deletion that misses one of the three fails `make check` rather than sitting unnoticed.
+`backup-job-sqlite`, `backup-job-mongodb`). That is a historical inventory, not today's Python command list:
+`image-declaration` and `notify-serve` now have only Go entrypoints in this checkout. `docs/commands.md`
+and the Makefile's `COMMANDS` are checked against the current catalogue, so a deletion that misses one
+of those surfaces fails `make check` rather than sitting unnoticed.
 
 **Console routes** (`tools/swhurl/console/routes/`): `/`, `/apps`, `/catalogue`, `/catalogue/{env}/use`, `/platform`,
 `/egress`, `/units/{unit}`, `/units/{unit}/{action}`, `/healthz`, `/apps/{app}/{env}`,

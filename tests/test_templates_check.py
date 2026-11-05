@@ -9,7 +9,7 @@ from unittest import mock
 
 from test_app_repo import COPIER_YML as ALL_QUESTIONS
 
-from swhurl.apps import image_declaration, repo, templates_check
+from swhurl.apps import repo, templates_check
 from swhurl.apps.contract import (
     STACK_REVISIONS,
     AppType,
@@ -32,12 +32,13 @@ TYPES = {'api': AppType('API', '', ('typescript',), {'kind': 'web', 'database': 
                            'private')}
 
 
-def template_runner(manifest, declaration=None):
+def template_runner(manifest, declaration=None, producer=None):
     """A FakeRunner whose git clone writes COPIER_YML, whose copier writes ``manifest(answers)``, and whose
     swhurl-v2 declaration answers ``declaration`` when given."""
     runner = FakeRunner()
     # Registered first so a test replacing the last rule still replaces the copier.
     runner.on('swhurl-v2', 'declaration', handler=declaration or (lambda args, _input: Result(args, 0, '', '')))
+    runner.on('swhurl-v2', 'image-declaration', handler=producer or (lambda args, _input: Result(args, 0, LABEL + '\n', '')))
 
     def clone(args, _input):
         Path(args[-1]).mkdir(parents=True)
@@ -59,13 +60,11 @@ def template_runner(manifest, declaration=None):
     return runner
 
 
-def run(runner, label=None):
-    """check() with the producer's label stubbed: these tests are about the check's shape, not the producer's
-    (tests/test_image_declaration.py is)."""
+def run(runner):
+    """The real coordinator with Go producer/acceptance answers supplied through FakeRunner."""
     out = io.StringIO()
     with mock.patch.object(repo, 'copier_command', return_value=['copier']), \
-            mock.patch.object(templates_check, 'binary', return_value='swhurl-v2'), \
-            mock.patch.object(templates_check, 'declaration_label', side_effect=label or (lambda _rendered: LABEL)):
+            mock.patch.object(templates_check, 'binary', return_value='swhurl-v2'):
         code = templates_check.check(runner, Report(out), {'typescript': 'samclement/t'}, types=TYPES)
     return code, out.getvalue()
 
@@ -93,7 +92,10 @@ class CheckTemplatesTests(unittest.TestCase):
         self.assertEqual(runner.calls, [], 'nothing is built when the environment or PATH names a binary')
 
     def test_each_type_produces_a_label_the_creation_rules_accept(self):
-        runner = template_runner(lambda a: WORKER if a['kind'] == 'worker' else WEB)
+        def accepts(args, _input):
+            self.assertEqual(Path(args[args.index('--label') + 1]).read_text(), LABEL + '\n')
+            return Result(args, 0, '', '')
+        runner = template_runner(lambda a: WORKER if a['kind'] == 'worker' else WEB, declaration=accepts)
         code, out = run(runner)
         self.assertEqual(code, 0, out)
         self.assertIn('[OK] typescript api=openapi database=sqlite kind=web (api): the label applies to a new instance', out)
@@ -106,6 +108,11 @@ class CheckTemplatesTests(unittest.TestCase):
                          'https://github.com/samclement/t.git', 'one clone, rendered locally')
         declarations = [c for c in runner.calls if c[:2] == ('swhurl-v2', 'declaration')]
         self.assertEqual(len(declarations), 2, 'one per type: the outside answers never reach the producer')
+        producers = [c for c in runner.calls if c[:2] == ('swhurl-v2', 'image-declaration')]
+        self.assertEqual(len(producers), 2)
+        self.assertTrue(all(c[2] == '--app-dir' for c in producers))
+        sequence = [c[1] for c in runner.calls if c[0] == 'swhurl-v2']
+        self.assertEqual(sequence, ['image-declaration', 'declaration'] * 2)
         self.assertIn('--team', declarations[0])
         self.assertNotIn('--out', declarations[0], 'the check writes nothing: the report is stdout only')
 
@@ -136,11 +143,14 @@ class CheckTemplatesTests(unittest.TestCase):
         self.assertIn('typescript: the API type (api) no longer fits the template: kind must be one of web, worker, job', out)
 
     def test_a_producer_or_creation_refusal_fails(self):
-        def refuses(_rendered):
-            raise image_declaration.LabelError('swhurl.yaml: secrets names a reserved variable')
-        code, out = run(template_runner(lambda a: WEB), label=refuses)
+        code, out = run(template_runner(lambda a: WEB, producer=lambda args, _input: Result(
+            args, 2, '', 'swhurl.yaml: secrets names a reserved variable')))
+
         self.assertEqual(code, 1)
         self.assertIn('the image-declaration producer refused the app: swhurl.yaml', out)
+        stopped = template_runner(lambda a: WEB, producer=lambda args, _input: Result(args, 2, '', 'swhurl.yaml: bad'))
+        run(stopped)
+        self.assertFalse(any(c[:2] == ('swhurl-v2', 'declaration') for c in stopped.calls))
         refusing = template_runner(lambda a: WEB, declaration=lambda args, _input: Result(args, 2, '', ''))
         code, out = run(refusing)
         self.assertEqual(code, 1)

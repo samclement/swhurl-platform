@@ -4638,3 +4638,23 @@ On 25 October, pushed `2eaeaea4`, then `1262960f` and `ad334338` (the backup tes
   data or backup destination was changed, and no signed-in browser exercise was performed. The status
   map now records the implemented/reviewed producer with external adoption partial, and the registry
   waits for the operator to choose the next producer rollout or Python retirement slice.
+
+## Go producer adoption by template workflows (5 November 2026)
+
+- **Approved scope:** adopt the Go declaration producer in both stack templates, validate and release
+  their shared workflows and advance this platform's catalogue pins. Existing app repositories' workflow
+  pins and records, credentials, retained data and backup destinations stay unchanged.
+- **Baseline captured before edits:** all seven template matrix combinations produced byte-identical
+  labels with the historical pinned Python helper and the new Go producer. Both templates' actual
+  image-assertion shells refused those labels because they still asserted version 1; their previous main
+  CI runs failed at that same assertion. This rollout updates the assertions to the current version-2
+  contract, including memory defaults and exact embedded document bytes.
+- **Delivered:** both template workflows now check out only the pinned Go module, build the producer outside
+  the app's Docker context and call it with no Python fallback; uv is installed only for template Copier.
+  Each workflow's real Template matrix passed — four TypeScript and three Kotlin combinations — with the
+  Go build and the version-2 memory/document-byte assertions in the logs. Immutable releases
+  `swhurl-app-template-typescript@v0.2.26` and `swhurl-app-template-kotlin@v0.2.25` were tagged on the
+  commits that point new apps' callers at them, and `STACK_REVISIONS` advances to those tag targets.
+  `make check-templates`, `make check` and `make check-v2` pass on the new pins; local verification also
+  confirmed all seven labels are byte-identical to the historical Python helper and fail closed on bad
+  source. Reconcile and live platform verification remain before the slice is recorded done.

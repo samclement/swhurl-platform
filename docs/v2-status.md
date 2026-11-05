@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: blocked
-Gate: choose the next producer rollout or Python retirement slice
+Status: in progress
+Gate: reconcile and live-verify the released Go producer rollout
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -32,7 +32,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | SQLite storage | done | [record](current-state.md#sqlite-storage-proved-live-25-october-2026) |
 | Backup and restore | done | [record](current-state.md#the-first-content-changing-restore-swhurl-try-10-staging-moved-back-a-day-27-october-2026) |
 | Promotion and rollback | done | [record](current-state.md#a-rollback-exercised-live-2-november-2026) |
-| Image declaration producer in Go | partial | [offline evidence](current-state.md#the-image-declaration-producer-leaves-python-offline-5-november-2026) |
+| Image declaration producer in Go | done | [workflow rollout](current-state.md#go-producer-adoption-by-template-workflows-5-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
 | Bulk status and revision evidence | done | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |
 | Status with the pod's ServiceAccount | done | [record](current-state.md#status-with-the-pods-serviceaccount-3-november-2026) |
@@ -75,7 +75,7 @@ loses its `run=` function.
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team targets are bash over `swhurl-v2 team`; `destroy-data` stays Python, a safety decision with its own tests |
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
 | The v1 records model and its fixture oracle (`apps/model/*`) | delete as importers leave; keep the fixture oracle until then | bounded, not started: 1,541 lines, imported by 13 modules (8 under `apps/`, 3 under `console/`, `dashboards.py` and 1 live test) and 4 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
-| Image-declaration producer | `swhurl-v2 image-declaration` | implemented and independently reviewed: Python producer/internal command and producer-only tests deleted; 35 full-label goldens and seven refusals preserve source behavior, and the checker exercises Go production then acceptance. External pinned build workflows keep the historical helper until a separate rollout |
+| Image-declaration producer | `swhurl-v2 image-declaration` | implemented, independently reviewed and rolled out to both template build workflows: Python producer/internal command and producer-only tests deleted; 35 full-label goldens and seven refusals preserve source behavior; the templates build and call the pinned Go binary, and the released catalogue pins are advanced. Existing apps' workflow pins stay unchanged until Copier updates them |
 | `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress: its readers and its promotion submission read `swhurl-v2 status` with the pod's credential. The server and its 18 templates go last |
 
 ## Remaining work
@@ -107,10 +107,13 @@ not migration.
    The unused Python service, its internal command and service-only tests are deleted ([retirement](current-state.md#the-python-notify-service-is-retired-5-november-2026)); Go retains their cases. **The producer-first slice is implemented:** the template checker calls
    `swhurl-v2 image-declaration`, and its Python producer is deleted
    ([evidence](current-state.md#the-image-declaration-producer-leaves-python-offline-5-november-2026)).
-   Its external build-workflow rollout and the template coordinator/catalogue retirement are separate,
-   unapproved next slices; Copier remains an explicit Python dependency.
+   **The external build-workflow rollout is delivered:** both template repositories build the pinned Go producer,
+   validated their complete matrices, released the workflows and advanced the catalogue pins
+   ([evidence](current-state.md#go-producer-adoption-by-template-workflows-5-november-2026)).
+   Existing apps' workflow pins are unchanged. The template coordinator/catalogue retirement remains
+   unapproved; Copier remains an explicit Python dependency.
 3. **The retirements proper.** Console, the remaining commands, the checks and host tooling,
-   each its own approved slice. The Go producer's adoption by external build workflows is a separate gate.
+   each its own approved slice. Existing apps' adoption of the new workflow releases is a separate gate.
 
 ## Deferred features
 

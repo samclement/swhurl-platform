@@ -853,6 +853,22 @@ diff whitespace checks. Delivery requires independent parent review, commit/push
 verification; its evidence is in [current state](current-state.md#the-image-declaration-producer-leaves-python-offline-5-november-2026).
 No template pin/workflow rollout, sibling repository or app-record change is part of this implementation.
 
+### Go producer adoption by template workflows (approved 5 November 2026)
+
+Both stack repositories' shared `app.yml` workflows build `swhurl-v2` from an immutable platform
+revision containing the Go producer, with the Go version and YAML dependency pinned by `v2/go.mod`
+and `v2/go.sum`. Only `v2/` is checked out; source and binary stay in the runner's temporary directory,
+outside every app build context. A failed build or producer invocation stops before image publication;
+there is no Python fallback. The app checkout remains the source of truth for the declaration.
+
+Copier's template-only rendering still uses uv/Python; image assertions and SQLite smoke checks may
+still use the runner's Python standard library. This slice does not claim Python-free template CI.
+Assertions cover declaration version 2, default/minimum memory and the embedded API/events/flags.
+Validate both complete template matrices (four TypeScript, three Kotlin) before immutable releases;
+then advance the generated callers and platform catalogue to those tested releases and run
+`make check-templates`, `make check`, reconcile and live platform verification. Existing app repositories'
+workflow pins, app records, credentials, data and backup destinations are outside this approval.
+
 ## 11. The console port: strangled from inside (approved 3 November 2026)
 
 **Decided 3 November 2026: option 3, status first.** The brief below is kept as the reasons and what would

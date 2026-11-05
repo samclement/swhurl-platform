@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/git"
 	"github.com/samclement/swhurl-platform/v2/adapters/helm"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
@@ -64,6 +65,7 @@ const usage = `usage:
       [--confirm APPLICATION/ENVIRONMENT [--age-key-file FILE] [--url-ttl DURATION]]
   swhurl-v2 team --records DIR --team TEAM --action ACTION --profile PROFILE.json --out DIR \
       [--description TEXT] [--rename NEW] [--transport ntfy]
+  swhurl-v2 workstreams --repo-root DIR
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
 platform's tag policy, and writes the record pair and the compiled files under --out. With --records it reads
@@ -241,9 +243,17 @@ an argument, and is encrypted with sops to the profile's recipient into platform
 before anything else is written; it is never printed. drop-channel removes the channel and deletes its Secret once
 nothing lists it. A change that leaves the registry as it was writes nothing new.
 
+workstreams compares the workstream registry, DIR/docs/workstreams.md, and its progress pages with the checkout at
+DIR, which must be the top of a Git working tree: each row's shape and page, one workstream in progress, each status
+page's block against its row and against git status, the commits it cites against what a ref reaches, a change
+under a workstream's paths that also changes its page, and each progress page's shape and size. Git is only read,
+never written (not even the index), and only the Markdown files the check uses are opened, inside DIR. It prints one
+line per check and exits 1 when any problem is found or a read fails, and 2 when DIR is not the top of a checkout.
+
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
-started but did not complete, a render --check that found a difference, a policy render/rule failure, or file and output I/O failure.
+started but did not complete, a render --check that found a difference, a policy render/rule failure, a workstream
+record that disagrees with its checkout, or file and output I/O failure.
 `
 
 func main() {
@@ -359,6 +369,7 @@ var commands = map[string]func(cli, request) int{
 	"remove":            cli.remove,
 	"restore":           cli.restore,
 	"team":              cli.team,
+	"workstreams":       cli.workstreams,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -445,6 +456,10 @@ func (r *request) registerInputs(flags *flag.FlagSet) {
 func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 	if command == "team" {
 		r.registerTeamFlags(flags)
+		return
+	}
+	if command == "workstreams" {
+		flags.Var(&once{value: &r.repoRoot}, "repo-root", "the top of the checkout whose workstream record is checked")
 		return
 	}
 	if r.registerRecordFlags(flags, command) {
@@ -709,6 +724,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"deploy":         (*request).deployNamed,
 	"edit":           (*request).editNamed,
 	"team":           (*request).teamNamed,
+	"workstreams":    func(r *request) []string { return []string{r.repoRoot} },
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one
@@ -854,6 +870,8 @@ type cli struct {
 	// inCluster is where status --in-cluster finds the pod's ServiceAccount; a test supplies a folder and an
 	// environment of its own.
 	inCluster inCluster
+	// git reads a checkout for the workstream check; nil is the git command on PATH.
+	git git.Reader
 }
 
 func (c cli) releaseID(path string) int {

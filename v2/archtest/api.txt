@@ -19,6 +19,23 @@ adapters/files: type Disk struct {}
 adapters/files: type Error struct {Code string Path string Reason string}
 adapters/files: type Outcome struct {Path string `json:"path"` State string `json:"state"`}
 adapters/files: type Writer interface {Write(dir string, files []kernel.File) ([]Outcome, error) Prune(dir, folder string, rendered []string) ([]Outcome, error) Remove(dir, path string) ([]Outcome, error)}
+adapters/git/gittest: func (*Fake) Read(root string) (git.Checkout, error)
+adapters/git/gittest: func Contract(t *testing.T, open func(*testing.T) (git.Reader, string))
+adapters/git/gittest: func New(root string, checkout git.Checkout) *Fake
+adapters/git/gittest: func Scenario() git.Checkout
+adapters/git/gittest: type Fake struct {Checkouts map[string]git.Checkout Err error Reads []string}
+adapters/git: const MaxOutput = 64 << 20
+adapters/git: const NotARepository = "not_a_repository"
+adapters/git: const NotTheTopLevel = "not_the_top_level"
+adapters/git: const ReadTimeout = time.Minute
+adapters/git: const RefusedRead = "refused_read"
+adapters/git: func (*Command) Read(root string) (Checkout, error)
+adapters/git: func (*Error) Error() string
+adapters/git: func New() *Command
+adapters/git: type Checkout struct {Tracked []string Present []string Uncommitted []string Shallow bool Commits []string}
+adapters/git: type Command struct {Binary string}
+adapters/git: type Error struct {Reason, Detail string}
+adapters/git: type Reader interface {Read(root string) (Checkout, error)}
 adapters/helm/helmtest: func (*Fake) Render(request helm.Request) ([]json.RawMessage, error)
 adapters/helm/helmtest: func Contract(t *testing.T, open func(*testing.T) helm.Renderer, request helm.Request)
 adapters/helm/helmtest: type Fake struct {Output []json.RawMessage Err error Calls []helm.Request}
@@ -530,6 +547,7 @@ orchestration: const StepNotRead = "not_read"
 orchestration: func (*Refusal) Error() string
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
 orchestration: func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
+orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
 orchestration: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
@@ -585,3 +603,9 @@ shadow: type Error struct {Field, Reason string}
 shadow: type Finding struct {Field, Outcome, Reason string}
 shadow: type HTTPComparison struct {Findings []Finding AssessedScope []string UnassessedScope []string}
 shadow: type ResourceChoices struct {CPURequestMilli, MemoryMiB int32}
+workstreams: const MaxLines = 250
+workstreams: const Registry = "docs/workstreams.md"
+workstreams: func Check(c Checkout) []Result
+workstreams: func Needs(c Checkout) []string
+workstreams: type Checkout struct {Tracked, Present []string Uncommitted []string Shallow bool Commits []string Markdown map[string]string}
+workstreams: type Result struct {Okay string Problems []string Warning string}

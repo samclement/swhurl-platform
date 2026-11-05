@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Go replacement (v2) | main | blocked | Legacy app-policy checker/API retirement independently reviewed and live-verified; Go owns decisions, v1 model oracle remains, Python entrypoint and shared chart acquisition remain | approve the next console-free Python retirement slice | operator approval of the next slice; no next implementation scope chosen | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/`, `tools/swhurl/`, `tests/` |
+| Go replacement (v2) | main | in progress | `check-docs` ported to Go (`swhurl-v2 workstreams` over a read-only `adapters/git`) and the Python checker deleted; verified offline, not yet pushed | push the workstream-check port, then verify CI and the console redeploy | nothing: delivery is the next step of the approved slice | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/`, `tools/swhurl/`, `tests/` |
 | Live platform | main | approved | the 24 open items in the plan index; the eight v1 app repositories stopped reusing a tested PR image, take the newest template and run Node.js 26 (30–31 October 2026), the two throwaways that could not take the template update were removed, with their namespaces, repositories and packages, and `make verify-platform`'s Image Automation check reads a v2-owned instance's own record (31 October 2026) | the next open plan item | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 
@@ -39,6 +39,8 @@ The page is overwritten, not appended to. A delivered slice changes the row it m
 
 ## What `make check-docs` enforces
 
+`make check-docs` is `swhurl-v2 workstreams` over this checkout, reading Git without writing to it ([contract](iteration-2-plan.md#the-workstream-check-in-go-approved-5-november-2026)); CI runs it on every push.
+
 | Rule | Why |
 | --- | --- |
 | The table's columns, each row's kind and state, a non-empty next gate and needs | a row without a next gate is work that has quietly stopped |
@@ -46,8 +48,8 @@ The page is overwritten, not appended to. A delivered slice changes the row it m
 | Each page resolves, including the heading when one is named; each path exists | links are how a new session finds the work |
 | A status page's `Status` and `Gate` equal the registry's; every `docs/*-status.md` is in the table | one record of progress, not two |
 | `Uncommitted` matches `git status` for that workstream | the drift this page exists to catch: a record that says "pending review" after the review |
-| Every commit a status page cites exists | evidence cannot be misremembered |
-| A change under a workstream's paths also changes its page | "update the row in the same change", made mechanical |
+| Every commit a status page cites is reachable from a ref (a shallow clone warns instead) | evidence cannot be misremembered |
+| A change under a workstream's paths (anything `git status` reports, a new file included) also changes its page | "update the row in the same change", made mechanical |
 | A status page has the sections above, states `done` or `partial` per capability, gives each row one evidence link that resolves, keeps a deferred table whose last two cells are non-empty, has no `## Slice record` heading, and stays at or under 250 lines | a map that is overwritten, not a log that grows |
 | A status page is the only place its workstream's deferred list lives | one list, so deferring and delivering cannot disagree |
 

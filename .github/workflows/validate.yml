@@ -52,7 +52,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # the workstream registry's cited commits are checked for reachability
+          fetch-depth: 0 # make check-docs checks the workstream pages' cited commits for reachability
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -90,6 +90,12 @@ jobs:
 
       - name: Download pinned v2 dependencies
         run: make v2-deps
+
+      # The workstream record against this checkout's Git (swhurl-v2 workstreams); the full history above lets it
+      # check that every cited commit is reachable. It runs before any step that may write into the checkout (the
+      # records render below), so it sees the tree as committed.
+      - name: Check the workstream record
+        run: make check-docs
 
       - name: Lint Python tooling
         run: pipx run ruff==0.16.9 check tools tests devtools

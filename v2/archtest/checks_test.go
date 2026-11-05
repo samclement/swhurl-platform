@@ -105,6 +105,7 @@ func f(count int) int {
 		"observe/explain.go": "package observe\n",
 		"policy/policy.go":   "package policy\n",
 		"shadow/http.go":     "package shadow\n",
+		"workstreams/a.go":   "package workstreams\n",
 	})
 	expect(t, checkPure(m),
 		"pure kernel/a.go:5: imports os, which is not in PureImports",
@@ -117,15 +118,19 @@ func f(count int) int {
 
 func TestCheckNoSubprocess(t *testing.T) {
 	m := fixture(t, map[string]string{
-		"kernel/a.go":         "package kernel\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"kubectl get pods\")\nvar d = \"fluxion\"\n",
-		"kernel/b.go":         "package kernel\n\nimport \"os\"\n\nfunc f() { os.StartProcess(\"flux\", nil, nil) }\n",
-		"kernel/b_test.go":    "package kernel\n\nimport \"os/exec\"\n\nvar e = exec.Command(\"go\")\n",
-		"adapters/git/git.go": "package git\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"git\", \"status\")\n",
-		// The one allowed adapter may start a process, and may still not name a Kubernetes command.
+		"kernel/a.go":                   "package kernel\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"kubectl get pods\")\nvar d = \"fluxion\"\n",
+		"kernel/b.go":                   "package kernel\n\nimport \"os\"\n\nfunc f() { os.StartProcess(\"flux\", nil, nil) }\n",
+		"kernel/b_test.go":              "package kernel\n\nimport \"os/exec\"\n\nvar e = exec.Command(\"go\")\n",
+		"adapters/registry/registry.go": "package registry\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"curl\")\n",
+		// An allowed adapter may start a process, and may still not name a Kubernetes command.
 		"adapters/sops/sops.go": "package sops\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"sops\")\nvar d = \"kubectl get pods\"\n",
+		"adapters/git/git.go":   "package git\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"git\", \"status\")\n",
+		// An allowed adapter's fake is not the adapter: it starts nothing.
+		"adapters/git/gittest/fake.go": "package gittest\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"git\")\n",
 	})
 	expect(t, checkNoSubprocess(m),
-		"no-subprocess adapters/git/git.go:3: imports os/exec",
+		"no-subprocess adapters/git/gittest/fake.go:3: imports os/exec",
+		"no-subprocess adapters/registry/registry.go:3: imports os/exec",
 		"no-subprocess adapters/sops/sops.go:6: names the kubectl command",
 		"no-subprocess kernel/a.go:3: imports os/exec",
 		"no-subprocess kernel/a.go:5: names the kubectl command",

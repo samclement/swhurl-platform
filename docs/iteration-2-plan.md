@@ -849,8 +849,9 @@ YAML semantics, named-file reads, send references and flags identity. Switch onl
 existing template checker to its already named Go binary, then keep Go declaration acceptance. Delete
 the Python producer/internal command and producer-only tests/dead helpers, retaining shared modules.
 Run focused tests, `make check-v2`, `make check`, `make check-templates`, host/fixture shell syntax and
-diff whitespace checks. Independent parent review, commit/push and live verification are later gates;
-no template pin/workflow rollout, sibling repository or live change is part of this implementation.
+diff whitespace checks. Delivery requires independent parent review, commit/push and live platform
+verification; its evidence is in [current state](current-state.md#the-image-declaration-producer-leaves-python-offline-5-november-2026).
+No template pin/workflow rollout, sibling repository or app-record change is part of this implementation.
 
 ## 11. The console port: strangled from inside (approved 3 November 2026)
 

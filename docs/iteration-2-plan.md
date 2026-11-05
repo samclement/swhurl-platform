@@ -1098,7 +1098,7 @@ and a send cut off before its save is sent again, which at least once allows.
 **Step 1 was implemented and delivered before the cutover:** the pure [`notify`](../v2/notify) package, Kubernetes
 `Reviewer`/`Data` ports, [`ntfy`](../v2/adapters/ntfy) publisher with real/fake contract suites, use cases and
 [`notify-serve`](../v2/cmd/swhurl-v2/notify.go) command exist. The HelmRelease now selects Go; the Python service
-is retained unchanged for rollback until live acceptance and the separate deletion step.
+is retained unchanged for rollback until the separate deletion step. [Live acceptance passed](current-state.md#the-notify-service-switches-to-go-5-november-2026).
 [Handler tests](../v2/cmd/swhurl-v2/notify_test.go) exercise the Python service's acceptance and delivery cases;
 [use-case tests](../v2/orchestration/notify_test.go) verify persistence before sending, retry and restart.
 The API baseline intentionally includes these ports, pure types and use cases, not budget exceptions.
@@ -1112,14 +1112,16 @@ other writes keep that original bound.
 refusal log lines replace uvicorn's access log; Go's standard handler supplies wrong-method/path answers.
 A successful empty channel-Secret list is read once per pass rather than once per copy. Unlike Python's
 pass-local retry list, Go keeps failed copies in every subsequent saved checkpoint, so a mid-pass stop cannot
-lose an earlier retry. Real TokenReview,
-RBAC, ntfy delivery, the existing live outbox and SIGTERM remain for the live gate.
+lose an earlier retry. Live TokenReview, RBAC, ntfy delivery/readback and the existing version-1 outbox
+were exercised at cutover. Forced token rotation, an in-flight SIGTERM and a real correctly signed ClickStack
+webhook remain uninduced; offline tests cover the corresponding decisions and request paths.
 
-**Remaining delivery, separate commits.** The operator approved delivery of step 1 and the live cutover on
-5 November 2026; Python deletion remains a separate step. After the offline implementation's image is built,
-the cutover sets the
-HelmRelease's command to `[swhurl-v2, notify-serve]`, then runs a live acceptance test through a port-forward: no
-token and a forged one get 401; a checker token (`kubectl create token`, ten minutes) is accepted for a team with a
-channel, a repeat of its key gets no channel, and the copy arrives; a wrong webhook secret gets 401; the outbox
-empties; the checker's next real messages are accepted. A revert of this commit is the rollback. (3) The Python
-service, its command entry and its tests are deleted.
+**Delivery, separate commits.** The operator approved delivery of step 1 and the live cutover on
+5 November 2026. Both are complete: the HelmRelease runs `[swhurl-v2, notify-serve]`. The acceptance test uses a
+port-forward: no token and a forged token get 401; a checker token (`kubectl create token`, ten minutes) is
+accepted for a team with a channel, a repeat of its key gets no channel, and the copy is read back from ntfy;
+a wrong webhook secret gets 401 and the outbox empties. The unchanged checker's real `forward()` client also
+sent and retried a separate notice, with delivery/readback verified; scheduled checker runs succeeded, but no
+new lifecycle incident was induced. Reverting the command-switch commit restores Python without an outbox
+migration or reset. **Step 3 remains separate:** delete the unused Python service, its command entry and its
+service tests after operator approval; keep the checker and shared delivery code it still imports.

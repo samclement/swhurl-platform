@@ -4657,4 +4657,10 @@ On 25 October, pushed `2eaeaea4`, then `1262960f` and `ad334338` (the backup tes
   commits that point new apps' callers at them, and `STACK_REVISIONS` advances to those tag targets.
   `make check-templates`, `make check` and `make check-v2` pass on the new pins; local verification also
   confirmed all seven labels are byte-identical to the historical Python helper and fail closed on bad
-  source. Reconcile and live platform verification remain before the slice is recorded done.
+  source. An independent review found no P0/P1 issues; its one P2 (setup-go cannot hash a moved go.sum) was
+  fixed with `cache: false`.
+- **Live delivery:** platform commit `0909720b`; Validate's deploy job then redeployed the console itself
+  to image `src-91b7022554b0a85f` (`7565a1d0`). `make flux-reconcile` applied all 31 units; `make verify-platform`
+  passed with 84 OK lines and no BAD/WARN, and `swhurl-v2 status --all` reported all 10 instances healthy.
+  No app image, record, credential, retained data or backup destination changed, and existing app
+  repositories' workflow pins stay unchanged.

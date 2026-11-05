@@ -1,6 +1,6 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: in progress
+Status: blocked
 Gate: approve the next console-free Python retirement slice
 Uncommitted: none
 
@@ -20,7 +20,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | --- | --- | --- |
 | Release selection and identity | done | [contract](iteration-2-plan.md#2-phase-1-model-and-contract) |
 | Deterministic compiler | done | [kernel](../v2/kernel) |
-| App policy: Go decisions, legacy checker/API retired offline | partial | [record](current-state.md#legacy-app-policy-retirement-4-november-2026) |
+| App policy: Go decisions, legacy checker/API retired | done | [record](current-state.md#legacy-app-policy-retirement-4-november-2026) |
 | Git delivery and units | done | [record](current-state.md#first-v2-instance-live-25-october-2026) |
 | Observation | done | [record](current-state.md#first-v2-observation-of-a-live-instance-25-october-2026) |
 | Shadow bridge | done | [shadow](../v2/shadow) |
@@ -65,7 +65,7 @@ loses its `run=` function.
 
 | Python surface | What replaces it | State |
 | --- | --- | --- |
-| Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2` and team/channel validation; the legacy fixture checker/API are retired and independently reviewed (delivery verification pending), with the v1 model oracle and Go tests kept. Python retains only check-apps entrypoint glue and shared chart acquisition, not policy decisions; `verify` and `apps/checks` are reached by the console's platform page |
+| Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-docs`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2` and team/channel validation; the legacy fixture checker/API retirement is independently reviewed and live-verified, with the v1 model oracle and Go tests kept. Python retains only check-apps entrypoint glue and shared chart acquisition, not policy decisions; `verify` and `apps/checks` are reached by the console's platform page |
 | Recovery and backup tooling (`recovery.py`, `sqlite_backup.py`, `backupset.py`) | `make restore-sqlite` is `swhurl-v2 restore`, the backup image's Go tool runs the jobs and `backup-mongodb` and `backup-sqlite` are bash; MongoDB's restore test and the freshness checks remain | partial: what remains is reached by `verify` |
 | The notification checker and the dashboard reconciler (the console image's two CronJobs), the notify service, the host heartbeat and `clickstack-bootstrap` | Go | not started: the notify service is console-free, the checker's modules are reached by `verify`; about 1.5k lines that run every minute in the cluster or send alerts, so services rather than operator convenience |
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team targets are bash over `swhurl-v2 team`; `destroy-data` stays Python, a safety decision with its own tests |
@@ -92,11 +92,11 @@ not migration.
 **B. Then the rest of the road.**
 
 2. **The console-free Python, first.** Go owns all app-policy decisions; the approved legacy fixture
-   checker/API retirement is implemented and independently reviewed, pending deployment verification
-   ([offline evidence](current-state.md#legacy-app-policy-retirement-4-november-2026)). The v1 model oracle
+   checker/API retirement is committed, independently reviewed and live-verified
+   ([evidence](current-state.md#legacy-app-policy-retirement-4-november-2026)). The v1 model oracle
    and existing Go policy tests remain; OTel/ClickStack share relocated chart helpers. Minimal Python
    entrypoint and dependency-acquisition glue remains, with no compatibility bridge or new Go contracts.
-   No live changes are claimed before delivery verification. Then **approve the next
+   The normal console/notify rollout is verified. **Approve the next
    console-free Python retirement slice**; no next implementation scope is chosen here.
 3. **The retirements proper.** Console, the remaining commands, the checks, the producer and host tooling,
    each its own approved slice.

@@ -32,10 +32,22 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## The notify service switches to Go (5 November 2026)
+
+- **Approved cutover:** the HelmRelease selects `[swhurl-v2, notify-serve]` in the already-built console image
+  `src-043f8c6e6233b3ab`. The command is the only manifest change: replicas, `Recreate` strategy, RBAC, routes,
+  Secrets, health checks and version-1 outbox are unchanged. The unused Python service stays for rollback.
+- **Implementation delivery:** `10b90c44` passed every Validate job and Render; `9603766d` pinned the new image.
+  Reconciliation and `make verify-platform` passed before the command switch while Python was still serving.
+- **Acceptance:** the command change is ready for reconciliation; live TokenReview, delivery/readback, duplicate
+  suppression and outbox checks are not yet recorded. The [approved test and rollback](iteration-2-plan.md#12-the-notify-service-in-go-approved-5-november-2026)
+  must pass before the Python deletion step. Revert the command-switch commit to restore Python; no outbox reset
+  or Secret rotation is involved.
+
 ## The notify service in Go, offline (5 November 2026)
 
-- **Scope:** the Go implementation exists offline. Python still runs the live notify service;
-  no HelmRelease, RBAC, Secret or cluster state changed in this implementation slice. The operator approved
+- **Scope:** the Go implementation was delivered separately from its live cutover. This implementation slice
+  left Python serving live; no HelmRelease, RBAC, Secret or cluster state changed in it. The operator approved
   delivery and the separate live cutover on 5 November, with the acceptance and rollback contract in [section 12](iteration-2-plan.md#12-the-notify-service-in-go-approved-5-november-2026).
 - **Implemented:** the pure message/alert rules and version-1 outbox; Kubernetes TokenReview and namespaced
   ConfigMap/Secret ports; the HTTPS ntfy publisher; locked acceptance/delivery use cases; and

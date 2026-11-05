@@ -50,7 +50,7 @@ spec:
               repository: ghcr.io/samclement/swhurl-console
               tag: src-043f8c6e6233b3ab # image: console
               digest: sha256:0276a746f92db695495f916f886a5265a7d1f0e2f258cf404f09930d0113982c # image: console
-            command: [python, -m, swhurl, notify-serve]
+            command: [swhurl-v2, notify-serve]
             resources:
               requests:
                 cpu: 10m

@@ -1095,9 +1095,10 @@ or by name (`notify-alerts`), so Helm's release record is never fetched. A `SIGT
 graceful drain (v2 code may not name `syscall`); a cut-off request was not answered 202 and is retried by its caller,
 and a send cut off before its save is sent again, which at least once allows.
 
-**Step 1 is implemented offline:** the pure [`notify`](../v2/notify) package, Kubernetes
+**Step 1 was implemented and delivered before the cutover:** the pure [`notify`](../v2/notify) package, Kubernetes
 `Reviewer`/`Data` ports, [`ntfy`](../v2/adapters/ntfy) publisher with real/fake contract suites, use cases and
-[`notify-serve`](../v2/cmd/swhurl-v2/notify.go) command exist. The Python service remains unchanged and live.
+[`notify-serve`](../v2/cmd/swhurl-v2/notify.go) command exist. The HelmRelease now selects Go; the Python service
+is retained unchanged for rollback until live acceptance and the separate deletion step.
 [Handler tests](../v2/cmd/swhurl-v2/notify_test.go) exercise the Python service's acceptance and delivery cases;
 [use-case tests](../v2/orchestration/notify_test.go) verify persistence before sending, retry and restart.
 The API baseline intentionally includes these ports, pure types and use cases, not budget exceptions.

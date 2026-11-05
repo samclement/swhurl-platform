@@ -58,6 +58,11 @@ What has been verified on the live cluster, and when: current facts first, then 
   output and two rules no test caught. Each fix has a test that fails without it.
 - **CI:** Validate's tooling job gains a "Check the workstream record" step right after `make v2-deps`; until now the
   real tree was checked only through `tests/test_docs.py` inside `make test`.
+- **Delivery (5 November 2026):** `d9e56d03` pushed to `main`. Validate run 41987093515 passed all nine jobs; its new
+  step reported 0 errors and no shallow warning on the full-history checkout. Deleting from `tools/` started the
+  console deploy (`96057b0a`, image `src-cc5290baa314dc16`). After `make flux-reconcile`, `make verify-platform`
+  passed with no `[BAD]` or `[WARN]` lines. Both console CronJobs ran a job on the new image at 07:29:11Z and
+  neither is suspended. No credential, data or `flux-system` object changed.
 
 ## Legacy app-policy retirement (4 November 2026)
 

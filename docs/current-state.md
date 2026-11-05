@@ -32,6 +32,39 @@ What has been verified on the live cluster, and when: current facts first, then 
   over http and 302 to sign-in over https. What drove the earlier peaks above 500M was not investigated.
 - **Not yet measured:** the effect over a full day against the figures above.
 
+## Legacy app-policy retirement (4 November 2026)
+
+- **Approved scope, implemented:** delete `apps/policy.py` and its Python-only
+  characterization tests; retire the explicit legacy-path API. `check-apps` takes no arguments and always
+  checks the whole v2 tree. Usage errors exit 2 before reads, chart fetches or Runner calls. No fixtures,
+  v1 model-oracle tests, Go policy rules/contracts or dependencies are removed or widened.
+- **Ownership:** Go makes all app-policy decisions. Python retains `apps/validation.py` entrypoint glue
+  and `charts.py` dependency acquisition; OTel/ClickStack call the relocated helpers. Profile and
+  HelmRepository resolution both use the supplied checkout root. Cache reuse, cold/failed pull and
+  competing-pull behavior are covered. Legacy reserve/public/alerts/exceptions/provenance semantics are
+  retired, not preserved through a bridge or compatibility mode.
+- **Offline validation:** before the reshape, seven acquisition/gate tests passed; new entrypoint tests
+  failed on the absent module. The focused command
+  `PYTHONPATH=tools:tests uv run --frozen python -m unittest test_charts test_v2_policy_gate test_otel test_manifest_policy test_interface test_app_relations test_v1_model_bound test_commands`
+  passed **76 tests**, with real charts, on both Helm 4.2 and 3.19. Under `pi-durable-subagents hold machine --`,
+  final `make check` passed **720 Python tests**, **98 code-graph tests**, lint/ShellCheck, collector checks,
+  the all-ten-instance Go gate, docs shape/link checks and **32 schema entrypoints**;
+  `REQUIRE_HELM=1 make check-v2` passed Go formatting, vet, tests and **157 rendered files, zero differences**.
+  The host/fixture/v2 `bash -n` loop and `git diff --check` passed. Direct `python3 -m swhurl check-apps`
+  reported all ten instances passing; a legacy-path invocation exited 2 with usage. The first full check
+  found two import-order errors and a stale evidence anchor; those were corrected before the passing run.
+- **Console build smoke:** `podman build --pull=never --network=none -f images/console/Dockerfile -t localhost/swhurl-console:policy-retirement .`
+  rebuilt the actual image from cached pinned dependencies. A network-disabled, read-only container
+  imported the console, OTel and new validation/chart modules and confirmed the legacy module is absent.
+  No image was pushed or pinned. Templates/app types/producer flow did not change, so `check-templates`
+  was not needed or run. Existing OTel name and Starlette deprecation warnings remain unrelated.
+- **Independent review:** no code regressions found; 76 focused tests, the real whole-tree command,
+  explicit-path refusal and Go policy/adapter tests passed. Two stale fixture-policy promises in console
+  and operations documentation were corrected to link to the canonical app-policy contract.
+- **Delivery:** deployment and live verification remain to be recorded. No cluster or credentials changed
+  during implementation. The next gate after delivery is to approve the next console-free Python retirement
+  slice; no implementation scope for it is chosen here.
+
 ## App-policy Helm boundary approved (4 November 2026)
 
 - **Operator decision:** proceed with the Go app-policy gate and admit `helm template` as v2's second subprocess
@@ -90,9 +123,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   baselines, with no repository retirement edits. Mutation probes still demonstrate headroom, team, public
   exposure and alerts missed by Go, exceptions not honored, and the other allowed storage class rejected.
   Provenance has no baseline proof: fixtures are exempt, while direct legacy provenance checks report 1/2/2
-  findings. The [unapproved candidate and residual contracts](iteration-2-plan.md#legacy-policy-retirement-probe-not-approved)
-  require the operator's scope decision; no compatibility mode, source compiler, fixture replacement or Python deletion
-  was introduced. Probe scripts/results: `/tmp/swhurl-policy-retirement-probe/` and `/tmp/probe-legacy-policy*`;
+  findings. The [retirement decision and residual contracts](iteration-2-plan.md#legacy-policy-retirement-approved-4-november-2026)
+  followed this probe; at the Go-gate checkpoint no compatibility mode, source compiler, fixture replacement
+  or Python deletion was introduced. Probe scripts/results: `/tmp/swhurl-policy-retirement-probe/` and `/tmp/probe-legacy-policy*`;
   stored input excludes Secret data/stringData, and output contains only rule counts/fixed diagnostics.
 
 **Validation:** focused adapter/policy/orchestration/CLI/guardrail suites and the real Unicode/policy
@@ -123,11 +156,9 @@ were the normal console/notify image deployment; policy itself is read-only and 
 No console PR submission or deliberately failing live app was exercised. GitHub's existing Node.js action-runtime
 and ubuntu-latest migration warnings remain; no unrelated workflow-version upgrade was included.
 
-**Next gate:** choose the legacy retirement scope in the [single handoff](v2-status.md#remaining-work): retire
-the obsolete fixture policy/API (recommended), retaining the v1 model oracle and Go policy tests, or preserve
-its contracts in Go through a thin JSON reader. Python fixture decisions/API and shared OTel/ClickStack chart
-helpers remain until that choice is implemented. Do not call this a complete Python retirement or live
-admission enforcement.
+**Follow-up:** the operator approved retiring the legacy checker/API rather than preserving its v1-only
+contracts; the [retirement record](#legacy-app-policy-retirement-4-november-2026) states its implementation
+and verification. Policy remains a read-only Git check, not live admission enforcement.
 
 ## The team registry leaves Python (4 November 2026)
 

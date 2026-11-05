@@ -932,7 +932,7 @@ On **later promotions**, production already exists, so the reviewed PR changes i
 make app-status APP=demo-orders ENV=prod     # state against the records at HEAD, Git applied?, the record's image running?, replicas, route, TLS, failing containers
 make app-logs APP=demo-orders ENV=prod       # FOLLOW=true, TAIL=N, PREVIOUS=true (last crashed container)
 make app-reconcile APP=demo-orders ENV=prod  # fetch Git and reconcile this instance's unit now
-make check-apps                              # render equality, Go policy for all v2 instances, legacy fixtures
+make check-apps                              # render equality and Go policy for all v2 instances
 swhurl-v2 edit --records v2-records --app demo-shopper --env staging --set replicas=2 \
   --profile v2/testdata/profile.json --out .   # a Git edit: commit and push
 ```
@@ -1003,11 +1003,12 @@ Removal refuses, before writing anything, while **any other instance in the same
 
 ## The app policy
 
-`make check-apps` checks both the three mutable legacy template fixtures and **every compiled v2
-instance, staging and production**. The default entrypoint remains Python: it checks the legacy fixtures,
-acquires the profile-pinned chart with the existing chart helper, then runs Go's `render --check` and
-`swhurl-v2 policy`. Go acquires no chart and writes nothing. An explicit `check-apps <instance-path> ...`
-still selects the legacy manifest checker only; use the default command for the complete v2 gate.
+`make check-apps` (or `python3 -m swhurl check-apps`) checks **every compiled v2 instance,
+staging and production**. It accepts no arguments: an explicit legacy path or any flag is refused with
+exit 2 before reading files, acquiring charts or running commands. There is no selected-instance mode.
+The small Python entrypoint resolves the profile-pinned chart through the shared
+[`charts.py`](../tools/swhurl/charts.py) acquisition helper, then runs Go's `render --check` and
+`swhurl-v2 policy`. Go acquires no chart and writes nothing.
 
 `render --check` requires every instance folder and unit, the resolution, egress allocation and proxy
 objects, auth folder, NATS users and Reloader watch list to be exactly what the working-tree records render.
@@ -1024,21 +1025,29 @@ rollouts, namespace-bound workloads/resource relationships and labels/network po
 maxima and the compiled backup included). Missing app workloads fail. Findings accumulate deterministically;
 render failures are distinct and any failed instance makes the command nonzero. Invalid inputs print no
 partial policy report. The [contract and rule ownership](iteration-2-plan.md#app-policy-all-compiled-instances)
-state the boundary, including the legacy-only quota reserve. Helm stdout's numeric precision is preserved;
+state the boundary, including retirement of the legacy-only quota reserve. Helm stdout's numeric precision is preserved;
 Helm's own values/template processing can round before that boundary.
 
-**Python retirement is not complete.** [`policy.py`](../tools/swhurl/apps/policy.py) still owns the legacy
-fixture checker/API, chart acquisition and helpers also used by OTel and ClickStack; some decisions remain
-duplicated until that final retirement. Legacy policy includes `public` routes, reviewed exceptions and
-`platform-image` provenance under `apps/` (none today), which v2 does not model. A v2 release's repository
-and image provenance are still claims for review, not verified provenance. `check-templates` checks image
-declarations through v2, not Kubernetes policy. The [remaining gate](v2-status.md#remaining-work) is
-independent review followed by fixture/helper retirement without losing those consumers' coverage.
+**Go owns all app-policy decisions.** The legacy Python fixture checker and explicit-path API are
+retired, not translated into another Go mode. The fixtures remain for the v1 model oracle (including
+[`test_interface.py`](../tests/test_interface.py) and [`test_app_relations.py`](../tests/test_app_relations.py));
+Go's [policy mutation tests](../v2/policy/policy_test.go) own the supported v2 rules. Legacy-only quota
+reserve, `public`/host-override routes, reviewed exceptions, alert settings, alternate storage classes and
+`platform-image` provenance/exemptions are not preserved as policy contracts. Unsupported v2 records
+remain refused; no rule filtering or compatibility bridge is added. A v2 release's repository and image
+provenance are still claims for review, not verified provenance. `check-templates` checks image declarations
+through v2, not Kubernetes policy.
 
-A reviewed exception for a legacy fixture goes in the instance's record, with a reason, and the render turns it into the HelmRelease's `platform.swhurl.com/policy-exceptions` annotation:
+Python remains for [entrypoint glue](../tools/swhurl/apps/validation.py) and shared chart acquisition
+(also used by OTel and ClickStack), not policy decisions. The [next gate](v2-status.md#remaining-work)
+is to approve the next console-free Python retirement slice.
 
-```yaml
-exceptions: no-escalation=needs raw sockets for ICMP
+**Test it yourself** (run in your own terminal, from this checkout; offline checks, nothing applied):
+
+```bash
+make check-apps
+PYTHONPATH=tools python3 -m swhurl check-apps tests/fixtures/apps/smoke-web/staging
+# The second command must print usage and exit 2; paths are no longer accepted.
 ```
 
 ## Moving a host between instances

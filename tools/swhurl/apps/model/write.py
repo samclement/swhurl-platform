@@ -222,7 +222,7 @@ def guard(root: Path, world: World, platform: Platform, targets: list[Instance],
     if held:
         shown = '; '.join(held[:5]) + (f'; and {len(held) - 5} more' if len(held) > 5 else '')
         raise EditError(f'the files differ from what the platform renders, so a command cannot change them '
-                        f'(make check-apps lists every difference): {shown}')
+                        f'(v1 generated-file guard): {shown}')
 
 
 @dataclasses.dataclass(frozen=True)

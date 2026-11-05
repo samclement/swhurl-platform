@@ -417,56 +417,33 @@ no partial report. Empty input and a chart with no application Deployment cannot
 | Actual workloads, including init containers and compiler-owned backup | Go policy checks effective non-root context, capabilities/escalation, image pins, resources, token/host access, exact runtime image/replicas/resources/UID/probes (HTTP defaults, scheme, connection host and headers) and Service ports |
 | Identity, calls and events | Actual main environment/ordering and seed references match compiled resolved facts; verification/token directories are read-only whole mounts (no subPath/subPathExpr), projected audiences/paths/lifetimes exact; backup is identified by compiled CronJob identity, never a label exemption; no additional streams/consumers |
 | Routes, storage and isolation | Known instance resources and main/backup relationships stay in the compiled namespace; omitted known namespaces use the Helm target without rewriting objects. Compiler-owned Flux automation may live in flux-system, and unknown kind scopes are not guessed. Chart output cannot name a foreign namespace. Services have no external IPs and their nonempty selector must select the intended main pods; profile-domain sign-in and TLS, compiled host/backend/class/issuer; profile storage and compiled claim size/mount; RWO replica/rollout rules; app labels match compiled selectors and chart-added policies cannot widen access or select all pods |
-| Quota | Exactly one profile-sized quota; actual workload totals include rolling surge, regular sums, init maxima/restartable sidecars and the compiled backup; CronJobs must forbid overlap and unbounded DaemonSets fail. The v1 blanket solver/restore reserve remains a legacy-fixture rule, not an invented v2 profile field |
-| Unsupported legacy settings | Public/host-override exposure, per-instance exceptions, provenance/platform-image policy and alerts remain legacy-only; v2 refuses unsupported records rather than porting settings it does not model |
+| Quota | Exactly one profile-sized quota; actual workload totals include rolling surge, regular sums, init maxima/restartable sidecars and the compiled backup; CronJobs must forbid overlap and unbounded DaemonSets fail. The retired v1 blanket solver/restore reserve is not a v2 profile field |
+| Unsupported legacy settings | Public/host-override exposure, per-instance exceptions, provenance/platform-image policy and alerts are not ported; v2 refuses unsupported records rather than modelling legacy settings |
 
-`check-apps` retains mutable Python legacy fixtures and shared chart helpers (including OTel/ClickStack),
-fetches the pinned chart outside Go, and asks `check-rendered.sh --chart DIR` for render equality followed
-by the Go policy. The helper stops on either failure. Duplicate Python decisions are explicit remaining
-work: decide the legacy fixture/API scope, then retire its Python decisions and relocate shared helpers
-without losing the OTel/ClickStack callers' coverage ([handoff](v2-status.md#remaining-work)).
+`check-apps` is a zero-argument whole-tree gate. Its Python entrypoint
+[`apps/validation.py`](../tools/swhurl/apps/validation.py) owns usage validation, profile and chart resolution,
+and calling `check-rendered.sh --chart DIR` through Runner. The script stops on render-equality failure
+before policy, and propagates policy failure. The entrypoint preserves the Go JSON report and diagnostics,
+returns the gate's nonzero status, and never treats chart acquisition failure as success. Explicit legacy
+paths and flags exit 2 before file reads or Runner calls. Both profile and HelmRepository reads use the
+requested checkout root. Shared cache/pull behavior lives in [`charts.py`](../tools/swhurl/charts.py), also
+used by OTel and ClickStack; it owns dependency acquisition, not policy decisions.
 
-### Legacy policy retirement probe (not approved)
+### Legacy policy retirement (approved 4 November 2026)
 
-No retirement implementation has been made. The three authoritative mutable fixtures were kustomized
-and chart-rendered through the existing reader and passed as JSON to the unchanged `policy.Check`:
+The operator approved retiring the legacy Python fixture checker and `check-apps <legacy-path>` API,
+keeping v1's mutable fixtures and model-oracle tests plus the existing Go policy tests. The checker and its
+Python-only characterization tests are deleted; no fixture files or model evaluator tests are removed.
+There is no JSON bridge, v1 compatibility mode, rule filter or second compiler. All live instances are
+already v2-owned, so the retained whole-tree Go gate covers every instance, including production.
 
-| Fixture | Unchanged Go result | Scratch-only diagnostic adjustments |
-| --- | --- | --- |
-| smoke-data/prod | one runtime image mismatch: chart emits repository:tag@digest, Go expects repository@digest | accept the source's tag as well as digest |
-| smoke-web/staging | invalid_policy_compilation: tag-only image | accept tag-only source pins; honor omitted replica count as chart default 1 |
-| smoke-worker/staging | invalid_policy_compilation: tag-only image | same adjustments |
-
-Those two small source-fact adjustments made **all three baselines pass in a scratch copy**, not this tree.
-That does not establish behavior parity. Additional source/render mutation probes found: legacy quota
-headroom and unregistered teams fail Python but pass that scratch Go checker; reviewed image exceptions
-suppress Python findings but not Go's; public routes inside the cookie domain and invalid alert settings
-fail Python but pass Go; the other supported legacy storage class passes Python but fails Go. The fixtures
-are deliberately exempt from platform-image provenance (directly invoking its checker reports 1/2/2
-findings), so their baselines cannot prove that contract has been retired safely.
-
-**Retirement alternatives, not approved:** retire the legacy checker and explicit-path API, keeping the v1
-model oracle and Go policy tests (recommended: no new v1 compatibility surface); or preserve the legacy API
-with the JSON bridge below. Retirement drops legacy-only fixture policy semantics, not policy over any live
-instance, because every live instance is v2-owned. The model fixtures still serve their existing oracle tests;
-Go policy mutation tests own the supported v2 contracts. Move shared chart helpers for OTel/ClickStack in
-either option. Neither option is implemented; the existing mutable fixture checks remain intact.
-
-**Bridge candidate:** retain the existing Python legacy decoder, kustomize/chart acquisition,
-generated and offers checks; have it send only source JSON and explicit constraints/context to one Go
-single-instance input command. Go uses the existing Helm renderer and `policy.Check`; Python does not
-translate records, manufacture expected manifests, filter findings or own exceptions. Keep the current
-helper callers rather than introduce a chart framework. Go-only authoritative YAML fixture reading is not
-smaller under the parser-import boundary; static JSON snapshots would not preserve mutable fixture coverage.
-
-Before that reshape, approve the exact policy inputs/ownership: tag/default-replica source facts;
-**separate quota hard limits and reserved headroom** (subtracting headroom from Platform also breaks the
-hard-quota equality check); allowed storage classes; registered-team context; public exposure, alert and
-reasoned exception semantics; and the provenance rule/fixture exemption or explicit retirement of the
-general legacy manifest API. Preserve these contracts in Go mutation tests rather than silently deleting
-them. Existing generated checks can continue to own legacy source intent until model retirement; no second
-v1 compiler or compatibility mode is proposed. Probe evidence is summarized in the
-[current record](current-state.md#app-policy-go-gate-4-november-2026); retirement waits for the operator's choice.
+Legacy quota reserve, public/host-override exposure, alert settings, reasoned exceptions, additional storage
+classes and provenance/platform-image policy (including fixture exemptions) are deliberately retired as
+checker contracts, not silently ported. The earlier probe established that the legacy fixtures did not have
+behavior parity with unchanged Go policy; its observations remain in the
+[historical record](current-state.md#app-policy-go-gate-4-november-2026). The Go contracts above stay unchanged.
+The [retirement record](current-state.md#legacy-app-policy-retirement-4-november-2026) distinguishes offline
+validation from deployment; remaining Python entrypoint/chart glue is not policy ownership.
 
 ### Kubernetes: the API server, not `kubectl`
 

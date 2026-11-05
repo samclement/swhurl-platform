@@ -10,8 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, platform
-from swhurl.apps import policy as app_policy
+from swhurl import ROOT, charts, platform
 from swhurl.run import Runner
 
 
@@ -192,8 +191,8 @@ class ClickStackRenderTests(unittest.TestCase):
             values_text = values_text.replace(f'${{{key}}}', str(value))
         spec = cls.release['spec']['chart']['spec']
         runner = Runner()
-        chart = app_policy.chart_dir(spec['chart'], spec['version'],
-                                     app_policy.helm_repositories()[spec['sourceRef']['name']], runner)
+        chart = charts.chart_dir(spec['chart'], spec['version'],
+                                     charts.helm_repositories()[spec['sourceRef']['name']], runner)
         cls.chart_defaults = yaml.safe_load((chart / 'values.yaml').read_text())
         stubs = [f'{v["targetPath"]}=stub-{v["valuesKey"].lower()}' for v in cls.release['spec']['valuesFrom']]
         with tempfile.NamedTemporaryFile('w', suffix='.yaml') as values:

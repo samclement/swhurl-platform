@@ -10,8 +10,8 @@ instance, where the offline checks and the console read them:
     apps/<app>/<env>/offers/openapi.<ext>    the API, as the repository has it
 
 The AsyncAPI document is the declaration of what the app publishes: SWHURL_EVENTS_PUBLISH on the
-instance is derived from it (rule offers). Nothing here edits an instance or imports what does, so
-the policy check can use it.
+legacy instance is derived from it. These read-only helpers remain for the v1 model oracle and
+Python consumers; check-apps uses Go's records/compiler path.
 """
 from __future__ import annotations
 
@@ -222,7 +222,7 @@ class Offers:
 
 def flags(text: str, name: str = FLAGS_NAME) -> dict:
     """The feature flags a kept flags.json declares; OfferError if it is not what swhurl.yaml allows."""
-    from swhurl.apps import declaration  # beside the reader: policy imports this module
+    from swhurl.apps import declaration  # local to the flag declaration reader
     try:
         found = json.loads(text)
     except ValueError as error:

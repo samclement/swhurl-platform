@@ -1,12 +1,17 @@
 """Names the platform provides to apps, not capability selection or rendering.
 
-Standard library only: importing this catalogue reads no configuration. ENTRIES maps each name
-(or documented family) to its surface, meaning and availability; docs/apps.md is checked against it.
+Standard library only: importing this catalogue reads no file; entries() reads v2/contract/names.json on first use.
+entries() maps each name (or documented family) to its surface, meaning and availability; docs/apps.md is checked
+against it.
 Optional reader overrides are inputs, not environment variables emitted by the renderers.
 Recovery and test labels use label(), but are not app capabilities. unlisted() is the one test of a name
-against the catalogue: check-templates applies it to what each app type reads, check-repo to what v2 emits.
+against the catalogue here, applied by check-repo to what v2 emits; check-templates applies swhurl-v2 names to what
+each app type reads.
 """
+import functools
+import json
 import re
+from pathlib import Path
 
 LABEL_DOMAIN = 'platform.swhurl.com'
 
@@ -80,54 +85,15 @@ def unlisted(names) -> set[str]:
     prefix alone (``SWHURL_SERVICE_``), which a reader builds the rest of at run time."""
     prefix = SERVICE_VARIABLE.partition('<')[0]
     return {name for name in names
-            if name not in ENTRIES and name != prefix and not SERVICE_VARIABLE_RE.match(name)}
+            if name not in entries() and name != prefix and not SERVICE_VARIABLE_RE.match(name)}
 
 
-ENTRIES = {
-    APP_VARIABLE: ('env', 'App name', 'Every instance'),
-    ENVIRONMENT_VARIABLE: ('env', 'Environment name', 'Every instance'),
-    NOTIFY_VARIABLE: ('env', 'Notify service address', 'Every instance'),
-    NOTIFY_TOKEN_VARIABLE: ('env override', f'Notify token file override; defaults to {TOKENS_MOUNT}/notify/token', 'Optional input to the Python notify reader; not injected'),
-    TOKENS_DIR_VARIABLE: ('env override', f'Token folder override; defaults to {TOKENS_MOUNT}', 'Optional input to the template readers; not injected'),
-    EVENTS_FILE_VARIABLE: ('env override', 'Events description file override; defaults to asyncapi.yaml', 'Optional input to the template readers; not injected'),
-    ISSUER_VARIABLE: ('env', 'Token issuer', 'Web instances (v1-rendered)'),
-    KEYS_VARIABLE: ('env', 'Public token-signing keys', 'Web instances (v1-rendered)'),
-    CALLERS_VARIABLE: ('env', 'Accepted callers, comma-separated', 'At least one connected caller (v1-rendered)'),
-    ISSUER_FILE_VARIABLE: ('env', 'Path of the token issuer, mounted from the platform\'s swhurl-auth ConfigMap', 'A callee (v2-rendered)'),
-    KEYS_FILE_VARIABLE: ('env', 'Path of the public token-signing keys, mounted from swhurl-auth', 'A callee (v2-rendered)'),
-    CALLERS_FILE_VARIABLE: ('env', 'Path of the accepted callers, comma-separated, mounted from <app>-callers', 'At least one connected caller (v2-rendered)'),
-    DESCRIPTION_VARIABLE: ('env', 'Image description', 'Nonempty release description'),
-    SERVICE_VARIABLE: ('env family', 'Callee URL; uppercase app name with hyphens changed to underscores', 'Mutually granted call to an existing web instance'),
-    PUBLISH_VARIABLE: ('env', 'Published events, comma-separated', 'Keyed instance with publications'),
-    SUBSCRIBE_VARIABLE: ('env', 'Subscriptions, comma-separated', 'Keyed instance with subscriptions'),
-    URL_VARIABLE: ('env', 'NATS address', 'Complete NATS identity'),
-    NKEY_VARIABLE: ('env', 'Public NATS key', 'Complete NATS identity'),
-    SEED_VARIABLE: ('Secret env', 'Private NATS seed via envFrom', 'Complete NATS identity'),
-    OTLP_HOST_IP: ('env', 'Node IP from status.hostIP', 'Telemetry or egress proxy'),
-    OTLP_ENDPOINT_VARIABLE: ('env', 'Node-local OTLP HTTP endpoint', 'Telemetry enabled'),
-    OTLP_PROTOCOL_VARIABLE: ('env', 'OTLP transport protocol', 'Telemetry enabled'),
-    OTLP_SERVICE_VARIABLE: ('env', 'Telemetry service name', 'Telemetry enabled'),
-    HTTP_VARIABLE: ('env', 'HTTP proxy URL', 'Platform has egress proxy'),
-    HTTPS_VARIABLE: ('env', 'HTTPS proxy URL', 'Platform has egress proxy'),
-    NO_PROXY_VARIABLE: ('env', 'Addresses bypassing the proxy', 'Platform has egress proxy'),
-    NODE_VARIABLE: ('env', 'Enable Node environment proxy', 'Platform has egress proxy'),
-    JAVA_VARIABLE: ('env', 'JVM proxy system properties', 'Platform has egress proxy'),
-    DATABASE_PATH_VARIABLE: ('env', 'SQLite database filename', 'SQLite database'),
-    DATA_MOUNT: ('path', 'Retained data mount', 'SQLite database'),
-    SQLITE_PATH: ('path', 'SQLite database file', 'SQLite database'),
-    f'{TOKENS_MOUNT}/<audience>/token': ('path family', 'Audience-bound token; notify or connected callee', 'Every instance has notify; calls add audiences'),
-    MANAGED: ('label', 'Platform-managed marker', 'Namespace and image automation'),
-    APP: ('label', 'App name', 'Namespace and image automation'),
-    ENVIRONMENT: ('label', 'Environment name', 'Namespace'),
-    EXPOSURE: ('label', 'Exposure grant', 'Namespace'),
-    TEAM: ('label', 'Owning team', 'Namespace'),
-    EXCEPTIONS: ('annotation', 'Reviewed policy exceptions', 'HelmRelease when nonempty'),
-    SECRET_NAMES: ('annotation', 'Required secret names, comma-separated', 'HelmRelease when declared'),
-    EGRESS_ANNOTATION: ('annotation', 'Outbound host:port grants', 'HelmRelease when nonempty and proxy exists'),
-    OFFERS_ANNOTATION: ('annotation', 'Commit supplying offered documents', 'HelmRelease when recorded'),
-    API_ANNOTATION: ('annotation', 'Served API description path', 'Web HelmRelease with API path'),
-    ALERTS_ANNOTATION: ('annotation', 'Alert overrides; absent means defaults', 'Namespace when configured'),
-    RENDER_ANNOTATION: ('annotation', 'Fingerprint of intended generated output', 'Every HelmRelease'),
-    RELOAD: ('annotation', 'Secrets whose change restarts the controller', 'Controller with referenced app or events Secret'),
-    PRUNE: ('annotation', 'Retain namespace and its data after removal', 'SQLite Namespace'),
-}
+# The catalogue itself is v2's file, which swhurl-v2 names also reads: one writer for both languages.
+CATALOGUE = Path(__file__).resolve().parents[2] / 'v2' / 'contract' / 'names.json'
+
+
+@functools.cache
+def entries() -> dict[str, tuple[str, str, str]]:
+    """Each listed name with its surface, meaning and availability, read from CATALOGUE on first use."""
+    return {entry['name']: (entry['surface'], entry['meaning'], entry['availability'])
+            for entry in json.loads(CATALOGUE.read_text())['names']}

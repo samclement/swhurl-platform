@@ -33,6 +33,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Backup and restore | done | [record](current-state.md#the-first-content-changing-restore-swhurl-try-10-staging-moved-back-a-day-27-october-2026) |
 | Promotion and rollback | done | [record](current-state.md#a-rollback-exercised-live-2-november-2026) |
 | Image declaration producer in Go | done | [workflow rollout](current-state.md#go-producer-adoption-by-template-workflows-5-november-2026) |
+| Template check without Python but Copier | done | [record](current-state.md#the-template-check-leaves-python-5-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
 | Bulk status and revision evidence | done | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |
 | Status with the pod's ServiceAccount | done | [record](current-state.md#status-with-the-pods-serviceaccount-3-november-2026) |
@@ -69,7 +70,7 @@ loses its `run=` function.
 
 | Python surface | What replaces it | State |
 | --- | --- | --- |
-| Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2`, team/channel validation and all of `check-docs` (`swhurl-v2 workstreams`); the legacy fixture checker/API retirement is independently reviewed and live-verified, with the v1 model oracle and Go tests kept. `check-apps` runs no Python: explicit Go chart acquisition and shell sequencing replace its entrypoint glue and the CI fetch recipes. Python chart acquisition remains for OTel and ClickStack, not policy decisions; the template coordinator/Copier/catalogue remain Python but its producer now calls Go; `verify` and `apps/checks` are reached by the console's platform page |
+| Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2`, team/channel validation and all of `check-docs` (`swhurl-v2 workstreams`); the legacy fixture checker/API retirement is independently reviewed and live-verified, with the v1 model oracle and Go tests kept. `check-apps` runs no Python: explicit Go chart acquisition and shell sequencing replace its entrypoint glue and the CI fetch recipes. Python chart acquisition remains for OTel and ClickStack, not policy decisions; `check-templates` is shell over Go (`names`, the producer and `declaration`) with Copier its only Python, and the stack and name catalogues are v2's JSON (`v2/contract/`), which Python still reads; `verify` and `apps/checks` are reached by the console's platform page |
 | Recovery and backup tooling (`recovery.py`, `sqlite_backup.py`, `backupset.py`) | `make restore-sqlite` is `swhurl-v2 restore`, the backup image's Go tool runs the jobs and `backup-mongodb` and `backup-sqlite` are bash; MongoDB's restore test and the freshness checks remain | partial: what remains is reached by `verify` |
 | The notification checker and the dashboard reconciler (the console image's two CronJobs), the host heartbeat and `clickstack-bootstrap` | Go | not started: these services still run Python, and the checker’s modules are reached by `verify`. The separate notify service is Go; its Python implementation and internal command are deleted, while the checker's shared notice/delivery modules remain |
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team targets are bash over `swhurl-v2 team`; `destroy-data` stays Python, a safety decision with its own tests |
@@ -110,8 +111,10 @@ not migration.
    **The external build-workflow rollout is delivered:** both template repositories build the pinned Go producer,
    validated their complete matrices, released the workflows and advanced the catalogue pins
    ([evidence](current-state.md#go-producer-adoption-by-template-workflows-5-november-2026)).
-   Existing apps' workflow pins are unchanged. The template coordinator/catalogue retirement remains
-   unapproved; Copier remains an explicit Python dependency.
+   Existing apps' workflow pins are unchanged. **Delivered 5 November: the template check runs no Python but
+   Copier**, and the stack and name catalogues are v2's JSON
+   ([contract](iteration-2-plan.md#the-template-check-leaves-python-approved-5-november-2026),
+   [evidence](current-state.md#the-template-check-leaves-python-5-november-2026)).
 3. **The retirements proper.** Console, the remaining commands, the checks and host tooling,
    each its own approved slice. Existing apps' adoption of the new workflow releases is a separate gate.
 
@@ -185,6 +188,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   fetch or general command runner (5 November 2026).
 - The only third-party v2 dependency is `go.yaml.in/yaml/v3` v3.0.6, confined to exactly `adapters/helm` and `adapters/appsource`;
   `make v2-deps` bootstraps with checksums and builds/checks stay offline (4 November 2026).
+- The stack and name catalogues are v2's files (`v2/contract/stacks.json`, `names.json`), one writer each; Python
+  reads them until its consumers leave, and the console image copies them (5 November 2026).
 - The v1 Python model is bounded, not ported: nothing new imports it and it only shrinks, with the v1
   renderer's interface tests in `tests/test_interface.py` (3 November 2026).
 

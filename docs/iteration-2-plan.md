@@ -869,6 +869,36 @@ then advance the generated callers and platform catalogue to those tested releas
 `make check-templates`, `make check`, reconcile and live platform verification. Existing app repositories'
 workflow pins, app records, credentials, data and backup destinations are outside this approval.
 
+### The template check leaves Python (approved 5 November 2026)
+
+`make check-templates` is [`v2/check-templates.sh`](../v2/check-templates.sh), shell sequencing like `check-apps`, and
+the Python coordinator and its tests are deleted. The one decision it made itself, the names scan, is Go:
+`swhurl-v2 names --catalogue NAMES.json --app-dir DIR` prints each `SWHURL_*` or `platform.swhurl.com/*` name a file
+under DIR uses that the catalogue does not list, as `NAME (PATH)` sorted by name with the first file in lexical order,
+and exits 1 when it printed one; a malformed catalogue or usage is 2, an unreadable tree or a symlink leaving DIR is I/O
+(1). The decision (`kernel.NameCatalogue`) is pure; the command reads the tree inside an `os.Root`. A family entry
+(`SWHURL_SERVICE_<APP>_URL`) lists its upper-case members and its prefix alone. No adapter or subprocess is added.
+
+Both catalogues are v2's files with one writer each: `v2/contract/names.json` (`platform-names` version 1: each
+name's surface, meaning and availability) and `v2/contract/stacks.json` (`platform-stacks` version 1: the Copier
+version, each stack's repository, pinned revision and description, and each app type's title, text, stacks, answers
+and starting exposure). Until their consumers are ported, Python reads them: `interface.entries()` on first use (the
+module's import still reads nothing), and `contract.py` builds `STACKS`, `STACK_REVISIONS`, `STACK_DESCRIPTIONS`,
+`APP_TYPES` and `COPIER` from the file with unchanged values. The console image copies `v2/contract/`, its only
+exception to copying no v2 sources.
+
+The script clones each stack at its revision, renders each type and the answers no type has (a worker with a
+database) with Copier in parallel, then runs `names`, `image-declaration` and `declaration` per rendered type,
+printing equivalent `[OK]`/`[WARN]`/`[BAD]` lines: a name is reported against `v2/contract/names.json`, and an
+outside render that writes no `swhurl.yaml` counts as accepted. The Python pre-check of answers against `copier.yml`
+has two replacements: Copier's own refusal (its validator, or a choice the question no longer offers) is the template
+refusing it, and an answer the rendered app's `.copier-answers.yml` does not record (Copier ignores one to a question
+the template no longer asks) fails the type. A check that stops without a result line fails, and a catalogue with no
+stack, or a stack with no type, is a failure rather than nothing checked. It takes no arguments, `SWHURL_V2` or a build names the binary (no `PATH` lookup), and Copier
+runs through `uvx` unless `copier` is on `PATH`: Copier is the only Python left on this path. Acceptance: Go tests for
+the decision and the command, the shell tested with fake `git`, `copier`, `go` and `swhurl-v2`, and the same verdicts
+as the Python coordinator against the pinned templates.
+
 ## 11. The console port: strangled from inside (approved 3 November 2026)
 
 **Decided 3 November 2026: option 3, status first.** The brief below is kept as the reasons and what would

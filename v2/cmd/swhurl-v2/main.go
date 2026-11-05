@@ -52,6 +52,7 @@ const usage = `usage:
       --out DIR [--exposure GRANT]
   swhurl-v2 image-declaration [--app-dir DIR]
   swhurl-v2 declaration --label FILE --app APPLICATION --team TEAM [--exposure GRANT]
+  swhurl-v2 names --catalogue NAMES.json --app-dir DIR
   swhurl-v2 remove --records DIR --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
       --calls CALLS.json --out DIR
   swhurl-v2 status --records DIR (--app APPLICATION --env ENVIRONMENT | --all) --profile PROFILE.json --revision COMMIT \
@@ -226,6 +227,11 @@ declaration decodes the declaration label an image build printed, applies the cr
 face, and reports what the image states. It reads no image, no registry and no cluster, and writes nothing: the stack
 templates' check uses it to prove a rendered app declares what the platform can create.
 
+names searches every file under --app-dir for the platform's names, SWHURL_* and platform.swhurl.com/*, and prints
+each one the --catalogue (v2/contract/names.json) does not list as "NAME (PATH)", with the first file using it, sorted
+by name. A family entry such as SWHURL_SERVICE_<APP>_URL lists its members and its prefix alone. It reads only, inside
+DIR, and exits 1 when it printed a name: the stack templates' check runs it over each app type they render.
+
 remove deletes one v2-owned instance: its record pair with its seed and the documents it publishes, the files
 compiled from them, its unit, the namespace's auth object, and the app record when this was the app's last
 environment. It writes the two kustomizations without the entries that named them in the same effect, so a commit
@@ -263,8 +269,9 @@ line per check and exits 1 when any problem is found or a read fails, and 2 when
 
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
-started but did not complete, a render --check that found a difference, a policy render/rule failure, a workstream
-record that disagrees with its checkout, chart dependency resolution/acquisition failure, or file and output I/O failure.
+started but did not complete, a render --check that found a difference, a name the catalogue does not list, a
+policy render/rule failure, a workstream record that disagrees with its checkout, chart dependency
+resolution/acquisition failure, or file and output I/O failure.
 `
 
 func main() {
@@ -376,6 +383,7 @@ var commands = map[string]func(cli, request) int{
 	"mint":              cli.mint,
 	"create":            cli.create,
 	"declaration":       cli.declaration,
+	"names":             cli.names,
 	"image-declaration": cli.imageDeclaration,
 	"migrate":           cli.migrate,
 	"edit":              cli.edit,
@@ -403,7 +411,7 @@ type request struct {
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
 	action, description, rename, transport             string
-	listen, appDir                                     string
+	listen, appDir, catalogue                          string
 	rotate, check, json, inCluster, all                bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
@@ -524,6 +532,9 @@ func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool 
 	case "image-declaration":
 		r.appDir = "."
 		flags.Var(&once{value: &r.appDir}, "app-dir", "app checkout (default: working directory)")
+	case "names":
+		flags.Var(&once{value: &r.catalogue}, "catalogue", "the platform's names catalogue")
+		flags.Var(&once{value: &r.appDir}, "app-dir", "the rendered app whose files are searched")
 	case "declaration":
 		flags.Var(&once{value: &r.label}, "label", "a file holding the declaration label an image build printed")
 		flags.Var(&once{value: &r.app}, "app", "the application the label would create")
@@ -747,6 +758,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"create":            func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
 	"image-declaration": func(r *request) []string { return []string{r.appDir} },
 	"declaration":       func(r *request) []string { return []string{r.label, r.app, r.team} },
+	"names":             func(r *request) []string { return []string{r.catalogue, r.appDir} },
 	"remove":            func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
 	"status":            (*request).statusNamed,
 	"restore":           func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },

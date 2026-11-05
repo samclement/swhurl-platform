@@ -1,0 +1,282 @@
+{
+  "kind": "platform-names",
+  "version": 1,
+  "names": [
+    {
+      "name": "SWHURL_APP",
+      "surface": "env",
+      "meaning": "App name",
+      "availability": "Every instance"
+    },
+    {
+      "name": "SWHURL_ENV",
+      "surface": "env",
+      "meaning": "Environment name",
+      "availability": "Every instance"
+    },
+    {
+      "name": "SWHURL_NOTIFY_URL",
+      "surface": "env",
+      "meaning": "Notify service address",
+      "availability": "Every instance"
+    },
+    {
+      "name": "SWHURL_NOTIFY_TOKEN_FILE",
+      "surface": "env override",
+      "meaning": "Notify token file override; defaults to /var/run/swhurl/tokens/notify/token",
+      "availability": "Optional input to the Python notify reader; not injected"
+    },
+    {
+      "name": "SWHURL_TOKENS_DIR",
+      "surface": "env override",
+      "meaning": "Token folder override; defaults to /var/run/swhurl/tokens",
+      "availability": "Optional input to the template readers; not injected"
+    },
+    {
+      "name": "SWHURL_EVENTS_FILE",
+      "surface": "env override",
+      "meaning": "Events description file override; defaults to asyncapi.yaml",
+      "availability": "Optional input to the template readers; not injected"
+    },
+    {
+      "name": "SWHURL_AUTH_ISSUER",
+      "surface": "env",
+      "meaning": "Token issuer",
+      "availability": "Web instances (v1-rendered)"
+    },
+    {
+      "name": "SWHURL_AUTH_KEYS",
+      "surface": "env",
+      "meaning": "Public token-signing keys",
+      "availability": "Web instances (v1-rendered)"
+    },
+    {
+      "name": "SWHURL_ALLOWED_CALLERS",
+      "surface": "env",
+      "meaning": "Accepted callers, comma-separated",
+      "availability": "At least one connected caller (v1-rendered)"
+    },
+    {
+      "name": "SWHURL_AUTH_ISSUER_FILE",
+      "surface": "env",
+      "meaning": "Path of the token issuer, mounted from the platform's swhurl-auth ConfigMap",
+      "availability": "A callee (v2-rendered)"
+    },
+    {
+      "name": "SWHURL_AUTH_KEYS_FILE",
+      "surface": "env",
+      "meaning": "Path of the public token-signing keys, mounted from swhurl-auth",
+      "availability": "A callee (v2-rendered)"
+    },
+    {
+      "name": "SWHURL_ALLOWED_CALLERS_FILE",
+      "surface": "env",
+      "meaning": "Path of the accepted callers, comma-separated, mounted from <app>-callers",
+      "availability": "At least one connected caller (v2-rendered)"
+    },
+    {
+      "name": "SWHURL_DESCRIPTION",
+      "surface": "env",
+      "meaning": "Image description",
+      "availability": "Nonempty release description"
+    },
+    {
+      "name": "SWHURL_SERVICE_<APP>_URL",
+      "surface": "env family",
+      "meaning": "Callee URL; uppercase app name with hyphens changed to underscores",
+      "availability": "Mutually granted call to an existing web instance"
+    },
+    {
+      "name": "SWHURL_EVENTS_PUBLISH",
+      "surface": "env",
+      "meaning": "Published events, comma-separated",
+      "availability": "Keyed instance with publications"
+    },
+    {
+      "name": "SWHURL_EVENTS_SUBSCRIBE",
+      "surface": "env",
+      "meaning": "Subscriptions, comma-separated",
+      "availability": "Keyed instance with subscriptions"
+    },
+    {
+      "name": "SWHURL_EVENTS_URL",
+      "surface": "env",
+      "meaning": "NATS address",
+      "availability": "Complete NATS identity"
+    },
+    {
+      "name": "SWHURL_EVENTS_NKEY",
+      "surface": "env",
+      "meaning": "Public NATS key",
+      "availability": "Complete NATS identity"
+    },
+    {
+      "name": "SWHURL_EVENTS_SEED",
+      "surface": "Secret env",
+      "meaning": "Private NATS seed via envFrom",
+      "availability": "Complete NATS identity"
+    },
+    {
+      "name": "HOST_IP",
+      "surface": "env",
+      "meaning": "Node IP from status.hostIP",
+      "availability": "Telemetry or egress proxy"
+    },
+    {
+      "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "surface": "env",
+      "meaning": "Node-local OTLP HTTP endpoint",
+      "availability": "Telemetry enabled"
+    },
+    {
+      "name": "OTEL_EXPORTER_OTLP_PROTOCOL",
+      "surface": "env",
+      "meaning": "OTLP transport protocol",
+      "availability": "Telemetry enabled"
+    },
+    {
+      "name": "OTEL_SERVICE_NAME",
+      "surface": "env",
+      "meaning": "Telemetry service name",
+      "availability": "Telemetry enabled"
+    },
+    {
+      "name": "HTTP_PROXY",
+      "surface": "env",
+      "meaning": "HTTP proxy URL",
+      "availability": "Platform has egress proxy"
+    },
+    {
+      "name": "HTTPS_PROXY",
+      "surface": "env",
+      "meaning": "HTTPS proxy URL",
+      "availability": "Platform has egress proxy"
+    },
+    {
+      "name": "NO_PROXY",
+      "surface": "env",
+      "meaning": "Addresses bypassing the proxy",
+      "availability": "Platform has egress proxy"
+    },
+    {
+      "name": "NODE_USE_ENV_PROXY",
+      "surface": "env",
+      "meaning": "Enable Node environment proxy",
+      "availability": "Platform has egress proxy"
+    },
+    {
+      "name": "JAVA_TOOL_OPTIONS",
+      "surface": "env",
+      "meaning": "JVM proxy system properties",
+      "availability": "Platform has egress proxy"
+    },
+    {
+      "name": "DATABASE_PATH",
+      "surface": "env",
+      "meaning": "SQLite database filename",
+      "availability": "SQLite database"
+    },
+    {
+      "name": "/data",
+      "surface": "path",
+      "meaning": "Retained data mount",
+      "availability": "SQLite database"
+    },
+    {
+      "name": "/data/app.db",
+      "surface": "path",
+      "meaning": "SQLite database file",
+      "availability": "SQLite database"
+    },
+    {
+      "name": "/var/run/swhurl/tokens/<audience>/token",
+      "surface": "path family",
+      "meaning": "Audience-bound token; notify or connected callee",
+      "availability": "Every instance has notify; calls add audiences"
+    },
+    {
+      "name": "platform.swhurl.com/managed",
+      "surface": "label",
+      "meaning": "Platform-managed marker",
+      "availability": "Namespace and image automation"
+    },
+    {
+      "name": "platform.swhurl.com/app",
+      "surface": "label",
+      "meaning": "App name",
+      "availability": "Namespace and image automation"
+    },
+    {
+      "name": "platform.swhurl.com/environment",
+      "surface": "label",
+      "meaning": "Environment name",
+      "availability": "Namespace"
+    },
+    {
+      "name": "platform.swhurl.com/exposure",
+      "surface": "label",
+      "meaning": "Exposure grant",
+      "availability": "Namespace"
+    },
+    {
+      "name": "platform.swhurl.com/team",
+      "surface": "label",
+      "meaning": "Owning team",
+      "availability": "Namespace"
+    },
+    {
+      "name": "platform.swhurl.com/policy-exceptions",
+      "surface": "annotation",
+      "meaning": "Reviewed policy exceptions",
+      "availability": "HelmRelease when nonempty"
+    },
+    {
+      "name": "platform.swhurl.com/secrets",
+      "surface": "annotation",
+      "meaning": "Required secret names, comma-separated",
+      "availability": "HelmRelease when declared"
+    },
+    {
+      "name": "platform.swhurl.com/egress",
+      "surface": "annotation",
+      "meaning": "Outbound host:port grants",
+      "availability": "HelmRelease when nonempty and proxy exists"
+    },
+    {
+      "name": "platform.swhurl.com/offers",
+      "surface": "annotation",
+      "meaning": "Commit supplying offered documents",
+      "availability": "HelmRelease when recorded"
+    },
+    {
+      "name": "platform.swhurl.com/api-description",
+      "surface": "annotation",
+      "meaning": "Served API description path",
+      "availability": "Web HelmRelease with API path"
+    },
+    {
+      "name": "platform.swhurl.com/alerts",
+      "surface": "annotation",
+      "meaning": "Alert overrides; absent means defaults",
+      "availability": "Namespace when configured"
+    },
+    {
+      "name": "platform.swhurl.com/render",
+      "surface": "annotation",
+      "meaning": "Fingerprint of intended generated output",
+      "availability": "Every HelmRelease"
+    },
+    {
+      "name": "secret.reloader.stakater.com/reload",
+      "surface": "annotation",
+      "meaning": "Secrets whose change restarts the controller",
+      "availability": "Controller with referenced app or events Secret"
+    },
+    {
+      "name": "kustomize.toolkit.fluxcd.io/prune",
+      "surface": "annotation",
+      "meaning": "Retain namespace and its data after removal",
+      "availability": "SQLite Namespace"
+    }
+  ]
+}

@@ -4681,3 +4681,26 @@ On 25 October, pushed `2eaeaea4`, then `1262960f` and `ad334338` (the backup tes
   passed with 84 OK lines and no BAD/WARN, and `swhurl-v2 status --all` reported all 10 instances healthy.
   No app image, record, credential, retained data or backup destination changed, and existing app
   repositories' workflow pins stay unchanged.
+
+## The template check leaves Python (5 November 2026)
+
+- **Approved scope:** `make check-templates` becomes [`v2/check-templates.sh`](../v2/check-templates.sh) with the names
+  scan in Go (`swhurl-v2 names`), and both catalogues become v2's JSON with one writer each
+  ([contract](iteration-2-plan.md#the-template-check-leaves-python-approved-5-november-2026)). The Python
+  coordinator (227 lines) and its 8 tests are deleted; 10 shell-level tests with fake `git`, `copier`, `go` and
+  `swhurl-v2` replace them, and a mutation of the script's exit status or its BAD count fails 5 and 4 of them.
+  Copier, through `uvx`, is the only Python left on this path. No template pin, app record or live object changes.
+- **Same values, same verdicts:** the Python catalogue values read from `v2/contract/` are byte-identical (`repr`) to
+  the constants they replace, and against the pinned templates the shell check printed the same nine result lines as
+  the Python coordinator (seven types accepted, both stacks refusing the answers no type has), in 8 s. Copier's own
+  refusal of an answer a template no longer offers (`Invalid choice for 'kind'`, observed against the Kotlin
+  template) is reported as the template refusing it; an answer Copier silently ignores (a question the template no
+  longer asks) is caught from the rendered `.copier-answers.yml`, which the Python pre-check used to catch.
+- **Independent review:** one P1 (that ignored answer would have passed), two gaps where the gate could pass having
+  checked nothing (a check that died, a catalogue jq could not read) and three P2s (the kernel's strict-JSON
+  primitive, a stale `STACK_REVISIONS` instruction, "same lines" wording); all fixed, each new failure path with a
+  test that fails without the fix.
+- **Offline verification:** `make test` (651 tests), `make check-v2` (with Go tests for the catalogue decode, the scan
+  and the command), host/fixture/v2 shell syntax, ShellCheck on the script, `git diff --check` and the real `make check-templates` (8 s) passed. The kernel's
+  exported API grew by `NameCatalogue`, `DecodeNameCatalogue` and `Unlisted`; the console-image guard admits exactly
+  `v2/contract/`.

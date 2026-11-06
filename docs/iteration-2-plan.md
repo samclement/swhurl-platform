@@ -1247,6 +1247,15 @@ table tests: (1) the nine checks that read the cluster, the checkout, the regist
 `registration`, `retention`); (4) the host facts (`notification-heartbeat`, `flux-controllers`), then `verify.py`
 and `verify-run` are deleted and the operations page's check table is checked against Go's list.
 
+**Slice 2 input gate.** The existing webhook checks read `BASE_DOMAIN` from the checkout's platform-settings
+ConfigMap manifest and the platform repository URL from its GitRepository manifest (both YAML under
+`clusters/home/flux-system/sources/`). No YAML parser for platform settings was approved: `appsource` explicitly
+reads app declarations, not platform files. Before implementing, choose either the installed ConfigMap and
+GitRepository through Kubernetes (checks actual installed webhook configuration, not checkout drift), or retain
+checkout semantics by converting the two manifests to JSON without changing their resources. The latter changes
+files under `flux-system` and needs explicit approval. The GitHub adapter, tokens and other slice-2 scope remain
+approved; slices 3 and 4 remain approved too.
+
 ## 12. The notify service in Go (approved 5 November 2026)
 
 The operator approved porting the [notify service](services.md#notify-service) to `swhurl-v2 notify-serve`, run from

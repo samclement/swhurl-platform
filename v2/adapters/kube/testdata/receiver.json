@@ -1,0 +1,1 @@
+{"apiVersion":"notification.toolkit.fluxcd.io/v1","kind":"Receiver","metadata":{"name":"github","namespace":"flux-system"},"status":{"conditions":[{"type":"Ready","status":"True"}]}}

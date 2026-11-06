@@ -5,12 +5,12 @@ section heading; any ``[BAD]`` makes the exit code 1. Key values are
 registered with the runner as secrets, so they are redacted from every message
 and never printed, even when a comparison fails.
 
-The checks that read the cluster, this checkout, the registry and S3 are ``swhurl-v2 verify --scope platform``'s,
+The checks that read the cluster, this checkout, the registry, S3 and GitHub are ``swhurl-v2 verify --scope platform``'s,
 run first (``CLUSTER_CHECKS``); the make recipe builds the binary and names it, the caller's kubeconfig and this
 checkout's console content tag in ``SWHURL_V2``, ``SWHURL_V2_KUBECONFIG`` and ``SWHURL_V2_CONSOLE_TAG``, and exports
-the AWS credentials it lists S3 with. The others, which read Secrets, run commands in pods or need this host or
-GitHub, live beside what they check (``flux.py``, ``clickstack.py``, ``apps/checks.py``, ``notifications/checks.py``,
-``console/checks.py``) and are listed in ``CHECKS``.
+the AWS credentials it lists S3 with and GH_TOKEN for hook listings. The five others run commands in pods or
+need this host, live beside what they check (``flux.py``, ``clickstack.py``, ``notifications/checks.py``) and are
+listed in ``CHECKS``.
 """
 from __future__ import annotations
 
@@ -20,8 +20,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from swhurl import ROOT, clickstack, flux, platform_checks
-from swhurl.apps import checks as apps
-from swhurl.console import checks as console
 from swhurl.notifications import checks as notifications
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -40,17 +38,24 @@ CLUSTER_CHECKS = (
     ('signing-keys', 'cluster checkout', "The signing keys and token issuer apps were given are the cluster's"),
     ('events', 'cluster checkout', 'NATS and its controller run, and every stream and consumer v2 rendered is Ready'),
     ('egress', 'cluster checkout', 'The egress proxy runs both replicas, with a port of its own for every instance v2 compiled'),
-    ('channels', 'cluster checkout',
+    ('channels', 'cluster checkout secret',
      "The team routes are Git's and every channel has its Secret (a team without a channel warns)"),
     ('backups', 'cluster s3',
      'The newest MongoDB backup in S3, archive and metadata, is younger than `BACKUP_MAX_AGE_HOURS` (26)'),
     ('sqlite-backups', 'checkout s3', 'Each instance whose release declares a SQLite database has a backup in S3 as young'),
     ('console', 'cluster checkout',
      "The console image is built from this checkout's tooling (warns otherwise) and its job record exists"),
+    ('push-webhook', 'cluster checkout github',
+     "Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise)"),
+    ('image-webhooks', 'cluster checkout github',
+     "The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise)"),
+    ('console-token', 'cluster checkout secret github',
+     "GitHub accepts the console's tokens and none expires within 14 days (warns)"),
 )
 """``swhurl-v2 verify --scope platform``'s checks, in its order, for the operations page: Go decides them
 (``v2/observe/platform.go`` and ``platform_scope.go``). Each names what it reads besides the cluster and its passing."""
-READS = {'cluster': 'Cluster (read)', 'checkout': 'this checkout', 'registry': 'registry (read)', 's3': 'S3 (list)'}
+READS = {'cluster': 'Cluster (read)', 'checkout': 'this checkout', 'registry': 'registry (read)', 's3': 'S3 (list)',
+         'secret': 'Secrets (read)', 'github': 'GitHub (read)'}
 
 
 def check_cluster(runner: Runner, report: Report) -> None:
@@ -112,14 +117,9 @@ CHECKS = (
     Check.of('retention', 'cluster exec', clickstack.check_retention,
              'Telemetry expires after 30 days and ClickHouse system logs after 7, no merge failed in the last hour, '
              'and the MongoDB volume is retained'),
-    Check.of('push-webhook', 'cluster host', flux.check_push_webhook,
-             "Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise)"),
-    Check.of('image-webhooks', 'cluster host', apps.check_image_webhooks,
-             "The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise)"),
     Check.of('notification-heartbeat', 'host', notifications.check_notification_heartbeat,
              "The host heartbeat timer is active and its service's last run succeeded within 15 minutes"),
-    Check.of('console-token', 'cluster secret host', console.check_console_token,
-             "GitHub accepts the console's tokens and none expires within 14 days (warns)"),
+
 )
 WORDS = {'cluster': 'Cluster (read)', 'secret': 'Secrets (read)', 'exec': 'commands in pods', 'host': 'this host'}
 

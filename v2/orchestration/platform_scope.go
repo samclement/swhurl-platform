@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
@@ -28,12 +29,15 @@ type Checkout struct {
 }
 
 // PlatformAllInputs is one run of every platform check: the cluster checks' inputs, the cluster's other ports, the
-// registry and the object store, the checkout, and what the caller supplied.
+// registry, the object store and GitHub, the checkout, and what the caller supplied.
 type PlatformAllInputs struct {
 	PlatformInputs
-	Data       kube.Data
-	Issuer     kube.Issuer
-	Registries func(image string) (registry.Reader, error)
+	// GitHubToken is the operator credential for hook listings only. Console credentials come from Data.
+	GitHub      github.Reader
+	GitHubToken string
+	Data        kube.Data
+	Issuer      kube.Issuer
+	Registries  func(image string) (registry.Reader, error)
 	// Objects opens the object store for one bucket; nil when no credentials were supplied, and nothing is listed.
 	Objects  func(bucket string) (s3.Reader, error)
 	Checkout Checkout
@@ -55,7 +59,7 @@ func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.Platfor
 	}
 	scope := observe.ScopeEvidence{Compiled: inputs.Checkout.Compiled, Credentials: inputs.Objects != nil, MaxAge: inputs.MaxAge}
 	for _, step := range []scopeStep{readImages, readIsolation, readSigning, readEvents, readEgress, readChannels,
-		readMongoBackups, readDatabases, readConsole} {
+		readMongoBackups, readDatabases, readConsole, readGitHub} {
 		if err := step(ctx, inputs, &scope); err != nil {
 			return observe.PlatformReport{}, err
 		}

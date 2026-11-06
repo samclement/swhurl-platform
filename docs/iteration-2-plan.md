@@ -1237,7 +1237,8 @@ The Flux version and controller arguments move to one JSON file under `clusters/
 **Deliberate differences.** Backups' S3 location is the live backup CronJob's `BACKUP_S3_URI`, not Git's YAML;
 the channel Secrets are those the notify service reads (by its label), not names alone; a console tag that is not a
 content tag (`src-…`) warns "cannot compare" instead of a `git diff`; until the last slice the report shows Go's
-checks before Python's remaining ones, then Python's order returns.
+checks before Python's remaining ones, then Python's order returns. Webhooks match the exact parsed host, not a
+substring or an impostor host; untrusted delivery messages retain only standard HTTP reasons, never URLs or credentials.
 
 **Delivery,** four slices, each committed, run live with `make verify-platform` (the platform page unchanged) and
 recorded in current state, Python's `CHECKS` shrinking with each and the deleted Python's test cases kept as Go
@@ -1247,14 +1248,14 @@ table tests: (1) the nine checks that read the cluster, the checkout, the regist
 `registration`, `retention`); (4) the host facts (`notification-heartbeat`, `flux-controllers`), then `verify.py`
 and `verify-run` are deleted and the operations page's check table is checked against Go's list.
 
-**Slice 2 input gate.** The existing webhook checks read `BASE_DOMAIN` from the checkout's platform-settings
-ConfigMap manifest and the platform repository URL from its GitRepository manifest (both YAML under
-`clusters/home/flux-system/sources/`). No YAML parser for platform settings was approved: `appsource` explicitly
-reads app declarations, not platform files. Before implementing, choose either the installed ConfigMap and
-GitRepository through Kubernetes (checks actual installed webhook configuration, not checkout drift), or retain
-checkout semantics by converting the two manifests to JSON without changing their resources. The latter changes
-files under `flux-system` and needs explicit approval. The GitHub adapter, tokens and other slice-2 scope remain
-approved; slices 3 and 4 remain approved too.
+**Slice 2 settings source (approved 6 November 2026).** The webhook checks read `BASE_DOMAIN` from the installed
+`flux-system/platform-settings` ConfigMap (`Data`) and the platform repository URL from the installed GitRepository
+named by the checkout profile's `delivery.source` in `flux-system` (`Reader`, which gains GitRepository). This checks
+the webhook configuration actually installed, not drift of those settings from the local checkout. An absent,
+malformed or unreadable setting is bad, never a guessed repository or domain. No Flux manifest is changed and no
+new YAML reader is added. App image-webhook repositories still come from staging release records, and both console
+tokens are checked against this installed platform repository. All other slice-2 scope, and slices 3 and 4, remain
+approved.
 
 ## 12. The notify service in Go (approved 5 November 2026)
 

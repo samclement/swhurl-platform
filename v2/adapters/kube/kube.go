@@ -427,6 +427,8 @@ func kinds() map[pathKey]resource {
 		{"cert-manager.io", "Certificate"}:               {"cert-manager.io/v1", "certificates", true},
 		{"notification.toolkit.fluxcd.io", "Alert"}:      {"notification.toolkit.fluxcd.io/v1beta3", "alerts", true},
 		{"notification.toolkit.fluxcd.io", "Provider"}:   {"notification.toolkit.fluxcd.io/v1beta3", "providers", true},
+		{"source.toolkit.fluxcd.io", "GitRepository"}:    {"source.toolkit.fluxcd.io/v1", "gitrepositories", true},
+		{"notification.toolkit.fluxcd.io", "Receiver"}:   {"notification.toolkit.fluxcd.io/v1", "receivers", true},
 		{"image.toolkit.fluxcd.io", "ImagePolicy"}:       {"image.toolkit.fluxcd.io/v1", "imagepolicies", true},
 		{"jetstream.nats.io", "Stream"}:                  {"jetstream.nats.io/v1beta2", "streams", true},
 		{"jetstream.nats.io", "Consumer"}:                {"jetstream.nats.io/v1beta2", "consumers", true},

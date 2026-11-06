@@ -24,8 +24,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from swhurl import ROOT, platform, yamlio
-from swhurl.kube import ready_condition
+from swhurl import ROOT, yamlio
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
@@ -226,37 +225,3 @@ def check_controllers(runner: Runner, report: Report, root: Path = ROOT) -> None
                         if args else '') + f'; expected {expected} (run: make flux-install)')
         else:
             report.ok(f'{name} {live}' + (' with the settings in Git' if args else ''))
-
-
-def check_push_webhook(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """Flux's GitHub Receiver is Ready and GitHub's latest delivery to it succeeded (docs/services.md#push-webhook)."""
-    report.section('Push Webhook')
-    try:
-        receiver = runner.json(['kubectl', '-n', 'flux-system', 'get', 'receivers.notification.toolkit.fluxcd.io',
-                                'github', '-o', 'json'])
-        status, message = ready_condition(receiver)
-    except (CommandError, TypeError):
-        status, message = 'Unknown', 'could not read it'
-    if status == 'True':
-        report.ok('Flux receiver flux-system/github is Ready')
-    else:
-        report.bad(f'Flux receiver flux-system/github is not Ready: {message} (make reconcile UNIT=platform-flux-webhook)')
-    host = f'flux-webhook.{platform.base_domain(root)}'
-    repository = platform.github_repository(root)
-    try:
-        hooks = runner.json(['gh', 'api', f'repos/{repository}/hooks'])
-    except CommandError as error:
-        report.warn(f'could not list the GitHub webhooks of {repository} with gh: {error}')
-        return
-    hook = next((h for h in hooks or [] if host in (h.get('config') or {}).get('url', '')), None)
-    if not hook:
-        report.warn(f'no GitHub webhook on {repository} calls {host}; Flux falls back to polling every minute')
-        return
-    last = hook.get('last_response') or {}
-    if not hook.get('active'):
-        report.warn(f'the GitHub webhook to {host} is disabled; Flux falls back to polling every minute')
-    elif last.get('code') == 200:
-        report.ok(f'GitHub\'s latest delivery to {host} returned 200')
-    else:
-        report.warn(f'GitHub\'s latest delivery to {host} returned {last.get("code")} {last.get("message", "")}'.rstrip()
-                    + '; see Recent Deliveries on the webhook (Flux still polls every minute)')

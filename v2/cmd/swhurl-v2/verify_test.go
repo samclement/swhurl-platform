@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/github/githubtest"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry/registrytest"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
@@ -177,7 +178,7 @@ func platformReport(t *testing.T, stdout string) map[string][]struct{ Level, Mes
 		names = append(names, check.Name)
 	}
 	if strings.Join(names, " ") != "flux-units ingress alerts notify-service dashboards notifications image-automation "+
-		"isolation signing-keys events egress channels backups sqlite-backups console" {
+		"isolation signing-keys events egress channels backups sqlite-backups console push-webhook image-webhooks console-token" {
 		t.Fatalf("the checks and their order: %v", names)
 	}
 	return checks
@@ -278,5 +279,47 @@ func TestVerifyScopeUsage(t *testing.T) {
 	if status, _, diagnostic := runStatus(t, "verify", "--scope", "platform", "--kubeconfig", kubeconfig(t, server),
 		"--root", "../../.."); status != 2 || !strings.Contains(diagnostic, "BACKUP_MAX_AGE_HOURS") {
 		t.Fatalf("an unreadable age: exit %d %s", status, diagnostic)
+	}
+}
+
+// The default scope never constructs the platform ports or consults GitHub, even with GH_TOKEN set.
+func TestVerifyClusterNeverReadsGitHubOrData(t *testing.T) {
+	t.Setenv("GH_TOKEN", "operator-fixture")
+	server, paths := platformAPI(t)
+	fake := githubtest.New()
+	c := cli{readFile: readInput, inCluster: podServiceAccount(), github: fake}
+	var out, diagnostic bytes.Buffer
+	status := runWith([]string{"verify", "--kubeconfig", kubeconfig(t, server), "--json"}, &out, &diagnostic, c)
+	if status != 0 || len(fake.Calls) != 0 || len(*paths) != 8 {
+		t.Fatalf("exit %d; GitHub calls %d; paths %v; %s", status, len(fake.Calls), *paths, diagnostic.String())
+	}
+	for _, path := range *paths {
+		if strings.Contains(path, "/secrets") || strings.Contains(path, "/configmaps") {
+			t.Fatalf("Data read: %s", path)
+		}
+	}
+}
+
+func TestVerifyMissingGitHubTokenReportsBadAndContinues(t *testing.T) {
+	for _, token := range []string{"", " \t\n"} {
+		t.Run(token, func(t *testing.T) {
+			t.Setenv("GH_TOKEN", token)
+			server, _ := platformAPI(t)
+			status, stdout, diagnostic, _ := verifyPlatform(t, server, "--console-tag", "src-abc")
+			if status != 1 {
+				t.Fatalf("exit %d: %s", status, diagnostic)
+			}
+			checks := platformReport(t, stdout)
+			for _, name := range []string{"push-webhook", "image-webhooks"} {
+				if !slices.ContainsFunc(checks[name], func(e struct{ Level, Message string }) bool {
+					return e.Level == "bad" && e.Message == "GitHub token not supplied"
+				}) {
+					t.Fatalf("%s: %+v", name, checks[name])
+				}
+			}
+			if len(checks["console-token"]) == 0 || len(checks["sqlite-backups"]) == 0 || len(checks["notifications"]) == 0 {
+				t.Fatal("unrelated checks stopped")
+			}
+		})
 	}
 }

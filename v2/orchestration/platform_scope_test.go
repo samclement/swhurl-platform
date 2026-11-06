@@ -96,7 +96,7 @@ func TestPlatformAllReadsEveryCheck(t *testing.T) {
 	for _, check := range report.Checks {
 		names = append(names, check.Name)
 	}
-	if len(report.Checks) != 15 || names[6] != "image-automation" || names[14] != "console" || report.Source != "test" {
+	if len(report.Checks) != 18 || names[6] != "image-automation" || names[14] != "console" || report.Source != "test" {
 		t.Fatalf("%v", names)
 	}
 	reads := []string{}
@@ -104,12 +104,12 @@ func TestPlatformAllReadsEveryCheck(t *testing.T) {
 		reads = append(reads, ref.Namespace+"/"+ref.Name)
 	}
 	want := []string{"kube-system/traefik", "notify/notify", "console/console", "console/console-dashboards",
-		"console/console-notifications", "messaging/nats", "messaging/nats-controller", "egress/egress", "observability/backup-mongodb"}
+		"console/console-notifications", "messaging/nats", "messaging/nats-controller", "egress/egress", "observability/backup-mongodb", "flux-system/swhurl-platform", "flux-system/github", "flux-system/app-images"}
 	if !slices.Equal(reads, want) {
 		t.Fatalf("reads %v", reads)
 	}
 	if !slices.Equal(fake.Calls, []string{"signing-keys", "configmaps notification-routes",
-		"secrets platform.swhurl.com/notify-transport=ntfy", "configmaps console-jobs"}) {
+		"secrets platform.swhurl.com/notify-transport=ntfy", "configmaps console-jobs", "configmaps platform-settings", "secrets console-github"}) {
 		t.Fatalf("calls %v", fake.Calls)
 	}
 	// The backup job is absent, so its location is unknown and only the database's prefix is listed.

@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: blocked
-Gate: choose the webhook settings source for verify slice 2 (GitHub)
+Status: in progress
+Gate: deliver verify slice 2, then the approved exec slice
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -33,7 +33,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Backup and restore | done | [record](current-state.md#the-first-content-changing-restore-swhurl-try-10-staging-moved-back-a-day-27-october-2026) |
 | Promotion and rollback | done | [record](current-state.md#a-rollback-exercised-live-2-november-2026) |
 | Image declaration producer in Go | done | [workflow rollout](current-state.md#go-producer-adoption-by-template-workflows-5-november-2026) |
-| Platform verification in Go (`swhurl-v2 verify`: six cluster checks, nine more in platform scope) | partial | [record](current-state.md#nine-more-platform-checks-move-to-go-6-november-2026) |
+| Platform verification in Go (`swhurl-v2 verify`: six cluster checks, twelve more in platform scope) | partial | [record](current-state.md#github-platform-checks-move-to-go-6-november-2026) |
 | Template check without Python but Copier | done | [record](current-state.md#the-template-check-leaves-python-5-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
 | Bulk status and revision evidence | done | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |
@@ -62,7 +62,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 
 What still runs Python, what replaces it, and where that port stands. This table is the distance to the
 goal; each row is its own approved slice. **Order matters here.** The 3 November import inventory found
-most Python reachable through the console, including `verify`, `apps/checks`, `recovery`, `dashboards` and
+most Python reachable through the console, including `verify`, `recovery`, `dashboards` and
 the notification checker, so those leave with or through the console port, not with a command; the remaining
 check-apps glue, the template checks and the notify service are console-free ([the brief](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026)). Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
 calls are bash ([`host/ops.sh`](../host/ops.sh)), and the rest makes a safety decision, runs in the cluster or
@@ -71,7 +71,7 @@ loses its `run=` function.
 
 | Python surface | What replaces it | State |
 | --- | --- | --- |
-| Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2`, team/channel validation and all of `check-docs` (`swhurl-v2 workstreams`); the legacy fixture checker/API retirement is independently reviewed and live-verified, with the v1 model oracle and Go tests kept. `check-apps` runs no Python: explicit Go chart acquisition and shell sequencing replace its entrypoint glue and the CI fetch recipes. Python chart acquisition remains for OTel and ClickStack, not policy decisions; `check-templates` is shell over Go (`names`, the producer and `declaration`) with Copier its only Python, and the stack and name catalogues are v2's JSON (`v2/contract/`), which Python still reads; `verify-platform`'s fifteen checks that read the cluster, the checkout, the registry and S3 are `swhurl-v2 verify --scope platform`, and the console's Overview and Platform pages call its six cluster-only ones (`--scope cluster`) instead of importing `verify`; its other checks (GitHub, Secrets, commands in pods, the host) remain Python, slices 2 to 4 of [the rest of verify-platform](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026) |
+| Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2`, team/channel validation and all of `check-docs` (`swhurl-v2 workstreams`); the legacy fixture checker/API retirement is independently reviewed and live-verified, with the v1 model oracle and Go tests kept. `check-apps` runs no Python: explicit Go chart acquisition and shell sequencing replace its entrypoint glue and the CI fetch recipes. Python chart acquisition remains for OTel and ClickStack, not policy decisions; `check-templates` is shell over Go (`names`, the producer and `declaration`) with Copier its only Python, and the stack and name catalogues are v2's JSON (`v2/contract/`), which Python still reads; `verify-platform`'s eighteen checks that read the cluster, the checkout, the registry, S3 and GitHub are `swhurl-v2 verify --scope platform`, and the console's Overview and Platform pages call its six cluster-only ones (`--scope cluster`) instead of importing `verify`; its five other checks (commands in pods, including ingestion Secrets, and the host) remain Python, slices 3 and 4 of [the rest of verify-platform](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026) |
 | Recovery and backup tooling (`recovery.py`, `backupset.py`) | `make restore-sqlite` is `swhurl-v2 restore`, the backup image's Go tool runs the jobs, `backup-mongodb` and `backup-sqlite` are bash, and both freshness checks are `swhurl-v2 verify --scope platform`'s; MongoDB's restore test remains | partial: what remains is MongoDB's restore test (`live-test-restore-mongodb`) and the backup set it fetches with |
 | The notification checker and the dashboard reconciler (the console image's two CronJobs), the host heartbeat and `clickstack-bootstrap` | Go | not started: these services still run Python, and the checker’s modules are reached by `verify`. The separate notify service is Go; its Python implementation and internal command are deleted, while the checker's shared notice/delivery modules remain |
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team targets are bash over `swhurl-v2 team`; `destroy-data` stays Python, a safety decision with its own tests |

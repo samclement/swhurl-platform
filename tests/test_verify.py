@@ -13,7 +13,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-from fakecluster import KEY, TOKEN, b64, healthy, verify_report
+from fakecluster import KEY, b64, healthy, verify_report
 
 from swhurl import ROOT, clickstack, platform, validate, verify
 from swhurl.notifications import checks as notification_checks
@@ -46,10 +46,9 @@ class VerifyPlatformTests(unittest.TestCase):
                          ['\n== Flux Kustomizations ==', '\n== Ingress ==', '\n== Alerts ==', '\n== Notify service ==',
                           '\n== App dashboards and alerts ==', '\n== Notifications ==', '\n== Image Automation ==',
                           '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Egress proxy ==',
-                          '\n== Notification channels ==', '\n== Backups ==', '\n== App SQLite backups ==', '\n== Console ==',
+                          '\n== Notification channels ==', '\n== Backups ==', '\n== App SQLite backups ==', '\n== Console ==', '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== Console GitHub Token ==',
                           '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Retention ==', '\n== Push Webhook ==', '\n== Image Webhooks ==',
-                          '\n== Notification heartbeat ==', '\n== Console GitHub Token =='])
+                          '\n== ClickStack Sign-up ==', '\n== Retention ==', '\n== Notification heartbeat =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -82,10 +81,7 @@ class VerifyPlatformTests(unittest.TestCase):
             'part_log unreadable': ({'merges': Result((), 1, '', 'UNKNOWN_TABLE')}, 'cannot read ClickHouse merge results'),
             'pv delete': ({'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Delete'}}}, 'data volume is not Retain'),
             'pvc missing': ({'pvc': Result((), 1, '', 'NotFound')}, 'data volume is not Retain'),
-            'token placeholder': ({'token': {'data': {'GITHUB_TOKEN': b64('REPLACE_ME')}}}, 'is not set'),
-            'token secret missing': ({'token': Result((), 1, '', 'NotFound')}, 'is not set'),
-            'token rejected': ({'github': Result((), 0, 'HTTP/2 401\r\n\r\n')}, 'did not accept the console token'),
-            'github unreachable': ({'github': Result((), 6, '', 'could not resolve')}, 'did not accept'),
+
         }
         for label, (overrides, expected) in cases.items():
             with self.subTest(label):
@@ -118,8 +114,6 @@ class VerifyPlatformTests(unittest.TestCase):
         run(runner)
         verbs = {c[c.index('get') if 'get' in c else c.index('exec')] for c in runner.calls if c[0] == 'kubectl'}
         self.assertLessEqual(verbs, {'get', 'exec'})
-        for args, _ in runner.github:
-            self.assertFalse({'--request', '-X', '--data', '--data-binary'} & set(args), f'GitHub call is not a GET: {args}')
         read_only_scripts = (clickstack.TEAM_KEYS,)
         self.assertTrue(runner.stdin, 'verify-platform sends nothing into pods? the allowlist would be untested')
         for args, program in runner.stdin:
@@ -130,18 +124,7 @@ class VerifyPlatformTests(unittest.TestCase):
                 self.assertEqual(request['method'], 'GET', f'HyperDX API call is not a GET: {program}')
 
 
-class ConsoleTokenTests(unittest.TestCase):
-    def test_expiry_soon_warns_and_token_never_leaks(self):
-        soon = (dt.datetime.now(dt.UTC) + dt.timedelta(days=5)).strftime('%Y-%m-%d %H:%M:%S UTC')
-        runner = healthy(github=Result((), 0, f'HTTP/2 200\r\ngithub-authentication-token-expiration: {soon}\r\n'))
-        code, report, text = run(runner)
-        self.assertEqual(code, 0, text)
-        self.assertTrue(any(line.startswith('[WARN]') and 'expires' in line for line in report.lines), text)
-        self.assertNotIn(TOKEN, text)
-        ((args, stdin),) = runner.github
-        self.assertNotIn(TOKEN, ' '.join(args))
-        self.assertEqual(stdin, f'header = "Authorization: Bearer {TOKEN}"\n')
-
+class FluxControllerTests(unittest.TestCase):
     def test_flux_controllers_without_git_settings_warn(self):
         plain = {'metadata': {'labels': {'app.kubernetes.io/version': 'v0.0.1'}},
                  'spec': {'template': {'spec': {'containers': [{'args': ['--log-level=info']}]}}}}
@@ -156,54 +139,6 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertEqual(code, 1, text)
         self.assertIn('[BAD] cannot read flux-system/kustomize-controller (kubectl -n flux-system get deploy kustomize-controller)', report.lines)
 
-    def test_image_webhook_problems(self):
-        url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
-        events = ['package', 'registry_package']
-        _, report, text = run(healthy())
-        self.assertIn('[OK] demo-shop: image webhook on samclement/demo-shop, latest delivery returned 200', report.lines, text)
-        cases = {
-            'receiver': ({'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'no secret'}]}}},
-                         '[BAD] Flux receiver flux-system/app-images is not Ready: no secret'),
-            'no hook': ({'hooks': []}, '[WARN] demo-shop: no image webhook on samclement/demo-shop; Flux finds its new images '
-                                       'within the hour (make app-hooks)'),
-            'unused': ({'hooks': [{'active': True, 'events': events, 'config': url, 'last_response': {'code': None}}]},
-                       '[OK] demo-shop: image webhook on samclement/demo-shop, no delivery yet'),
-            'failing': ({'hooks': [{'active': True, 'events': events, 'config': url, 'last_response': {'code': 404}}]},
-                        '[WARN] demo-shop: the latest image webhook delivery from samclement/demo-shop returned 404'),
-            'events': ({'hooks': [{'active': True, 'events': ['push'], 'config': url}]}, 'is disabled or lacks its events'),
-        }
-        for name, (overrides, expected) in cases.items():
-            with self.subTest(name=name):
-                _, report, text = run(healthy(**overrides))
-                self.assertTrue(any(expected in line for line in report.lines), text)
-
-    def test_push_webhook_problems(self):
-        url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
-        cases = {
-            'receiver': ({'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'no secret'}]}}},
-                         '[BAD] Flux receiver flux-system/github is not Ready: no secret'),
-            'no hook': ({'hooks': []}, '[WARN] no GitHub webhook on'),
-            'failing': ({'hooks': [{'active': True, 'config': url, 'last_response': {'code': 502, 'message': 'Bad Gateway'}}]},
-                        "[WARN] GitHub's latest delivery to flux-webhook."),
-            'disabled': ({'hooks': [{'active': False, 'config': url, 'last_response': {'code': 200}}]}, 'is disabled'),
-            'gh fails': ({'hooks': Result((), 1, '', 'gh: not logged in')}, '[WARN] could not list the GitHub webhooks'),
-        }
-        for name, (overrides, expected) in cases.items():
-            with self.subTest(name=name):
-                _, report, text = run(healthy(**overrides))
-                self.assertTrue(any(expected in line for line in report.lines), text)
-
-    def test_the_repository_token_is_optional_and_checked_when_set(self):
-        _, report, _ = run(healthy())
-        self.assertTrue(any(line.startswith('[WARN] console/console-github.APP_REPOS_TOKEN is not set') for line in report.lines))
-        code, report, text = run(healthy(token={'data': {'GITHUB_TOKEN': b64(TOKEN), 'APP_REPOS_TOKEN': b64('github_pat_two')}}))
-        self.assertEqual(code, 0, text)
-        self.assertTrue(any('GitHub accepts the console repository token; it expires 2099-01-01' in line for line in report.lines))
-        self.assertNotIn('github_pat_two', text)
-
-    def test_no_expiry_passes(self):
-        _, report, _ = run(healthy(github=Result((), 0, 'HTTP/2 200\r\n\r\n')))
-        self.assertIn('[OK] GitHub accepts the console token (no expiry date)', report.lines)
 
 
 class AllowedChecksTests(unittest.TestCase):

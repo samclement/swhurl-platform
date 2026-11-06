@@ -44,7 +44,8 @@ func healthyScope() ScopeEvidence {
 		return ArchiveList{Status: Present, Objects: []Archive{{Key: prefix + name + "-" + backupStamp + suffix},
 			{Key: prefix + name + "-" + backupStamp + ".json"}}}
 	}
-	return ScopeEvidence{
+	push, images, tokens := healthyGitHub()
+	return ScopeEvidence{PushWebhook: push, ImageWebhooks: images, ConsoleTokens: tokens,
 		Compiled: []CompiledInstance{compiledHello()},
 		Images: ImageEvidence{
 			Policies: collectionOf(PlatformImagePolicies, policyItem("hello-staging", "hello", "True", "", "42-abc1234")),
@@ -139,7 +140,7 @@ func TestScopeChecksFollowTheClusterChecksAndPass(t *testing.T) {
 		}
 	}
 	want := "flux-units ingress alerts notify-service dashboards notifications image-automation isolation signing-keys " +
-		"events egress channels backups sqlite-backups console"
+		"events egress channels backups sqlite-backups console push-webhook image-webhooks console-token"
 	if strings.Join(names, " ") != want {
 		t.Fatalf("%v", names)
 	}

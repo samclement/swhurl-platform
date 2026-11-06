@@ -6,8 +6,10 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/observe"
@@ -67,9 +69,14 @@ func (c cli) verifyCluster(inputs orchestration.PlatformInputs) (observe.Platfor
 }
 
 // verifyPlatform runs every check: the connection's other ports, the anonymous registry, the object store with the
-// operator's credentials when they are set, the checkout at --root and the tag the caller supplied.
+// operator's credentials when they are set, GitHub with explicit operator/console credentials, the checkout
+// at --root and the tag the caller supplied.
 func (c cli) verifyPlatform(r request, connection kube.Connection, cluster orchestration.PlatformInputs) (observe.PlatformReport, int) {
 	inputs := orchestration.PlatformAllInputs{PlatformInputs: cluster, Registries: c.registries, ConsoleTag: r.consoleTag}
+	inputs.GitHub, inputs.GitHubToken = c.github, strings.TrimSpace(os.Getenv("GH_TOKEN"))
+	if inputs.GitHub == nil {
+		inputs.GitHub = github.New(nil)
+	}
 	var status int
 	if inputs.MaxAge, status = c.backupMaxAge(); status != 0 {
 		return observe.PlatformReport{}, status

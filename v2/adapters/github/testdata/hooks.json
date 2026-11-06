@@ -1,0 +1,1 @@
+[{"active":true,"events":["package","registry_package"],"config":{"url":"https://hooks.example/hook/private","secret":"discard-this"},"last_response":{"code":200,"message":"OK"}}]

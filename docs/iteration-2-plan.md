@@ -1257,6 +1257,13 @@ new YAML reader is added. App image-webhook repositories still come from staging
 tokens are checked against this installed platform repository. All other slice-2 scope, and slices 3 and 4, remain
 approved.
 
+**Slice 3 report gate.** Python's `ingestion-key` routine emits two sections, `Runtime Secrets` and
+`Ingestion Key Sync`, whereas each Go `PlatformCheck` has one name and section. The proposed smallest reshape is
+two result groups, `runtime-secrets` and `ingestion-key`, preserving both sections and their verdicts without
+changing the JSON schema or repeating a check name. This would make the final catalogue twenty-four groups
+rather than twenty-three; no additional live operation is implied. Confirm this presentation choice before
+implementing slice 3.
+
 ## 12. The notify service in Go (approved 5 November 2026)
 
 The operator approved porting the [notify service](services.md#notify-service) to `swhurl-v2 notify-serve`, run from

@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: in progress
-Gate: deliver verify slice 2, then the approved exec slice
+Status: blocked
+Gate: confirm two ingestion result groups for verify slice 3
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —

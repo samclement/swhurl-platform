@@ -26,7 +26,14 @@ What has been verified on the live cluster, and when: current facts first, then 
   sections are identical; other differences are elapsed backup ages. This is not a fully healthy-platform claim.
 - **Offline validation:** parent runs of `make check-v2` and `make check` passed, including after the whitespace
   regression fix (630 Python and 98 codegraph tests; docs zero errors/warnings). Host/fixture Bash syntax and
-  `git diff --check` passed. Delivery and post-deployment verification are pending; no live state has been changed.
+  `git diff --check` passed.
+- **Delivered:** `7164b03f` passed Validate run `42289777045`; `ef9d5ee4` pinned image
+  `src-0c69d900750f1c70`. Flux reconciliation and both console/notify rollouts succeeded; both have one ready
+  replica. Post-deployment `make verify-platform` returned 83 OK, zero warnings and one existing retention BAD
+  (28 failed ClickHouse merges in the last hour). All eighteen Go checks passed, both scheduled console checks
+  had succeeded within five minutes, and `make app-status APP=demo-shop ENV=staging` was healthy. Public console
+  HTTP/HTTPS returned 301/302 signed out. A real signed-in browser session was not exercised for this slice.
+  No credentials, webhook configuration or rollout strategy changed.
 
 ## Nine more platform checks move to Go (6 November 2026)
 

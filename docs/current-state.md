@@ -31,7 +31,15 @@ What has been verified on the live cluster, and when: current facts first, then 
   (1002, 1008, 1011, …) after a success status now fails the run, with 1000/1001 and no code still orderly; and a
   101 that selects a WebSocket extension this client never offered is refused. Both have real-TLS regression
   tests. No baseline, dependency or guardrail changed.
-- **Delivery:** independent review and deployment verification pending.
+- **Delivery:** commit `3f959d9f`, rebased over the Deploy workflow's `demo-notifier` commit and pushed as `main`.
+  Validate run 42300927175 passed all nine jobs (tooling, policy, templates, OTel, manifests/docs), including the
+  console deploy; the console and notify service now run `src-df394ce2e9e9a51a`, built from this tooling and
+  `[OK]` in the Console check. `make flux-reconcile` succeeded and `demo-shop/staging` reads healthy at
+  `bc25a9f9`. The post-deploy `make verify-platform` returned **83 OK, zero warnings and one `[BAD]`**: the same
+  pre-existing ClickHouse merge failures (16 in that hour, `default.otel_metrics_histogram`), so it exits 2.
+  That is an existing live fault reported, not a migration failure, and it is not fixed here.
+  The first Validate run failed only because this page still said the slice was uncommitted; `13393cf5`
+  corrected the status line the registry compares.
 
 ## GitHub platform checks move to Go (6 November 2026)
 

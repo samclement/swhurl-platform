@@ -3,11 +3,11 @@
   "application": "swhurl-try-30",
   "source": {
     "repository": "samclement/swhurl-try-30",
-    "commit": "74d4a143a326f1ec7a642bc37c69e3f6c4b005f5"
+    "commit": "18d41b7fae26741cf27f0c997bb167e8818104e8"
   },
   "artifact": {
     "image": "ghcr.io/samclement/swhurl-try-30",
-    "digest": "sha256:ebc3b086b87d7e28971cb17cb6e94adff1426175e54732f49027edaee1e2b210",
+    "digest": "sha256:84b900e03ad9e0899c87445cd564cd62be3438b7df5cd3ac4314dcaf2aca7259",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -26,5 +26,5 @@
     "events",
     "flags"
   ],
-  "releaseId": "rel-sha256:81d8b8bad53d2cd9ff3f905ed0759f847666b2767823d3bba7b89edc736b2dcb"
+  "releaseId": "rel-sha256:e411f400997e48a26b81d74f08938c6641808a30b4346d65bb2311dfca8fc025"
 }

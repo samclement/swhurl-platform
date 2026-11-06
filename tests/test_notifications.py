@@ -12,10 +12,9 @@ import yaml
 
 from swhurl import ROOT, platform
 from swhurl import notifications as n
-from swhurl.notifications import checks, delivery
+from swhurl.notifications import delivery
 from swhurl.notifications.notice import Notice, Ntfy
 from swhurl.notifications.notice import forward as forward_copy
-from swhurl.report import Report
 from swhurl.run import CommandError, FakeRunner, Result
 
 BASE = 'https://console.example.test'
@@ -699,14 +698,3 @@ class WiringTests(unittest.TestCase):
                 self.assertEqual(unit.labels.get('platform.swhurl.com/alert'), 'failures' if alerted else None)
         for path in (ROOT / 'apps').glob('*/prod/kustomization.yaml'):
             self.assertNotIn('production-alert.yaml', yaml.safe_load(path.read_text())['resources'])
-
-    def test_recent_missing_stale_or_suspended_checker(self):
-        now = dt.datetime.fromtimestamp(NOW, dt.UTC)
-        for age, suspend, expected in ((0, False, 0), (360, False, 1), (None, False, 1), (0, True, 1)):
-            job = {'spec': {'suspend': suspend}, 'status': {}}
-            if age is not None:
-                job['status']['lastSuccessfulTime'] = dt.datetime.fromtimestamp(NOW-age, dt.UTC).isoformat()
-            runner = FakeRunner().on('kubectl', handler=lambda args, _input, job=job: Result(args, 0, json.dumps(job)))
-            report = Report()
-            checks.check_notifications(runner, report, now)
-            self.assertEqual(report.exit_code(), expected)

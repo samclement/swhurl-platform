@@ -115,7 +115,7 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command('install', 'flux-reconcile, then verify-platform (SKIP_VERIFY=1 skips the checks)', CLUSTER, dry_run=PLAN),
         Command('reconcile', 'Fetch Git and reconcile one Flux unit (for example after changing its Secret)', CLUSTER,
                 'swhurl.flux:reconcile_main', takes=(Var('UNIT', '<name>'),), dry_run=PLAN),
-        Command('verify-platform', 'Every live platform check (never prints keys)', READ, 'swhurl.verify:main'),
+        Command('verify-platform', 'Every live platform check: swhurl-v2 verify, then the rest (never prints keys; needs Go 1.26.0)', READ),
         Command('notifications-check', 'Preview lifecycle and health notifications without sending or saving', READ,
                 'swhurl.notifications:main', takes=('--dry-run',), uv=True),
         Command('notifications-heartbeat', 'Alert if the notification checker is stale (the host timer runs it)', READ,
@@ -225,6 +225,8 @@ INTERNAL = (
     Command('bot-render', 'CI (Render): render the newest main from its records, check it and push it', run='swhurl.bots:main_render', internal=True),
     Command('bot-deploy-v2', 'CI (Deploy v2): bring every v2-owned staging instance to its newest image, check it and push it',
             run='swhurl.bots:main_deploy_v2', internal=True),
+    Command('verify-run', "verify-platform's checks: swhurl-v2 verify's report (SWHURL_V2, SWHURL_V2_KUBECONFIG), then the rest",
+            run='swhurl.verify:main', internal=True),
     Command('flux-wait', 'Wait for every Flux unit to apply the fetched Git revision (flux-reconcile ends with it)',
             run='swhurl.flux:main', internal=True),
 )

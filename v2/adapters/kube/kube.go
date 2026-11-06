@@ -34,6 +34,7 @@ type Reader interface {
 	Read(ctx context.Context, ref observe.Ref) (observe.Read, error)
 	List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
 	ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
+	ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error)
 }
 
 // maxBytes bounds one response body, so a wrong endpoint or a wrong kind fails as a read instead of
@@ -174,6 +175,26 @@ func (a *API) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector s
 		return observe.List{}, &Error{RefusedRequest, "resource", "namespaced_kind_required"}
 	}
 	return a.list(ctx, ref, selector, resource.prefix()+"/"+resource.collection)
+}
+
+// ListNamespace explicitly reads every object of a namespaced kind in one namespace, with no selector: for objects
+// that carry no label to select them by. List still requires a selector, so an empty one is never reinterpreted.
+func (a *API) ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error) {
+	if ref.Name != "" {
+		return observe.List{}, &Error{RefusedRequest, "resource", "collection_required"}
+	}
+	resource, err := resourceOf(ref)
+	if err != nil {
+		return observe.List{}, err
+	}
+	if !resource.namespaced {
+		return observe.List{}, &Error{RefusedRequest, "resource", "namespaced_kind_required"}
+	}
+	answer := a.get(ctx, resource.listPath(ref), nil)
+	if answer.status != http.StatusOK {
+		return observe.List{Ref: ref, Status: observe.Unavailable, Reason: answer.reason()}, nil
+	}
+	return DecodeCollection(ref, "", answer.body), nil
 }
 
 func (a *API) list(ctx context.Context, ref observe.Ref, selector, path string) (observe.List, error) {
@@ -397,6 +418,8 @@ func kinds() map[pathKey]resource {
 		{"helm.toolkit.fluxcd.io", "HelmRelease"}:        {"helm.toolkit.fluxcd.io/v2", "helmreleases", true},
 		{"kustomize.toolkit.fluxcd.io", "Kustomization"}: {"kustomize.toolkit.fluxcd.io/v1", "kustomizations", true},
 		{"cert-manager.io", "Certificate"}:               {"cert-manager.io/v1", "certificates", true},
+		{"notification.toolkit.fluxcd.io", "Alert"}:      {"notification.toolkit.fluxcd.io/v1beta3", "alerts", true},
+		{"notification.toolkit.fluxcd.io", "Provider"}:   {"notification.toolkit.fluxcd.io/v1beta3", "providers", true},
 	}
 }
 

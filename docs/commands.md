@@ -10,7 +10,7 @@ Every `make` target, grouped by task. Each is stated once, in [`tools/swhurl/com
 | --- | --- | --- |
 | `flux-reconcile` | Fetch Git, reconcile the source layer and the stack, then wait until every unit is Ready at that revision, or at a newer one if a commit lands meanwhile (`swhurl flux-wait`: stops at the first unit that fails, skips suspended ones) | Cluster |
 | `install` † | `flux-reconcile`, then `verify-platform` (`SKIP_VERIFY=1` skips the checks) | Cluster |
-| `verify-platform` | Every live check of the platform, listed in [operations](operations.md#check-health); warns or fails, never prints a key | Cluster (read), S3 (list) |
+| `verify-platform` | Every live check of the platform, listed in [operations](operations.md#check-health): builds `swhurl-v2` for the six that only read the cluster (`swhurl-v2 verify`, needs Go 1.26.0), then runs the rest; warns or fails, never prints a key | Cluster (read), S3 (list) |
 | `notifications-check` | Preview [lifecycle and health notifications](services.md#alerts) from the live cluster without posting or changing incident state | Cluster (read) |
 | `notifications-heartbeat [ARGS=--dry-run]` | Check `console-notifications`; by default alert on stale/missing/suspended status, remind hourly and send recovery when it succeeds again. Pass `ARGS=--dry-run` to preview without posting or saving state | Cluster (read); ntfy and local state on transitions |
 | `verify-logs [MINUTES=15]` | Summarize fresh ClickStack log parser, severity, trace and original-line coverage per running container; report quiet containers separately, without printing bodies. `MINUTES` is 1 to 1440 | Cluster (read) |

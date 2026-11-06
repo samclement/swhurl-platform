@@ -3,6 +3,7 @@ import datetime as dt
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -13,14 +14,14 @@ from pathlib import Path
 from unittest import mock
 from urllib.parse import urlparse
 
-from fakecluster import CONSOLE_TAG, KEY, TOKEN, b64, fresh_backup, healthy
+from fakecluster import KEY, TOKEN, b64, fresh_backup, healthy, verify_report
 
-from swhurl import ROOT, clickstack, dashboards, images, interface, platform, recovery, validate, verify
+from swhurl import ROOT, clickstack, images, interface, platform, recovery, validate, verify
 from swhurl.apps import calling, channels
 from swhurl.apps import checks as app_checks
 from swhurl.notifications import checks as notification_checks
 from swhurl.report import Report
-from swhurl.run import FakeRunner, Result
+from swhurl.run import CommandError, FakeRunner, Result
 
 OTHER = 'fixture-other-ingestion-key-9999'
 
@@ -30,7 +31,7 @@ def run(runner, **kwargs):
     report = Report(out)
     backups = Path(tempfile.mkdtemp())
     (backups / fresh_backup()).write_bytes(b'x')
-    env = {'BACKUP_DIR': str(backups)}
+    env = {'BACKUP_DIR': str(backups), 'SWHURL_V2': 'swhurl-v2', 'SWHURL_V2_KUBECONFIG': '/nonexistent/kubeconfig.json'}
     try:
         with redirect_stderr(err), mock.patch.dict('os.environ', env):
             code = verify.verify_platform(runner, report, **kwargs)
@@ -50,9 +51,11 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(code, 0, text)
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
-                         ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Egress proxy ==', '\n== Alerts ==', '\n== Notification channels ==', '\n== Notify service ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
-                      '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== App dashboards and alerts ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
+                         ['\n== Flux Kustomizations ==', '\n== Ingress ==', '\n== Alerts ==', '\n== Notify service ==',
+                          '\n== App dashboards and alerts ==', '\n== Notifications ==',
+                          '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
+                          '\n== ClickStack Sign-up ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Egress proxy ==', '\n== Notification channels ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
+                      '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== Notification heartbeat ==',
                       '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
@@ -60,11 +63,11 @@ class VerifyPlatformTests(unittest.TestCase):
 
     def test_each_failure_is_reported_and_fails(self):
         cases = {
-            'unit not ready': ({'units': {'items': [{'metadata': {'name': 'homelab-x'}, 'status': {'conditions': [
-                {'type': 'Ready', 'status': 'False', 'message': 'dependency not ready'}]}}]}},
-                'homelab-x is not Ready: dependency not ready'),
-            'no units': ({'units': {'items': []}}, 'no Flux kustomizations in flux-system'),
-            'units unreadable': ({'units': Result((), 1, '', 'forbidden')}, 'cannot read Flux kustomizations'),
+            'cluster check bad': ({'v2-verify': verify_report(('ingress', 'Ingress', [('bad', 'Traefik does not redirect HTTP to HTTPS')]))},
+                                  'Traefik does not redirect HTTP to HTTPS'),
+            'no cluster report': ({'v2-verify': Result((), 2, '', 'credentials: kubeconfig: no current context')},
+                                  'swhurl-v2 verify gave no report (not a v2-platform-checks document): credentials: kubeconfig'),
+            'another document': ({'v2-verify': {'kind': 'v2-platform-checks', 'version': 2, 'checks': []}}, 'swhurl-v2 verify gave no report'),
             'secret missing': ({'secret': {'data': {}}}, 'CLICKSTACK_INGESTION_KEY is empty'),
             'secret unreadable': ({'secret': Result((), 1, '', 'NotFound')}, 'CLICKSTACK_INGESTION_KEY is empty'),
             'team key unreadable': ({'team': Result((), 2, '', 'quit(2)')}, 'cannot read a unique ClickStack team'),
@@ -77,8 +80,6 @@ class VerifyPlatformTests(unittest.TestCase):
             'different key': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(OTHER)}}}, 'does not match'),
             'double encoded': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(b64(KEY))}}}, 'does not match'),
             'trailing newline': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY + '\n')}}}, 'does not match'),
-            'no redirect': ({'traefik': {'spec': {'template': {'spec': {'containers': [{'args': []}]}}}}},
-                            'does not redirect HTTP to HTTPS'),
             'telemetry ttl drift': ({'ttl30': Result((), 0, '8\t9\n')}, '1 of 9 telemetry tables have no 30-day TTL'),
             'no telemetry tables': ({'ttl30': Result((), 0, '0\t0\n')}, 'have no 30-day TTL'),
             'clickhouse down': ({'ttl30': Result((), 1, '', 'connection refused')}, 'cannot read ClickHouse telemetry'),
@@ -388,14 +389,6 @@ class ConsoleTokenTests(unittest.TestCase):
         _, report, text = run(healthy(streams=Result((), 1, '', 'no such resource')))
         self.assertIn('[BAD] cannot read NATS, its controller, or the streams and consumers (make reconcile UNIT=platform-nats)', report.lines, text)
 
-    def test_alert_problems(self):
-        _, report, text = run(healthy(alerts={'items': []}))
-        self.assertIn('[WARN] alert failures is missing: no push notifications for it (make reconcile UNIT=platform-alerts)',
-                      report.lines, text)
-        _, report, text = run(healthy(providers={'items': []}))
-        self.assertIn('[BAD] alert failures points at provider ntfy-platform, which does not exist, so its notifications are lost '
-                      '(make reconcile UNIT=platform-alerts)', report.lines, text)
-
     def test_channel_problems(self):
         _, report, text = run(healthy())
         self.assertIn(f'[OK] {len(channels.routes(ROOT)["teams"])} team(s) notify a channel, as in Git', report.lines, text)
@@ -428,19 +421,6 @@ class ConsoleTokenTests(unittest.TestCase):
         with mock.patch.object(channels, 'routes', return_value={**channels.routes(ROOT), 'teams': {team: [team] for team in owned}}):
             _, report, text = run(cluster)
         self.assertFalse([line for line in report.lines if 'has no notification channel' in line], text)
-
-    def test_notify_service_problems(self):
-        _, report, text = run(healthy())
-        self.assertIn(f'[OK] the notify service is running {CONSOLE_TAG}, as the console', report.lines, text)
-        stopped = {'spec': {'template': {'spec': {'containers': [{'image': f'x:{CONSOLE_TAG}'}]}}}, 'status': {}}
-        _, report, text = run(healthy(notify=stopped))
-        self.assertTrue(any(line.startswith('[BAD] the notify service is not running') for line in report.lines), text)
-        other = {'spec': {'template': {'spec': {'containers': [{'image': 'x:src-old@sha256:abc'}]}}}, 'status': {'readyReplicas': 1}}
-        _, report, text = run(healthy(notify=other))
-        self.assertIn(f"[WARN] the notify service runs src-old, not the console's {CONSOLE_TAG}: make console-image pins both, "
-                      'then commit and push', report.lines, text)
-        _, report, text = run(healthy(notify=Result((), 1, '', 'NotFound')))
-        self.assertTrue(any(line.startswith('[BAD] cannot read the notify service (notify/notify)') for line in report.lines), text)
 
     def test_image_webhook_problems(self):
         url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
@@ -493,19 +473,38 @@ class ConsoleTokenTests(unittest.TestCase):
 
 
 class AllowedChecksTests(unittest.TestCase):
-    def test_cluster_only_reads_no_secrets_execs_nothing_and_names_what_it_skipped(self):
+    def test_the_cluster_checks_are_swhurl_v2_verify_with_the_named_binary_and_kubeconfig(self):
         runner = healthy()
-        code, report, text = run(runner, allowed=frozenset({'cluster'}))
-        self.assertEqual(code, 0, text)
-        self.assertEqual([e.section for e in report.entries if e.level != 'info'],
-                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Alerts', 'Notify service'] + ['App dashboards and alerts', 'Notifications'])
-        self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, image-automation, isolation, signing-keys, events, egress, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
-                      report.lines)
+        run(runner)
+        self.assertIn(('swhurl-v2', 'verify', '--kubeconfig', '/nonexistent/kubeconfig.json', '--source', 'verify-platform', '--json'),
+                      runner.calls)
+        names = {check.name for check in verify.CHECKS}
+        self.assertEqual(len(names), len(verify.CHECKS))
+        self.assertFalse(names & {name for name, _ in verify.CLUSTER_CHECKS}, 'a check is either Go\'s or Python\'s')
+        self.assertEqual(frozenset().union(*(check.needs for check in verify.CHECKS)), {'cluster', 'secret', 'exec', 'host'})
 
-    def test_every_check_names_only_known_needs(self):
-        self.assertEqual(verify.NEEDS, {'cluster', 'secret', 'exec', 'host'})
-        self.assertEqual(len({check.name for check in verify.CHECKS}), len(verify.CHECKS))
+    def test_the_operations_table_names_go_s_checks_in_go_s_order(self):
+        source = (ROOT / 'v2/observe/platform.go').read_text()
+        body = source[source.index('func PlatformChecks('):]
+        names = re.findall(r'\{"([a-z-]+)", "[^"]+", platform', body[:body.index('\n}\n')])
+        self.assertEqual(names, [name for name, _ in verify.CLUSTER_CHECKS])
+
+    def test_a_binary_that_cannot_start_is_a_failed_check(self):
+        runner = FakeRunner().on('swhurl-v2', 'verify', handler=lambda args, _: (_ for _ in ()).throw(
+            CommandError(args, 'missing required command: swhurl-v2')))
+        with mock.patch.dict('os.environ', {'SWHURL_V2': 'swhurl-v2', 'SWHURL_V2_KUBECONFIG': 'k.json'}):
+            report = Report(io.StringIO())
+            verify.check_cluster(runner, report)
+        self.assertEqual(report.failures, 1)
+        self.assertIn('swhurl-v2 verify did not run: missing required command', report.lines[-1])
+
+    def test_without_the_binary_the_cluster_checks_fail(self):
+        runner = healthy()
+        with mock.patch.dict('os.environ', {'SWHURL_V2': ''}):
+            report = Report(io.StringIO())
+            verify.check_cluster(runner, report)
+        self.assertEqual(report.failures, 1)
+        self.assertIn('swhurl-v2 verify did not run', report.lines[-1])
 
     def test_the_operations_page_lists_the_checks_as_the_registry_does(self):
         page = (ROOT / 'docs/operations.md').read_text()
@@ -519,7 +518,8 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual(loaded.returncode, 0, loaded.stderr)
 
     def test_entries_carry_section_and_level(self):
-        _, report, _ = run(healthy(traefik={'spec': {'template': {'spec': {'containers': [{'args': []}]}}}}))
+        _, report, _ = run(healthy(**{'v2-verify': verify_report(
+            ('flux-units', 'Flux Kustomizations', [('ok', 'a')]), ('ingress', 'Ingress', [('bad', 'Traefik does not redirect HTTP to HTTPS')]))}))
         bad = [e for e in report.entries if e.level == 'bad']
         self.assertEqual([(e.section, e.message[:28]) for e in bad], [('Ingress', 'Traefik does not redirect HT')])
 
@@ -623,19 +623,6 @@ class VerifyConfigTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-
-class DashboardHealthTests(unittest.TestCase):
-    def test_recent_stale_missing_and_suspended(self):
-        now = dt.datetime(2026, 10, 2, 20, tzinfo=dt.UTC)
-        for spec, taken, expected in (({}, now, 0), ({}, now - dt.timedelta(minutes=6), 1),
-                                      ({}, None, 1), ({'suspend': True}, now, 1)):
-            with self.subTest(spec=spec, taken=taken):
-                job = {'spec': spec, 'status': {'lastSuccessfulTime': taken.isoformat()} if taken else {}}
-                out = io.StringIO()
-                report = Report(out)
-                dashboards.check_dashboards(healthy(dashboards=job), report, now)
-                self.assertEqual(report.exit_code(), expected, out.getvalue())
 
 
 class NotificationHeartbeatHostVerifyTests(unittest.TestCase):

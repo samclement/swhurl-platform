@@ -43,6 +43,8 @@ type Fake struct {
 	// Objects are further objects Read answers as present. With Objects set, any other object of a kind the adapter
 	// reads, and the scenario does not name, is absent, as the API server's 404 says.
 	Objects map[observe.Ref][]byte
+	// Collections are further namespace collections ListNamespace answers as present, keyed by a ref without a name.
+	Collections map[observe.Ref][][]byte
 	// Tokens is what Review answers for each token; the API server vouches for no other.
 	Tokens map[string]kube.TokenReview
 	// ConfigMapData and SecretData are each namespace's ConfigMaps and Secrets; SetConfigMapKey changes the first.
@@ -193,15 +195,50 @@ func (f *Fake) list(ref observe.Ref, selector string, all bool) (observe.List, e
 	}
 	body := f.Answers.Collection
 	if body == nil {
-		items := make([]json.RawMessage, 0, len(f.Answers.Items))
-		for _, item := range f.Answers.Items {
-			items = append(items, json.RawMessage(item))
-		}
-		body, _ = json.Marshal(struct {
-			Items []json.RawMessage `json:"items"`
-		}{items})
+		body = collection(f.Answers.Items)
 	}
 	return kube.DecodeCollection(ref, selector, body), nil
+}
+
+// collection is the list document the API server would answer with these items.
+func collection(found [][]byte) []byte {
+	items := make([]json.RawMessage, 0, len(found))
+	for _, item := range found {
+		items = append(items, json.RawMessage(item))
+	}
+	body, _ := json.Marshal(struct {
+		Items []json.RawMessage `json:"items"`
+	}{items})
+	return body
+}
+
+// ListNamespace answers a collection Collections names, else the scenario's pod list, and refuses what the real
+// adapter refuses: a named ref, or no namespace.
+func (f *Fake) ListNamespace(_ context.Context, ref observe.Ref) (observe.List, error) {
+	f.Selectors = append(f.Selectors, "")
+	if f.Refuse != nil {
+		return observe.List{}, f.Refuse
+	}
+	if ref.Name != "" {
+		return observe.List{}, &kube.Error{Code: kube.RefusedRequest, Subject: "resource", Reason: "collection_required"}
+	}
+	if ref.Namespace == "" || !readable(ref) {
+		return observe.List{}, &kube.Error{Code: kube.RefusedRequest, Subject: "resource", Reason: "invalid_namespace"}
+	}
+	if items, ok := f.Collections[ref]; ok {
+		return kube.DecodeCollection(ref, "", collection(items)), nil
+	}
+	if ref != f.Answers.Pods {
+		return observe.List{}, &kube.Error{Code: kube.RefusedRequest, Subject: "resource", Reason: "unsupported_kind"}
+	}
+	if f.Answers.ListReason != "" {
+		return observe.List{Ref: ref, Status: observe.Unavailable, Reason: f.Answers.ListReason}, nil
+	}
+	body := f.Answers.Collection
+	if body == nil {
+		body = collection(f.Answers.Items)
+	}
+	return kube.DecodeCollection(ref, "", body), nil
 }
 
 // Contract is the behaviour every kube.Reader must have: presence, absence, a failed read and an

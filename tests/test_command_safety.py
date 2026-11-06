@@ -41,7 +41,8 @@ class CommandSafetyTests(unittest.TestCase):
         self.env['ROUTES'] = json.dumps(channels.routes(ROOT))
         self.env['CHANNEL_SECRETS'] = '\n'.join(f'secret/channel-{name}' for name in channels.routes(ROOT)['channels'])
         self.env['REPO'], self.env['ISSUER'] = str(ROOT), calling.ISSUER
-        for name in ('kubectl', 'flux', 'aws', 'curl', 'gh', 'systemctl'):
+        self.env.update(SWHURL_V2='swhurl-v2', SWHURL_V2_KUBECONFIG=str(self.bin / 'kubeconfig.json'))
+        for name in ('kubectl', 'flux', 'aws', 'curl', 'gh', 'systemctl', 'swhurl-v2'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
 import base64, datetime, json, os, sys
@@ -52,7 +53,13 @@ scenario = os.environ.get('SCENARIO', 'match')
 argv = sys.argv[1:]
 def emit(obj):
     print(json.dumps(obj))
-if Path(sys.argv[0]).name == 'curl':
+if Path(sys.argv[0]).name == 'swhurl-v2':  # verify: Go decides these checks, so here they are only an answer
+    level = 'bad' if scenario == 'unready' else 'ok'
+    emit({'kind': 'v2-platform-checks', 'version': 1, 'source': 'verify-platform', 'observedAt': '2026-11-06T12:00:00Z',
+          'passed': level == 'ok', 'checks': [{'name': 'flux-units', 'section': 'Flux Kustomizations',
+                                               'entries': [{'level': level, 'message': 'platform-clickstack'}]}]})
+    sys.exit(0 if level == 'ok' else 1)
+elif Path(sys.argv[0]).name == 'curl':
     sys.stdin.read()
     print('HTTP/2 200')
 elif Path(sys.argv[0]).name == 'systemctl':
@@ -104,22 +111,12 @@ elif argv[:3] == ['-n', 'notify', 'get']:
         emit({'items': [{'metadata': {'name': 'notification-routes'}, 'data': {'routes.json': os.environ['ROUTES']}}]})
     else:
         print(os.environ['CHANNEL_SECRETS'])
-elif any(a.startswith('alerts.notification') for a in argv):
-    emit({'items': [{'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures',)]})
-elif any(a.startswith('providers.notification') for a in argv):
-    emit({'items': [{'metadata': {'name': 'p'}}]})
 elif any(a.startswith('receivers') for a in argv):
     emit({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}})
 elif Path(sys.argv[0]).name == 'flux':
     sys.exit(1 if os.environ.get('FLUX_FAIL') else 0)
-elif any(a.startswith('kustomizations') for a in argv):
-    ready = 'False' if scenario == 'unready' else 'True'
-    emit({'items': [{'metadata': {'name': 'platform-clickstack'},
-                     'status': {'conditions': [{'type': 'Ready', 'status': ready, 'message': 'fixture'}]}}]})
 elif 'console-github' in argv:
     emit({'data': {'GITHUB_TOKEN': base64.b64encode(b'fixture-github-token').decode()}})
-elif 'cronjob' in argv and any(n in argv for n in ('console-dashboards', 'console-notifications')):
-    emit({'spec': {}, 'status': {'lastSuccessfulTime': datetime.datetime.now(datetime.timezone.utc).isoformat()}})
 elif 'console-jobs' in argv:
     emit({'data': {}})
 elif 'helmrelease' in argv and 'console' in argv:
@@ -128,10 +125,6 @@ elif 'helmrelease' in argv and 'console' in argv:
 elif 'flux-system' in argv and 'deployment' in argv:
     emit({'metadata': {'labels': {'app.kubernetes.io/version': os.environ['FLUX_VERSION']}},
           'spec': {'template': {'spec': {'containers': [{'args': os.environ['FLUX_ARGS'].split()}]}}}})
-elif 'traefik' in argv:
-    emit({'spec': {'template': {'spec': {'containers': [{'args': [
-        '--entryPoints.web.http.redirections.entryPoint.to=:443',
-        '--entryPoints.web.http.redirections.entryPoint.scheme=https']}]}}}})
 elif 'clickhouse-client' in argv:
     print('9\\t9' if 'toIntervalDay(30)' in argv[-1] else '0')
 elif 'pvc' in argv:
@@ -234,7 +227,7 @@ elif 'secret' in argv:
                  'sys.exit(report.exit_code())\n')
 
         def verify(scenario):
-            argv = ['-m', 'swhurl', 'verify-platform'] if scenario in whole else ['-c', check]
+            argv = ['-m', 'swhurl', 'verify-run'] if scenario in whole else ['-c', check]
             return subprocess.run([sys.executable, *argv], cwd=ROOT,
                                   env=dict(self.env, SCENARIO=scenario, PYTHONPATH=str(ROOT / 'tools')),
                                   capture_output=True, text=True)

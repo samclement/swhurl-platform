@@ -208,6 +208,10 @@ func (f *fakeCluster) ListAllNamespaces(context.Context, observe.Ref, string) (o
 	return observe.List{}, errors.New("unexpected all-namespaces read during restore")
 }
 
+func (f *fakeCluster) ListNamespace(context.Context, observe.Ref) (observe.List, error) {
+	return observe.List{}, errors.New("unexpected namespace read during restore")
+}
+
 // deleted is whether this run has already deleted one kind.
 func (f *fakeCluster) deleted(kind string) bool {
 	created, removed := 0, 0

@@ -34,8 +34,6 @@ def recent_job():
 
 def flux_answers():
     return {
-        'units': {'items': [{'metadata': {'name': 'homelab-b'}, 'status': READY},
-                            {'metadata': {'name': 'homelab-a'}, 'status': READY}]},
         'kustomize-controller': {'metadata': {'labels': {'app.kubernetes.io/version': f'v{flux.pinned_version()}'}},
                                  'spec': {'template': {'spec': {'containers': [
                                      {'args': ['--log-level=info', *flux.required_args()['kustomize-controller']]}]}}}},
@@ -43,19 +41,14 @@ def flux_answers():
         'hooks': [{'active': True, 'events': ['push', 'package', 'registry_package'],
                    'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},
                    'last_response': {'code': 200, 'message': 'OK'}}],
-        'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-platform'}}}]},
-        'providers': {'items': [{'metadata': {'name': 'ntfy-platform'}}]},
     }
 
 
 def flux_rules(runner, answer):
     get = ('kubectl', '-n', 'flux-system', 'get')
-    (runner.on(*get, 'kustomizations.kustomize.toolkit.fluxcd.io', handler=answer('units'))
-     .on(*get, 'deployment', handler=answer('kustomize-controller'))
+    (runner.on(*get, 'deployment', handler=answer('kustomize-controller'))
      .on(*get, 'receivers.notification.toolkit.fluxcd.io', handler=answer('receiver'))
-     .on('gh', 'api', handler=answer('hooks'))  # the push webhook's and each app's image webhook
-     .on(*get, 'alerts.notification.toolkit.fluxcd.io', handler=answer('alerts'))
-     .on(*get, 'providers.notification.toolkit.fluxcd.io', handler=answer('providers')))
+     .on('gh', 'api', handler=answer('hooks')))  # the push webhook's and each app's image webhook
 
 
 def clickstack_answers():
@@ -92,13 +85,31 @@ def clickstack_rules(runner, answer):
      .on('kubectl', 'get', 'pv', handler=answer('pv')))
 
 
-def ingress_answers():
-    return {'traefik': {'spec': {'template': {'spec': {'containers': [
-        {'args': ['--entryPoints.web.http.redirections.entryPoint.scheme=https']}]}}}}}
+def verify_report(*checks):
+    """swhurl-v2 verify's document: ``checks`` are ``(name, section, [(level, message), ...])``."""
+    return {'kind': 'v2-platform-checks', 'version': 1, 'source': 'verify-platform', 'observedAt': '2026-11-06T12:00:00Z',
+            'passed': all(level != 'bad' for _, _, entries in checks for level, _ in entries),
+            'checks': [{'name': name, 'section': section, 'entries': [{'level': level, 'message': message} for level, message in entries]}
+                       for name, section, entries in checks]}
 
 
-def ingress_rules(runner, answer):
-    runner.on('kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', handler=answer('traefik'))
+HEALTHY_CHECKS = (
+    ('flux-units', 'Flux Kustomizations', [('ok', 'homelab-a'), ('ok', 'homelab-b')]),
+    ('ingress', 'Ingress', [('ok', 'Traefik redirects HTTP to HTTPS')]),
+    ('alerts', 'Alerts', [('ok', 'alert failures sends to ntfy-platform')]),
+    ('notify-service', 'Notify service', [('ok', f'the notify service is running {CONSOLE_TAG}, as the console')]),
+    ('dashboards', 'App dashboards and alerts', [('ok', 'dashboard and alert sync succeeded in the last 5 minutes')]),
+    ('notifications', 'Notifications', [('ok', 'notification checker succeeded in the last 5 minutes')]),
+)
+"""What swhurl-v2 verify reports for a healthy cluster: Go decides these checks, so here they are only an answer."""
+
+
+def cluster_answers():
+    return {'v2-verify': verify_report(*HEALTHY_CHECKS)}
+
+
+def cluster_rules(runner, answer):
+    runner.on('swhurl-v2', 'verify', handler=answer('v2-verify'))
 
 
 def policy(app, tag, ready=READY):
@@ -159,12 +170,9 @@ def apps_rules(runner, answer):
 
 def notification_answers():
     return {
-        'notifications': recent_job(),
         'routes': {'items': [{'metadata': {'name': channels.ROUTES_NAME}, 'data': {channels.ROUTES_KEY: json.dumps(
             channels.routes(ROOT))}}]},
         'channel-secrets': Result((), 0, ''.join(f'secret/channel-{name}\n' for name in channels.routes(ROOT)['channels'])),
-        'notify': {'spec': {'template': {'spec': {'containers': [
-            {'image': f'ghcr.io/samclement/swhurl-console:{CONSOLE_TAG}@sha256:abc'}]}}}, 'status': {'readyReplicas': 1}},
     }
 
 
@@ -172,8 +180,6 @@ def notification_rules(runner, answer):
     (runner.on('systemctl', 'is-active', stdout='active\n')
      .on('systemctl', 'show', stdout=('Result=success\nExecMainStatus=0\nExecMainExitTimestamp='
                                       + dt.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z') + '\n'))
-     .on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-notifications', handler=answer('notifications'))
-     .on('kubectl', '-n', 'notify', 'get', 'deployment', 'notify', handler=answer('notify'))
      .on('kubectl', '-n', 'notify', 'get', 'configmaps', handler=answer('routes'))
      .on('kubectl', '-n', 'notify', 'get', 'secrets', '-o', 'name', handler=answer('channel-secrets')))
 
@@ -194,7 +200,6 @@ def backup_rules(runner, answer):
 
 def console_answers():
     return {
-        'dashboards': recent_job(),
         'console-jobs': {'data': {}},
         'console': {'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {'tag': CONSOLE_TAG}}}}}}}},
         'git-diff': Result((), 0),
@@ -208,15 +213,14 @@ def console_rules(runner, answer):
         runner.github.append((args, config))
         return answer('github')(args, config)
 
-    (runner.on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-dashboards', handler=answer('dashboards'))
-     .on('kubectl', '-n', 'console', 'get', 'helmrelease', 'console', handler=answer('console'))
+    (runner.on('kubectl', '-n', 'console', 'get', 'helmrelease', 'console', handler=answer('console'))
      .on('kubectl', '-n', 'console', 'get', 'configmap', 'console-jobs', handler=answer('console-jobs'))
      .on('git', '-C', str(ROOT), 'diff', '--quiet', CONSOLE_TAG, 'HEAD', '--', handler=answer('git-diff'))
      .on('kubectl', '-n', 'console', 'get', 'secret', 'console-github', handler=answer('token'))
      .on('curl', handler=github))
 
 
-AREAS = ((flux_answers, flux_rules), (clickstack_answers, clickstack_rules), (ingress_answers, ingress_rules),
+AREAS = ((flux_answers, flux_rules), (clickstack_answers, clickstack_rules), (cluster_answers, cluster_rules),
          (apps_answers, apps_rules), (notification_answers, notification_rules), (backup_answers, backup_rules),
          (console_answers, console_rules))
 

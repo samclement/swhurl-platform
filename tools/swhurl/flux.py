@@ -201,26 +201,6 @@ def install_main(argv: list[str] | None = None, runner: Runner | None = None, ro
         return 1
 
 
-def check_units(runner: Runner, report: Report) -> None:
-    report.section('Flux Kustomizations')
-    try:
-        units = runner.json(['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
-                             '-o', 'json'])['items']
-    except (CommandError, KeyError, TypeError):
-        report.bad('cannot read Flux kustomizations (kubectl -n flux-system get kustomizations)')
-        return
-    if not units:
-        report.bad('no Flux kustomizations in flux-system, so nothing applies Git: make flux-bootstrap')
-        return
-    for unit in sorted(units, key=lambda u: u['metadata']['name']):
-        name = unit['metadata']['name']
-        status, message = ready_condition(unit)
-        if status == 'True':
-            report.ok(name)
-        else:
-            report.bad(f'{name} is not Ready' + (f': {message}' if message else ''))
-
-
 def check_controllers(runner: Runner, report: Report, root: Path = ROOT) -> None:
     """The controllers run the pinned version with the settings in Git (a plain `flux install` drops them)."""
     report.section('Flux Controllers')
@@ -280,30 +260,3 @@ def check_push_webhook(runner: Runner, report: Report, root: Path = ROOT) -> Non
     else:
         report.warn(f'GitHub\'s latest delivery to {host} returned {last.get("code")} {last.get("message", "")}'.rstrip()
                     + '; see Recent Deliveries on the webhook (Flux still polls every minute)')
-
-
-ALERTS = ('failures',)  # platform/alerts/alerts.yaml
-
-
-def check_alerts(runner: Runner, report: Report) -> None:
-    """The ntfy alerts exist and point at existing providers (v1beta3 objects report no Ready status)."""
-    report.section('Alerts')
-    base = ['kubectl', '-n', 'flux-system', 'get']
-    try:
-        alerts = {a['metadata']['name']: a for a in runner.json([*base, 'alerts.notification.toolkit.fluxcd.io',
-                                                                 '-o', 'json'])['items']}
-        providers = {p['metadata']['name'] for p in runner.json([*base, 'providers.notification.toolkit.fluxcd.io',
-                                                                 '-o', 'json'])['items']}
-    except (CommandError, KeyError, TypeError):
-        report.bad('cannot read Flux alerts and providers (make reconcile UNIT=platform-alerts)')
-        return
-    for name in ALERTS:
-        alert = alerts.get(name)
-        provider = ((alert or {}).get('spec') or {}).get('providerRef', {}).get('name')
-        if alert is None:
-            report.warn(f'alert {name} is missing: no push notifications for it (make reconcile UNIT=platform-alerts)')
-        elif provider not in providers:
-            report.bad(f'alert {name} points at provider {provider}, which does not exist, so its notifications are '
-                       'lost (make reconcile UNIT=platform-alerts)')
-        else:
-            report.ok(f'alert {name} sends to {provider}')

@@ -29,7 +29,7 @@
 {% endif %}
 {% endfor %}
 </div>
-<p class="muted">Flux unit checks are in the list below.{% if checks.skipped %} {{ checks.skipped | length }} more checks read Secrets, run commands in pods or need your machine ({{ checks.skipped | join(', ') }}): run <code>make verify-platform</code>.{% endif %}</p>
+<p class="muted">Flux unit checks are in the list below. The other checks read Secrets, run commands in pods or need your machine: run <code>make verify-platform</code>.</p>
 
 <p class="muted"><a href="/egress">Egress</a>: every app's port on the egress proxy and the hosts outside the cluster it is granted.</p>
 

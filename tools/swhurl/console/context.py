@@ -99,3 +99,4 @@ class Context:
     resumable: Callable[[actions.Job], dict | None]
     apps: Callable[[], list[cluster.AppRow]]
     promotion_status: Callable[[str, str], dict]
+    platform_checks: Callable[[], cluster.Checks]  # swhurl-v2 verify's report, read once per call

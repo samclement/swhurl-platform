@@ -1157,6 +1157,47 @@ Measure cold and warm page reads against the current console before deployment; 
 instance, test signed-out redirects and signed-in pages/forms, and prove a promotion is refused while its own
 change is unapplied without merging a promotion or creating a repository as part of the test.
 
+### Slice: the platform page's checks (approved 6 November 2026)
+
+**Outcome.** The six `verify-platform` checks that only read the cluster, the ones the console's platform page and
+Overview run, are `swhurl-v2 verify`. The console calls the binary and no longer imports `verify`, which took eight
+modules (about 1,340 lines) into its reach. `make verify-platform` runs the same Go checks first, then the remaining
+Python ones, in one report and one exit code.
+
+```text
+console (--in-cluster) ──┐
+                         ├→ swhurl-v2 verify --json → v2-platform-checks → page / Python Report
+make verify-platform ────┘   (kubeconfig, SWHURL_V2)
+```
+
+**Semantics.** A check is one named group (`flux-units`, `ingress`, `alerts`, `notify-service`, `dashboards`,
+`notifications`, in that order; Python's `flux` is `flux-units` because v2's guardrail refuses a string starting
+with a command's name) with a section title and entries, each `ok`, `warn` or `bad` with a message. The
+messages and verdicts are Python's: a unit that is not Ready, a missing redirect, an alert pointing at no provider, a
+notify service with no ready replica, a suspended CronJob or one with no success in five minutes are `bad`; a missing
+alert and a notify service on another image than the console's are `warn`. A failed read is `bad` ("cannot read …"),
+never absence; an absent object is `bad` too and says it is missing. The time is the caller's.
+
+**Boundaries.** The decisions are pure, in `observe` (`v2/observe/platform.go`: a pure package may not import another, and
+the checks judge `observe`'s reads); one orchestration use case makes the reads; the command
+parses flags, connects with `--kubeconfig` or `--in-cluster` (status's credential path) and prints. The kube adapter
+gains the Flux `Alert` and `Provider` kinds (`notification.toolkit.fluxcd.io/v1beta3`) and one explicit read,
+`ListNamespace`: every object of a kind in one namespace, with no selector, because the root Flux units carry no label
+to select them by. `List` keeps its mandatory selector. Python owns only the merge into its `Report` and the console's
+presentation; the console's page no longer names the checks it skips, only that `make verify-platform` runs more.
+
+**Contract.** `--json` prints `{"kind":"v2-platform-checks","version":1,"source":…,"observedAt":…,"passed":bool,
+"checks":[{"name","section","entries":[{"level","message"}]}]}`; without it, the `== section ==` and `[OK]` lines
+Python prints. Exit 0 when no entry is `bad`, 1 when one is (the report is still printed), 2 for a usage error, an
+unusable credential or a request the adapter refuses. The Python consumer validates kind, version and levels and
+shows unavailable on anything else. Reads per run: three namespace lists (units, alerts, providers) and five gets,
+independent of the number of instances.
+
+**Acceptance.** Go table tests for each check (ready, not ready, empty, failed and absent reads, stale, suspended,
+warn cases); adapter contract tests for `ListNamespace` against the real adapter and the fake; `FakeRunner` tests for
+the console and the merge; `make check-v2`, `make check`. Live: `make verify-platform` and the platform page agree
+with the current results (84 OK, no BAD or WARN), and the console's image runs the binary for the page.
+
 ## 12. The notify service in Go (approved 5 November 2026)
 
 The operator approved porting the [notify service](services.md#notify-service) to `swhurl-v2 notify-serve`, run from

@@ -23,7 +23,21 @@ What has been verified on the live cluster, and when: current facts first, then 
   host/fixture/new-script Bash syntax and `git diff --check` passed. Independent read-only review found no issues.
   Added regressions reject non-finite/overflowing backup ages and prove a missing Git input stops content-tag
   generation without printing a partial tag. Both image tags equal the previous inline CI computation.
-- **Delivery:** push, rebuilt-console rollout and post-delivery verification are not yet performed.
+- **Delivered:** `e7f5dadf` passed all nine Validate jobs in run `42282142672`; `93e37f44` pinned image
+  `src-2f1fd168b247a7c2`. Flux reconciliation succeeded, the console HelmRelease reached Ready, and the notify
+  service runs the same image. Both scheduled console checks succeeded within five minutes on the new image.
+  Post-delivery `make verify-platform` returned 83 OK, zero warnings and one BAD: the existing retention check
+  counted 33 failed ClickHouse merges in the last hour. All fifteen Go checks passed; `make app-status
+  APP=demo-shop ENV=staging` reported healthy. This is not a fully healthy-platform claim.
+- **Console outage during deployment:** the operator saw “no available server” while the existing `Recreate`
+  strategy had no ready backend. Events showed roughly 110 seconds from the old console's termination request to
+  creation of its replacement. Concurrent console CronJobs spent about 105 seconds pulling the new image; the
+  replacement console's own pull took 2.6 seconds. The relative contribution of graceful shutdown versus image
+  availability to the gap was not isolated. The new console started at 19:48:57 UTC, its probes returned 200 and
+  its service endpoint became ready. Its direct homepage
+  returned 401 without identity, direct health returned 200, and public HTTP/HTTPS returned 301/302 signed out.
+  The operator confirmed browser recovery. No manual cluster patch or rollout-strategy change was made;
+  overlap safety for background jobs has not been evaluated. Allow for this deployment gap in subsequent slices.
 
 ## ClickHouse merge rewrites (2 November 2026)
 

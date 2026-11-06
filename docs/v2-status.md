@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: in progress
-Gate: the rest of verify-platform, slice 1 of 4 ([contract](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026))
+Status: blocked
+Gate: choose the webhook settings source for verify slice 2 (GitHub)
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —

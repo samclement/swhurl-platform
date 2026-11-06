@@ -4682,6 +4682,32 @@ On 25 October, pushed `2eaeaea4`, then `1262960f` and `ad334338` (the backup tes
   No app image, record, credential, retained data or backup destination changed, and existing app
   repositories' workflow pins stay unchanged.
 
+## The platform page's checks leave Python (6 November 2026)
+
+- **Approved scope:** the six `verify-platform` checks that only read the cluster (Flux units, the Traefik redirect,
+  Flux alerts, the notify service, the console's dashboard and notification CronJobs) become `swhurl-v2 verify`, and
+  the console calls it instead of importing `verify`
+  ([contract](iteration-2-plan.md#slice-the-platform-pages-checks-approved-6-november-2026)). The Python checks,
+  `kube.cronjob_run`, the console's skipped-check filter and their tests are deleted; the console no longer reaches
+  `verify`, `apps/checks`, `recovery`, `backupset`, `sqlite_backup`, `notifications/checks`, `notifications/heartbeat`
+  or `apps/images` (82 to 74 of 114 modules). Python's `flux` check is named `flux-units`: v2's guardrail refuses a
+  string that starts with a command's name.
+- **Independent review:** no P0; two P1s (the plan named `flux` and a `health` package; bootstrap did not list Go,
+  which `make install`'s verify step now needs) and P2s (a binary that cannot start aborted the run, Go's names and the
+  operations table could drift, a notify message order, three copies of the credential choice, three stale doc
+  lines); all fixed, the first two P2s with tests.
+- **Offline verification:** `make check-v2` (Go table tests for every check, `ListNamespace` contract tests against
+  the real adapter and the fake, the command against a test API server), `make check` (650 tests), host/fixture shell
+  syntax and `git diff --check` passed.
+- **Live delivery:** `373ee676`; Validate `42180929751` passed every job and `ee06abb6` pinned console image
+  `src-29da498cc8db1879`; `make flux-reconcile` applied every unit and the console rolled out. In the pod,
+  `swhurl-v2 verify --in-cluster` read all eight objects with the console's ServiceAccount (no RBAC change) and
+  passed. Through a port-forward with a set sign-in header, Overview and Platform returned 200 and said all 36 checks
+  pass and all 31 units are applied; signed out, https redirects to Google sign-in and http to https. `make
+  verify-platform` (28 s, building the binary) passed with 83 OK, one WARN (`swhurl-try-10`'s latest image webhook
+  delivery returned 502) and no BAD, and the Apps page shows all 10 instances healthy. No record, credential or
+  retained data changed.
+
 ## The template check leaves Python (5 November 2026)
 
 - **Approved scope:** `make check-templates` becomes [`v2/check-templates.sh`](../v2/check-templates.sh) with the names

@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: in progress
-Gate: live acceptance of the platform page's checks in Go
+Status: blocked
+Gate: choose the next Python retirement slice
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -33,7 +33,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Backup and restore | done | [record](current-state.md#the-first-content-changing-restore-swhurl-try-10-staging-moved-back-a-day-27-october-2026) |
 | Promotion and rollback | done | [record](current-state.md#a-rollback-exercised-live-2-november-2026) |
 | Image declaration producer in Go | done | [workflow rollout](current-state.md#go-producer-adoption-by-template-workflows-5-november-2026) |
-| Platform page's checks in Go (`swhurl-v2 verify`) | partial | [contract](iteration-2-plan.md#slice-the-platform-pages-checks-approved-6-november-2026) |
+| Platform page's checks in Go (`swhurl-v2 verify`) | done | [record](current-state.md#the-platform-pages-checks-leave-python-6-november-2026) |
 | Template check without Python but Copier | done | [record](current-state.md#the-template-check-leaves-python-5-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
 | Bulk status and revision evidence | done | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |

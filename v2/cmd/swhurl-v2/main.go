@@ -70,7 +70,8 @@ const usage = `usage:
   swhurl-v2 team --records DIR --team TEAM --action ACTION --profile PROFILE.json --out DIR \
       [--description TEXT] [--rename NEW] [--transport ntfy]
   swhurl-v2 workstreams --repo-root DIR
-  swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--source NAME] [--json]
+  swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--scope cluster] [--source NAME] [--json]
+  swhurl-v2 verify --scope platform --kubeconfig KUBECONFIG.json --root DIR [--console-tag TAG] [--source NAME] [--json]
   swhurl-v2 notify-serve [--listen ADDR]
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
@@ -124,13 +125,22 @@ Every report includes promotion:{ready,reason}, evaluated for the selected diges
 --reviewed-digest DIGEST to evaluate the submitted review instead (including an empty/invalid digest, which refuses
 readiness). It is forbidden with --all. This is a submission-time observation, not a later manual-merge guarantee.
 
-verify runs the platform checks that only read the cluster — every Flux unit Ready, Traefik's HTTPS redirect, the
-Flux alerts and their providers, the notify service on the console's image, and the console's dashboard and
-notification CronJobs succeeding within five minutes — with the credential status takes. It prints each check's
-section and [OK], [WARN] or [BAD] lines, or with --json the v2-platform-checks document (version 1). A failed read is
-a bad entry, never absence. The exit status is 1 when an entry is bad, after the report is printed, and 2 for a usage
-error, an unusable credential or a request the adapter refuses. make verify-platform runs it before the checks that
-read Secrets, run commands in pods or need the host.
+verify runs the platform checks. --scope cluster, the default and what the console runs, is the six that only read
+the cluster — every Flux unit Ready, Traefik's HTTPS redirect, the Flux alerts and their providers, the notify service
+on the console's image, and the console's dashboard and notification CronJobs succeeding within five minutes — with
+the credential status takes. --scope platform is all of them: those six, then the checks that compare the cluster with
+the checkout at --root (its v2 records, compiled tree, profile and egress allocation), the registry and the object
+store — each app's ImagePolicy and staging image, app isolation, the token issuer and signing keys, NATS and the
+declared streams and consumers, the egress proxy and its ports, the notification routes and channel Secrets, the
+MongoDB and SQLite backups, and the console's image against --console-tag (the checkout's content tag,
+images/content-tag.sh console) and its job record. It needs --kubeconfig (--in-cluster is a usage error); registry
+reads are anonymous; the object store is read with AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN from
+the environment, and a backup is too old after BACKUP_MAX_AGE_HOURS (default 26). An input it needs but was not given
+(the credentials, the tag) is a bad entry saying it was not supplied. It prints each check's section and [OK], [WARN]
+or [BAD] lines, or with --json the v2-platform-checks document (version 1). A failed read is a bad entry, never
+absence. The exit status is 1 when an entry is bad, after the report is printed, and 2 for a usage error, an unusable
+credential or a request an adapter refuses. make verify-platform runs the platform scope before the checks that read
+Secrets, run commands in pods or need the host.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
@@ -360,12 +370,18 @@ func registryReader(image string) (registry.Reader, error) {
 // archiveReader is the object-store reader the command builds from the operator's own credentials. They are
 // read from the environment and never written down, and the region is the bucket's own when none is given.
 func archiveReader(bucket, region string) (s3.Reader, error) {
-	credentials := s3.Credentials{AccessKey: os.Getenv("AWS_ACCESS_KEY_ID"),
-		SecretKey: os.Getenv("AWS_SECRET_ACCESS_KEY"), SessionToken: os.Getenv("AWS_SESSION_TOKEN")}
-	if credentials.AccessKey == "" || credentials.SecretKey == "" {
+	credentials, supplied := awsCredentials()
+	if !supplied {
 		return nil, errors.New("invalid: credentials: aws_credentials_are_not_set")
 	}
 	return s3.New(region, credentials, &http.Client{Timeout: 30 * time.Second}), nil
+}
+
+// awsCredentials are the operator's object-store credentials, from the environment; false when they are not set.
+func awsCredentials() (s3.Credentials, bool) {
+	credentials := s3.Credentials{AccessKey: os.Getenv("AWS_ACCESS_KEY_ID"),
+		SecretKey: os.Getenv("AWS_SECRET_ACCESS_KEY"), SessionToken: os.Getenv("AWS_SESSION_TOKEN")}
+	return credentials, credentials.AccessKey != "" && credentials.SecretKey != ""
 }
 
 // commands is every command and the step that runs it, in one table so the dispatcher and the usage check
@@ -410,6 +426,7 @@ type request struct {
 	reviewedDigestSet                                  bool
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
+	scope, root, consoleTag                            string
 	region                                             string
 	from                                               string
 	archive                                            bool
@@ -625,6 +642,9 @@ func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) boo
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
 		flags.Var(&once{value: &r.source}, "source", "name of the evidence source (default: the kubeconfig's current context)")
 		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-platform-checks document instead of the text")
+		flags.Var(&once{value: &r.scope}, "scope", "cluster (the default) or platform")
+		flags.Var(&once{value: &r.root}, "root", "the checkout the platform scope compares the cluster with")
+		flags.Var(&once{value: &r.consoleTag}, "console-tag", "the checkout's console content tag (platform scope)")
 	case "restore":
 		r.registerLive(flags)
 		flags.Var(&once{value: &r.from}, "from", "the archive to restore (default: the newest)")
@@ -802,12 +822,23 @@ func (r *request) statusNamed() []string {
 	return []string{r.records, r.app, r.env, r.profile, r.revision}
 }
 
-// verifyNamed is exactly one credential, a kubeconfig or the pod's own ServiceAccount: neither or both is a usage error.
+// verifyNamed is the cluster scope's exactly one credential, a kubeconfig or the pod's own ServiceAccount (neither or
+// both is a usage error), or the platform scope's kubeconfig and checkout: the pod's ServiceAccount cannot read what
+// the platform scope needs, and the cluster scope compares with no checkout.
 func (r *request) verifyNamed() []string {
-	if (r.kubeconfig != "") == r.inCluster {
-		return []string{""}
+	switch r.scope {
+	case "", "cluster":
+		if (r.kubeconfig != "") == r.inCluster || r.root != "" || r.consoleTag != "" {
+			return []string{""}
+		}
+		return []string{}
+	case "platform":
+		if r.inCluster {
+			return []string{""}
+		}
+		return []string{r.kubeconfig, r.root}
 	}
-	return []string{}
+	return []string{""}
 }
 
 // appNamed is what a command that works on one app needs: migrate reads a snapshot, promote the records tree; both

@@ -8,24 +8,17 @@ import base64
 import datetime as dt
 import json
 
-from swhurl import ROOT, clickstack, flux, platform
-from swhurl.apps import calling, channels
+from swhurl import clickstack, flux, platform
 from swhurl.run import FakeRunner, Result
 
 KEY = 'fixture-team-ingestion-key-0001'
 CONSOLE_TAG = 'b63d2aff9dfd4cf9df0307e382038dcbd15e29ed'
 TOKEN = 'github_pat_fixture_token_0001'
-COMPILED = ROOT / 'v2-apps/instances'
 READY = {'conditions': [{'type': 'Ready', 'status': 'True'}]}
 
 
 def b64(value: bytes | str) -> str:
     return base64.b64encode(value.encode() if isinstance(value, str) else value).decode()
-
-
-def fresh_backup(hours=1):
-    taken = dt.datetime.now(dt.UTC) - dt.timedelta(hours=hours)
-    return f'clickstack-mongodb-{taken:%Y%m%dT%H%M%SZ}.archive.gz.age'
 
 
 def recent_job():
@@ -101,108 +94,45 @@ HEALTHY_CHECKS = (
     ('dashboards', 'App dashboards and alerts', [('ok', 'dashboard and alert sync succeeded in the last 5 minutes')]),
     ('notifications', 'Notifications', [('ok', 'notification checker succeeded in the last 5 minutes')]),
 )
-"""What swhurl-v2 verify reports for a healthy cluster: Go decides these checks, so here they are only an answer."""
+"""What swhurl-v2 verify (its cluster scope, the console's) reports for a healthy cluster: Go decides these checks, so
+here they are only an answer."""
+
+PLATFORM_CHECKS = (
+    *HEALTHY_CHECKS,
+    ('image-automation', 'Image Automation', [('ok', 'demo-shop-staging: newest image 1-abc1234, deployed')]),
+    ('isolation', 'App isolation', [('ok', '1 app namespace(s) have a registered team, the platform quota and a NetworkPolicy')]),
+    ('signing-keys', 'Call identity', [('ok', "v2/testdata/profile.json states the cluster's 1 signing key(s)"),
+                                       ('ok', 'token issuer is https://kubernetes.default.svc.cluster.local')]),
+    ('events', 'Events', [('ok', 'NATS is running'), ('ok', 'the stream controller is running')]),
+    ('egress', 'Egress proxy', [('ok', 'the egress proxy runs 2 replicas'), ('ok', '1 instance(s) each have a port of their own')]),
+    ('channels', 'Notification channels', [('ok', '1 team(s) notify a channel, as in Git'), ('ok', '1 channel(s) have their Secret')]),
+    ('backups', 'Backups', [('ok', 'newest MongoDB backup in s3://bucket/clickstack-mongodb/ is 1.0 h old')]),
+    ('sqlite-backups', 'App SQLite backups', [('ok', 'no app has a SQLite database')]),
+    ('console', 'Console', [('ok', f'console image {CONSOLE_TAG[:7]} is built from the current tooling')]),
+)
+"""What swhurl-v2 verify --scope platform, verify-platform's, reports for a healthy platform."""
 
 
 def cluster_answers():
-    return {'v2-verify': verify_report(*HEALTHY_CHECKS)}
+    return {'v2-verify': verify_report(*PLATFORM_CHECKS)}
 
 
 def cluster_rules(runner, answer):
     runner.on('swhurl-v2', 'verify', handler=answer('v2-verify'))
 
 
-def policy(app, tag, ready=READY):
-    """An app's ImagePolicy as Flux reports it: ``tag`` is the newest image it picked."""
-    return {'metadata': {'name': f'{app}-staging', 'labels': {'platform.swhurl.com/app': app}},
-            'status': ready | {'latestRef': {'tag': tag}}}
-
-
-def compiled():
-    """Every instance v2 compiled from the records: ``(app, env, folder)``, the objects Git declares."""
-    return [(folder.parent.name, folder.name, folder) for folder in sorted(COMPILED.glob('*/*')) if folder.is_dir()]
-
-
-def declared(folder, name):
-    return json.loads((folder / name).read_text())
-
-
-def declared_events():
-    """Every stream and consumer v2 rendered: the events the instances publish and subscribe to."""
-    return [declared(folder, path.name) for _app, _env, folder in compiled()
-            for path in sorted(folder.glob('stream.json')) + sorted(folder.glob('consumer-*.json'))]
-
-
-def apps_answers():
-    """The isolation and event checks walk the instances v2 compiled: a healthy cluster has exactly them."""
-    folders = [folder for _app, _env, folder in compiled()]
-    return {
-        # Image automation resolves a tag in the registry, so the healthy cluster has no ImagePolicy to judge;
-        # V2ImageAutomationTests adds one with a fake registry.
-        'policies': {'items': []},
-        'app-namespaces': {'items': [declared(folder, 'namespace.json') for folder in folders]},
-        'quotas': {'items': [declared(folder, 'resourcequota.json') for folder in folders]},
-        'network-policies': {'items': [declared(folder, 'networkpolicy.json') for folder in folders]},
-        'nats': {'status': {'readyReplicas': 1}},
-        'nats-controller': {'status': {'readyReplicas': 1}},
-        'egress': {'spec': {'replicas': 2}, 'status': {'readyReplicas': 2}},
-        'streams': {'items': [doc | {'status': READY} for doc in declared_events()]},
-        'jwks': json.loads(json.loads((ROOT / calling.SIGNING_KEYS_FILE).read_text())['auth']['keys']),
-        'openid': {'issuer': calling.ISSUER},
-        'deployments': {'items': []},  # where app SQLite databases are looked for
-    }
-
-
-def apps_rules(runner, answer):
-    get = ('kubectl', '-n', 'flux-system', 'get')
-    (runner.on(*get, 'imagepolicies.image.toolkit.fluxcd.io', handler=answer('policies'))
-     .on('kubectl', 'get', 'namespaces', '-l', 'platform.swhurl.com/app', handler=answer('app-namespaces'))
-     .on('kubectl', 'get', 'resourcequotas', handler=answer('quotas'))
-     .on('kubectl', 'get', 'networkpolicies.networking.k8s.io', handler=answer('network-policies'))
-     .on('kubectl', '-n', 'messaging', 'get', 'statefulset', 'nats', handler=answer('nats'))
-     .on('kubectl', '-n', 'messaging', 'get', 'deployment', 'nats-controller', handler=answer('nats-controller'))
-     .on('kubectl', 'get', 'streams.jetstream.nats.io,consumers.jetstream.nats.io', handler=answer('streams'))
-     .on('kubectl', '-n', 'egress', 'get', 'deployment', 'egress', handler=answer('egress'))
-     .on('kubectl', 'get', '--raw', '/openid/v1/jwks', handler=answer('jwks'))
-     .on('kubectl', 'get', '--raw', '/.well-known/openid-configuration', handler=answer('openid'))
-     .on('kubectl', 'get', 'deployments', '--all-namespaces', handler=answer('deployments')))
-
-
 def notification_answers():
-    return {
-        'routes': {'items': [{'metadata': {'name': channels.ROUTES_NAME}, 'data': {channels.ROUTES_KEY: json.dumps(
-            channels.routes(ROOT))}}]},
-        'channel-secrets': Result((), 0, ''.join(f'secret/channel-{name}\n' for name in channels.routes(ROOT)['channels'])),
-    }
+    return {}
 
 
 def notification_rules(runner, answer):
     (runner.on('systemctl', 'is-active', stdout='active\n')
      .on('systemctl', 'show', stdout=('Result=success\nExecMainStatus=0\nExecMainExitTimestamp='
-                                      + dt.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z') + '\n'))
-     .on('kubectl', '-n', 'notify', 'get', 'configmaps', handler=answer('routes'))
-     .on('kubectl', '-n', 'notify', 'get', 'secrets', '-o', 'name', handler=answer('channel-secrets')))
-
-
-def backup_answers():
-    return {'remote': [f'clickstack-mongodb/{fresh_backup()}', f'clickstack-mongodb/{fresh_backup()[:-15]}.json']}
-
-
-def backup_rules(runner, answer):
-    def listing(args, _):
-        prefix = args[args.index('--prefix') + 1]
-        if prefix.startswith('clickstack-mongodb/'):
-            return answer('remote')(args, _)
-        stamp = fresh_backup()[len('clickstack-mongodb-'):-len('.archive.gz.age')]
-        return Result(args, 0, json.dumps([f'{prefix}sqlite-{stamp}.db.age', f'{prefix}sqlite-{stamp}.json']))
-    runner.on('aws', 's3api', 'list-objects-v2', handler=listing)
+                                      + dt.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z') + '\n')))
 
 
 def console_answers():
     return {
-        'console-jobs': {'data': {}},
-        'console': {'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {'tag': CONSOLE_TAG}}}}}}}},
-        'git-diff': Result((), 0),
         'token': {'data': {'GITHUB_TOKEN': b64(TOKEN)}},
         'github': Result((), 0, 'HTTP/2 200\r\ngithub-authentication-token-expiration: 2099-01-01 00:00:00 UTC\r\n\r\n'),
     }
@@ -213,16 +143,12 @@ def console_rules(runner, answer):
         runner.github.append((args, config))
         return answer('github')(args, config)
 
-    (runner.on('kubectl', '-n', 'console', 'get', 'helmrelease', 'console', handler=answer('console'))
-     .on('kubectl', '-n', 'console', 'get', 'configmap', 'console-jobs', handler=answer('console-jobs'))
-     .on('git', '-C', str(ROOT), 'diff', '--quiet', CONSOLE_TAG, 'HEAD', '--', handler=answer('git-diff'))
-     .on('kubectl', '-n', 'console', 'get', 'secret', 'console-github', handler=answer('token'))
+    (runner.on('kubectl', '-n', 'console', 'get', 'secret', 'console-github', handler=answer('token'))
      .on('curl', handler=github))
 
 
 AREAS = ((flux_answers, flux_rules), (clickstack_answers, clickstack_rules), (cluster_answers, cluster_rules),
-         (apps_answers, apps_rules), (notification_answers, notification_rules), (backup_answers, backup_rules),
-         (console_answers, console_rules))
+         (notification_answers, notification_rules), (console_answers, console_rules))
 
 
 def healthy(**overrides):

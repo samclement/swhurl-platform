@@ -210,14 +210,21 @@ func fixtures(t *testing.T) map[string][]byte {
 func readerWith(t *testing.T, scenario kubetest.Answers) (kube.Reader, *apiServer) {
 	t.Helper()
 	documents := fixtures(t)
-	// The scenario's object is a Deployment or a Certificate: both collections are the kind's plural.
-	documents[strings.ToLower(scenario.Object.Kind)+"s/"+scenario.Object.Name] = scenario.Document
+	documents[collectionOf(scenario.Object.Kind)+"/"+scenario.Object.Name] = scenario.Document
 	server := &apiServer{answers: scenario, documents: documents}
 	reader, err := kube.New(endpoint, &http.Client{Transport: server}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return reader, server
+}
+
+// collectionOf is the collection the API server addresses a recorded kind's objects by: its plural.
+func collectionOf(kind string) string {
+	if kind == "ImagePolicy" {
+		return "imagepolicies"
+	}
+	return strings.ToLower(kind) + "s"
 }
 
 func TestContract(t *testing.T) {
@@ -234,6 +241,22 @@ func TestContractForACertificate(t *testing.T) {
 		reader, _ := readerWith(t, scenario)
 		return reader
 	})
+}
+
+// The kinds the platform checks read — an app's ImagePolicy, NATS's StatefulSet, a stream and a consumer — are read
+// the same way: the contract runs around each recorded document, so each stated group, version and collection is the
+// one its document carries.
+func TestContractForThePlatformChecksKinds(t *testing.T) {
+	for _, fixture := range []string{"imagepolicy.json", "statefulset.json", "stream.json", "consumer.json"} {
+		t.Run(fixture, func(t *testing.T) {
+			scenario := answersAbout(t, fixture)
+			scenario.Pods.Namespace = "hello-staging" // the recorded pods' own namespace
+			kubetest.Contract(t, scenario, func(t *testing.T, scenario kubetest.Answers) kube.Reader {
+				reader, _ := readerWith(t, scenario)
+				return reader
+			})
+		})
+	}
 }
 
 // A certificate is read only: v2 neither creates nor deletes one, so the writable table refuses it.
@@ -689,6 +712,10 @@ func TestRefOfStatesTheVersion(t *testing.T) {
 		{"batch", "Job", "batch/v1"},
 		{"networking.k8s.io", "Ingress", "networking.k8s.io/v1"},
 		{"cert-manager.io", "Certificate", "cert-manager.io/v1"},
+		{"apps", "StatefulSet", "apps/v1"},
+		{"image.toolkit.fluxcd.io", "ImagePolicy", "image.toolkit.fluxcd.io/v1"},
+		{"jetstream.nats.io", "Stream", "jetstream.nats.io/v1beta2"},
+		{"jetstream.nats.io", "Consumer", "jetstream.nats.io/v1beta2"},
 	} {
 		ref, err := kube.RefOf(tt.group, tt.kind, "hello-staging", "hello")
 		if err != nil || ref.APIVersion != tt.apiVersion || ref.Kind != tt.kind {

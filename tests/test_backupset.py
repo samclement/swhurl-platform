@@ -1,4 +1,4 @@
-"""A backup set (backupset): names, newest, age, the metadata file and fetching from S3; offline."""
+"""A backup set (backupset): names, newest, the metadata file and fetching from S3; offline."""
 import datetime as dt
 import json
 import shutil
@@ -7,11 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl import ROOT, platform, recovery, sqlite_backup
+from swhurl import ROOT, platform, recovery
 from swhurl.backupset import BackupError, BackupSet, sha256
 from swhurl.run import FakeRunner, Result
-
-NOW = dt.datetime(2026, 10, 2, 12, 0, 0, tzinfo=dt.UTC)
 
 
 class PlatformLocationTests(unittest.TestCase):
@@ -44,7 +42,7 @@ class BackupSetTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.dir)
         # The two producers: every rule below holds for both.
         self.sets = {'mongodb': recovery.backups(self.dir / 'backups'),
-                     'sqlite': sqlite_backup.backups_in(self.dir / 'backups/sqlite/notes-staging')}
+                     'sqlite': BackupSet(self.dir / 'backups/sqlite/notes-staging', 'sqlite', '.db.age')}
 
     def each(self):
         for name, backups in self.sets.items():
@@ -84,14 +82,7 @@ class BackupSetTests(unittest.TestCase):
                      backups.metadata_path(half).name.replace('.json', '.txt')]
             self.assertEqual(backups.newest(names), new.name, 'an archive without its metadata is no backup')
             self.assertIsNone(backups.newest([]))
-            self.assertIsNone(backups.age(NOW, ['notes.txt']))
-
-    def test_age_of_a_listing(self):
-        for backups in self.each():
-            done, half = backups.path('20261001T120000Z'), backups.path('20261002T115900Z')
-            remote = [done.name, backups.metadata_path(done).name, half.name]
-            self.assertEqual(backups.age(NOW, remote), dt.timedelta(days=1), 'an archive without its metadata is no backup')
-            self.assertIsNone(backups.age(NOW, [backups.metadata_path(half).name]), 'nor is a metadata file alone')
+            self.assertIsNone(backups.newest(['notes.txt', backups.metadata_path(half).name]), 'nor is a metadata file alone')
 
     def test_read_checks_the_archive_against_its_metadata(self):
         for backups in self.each():

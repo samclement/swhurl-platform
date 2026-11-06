@@ -118,3 +118,28 @@ func TestDataFakeRecordsAndCanFail(t *testing.T) {
 		t.Fatalf("calls %v, want %v", fake.Calls, want)
 	}
 }
+
+func TestIssuerContract(t *testing.T) {
+	want := kube.SigningKeys{Issuer: "https://kubernetes.default.svc.cluster.local", Keys: []byte(`{"keys":[{"kid":"a"}]}`)}
+	kubetest.IssuerContract(t, want, func(t *testing.T, want kube.SigningKeys) kube.Issuer {
+		fake := kubetest.New(kubetest.Answers{})
+		fake.Signing = want
+		return fake
+	})
+}
+
+// A collection the scenario names is answered by List and ListAllNamespaces too, whatever the selector.
+func TestFakeAnswersNamedCollectionsToEveryList(t *testing.T) {
+	fake := kubetest.New(kubetest.Answers{})
+	item := []byte(`{"metadata":{"name":"hello-staging"}}`)
+	namespaces := observe.Ref{APIVersion: "v1", Kind: "Namespace"}
+	fake.Collections = map[observe.Ref][][]byte{namespaces: {item}}
+	list, err := fake.List(t.Context(), namespaces, "platform.swhurl.com/app")
+	if err != nil || list.Status != observe.Present || len(list.Items) != 1 {
+		t.Fatalf("%+v, %v", list, err)
+	}
+	fake.Failing = map[string]error{"signing-keys": errRefused}
+	if _, err := fake.SigningKeys(t.Context()); err != errRefused {
+		t.Fatalf("a failing read: %v", err)
+	}
+}

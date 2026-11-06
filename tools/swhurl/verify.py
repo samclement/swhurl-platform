@@ -5,10 +5,12 @@ section heading; any ``[BAD]`` makes the exit code 1. Key values are
 registered with the runner as secrets, so they are redacted from every message
 and never printed, even when a comparison fails.
 
-The checks that only read the cluster are ``swhurl-v2 verify``'s, run first (``CLUSTER_CHECKS``); the make recipe
-builds the binary and names it and the caller's kubeconfig in ``SWHURL_V2`` and ``SWHURL_V2_KUBECONFIG``. The others
-live beside what they check (``flux.py``, ``clickstack.py``, ``apps/checks.py``, ``notifications/checks.py``,
-``console/checks.py``, the backup modules) and are listed in ``CHECKS``.
+The checks that read the cluster, this checkout, the registry and S3 are ``swhurl-v2 verify --scope platform``'s,
+run first (``CLUSTER_CHECKS``); the make recipe builds the binary and names it, the caller's kubeconfig and this
+checkout's console content tag in ``SWHURL_V2``, ``SWHURL_V2_KUBECONFIG`` and ``SWHURL_V2_CONSOLE_TAG``, and exports
+the AWS credentials it lists S3 with. The others, which read Secrets, run commands in pods or need this host or
+GitHub, live beside what they check (``flux.py``, ``clickstack.py``, ``apps/checks.py``, ``notifications/checks.py``,
+``console/checks.py``) and are listed in ``CHECKS``.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from swhurl import clickstack, flux, platform_checks, recovery, sqlite_backup
+from swhurl import ROOT, clickstack, flux, platform_checks
 from swhurl.apps import checks as apps
 from swhurl.console import checks as console
 from swhurl.notifications import checks as notifications
@@ -25,26 +27,46 @@ from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 CLUSTER_CHECKS = (
-    ('flux-units', 'Every Flux unit is Ready'),
-    ('ingress', 'Traefik redirects HTTP to HTTPS'),
-    ('alerts', 'The Flux failure Alert exists and its provider does (a missing Alert warns)'),
-    ('notify-service', "The notify service runs, on the console's image (another image warns)"),
-    ('dashboards', 'The platform webhook, dashboard and alert sync succeeded within five minutes'),
-    ('notifications', 'The notification checker succeeded within five minutes'),
+    ('flux-units', 'cluster', 'Every Flux unit is Ready'),
+    ('ingress', 'cluster', 'Traefik redirects HTTP to HTTPS'),
+    ('alerts', 'cluster', 'The Flux failure Alert exists and its provider does (a missing Alert warns)'),
+    ('notify-service', 'cluster', "The notify service runs, on the console's image (another image warns)"),
+    ('dashboards', 'cluster', 'The platform webhook, dashboard and alert sync succeeded within five minutes'),
+    ('notifications', 'cluster', 'The notification checker succeeded within five minutes'),
+    ('image-automation', 'cluster checkout registry',
+     "Every app's ImagePolicy is Ready and staging runs the image its record states (warns otherwise)"),
+    ('isolation', 'cluster checkout',
+     'Every instance v2 compiled has its namespace, a registered team, the platform quota and a NetworkPolicy'),
+    ('signing-keys', 'cluster checkout', "The signing keys and token issuer apps were given are the cluster's"),
+    ('events', 'cluster checkout', 'NATS and its controller run, and every stream and consumer v2 rendered is Ready'),
+    ('egress', 'cluster checkout', 'The egress proxy runs both replicas, with a port of its own for every instance v2 compiled'),
+    ('channels', 'cluster checkout',
+     "The team routes are Git's and every channel has its Secret (a team without a channel warns)"),
+    ('backups', 'cluster s3',
+     'The newest MongoDB backup in S3, archive and metadata, is younger than `BACKUP_MAX_AGE_HOURS` (26)'),
+    ('sqlite-backups', 'checkout s3', 'Each instance whose release declares a SQLite database has a backup in S3 as young'),
+    ('console', 'cluster checkout',
+     "The console image is built from this checkout's tooling (warns otherwise) and its job record exists"),
 )
-"""``swhurl-v2 verify``'s checks, in its order, for the operations page: Go decides them (``v2/observe/platform.go``)."""
+"""``swhurl-v2 verify --scope platform``'s checks, in its order, for the operations page: Go decides them
+(``v2/observe/platform.go`` and ``platform_scope.go``). Each names what it reads besides the cluster and its passing."""
+READS = {'cluster': 'Cluster (read)', 'checkout': 'this checkout', 'registry': 'registry (read)', 's3': 'S3 (list)'}
 
 
 def check_cluster(runner: Runner, report: Report) -> None:
-    """Show what ``swhurl-v2 verify`` reported. A run that gave no complete report is a failed check, not a pass."""
+    """Show what ``swhurl-v2 verify --scope platform`` reported. A run that gave no complete report is a failed check,
+    not a pass. Without ``SWHURL_V2_CONSOLE_TAG`` no tag is passed, and Go reports it was not supplied."""
     binary, kubeconfig = os.environ.get('SWHURL_V2', ''), os.environ.get('SWHURL_V2_KUBECONFIG', '')
     if not binary or not kubeconfig:
         report.section('Cluster checks')
         report.bad('swhurl-v2 verify did not run: SWHURL_V2 and SWHURL_V2_KUBECONFIG name no binary and kubeconfig '
                    '(run make verify-platform, which builds both)')
         return
+    tag = os.environ.get('SWHURL_V2_CONSOLE_TAG', '')
+    command = [binary, 'verify', '--scope', 'platform', '--kubeconfig', kubeconfig, '--root', str(ROOT),
+               *(['--console-tag', tag] if tag else []), '--source', 'verify-platform', '--json']
     try:
-        result = runner.run([binary, 'verify', '--kubeconfig', kubeconfig, '--source', 'verify-platform', '--json'], check=False)
+        result = runner.run(command, check=False)
     except CommandError as error:
         report.section('Cluster checks')
         report.bad(f'swhurl-v2 verify did not run: {error}')
@@ -68,7 +90,7 @@ class Check:
     """One group of checks, what it needs beyond reading the cluster, and what passing means.
 
     ``cluster``: read non-Secret objects; ``secret``: read Secrets; ``exec``: run
-    commands in pods; ``host``: this machine's files or AWS credentials.
+    commands in pods; ``host``: this machine's files or services, or GitHub.
     ``what`` is the check's row in the operations page (``table``; a test keeps the two the same).
     """
     name: str
@@ -87,33 +109,15 @@ CHECKS = (
     Check.of('ingestion-key', 'cluster secret exec', clickstack.check_ingestion,
              "The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed"),
     Check.of('registration', 'cluster exec', clickstack.check_registration, 'A HyperDX team exists, so registration is closed'),
-    Check.of('image-automation', 'cluster host', apps.check_image_automation,  # reads v2-records/<app>/staging
-             "Every app's ImagePolicy is Ready and staging runs the image its record states (warns otherwise)"),
-    Check.of('isolation', 'cluster host', apps.check_isolation,  # reads v2-apps/ and v2-records/teams.json
-             'Every instance v2 compiled has its namespace, a registered team, the platform quota and a NetworkPolicy'),
-    Check.of('signing-keys', 'cluster host', apps.check_signing_keys,  # reads the profile's auth block
-             "The signing keys and token issuer apps were given are the cluster's"),
-    Check.of('events', 'cluster host', apps.check_events,  # reads itself and NATS's own objects
-             'NATS and its controller run, and every stream and consumer v2 rendered is Ready'),
-    Check.of('egress', 'cluster host', apps.check_egress,  # reads platform/egress/allocation.json
-             'The egress proxy runs both replicas, with a port of its own for every instance v2 compiled'),
-    Check.of('channels', 'cluster host', notifications.check_channels,  # reads platform/notify/routes.json
-             "The team routes are Git's and every channel has its Secret (a team without a channel warns)"),
     Check.of('retention', 'cluster exec', clickstack.check_retention,
              'Telemetry expires after 30 days and ClickHouse system logs after 7, no merge failed in the last hour, '
              'and the MongoDB volume is retained'),
-    Check.of('backups', 'host', recovery.check_backups,
-             'The newest MongoDB backup in S3, archive and metadata, is younger than `BACKUP_MAX_AGE_HOURS` (26)'),
-    Check.of('sqlite-backups', 'host', sqlite_backup.check_sqlite_backups,
-             "Each instance whose release declares a SQLite database has a backup in S3 as young"),
     Check.of('push-webhook', 'cluster host', flux.check_push_webhook,
              "Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise)"),
     Check.of('image-webhooks', 'cluster host', apps.check_image_webhooks,
              "The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise)"),
     Check.of('notification-heartbeat', 'host', notifications.check_notification_heartbeat,
              "The host heartbeat timer is active and its service's last run succeeded within 15 minutes"),
-    Check.of('console', 'cluster host', console.check_console,
-             'The console image is built from this checkout\'s tooling (warns otherwise) and its job record exists'),
     Check.of('console-token', 'cluster secret host', console.check_console_token,
              "GitHub accepts the console's tokens and none expires within 14 days (warns)"),
 )
@@ -122,7 +126,8 @@ WORDS = {'cluster': 'Cluster (read)', 'secret': 'Secrets (read)', 'exec': 'comma
 
 def table() -> str:
     """The checks as the Markdown table in the operations page, in the order they run."""
-    rows = [f"| `{name}` | {what} | Cluster (read), `swhurl-v2 verify` |" for name, what in CLUSTER_CHECKS]
+    rows = [f"| `{name}` | {what} | {', '.join(READS[read] for read in READS if read in reads.split())}, `swhurl-v2 verify` |"
+            for name, reads, what in CLUSTER_CHECKS]
     rows += [f"| `{check.name}` | {check.what} | {', '.join(WORDS[need] for need in WORDS if need in check.needs)} |"
              for check in CHECKS]
     return '\n'.join(['| Check | Passes when | Reads |', '| --- | --- | --- |', *rows])

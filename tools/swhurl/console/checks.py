@@ -1,6 +1,7 @@
-"""Live checks of the console: its image against this checkout, its job record and its GitHub tokens.
+"""Live checks of the console that Go does not run yet: its GitHub tokens.
 
-Each takes a Runner and a Report and only reads; ``verify.CHECKS`` lists them (make verify-platform).
+Its image against this checkout and its job record are ``swhurl-v2 verify --scope platform``'s. Each takes a Runner
+and a Report and only reads; ``verify.CHECKS`` lists them (make verify-platform).
 """
 from __future__ import annotations
 
@@ -8,49 +9,11 @@ import base64
 import binascii
 import datetime as dt
 
-from swhurl import ROOT, images, platform
-from swhurl.apps import helmrelease
+from swhurl import platform
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 TOKEN_WARN_DAYS = 14
-
-
-def check_console(runner: Runner, report: Report) -> None:
-    """Warn if the console image's inputs changed since it was built.
-
-    A ``src-<hash>`` tag (make console-image) is compared with the hash of this
-    checkout's inputs; a commit tag with git diff since that commit.
-    """
-    report.section('Console')
-    try:
-        release = runner.json(['kubectl', '-n', 'console', 'get', 'helmrelease', 'console', '-o', 'json'])
-        tag = helmrelease.image(release)['tag']
-    except (CommandError, KeyError, TypeError):
-        report.bad('cannot read the console HelmRelease image tag (console/console), so its image is unchecked '
-                   '(make reconcile UNIT=platform-console)')
-        return
-    try:  # where the console keeps its jobs across a restart (console/jobstore.py)
-        runner.json(['kubectl', '-n', 'console', 'get', 'configmap', 'console-jobs', '-o', 'json'])
-    except CommandError:
-        report.bad('console/console-jobs is missing: the console forgets its jobs on restart (make reconcile UNIT=platform-console)')
-    label = tag if tag.startswith('src-') else tag[:7]
-    if tag.startswith('src-'):
-        try:
-            changed = 0 if images.content_tag(runner) == tag else 1
-        except CommandError:
-            changed = 2
-    else:
-        changed = runner.run(['git', '-C', str(ROOT), 'diff', '--quiet', tag, 'HEAD', '--',
-                              *platform.CONSOLE_IMAGE_INPUTS], check=False).returncode
-    if changed == 0:
-        report.ok(f'console image {label} is built from the current tooling')
-    elif changed == 1:
-        report.warn(f'the console runs image {label}, older than the tooling in this checkout. Validate '
-                    'deploys a new one about 2 minutes after a push (gh run list --workflow validate.yml); if it '
-                    'failed, or this checkout is ahead of main: make console-image, commit and push')
-    else:
-        report.warn(f'cannot compare console image {label} with this checkout: it lacks that commit (git fetch)')
 
 
 def check_console_token(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:

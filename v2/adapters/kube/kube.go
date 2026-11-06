@@ -239,6 +239,12 @@ func (a *API) get(ctx context.Context, path string, query url.Values) answer {
 
 // getBounded is get with its own bound on the answer's size.
 func (a *API) getBounded(ctx context.Context, path string, query url.Values, limit int) answer {
+	return a.getAccepting(ctx, path, query, limit, "application/json")
+}
+
+// getAccepting is a GET for a document the server serves as another JSON media type: it refuses application/json for
+// one it does not serve as that.
+func (a *API) getAccepting(ctx context.Context, path string, query url.Values, limit int, accept string) answer {
 	address := *a.base
 	address.Path = strings.TrimSuffix(address.Path, "/") + path
 	address.RawQuery = query.Encode()
@@ -246,7 +252,7 @@ func (a *API) getBounded(ctx context.Context, path string, query url.Values, lim
 	if err != nil {
 		return answer{why: observe.ReasonTransport}
 	}
-	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept", accept)
 	if a.token != "" {
 		request.Header.Set("Authorization", "Bearer "+a.token)
 	}
@@ -411,6 +417,7 @@ func kinds() map[pathKey]resource {
 		{"", "Pod"}:                                      {"v1", "pods", true},
 		{"", "ResourceQuota"}:                            {"v1", "resourcequotas", true},
 		{"apps", "Deployment"}:                           {"apps/v1", "deployments", true},
+		{"apps", "StatefulSet"}:                          {"apps/v1", "statefulsets", true},
 		{"batch", "CronJob"}:                             {"batch/v1", "cronjobs", true},
 		{"batch", "Job"}:                                 {"batch/v1", "jobs", true},
 		{"networking.k8s.io", "NetworkPolicy"}:           {"networking.k8s.io/v1", "networkpolicies", true},
@@ -420,6 +427,9 @@ func kinds() map[pathKey]resource {
 		{"cert-manager.io", "Certificate"}:               {"cert-manager.io/v1", "certificates", true},
 		{"notification.toolkit.fluxcd.io", "Alert"}:      {"notification.toolkit.fluxcd.io/v1beta3", "alerts", true},
 		{"notification.toolkit.fluxcd.io", "Provider"}:   {"notification.toolkit.fluxcd.io/v1beta3", "providers", true},
+		{"image.toolkit.fluxcd.io", "ImagePolicy"}:       {"image.toolkit.fluxcd.io/v1", "imagepolicies", true},
+		{"jetstream.nats.io", "Stream"}:                  {"jetstream.nats.io/v1beta2", "streams", true},
+		{"jetstream.nats.io", "Consumer"}:                {"jetstream.nats.io/v1beta2", "consumers", true},
 	}
 }
 

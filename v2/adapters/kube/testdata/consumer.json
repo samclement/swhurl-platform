@@ -1,0 +1,8 @@
+{
+  "apiVersion": "jetstream.nats.io/v1beta2",
+  "kind": "Consumer",
+  "metadata": {"name": "hello-created", "namespace": "world-staging"},
+  "spec": {"ackPolicy": "explicit", "durableName": "world_created", "filterSubject": "staging.hello.created",
+    "streamName": "staging-hello"},
+  "status": {"conditions": [{"type": "Ready", "status": "True", "reason": "Created", "message": "Consumer successfully created"}]}
+}

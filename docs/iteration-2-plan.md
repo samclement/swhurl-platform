@@ -1198,6 +1198,55 @@ warn cases); adapter contract tests for `ListNamespace` against the real adapter
 the console and the merge; `make check-v2`, `make check`. Live: `make verify-platform` and the platform page agree
 with the current results (84 OK, no BAD or WARN), and the console's image runs the binary for the page.
 
+### Slice: the rest of `verify-platform` (approved 6 November 2026)
+
+**Outcome.** Every `verify-platform` check is `swhurl-v2 verify`; `verify.py`, its internal `verify-run` and the
+modules only it reaches are deleted, and `make verify-platform` runs the binary itself. The console keeps the six
+cluster checks with its pod's credential and changes nothing.
+
+```text
+make verify-platform ──→ swhurl-v2 verify --scope platform --kubeconfig K --root . [host facts] ──→ report, exit
+console (--in-cluster) ──→ swhurl-v2 verify (--scope cluster, the default) ──→ the six, unchanged
+```
+
+**Semantics.** `--scope cluster` (the default) is the six checks of the [previous slice](#slice-the-platform-pages-checks-approved-6-november-2026);
+`--scope platform` is all of them, needs `--kubeconfig` (with `--in-cluster` it is a usage error, 2: the console's
+ServiceAccount cannot read what the rest needs) and `--root`, the checkout whose records, compiled tree, profile and
+settings the checks compare with. Each check keeps Python's name, section, verdicts and messages unless a deliberate
+difference below says otherwise. An input the platform scope needs but was not given (AWS credentials, a GitHub
+token, a host fact) is `bad` "… not supplied", never a skipped check; a failed read stays `bad`, never absence. The
+time is the caller's. Values read from Secrets are compared, never printed, in any message or error.
+
+**Boundaries.** Decisions are pure, in `observe`, one function per check over the evidence it needs. One use case in
+`orchestration` makes the reads for the platform scope. Adapters, each with its real/fake `Contract` suite:
+
+| Adapter | Gains |
+| --- | --- |
+| `adapters/kube` | `Reader` kinds ImagePolicy, Receiver, StatefulSet, Stream, Consumer, PersistentVolumeClaim, PersistentVolume; one read of the cluster's token issuer and signing keys (the OIDC discovery document and its JWKS), named in domain terms, not a raw path. Secrets and ConfigMaps only through `Data`. An `Executor` port: exec in one named pod and container through the API server over WebSocket (`v5.channel.k8s.io`, standard library only), optional stdin, bounded output, the exit status from the status channel. The commands are fixed strings in v2; the port is not reachable from `Reader` |
+| `adapters/github` (new) | Read-only, `api.github.com` only: a repository's hooks with each one's latest delivery; whether a token is accepted and its `github-authentication-token-expiration`. Tokens are arguments, never logged or in errors |
+| `adapters/s3`, `adapters/registry` | Unchanged: `List` and `Describe` |
+
+**Inputs from the host.** v2 still starts no process for these: the make recipe passes them.
+`--console-tag` is the checkout's console content tag, computed by one script that CI's deploy job also uses;
+`--heartbeat FILE` is `systemctl show --timestamp=unix` of the heartbeat timer and service, parsed by Go; AWS
+credentials come from the environment (`aws configure export-credentials`, as `restore-sqlite`); the operator's
+GitHub token for listing hooks is `GH_TOKEN` (`gh auth token`). The console's GitHub tokens are read from its Secret.
+The Flux version and controller arguments move to one JSON file under `clusters/home/flux-system/install/`, read by
+`flux-install` and by the check; no third package parses YAML.
+
+**Deliberate differences.** Backups' S3 location is the live backup CronJob's `BACKUP_S3_URI`, not Git's YAML;
+the channel Secrets are those the notify service reads (by its label), not names alone; a console tag that is not a
+content tag (`src-…`) warns "cannot compare" instead of a `git diff`; until the last slice the report shows Go's
+checks before Python's remaining ones, then Python's order returns.
+
+**Delivery,** four slices, each committed, run live with `make verify-platform` (the platform page unchanged) and
+recorded in current state, Python's `CHECKS` shrinking with each and the deleted Python's test cases kept as Go
+table tests: (1) the nine checks that read the cluster, the checkout, the registry and S3 (`image-automation`,
+`isolation`, `signing-keys`, `events`, `egress`, `channels`, `backups`, `sqlite-backups`, `console`) and
+`--scope platform`; (2) GitHub (`push-webhook`, `image-webhooks`, `console-token`); (3) exec (`ingestion-key`,
+`registration`, `retention`); (4) the host facts (`notification-heartbeat`, `flux-controllers`), then `verify.py`
+and `verify-run` are deleted and the operations page's check table is checked against Go's list.
+
 ## 12. The notify service in Go (approved 5 November 2026)
 
 The operator approved porting the [notify service](services.md#notify-service) to `swhurl-v2 notify-serve`, run from

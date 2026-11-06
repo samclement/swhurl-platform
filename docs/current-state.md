@@ -2,6 +2,29 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Nine more platform checks move to Go (6 November 2026)
+
+- **Scope:** slice 1 of [the approved verify retirement](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026).
+  `swhurl-v2 verify --scope platform` adds image automation, isolation, signing keys, events, egress,
+  notification channels, MongoDB and SQLite backup freshness, and console image/job-record checks to the six
+  cluster checks. The console keeps the unchanged default cluster scope; eight checks remain Python.
+- **Boundaries:** the kube adapter gains ImagePolicy, StatefulSet, Stream and Consumer reads and a separate
+  issuer/JWKS port. Secrets remain outside `Reader`; channel checks use the notify service's labelled Secrets.
+  The MongoDB backup location is the live CronJob's; a complete archive needs its sibling metadata by name.
+  `images/content-tag.sh` supplies the same content tags as the former CI expressions for both images, and
+  `make verify-platform` exports the operator's AWS credentials as `restore-sqlite` does.
+- **Local live comparison:** the saved pre-change run and the new run both returned 78 OK, five warnings for
+  staging records behind the registry, and one BAD from the unchanged Python retention check. That check counted
+  17 failed ClickHouse merges before the change and 25 in the later hour; it is an existing live fault, not a
+  passing platform run. The moved checks agree apart from elapsed backup age and the documented ordering change.
+  No cluster resource, credential, database, backup location or Flux installation was changed by these checks.
+- **Offline verification:** `make check-v2` passed, including the new adapter real/fake contracts, pure decision
+  tables and CLI/use-case tests. `make check` passed (634 Python and 98 codegraph tests, docs zero errors/warnings);
+  host/fixture/new-script Bash syntax and `git diff --check` passed. Independent read-only review found no issues.
+  Added regressions reject non-finite/overflowing backup ages and prove a missing Git input stops content-tag
+  generation without printing a partial tag. Both image tags equal the previous inline CI computation.
+- **Delivery:** push, rebuilt-console rollout and post-delivery verification are not yet performed.
+
 ## ClickHouse merge rewrites (2 November 2026)
 
 - **Cause, read-only on `system.part_log`, `system.parts` and `system.metric_log`:** ClickHouse used 0.2 to 0.6

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "application": "swhurl-try-10",
   "environment": "staging",
-  "release": "rel-sha256:2bfa77d236963aa01ba8d0ca57b11cbf2fd27c9a44279cb9ba3df63007d9ba23",
+  "release": "rel-sha256:5cf6421dd5c7919d098c21af8c3c431b14180b248d82222044cf33b4fe6ced2a",
   "configuration": {
     "replicas": 1,
     "memoryMiB": 128

@@ -1,0 +1,1 @@
+{"namespace":"observability","pod":"clickstack-mongodb-0","container":"mongod","command":["mongosh","--quiet","--nodb","--norc","--file","/dev/stdin"],"stdin":"c3ludGhldGljIHN0ZGluCg=="}

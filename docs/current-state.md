@@ -2,6 +2,37 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Pod-query platform checks move to Go (6 November 2026)
+
+- **Scope:** slice 3 of [the approved verify retirement](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026).
+  `runtime-secrets`, `ingestion-key`, `registration` and `retention` are Go groups, retaining both ingestion
+  headings as approved. Platform scope has twenty-two groups; only Flux controllers and the host heartbeat
+  remain Python. The console's six default cluster groups remain unchanged.
+- **Boundary:** a separate Kubernetes Executor uses the API server's WebSocket v5 protocol with the existing
+  credential, masked frames, bounded output and cancellation. Reader still cannot execute or read Secrets.
+  The fixed Mongo query gets its connection URI only on stdin; reports retain presence/equality/error facts,
+  never key bytes, URI, raw output or stderr. Registration selects a ready, nonterminating app pod from its
+  installed Deployment's selector. Retention keeps the existing three SELECT queries independent and reads the
+  MongoDB PVC/PV reclaim policy. Live metadata confirmed the ClickHouse container is `clickhouse-server`.
+- **Retirement and tests:** Python's three verifier routines and verify-only helpers are removed; shared Mongo,
+  HyperDX, ClickHouse, bootstrap and recovery helpers stay. Go tables retain their failure cases; real TLS
+  upgrade tests and a shared real/fake contract cover protocol behavior, stdin, exit status, output limits,
+  cancellation and credential-safe diagnostics. New public APIs are the Executor and narrow read facts/inputs;
+  no dependency, budget exception or guardrail weakening was added. The retained system-log query checks TTL
+  presence, not duration; its “7 days” message is not a duration measurement.
+- **Validation:** parent `make check-v2` and `make check` passed (628 Python and 98 codegraph tests; docs zero
+  errors/warnings); host/fixture Bash syntax and `git diff --check` passed. An earlier notify timeout-test
+  failure did not reproduce in ten focused reruns; no notify code/test or timing threshold was changed.
+- **Local live comparison:** before and after both returned 83 OK, zero warnings and one retention BAD
+  (29 then 24 failed ClickHouse merges in the last hour). All migrated verdicts/messages agree apart from that
+  existing merge count; backup ages and the approved intermediate section order also differ. This is not a
+  fully healthy-platform claim. No database writes, RBAC/credential changes or live resource mutations were made.
+- **Review findings fixed:** independent review found two fail-open gaps. A syntactically valid error Close
+  (1002, 1008, 1011, …) after a success status now fails the run, with 1000/1001 and no code still orderly; and a
+  101 that selects a WebSocket extension this client never offered is refused. Both have real-TLS regression
+  tests. No baseline, dependency or guardrail changed.
+- **Delivery:** independent review and deployment verification pending.
+
 ## GitHub platform checks move to Go (6 November 2026)
 
 - **Scope:** slice 2 of [the approved verify retirement](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026).

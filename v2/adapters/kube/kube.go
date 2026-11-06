@@ -96,7 +96,7 @@ func New(endpoint string, client *http.Client, token string) (Reader, error) {
 	return api, nil
 }
 
-// NewAPI builds one adapter implementing Reader, Writer, Reviewer and Data over the supplied client.
+// NewAPI builds one adapter implementing Reader, Writer, Reviewer, Data, Issuer and Executor over the supplied client.
 // The caller owns the client's timeout and transport lifecycle; endpoint validation and redirect refusal match New.
 func NewAPI(endpoint string, client *http.Client, token string) (*API, error) {
 	base, err := url.Parse(endpoint)
@@ -414,6 +414,8 @@ type pathKey struct{ group, kind string }
 func kinds() map[pathKey]resource {
 	return map[pathKey]resource{
 		{"", "Namespace"}:                                {"v1", "namespaces", false},
+		{"", "PersistentVolumeClaim"}:                    {"v1", "persistentvolumeclaims", true},
+		{"", "PersistentVolume"}:                         {"v1", "persistentvolumes", false},
 		{"", "Pod"}:                                      {"v1", "pods", true},
 		{"", "ResourceQuota"}:                            {"v1", "resourcequotas", true},
 		{"apps", "Deployment"}:                           {"apps/v1", "deployments", true},

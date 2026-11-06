@@ -91,6 +91,9 @@ func (c cli) verifyPlatform(r request, connection kube.Connection, cluster orche
 	if inputs.Issuer, err = connection.Issuer(); err != nil {
 		return observe.PlatformReport{}, fail(c.diagnostic, err)
 	}
+	if inputs.Executor, err = connection.Executor(); err != nil {
+		return observe.PlatformReport{}, fail(c.diagnostic, err)
+	}
 	if _, supplied := awsCredentials(); supplied {
 		inputs.Objects = func(bucket string) (s3.Reader, error) { return c.archives(bucket, "") }
 	}

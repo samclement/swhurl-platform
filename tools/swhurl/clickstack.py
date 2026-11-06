@@ -16,13 +16,11 @@ stdin (``kubectl exec -i``), so no secret appears in a command line.
 from __future__ import annotations
 
 import base64
-import binascii
 import json
 import os
 import time
 from dataclasses import dataclass
 
-from swhurl import platform
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
@@ -30,7 +28,6 @@ NS = 'observability'
 INPUTS_SECRET = 'clickstack-runtime-inputs'
 MONGO_URI_SECRET = 'clickstack-mongodb-hyperdx-hyperdx'  # written by the MongoDB operator
 MONGO_POD = 'clickstack-mongodb-0'
-MONGO_DATA_CLAIM = 'data-volume-clickstack-mongodb-0'
 CLICKHOUSE_POD = 'clickstack-clickhouse-clickhouse-0-0-0'  # operator naming: <cluster>-clickhouse-<shard>-<replica>-0
 APP = 'deploy/clickstack-app'
 API = 'http://127.0.0.1:8000'
@@ -94,15 +91,6 @@ def api(runner: Runner, method: str, path: str, body: dict | None = None, *, mut
                          'node', '--input-type=module', '-'],
                         input=program, secret_output=True, mutating=mutating)
     return _result(out)
-
-
-def team_key(runner: Runner) -> str:
-    """The one team ingestion key ('' unless exactly one team key exists); registered as secret."""
-    uri = read_secret(runner, MONGO_URI_SECRET).get('connectionString.standard', '')
-    keys = mongo(runner, uri, TEAM_KEYS)['keys'] if uri else []
-    for key in keys:
-        runner.add_secret(key)
-    return keys[0] if len(keys) == 1 else ''
 
 
 def wait_ready(runner: Runner, timeout: float, interval: float = 5) -> bool:
@@ -189,137 +177,6 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, report: Re
     return bootstrap(runner, report, float(os.environ.get('TIMEOUT_SECS') or 300))
 
 
-SYSTEM_LOGS = ('query_log', 'metric_log', 'asynchronous_metric_log', 'crash_log', 'processors_profile_log',
-               'part_log', 'trace_log', 'query_thread_log', 'query_views_log', 'opentelemetry_span_log')
-
-
 def clickhouse(runner: Runner, query: str) -> str:
     return runner.output(['kubectl', '-n', 'observability', 'exec', CLICKHOUSE_POD, '--',
                           'clickhouse-client', '-q', query]).strip()
-
-
-def read_ingestion_secret(runner: Runner) -> str:
-    """The Secret's ``data`` value: base64 text, exactly as Kubernetes stores it."""
-    try:
-        secret = runner.json(['kubectl', '-n', 'logging', 'get', 'secret', platform.INGESTION_SECRET_NAME, '-o', 'json'],
-                             secret_output=True)
-    except CommandError:
-        return ''
-    value = ((secret or {}).get('data') or {}).get(platform.INGESTION_KEY, '')
-    runner.add_secret(value)
-    return value
-
-
-def check_runtime_secret(stored: str, report: Report) -> None:
-    report.section('Runtime Secrets')
-    if stored:
-        report.ok(f'logging/{platform.INGESTION_SECRET_NAME}.{platform.INGESTION_KEY} present')
-    else:
-        report.bad(f'logging/{platform.INGESTION_SECRET_NAME}.{platform.INGESTION_KEY} is empty (run: make reconcile UNIT=platform-otel)')
-
-
-def check_ingestion_key(runner: Runner, report: Report, stored: str) -> None:
-    """The collectors' key must be exactly one base64 layer around the ClickStack team key."""
-    report.section('Ingestion Key Sync')
-    try:
-        wanted = team_key(runner)
-    except (CommandError, ValueError, KeyError):
-        wanted = ''
-    if not wanted:
-        report.bad('cannot read a unique ClickStack team ingestion key; is MongoDB Running and '
-                   'make clickstack-bootstrap done?')
-        return
-    try:
-        decoded = base64.b64decode(stored, validate=True)
-    except (binascii.Error, ValueError):
-        decoded = b''
-    runner.add_secret(decoded)
-    if not decoded:
-        report.bad(f'logging/{platform.INGESTION_SECRET_NAME}.{platform.INGESTION_KEY} is empty or invalid base64')
-    elif decoded == wanted.encode() and stored == base64.b64encode(wanted.encode()).decode():
-        report.ok('ingestion Secret bytes match ClickStack; verify collector logs and fresh telemetry after a restart')
-    else:
-        report.bad(f'{platform.INGESTION_KEY} does not match the ClickStack team ingestion key')
-        report.detail('Fix: run make clickstack-bootstrap (writes the Git key into the team); if the two')
-        report.detail('     SOPS copies differ, make check-secrets says so')
-
-
-def check_ingestion(runner: Runner, report: Report) -> None:
-    stored = read_ingestion_secret(runner)
-    check_runtime_secret(stored, report)
-    check_ingestion_key(runner, report, stored)
-
-
-def check_registration(runner: Runner, report: Report) -> None:
-    report.section('ClickStack Sign-up')
-    try:
-        closed = api(runner, 'GET', '/installation')['body'].get('isTeamExisting')
-    except (CommandError, ValueError, KeyError, AttributeError):
-        report.bad(f'cannot ask the HyperDX API whether a team exists (kubectl -n {NS} logs {APP})')
-        return
-    if closed:
-        report.ok('a team exists, so HyperDX registration is closed')
-    else:
-        report.bad('no team yet: HyperDX registration is open (run: make clickstack-bootstrap)')
-
-
-def check_retention(runner: Runner, report: Report) -> None:
-    report.section('Retention')
-    try:
-        with_ttl, total = map(int, clickhouse(runner, (
-            "SELECT countIf(position(engine_full, 'toIntervalDay(30)') > 0), count() FROM system.tables "
-            "WHERE database = 'default' AND engine LIKE '%MergeTree' FORMAT TSV")).split())
-    except (CommandError, ValueError):
-        report.bad(f'cannot read ClickHouse telemetry table TTLs (kubectl -n {NS} get pods)')
-    else:
-        if total > 0 and with_ttl == total:
-            report.ok(f'all {total} telemetry tables expire after 30 days')
-        else:
-            report.bad(f'{total - with_ttl} of {total} telemetry tables have no 30-day TTL, so they grow without limit; '
-                       'the collector image default may have changed')
-
-    names = "', '".join(SYSTEM_LOGS)
-    try:
-        untimed = int(clickhouse(runner, (
-            f"SELECT count() FROM system.tables WHERE database = 'system' AND name IN ('{names}') "
-            "AND position(engine_full, 'TTL ') = 0 FORMAT TSV")))
-    except (CommandError, ValueError):
-        report.bad(f'cannot read ClickHouse system log TTLs (kubectl -n {NS} get pods)')
-    else:
-        if untimed == 0:
-            report.ok('ClickHouse system logs expire after 7 days')
-        else:
-            report.bad(f'{untimed} ClickHouse system log table(s) have no TTL; '
-                       'the chart sets them in clickhouse.cluster.spec.settings.extraConfig')
-
-    # A merge that fails is retried at once, burning CPU and logging a stack trace each time.
-    try:
-        failed, table = (clickhouse(runner, (
-            "SELECT count(), any(database || '.' || table) FROM system.part_log WHERE event_type = 'MergeParts' "
-            "AND error != 0 AND event_time > now() - INTERVAL 1 HOUR FORMAT TSV")).split('\t') + [''])[:2]
-        failed = int(failed)
-    except (CommandError, ValueError):
-        report.bad(f'cannot read ClickHouse merge results (system.part_log; kubectl -n {NS} get pods)')
-    else:
-        if failed == 0:
-            report.ok('no ClickHouse merge failed in the last hour')
-        else:
-            report.bad(f'{failed} ClickHouse merge(s) failed in the last hour (for example {table}); '
-                       'see docs/operations.md#troubleshooting')
-
-    try:
-        pvc = runner.json(['kubectl', '-n', 'observability', 'get', 'pvc', MONGO_DATA_CLAIM, '-o', 'json'])
-    except CommandError:
-        pvc = {}
-    volume = (pvc.get('spec') or {}).get('volumeName', '')
-    policy = ''
-    if volume:
-        try:
-            policy = runner.json(['kubectl', 'get', 'pv', volume, '-o', 'json'])['spec'].get(
-                'persistentVolumeReclaimPolicy', '')
-        except (CommandError, KeyError, TypeError):
-            policy = ''
-    if policy == 'Retain':
-        report.ok('ClickStack MongoDB data volume is Retain (outlives its claim)')
-    else:
-        report.bad('ClickStack MongoDB data volume is not Retain; its storage class must be local-path-retain')

@@ -59,6 +59,9 @@ type ScopeEvidence struct {
 	Console                    ConsoleEvidence
 	PushWebhook, ImageWebhooks WebhookEvidence
 	ConsoleTokens              ConsoleTokenEvidence
+	Ingestion                  IngestionEvidence
+	Registration               RegistrationEvidence
+	Retention                  RetentionEvidence
 	// Credentials is whether object-store credentials were supplied: without them no backup listing is read.
 	Credentials bool
 	// MaxAge is how old the newest complete backup may be.
@@ -81,6 +84,10 @@ func PlatformScopeChecks(e PlatformEvidence, s ScopeEvidence) []PlatformCheck {
 		PlatformCheck{"push-webhook", "Push Webhook", platformPushWebhook(s.PushWebhook)},
 		PlatformCheck{"image-webhooks", "Image Webhooks", platformImageWebhooks(s.ImageWebhooks)},
 		PlatformCheck{"console-token", "Console GitHub Token", platformConsoleTokens(s.ConsoleTokens, e.Now)},
+		PlatformCheck{"runtime-secrets", "Runtime Secrets", platformRuntimeSecrets(s.Ingestion)},
+		PlatformCheck{"ingestion-key", "Ingestion Key Sync", platformIngestion(s.Ingestion)},
+		PlatformCheck{"registration", "ClickStack Sign-up", platformRegistration(s.Registration)},
+		PlatformCheck{"retention", "Retention", platformRetention(s.Retention)},
 	)
 }
 

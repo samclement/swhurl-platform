@@ -85,6 +85,7 @@ adapters/helm: type Error struct {Reason string}
 adapters/helm: type Pin struct {Name, Version, Repository string}
 adapters/helm: type Renderer interface {Render(Request) ([]json.RawMessage, error)}
 adapters/helm: type Request struct {Chart, Release, Namespace string ChartName, ChartVersion string Values json.RawMessage}
+adapters/kube/kubetest: func (*Executor) Exec(ctx context.Context, r kube.ExecRequest) (kube.ExecResult, error)
 adapters/kube/kubetest: func (*Fake) ConfigMaps(_ context.Context, namespace string, selector kube.Selector) ([]kube.ConfigMap, error)
 adapters/kube/kubetest: func (*Fake) Create(_ context.Context, ref observe.Ref, _ []byte) error
 adapters/kube/kubetest: func (*Fake) Delete(_ context.Context, ref observe.Ref) error
@@ -101,12 +102,16 @@ adapters/kube/kubetest: func (*Fake) SigningKeys(context.Context) (kube.SigningK
 adapters/kube/kubetest: func CollectionContract(t *testing.T, open func(*testing.T, []byte, string) kube.Reader)
 adapters/kube/kubetest: func Contract(t *testing.T, answers Answers, open func(*testing.T, Answers) kube.Reader)
 adapters/kube/kubetest: func DataContract(t *testing.T, answers DataAnswers, open func(*testing.T, DataAnswers) kube.Data)
+adapters/kube/kubetest: func ExecutorContract(t *testing.T, request kube.ExecRequest, open func(*testing.T, kube.ExecResult, bool) kube.Executor)
 adapters/kube/kubetest: func IssuerContract(t *testing.T, want kube.SigningKeys, open func(*testing.T, kube.SigningKeys) kube.Issuer)
 adapters/kube/kubetest: func New(answers Answers) *Fake
+adapters/kube/kubetest: func NewExecutor(answers ...ExecAnswer) *Executor
 adapters/kube/kubetest: func ReviewContract(t *testing.T, answers ReviewAnswers, open func(*testing.T, ReviewAnswers) kube.Reviewer)
 adapters/kube/kubetest: func WriteContract(t *testing.T, log string, open func(*testing.T, string) kube.Writer)
 adapters/kube/kubetest: type Answers struct {Object observe.Ref Document []byte Missing observe.Ref Failed observe.Ref Malformed observe.Ref Mismatched observe.Ref Pods observe.Ref Selector string Collection []byte ListReason string Items [][]byte}
 adapters/kube/kubetest: type DataAnswers struct {Namespace, Labels string ConfigMap kube.ConfigMap Secret kube.Secret Other string}
+adapters/kube/kubetest: type ExecAnswer struct {Result kube.ExecResult Err error}
+adapters/kube/kubetest: type Executor struct {Answers []ExecAnswer Requests []kube.ExecRequest}
 adapters/kube/kubetest: type Fake struct {Answers Answers Reads []observe.Ref Writes []observe.Ref ReadLogs []observe.Ref Log string Selectors []string Refuse error Objects map[observe.Ref][]byte Collections map[observe.Ref][][]byte Signing kube.SigningKeys Tokens map[string]kube.TokenReview ConfigMapData map[string][]kube.ConfigMap SecretData map[string][]kube.Secret Failing map[string]error Calls []string}
 adapters/kube/kubetest: type ReviewAnswers struct {Token, Audience, Username string}
 adapters/kube: const BadCredentials = "credentials"
@@ -115,6 +120,7 @@ adapters/kube: const RefusedRequest = "refused_request"
 adapters/kube: func (*API) ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error)
 adapters/kube: func (*API) Create(ctx context.Context, ref observe.Ref, document []byte) error
 adapters/kube: func (*API) Delete(ctx context.Context, ref observe.Ref) error
+adapters/kube: func (*API) Exec(ctx context.Context, request ExecRequest) (ExecResult, error)
 adapters/kube: func (*API) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube: func (*API) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube: func (*API) ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error)
@@ -127,6 +133,7 @@ adapters/kube: func (*API) SetConfigMapKey(ctx context.Context, namespace, name,
 adapters/kube: func (*API) SigningKeys(ctx context.Context) (SigningKeys, error)
 adapters/kube: func (*Error) Error() string
 adapters/kube: func (Connection) Data() (Data, error)
+adapters/kube: func (Connection) Executor() (Executor, error)
 adapters/kube: func (Connection) Issuer() (Issuer, error)
 adapters/kube: func (Connection) Reader() (Reader, error)
 adapters/kube: func (Connection) Reviewer() (Reviewer, error)
@@ -145,6 +152,9 @@ adapters/kube: type Connection struct {Endpoint string Credentials Credentials T
 adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
 adapters/kube: type Data interface {ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error) // SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every // other key as it is. SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error}
 adapters/kube: type Error struct {Code, Subject, Reason string}
+adapters/kube: type ExecRequest struct {Namespace, Pod, Container string Command []string Stdin []byte}
+adapters/kube: type ExecResult struct {Stdout []byte ExitCode int}
+adapters/kube: type Executor interface {Exec(context.Context, ExecRequest) (ExecResult, error)}
 adapters/kube: type Issuer interface {SigningKeys(ctx context.Context) (SigningKeys, error)}
 adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error)}
 adapters/kube: type Reviewer interface {Review(ctx context.Context, token, audience string) (TokenReview, error)}
@@ -643,6 +653,9 @@ observe: func BackupJobLocation(job Read) (ArchiveQuery, bool)
 observe: func BackupLocation(uri string) (ArchiveQuery, bool)
 observe: func BackupTargetOf(cronJob []byte) (BackupTarget, error)
 observe: func BulkPlan(targets []Target) []ListRequest
+observe: func ClickStackPod(pods List) string
+observe: func ClickStackSelector(deployment Read) string
+observe: func CompareIngestion(collector []byte, collectorFailed bool, teamOutput []byte, teamFailed bool) IngestionEvidence
 observe: func CompiledObject(name string) bool
 observe: func CurrentnessOf(expected, literal, availability string, scope ChangeScope, changes *Changes) (Currentness, error)
 observe: func DecodeChanges(data []byte) (Changes, error)
@@ -657,7 +670,10 @@ observe: func ImagePolicies(list List) []ImagePolicy
 observe: func IndexCandidates(lists []List) (Candidates, error)
 observe: func InstalledRepository(value string) (string, string)
 observe: func IsPositive(outcome string) bool
+observe: func MergeFailures(output []byte, failed bool) PlatformEntry
+observe: func MongoVolumeName(claim Read) string
 observe: func NewestRun(items [][]byte) (string, bool, error)
+observe: func ParseRegistration(output []byte, failed bool) RegistrationEvidence
 observe: func PlatformChecks(e PlatformEvidence) []PlatformCheck
 observe: func PlatformScopeChecks(e PlatformEvidence, s ScopeEvidence) []PlatformCheck
 observe: func PlatformText(r PlatformReport) string
@@ -666,7 +682,9 @@ observe: func RestoreOf(input RestoreInput) RestorePlan
 observe: func RouteTargetOf(ingress []byte) (RouteTarget, error)
 observe: func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
 observe: func StateOf(report Report) State
+observe: func SystemLogTTL(output []byte, failed bool) PlatformEntry
 observe: func TargetOf(helmRelease []byte, unit Ref, revision string) (Target, error)
+observe: func TelemetryTTL(output []byte, failed bool) PlatformEntry
 observe: func UnitRef(unit []byte) (Ref, error)
 observe: func WebhookHost(domain string) (string, string)
 observe: type Archive struct {Key string LastModified time.Time}
@@ -702,6 +720,7 @@ observe: type Hook struct {Active bool Events []string Host string Code *int Mes
 observe: type HookListing struct {Hooks []Hook MissingToken bool Problem string}
 observe: type ImageEvidence struct {Policies List Records map[string]StagingRecord Newest map[string]NewestImage}
 observe: type ImagePolicy struct {Name, App, Status, Message, Tag string}
+observe: type IngestionEvidence struct {CollectorPresent, CollectorFailed, TeamAvailable, Equal bool}
 observe: type InstancePort struct {Application, Environment string Port int32}
 observe: type InstanceReport struct {Application, Environment string Report Report}
 observe: type IsolationEvidence struct {Namespaces List Quotas, Policies map[string]List Teams map[string]bool TeamsProblem string}
@@ -718,15 +737,17 @@ observe: type Problem struct {Pod, Container, Reason, Message string}
 observe: type PromotionDecision struct {Ready bool `json:"ready"` Reason string `json:"reason"`}
 observe: type Read struct {Ref Ref Status string Reason string Object []byte}
 observe: type Ref struct {APIVersion, Kind, Namespace, Name string}
+observe: type RegistrationEvidence struct {Readable, TeamExists bool}
 observe: type Report struct {Target Target Currentness Currentness Live LiveFacts Source string ObservedAt string Findings []Finding Verdict Verdict Backup BackupReport Problems []Problem Routes []Route Certificates []Certificate State State Assessed []string Unassessed []string NotCovered []string}
 observe: type RepositoryHooks struct {App, Repository, Problem string Listing HookListing}
 observe: type RestoreInput struct {Namespace, Application string Archive ArchiveReport Metadata *ArchiveMetadata Failure string}
 observe: type RestorePlan struct {State string Reason string Archive ArchiveReport Metadata ArchiveMetadata}
+observe: type RetentionEvidence struct {Telemetry, SystemLogs, Merges PlatformEntry Volume Read}
 observe: type Route struct {Name string Outcome string Reason string Hosts []string}
 observe: type RouteTarget struct {Ingress Ref Certificates []Ref}
 observe: type RunReport struct {Name string CreatedAt string CompletedAt string Outcome string}
 observe: type RunningFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` Digests []string `json:"digests"`}
-observe: type ScopeEvidence struct {Compiled []CompiledInstance Images ImageEvidence Isolation IsolationEvidence Signing SigningEvidence Events EventEvidence Egress EgressEvidence Channels ChannelEvidence Backups MongoBackupEvidence Databases DatabaseEvidence Console ConsoleEvidence PushWebhook, ImageWebhooks WebhookEvidence ConsoleTokens ConsoleTokenEvidence Credentials bool MaxAge time.Duration}
+observe: type ScopeEvidence struct {Compiled []CompiledInstance Images ImageEvidence Isolation IsolationEvidence Signing SigningEvidence Events EventEvidence Egress EgressEvidence Channels ChannelEvidence Backups MongoBackupEvidence Databases DatabaseEvidence Console ConsoleEvidence PushWebhook, ImageWebhooks WebhookEvidence ConsoleTokens ConsoleTokenEvidence Ingestion IngestionEvidence Registration RegistrationEvidence Retention RetentionEvidence Credentials bool MaxAge time.Duration}
 observe: type SigningEvidence struct {Issuer string Keys []byte Unread string StatedIssuer, StatedKeys, Unstated string}
 observe: type StagingRecord struct {Image, Digest, Problem string}
 observe: type State struct {Name, Field, Reason string}
@@ -811,7 +832,7 @@ orchestration: type MintOutcome struct {Application, Environment string Public, 
 orchestration: type Notifier struct {}
 orchestration: type NotifyCluster struct {Reviewer kube.Reviewer Data kube.Data Reader kube.Reader}
 orchestration: type NotifyConnect func() (NotifyCluster, error)
-orchestration: type PlatformAllInputs struct {PlatformInputs GitHub github.Reader GitHubToken string Data kube.Data Issuer kube.Issuer Registries func(image string) (registry.Reader, error) Objects func(bucket string) (s3.Reader, error) Checkout Checkout ConsoleTag string MaxAge time.Duration}
+orchestration: type PlatformAllInputs struct {PlatformInputs GitHub github.Reader GitHubToken string Data kube.Data Issuer kube.Issuer Executor kube.Executor Registries func(image string) (registry.Reader, error) Objects func(bucket string) (s3.Reader, error) Checkout Checkout ConsoleTag string MaxAge time.Duration}
 orchestration: type PlatformInputs struct {Reader kube.Reader Source string Now func() time.Time}
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
 orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}

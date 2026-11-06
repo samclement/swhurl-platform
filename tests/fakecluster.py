@@ -8,12 +8,11 @@ import base64
 import datetime as dt
 import json
 
-from swhurl import clickstack, flux, platform
+from swhurl import clickstack, flux
 from swhurl.run import FakeRunner, Result
 
 KEY = 'fixture-team-ingestion-key-0001'
 CONSOLE_TAG = 'b63d2aff9dfd4cf9df0307e382038dcbd15e29ed'
-TOKEN = 'github_pat_fixture_token_0001'
 READY = {'conditions': [{'type': 'Ready', 'status': 'True'}]}
 
 
@@ -30,18 +29,13 @@ def flux_answers():
         'kustomize-controller': {'metadata': {'labels': {'app.kubernetes.io/version': f'v{flux.pinned_version()}'}},
                                  'spec': {'template': {'spec': {'containers': [
                                      {'args': ['--log-level=info', *flux.required_args()['kustomize-controller']]}]}}}},
-        'receiver': {'status': READY},
-        'hooks': [{'active': True, 'events': ['push', 'package', 'registry_package'],
-                   'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},
-                   'last_response': {'code': 200, 'message': 'OK'}}],
+
     }
 
 
 def flux_rules(runner, answer):
     get = ('kubectl', '-n', 'flux-system', 'get')
-    (runner.on(*get, 'deployment', handler=answer('kustomize-controller'))
-     .on(*get, 'receivers.notification.toolkit.fluxcd.io', handler=answer('receiver'))
-     .on('gh', 'api', handler=answer('hooks')))  # the push webhook's and each app's image webhook
+    runner.on(*get, 'deployment', handler=answer('kustomize-controller'))
 
 
 def clickstack_answers():
@@ -109,6 +103,12 @@ PLATFORM_CHECKS = (
     ('backups', 'Backups', [('ok', 'newest MongoDB backup in s3://bucket/clickstack-mongodb/ is 1.0 h old')]),
     ('sqlite-backups', 'App SQLite backups', [('ok', 'no app has a SQLite database')]),
     ('console', 'Console', [('ok', f'console image {CONSOLE_TAG[:7]} is built from the current tooling')]),
+    ('push-webhook', 'Push Webhook', [('ok', "Flux receiver flux-system/github is Ready"),
+                                      ('ok', "GitHub's latest delivery to flux-webhook.example.test returned 200")]),
+    ('image-webhooks', 'Image Webhooks', [('ok', 'Flux receiver flux-system/app-images is Ready'),
+                                        ('ok', 'demo-shop: image webhook on samclement/demo-shop, latest delivery returned 200')]),
+    ('console-token', 'Console GitHub Token', [('ok', 'GitHub accepts the console token (no expiry date)'),
+                                             ('ok', 'GitHub accepts the console repository token (no expiry date)')]),
 )
 """What swhurl-v2 verify --scope platform, verify-platform's, reports for a healthy platform."""
 
@@ -131,24 +131,8 @@ def notification_rules(runner, answer):
                                       + dt.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z') + '\n')))
 
 
-def console_answers():
-    return {
-        'token': {'data': {'GITHUB_TOKEN': b64(TOKEN)}},
-        'github': Result((), 0, 'HTTP/2 200\r\ngithub-authentication-token-expiration: 2099-01-01 00:00:00 UTC\r\n\r\n'),
-    }
-
-
-def console_rules(runner, answer):
-    def github(args, config):
-        runner.github.append((args, config))
-        return answer('github')(args, config)
-
-    (runner.on('kubectl', '-n', 'console', 'get', 'secret', 'console-github', handler=answer('token'))
-     .on('curl', handler=github))
-
-
 AREAS = ((flux_answers, flux_rules), (clickstack_answers, clickstack_rules), (cluster_answers, cluster_rules),
-         (notification_answers, notification_rules), (console_answers, console_rules))
+         (notification_answers, notification_rules))
 
 
 def healthy(**overrides):
@@ -171,7 +155,6 @@ def healthy(**overrides):
 
     runner = FakeRunner()
     runner.stdin = []  # (args, program) of every program sent into a pod (mongosh scripts, API requests)
-    runner.github = []  # (args, stdin) of each GitHub API call
     runner.on('kubectl', 'get', '--raw=/version', handler=answer('version'))
     for _, rules in AREAS:
         rules(runner, answer)

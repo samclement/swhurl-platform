@@ -287,8 +287,8 @@ phase 3 (§2.3).
   Python, so the target now needs Go (Validate's `apps` job and Deploy install it). The Makefile's `check` keeps its
   shape.
 - `make verify-platform` reads `v2-apps/instances/` (and `platform/egress/allocation.json` for the ports); the v1
-  branch, the `0 instance(s)` path and `check_secrets` are deleted. `apps/checks.py` is kept, v1-free: it holds the
-  live checks, and its only v1 input left is the template fixtures' Helm policy.
+  branch, the `0 instance(s)` path and `check_secrets` are deleted. `apps/checks.py` now retains only the compiled-tree path used by validation; its live checks are Go's
+  ([status](v2-status.md)).
 - The deviation: the isolation and events checks read the **compiled** files, not the records, because a second
   Python reader of the records would be a second compiler; `check-apps` proves the records render to those files.
 - `swhurl-v2 resolve` test (done in phase 3): one record shape, a predecessor's refused.

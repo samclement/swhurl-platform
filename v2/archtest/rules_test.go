@@ -75,6 +75,8 @@ var Layers = map[string]int{
 	"workstreams":                      0,
 	"adapters/appsource":               1,
 	"adapters/appsource/appsourcetest": 1,
+	"adapters/github":                  1,
+	"adapters/github/githubtest":       1,
 	"adapters/git":                     1,
 	"adapters/git/gittest":             1,
 	"adapters/helm":                    1,

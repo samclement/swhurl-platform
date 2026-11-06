@@ -2,6 +2,32 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## GitHub platform checks move to Go (6 November 2026)
+
+- **Scope:** slice 2 of [the approved verify retirement](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026).
+  `push-webhook`, `image-webhooks` and `console-token` are Go's; platform scope now has eighteen checks and
+  five remain Python. The default cluster scope is unchanged and reads neither Secrets nor GitHub.
+- **Inputs and boundaries:** webhook settings come from the installed `platform-settings` ConfigMap and the
+  GitRepository named by the profile, as approved. App repositories come from staging release records; the
+  operator token lists hooks and the two console tokens are checked separately against the platform repository.
+  The new GitHub adapter is read-only, fixed to `api.github.com`, refuses redirects, bounds response size/time
+  and pagination, and discards partial results on failure. It retains no webhook secret/path in observation
+  evidence, reports no raw response body, and accepts only standard HTTP reason text as a delivery message.
+  Host matching is exact rather than substring-based. Missing operator credentials are BAD; a denied listing
+  warns; failed Secret reads are BAD, distinct from an absent optional repository token.
+- **Retirement and tests:** Python's three checks and `console/checks.py` are deleted; shared app-hooks logic
+  stays. Go pure tables, real/fake adapter contracts and use-case/CLI tests retain their cases and cover
+  malformed/oversized responses, pagination, redirects, hostile hosts, expiry boundaries and credential absence.
+  An additional regression keeps whitespace-only credentials missing in the CLI and real/fake adapter alike.
+  Exported API changes add the GitHub read port, its narrow facts and platform-scope inputs; no dependency,
+  budget exception or guardrail weakening was added. Independent read-only review found no issues.
+- **Local live comparison:** before and after the port both returned 83 OK, zero warnings and one BAD from the
+  unchanged ClickHouse retention check (31 then 33 failed merges in the last hour). The three migrated live
+  sections are identical; other differences are elapsed backup ages. This is not a fully healthy-platform claim.
+- **Offline validation:** parent runs of `make check-v2` and `make check` passed, including after the whitespace
+  regression fix (630 Python and 98 codegraph tests; docs zero errors/warnings). Host/fixture Bash syntax and
+  `git diff --check` passed. Delivery and post-deployment verification are pending; no live state has been changed.
+
 ## Nine more platform checks move to Go (6 November 2026)
 
 - **Scope:** slice 1 of [the approved verify retirement](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026).
@@ -3444,7 +3470,7 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 
 ## Each area owns its live checks (12 October 2026)
 
-`4ed543c` moves each live check beside what it checks (`flux.py`, `clickstack.py`, [`apps/checks.py`](../tools/swhurl/apps/checks.py), [`notifications/checks.py`](../tools/swhurl/notifications/checks.py), [`console/checks.py`](../tools/swhurl/console/checks.py), `dashboards.py` and the backup modules) and leaves [`verify.py`](../tools/swhurl/verify.py) as the list of them (145 lines, from 835). A refactor: what `make verify-platform` checks and prints did not change. Console image `src-74fa58e2a48725ee` (`87eb773`).
+`4ed543c` moves each live check beside what it checks (`flux.py`, `clickstack.py`, [`apps/checks.py`](../tools/swhurl/apps/checks.py), [`notifications/checks.py`](../tools/swhurl/notifications/checks.py), [`console/checks.py`](https://github.com/samclement/swhurl-platform/blob/4ed543c87cf4111e237c6d2af57ff96e7edf3037/tools/swhurl/console/checks.py), `dashboards.py` and the backup modules) and leaves [`verify.py`](../tools/swhurl/verify.py) as the list of them (145 lines, from 835). A refactor: what `make verify-platform` checks and prints did not change. Console image `src-74fa58e2a48725ee` (`87eb773`).
 
 - **Same output as before:** on the live cluster, the previous commit's `verify-platform` (from an export of `ba408e4`) and the new one printed the same 147 lines but one: the export is not a Git checkout, so it could not compare the console image with itself.
 - **After the deploy:** `make verify-platform` passed with 99 `[OK]` lines and no warnings, with the notify service and the console on the new image. The console's Platform page, read through a port-forward with the sign-in header, showed its checks from the new image (Ingress, Image Automation with 9 passing, Notify service, App dashboards and alerts, Notifications) and no error; a `console-dashboards` job on the new image succeeded.

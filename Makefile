@@ -119,9 +119,10 @@ v2-deploy:
 	@$(V2_BUILD); 	"$$work/swhurl-v2" deploy --records v2-records --profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json --out .
 
 # Every live platform check: swhurl-v2 verify --scope platform (the checks that read the cluster, this checkout, the
-# registry and S3, with the caller's kubeconfig in the throwaway folder, readable by the caller only, and removed on
+# registry, S3 and GitHub, with the caller's kubeconfig in the throwaway folder, readable by the caller only, and removed on
 # exit), then the Python ones. AWS credentials come from the AWS CLI unless AWS_ACCESS_KEY_ID is set, and the console's
-# content tag from images/content-tag.sh; without either, the checks that need it say it was not supplied. Needs Go 1.26.0.
+# content tag from images/content-tag.sh. Hook listings use GH_TOKEN or gh auth token; missing inputs are BAD,
+# without stopping unrelated checks. Needs Go 1.26.0.
 .PHONY: verify-platform
 verify-platform:
 	@$(V2_BUILD); \
@@ -130,6 +131,8 @@ verify-platform:
 		if credentials=$$(aws configure export-credentials --format env); then eval "$$credentials"; \
 		else echo "[WARN] no AWS credentials from aws configure export-credentials: the backup checks cannot list S3" >&2; fi; \
 	fi; \
+	if [ -z "$${GH_TOKEN:-}" ]; then GH_TOKEN=$$(gh auth token 2>/dev/null) || GH_TOKEN=; fi; \
+	export GH_TOKEN; \
 	SWHURL_V2="$$work/swhurl-v2" SWHURL_V2_KUBECONFIG="$$work/kubeconfig.json" \
 		SWHURL_V2_CONSOLE_TAG="$$(bash images/content-tag.sh console)" $(SWHURL) verify-run
 

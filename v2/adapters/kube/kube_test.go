@@ -221,6 +221,9 @@ func readerWith(t *testing.T, scenario kubetest.Answers) (kube.Reader, *apiServe
 
 // collectionOf is the collection the API server addresses a recorded kind's objects by: its plural.
 func collectionOf(kind string) string {
+	if kind == "GitRepository" {
+		return "gitrepositories"
+	}
 	if kind == "ImagePolicy" {
 		return "imagepolicies"
 	}
@@ -247,7 +250,7 @@ func TestContractForACertificate(t *testing.T) {
 // the same way: the contract runs around each recorded document, so each stated group, version and collection is the
 // one its document carries.
 func TestContractForThePlatformChecksKinds(t *testing.T) {
-	for _, fixture := range []string{"imagepolicy.json", "statefulset.json", "stream.json", "consumer.json"} {
+	for _, fixture := range []string{"imagepolicy.json", "statefulset.json", "stream.json", "consumer.json", "receiver.json", "gitrepository.json"} {
 		t.Run(fixture, func(t *testing.T) {
 			scenario := answersAbout(t, fixture)
 			scenario.Pods.Namespace = "hello-staging" // the recorded pods' own namespace
@@ -714,6 +717,8 @@ func TestRefOfStatesTheVersion(t *testing.T) {
 		{"cert-manager.io", "Certificate", "cert-manager.io/v1"},
 		{"apps", "StatefulSet", "apps/v1"},
 		{"image.toolkit.fluxcd.io", "ImagePolicy", "image.toolkit.fluxcd.io/v1"},
+		{"notification.toolkit.fluxcd.io", "Receiver", "notification.toolkit.fluxcd.io/v1"},
+		{"source.toolkit.fluxcd.io", "GitRepository", "source.toolkit.fluxcd.io/v1"},
 		{"jetstream.nats.io", "Stream", "jetstream.nats.io/v1beta2"},
 		{"jetstream.nats.io", "Consumer", "jetstream.nats.io/v1beta2"},
 	} {

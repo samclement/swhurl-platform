@@ -47,16 +47,18 @@ const AppLabel = "platform.swhurl.com/app"
 // ScopeEvidence is what the platform scope's checks read, beyond the cluster checks' PlatformEvidence.
 type ScopeEvidence struct {
 	// Compiled is every instance v2 compiled, in order: what Git declares to the cluster.
-	Compiled  []CompiledInstance
-	Images    ImageEvidence
-	Isolation IsolationEvidence
-	Signing   SigningEvidence
-	Events    EventEvidence
-	Egress    EgressEvidence
-	Channels  ChannelEvidence
-	Backups   MongoBackupEvidence
-	Databases DatabaseEvidence
-	Console   ConsoleEvidence
+	Compiled                   []CompiledInstance
+	Images                     ImageEvidence
+	Isolation                  IsolationEvidence
+	Signing                    SigningEvidence
+	Events                     EventEvidence
+	Egress                     EgressEvidence
+	Channels                   ChannelEvidence
+	Backups                    MongoBackupEvidence
+	Databases                  DatabaseEvidence
+	Console                    ConsoleEvidence
+	PushWebhook, ImageWebhooks WebhookEvidence
+	ConsoleTokens              ConsoleTokenEvidence
 	// Credentials is whether object-store credentials were supplied: without them no backup listing is read.
 	Credentials bool
 	// MaxAge is how old the newest complete backup may be.
@@ -76,6 +78,9 @@ func PlatformScopeChecks(e PlatformEvidence, s ScopeEvidence) []PlatformCheck {
 		PlatformCheck{"backups", "Backups", platformBackups(s.Backups, s.Credentials, s.MaxAge, e.Now)},
 		PlatformCheck{"sqlite-backups", "App SQLite backups", platformDatabases(s.Databases, s.Credentials, s.MaxAge, e.Now)},
 		PlatformCheck{"console", "Console", platformConsole(e.Console, s.Console)},
+		PlatformCheck{"push-webhook", "Push Webhook", platformPushWebhook(s.PushWebhook)},
+		PlatformCheck{"image-webhooks", "Image Webhooks", platformImageWebhooks(s.ImageWebhooks)},
+		PlatformCheck{"console-token", "Console GitHub Token", platformConsoleTokens(s.ConsoleTokens, e.Now)},
 	)
 }
 

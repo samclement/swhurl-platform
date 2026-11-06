@@ -15,7 +15,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from swhurl import ROOT, commands, flux, platform
+from swhurl import ROOT, commands, flux
 from swhurl.apps import calling, channels
 
 KEY = 'fixture-private-ingestion-token'
@@ -32,7 +32,6 @@ class CommandSafetyTests(unittest.TestCase):
                         CALLS=str(self.calls), KEY=KEY, OTHER_KEY=OTHER_KEY)
         stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')  # the fake bucket's backups are this fresh
         self.env.update(STAMP=stamp)
-        self.env['WEBHOOK_HOST'] = f'flux-webhook.{platform.base_domain()}'
         self.env.update(FLUX_VERSION=f'v{flux.pinned_version()}',
                         FLUX_ARGS=' '.join(flux.required_args()['kustomize-controller']))
         # The console image tag is this checkout's commit, so the real git diff finds no change.
@@ -42,7 +41,7 @@ class CommandSafetyTests(unittest.TestCase):
         self.env['CHANNEL_SECRETS'] = '\n'.join(f'secret/channel-{name}' for name in channels.routes(ROOT)['channels'])
         self.env['REPO'], self.env['ISSUER'] = str(ROOT), calling.ISSUER
         self.env.update(SWHURL_V2='swhurl-v2', SWHURL_V2_KUBECONFIG=str(self.bin / 'kubeconfig.json'))
-        for name in ('kubectl', 'flux', 'aws', 'curl', 'gh', 'systemctl', 'swhurl-v2'):
+        for name in ('kubectl', 'flux', 'aws', 'systemctl', 'swhurl-v2'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
 import base64, datetime, json, os, sys
@@ -59,9 +58,6 @@ if Path(sys.argv[0]).name == 'swhurl-v2':  # verify: Go decides these checks, so
           'passed': level == 'ok', 'checks': [{'name': 'flux-units', 'section': 'Flux Kustomizations',
                                                'entries': [{'level': level, 'message': 'platform-clickstack'}]}]})
     sys.exit(0 if level == 'ok' else 1)
-elif Path(sys.argv[0]).name == 'curl':
-    sys.stdin.read()
-    print('HTTP/2 200')
 elif Path(sys.argv[0]).name == 'systemctl':
     if argv[0] == 'is-active':
         print('active')
@@ -73,9 +69,6 @@ elif Path(sys.argv[0]).name == 'aws':
     names = ['clickstack-mongodb-' + stamp + s for s in ('.archive.gz.age', '.json')] if prefix.startswith('clickstack') \\
         else ['sqlite-' + stamp + s for s in ('.db.age', '.json')]
     emit([prefix + name for name in names])
-elif Path(sys.argv[0]).name == 'gh':
-    emit([{'active': True, 'config': {'url': 'https://' + os.environ['WEBHOOK_HOST'] + '/hook/x'},
-           'last_response': {'code': 200}}])
 elif any(a.startswith('imagepolicies') for a in argv):
     emit({'items': []})
 elif argv[:3] == ['-n', 'messaging', 'get']:
@@ -111,12 +104,8 @@ elif argv[:3] == ['-n', 'notify', 'get']:
         emit({'items': [{'metadata': {'name': 'notification-routes'}, 'data': {'routes.json': os.environ['ROUTES']}}]})
     else:
         print(os.environ['CHANNEL_SECRETS'])
-elif any(a.startswith('receivers') for a in argv):
-    emit({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}})
 elif Path(sys.argv[0]).name == 'flux':
     sys.exit(1 if os.environ.get('FLUX_FAIL') else 0)
-elif 'console-github' in argv:
-    emit({'data': {'GITHUB_TOKEN': base64.b64encode(b'fixture-github-token').decode()}})
 elif 'console-jobs' in argv:
     emit({'data': {}})
 elif 'helmrelease' in argv and 'console' in argv:
@@ -209,6 +198,39 @@ elif 'secret' in argv:
                                         env=self.env, capture_output=True, text=True)
                 self.assertEqual(result.stdout.splitlines(), ['Plan (install):', *[f'  - make {s}' for s in steps]])
                 self.assertFalse(self.calls.exists())
+
+    def test_verify_recipe_supplies_hook_credential_without_leaking_or_stopping_on_lookup_failure(self):
+        gh = self.bin / 'gh'
+        gh.write_text('#!/usr/bin/env bash\n'
+                      'echo called >> "$CALLS"\n'
+                      'echo "$FIXTURE_TOKEN"\n'
+                      'echo "$FIXTURE_TOKEN" >&2\n'
+                      'exit "${GH_RC:-0}"\n')
+        gh.chmod(0o700)
+        verifier = self.bin / 'verify-recipe'
+        verifier.write_text('#!/usr/bin/env python3\n'
+                            'import os, sys\n'
+                            'assert sys.argv[1:] == ["verify-run"]\n'
+                            'expected = os.environ["EXPECTED_TOKEN"]\n'
+                            'assert os.environ.get("GH_TOKEN", "") == expected\n'
+                            'print("verifier ran")\n')
+        verifier.chmod(0o700)
+        for supplied, lookup_rc, expected, looked_up in (
+                ('supplied-fixture', '0', 'supplied-fixture', False),
+                ('', '0', 'lookup-fixture', True), ('', '1', '', True)):
+            with self.subTest(supplied=bool(supplied), lookup_rc=lookup_rc):
+                self.calls.unlink(missing_ok=True)
+                env = dict(self.env, GH_TOKEN=supplied, GH_RC=lookup_rc, EXPECTED_TOKEN=expected,
+                           FIXTURE_TOKEN='lookup-fixture', AWS_ACCESS_KEY_ID='fixture-access-key')
+                result = subprocess.run(['make', 'verify-platform', f'SWHURL={verifier}',
+                                         'V2_BUILD=set -eu; work=$$(mktemp -d); trap \'rm -rf "$$work"\' EXIT'],
+                                        cwd=ROOT, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn('verifier ran', result.stdout)
+                calls = self.calls.read_text().splitlines()
+                self.assertEqual('called' in calls, looked_up)
+                for token in ('supplied-fixture', 'lookup-fixture'):
+                    self.assertNotIn(token, result.stdout + result.stderr)
 
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
         """End to end through real subprocesses and the fake kubectl (contract test).

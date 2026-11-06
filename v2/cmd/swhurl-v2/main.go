@@ -17,6 +17,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/appsource"
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/git"
+	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/helm"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
@@ -973,6 +974,7 @@ type cli struct {
 	// git reads a checkout for the workstream check; nil is the git command on PATH.
 	git       git.Reader
 	appSource appsource.Reader
+	github    github.Reader
 }
 
 func (c cli) releaseID(path string) int {

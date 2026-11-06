@@ -1,7 +1,6 @@
 """verify-platform and check-repo's required Secrets and settings: every branch, offline, against the fake cluster (fakecluster.py)."""
 import datetime as dt
 import io
-import json
 import os
 import re
 import shutil
@@ -15,7 +14,7 @@ from unittest import mock
 
 from fakecluster import KEY, b64, healthy, verify_report
 
-from swhurl import ROOT, clickstack, platform, validate, verify
+from swhurl import ROOT, platform, validate, verify
 from swhurl.notifications import checks as notification_checks
 from swhurl.report import Report
 from swhurl.run import CommandError, FakeRunner, Result
@@ -47,8 +46,8 @@ class VerifyPlatformTests(unittest.TestCase):
                           '\n== App dashboards and alerts ==', '\n== Notifications ==', '\n== Image Automation ==',
                           '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Egress proxy ==',
                           '\n== Notification channels ==', '\n== Backups ==', '\n== App SQLite backups ==', '\n== Console ==', '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== Console GitHub Token ==',
-                          '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Retention ==', '\n== Notification heartbeat =='])
+                          '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
+                          '\n== ClickStack Sign-up ==', '\n== Retention ==', '\n== Flux Controllers ==', '\n== Notification heartbeat =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -60,27 +59,6 @@ class VerifyPlatformTests(unittest.TestCase):
             'no cluster report': ({'v2-verify': Result((), 2, '', 'credentials: kubeconfig: no current context')},
                                   'swhurl-v2 verify gave no report (not a v2-platform-checks document): credentials: kubeconfig'),
             'another document': ({'v2-verify': {'kind': 'v2-platform-checks', 'version': 2, 'checks': []}}, 'swhurl-v2 verify gave no report'),
-            'secret missing': ({'secret': {'data': {}}}, 'CLICKSTACK_INGESTION_KEY is empty'),
-            'secret unreadable': ({'secret': Result((), 1, '', 'NotFound')}, 'CLICKSTACK_INGESTION_KEY is empty'),
-            'team key unreadable': ({'team': Result((), 2, '', 'quit(2)')}, 'cannot read a unique ClickStack team'),
-            'two team keys': ({'team': Result((), 0, 'RESULT ' + json.dumps({'keys': [KEY, OTHER]}))},
-                              'cannot read a unique ClickStack team'),
-            'registration open': ({'installation': Result((), 0, 'RESULT ' + json.dumps(
-                {'status': 200, 'body': {'isTeamExisting': False}}))}, 'registration is open'),
-            'api unreachable': ({'installation': Result((), 1, '', 'no pod')}, 'cannot ask the HyperDX API'),
-            'invalid base64': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY) + '!'}}}, 'invalid base64'),
-            'different key': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(OTHER)}}}, 'does not match'),
-            'double encoded': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(b64(KEY))}}}, 'does not match'),
-            'trailing newline': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY + '\n')}}}, 'does not match'),
-            'telemetry ttl drift': ({'ttl30': Result((), 0, '8\t9\n')}, '1 of 9 telemetry tables have no 30-day TTL'),
-            'no telemetry tables': ({'ttl30': Result((), 0, '0\t0\n')}, 'have no 30-day TTL'),
-            'clickhouse down': ({'ttl30': Result((), 1, '', 'connection refused')}, 'cannot read ClickHouse telemetry'),
-            'system logs untimed': ({'untimed': Result((), 0, '3\n')}, '3 ClickHouse system log table(s) have no TTL'),
-            'merges failing': ({'merges': Result((), 0, '3765\tsystem.metric_log\n')},
-                               '3765 ClickHouse merge(s) failed in the last hour (for example system.metric_log)'),
-            'part_log unreadable': ({'merges': Result((), 1, '', 'UNKNOWN_TABLE')}, 'cannot read ClickHouse merge results'),
-            'pv delete': ({'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Delete'}}}, 'data volume is not Retain'),
-            'pvc missing': ({'pvc': Result((), 1, '', 'NotFound')}, 'data volume is not Retain'),
 
         }
         for label, (overrides, expected) in cases.items():
@@ -90,16 +68,6 @@ class VerifyPlatformTests(unittest.TestCase):
                 self.assertTrue(any(line.startswith('[BAD]') and expected in line for line in report.lines), text)
                 self.assertNotIn('Validation passed.', text)
                 self.assertNoKeys(text)
-
-    def test_mismatch_prints_fix_hint(self):
-        _, report, _ = run(healthy(secret={'data': {'CLICKSTACK_INGESTION_KEY': b64(OTHER)}}))
-        self.assertTrue(any('make clickstack-bootstrap' in line for line in report.lines))
-
-    def test_team_key_failure_output_never_leaks(self):
-        runner = healthy(team=Result((), 1, KEY, f'error near {KEY}'))
-        code, _, text = run(runner)
-        self.assertEqual(code, 1)
-        self.assertNoKeys(text)
 
     def test_unreachable_cluster_stops_early(self):
         runner = healthy(version=Result((), 1, '', 'connection refused'))
@@ -114,14 +82,7 @@ class VerifyPlatformTests(unittest.TestCase):
         run(runner)
         verbs = {c[c.index('get') if 'get' in c else c.index('exec')] for c in runner.calls if c[0] == 'kubectl'}
         self.assertLessEqual(verbs, {'get', 'exec'})
-        read_only_scripts = (clickstack.TEAM_KEYS,)
-        self.assertTrue(runner.stdin, 'verify-platform sends nothing into pods? the allowlist would be untested')
-        for args, program in runner.stdin:
-            if clickstack.MONGO_POD in args:
-                self.assertTrue(program.rstrip('\n').endswith(read_only_scripts), f'unlisted mongosh script: {program}')
-            else:
-                request = json.loads(program.split(', ', 1)[1].split(');\n', 1)[0])
-                self.assertEqual(request['method'], 'GET', f'HyperDX API call is not a GET: {program}')
+        self.assertFalse(any('exec' in call for call in runner.calls), 'pod queries belong to Go')
 
 
 class FluxControllerTests(unittest.TestCase):
@@ -150,7 +111,7 @@ class AllowedChecksTests(unittest.TestCase):
         names = {check.name for check in verify.CHECKS}
         self.assertEqual(len(names), len(verify.CHECKS))
         self.assertFalse(names & {name for name, _, _ in verify.CLUSTER_CHECKS}, 'a check is either Go\'s or Python\'s')
-        self.assertEqual(frozenset().union(*(check.needs for check in verify.CHECKS)), {'cluster', 'secret', 'exec', 'host'})
+        self.assertEqual(frozenset().union(*(check.needs for check in verify.CHECKS)), {'cluster', 'host'})
         self.assertLessEqual({read for _, reads, _ in verify.CLUSTER_CHECKS for read in reads.split()}, verify.READS.keys())
 
     def test_without_a_console_tag_none_is_passed_and_go_says_it_was_not_supplied(self):

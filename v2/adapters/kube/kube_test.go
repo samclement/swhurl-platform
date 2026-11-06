@@ -250,7 +250,7 @@ func TestContractForACertificate(t *testing.T) {
 // the same way: the contract runs around each recorded document, so each stated group, version and collection is the
 // one its document carries.
 func TestContractForThePlatformChecksKinds(t *testing.T) {
-	for _, fixture := range []string{"imagepolicy.json", "statefulset.json", "stream.json", "consumer.json", "receiver.json", "gitrepository.json"} {
+	for _, fixture := range []string{"imagepolicy.json", "statefulset.json", "stream.json", "consumer.json", "receiver.json", "gitrepository.json", "persistentvolumeclaim.json", "persistentvolume.json"} {
 		t.Run(fixture, func(t *testing.T) {
 			scenario := answersAbout(t, fixture)
 			scenario.Pods.Namespace = "hello-staging" // the recorded pods' own namespace
@@ -806,5 +806,15 @@ func TestAllNamespacesPathAndSelectorAreExplicit(t *testing.T) {
 	request := server.requests[0]
 	if request.URL.Path != "/apis/apps/v1/deployments" || request.URL.Query().Get("labelSelector") != "app.kubernetes.io/instance" {
 		t.Fatalf("%s", request.URL)
+	}
+}
+
+func TestFakeReaderContractForVolumes(t *testing.T) {
+	for _, fixture := range []string{"persistentvolumeclaim.json", "persistentvolume.json"} {
+		t.Run(fixture, func(t *testing.T) {
+			scenario := answersAbout(t, fixture)
+			scenario.Pods.Namespace = "hello-staging"
+			kubetest.Contract(t, scenario, func(t *testing.T, scenario kubetest.Answers) kube.Reader { return kubetest.New(scenario) })
+		})
 	}
 }

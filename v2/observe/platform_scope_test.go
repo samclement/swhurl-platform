@@ -45,7 +45,11 @@ func healthyScope() ScopeEvidence {
 			{Key: prefix + name + "-" + backupStamp + ".json"}}}
 	}
 	push, images, tokens := healthyGitHub()
-	return ScopeEvidence{PushWebhook: push, ImageWebhooks: images, ConsoleTokens: tokens,
+	return ScopeEvidence{
+		Ingestion:    IngestionEvidence{CollectorPresent: true, TeamAvailable: true, Equal: true},
+		Registration: RegistrationEvidence{Readable: true, TeamExists: true},
+		Retention:    RetentionEvidence{Telemetry: TelemetryTTL([]byte("9\t9"), false), SystemLogs: SystemLogTTL([]byte("0"), false), Merges: MergeFailures([]byte("0\t"), false), Volume: Read{Status: Present, Object: []byte(`{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}`)}},
+		PushWebhook:  push, ImageWebhooks: images, ConsoleTokens: tokens,
 		Compiled: []CompiledInstance{compiledHello()},
 		Images: ImageEvidence{
 			Policies: collectionOf(PlatformImagePolicies, policyItem("hello-staging", "hello", "True", "", "42-abc1234")),
@@ -140,7 +144,7 @@ func TestScopeChecksFollowTheClusterChecksAndPass(t *testing.T) {
 		}
 	}
 	want := "flux-units ingress alerts notify-service dashboards notifications image-automation isolation signing-keys " +
-		"events egress channels backups sqlite-backups console push-webhook image-webhooks console-token"
+		"events egress channels backups sqlite-backups console push-webhook image-webhooks console-token runtime-secrets ingestion-key registration retention"
 	if strings.Join(names, " ") != want {
 		t.Fatalf("%v", names)
 	}

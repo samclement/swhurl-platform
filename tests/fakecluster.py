@@ -8,7 +8,7 @@ import base64
 import datetime as dt
 import json
 
-from swhurl import clickstack, flux
+from swhurl import flux
 from swhurl.run import FakeRunner, Result
 
 KEY = 'fixture-team-ingestion-key-0001'
@@ -36,40 +36,6 @@ def flux_answers():
 def flux_rules(runner, answer):
     get = ('kubectl', '-n', 'flux-system', 'get')
     runner.on(*get, 'deployment', handler=answer('kustomize-controller'))
-
-
-def clickstack_answers():
-    return {
-        'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY)}},
-        'mongouri': {'data': {'connectionString.standard': b64('mongodb://u:p@db/hyperdx')}},
-        'team': Result((), 0, 'Warning: EACCES\nRESULT ' + json.dumps({'keys': [KEY]}) + '\n'),
-        'installation': Result((), 0, 'RESULT ' + json.dumps({'status': 200, 'body': {'isTeamExisting': True}}) + '\n'),
-        'ttl30': Result((), 0, '9\t9\n'),
-        'untimed': Result((), 0, '0\n'),
-        'merges': Result((), 0, '0\t\n'),
-        'pvc': {'spec': {'volumeName': 'pv-1'}},
-        'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Retain'}},
-    }
-
-
-def clickstack_rules(runner, answer):
-    def clickhouse(args, _input):
-        query = args[-1]
-        return answer('ttl30' if 'toIntervalDay(30)' in query else 'merges' if 'MergeParts' in query else 'untimed')(args, _input)
-
-    def recorded(key):
-        def handler(args, program):
-            runner.stdin.append((args, program))
-            return answer(key)(args, program)
-        return handler
-
-    (runner.on('kubectl', '-n', 'logging', 'get', 'secret', 'clickstack-ingestion-key', handler=answer('secret'))
-     .on('kubectl', '-n', 'observability', 'get', 'secret', clickstack.MONGO_URI_SECRET, handler=answer('mongouri'))
-     .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.MONGO_POD, handler=recorded('team'))
-     .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.APP, handler=recorded('installation'))
-     .on('kubectl', '-n', 'observability', 'exec', clickstack.CLICKHOUSE_POD, handler=clickhouse)
-     .on('kubectl', '-n', 'observability', 'get', 'pvc', handler=answer('pvc'))
-     .on('kubectl', 'get', 'pv', handler=answer('pv')))
 
 
 def verify_report(*checks):
@@ -109,6 +75,13 @@ PLATFORM_CHECKS = (
                                         ('ok', 'demo-shop: image webhook on samclement/demo-shop, latest delivery returned 200')]),
     ('console-token', 'Console GitHub Token', [('ok', 'GitHub accepts the console token (no expiry date)'),
                                              ('ok', 'GitHub accepts the console repository token (no expiry date)')]),
+    ('runtime-secrets', 'Runtime Secrets', [('ok', 'logging/clickstack-ingestion-key.CLICKSTACK_INGESTION_KEY present')]),
+    ('ingestion-key', 'Ingestion Key Sync', [('ok', 'ingestion Secret bytes match ClickStack; verify collector logs and fresh telemetry after a restart')]),
+    ('registration', 'ClickStack Sign-up', [('ok', 'a team exists, so HyperDX registration is closed')]),
+    ('retention', 'Retention', [('ok', 'all 9 telemetry tables expire after 30 days'),
+                                ('ok', 'ClickHouse system logs expire after 7 days'),
+                                ('ok', 'no ClickHouse merge failed in the last hour'),
+                                ('ok', 'ClickStack MongoDB data volume is Retain (outlives its claim)')]),
 )
 """What swhurl-v2 verify --scope platform, verify-platform's, reports for a healthy platform."""
 
@@ -131,7 +104,7 @@ def notification_rules(runner, answer):
                                       + dt.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z') + '\n')))
 
 
-AREAS = ((flux_answers, flux_rules), (clickstack_answers, clickstack_rules), (cluster_answers, cluster_rules),
+AREAS = ((flux_answers, flux_rules), (cluster_answers, cluster_rules),
          (notification_answers, notification_rules))
 
 
@@ -154,7 +127,6 @@ def healthy(**overrides):
         return handler
 
     runner = FakeRunner()
-    runner.stdin = []  # (args, program) of every program sent into a pod (mongosh scripts, API requests)
     runner.on('kubectl', 'get', '--raw=/version', handler=answer('version'))
     for _, rules in AREAS:
         rules(runner, answer)

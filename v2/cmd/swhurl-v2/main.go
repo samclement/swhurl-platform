@@ -134,14 +134,16 @@ the checkout at --root (its v2 records, compiled tree, profile and egress alloca
 store — each app's ImagePolicy and staging image, app isolation, the token issuer and signing keys, NATS and the
 declared streams and consumers, the egress proxy and its ports, the notification routes and channel Secrets, the
 MongoDB and SQLite backups, and the console's image against --console-tag (the checkout's content tag,
-images/content-tag.sh console) and its job record. It needs --kubeconfig (--in-cluster is a usage error); registry
+images/content-tag.sh console) and its job record. It also checks GitHub hooks and console tokens, the collector's
+runtime ingestion Secret and its bytes against the ClickStack team key, closed registration, ClickHouse TTLs and
+failed merges, and MongoDB volume retention. Pod queries use fixed read-only commands over API-server WebSocket v5,
+with credentials only on stdin and no subprocess. It needs --kubeconfig (--in-cluster is a usage error); registry
 reads are anonymous; the object store is read with AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN from
 the environment, and a backup is too old after BACKUP_MAX_AGE_HOURS (default 26). An input it needs but was not given
 (the credentials, the tag) is a bad entry saying it was not supplied. It prints each check's section and [OK], [WARN]
 or [BAD] lines, or with --json the v2-platform-checks document (version 1). A failed read is a bad entry, never
 absence. The exit status is 1 when an entry is bad, after the report is printed, and 2 for a usage error, an unusable
-credential or a request an adapter refuses. make verify-platform runs the platform scope before the checks that read
-Secrets, run commands in pods or need the host.
+credential or a request an adapter refuses. make verify-platform runs the platform scope before the two remaining host checks.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the

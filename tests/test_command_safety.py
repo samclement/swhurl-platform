@@ -114,30 +114,6 @@ elif 'helmrelease' in argv and 'console' in argv:
 elif 'flux-system' in argv and 'deployment' in argv:
     emit({'metadata': {'labels': {'app.kubernetes.io/version': os.environ['FLUX_VERSION']}},
           'spec': {'template': {'spec': {'containers': [{'args': os.environ['FLUX_ARGS'].split()}]}}}})
-elif 'clickhouse-client' in argv:
-    print('9\\t9' if 'toIntervalDay(30)' in argv[-1] else '0')
-elif 'pvc' in argv:
-    emit({'spec': {'volumeName': 'pv-mongodb'}})
-elif 'pv' in argv:
-    emit({'spec': {'persistentVolumeReclaimPolicy': 'Retain'}})
-elif 'exec' in argv and 'node' in argv:
-    print('RESULT ' + json.dumps({'status': 200, 'body': {'isTeamExisting': True}}))
-elif 'exec' in argv:
-    sys.stdin.read()
-    print('RESULT ' + json.dumps({'keys': [os.environ['KEY']]}))
-    if scenario == 'mongo-failure':
-        print('failed near ' + os.environ['KEY'], file=sys.stderr)
-        sys.exit(1)
-elif 'clickstack-mongodb-hyperdx-hyperdx' in argv:
-    emit({'data': {'connectionString.standard': base64.b64encode(b'mongodb://u:p@db/hyperdx').decode()}})
-elif 'secret' in argv:
-    value = os.environ['KEY'].encode()
-    if scenario == 'mismatch': value = os.environ['OTHER_KEY'].encode()
-    if scenario == 'newline': value += b'\\n'
-    if scenario == 'double': value = base64.b64encode(value)
-    encoded = base64.b64encode(value).decode()
-    if scenario == 'invalid': encoded += '!'
-    emit({'data': {} if scenario == 'missing' else {'CLICKSTACK_INGESTION_KEY': encoded}})
 ''')
             path.chmod(0o700)
 
@@ -232,38 +208,17 @@ elif 'secret' in argv:
                 for token in ('supplied-fixture', 'lookup-fixture'):
                     self.assertNotIn(token, result.stdout + result.stderr)
 
-    def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
-        """End to end through real subprocesses and the fake kubectl (contract test).
-
-        ``match`` and ``unready`` run the whole verify-platform; the key scenarios change only the
-        ingestion Secret, so they run that one check (a whole run costs about 60 fake tool processes)."""
-        whole = ('match', 'unready')
-        key_only = ('double', 'mismatch', 'missing', 'invalid', 'newline', 'mongo-failure')
-        check = ('import sys\n'
-                 'from swhurl import clickstack\n'
-                 'from swhurl.report import Report\n'
-                 'from swhurl.run import Runner\n'
-                 'runner, report = Runner(), Report()\n'
-                 'report.redact = runner.redact\n'
-                 'clickstack.check_ingestion(runner, report)\n'
-                 'sys.exit(report.exit_code())\n')
-
-        def verify(scenario):
-            argv = ['-m', 'swhurl', 'verify-run'] if scenario in whole else ['-c', check]
-            return subprocess.run([sys.executable, *argv], cwd=ROOT,
-                                  env=dict(self.env, SCENARIO=scenario, PYTHONPATH=str(ROOT / 'tools')),
-                                  capture_output=True, text=True)
-
-        # The scenarios are independent processes; running them together keeps make test quick.
-        scenarios = whole + key_only
-        with ThreadPoolExecutor() as pool:
-            results = dict(zip(scenarios, pool.map(verify, scenarios), strict=True))
-        for scenario, result in results.items():
+    def test_verifier_preserves_go_report_exit_and_runs_host_checks(self):
+        # Ingestion byte/protocol/failure cases are in Go's platform_exec and exec adapter tests.
+        for scenario in ('match', 'unready'):
             with self.subTest(scenario=scenario):
+                result = subprocess.run([sys.executable, '-m', 'swhurl', 'verify-run'], cwd=ROOT,
+                                        env=dict(self.env, SCENARIO=scenario, PYTHONPATH=str(ROOT / 'tools')),
+                                        capture_output=True, text=True)
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode == 0, scenario == 'match', output)
-                if scenario in key_only:
-                    self.assertIn('Ingestion Key Sync', output, 'the key check ran')
+                self.assertIn('Flux Controllers', output)
+                self.assertIn('Notification heartbeat', output)
                 for value in (KEY, OTHER_KEY):
                     self.assertNotIn(value, output)
                     self.assertNotIn(base64.b64encode(value.encode()).decode(), output)

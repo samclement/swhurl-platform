@@ -1,0 +1,1 @@
+{"apiVersion":"v1","kind":"PersistentVolume","metadata":{"name":"mongo-data"},"spec":{"persistentVolumeReclaimPolicy":"Retain"}}

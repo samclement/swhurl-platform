@@ -1239,6 +1239,9 @@ the channel Secrets are those the notify service reads (by its label), not names
 content tag (`src-…`) warns "cannot compare" instead of a `git diff`; until the last slice the report shows Go's
 checks before Python's remaining ones, then Python's order returns. Webhooks match the exact parsed host, not a
 substring or an impostor host; untrusted delivery messages retain only standard HTTP reasons, never URLs or credentials.
+An exec stream ends successfully only after a terminal status and an orderly close (code 1000/1001, or none): a
+valid error close (1002, 1008, 1011, …) fails the check even after a status, and a 101 selecting an extension this
+client never offered is refused, so a failed transport can never read as a passing check.
 
 **Delivery,** four slices, each committed, run live with `make verify-platform` (the platform page unchanged) and
 recorded in current state, Python's `CHECKS` shrinking with each and the deleted Python's test cases kept as Go
@@ -1257,12 +1260,11 @@ new YAML reader is added. App image-webhook repositories still come from staging
 tokens are checked against this installed platform repository. All other slice-2 scope, and slices 3 and 4, remain
 approved.
 
-**Slice 3 report gate.** Python's `ingestion-key` routine emits two sections, `Runtime Secrets` and
-`Ingestion Key Sync`, whereas each Go `PlatformCheck` has one name and section. The proposed smallest reshape is
-two result groups, `runtime-secrets` and `ingestion-key`, preserving both sections and their verdicts without
-changing the JSON schema or repeating a check name. This would make the final catalogue twenty-four groups
-rather than twenty-three; no additional live operation is implied. Confirm this presentation choice before
-implementing slice 3.
+**Slice 3 report groups (approved 6 November 2026).** The ingestion checks are two result groups,
+`runtime-secrets` (`Runtime Secrets`) and `ingestion-key` (`Ingestion Key Sync`), preserving both sections and their
+verdicts without changing the JSON schema or repeating a check name. The final catalogue has twenty-four groups
+rather than twenty-three; no additional live operation is implied. Slice 3 moves Python's three routines into
+four Go groups; after it twenty-two groups are Go's and two host checks remain Python.
 
 ## 12. The notify service in Go (approved 5 November 2026)
 

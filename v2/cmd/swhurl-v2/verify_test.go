@@ -178,7 +178,7 @@ func platformReport(t *testing.T, stdout string) map[string][]struct{ Level, Mes
 		names = append(names, check.Name)
 	}
 	if strings.Join(names, " ") != "flux-units ingress alerts notify-service dashboards notifications image-automation "+
-		"isolation signing-keys events egress channels backups sqlite-backups console push-webhook image-webhooks console-token" {
+		"isolation signing-keys events egress channels backups sqlite-backups console push-webhook image-webhooks console-token runtime-secrets ingestion-key registration retention" {
 		t.Fatalf("the checks and their order: %v", names)
 	}
 	return checks
@@ -283,7 +283,7 @@ func TestVerifyScopeUsage(t *testing.T) {
 }
 
 // The default scope never constructs the platform ports or consults GitHub, even with GH_TOKEN set.
-func TestVerifyClusterNeverReadsGitHubOrData(t *testing.T) {
+func TestVerifyClusterNeverReadsGitHubDataOrExec(t *testing.T) {
 	t.Setenv("GH_TOKEN", "operator-fixture")
 	server, paths := platformAPI(t)
 	fake := githubtest.New()
@@ -294,7 +294,7 @@ func TestVerifyClusterNeverReadsGitHubOrData(t *testing.T) {
 		t.Fatalf("exit %d; GitHub calls %d; paths %v; %s", status, len(fake.Calls), *paths, diagnostic.String())
 	}
 	for _, path := range *paths {
-		if strings.Contains(path, "/secrets") || strings.Contains(path, "/configmaps") {
+		if strings.Contains(path, "/secrets") || strings.Contains(path, "/configmaps") || strings.Contains(path, "/exec") {
 			t.Fatalf("Data read: %s", path)
 		}
 	}
@@ -321,5 +321,37 @@ func TestVerifyMissingGitHubTokenReportsBadAndContinues(t *testing.T) {
 				t.Fatal("unrelated checks stopped")
 			}
 		})
+	}
+}
+
+func TestVerifyPlatformReportsAllPodGroupsWhenInputsAreUnavailable(t *testing.T) {
+	server, paths := platformAPI(t)
+	status, stdout, diagnostic, _ := verifyPlatform(t, server)
+	if status != 1 || diagnostic != "" {
+		t.Fatalf("exit %d: %s", status, diagnostic)
+	}
+	checks := platformReport(t, stdout)
+	for _, name := range []string{"runtime-secrets", "ingestion-key", "registration", "retention"} {
+		entries := checks[name]
+		if len(entries) == 0 {
+			t.Fatalf("missing group %s", name)
+		}
+		for _, entry := range entries {
+			if entry.Level != "bad" {
+				t.Fatalf("%s silently passed unavailable evidence", name)
+			}
+		}
+	}
+	executed := 0
+	for _, path := range *paths {
+		if strings.Contains(path, "/exec") {
+			executed++
+			if !strings.Contains(path, "/pods/clickstack-clickhouse-clickhouse-0-0-0/exec?") {
+				t.Fatal("no Mongo URI or ready app pod, so no such exec may be guessed")
+			}
+		}
+	}
+	if executed != 3 {
+		t.Fatalf("expected three independent ClickHouse queries, got %d", executed)
 	}
 }

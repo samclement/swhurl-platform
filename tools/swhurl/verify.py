@@ -5,11 +5,10 @@ section heading; any ``[BAD]`` makes the exit code 1. Key values are
 registered with the runner as secrets, so they are redacted from every message
 and never printed, even when a comparison fails.
 
-The checks that read the cluster, this checkout, the registry, S3 and GitHub are ``swhurl-v2 verify --scope platform``'s,
+The checks that read the cluster, this checkout, the registry, S3 and GitHub, plus fixed read-only pod queries, are ``swhurl-v2 verify --scope platform``'s,
 run first (``CLUSTER_CHECKS``); the make recipe builds the binary and names it, the caller's kubeconfig and this
 checkout's console content tag in ``SWHURL_V2``, ``SWHURL_V2_KUBECONFIG`` and ``SWHURL_V2_CONSOLE_TAG``, and exports
-the AWS credentials it lists S3 with and GH_TOKEN for hook listings. The five others run commands in pods or
-need this host, live beside what they check (``flux.py``, ``clickstack.py``, ``notifications/checks.py``) and are
+the AWS credentials it lists S3 with and GH_TOKEN for hook listings. The two host checks live beside what they check (``flux.py``, ``notifications/checks.py``) and are
 listed in ``CHECKS``.
 """
 from __future__ import annotations
@@ -19,7 +18,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from swhurl import ROOT, clickstack, flux, platform_checks
+from swhurl import ROOT, flux, platform_checks
 from swhurl.notifications import checks as notifications
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -51,11 +50,17 @@ CLUSTER_CHECKS = (
      "The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise)"),
     ('console-token', 'cluster checkout secret github',
      "GitHub accepts the console's tokens and none expires within 14 days (warns)"),
+    ('runtime-secrets', 'cluster secret', 'The collector ingestion key Secret is present and nonempty'),
+    ('ingestion-key', 'cluster secret exec', "The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed"),
+    ('registration', 'cluster exec', 'A HyperDX team exists, so registration is closed'),
+    ('retention', 'cluster exec',
+     'Telemetry expires after 30 days and ClickHouse system logs after 7, no merge failed in the last hour, '
+     'and the MongoDB volume is retained'),
 )
 """``swhurl-v2 verify --scope platform``'s checks, in its order, for the operations page: Go decides them
 (``v2/observe/platform.go`` and ``platform_scope.go``). Each names what it reads besides the cluster and its passing."""
 READS = {'cluster': 'Cluster (read)', 'checkout': 'this checkout', 'registry': 'registry (read)', 's3': 'S3 (list)',
-         'secret': 'Secrets (read)', 'github': 'GitHub (read)'}
+         'secret': 'Secrets (read)', 'github': 'GitHub (read)', 'exec': 'commands in pods'}
 
 
 def check_cluster(runner: Runner, report: Report) -> None:
@@ -111,12 +116,6 @@ class Check:
 CHECKS = (
     Check.of('flux-controllers', 'cluster host', flux.check_controllers,
              'The Flux controllers run the pinned version with the settings in Git (warns otherwise)'),
-    Check.of('ingestion-key', 'cluster secret exec', clickstack.check_ingestion,
-             "The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed"),
-    Check.of('registration', 'cluster exec', clickstack.check_registration, 'A HyperDX team exists, so registration is closed'),
-    Check.of('retention', 'cluster exec', clickstack.check_retention,
-             'Telemetry expires after 30 days and ClickHouse system logs after 7, no merge failed in the last hour, '
-             'and the MongoDB volume is retained'),
     Check.of('notification-heartbeat', 'host', notifications.check_notification_heartbeat,
              "The host heartbeat timer is active and its service's last run succeeded within 15 minutes"),
 

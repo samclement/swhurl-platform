@@ -43,8 +43,12 @@ type Fake struct {
 	// Objects are further objects Read answers as present. With Objects set, any other object of a kind the adapter
 	// reads, and the scenario does not name, is absent, as the API server's 404 says.
 	Objects map[observe.Ref][]byte
-	// Collections are further namespace collections ListNamespace answers as present, keyed by a ref without a name.
+	// Collections are further collections answered as present, keyed by a ref without a name: ListNamespace's by
+	// its namespace, List's by its namespace (none for a cluster-scoped kind) and ListAllNamespaces' by none. A list
+	// with a selector answers every item, whatever the selector says.
 	Collections map[observe.Ref][][]byte
+	// Signing is what SigningKeys answers.
+	Signing kube.SigningKeys
 	// Tokens is what Review answers for each token; the API server vouches for no other.
 	Tokens map[string]kube.TokenReview
 	// ConfigMapData and SecretData are each namespace's ConfigMaps and Secrets; SetConfigMapKey changes the first.
@@ -61,6 +65,7 @@ var _ kube.Reader = (*Fake)(nil)
 var _ kube.Writer = (*Fake)(nil)
 var _ kube.Reviewer = (*Fake)(nil)
 var _ kube.Data = (*Fake)(nil)
+var _ kube.Issuer = (*Fake)(nil)
 
 // New returns a fake that answers from the scenario.
 func New(answers Answers) *Fake { return &Fake{Answers: answers} }
@@ -182,6 +187,9 @@ func (f *Fake) list(ref observe.Ref, selector string, all bool) (observe.List, e
 	}
 	if selector == "" {
 		return observe.List{}, &kube.Error{Code: kube.RefusedRequest, Subject: "selector", Reason: "required"}
+	}
+	if items, ok := f.Collections[ref]; ok {
+		return kube.DecodeCollection(ref, selector, collection(items)), nil
 	}
 	expected := f.Answers.Pods
 	if all {

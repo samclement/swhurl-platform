@@ -19,6 +19,18 @@ type PlatformInputs struct {
 // instances there are — and reports their verdicts. A read the cluster answers with a failure is evidence the checks
 // judge; a request the adapter refuses to make is an error, and no report is made.
 func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformReport, error) {
+	evidence, err := platformEvidence(ctx, inputs.Reader)
+	if err != nil {
+		return observe.PlatformReport{}, err
+	}
+	now := inputs.Now().UTC()
+	evidence.Now = now
+	return observe.PlatformReport{Source: inputs.Source, ObservedAt: now.Format(time.RFC3339),
+		Checks: observe.PlatformChecks(evidence)}, nil
+}
+
+// platformEvidence makes the cluster checks' reads.
+func platformEvidence(ctx context.Context, reader kube.Reader) (observe.PlatformEvidence, error) {
 	evidence := observe.PlatformEvidence{}
 	for _, list := range []struct {
 		ref    observe.Ref
@@ -28,9 +40,9 @@ func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformRepor
 		{observe.PlatformAlerts, &evidence.Alerts},
 		{observe.PlatformProviders, &evidence.Providers},
 	} {
-		found, err := inputs.Reader.ListNamespace(ctx, list.ref)
+		found, err := reader.ListNamespace(ctx, list.ref)
 		if err != nil {
-			return observe.PlatformReport{}, err
+			return observe.PlatformEvidence{}, err
 		}
 		*list.target = found
 	}
@@ -44,14 +56,11 @@ func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformRepor
 		{observe.PlatformDashboards, &evidence.Dashboards},
 		{observe.PlatformNotifications, &evidence.Notifications},
 	} {
-		found, err := inputs.Reader.Read(ctx, read.ref)
+		found, err := reader.Read(ctx, read.ref)
 		if err != nil {
-			return observe.PlatformReport{}, err
+			return observe.PlatformEvidence{}, err
 		}
 		*read.target = found
 	}
-	now := inputs.Now().UTC()
-	evidence.Now = now
-	return observe.PlatformReport{Source: inputs.Source, ObservedAt: now.Format(time.RFC3339),
-		Checks: observe.PlatformChecks(evidence)}, nil
+	return evidence, nil
 }

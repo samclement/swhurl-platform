@@ -259,7 +259,7 @@ def default_host(name: str, env: str) -> str:
 # Automatic staging deploys (docs/apps.md#deploy-a-new-image): for an app with --auto-deploy,
 # the compiler writes an ImageRepository and ImagePolicy (in flux-system) into the staging instance. The
 # policy's report starts the Deploy workflow, which reads the registry with the same filter
-# (apps/images.py) and writes the tag and digest. Tags must be <run number>-<commit sha>, as the
+# (swhurl-v2 deploy) and writes the tag and digest. Tags must be <run number>-<commit sha>, as the
 # template's workflow publishes them; the highest run wins.
 IMAGE_AUTOMATION_FILE = 'image-automation.yaml'
 AUTO_DEPLOY_TAG_PATTERN = r'^(?P<run>[0-9]+)-[0-9a-f]{7,40}$'

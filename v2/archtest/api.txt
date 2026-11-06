@@ -82,15 +82,17 @@ adapters/kube/kubetest: func (*Fake) Read(_ context.Context, ref observe.Ref) (o
 adapters/kube/kubetest: func (*Fake) Review(_ context.Context, token, audience string) (kube.TokenReview, error)
 adapters/kube/kubetest: func (*Fake) Secrets(_ context.Context, namespace string, selector kube.Selector) ([]kube.Secret, error)
 adapters/kube/kubetest: func (*Fake) SetConfigMapKey(_ context.Context, namespace, name, key, value, fieldManager string) error
+adapters/kube/kubetest: func (*Fake) SigningKeys(context.Context) (kube.SigningKeys, error)
 adapters/kube/kubetest: func CollectionContract(t *testing.T, open func(*testing.T, []byte, string) kube.Reader)
 adapters/kube/kubetest: func Contract(t *testing.T, answers Answers, open func(*testing.T, Answers) kube.Reader)
 adapters/kube/kubetest: func DataContract(t *testing.T, answers DataAnswers, open func(*testing.T, DataAnswers) kube.Data)
+adapters/kube/kubetest: func IssuerContract(t *testing.T, want kube.SigningKeys, open func(*testing.T, kube.SigningKeys) kube.Issuer)
 adapters/kube/kubetest: func New(answers Answers) *Fake
 adapters/kube/kubetest: func ReviewContract(t *testing.T, answers ReviewAnswers, open func(*testing.T, ReviewAnswers) kube.Reviewer)
 adapters/kube/kubetest: func WriteContract(t *testing.T, log string, open func(*testing.T, string) kube.Writer)
 adapters/kube/kubetest: type Answers struct {Object observe.Ref Document []byte Missing observe.Ref Failed observe.Ref Malformed observe.Ref Mismatched observe.Ref Pods observe.Ref Selector string Collection []byte ListReason string Items [][]byte}
 adapters/kube/kubetest: type DataAnswers struct {Namespace, Labels string ConfigMap kube.ConfigMap Secret kube.Secret Other string}
-adapters/kube/kubetest: type Fake struct {Answers Answers Reads []observe.Ref Writes []observe.Ref ReadLogs []observe.Ref Log string Selectors []string Refuse error Objects map[observe.Ref][]byte Collections map[observe.Ref][][]byte Tokens map[string]kube.TokenReview ConfigMapData map[string][]kube.ConfigMap SecretData map[string][]kube.Secret Failing map[string]error Calls []string}
+adapters/kube/kubetest: type Fake struct {Answers Answers Reads []observe.Ref Writes []observe.Ref ReadLogs []observe.Ref Log string Selectors []string Refuse error Objects map[observe.Ref][]byte Collections map[observe.Ref][][]byte Signing kube.SigningKeys Tokens map[string]kube.TokenReview ConfigMapData map[string][]kube.ConfigMap SecretData map[string][]kube.Secret Failing map[string]error Calls []string}
 adapters/kube/kubetest: type ReviewAnswers struct {Token, Audience, Username string}
 adapters/kube: const BadCredentials = "credentials"
 adapters/kube: const Failed = "failed"
@@ -107,8 +109,10 @@ adapters/kube: func (*API) Read(ctx context.Context, ref observe.Ref) (observe.R
 adapters/kube: func (*API) Review(ctx context.Context, token, audience string) (TokenReview, error)
 adapters/kube: func (*API) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error)
 adapters/kube: func (*API) SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error
+adapters/kube: func (*API) SigningKeys(ctx context.Context) (SigningKeys, error)
 adapters/kube: func (*Error) Error() string
 adapters/kube: func (Connection) Data() (Data, error)
+adapters/kube: func (Connection) Issuer() (Issuer, error)
 adapters/kube: func (Connection) Reader() (Reader, error)
 adapters/kube: func (Connection) Reviewer() (Reviewer, error)
 adapters/kube: func (Connection) Writer() (Writer, error)
@@ -126,10 +130,12 @@ adapters/kube: type Connection struct {Endpoint string Credentials Credentials T
 adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
 adapters/kube: type Data interface {ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error) // SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every // other key as it is. SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error}
 adapters/kube: type Error struct {Code, Subject, Reason string}
+adapters/kube: type Issuer interface {SigningKeys(ctx context.Context) (SigningKeys, error)}
 adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error)}
 adapters/kube: type Reviewer interface {Review(ctx context.Context, token, audience string) (TokenReview, error)}
 adapters/kube: type Secret struct {Name string Labels map[string]string Data map[string][]byte}
 adapters/kube: type Selector struct {Name, Labels string}
+adapters/kube: type SigningKeys struct {Issuer string Keys []byte}
 adapters/kube: type TokenReview struct {Authenticated bool Audiences []string Username string}
 adapters/kube: type Writer interface {// Patch applies a JSON merge patch to one object: the shape the platform uses to suspend a release or // set a replica count. Patch(ctx context.Context, ref observe.Ref, patch []byte) error // Create creates one object from its document. Create(ctx context.Context, ref observe.Ref, document []byte) error // Delete removes one object. An object that is already gone is not an error. Delete(ctx context.Context, ref observe.Ref) error // Logs reads the last lines of one pod's log: the evidence a restore job leaves about what it did. Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)}
 adapters/ntfy/ntfytest: func (*Fake) Publish(_ context.Context, address string, publication notify.Publication) error
@@ -504,6 +510,7 @@ notify: type State struct {Seen map[string]float64 Pending []Entry}
 notify: var ErrInvalidOutbox = errors.New("the outbox is invalid; refusing to reset delivery history")
 notify: var ErrOutboxTooLarge = errors.New("the outbox exceeds its bounded size")
 observe: const Absent = "absent"
+observe: const AppLabel = "platform.swhurl.com/app"
 observe: const Applied = "applied"
 observe: const AsIntended = "as_intended"
 observe: const BackupAbsent = "absent"
@@ -517,6 +524,11 @@ observe: const BackupUnavailable = "unavailable"
 observe: const CheckBad CheckLevel = "bad"
 observe: const CheckOK CheckLevel = "ok"
 observe: const CheckWarn CheckLevel = "warn"
+observe: const CheckoutAllocation = "platform/egress/allocation.json"
+observe: const CheckoutCompiled = "v2-apps/instances"
+observe: const CheckoutProfile = "v2/testdata/profile.json"
+observe: const CheckoutRecords = "v2-records"
+observe: const CheckoutTeams = "v2-records/teams.json"
 observe: const Different = "different"
 observe: const IsNotRunning Verdict = "not_running"
 observe: const IsRunning Verdict = "running"
@@ -594,6 +606,7 @@ observe: const RunRunning = "running"
 observe: const RunUnknown = "unknown"
 observe: const Running = "running"
 observe: const Settled = "settled"
+observe: const StagingEnvironment = "staging"
 observe: const StateFailing = "failing"
 observe: const StateHealthy = "healthy"
 observe: const StateStopped = "stopped"
@@ -606,22 +619,30 @@ observe: const Unknown Verdict = "unknown"
 observe: func (*Error) Error() string
 observe: func (Candidates) EvidenceFor(target Target) Evidence
 observe: func (Changes) Validate() error
+observe: func (CompiledInstance) Namespace() string
+observe: func (ImagePolicy) Ready() bool
 observe: func (PlatformReport) Passed() bool
 observe: func (RestorePlan) Ready() bool
 observe: func ArchiveMetadataOf(document []byte) (ArchiveMetadata, error)
+observe: func BackupJobLocation(job Read) (ArchiveQuery, bool)
+observe: func BackupLocation(uri string) (ArchiveQuery, bool)
 observe: func BackupTargetOf(cronJob []byte) (BackupTarget, error)
 observe: func BulkPlan(targets []Target) []ListRequest
+observe: func CompiledObject(name string) bool
 observe: func CurrentnessOf(expected, literal, availability string, scope ChangeScope, changes *Changes) (Currentness, error)
 observe: func DecodeChanges(data []byte) (Changes, error)
 observe: func EncodeCollection(collection Collection) ([]byte, error)
 observe: func EncodePlatformReport(r PlatformReport) ([]byte, error)
 observe: func EncodeReport(report Report) ([]byte, error)
 observe: func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error)
+observe: func EventNamespaces(compiled []CompiledInstance) []string
 observe: func Explain(target Target, evidence Evidence) (Report, error)
+observe: func ImagePolicies(list List) []ImagePolicy
 observe: func IndexCandidates(lists []List) (Candidates, error)
 observe: func IsPositive(outcome string) bool
 observe: func NewestRun(items [][]byte) (string, bool, error)
 observe: func PlatformChecks(e PlatformEvidence) []PlatformCheck
+observe: func PlatformScopeChecks(e PlatformEvidence, s ScopeEvidence) []PlatformCheck
 observe: func PlatformText(r PlatformReport) string
 observe: func PromotionReadiness(report Report, reviewedDigest string) PromotionDecision
 observe: func RestoreOf(input RestoreInput) RestorePlan
@@ -642,19 +663,32 @@ observe: type Candidates struct {}
 observe: type Certificate struct {Name string Outcome string Reason string}
 observe: type ChangeScope struct {Files, Folders []string}
 observe: type Changes struct {Kind string `json:"kind"` Version int `json:"version"` Comparisons []Comparison `json:"comparisons"`}
+observe: type ChannelEvidence struct {Wanted []byte Problem string Live []byte Unread string Secrets []string Owners map[string][]string}
 observe: type CheckLevel string
 observe: type Collection struct {Source, ObservedAt, Revision string Instances []InstanceReport}
 observe: type Comparison struct {From string `json:"from"` To string `json:"to"` Status string `json:"status"` Paths []string `json:"paths"`}
+observe: type CompiledInstance struct {Application, Environment string Files map[string][]byte}
 observe: type Condition struct {Type string `json:"type"` Status string `json:"status"` Reason string `json:"reason"` ObservedGeneration *int64 `json:"observedGeneration"`}
+observe: type ConsoleEvidence struct {Jobs bool JobsUnread string Tag string}
 observe: type Currentness struct {State string `json:"state"` Reason string `json:"reason"` AppliedRevision string `json:"appliedRevision"`}
+observe: type DatabaseBackup struct {Namespace string Listing ArchiveList}
+observe: type DatabaseEvidence struct {Problem string Location ArchiveQuery Databases []DatabaseBackup}
+observe: type EgressEvidence struct {Proxy Read Ports []InstancePort Problem string}
 observe: type Error struct {Field, Reason string}
+observe: type EventEvidence struct {Server, Controller Read Streams, Consumers map[string]List}
 observe: type Evidence struct {Source string ObservedAt string Objects []Read Pods []List Backup *BackupEvidence Changes *Changes}
 observe: type Finding struct {Field, Outcome, Reason string}
 observe: type FluxFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` Suspended *bool `json:"suspended"` Conditions []Condition `json:"conditions"`}
+observe: type ImageEvidence struct {Policies List Records map[string]StagingRecord Newest map[string]NewestImage}
+observe: type ImagePolicy struct {Name, App, Status, Message, Tag string}
+observe: type InstancePort struct {Application, Environment string Port int32}
 observe: type InstanceReport struct {Application, Environment string Report Report}
+observe: type IsolationEvidence struct {Namespaces List Quotas, Policies map[string]List Teams map[string]bool TeamsProblem string}
 observe: type List struct {Ref Ref Selector string Status string Reason string Items [][]byte}
 observe: type ListRequest struct {Ref Ref Selector string}
 observe: type LiveFacts struct {Unit FluxFacts `json:"unit"` Release FluxFacts `json:"release"` Workload WorkloadFacts `json:"workload"` Running RunningFacts `json:"running"`}
+observe: type MongoBackupEvidence struct {Job Read Listing ArchiveList}
+observe: type NewestImage struct {Digest, Problem string}
 observe: type PlatformCheck struct {Name string `json:"name"` Section string `json:"section"` Entries []PlatformEntry `json:"entries"`}
 observe: type PlatformEntry struct {Level CheckLevel `json:"level"` Message string `json:"message"`}
 observe: type PlatformEvidence struct {Units, Alerts, Providers List Traefik, Notify, Console, Dashboards, Notifications Read Now time.Time}
@@ -670,16 +704,29 @@ observe: type Route struct {Name string Outcome string Reason string Hosts []str
 observe: type RouteTarget struct {Ingress Ref Certificates []Ref}
 observe: type RunReport struct {Name string CreatedAt string CompletedAt string Outcome string}
 observe: type RunningFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` Digests []string `json:"digests"`}
+observe: type ScopeEvidence struct {Compiled []CompiledInstance Images ImageEvidence Isolation IsolationEvidence Signing SigningEvidence Events EventEvidence Egress EgressEvidence Channels ChannelEvidence Backups MongoBackupEvidence Databases DatabaseEvidence Console ConsoleEvidence Credentials bool MaxAge time.Duration}
+observe: type SigningEvidence struct {Issuer string Keys []byte Unread string StatedIssuer, StatedKeys, Unstated string}
+observe: type StagingRecord struct {Image, Digest, Problem string}
 observe: type State struct {Name, Field, Reason string}
 observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string Backup *BackupTarget Route *RouteTarget Scope *ChangeScope}
 observe: type Verdict string
 observe: type WorkloadFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` ReadyReplicas *int64 `json:"readyReplicas"`}
 observe: var PlatformAlerts = Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Alert", Namespace: "flux-system"}
 observe: var PlatformConsole = Ref{APIVersion: "helm.toolkit.fluxcd.io/v2", Kind: "HelmRelease", Namespace: "console", Name: "console"}
+observe: var PlatformConsumers = Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Consumer"}
 observe: var PlatformDashboards = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-dashboards"}
+observe: var PlatformEgress = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "egress", Name: "egress"}
+observe: var PlatformImagePolicies = Ref{APIVersion: "image.toolkit.fluxcd.io/v1", Kind: "ImagePolicy", Namespace: "flux-system"}
+observe: var PlatformMongoBackup = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "observability", Name: "backup-mongodb"}
+observe: var PlatformNATS = Ref{APIVersion: "apps/v1", Kind: "StatefulSet", Namespace: "messaging", Name: "nats"}
+observe: var PlatformNATSController = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "messaging", Name: "nats-controller"}
+observe: var PlatformNamespaces = Ref{APIVersion: "v1", Kind: "Namespace"}
+observe: var PlatformNetworkPolicies = Ref{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"}
 observe: var PlatformNotifications = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-notifications"}
 observe: var PlatformNotify = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "notify", Name: "notify"}
 observe: var PlatformProviders = Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Provider", Namespace: "flux-system"}
+observe: var PlatformQuotas = Ref{APIVersion: "v1", Kind: "ResourceQuota"}
+observe: var PlatformStreams = Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Stream"}
 observe: var PlatformTraefik = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "kube-system", Name: "traefik"}
 observe: var PlatformUnits = Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization", Namespace: "flux-system"}
 orchestration: const AppRunning = "running"
@@ -712,6 +759,7 @@ orchestration: func Migrate(ctx context.Context, inputs MigrationInputs, images 
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewNotifier(publisher ntfy.Publisher) *Notifier
 orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformReport, error)
+orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.PlatformReport, error)
 orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
 orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
@@ -721,6 +769,7 @@ orchestration: func StatusAll(ctx context.Context, inputs StatusInputs, instance
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Accepted struct {Request notify.Request Caller string Channels []string Failure error}
+orchestration: type Checkout struct {Profile, Teams, Allocation []byte Apps, Releases map[string][]byte Compiled []observe.CompiledInstance}
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}
 orchestration: type Created struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Public string Written []files.Outcome}
@@ -738,6 +787,7 @@ orchestration: type MintOutcome struct {Application, Environment string Public, 
 orchestration: type Notifier struct {}
 orchestration: type NotifyCluster struct {Reviewer kube.Reviewer Data kube.Data Reader kube.Reader}
 orchestration: type NotifyConnect func() (NotifyCluster, error)
+orchestration: type PlatformAllInputs struct {PlatformInputs Data kube.Data Issuer kube.Issuer Registries func(image string) (registry.Reader, error) Objects func(bucket string) (s3.Reader, error) Checkout Checkout ConsoleTag string MaxAge time.Duration}
 orchestration: type PlatformInputs struct {Reader kube.Reader Source string Now func() time.Time}
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
 orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}

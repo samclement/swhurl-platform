@@ -1,59 +1,15 @@
-"""Live checks of notifications: the channels, the notify service, the checker and the host heartbeat.
+"""Live checks of notifications that Go does not run yet: the host heartbeat.
 
-Each takes a Runner and a Report and only reads; ``verify.CHECKS`` lists them (make verify-platform).
+The channels, the notify service and the checker are ``swhurl-v2 verify``'s. Each takes a Runner and a Report and
+only reads; ``verify.CHECKS`` lists them (make verify-platform).
 """
 from __future__ import annotations
 
 import datetime as dt
-import json
 import time
-from pathlib import Path
 
-from swhurl import ROOT
-from swhurl.apps import channels
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
-
-
-def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """The team routes in the cluster are Git's and every channel has its Secret (names only, never an address)."""
-    report.section('Notification channels')
-    wanted = channels.routes(root)
-    if wanted is None:
-        return
-    get = ['kubectl', '-n', channels.NAMESPACE, 'get']
-    try:
-        configmaps = runner.json([*get, 'configmaps', '-o', 'json'])['items']
-        secrets = runner.output([*get, 'secrets', '-o', 'name']).split()
-        live = next((json.loads(c['data'][channels.ROUTES_KEY]) for c in configmaps
-                     if c['metadata']['name'] == channels.ROUTES_NAME), None)
-    except (CommandError, KeyError, TypeError, ValueError):
-        report.bad('could not read the notification routes and channels (make reconcile UNIT=platform-notify)')
-        return
-    routes = wanted.get('teams') or {}
-    if live != wanted:
-        report.bad(f'the team routes in the cluster are not those of {channels.ROUTES_FILE}: a team or channel change '
-                   'rewrites them, so commit, push and make flux-reconcile')
-    else:
-        report.ok(f'{len(routes)} team(s) notify a channel, as in Git')
-    known = wanted.get('channels') or {}
-    missing = [name for name in known if f'secret/{channels.SECRET_PREFIX}{name}' not in secrets]
-    if missing:
-        report.bad(f'channel {", ".join(missing)} has no Secret in the cluster: its teams get no notifications '
-                   '(make reconcile UNIT=platform-notify)')
-    elif known:
-        report.ok(f'{len(known)} channel(s) have their Secret')
-    owned: dict[str, set[str]] = {}  # each team's apps, from v2's app records
-    for record in sorted((root / 'v2-records').glob('*/app.json')):
-        try:
-            name, team = record.parent.name, json.loads(record.read_text()).get('team')
-        except (OSError, ValueError, KeyError, TypeError):
-            continue  # an app record that cannot be read fails check-apps; here it adds no warning
-        owned.setdefault(team, set()).add(name)
-    for team, apps in sorted(owned.items()):
-        if team and not routes.get(team):
-            report.warn(f'team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '
-                        f'reach nobody (make team-channel NAME={team})')
 
 
 def check_notification_heartbeat(runner: Runner, report: Report,

@@ -12,13 +12,10 @@ import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
-from urllib.parse import urlparse
 
-from fakecluster import KEY, TOKEN, b64, fresh_backup, healthy, verify_report
+from fakecluster import KEY, TOKEN, b64, healthy, verify_report
 
-from swhurl import ROOT, clickstack, images, interface, platform, recovery, validate, verify
-from swhurl.apps import calling, channels
-from swhurl.apps import checks as app_checks
+from swhurl import ROOT, clickstack, platform, validate, verify
 from swhurl.notifications import checks as notification_checks
 from swhurl.report import Report
 from swhurl.run import CommandError, FakeRunner, Result
@@ -29,14 +26,9 @@ OTHER = 'fixture-other-ingestion-key-9999'
 def run(runner, **kwargs):
     out, err = io.StringIO(), io.StringIO()
     report = Report(out)
-    backups = Path(tempfile.mkdtemp())
-    (backups / fresh_backup()).write_bytes(b'x')
-    env = {'BACKUP_DIR': str(backups), 'SWHURL_V2': 'swhurl-v2', 'SWHURL_V2_KUBECONFIG': '/nonexistent/kubeconfig.json'}
-    try:
-        with redirect_stderr(err), mock.patch.dict('os.environ', env):
-            code = verify.verify_platform(runner, report, **kwargs)
-    finally:
-        shutil.rmtree(backups)
+    env = {'SWHURL_V2': 'swhurl-v2', 'SWHURL_V2_KUBECONFIG': '/nonexistent/kubeconfig.json', 'SWHURL_V2_CONSOLE_TAG': 'src-abc'}
+    with redirect_stderr(err), mock.patch.dict('os.environ', env):
+        code = verify.verify_platform(runner, report, **kwargs)
     return code, report, out.getvalue() + err.getvalue()
 
 
@@ -52,11 +44,12 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Ingress ==', '\n== Alerts ==', '\n== Notify service ==',
-                          '\n== App dashboards and alerts ==', '\n== Notifications ==',
+                          '\n== App dashboards and alerts ==', '\n== Notifications ==', '\n== Image Automation ==',
+                          '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Egress proxy ==',
+                          '\n== Notification channels ==', '\n== Backups ==', '\n== App SQLite backups ==', '\n== Console ==',
                           '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Egress proxy ==', '\n== Notification channels ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
-                      '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== Notification heartbeat ==',
-                      '\n== Console ==', '\n== Console GitHub Token =='])
+                          '\n== ClickStack Sign-up ==', '\n== Retention ==', '\n== Push Webhook ==', '\n== Image Webhooks ==',
+                          '\n== Notification heartbeat ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -89,7 +82,6 @@ class VerifyPlatformTests(unittest.TestCase):
             'part_log unreadable': ({'merges': Result((), 1, '', 'UNKNOWN_TABLE')}, 'cannot read ClickHouse merge results'),
             'pv delete': ({'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Delete'}}}, 'data volume is not Retain'),
             'pvc missing': ({'pvc': Result((), 1, '', 'NotFound')}, 'data volume is not Retain'),
-            'console missing': ({'console': Result((), 1, '', 'NotFound')}, 'cannot read the console HelmRelease'),
             'token placeholder': ({'token': {'data': {'GITHUB_TOKEN': b64('REPLACE_ME')}}}, 'is not set'),
             'token secret missing': ({'token': Result((), 1, '', 'NotFound')}, 'is not set'),
             'token rejected': ({'github': Result((), 0, 'HTTP/2 401\r\n\r\n')}, 'did not accept the console token'),
@@ -138,121 +130,6 @@ class VerifyPlatformTests(unittest.TestCase):
                 self.assertEqual(request['method'], 'GET', f'HyperDX API call is not a GET: {program}')
 
 
-class V2ImageAutomationTests(unittest.TestCase):
-    """Image Automation judges a v2-owned instance by its own record, not v1's.
-
-    v1's record states the tag staging runs; a v2 record states the digest of the tag's linux/amd64
-    manifest, so the tag is read from the registry through its index and that entry compared.
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        cls.record = json.loads((ROOT / 'v2-records/demo-notifier/staging/release.json').read_text())
-        cls.digest = cls.record['artifact']['digest']
-        cls.repository = cls.record['artifact']['image'].removeprefix('ghcr.io/')
-        cls.tag = '58-bd44c68'
-
-    def registry(self, *digests, platform=None):
-        """An opener serving GHCR: a pull token, then an index naming one manifest per digest."""
-        platform = platform or {'os': 'linux', 'architecture': 'amd64'}
-        asked = []
-
-        def opener(request):
-            asked.append((urlparse(request.full_url).path, request.get_header('Authorization')))
-            if urlparse(request.full_url).path == '/token':
-                return b'{"token": "t"}'
-            return json.dumps({'schemaVersion': 2, 'mediaType': 'application/vnd.oci.image.index.v1+json',
-                               'manifests': [{'digest': digest, 'platform': platform,
-                                              'mediaType': 'application/vnd.oci.image.manifest.v1+json'}
-                                             for digest in digests]}).encode()
-        return opener, asked
-
-    def lines(self, opener, root=ROOT):
-        from fakecluster import apps_answers, policy
-        items = [*apps_answers()['policies']['items'], policy('demo-notifier', self.tag)]
-        report = Report(io.StringIO())
-        app_checks.check_image_automation(healthy(policies={'items': items}), report, root, opener=opener)
-        return [line for line in report.lines if 'demo-notifier' in line]
-
-    def test_the_v2_record_says_staging_runs_the_picked_image(self):
-        opener, asked = self.registry(self.digest)
-        self.assertEqual(self.lines(opener), [f'[OK] demo-notifier-staging: newest image {self.tag}, deployed'])
-        self.assertEqual([path for path, _ in asked],
-                         ['/token', f'/v2/{self.repository}/manifests/{self.tag}'],
-                         "the tag is resolved on the record's own image, anonymously")
-        self.assertEqual(asked[1][1], 'Bearer t')
-
-    def test_a_stale_v2_digest_still_warns(self):
-        opener, _ = self.registry('sha256:' + '0' * 64)
-        (line,) = self.lines(opener)
-        self.assertTrue(line.startswith(
-            f'[WARN] demo-notifier-staging: newest image {self.tag} is not what v2 records state'), line)
-        self.assertIn(self.digest, line)
-        self.assertIn('make v2-deploy', line)
-
-    def test_an_index_without_the_platform_states_that_the_check_is_unchecked(self):
-        opener, _ = self.registry(self.digest, platform={'os': 'unknown', 'architecture': 'unknown'})
-        (line,) = self.lines(opener)
-        self.assertTrue(line.startswith('[WARN] demo-notifier-staging: cannot read the digest of'), line)
-        self.assertIn('has no linux/amd64 manifest', line)
-        self.assertIn('is deployed is unchecked', line)
-
-    def test_a_plain_manifest_tag_is_its_own_digest(self):
-        import hashlib
-        body = b'{"mediaType": "application/vnd.oci.image.manifest.v1+json"}'
-
-        def opener(request):
-            return b'{"token": "t"}' if urlparse(request.full_url).path == '/token' else body
-        self.assertEqual(app_checks.images.platform_digest(self.repository, self.tag, opener=opener),
-                         'sha256:' + hashlib.sha256(body).hexdigest())
-
-    def test_an_instance_with_no_record_warns_about_it(self):
-        root = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, root)
-        opener, _ = self.registry(self.digest)
-        (line,) = self.lines(opener, root=root)
-        self.assertTrue(line.startswith(
-            f'[WARN] demo-notifier-staging: newest image {self.tag}, but this checkout has no'), line)
-        self.assertIn('v2-records/demo-notifier/staging/release.json', line)
-
-
-class ConsoleCheckTests(unittest.TestCase):
-    def test_current_image_passes_and_compares_only_image_inputs(self):
-        runner = healthy()
-        _, report, _ = run(runner)
-        self.assertIn('[OK] console image b63d2af is built from the current tooling', report.lines)
-        diff = next(c for c in runner.calls if c[0] == 'git')
-        self.assertEqual(diff[diff.index('--') + 1:], platform.CONSOLE_IMAGE_INPUTS)
-
-    def test_changed_or_unknown_tooling_warns_without_failing(self):
-        for code, expected in ((1, 'the console runs image b63d2af, older than the tooling'), (128, 'cannot compare')):
-            with self.subTest(code=code):
-                exit_code, report, text = run(healthy(**{'git-diff': Result((), code)}))
-                self.assertEqual(exit_code, 0, text)
-                self.assertTrue(any(line.startswith('[WARN]') and expected in line for line in report.lines), text)
-
-    def test_a_missing_job_record_fails(self):
-        exit_code, report, text = run(healthy(**{'console-jobs': Result((), 1, '', 'NotFound')}))
-        self.assertEqual(exit_code, 1, text)
-        self.assertIn('[BAD] console/console-jobs is missing: the console forgets its jobs on restart '
-                      '(make reconcile UNIT=platform-console)', report.lines)
-
-    def test_publish_workflow_hashes_the_same_inputs_in_the_same_order(self):
-        workflow = (ROOT / '.github/workflows/validate.yml').read_text()
-        listed = workflow.split('paths=(', 1)[1].split(')', 1)[0].split()
-        self.assertEqual(tuple(listed), platform.CONSOLE_IMAGE_INPUTS, 'the order changes the hash')
-
-    def test_content_tag_is_compared_exactly(self):
-        for current, expected in (('src-abc', '[OK] console image src-abc is built from the current tooling'),
-                                  ('src-new', '[WARN] the console runs image src-abc, older than the tooling')):
-            with self.subTest(current=current):
-                runner = healthy(console={'spec': {'values': {'controllers': {'main': {'containers': {'main': {
-                    'image': {'tag': 'src-abc'}}}}}}}})
-                with mock.patch.object(images, 'content_tag', return_value=current):
-                    _, report, _ = run(runner)
-                self.assertTrue(any(line.startswith(expected) for line in report.lines), report.lines)
-
-
 class ConsoleTokenTests(unittest.TestCase):
     def test_expiry_soon_warns_and_token_never_leaks(self):
         soon = (dt.datetime.now(dt.UTC) + dt.timedelta(days=5)).strftime('%Y-%m-%d %H:%M:%S UTC')
@@ -278,149 +155,6 @@ class ConsoleTokenTests(unittest.TestCase):
         code, report, text = run(healthy(**{'kustomize-controller': Result((), 0, '')}))
         self.assertEqual(code, 1, text)
         self.assertIn('[BAD] cannot read flux-system/kustomize-controller (kubectl -n flux-system get deploy kustomize-controller)', report.lines)
-
-    def test_image_automation_problems(self):
-        from fakecluster import policy
-        root = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, root)
-        items = [policy('hello', '1.27-alpine', {'conditions': [
-            {'type': 'Ready', 'status': 'False', 'message': 'no tags match'}]})]
-        report = Report(io.StringIO())
-        app_checks.check_image_automation(healthy(policies={'items': items}), report, root)
-        self.assertTrue(any(line.startswith(
-            '[BAD] ImagePolicy hello-staging is not Ready, so staging gets no new images: no tags match')
-            for line in report.lines), report.lines)
-
-    def make_compiled(self, root, team='demo'):
-        """One instance as v2 compiles it: its Namespace, ResourceQuota and NetworkPolicy under ``root``."""
-        folder = root / 'v2-apps/instances/w/staging'
-        shutil.copytree(ROOT / 'v2-apps/instances/demo-shopper/staging', folder)
-        namespace = json.loads((folder / 'namespace.json').read_text())
-        namespace['metadata'] = {'name': 'w-staging', 'labels': {**namespace['metadata']['labels'],
-                                                                 interface.TEAM: team}}
-        (folder / 'namespace.json').write_text(json.dumps(namespace))
-        for name in ('resourcequota.json', 'networkpolicy.json'):
-            document = json.loads((folder / name).read_text())
-            document['metadata'] = {**document['metadata'], 'name': 'w', 'namespace': 'w-staging'}
-            (folder / name).write_text(json.dumps(document))
-        (root / 'v2-records').mkdir(parents=True, exist_ok=True)
-        (root / 'v2-records/teams.json').write_text(json.dumps({'schemaVersion': 1, 'teams': {team: {'description': 'ours'}}}))
-        return folder
-
-    def test_isolation_problems(self):
-        root = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, root)
-        folder = self.make_compiled(root)
-        owned = {'app-namespaces': {'items': [json.loads((folder / 'namespace.json').read_text())]},
-                 'quotas': {'items': [json.loads((folder / 'resourcequota.json').read_text())]},
-                 'network-policies': {'items': [json.loads((folder / 'networkpolicy.json').read_text())]}}
-
-        def isolation(**overrides):
-            report = Report(io.StringIO())
-            app_checks.check_isolation(healthy(**{**owned, **overrides}), report, root)
-            return report.lines
-        self.assertIn('[OK] 1 app namespace(s) have a registered team, the platform quota and a NetworkPolicy',
-                      isolation())
-        # a namespace kept for its data after its app was removed is not an instance and is not checked
-        gone = {'items': [*owned['app-namespaces']['items'],
-                          {'metadata': {'name': 'gone-prod', 'labels': {interface.APP: 'gone'}}}]}
-        self.assertIn('[OK] 1 app namespace(s) have a registered team, the platform quota and a NetworkPolicy',
-                      isolation(**{'app-namespaces': gone}))
-        lines = isolation(**{'app-namespaces': {'items': []}})
-        self.assertTrue(any(line.startswith('[BAD] w-staging: the namespace does not exist, so the instance is not running')
-                            for line in lines), lines)
-        (root / 'v2-records/teams.json').write_text('{"schemaVersion": 1, "teams": {}}')
-        moved = isolation(**{'network-policies': {'items': []}, 'quotas': {'items': []}})
-        self.assertTrue(any(line.startswith("[BAD] w-staging: team 'demo' is not in v2-records/teams.json")
-                            and 'no ResourceQuota as Git declares it' in line
-                            and "no NetworkPolicy on the app's pods" in line
-                            and 'make check-apps, then make app-reconcile APP=w ENV=staging' in line for line in moved),
-                        moved)
-        (root / 'v2-records/teams.json').write_text(json.dumps({'schemaVersion': 1, 'teams': {'demo': {}}}))
-        labels = isolation(**{'app-namespaces': {'items': [{'metadata': {'name': 'w-staging', 'labels': {
-            interface.APP: 'w'}}}]}})
-        self.assertTrue(any(line.startswith('[BAD] w-staging: the namespace labels differ from Git') for line in labels),
-                        labels)
-        (root / 'v2-apps/instances/w/staging/namespace.json').unlink()
-        broken = isolation()
-        self.assertTrue(any(line.startswith('[BAD] v2-apps/instances/w/staging: its compiled objects cannot be read')
-                            for line in broken), broken)
-        self.assertIn('[BAD] cannot read app namespaces, ResourceQuotas or NetworkPolicies, so app isolation is unchecked '
-                      '(kubectl get namespaces -l platform.swhurl.com/app)',
-                      isolation(**{'quotas': Result((), 1, '', 'forbidden')}))
-
-    def test_signing_key_problems(self):
-        _, report, text = run(healthy())
-        self.assertIn("[OK] v2/testdata/profile.json states the cluster's 1 signing key(s)", report.lines, text)
-        self.assertIn(f'[OK] token issuer is {calling.ISSUER}', report.lines, text)
-        code, report, text = run(healthy(jwks={'keys': [{'kid': 'rotated'}]}))
-        self.assertEqual(code, 1, text)
-        self.assertTrue(any(line.startswith("[BAD] v2/testdata/profile.json does not state the cluster's signing key set")
-                            and 'docs/operations.md#signing-keys' in line for line in report.lines), text)
-        code, report, text = run(healthy(openid={'issuer': 'https://elsewhere'}))
-        self.assertEqual(code, 1, text)
-        self.assertTrue(any(line.startswith('[BAD] token issuer is https://elsewhere') for line in report.lines), text)
-        _, report, text = run(healthy(jwks=Result((), 1, '', 'forbidden')))
-        self.assertIn("[BAD] cannot read the cluster's token issuer or signing keys (kubectl get --raw /openid/v1/jwks)", report.lines, text)
-
-    def test_event_problems(self):
-        from fakecluster import declared_events
-        declared = declared_events()
-        _, report, text = run(healthy())
-        self.assertIn('[OK] NATS is running', report.lines, text)
-        self.assertIn(f'[OK] {len(declared)} declared stream(s) and consumer(s) exist in NATS', report.lines, text)
-        code, report, text = run(healthy(nats={'status': {}}))
-        self.assertEqual(code, 1, text)
-        self.assertTrue(any(line.startswith('[BAD] NATS is not running') for line in report.lines), text)
-        consumer = next(doc for doc in declared if doc['kind'] == 'Consumer')
-        where = f"{consumer['metadata']['namespace']}/{consumer['metadata']['name']}"
-        code, report, text = run(healthy(streams={'items': []}))
-        self.assertEqual(code, 1, text)
-        self.assertIn(f'[BAD] Consumer {where} is what Git declares, but NATS has no such consumer', ' '.join(report.lines))
-        pending = {'items': [dict(doc, status={'conditions': [
-            {'type': 'Ready', 'status': 'False', 'message': 'stream not found'}]}) if doc['kind'] == 'Consumer'
-            else doc | {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}
-            for doc in declared]}
-        code, report, text = run(healthy(streams=pending))
-        self.assertEqual(code, 1, text)
-        self.assertIn(f'[BAD] Consumer {where} is not Ready, so its events are not kept or delivered: stream not found '
-                      f'(kubectl -n {consumer["metadata"]["namespace"]} describe consumer {consumer["metadata"]["name"]})',
-                      report.lines, text)
-        _, report, text = run(healthy(streams=Result((), 1, '', 'no such resource')))
-        self.assertIn('[BAD] cannot read NATS, its controller, or the streams and consumers (make reconcile UNIT=platform-nats)', report.lines, text)
-
-    def test_channel_problems(self):
-        _, report, text = run(healthy())
-        self.assertIn(f'[OK] {len(channels.routes(ROOT)["teams"])} team(s) notify a channel, as in Git', report.lines, text)
-        _, report, text = run(healthy(routes={'items': [{'metadata': {'name': channels.ROUTES_NAME}, 'data': {
-            channels.ROUTES_KEY: json.dumps({'teams': {'ghosts': ['nowhere']}})}}]}))
-        self.assertIn('[BAD] the team routes in the cluster are not those of platform/notify/routes.json: a team or channel change '
-                      'rewrites them, so commit, push and make flux-reconcile', report.lines, text)
-        _, report, text = run(healthy(routes={'items': []}))
-        self.assertTrue(any('team routes in the cluster are not' in line for line in report.lines), text)
-        _, report, text = run(healthy(routes=Result((), 1, '', 'forbidden')))
-        self.assertIn('[BAD] could not read the notification routes and channels (make reconcile UNIT=platform-notify)',
-                      report.lines, text)
-        cluster = healthy()  # no channel Secret in the cluster
-        with mock.patch.object(channels, 'routes', return_value={**channels.routes(ROOT), 'channels': {'payments-phone': 'ntfy'}}):
-            _, report, text = run(cluster)
-        self.assertIn('[BAD] channel payments-phone has no Secret in the cluster: its teams get no notifications '
-                      '(make reconcile UNIT=platform-notify)', report.lines, text)
-
-    def test_a_team_that_owns_apps_and_has_no_channel_is_named(self):
-        _, report, text = run(healthy())
-        owned = {}
-        for record in sorted((ROOT / 'v2-records').glob('*/app.json')):
-            owned.setdefault(json.loads(record.read_text())['team'], set()).add(record.parent.name)
-        routes = channels.routes(ROOT)['teams']
-        for team, apps in owned.items():
-            line = (f'[WARN] team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '
-                    f'reach nobody (make team-channel NAME={team})')
-            (self.assertNotIn if routes.get(team) else self.assertIn)(line, report.lines, text)
-        cluster = healthy()
-        with mock.patch.object(channels, 'routes', return_value={**channels.routes(ROOT), 'teams': {team: [team] for team in owned}}):
-            _, report, text = run(cluster)
-        self.assertFalse([line for line in report.lines if 'has no notification channel' in line], text)
 
     def test_image_webhook_problems(self):
         url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
@@ -473,21 +207,32 @@ class ConsoleTokenTests(unittest.TestCase):
 
 
 class AllowedChecksTests(unittest.TestCase):
-    def test_the_cluster_checks_are_swhurl_v2_verify_with_the_named_binary_and_kubeconfig(self):
+    def test_the_cluster_checks_are_swhurl_v2_verify_with_the_named_binary_kubeconfig_checkout_and_tag(self):
         runner = healthy()
         run(runner)
-        self.assertIn(('swhurl-v2', 'verify', '--kubeconfig', '/nonexistent/kubeconfig.json', '--source', 'verify-platform', '--json'),
-                      runner.calls)
+        self.assertIn(('swhurl-v2', 'verify', '--scope', 'platform', '--kubeconfig', '/nonexistent/kubeconfig.json',
+                       '--root', str(ROOT), '--console-tag', 'src-abc', '--source', 'verify-platform', '--json'), runner.calls)
         names = {check.name for check in verify.CHECKS}
         self.assertEqual(len(names), len(verify.CHECKS))
-        self.assertFalse(names & {name for name, _ in verify.CLUSTER_CHECKS}, 'a check is either Go\'s or Python\'s')
+        self.assertFalse(names & {name for name, _, _ in verify.CLUSTER_CHECKS}, 'a check is either Go\'s or Python\'s')
         self.assertEqual(frozenset().union(*(check.needs for check in verify.CHECKS)), {'cluster', 'secret', 'exec', 'host'})
+        self.assertLessEqual({read for _, reads, _ in verify.CLUSTER_CHECKS for read in reads.split()}, verify.READS.keys())
+
+    def test_without_a_console_tag_none_is_passed_and_go_says_it_was_not_supplied(self):
+        runner = healthy()
+        with mock.patch.dict('os.environ', {'SWHURL_V2': 'swhurl-v2', 'SWHURL_V2_KUBECONFIG': 'k.json', 'SWHURL_V2_CONSOLE_TAG': ''}):
+            verify.check_cluster(runner, Report(io.StringIO()))
+        (call,) = [c for c in runner.calls if c[:2] == ('swhurl-v2', 'verify')]
+        self.assertNotIn('--console-tag', call)
 
     def test_the_operations_table_names_go_s_checks_in_go_s_order(self):
-        source = (ROOT / 'v2/observe/platform.go').read_text()
-        body = source[source.index('func PlatformChecks('):]
-        names = re.findall(r'\{"([a-z-]+)", "[^"]+", platform', body[:body.index('\n}\n')])
-        self.assertEqual(names, [name for name, _ in verify.CLUSTER_CHECKS])
+        names = []
+        for path, function in (('v2/observe/platform.go', 'func PlatformChecks('),
+                               ('v2/observe/platform_scope.go', 'func PlatformScopeChecks(')):
+            source = (ROOT / path).read_text()
+            body = source[source.index(function):]
+            names += re.findall(r'\{"([a-z-]+)", "[^"]+", platform', body[:body.index('\n}\n')])
+        self.assertEqual(names, [name for name, _, _ in verify.CLUSTER_CHECKS])
 
     def test_a_binary_that_cannot_start_is_a_failed_check(self):
         runner = FakeRunner().on('swhurl-v2', 'verify', handler=lambda args, _: (_ for _ in ()).throw(
@@ -522,62 +267,6 @@ class AllowedChecksTests(unittest.TestCase):
             ('flux-units', 'Flux Kustomizations', [('ok', 'a')]), ('ingress', 'Ingress', [('bad', 'Traefik does not redirect HTTP to HTTPS')]))}))
         bad = [e for e in report.entries if e.level == 'bad']
         self.assertEqual([(e.section, e.message[:28]) for e in bad], [('Ingress', 'Traefik does not redirect HT')])
-
-
-class BackupAgeTests(unittest.TestCase):
-    NOW = dt.datetime(2026, 9, 29, 12, 0, tzinfo=dt.UTC)
-
-    def check(self, local=(), remote=(), uri='s3://bucket/p/', remote_rc=0, max_hours=None):
-        folder = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, folder)
-        for name in local:
-            (folder / name).write_bytes(b'x')
-        if uri is not None:  # the platform's backup job, stating only where it publishes
-            container = {'name': 'backup', 'env': [{'name': 'BACKUP_S3_URI', 'value': uri}]}
-            job = {'spec': {'jobTemplate': {'spec': {'template': {'spec': {'containers': [container]}}}}}}
-            (folder / platform.BACKUP_JOB).parent.mkdir(parents=True)
-            (folder / platform.BACKUP_JOB).write_text(json.dumps(job))
-        runner = FakeRunner().on('aws', 's3api', 'list-objects-v2', returncode=remote_rc, stderr='AccessDenied',
-                                 stdout=json.dumps([f'p/{n}' for n in remote]))
-        env = {'BACKUP_DIR': str(folder), **({'BACKUP_MAX_AGE_HOURS': max_hours} if max_hours else {})}
-        report = Report(io.StringIO())
-        recovery.check_backups(runner, report, env, now=self.NOW, root=folder)
-        return report, runner
-
-    def test_fresh_backups_pass(self):
-        name = 'clickstack-mongodb-20260929T033000Z'
-        report, _ = self.check(remote=[f'{name}.archive.gz.age', f'{name}.json'])
-        self.assertEqual(report.failures, 0, report.lines)
-
-    def test_stale_missing_incomplete_or_unlistable_backups_fail(self):
-        old, new = 'clickstack-mongodb-20260928T030000Z', 'clickstack-mongodb-20260929T033000Z'
-        cases = {
-            'stale': ({'remote': [f'{old}.archive.gz.age', f'{old}.json']}, 's3://bucket/p/ is 33 h old'),
-            'none': ({'remote': []}, 'no MongoDB backup in s3://bucket/p/'),
-            'archive without its metadata': ({'remote': [f'{new}.archive.gz.age', f'{old}.archive.gz.age', f'{old}.json']},
-                                             'is 33 h old'),
-            'local only': ({'local': [f'{new}.archive.gz.age', f'{new}.json'], 'remote': []}, 'no MongoDB backup in s3'),
-            'unlistable': ({'remote_rc': 255}, 'cannot list backups in s3://bucket/p/'),
-            'tighter limit': ({'remote': [f'{new}.archive.gz.age', f'{new}.json'], 'max_hours': '6'}, 'is 8 h old'),
-            'no backup job': ({'uri': None}, "platform/backup/mongodb.yaml: cannot read the job's BACKUP_S3_URI"),
-            'no location': ({'uri': ''}, 'platform/backup/mongodb.yaml: the backup location must be'),
-        }
-        for label, (kwargs, message) in cases.items():
-            with self.subTest(label):
-                report, _ = self.check(**kwargs)
-                self.assertTrue(any(line.startswith('[BAD]') and message in line for line in report.lines), report.lines)
-
-    def test_expected_sqlite_databases_come_from_the_releases_in_git(self):
-        from swhurl import sqlite_backup
-        names = [each.namespace for each in sqlite_backup.expected()]
-        self.assertIn('demo-orders-prod', names)
-        self.assertNotIn('swhurl-try-12-prod', names, 'a web app without a database')
-        self.assertNotIn('demo-shopper-staging', names, 'a worker')
-        runner = FakeRunner().on('aws', 's3api', 'list-objects-v2', stdout='[]')
-        report = Report(io.StringIO())
-        sqlite_backup.check_sqlite_backups(runner, report, {}, now=self.NOW)
-        self.assertEqual(report.failures, len(names), 'no backup in S3: each expected database fails')
-        self.assertTrue(all(call[:3] == ('aws', 's3api', 'list-objects-v2') for call in runner.calls), 'reads no cluster')
 
 
 class VerifyConfigTests(unittest.TestCase):

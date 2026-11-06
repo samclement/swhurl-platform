@@ -163,6 +163,15 @@ func (c Connection) Reviewer() (Reviewer, error) {
 	return api, nil
 }
 
+// Issuer reads the same API server's token issuer and signing keys.
+func (c Connection) Issuer() (Issuer, error) {
+	api, err := c.api()
+	if err != nil {
+		return nil, err
+	}
+	return api, nil
+}
+
 // Data reads and sets a service's own ConfigMaps and Secrets on the same API server.
 func (c Connection) Data() (Data, error) {
 	api, err := c.api()

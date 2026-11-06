@@ -118,13 +118,20 @@ v2-reloader:
 v2-deploy:
 	@$(V2_BUILD); 	"$$work/swhurl-v2" deploy --records v2-records --profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json --out .
 
-# Every live platform check: swhurl-v2 verify (the checks that only read the cluster, with the caller's kubeconfig in
-# the throwaway folder, readable by the caller only, and removed on exit), then the Python ones. Needs Go 1.26.0.
+# Every live platform check: swhurl-v2 verify --scope platform (the checks that read the cluster, this checkout, the
+# registry and S3, with the caller's kubeconfig in the throwaway folder, readable by the caller only, and removed on
+# exit), then the Python ones. AWS credentials come from the AWS CLI unless AWS_ACCESS_KEY_ID is set, and the console's
+# content tag from images/content-tag.sh; without either, the checks that need it say it was not supplied. Needs Go 1.26.0.
 .PHONY: verify-platform
 verify-platform:
 	@$(V2_BUILD); \
 	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
-	SWHURL_V2="$$work/swhurl-v2" SWHURL_V2_KUBECONFIG="$$work/kubeconfig.json" $(SWHURL) verify-run
+	if [ -z "$${AWS_ACCESS_KEY_ID:-}" ]; then \
+		if credentials=$$(aws configure export-credentials --format env); then eval "$$credentials"; \
+		else echo "[WARN] no AWS credentials from aws configure export-credentials: the backup checks cannot list S3" >&2; fi; \
+	fi; \
+	SWHURL_V2="$$work/swhurl-v2" SWHURL_V2_KUBECONFIG="$$work/kubeconfig.json" \
+		SWHURL_V2_CONSOLE_TAG="$$(bash images/content-tag.sh console)" $(SWHURL) verify-run
 
 # One instance's state from v2's records (swhurl-v2 status): what they say should run at HEAD, compared with the
 # cluster the caller's kubeconfig names. Its JSON form is written into the throwaway folder, readable by the caller

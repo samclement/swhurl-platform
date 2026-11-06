@@ -225,7 +225,8 @@ INTERNAL = (
     Command('bot-render', 'CI (Render): render the newest main from its records, check it and push it', run='swhurl.bots:main_render', internal=True),
     Command('bot-deploy-v2', 'CI (Deploy v2): bring every v2-owned staging instance to its newest image, check it and push it',
             run='swhurl.bots:main_deploy_v2', internal=True),
-    Command('verify-run', "verify-platform's checks: swhurl-v2 verify's report (SWHURL_V2, SWHURL_V2_KUBECONFIG), then the rest",
+    Command('verify-run', "verify-platform's checks: swhurl-v2 verify --scope platform's report (SWHURL_V2, "
+            'SWHURL_V2_KUBECONFIG, SWHURL_V2_CONSOLE_TAG), then the rest',
             run='swhurl.verify:main', internal=True),
     Command('flux-wait', 'Wait for every Flux unit to apply the fetched Git revision (flux-reconcile ends with it)',
             run='swhurl.flux:main', internal=True),

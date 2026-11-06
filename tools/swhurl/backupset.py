@@ -3,8 +3,8 @@
     <prefix>-<UTC stamp><suffix>   the archive, for example clickstack-mongodb-20260928T120000Z.archive.gz.age
     <prefix>-<UTC stamp>.json      its metadata: when it was taken, its SHA-256 and what its producer adds
 
-A set owns its file names, which archive is the newest (by the stamp in the name), how old that one
-is, the checksum and fetching back from S3. A backup counts only when its metadata is beside it: the
+A set owns its file names, which archive is the newest (by the stamp in the name), the checksum and
+fetching back from S3 (how old the newest is, ``swhurl-v2 verify --scope platform`` decides). A backup counts only when its metadata is beside it: the
 backup image's jobs (images/backup/tool) publish the metadata last. MongoDB's restore test
 (``recovery``) fetches one into a private directory of its own; an app database is restored by
 ``swhurl-v2 restore``. Retention is the bucket's lifecycle rule (docs/operations.md#backups-and-recovery).
@@ -22,8 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, platform
-from swhurl.report import Report
-from swhurl.run import CommandError, Runner
+from swhurl.run import Runner
 
 STAMP = '%Y%m%dT%H%M%SZ'
 
@@ -96,11 +95,6 @@ class BackupSet:
                     and self.metadata_path(self.directory / name).name in present]
         return max(complete)[1] if complete else None
 
-    def age(self, now: dt.datetime, names: Iterable[str]) -> dt.timedelta | None:
-        """How old the newest complete backup among ``names`` is; None without one."""
-        newest = self.newest(names)
-        return now - self.taken(newest) if newest else None
-
     def fetch(self, runner: Runner, uri: str) -> Path:
         """Download the newest complete backup under ``uri`` and its metadata into this set's directory
         (private); return the archive. Reads with the AWS CLI's own credentials."""
@@ -125,21 +119,3 @@ class BackupSet:
         if sha256(archive) != metadata.get('sha256'):
             raise BackupError(f'{archive.name}: checksum does not match its metadata')
         return metadata
-
-
-def check_backup_set(runner: Runner, report: Report, backups: BackupSet, uri: str, *, env: Mapping[str, str],
-                     now: dt.datetime | None, what: str, hint: str, run: str, prefix: str = '') -> None:
-    """The set's newest complete backup under ``uri`` (S3) must be younger than BACKUP_MAX_AGE_HOURS (26)."""
-    now = now or dt.datetime.now(dt.UTC)
-    limit = dt.timedelta(hours=float(env.get('BACKUP_MAX_AGE_HOURS') or 26))
-    try:
-        age = backups.age(now, remote_names(runner, uri))
-    except (CommandError, BackupError, TypeError) as error:
-        report.bad(f'{prefix}cannot list backups in {uri}: {error}')
-        return
-    if age is None:
-        report.bad(f'{prefix}no {what} backup in {uri} (run: {run})')
-    elif age > limit:
-        report.bad(f'{prefix}newest {what} backup in {uri} is {age.total_seconds() / 3600:.0f} h old; check: {hint}')
-    else:
-        report.ok(f'{prefix}newest {what} backup in {uri} is {age.total_seconds() / 3600:.1f} h old')

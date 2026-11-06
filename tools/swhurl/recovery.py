@@ -1,4 +1,4 @@
-"""Prove ClickStack MongoDB's backup restores, and check its backups are fresh.
+"""Prove ClickStack MongoDB's backup restores (its freshness is ``swhurl-v2 verify --scope platform``'s).
 
     live-test-restore-mongodb  restore the newest backup into a throwaway namespace and check it
 
@@ -14,7 +14,6 @@ from __future__ import annotations
 import base64
 import binascii
 import contextlib
-import datetime as dt
 import json
 import os
 import sys
@@ -195,17 +194,3 @@ def restore_test_mongodb(argv: list[str] | None = None, runner: Runner | None = 
     except (BackupError, CommandError, KeyError, ValueError) as error:
         print(f'[ERROR] {runner.redact(str(error))}', file=sys.stderr)
         return 1
-
-
-def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
-                  now: dt.datetime | None = None, root: Path = ROOT) -> None:
-    """The newest MongoDB backup in S3 must be younger than BACKUP_MAX_AGE_HOURS (26)."""
-    env = os.environ if env is None else env
-    report.section('Backups')
-    try:
-        uri = platform.backup_s3_uri(root)
-    except ValueError as error:
-        report.bad(str(error))
-        return
-    backupset.check_backup_set(runner, report, backups(Path()), uri, env=env, now=now, what='MongoDB',
-                     run='make backup-mongodb', hint=f'kubectl -n observability get jobs -l {interface.label("backup")}=true')

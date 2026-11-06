@@ -1,12 +1,22 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/registry"
+	"github.com/samclement/swhurl-platform/v2/adapters/registry/registrytest"
+	"github.com/samclement/swhurl-platform/v2/adapters/s3"
+	"github.com/samclement/swhurl-platform/v2/adapters/sops"
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // platformAPI answers the eight reads the platform checks make, as the API server writes them; a path in failing
@@ -111,5 +121,162 @@ func TestVerifyNeedsExactlyOneCredential(t *testing.T) {
 		if status, _, _ := runStatus(t, args...); status != 2 {
 			t.Fatalf("%v: exit %d", args, status)
 		}
+	}
+}
+
+// verifyPlatform runs the platform scope against the test server and the checkout at the repository's root, with a
+// registry and an object store that answer without a network.
+func verifyPlatform(t *testing.T, server *httptest.Server, extra ...string) (int, string, string, *[]observe.ArchiveQuery) {
+	t.Helper()
+	listed := &[]observe.ArchiveQuery{}
+	c := cli{readFile: readInput, writer: files.New(), encrypter: sops.New(), seed: randomSeed, inCluster: podServiceAccount(),
+		registries: func(string) (registry.Reader, error) { return registrytest.New(registrytest.Scenario{}), nil },
+		archives: func(bucket, region string) (s3.Reader, error) {
+			if region != "" {
+				t.Errorf("the region %q was stated: it is the bucket's own", region)
+			}
+			return listingStore{listed}, nil
+		}}
+	args := append([]string{"verify", "--scope", "platform", "--kubeconfig", kubeconfig(t, server), "--root", "../../..",
+		"--json"}, extra...)
+	var out, diagnostic bytes.Buffer
+	status := runWith(args, &out, &diagnostic, c)
+	return status, out.String(), diagnostic.String(), listed
+}
+
+// listingStore answers every listing with an empty prefix, and records it.
+type listingStore struct{ listed *[]observe.ArchiveQuery }
+
+func (l listingStore) List(_ context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error) {
+	*l.listed = append(*l.listed, query)
+	return observe.ArchiveList{Query: query, Status: observe.Present, Objects: []observe.Archive{}}, nil
+}
+func (listingStore) Get(context.Context, observe.ArchiveQuery, string) ([]byte, error) {
+	return nil, nil
+}
+func (listingStore) PresignURL(context.Context, observe.ArchiveQuery, string, time.Duration) (string, error) {
+	return "", nil
+}
+
+// platformReport is the v2-platform-checks document's checks, by name.
+func platformReport(t *testing.T, stdout string) map[string][]struct{ Level, Message string } {
+	t.Helper()
+	var report struct {
+		Checks []struct {
+			Name    string
+			Entries []struct{ Level, Message string }
+		}
+	}
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("%v: %s", err, stdout)
+	}
+	checks := map[string][]struct{ Level, Message string }{}
+	names := []string{}
+	for _, check := range report.Checks {
+		checks[check.Name] = check.Entries
+		names = append(names, check.Name)
+	}
+	if strings.Join(names, " ") != "flux-units ingress alerts notify-service dashboards notifications image-automation "+
+		"isolation signing-keys events egress channels backups sqlite-backups console" {
+		t.Fatalf("the checks and their order: %v", names)
+	}
+	return checks
+}
+
+// The platform scope reads the checkout: the databases it backs up are the releases in Git that declare SQLite, each
+// listed under its namespace's prefix of the profile's location, in the bucket's own region; a worker has none.
+func TestVerifyPlatformReadsTheCheckout(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "example-secret")
+	server, _ := platformAPI(t)
+	status, stdout, diagnostic, listed := verifyPlatform(t, server, "--console-tag", "src-abc")
+	if status != 1 {
+		t.Fatalf("exit %d (the test server holds none of the scope's objects): %s", status, diagnostic)
+	}
+	checks := platformReport(t, stdout)
+	databases := []string{}
+	for _, entry := range checks["sqlite-backups"] {
+		databases = append(databases, strings.SplitN(entry.Message, ":", 2)[0])
+	}
+	if !slices.Contains(databases, "demo-orders-prod") || slices.Contains(databases, "demo-shopper-staging") {
+		t.Fatalf("databases %v", databases)
+	}
+	if len(*listed) != len(databases) || !strings.HasSuffix((*listed)[0].Prefix, "/"+databases[0]+"/") {
+		t.Fatalf("listed %v for %v", *listed, databases)
+	}
+	if console := checks["console"]; console[len(console)-1].Message != "console image src-abc is built from the current tooling" {
+		t.Fatalf("console %+v", console)
+	}
+	// The backup job is absent from the test server: missing, never a backup that is merely unlisted.
+	if backups := checks["backups"]; !strings.Contains(backups[0].Message, "is missing") {
+		t.Fatalf("backups %+v", backups)
+	}
+}
+
+// Without credentials or the checkout's tag, the checks that need them say they were not supplied: a report, not a
+// usage error.
+func TestVerifyPlatformWithoutInputsSaysNotSupplied(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+	server, _ := platformAPI(t)
+	status, stdout, _, listed := verifyPlatform(t, server)
+	if status != 1 || len(*listed) != 0 {
+		t.Fatalf("exit %d, listed %v", status, *listed)
+	}
+	checks := platformReport(t, stdout)
+	for _, entry := range checks["sqlite-backups"] {
+		if entry.Level != "bad" || !strings.Contains(entry.Message, "AWS credentials not supplied") {
+			t.Fatalf("%+v", entry)
+		}
+	}
+	if console := checks["console"]; !strings.Contains(console[len(console)-1].Message, "content tag was not supplied") {
+		t.Fatalf("console %+v", console)
+	}
+}
+
+func TestBackupMaxAgeRejectsInvalidDurations(t *testing.T) {
+	for _, stated := range []string{"NaN", "+Inf", "-Inf", "1e30", "0", "-1", "a day"} {
+		t.Run(stated, func(t *testing.T) {
+			t.Setenv("BACKUP_MAX_AGE_HOURS", stated)
+			var diagnostic bytes.Buffer
+			if _, status := (cli{diagnostic: &diagnostic}).backupMaxAge(); status != 2 {
+				t.Fatalf("%q: exit %d, %s", stated, status, diagnostic.String())
+			}
+		})
+	}
+	for stated, want := range map[string]time.Duration{"": 26 * time.Hour, "1.5": 90 * time.Minute} {
+		t.Setenv("BACKUP_MAX_AGE_HOURS", stated)
+		var diagnostic bytes.Buffer
+		if got, status := (cli{diagnostic: &diagnostic}).backupMaxAge(); status != 0 || got != want {
+			t.Fatalf("%q: duration %s, exit %d, %s", stated, got, status, diagnostic.String())
+		}
+	}
+}
+
+// The scope decides what is needed: the platform scope needs a kubeconfig and a checkout and refuses the pod's
+// ServiceAccount; the cluster scope compares with no checkout; there is no third scope.
+func TestVerifyScopeUsage(t *testing.T) {
+	for _, args := range [][]string{
+		{"verify", "--scope", "platform", "--in-cluster", "--root", "."},
+		{"verify", "--scope", "platform", "--kubeconfig", "k.json"},
+		{"verify", "--scope", "platform", "--root", "."},
+		{"verify", "--kubeconfig", "k.json", "--root", "."},
+		{"verify", "--scope", "cluster", "--kubeconfig", "k.json", "--console-tag", "src-abc"},
+		{"verify", "--scope", "everything", "--kubeconfig", "k.json"},
+		{"verify", "--scope", "platform", "--scope", "platform", "--kubeconfig", "k.json", "--root", "."},
+	} {
+		if status, _, _ := runStatus(t, args...); status != 2 {
+			t.Fatalf("%v: exit %d", args, status)
+		}
+	}
+	server, _ := platformAPI(t)
+	if status, _, diagnostic := runStatus(t, "verify", "--scope", "platform", "--kubeconfig", kubeconfig(t, server),
+		"--root", "verify_test.go"); status != 2 || !strings.Contains(diagnostic, "is not a directory") {
+		t.Fatalf("a root that is no directory: exit %d %s", status, diagnostic)
+	}
+	t.Setenv("BACKUP_MAX_AGE_HOURS", "a day")
+	if status, _, diagnostic := runStatus(t, "verify", "--scope", "platform", "--kubeconfig", kubeconfig(t, server),
+		"--root", "../../.."); status != 2 || !strings.Contains(diagnostic, "BACKUP_MAX_AGE_HOURS") {
+		t.Fatalf("an unreadable age: exit %d %s", status, diagnostic)
 	}
 }

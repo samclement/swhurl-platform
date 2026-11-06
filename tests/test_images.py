@@ -48,11 +48,33 @@ class ConsoleImageTests(unittest.TestCase):
 
 
 class ConsoleImageCommandTests(unittest.TestCase):
-    def test_content_tag_matches_the_workflow_shell(self):
-        paths = ' '.join(platform.CONSOLE_IMAGE_INPUTS)
-        shell = subprocess.run(['bash', '-c', f'for p in {paths}; do git rev-parse "HEAD:$p"; done | sha256sum | cut -c1-16'],
-                               cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
-        self.assertEqual(images.content_tag(Runner()), f'src-{shell}')
+    def test_content_tag_matches_the_script_ci_and_verify_platform_use(self):
+        script = subprocess.run(['bash', str(ROOT / 'images/content-tag.sh'), 'console'], capture_output=True, text=True,
+                                check=True).stdout.strip()
+        self.assertEqual(images.content_tag(Runner()), script)
+
+    def test_content_tag_stops_without_printing_a_tag_if_an_input_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'images').mkdir()
+            script = root / 'images/content-tag.sh'
+            shutil.copyfile(ROOT / 'images/content-tag.sh', script)
+            subprocess.run(['git', 'init', '-q', str(root)], check=True)
+            for image in ('console', 'backup'):
+                result = subprocess.run(['bash', str(script), image], capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, '', 'a partial input hash must never become an image tag')
+
+    def test_the_script_hashes_the_same_inputs_in_the_same_order(self):
+        script = (ROOT / 'images/content-tag.sh').read_text()
+        listed = script.split('console) paths=(', 1)[1].split(')', 1)[0].split()
+        self.assertEqual(tuple(listed), platform.CONSOLE_IMAGE_INPUTS, 'the order changes the hash')
+
+    def test_validate_tags_both_images_with_the_script(self):
+        workflow = (ROOT / '.github/workflows/validate.yml').read_text()
+        for image in ('console', 'backup'):
+            self.assertIn(f'tag=$(bash images/content-tag.sh {image})', workflow)
+        self.assertNotIn('rev-parse "HEAD:$p"', workflow, 'one computation of the content tag, the script')
 
     def test_pin_keeps_comments_and_replaces_one_tag_and_digest(self):
         text = (ROOT / images.RELEASE).read_text()

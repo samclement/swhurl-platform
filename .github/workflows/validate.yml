@@ -352,11 +352,9 @@ jobs:
         id: source
         run: |
           set -Eeuo pipefail
-          paths=(images/console .dockerignore pyproject.toml uv.lock tools v2
-                 clusters/home/flux-system/sources/configmap-platform-settings.yaml)
-          content=$(for p in "${paths[@]}"; do git rev-parse "HEAD:$p"; done | sha256sum | cut -c1-16)
+          tag=$(bash images/content-tag.sh console)
           echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "content=$content" >> "$GITHUB_OUTPUT"
+          echo "content=${tag#src-}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -428,10 +426,9 @@ jobs:
         id: source
         run: |
           set -Eeuo pipefail
-          paths=(images/backup .dockerignore)
-          content=$(for p in "${paths[@]}"; do git rev-parse "HEAD:$p"; done | sha256sum | cut -c1-16)
+          tag=$(bash images/content-tag.sh backup)
           echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "content=$content" >> "$GITHUB_OUTPUT"
+          echo "content=${tag#src-}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3

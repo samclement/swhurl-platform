@@ -1,0 +1,7 @@
+{
+  "apiVersion": "jetstream.nats.io/v1beta2",
+  "kind": "Stream",
+  "metadata": {"name": "staging-hello", "namespace": "hello-staging"},
+  "spec": {"name": "staging-hello", "subjects": ["staging.hello.>"], "storage": "file"},
+  "status": {"conditions": [{"type": "Ready", "status": "True", "reason": "Created", "message": "Stream successfully created"}]}
+}

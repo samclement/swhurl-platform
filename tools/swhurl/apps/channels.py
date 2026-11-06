@@ -18,7 +18,6 @@ CHANNELS_DIR = NOTIFY_DIR / 'channels'
 NAMESPACE = 'notify'
 ROUTES_NAME = 'notification-routes'
 ROUTES_KEY = 'routes.json'
-SECRET_PREFIX = 'channel-'
 ADDRESS_KEY = 'address'
 TRANSPORT = interface.label('notify-transport')
 

@@ -1,0 +1,22 @@
+{
+  "apiVersion": "image.toolkit.fluxcd.io/v1",
+  "kind": "ImagePolicy",
+  "metadata": {
+    "name": "hello-staging",
+    "namespace": "flux-system",
+    "labels": {"platform.swhurl.com/app": "hello", "platform.swhurl.com/managed": "true"}
+  },
+  "spec": {
+    "digestReflectionPolicy": "Always",
+    "filterTags": {"extract": "$run", "pattern": "^(?P<run>[0-9]+)-[0-9a-f]{7,40}$"},
+    "imageRepositoryRef": {"name": "hello"},
+    "interval": "1h",
+    "policy": {"numerical": {"order": "asc"}}
+  },
+  "status": {
+    "conditions": [{"type": "Ready", "status": "True", "reason": "Succeeded",
+      "message": "Latest image tag for ghcr.io/samclement/hello resolved to 42-abc1234"}],
+    "latestRef": {"name": "ghcr.io/samclement/hello", "tag": "42-abc1234",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"}
+  }
+}

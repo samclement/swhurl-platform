@@ -1,8 +1,8 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: independently review slice 3 (pod-exec checks), then the approved host slice
-Uncommitted: `v2/`, `tools/swhurl/`, `tests/`
+Gate: verify slice 3's delivery live, then the approved host slice
+Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
 kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl`

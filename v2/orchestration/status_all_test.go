@@ -40,6 +40,9 @@ func (f *statusCluster) List(ctx context.Context, ref observe.Ref, selector stri
 func (f *statusCluster) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) {
 	return f.list(ref, selector)
 }
+func (f *statusCluster) ListNamespace(context.Context, observe.Ref) (observe.List, error) {
+	return observe.List{}, errors.New("unexpected unselected read during status")
+}
 func (f *statusCluster) list(ref observe.Ref, selector string) (observe.List, error) {
 	f.lists = append(f.lists, observe.ListRequest{Ref: ref, Selector: selector})
 	if f.refuse != nil {

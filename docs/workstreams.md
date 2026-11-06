@@ -8,7 +8,7 @@ Read this first when resuming. `make check-docs` compares it with Git, so it can
 
 | Workstream | Kind | State | Current slice | Next gate | Needs | Page | Paths |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Go replacement (v2) | main | blocked | the template check is shell over Go with Copier its only Python; the stack and name catalogues are v2's JSON | choose the next Python retirement slice | operator choice | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/`, `tools/swhurl/`, `tests/` |
+| Go replacement (v2) | main | in progress | the platform page's six cluster-only checks are `swhurl-v2 verify`; the console calls it instead of importing `verify` | live acceptance of the platform page's checks in Go | the console deploy | [v2 status](v2-status.md) | `v2/`, `v2-apps/`, `v2-records/`, `images/backup/`, `tools/swhurl/`, `tests/` |
 | Live platform | main | approved | the 24 open items in the plan index; the eight v1 app repositories stopped reusing a tested PR image, take the newest template and run Node.js 26 (30–31 October 2026), the two throwaways that could not take the template update were removed, with their namespaces, repositories and packages, and `make verify-platform`'s Image Automation check reads a v2-owned instance's own record (31 October 2026) | the next open plan item | the operator's confirmations for live actions | [plan index](plan.md#0-where-this-paused-and-what-is-left) | — |
 | Code graph | sidequest | parked | steps 0 to 3 and `view` committed 24 October 2026 | step 4 (`diff`) | operator approval | [tool page](visual-change-tool.md) | `devtools/codegraph/` |
 

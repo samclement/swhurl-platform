@@ -41,6 +41,7 @@ from swhurl.console import (
     catalogue,
     cluster,
     flagstore,
+    health,
     jobstore,
     logconfig,
     merge,
@@ -219,13 +220,15 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 finally:
                     request_files.reset(token)
 
+    # Live reads use the pod's ServiceAccount, except under --dev, which reads with the host's kubeconfig.
+    in_cluster = not bool(dev_identity) and bool(os.environ.get('KUBERNETES_SERVICE_HOST'))
+
     def app_rows() -> list[cluster.AppRow]:
         files = request_files.get()
         def read():
             inventory = cluster.apps(runner, include_removing=True)
             try:
-                reports = status.read(runner, files, cluster.items(runner, cluster.UNITS),
-                                      in_cluster=not bool(dev_identity) and bool(os.environ.get('KUBERNETES_SERVICE_HOST')))
+                reports = status.read(runner, files, cluster.items(runner, cluster.UNITS), in_cluster=in_cluster)
                 return status.rows(inventory, reports)
             except (actions.ActionError, CommandError, OSError, ValueError) as error:
                 raise cluster.ReadError(f'Go status unavailable: {error}') from None
@@ -236,10 +239,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         refusal (400): only Go's own `promotion:{ready:false,reason}` is a refusal."""
         try:
             return status.read(runner, request_files.get(), cluster.items(runner, cluster.UNITS),
-                               in_cluster=not bool(dev_identity) and bool(os.environ.get('KUBERNETES_SERVICE_HOST')),
-                               app=app, reviewed_digest=digest)
+                               in_cluster=in_cluster, app=app, reviewed_digest=digest)
         except (cluster.ReadError, actions.ActionError, CommandError, OSError, ValueError) as error:
             raise cluster.ReadError(f'Go promotion readiness unavailable: {error}') from None
+
+    def platform_checks() -> cluster.Checks:
+        """swhurl-v2 verify's checks for this page, with the pod's credential (the host's under --dev)."""
+        return health.checks(runner, in_cluster=in_cluster)
 
     def offer_text(row: cluster.AppRow, event: str = '') -> str:
         """What an app's own documents say about its API, or about one of its events ('' if nothing)."""
@@ -483,7 +489,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     ctx = Context(runner, github, jobs, flags, app_repos, repo_opener, described, document_source, file_source, platform_file,
                   request_files, page, reading, open_prs, change_rows, stacks, platform_teams, platform_channels, teams_cache,
-                  channels_cache, connectable, propose, resumable, app_rows, promotion_status)
+                  channels_cache, connectable, propose, resumable, app_rows, promotion_status, platform_checks)
     return Starlette(
         routes=[*pages.routes(ctx), *instance.routes(ctx), *teams.routes(ctx), *activity.routes(ctx), *new_app.routes(ctx),
                 Mount('/static', StaticFiles(directory=STATIC), name='static')],

@@ -10,7 +10,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
-COMMANDS := help reconcile verify-platform notifications-check notifications-heartbeat verify-logs flux-install \
+COMMANDS := help reconcile notifications-check notifications-heartbeat verify-logs flux-install \
 	clickstack-bootstrap clickstack-dashboards \
 	app-repo app-hooks \
 	console-image console-dev \
@@ -117,6 +117,14 @@ v2-reloader:
 .PHONY: v2-deploy
 v2-deploy:
 	@$(V2_BUILD); 	"$$work/swhurl-v2" deploy --records v2-records --profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json --out .
+
+# Every live platform check: swhurl-v2 verify (the checks that only read the cluster, with the caller's kubeconfig in
+# the throwaway folder, readable by the caller only, and removed on exit), then the Python ones. Needs Go 1.26.0.
+.PHONY: verify-platform
+verify-platform:
+	@$(V2_BUILD); \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	SWHURL_V2="$$work/swhurl-v2" SWHURL_V2_KUBECONFIG="$$work/kubeconfig.json" $(SWHURL) verify-run
 
 # One instance's state from v2's records (swhurl-v2 status): what they say should run at HEAD, compared with the
 # cluster the caller's kubeconfig names. Its JSON form is written into the throwaway folder, readable by the caller

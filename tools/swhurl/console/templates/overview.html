@@ -8,7 +8,7 @@
 {% elif updating %}{{ st.mark('updating') }} <strong>Updating</strong> <span class="muted">— {{ updating | length }} unit{{ 's' if updating | length != 1 }} applying a change; normal for a few seconds after a push</span>
 {% else %}{{ st.mark('healthy') }} <strong>Everything is healthy</strong>{% endif %}</p>
 <p class="muted">{{ apps | length }} app instances · {{ units | length }} Flux units · {{ checks.count }} health checks, read at {{ read_at }}.
-{% if checks.skipped %}{{ checks.skipped | length }} more checks need your terminal: <code>make verify-platform</code>.{% endif %}</p>
+More checks need your terminal: <code>make verify-platform</code>.</p>
 
 {% if problems %}<h2>Needs attention</h2>{{ st.items(problems) }}{% endif %}
 {% if updating %}<h2>Updating now</h2>{{ st.items(updating) }}{% endif %}

@@ -9,16 +9,17 @@ from pathlib import Path
 from unittest import mock
 
 from console_observation import install, report
+from fakecluster import HEALTHY_CHECKS, verify_report
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from swhurl import kube
 from swhurl.apps import state
 from swhurl.apps.instance import Instance
-from swhurl.console import actions, cluster, context, server, stages
+from swhurl.console import actions, cluster, context, health, server, stages
 from swhurl.console import github as gh
 from swhurl.console.routes import activity
-from swhurl.run import FakeRunner, Result, SharedReads, is_read
+from swhurl.run import FakeRunner, Result, is_read
 
 REV = 'main@sha1:abc1234def'
 WHO = {'X-Auth-Request-Email': 'sam@swhurl.com'}
@@ -46,22 +47,8 @@ UNITS = [unit('cluster-sources'), unit('infra-base'), unit('platform-oauth2-prox
 RELEASES = [release('web-prod', 'web')]
 
 
-TRAEFIK_REDIRECTS = {'spec': {'template': {'spec': {'containers': [
-    {'args': ['--entryPoints.web.http.redirections.entryPoint.scheme=https']}]}}}}
-CHECKS = {'kubectl -n console get cronjob console-dashboards': json.dumps({
-              'spec': {}, 'status': {'lastSuccessfulTime': dt.datetime.now(dt.UTC).isoformat()}}),
-          'kubectl get --raw=/version': '{}',
-          'kubectl -n kube-system get deploy traefik': json.dumps(TRAEFIK_REDIRECTS),
-          'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []}),
-          'kubectl -n flux-system get alerts.notification.toolkit.fluxcd.io': json.dumps({'items': [
-              {'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures',)]}),
-          'kubectl -n flux-system get providers.notification.toolkit.fluxcd.io': json.dumps({'items': [{'metadata': {'name': 'p'}}]})}
-CHECKS['kubectl -n console get cronjob console-notifications'] = CHECKS['kubectl -n console get cronjob console-dashboards']
-CHECKS['kubectl -n console get helmrelease console'] = json.dumps({'spec': {'values': {'controllers': {'main': {'containers': {
-    'main': {'image': {'tag': 'src-abc'}}}}}}}})
-CHECKS['kubectl -n notify get deployment notify'] = json.dumps({'status': {'readyReplicas': 1}, 'spec': {'template': {'spec': {
-    'containers': [{'image': 'ghcr.io/samclement/swhurl-console:src-abc@sha256:abc'}]}}}})
-"""Answers for the cluster-only platform checks (Overview and Platform run them)."""
+CHECKS = {'swhurl-v2 verify': json.dumps(verify_report(*HEALTHY_CHECKS))}
+"""swhurl-v2 verify's answer for a healthy platform (Overview and Platform show it)."""
 
 
 def fake(units=UNITS, releases=RELEASES, **extra):
@@ -629,14 +616,14 @@ class StateTests(unittest.TestCase):
                     'kubectl -n flux-system get kustomization app-web-prod': json.dumps(unit('app-web-prod')),
                     'kubectl -n web-prod get': '{}'})
                 self.assertEqual(client(runner).get(path, headers=WHO).status_code, 200)
-                self.assertEqual(len(runner.calls), len(set(runner.calls)), 'no cluster read is made twice for one page')
-        runner = fake(**CHECKS)
-        apart = cluster.platform_checks(runner)
-        shared = SharedReads(runner)
-        with shared.once():
-            at_once = cluster.platform_checks(shared)
-        self.assertEqual(at_once, apart, 'checks run at once are reported as when run one after another')
-        self.assertGreater(apart.count, 3)
+                reads = [call for call in runner.calls if call[:3] != ('kubectl', 'config', 'view')]  # the --dev credential
+                self.assertEqual(len(reads), len(set(reads)), 'no cluster read is made twice for one page')
+        found = health.checks(fake(**CHECKS), in_cluster=False)
+        self.assertEqual([section for section, _ in found.sections],
+                         ['Flux Kustomizations', 'Ingress', 'Alerts', 'Notify service', 'App dashboards and alerts', 'Notifications'],
+                         "the checks are shown in swhurl-v2 verify's order")
+        self.assertTrue(found.passed)
+        self.assertEqual(found.count, 7)
 
     def test_every_read_a_page_makes_is_one_the_pod_can_make_without_kubectl(self):
         """A read ``kube.api_read`` does not know still works, through kubectl and ten times slower."""
@@ -810,7 +797,7 @@ class OverviewTests(unittest.TestCase):
         self.assertIn('my-api/staging is suspended', text)
         self.assertNotIn('app-my-api-staging', text, 'Overview names app instances <app>/<env>')
         self.assertIn('2 app instances', text)
-        self.assertIn('more checks need your terminal', text)
+        self.assertIn('More checks need your terminal', text)
 
     def test_healthy_cluster_says_so(self):
         text = client(fake(units=[unit('infra-base')], **CHECKS)).get('/', headers=WHO).text
@@ -819,33 +806,35 @@ class OverviewTests(unittest.TestCase):
 
 
 class PlatformTests(unittest.TestCase):
-    def test_runs_only_cluster_checks_and_says_what_it_skipped(self):
-        traefik = {'spec': {'template': {'spec': {'containers': [{'args': []}]}}}}
-        runner = fake(**{'kubectl -n console get cronjob console-dashboards': CHECKS['kubectl -n console get cronjob console-dashboards'],
-                         'kubectl -n console get cronjob console-notifications': CHECKS['kubectl -n console get cronjob console-notifications'],
-                         'kubectl get --raw=/version': '{}',
-                         **{key: CHECKS[key] for key in ('kubectl -n console get helmrelease console',
-                                                         'kubectl -n notify get deployment notify')},
-                         'kubectl -n kube-system get deploy traefik': json.dumps(traefik),
-                         'kubectl -n flux-system get alerts.notification.toolkit.fluxcd.io': json.dumps({'items': []}),
-                         'kubectl -n flux-system get providers.notification.toolkit.fluxcd.io': json.dumps({'items': []})})
+    def test_shows_swhurl_v2_verify_and_leaves_the_rest_to_the_terminal(self):
+        failing = [check if check[0] != 'ingress' else ('ingress', 'Ingress', [('bad', 'Traefik does not redirect HTTP to HTTPS')])
+                   for check in HEALTHY_CHECKS]
+        runner = fake(**{'swhurl-v2 verify': json.dumps(verify_report(*failing))})
         response = client(runner).get('/platform', headers=WHO)
         self.assertEqual(response.status_code, 200)
         self.assertIn('<span class="mark failing" aria-hidden="true"></span> <strong>Ingress</strong> <span class="muted">·</span> '
                       'Traefik does not redirect HTTP to HTTPS', response.text, 'a group of one check is that check, on one line')
-        self.assertIn('17 more checks read Secrets, run commands in pods or need your machine', response.text)
+        self.assertIn('The other checks read Secrets, run commands in pods or need your machine', response.text)
+        verify = [call for call in runner.calls if call[:2] == ('swhurl-v2', 'verify')]
+        self.assertEqual(len(verify), 1)
+        self.assertEqual(verify[0][2:6], ('--source', 'console', '--json', '--kubeconfig'), 'under --dev, the host credential')
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c], runner.calls)
+
+    def test_in_the_pod_the_checks_use_its_service_account(self):
+        runner = FakeRunner().on('swhurl-v2', 'verify', stdout=json.dumps(verify_report(*HEALTHY_CHECKS)))
+        health.checks(runner, in_cluster=True)
+        self.assertEqual(runner.calls, [('swhurl-v2', 'verify', '--source', 'console', '--json', '--in-cluster')])
 
     def test_a_unit_is_what_one_read_says_it_is(self):
         """The checks read the units a moment before the units list does: a unit that became Ready in
         between was once shown as failing beside a list that said all healthy."""
         from swhurl.report import Entry
         checks = cluster.Checks(False, [(cluster.FLUX_SECTION, [
-            Entry(cluster.FLUX_SECTION, 'bad', 'app-web-prod is not Ready: Reconciliation in progress')])], [])
+            Entry(cluster.FLUX_SECTION, 'bad', 'app-web-prod is not Ready: Reconciliation in progress')])])
         ready = cluster.units(fake(units=[unit('app-web-prod')]))
         self.assertEqual(cluster.problems(checks, ready), [])
         failing = cluster.units(fake(units=[unit('app-web-prod', ready='False', message='boom')]))
-        self.assertEqual(cluster.problems(cluster.Checks(True, [], []), failing),
+        self.assertEqual(cluster.problems(cluster.Checks(True, []), failing),
                          [cluster.Problem('failing', 'web/prod is not Ready: boom', '/apps/web/prod')])
 
     def test_an_apps_image_check_names_the_instance_and_times_read_as_how_long_ago(self):
@@ -863,10 +852,15 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual([server.ago(day, now) for day in ('2026-10-11', '2026-10-10', '2026-10-01')],
                          ['today', 'yesterday', '10 days ago'], 'a date alone has no hour to count from')
 
-    def test_unreachable_cluster_is_a_502(self):
-        runner = FakeRunner().on('kubectl', 'get', '--raw=/version', returncode=1, stderr='refused')
-        with redirect_stderr(io.StringIO()):
-            self.assertEqual(client(runner).get('/platform', headers=WHO).status_code, 502)
+    def test_no_report_is_a_502_never_a_pass(self):
+        for answer in ({'returncode': 2, 'stderr': 'credentials: no current context'},
+                       {'stdout': json.dumps({'kind': 'v2-platform-checks', 'version': 2})}, {'stdout': 'not json'}):
+            with self.subTest(answer=answer):
+                runner = fake(**CHECKS)
+                runner._rules.insert(0, (('swhurl-v2', 'verify'), Result((), answer.get('returncode', 0), answer.get('stdout', ''),
+                                                                         answer.get('stderr', ''))))
+                with redirect_stderr(io.StringIO()):
+                    self.assertEqual(client(runner).get('/platform', headers=WHO).status_code, 502)
 
 
 ORIGIN = {**WHO, 'Origin': 'http://testserver'}

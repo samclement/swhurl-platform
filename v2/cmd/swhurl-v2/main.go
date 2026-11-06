@@ -70,6 +70,7 @@ const usage = `usage:
   swhurl-v2 team --records DIR --team TEAM --action ACTION --profile PROFILE.json --out DIR \
       [--description TEXT] [--rename NEW] [--transport ntfy]
   swhurl-v2 workstreams --repo-root DIR
+  swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--source NAME] [--json]
   swhurl-v2 notify-serve [--listen ADDR]
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
@@ -122,6 +123,14 @@ calls and egress must be inside that root. Shared profile/resolution/allocation 
 Every report includes promotion:{ready,reason}, evaluated for the selected digest by default. Single status accepts
 --reviewed-digest DIGEST to evaluate the submitted review instead (including an empty/invalid digest, which refuses
 readiness). It is forbidden with --all. This is a submission-time observation, not a later manual-merge guarantee.
+
+verify runs the platform checks that only read the cluster — every Flux unit Ready, Traefik's HTTPS redirect, the
+Flux alerts and their providers, the notify service on the console's image, and the console's dashboard and
+notification CronJobs succeeding within five minutes — with the credential status takes. It prints each check's
+section and [OK], [WARN] or [BAD] lines, or with --json the v2-platform-checks document (version 1). A failed read is
+a bad entry, never absence. The exit status is 1 when an entry is bad, after the report is printed, and 2 for a usage
+error, an unusable credential or a request the adapter refuses. make verify-platform runs it before the checks that
+read Secrets, run commands in pods or need the host.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
@@ -391,6 +400,7 @@ var commands = map[string]func(cli, request) int{
 	"restore":           cli.restore,
 	"team":              cli.team,
 	"workstreams":       cli.workstreams,
+	"verify":            cli.verify,
 	"notify-serve":      cli.notifyServe,
 }
 
@@ -610,6 +620,11 @@ func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) boo
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
 		flags.Var(&onceBool{value: &r.archive}, "archive", "also read the newest archive from the object store (needs AWS credentials)")
 		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-observation document instead of the text")
+	case "verify":
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
+		flags.Var(&once{value: &r.source}, "source", "name of the evidence source (default: the kubeconfig's current context)")
+		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-platform-checks document instead of the text")
 	case "restore":
 		r.registerLive(flags)
 		flags.Var(&once{value: &r.from}, "from", "the archive to restore (default: the newest)")
@@ -768,6 +783,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"edit":              (*request).editNamed,
 	"team":              (*request).teamNamed,
 	"workstreams":       func(r *request) []string { return []string{r.repoRoot} },
+	"verify":            (*request).verifyNamed,
 	"notify-serve":      func(r *request) []string { return []string{r.listen} },
 }
 
@@ -784,6 +800,14 @@ func (r *request) statusNamed() []string {
 		return []string{r.records, r.profile, r.revision}
 	}
 	return []string{r.records, r.app, r.env, r.profile, r.revision}
+}
+
+// verifyNamed is exactly one credential, a kubeconfig or the pod's own ServiceAccount: neither or both is a usage error.
+func (r *request) verifyNamed() []string {
+	if (r.kubeconfig != "") == r.inCluster {
+		return []string{""}
+	}
+	return []string{}
 }
 
 // appNamed is what a command that works on one app needs: migrate reads a snapshot, promote the records tree; both

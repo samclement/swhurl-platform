@@ -738,6 +738,29 @@ func TestCollectionContract(t *testing.T) {
 	})
 }
 
+// A namespace's whole collection is one GET of its namespaced path with no label selector at all.
+func TestNamespaceListHasNoSelector(t *testing.T) {
+	server := &apiServer{body: []byte(`{"items":[]}`)}
+	reader, err := kube.New(endpoint, &http.Client{Transport: server}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := kube.RefOf("notification.toolkit.fluxcd.io", "Alert", "flux-system", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list, err := reader.ListNamespace(t.Context(), ref); err != nil || list.Status != observe.Present {
+		t.Fatalf("%+v, %v", list, err)
+	}
+	request := server.requests[0]
+	if request.URL.Path != "/apis/notification.toolkit.fluxcd.io/v1beta3/namespaces/flux-system/alerts" || request.URL.RawQuery != "" {
+		t.Fatalf("%s", request.URL)
+	}
+	if _, err := reader.ListNamespace(t.Context(), observe.Ref{APIVersion: "v1", Kind: "Namespace"}); !refused(err, "namespaced_kind_required") {
+		t.Fatalf("a cluster-scoped kind: %v", err)
+	}
+}
+
 func TestAllNamespacesPathAndSelectorAreExplicit(t *testing.T) {
 	server := &apiServer{body: []byte(`{"items":[]}`)}
 	reader, err := kube.New(endpoint, &http.Client{Transport: server}, "")

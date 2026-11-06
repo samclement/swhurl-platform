@@ -5,38 +5,62 @@ section heading; any ``[BAD]`` makes the exit code 1. Key values are
 registered with the runner as secrets, so they are redacted from every message
 and never printed, even when a comparison fails.
 
-A check lives beside what it checks (``flux.py``, ``clickstack.py``, ``apps/checks.py``,
-``notifications/checks.py``, ``console/checks.py``, the backup modules) and is listed in ``CHECKS``.
+The checks that only read the cluster are ``swhurl-v2 verify``'s, run first (``CLUSTER_CHECKS``); the make recipe
+builds the binary and names it and the caller's kubeconfig in ``SWHURL_V2`` and ``SWHURL_V2_KUBECONFIG``. The others
+live beside what they check (``flux.py``, ``clickstack.py``, ``apps/checks.py``, ``notifications/checks.py``,
+``console/checks.py``, the backup modules) and are listed in ``CHECKS``.
 """
 from __future__ import annotations
 
-import functools
-import io
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from swhurl import clickstack, dashboards, flux, recovery, sqlite_backup
+from swhurl import clickstack, flux, platform_checks, recovery, sqlite_backup
 from swhurl.apps import checks as apps
 from swhurl.console import checks as console
 from swhurl.notifications import checks as notifications
 from swhurl.report import Report
-from swhurl.run import CommandError, Runner, SharedReads
+from swhurl.run import CommandError, Runner
+
+CLUSTER_CHECKS = (
+    ('flux-units', 'Every Flux unit is Ready'),
+    ('ingress', 'Traefik redirects HTTP to HTTPS'),
+    ('alerts', 'The Flux failure Alert exists and its provider does (a missing Alert warns)'),
+    ('notify-service', "The notify service runs, on the console's image (another image warns)"),
+    ('dashboards', 'The platform webhook, dashboard and alert sync succeeded within five minutes'),
+    ('notifications', 'The notification checker succeeded within five minutes'),
+)
+"""``swhurl-v2 verify``'s checks, in its order, for the operations page: Go decides them (``v2/observe/platform.go``)."""
 
 
-def check_ingress(runner: Runner, report: Report) -> None:
-    """Traefik comes with k3s and has no module of its own, so its one check is here."""
-    report.section('Ingress')
+def check_cluster(runner: Runner, report: Report) -> None:
+    """Show what ``swhurl-v2 verify`` reported. A run that gave no complete report is a failed check, not a pass."""
+    binary, kubeconfig = os.environ.get('SWHURL_V2', ''), os.environ.get('SWHURL_V2_KUBECONFIG', '')
+    if not binary or not kubeconfig:
+        report.section('Cluster checks')
+        report.bad('swhurl-v2 verify did not run: SWHURL_V2 and SWHURL_V2_KUBECONFIG name no binary and kubeconfig '
+                   '(run make verify-platform, which builds both)')
+        return
     try:
-        deploy = runner.json(['kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', '-o', 'json'])
-        args = deploy['spec']['template']['spec']['containers'][0].get('args') or []
-    except (CommandError, KeyError, IndexError, TypeError):
-        args = []
-    if any('entryPoints.web.http.redirections.entryPoint.scheme=https' in a for a in args):
-        report.ok('Traefik redirects HTTP to HTTPS')
-    else:
-        report.bad('Traefik does not redirect HTTP to HTTPS (plain-HTTP sign-in fails with 403); '
-                   'check infra/traefik/helmchartconfig.yaml')
+        result = runner.run([binary, 'verify', '--kubeconfig', kubeconfig, '--source', 'verify-platform', '--json'], check=False)
+    except CommandError as error:
+        report.section('Cluster checks')
+        report.bad(f'swhurl-v2 verify did not run: {error}')
+        return
+    try:
+        found = platform_checks.entries(result.stdout)
+    except ValueError as error:
+        report.section('Cluster checks')
+        report.bad(f'swhurl-v2 verify gave no report ({error}): {(result.stderr or "").strip() or f"exit {result.returncode}"}')
+        return
+    section = None
+    for entry in found:
+        if entry.section != section:
+            section = entry.section
+            report.section(section)
+        getattr(report, entry.level)(entry.message)
 
 
 @dataclass(frozen=True)
@@ -44,8 +68,7 @@ class Check:
     """One group of checks, what it needs beyond reading the cluster, and what passing means.
 
     ``cluster``: read non-Secret objects; ``secret``: read Secrets; ``exec``: run
-    commands in pods; ``host``: this machine's files or AWS credentials. The
-    console runs only the checks its read-only account can (``{'cluster'}``).
+    commands in pods; ``host``: this machine's files or AWS credentials.
     ``what`` is the check's row in the operations page (``table``; a test keeps the two the same).
     """
     name: str
@@ -59,13 +82,11 @@ class Check:
 
 
 CHECKS = (
-    Check.of('flux', 'cluster', flux.check_units, 'Every Flux unit is Ready'),
     Check.of('flux-controllers', 'cluster host', flux.check_controllers,
              'The Flux controllers run the pinned version with the settings in Git (warns otherwise)'),
     Check.of('ingestion-key', 'cluster secret exec', clickstack.check_ingestion,
              "The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed"),
     Check.of('registration', 'cluster exec', clickstack.check_registration, 'A HyperDX team exists, so registration is closed'),
-    Check.of('ingress', 'cluster', check_ingress, 'Traefik redirects HTTP to HTTPS'),
     Check.of('image-automation', 'cluster host', apps.check_image_automation,  # reads v2-records/<app>/staging
              "Every app's ImagePolicy is Ready and staging runs the image its record states (warns otherwise)"),
     Check.of('isolation', 'cluster host', apps.check_isolation,  # reads v2-apps/ and v2-records/teams.json
@@ -76,11 +97,8 @@ CHECKS = (
              'NATS and its controller run, and every stream and consumer v2 rendered is Ready'),
     Check.of('egress', 'cluster host', apps.check_egress,  # reads platform/egress/allocation.json
              'The egress proxy runs both replicas, with a port of its own for every instance v2 compiled'),
-    Check.of('alerts', 'cluster', flux.check_alerts, 'The Flux failure Alert exists and its provider does (a missing Alert warns)'),
     Check.of('channels', 'cluster host', notifications.check_channels,  # reads platform/notify/routes.json
              "The team routes are Git's and every channel has its Secret (a team without a channel warns)"),
-    Check.of('notify-service', 'cluster', notifications.check_notify_service,
-             "The notify service runs, on the console's image (another image warns)"),
     Check.of('retention', 'cluster exec', clickstack.check_retention,
              'Telemetry expires after 30 days and ClickHouse system logs after 7, no merge failed in the last hour, '
              'and the MongoDB volume is retained'),
@@ -92,8 +110,6 @@ CHECKS = (
              "Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise)"),
     Check.of('image-webhooks', 'cluster host', apps.check_image_webhooks,
              "The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise)"),
-    Check.of('dashboards', 'cluster', dashboards.check_dashboards, 'The platform webhook, dashboard and alert sync succeeded within five minutes'),
-    Check.of('notifications', 'cluster', notifications.check_notifications, 'The notification checker succeeded within five minutes'),
     Check.of('notification-heartbeat', 'host', notifications.check_notification_heartbeat,
              "The host heartbeat timer is active and its service's last run succeeded within 15 minutes"),
     Check.of('console', 'cluster host', console.check_console,
@@ -101,19 +117,19 @@ CHECKS = (
     Check.of('console-token', 'cluster secret host', console.check_console_token,
              "GitHub accepts the console's tokens and none expires within 14 days (warns)"),
 )
-NEEDS = frozenset().union(*(check.needs for check in CHECKS))
 WORDS = {'cluster': 'Cluster (read)', 'secret': 'Secrets (read)', 'exec': 'commands in pods', 'host': 'this host'}
 
 
 def table() -> str:
     """The checks as the Markdown table in the operations page, in the order they run."""
-    rows = [f"| `{check.name}` | {check.what} | {', '.join(WORDS[need] for need in WORDS if need in check.needs)} |"
-            for check in CHECKS]
+    rows = [f"| `{name}` | {what} | Cluster (read), `swhurl-v2 verify` |" for name, what in CLUSTER_CHECKS]
+    rows += [f"| `{check.name}` | {check.what} | {', '.join(WORDS[need] for need in WORDS if need in check.needs)} |"
+             for check in CHECKS]
     return '\n'.join(['| Check | Passes when | Reads |', '| --- | --- | --- |', *rows])
 
 
-def verify_platform(runner: Runner, report: Report, *, allowed: frozenset[str] = NEEDS) -> int:
-    """Run every check whose needs are within ``allowed``; name the skipped ones."""
+def verify_platform(runner: Runner, report: Report) -> int:
+    """Run ``swhurl-v2 verify``'s checks, then every other one, each line as its check finishes."""
     report.redact = runner.redact
     try:
         runner.run(['kubectl', 'get', '--raw=/version'])
@@ -123,21 +139,9 @@ def verify_platform(runner: Runner, report: Report, *, allowed: frozenset[str] =
             detail = str(error)
         print(f'[ERROR] {detail}', file=sys.stderr)
         return 1
-    skipped = [check.name for check in CHECKS if not check.needs <= allowed]
-    def alone(check: Check) -> Report:
-        part = Report(io.StringIO(), redact=runner.redact)
-        check.run(runner, part)
-        return part
-    wanted = [check for check in CHECKS if check.needs <= allowed]
-    if isinstance(runner, SharedReads):  # a console page: the checks at once, reported in their order
-        for part in runner.together(*(functools.partial(alone, check) for check in wanted)):
-            report.merge(part)
-    else:  # a terminal: each line as its check finishes
-        for check in wanted:
-            check.run(runner, report)
-    if skipped:
-        report.line()
-        report.info(f"skipped (need more than {', '.join(sorted(allowed))}): {', '.join(skipped)}")
+    check_cluster(runner, report)
+    for check in CHECKS:
+        check.run(runner, report)
     if report.passed:
         report.line('\nValidation passed.')
     return report.exit_code()

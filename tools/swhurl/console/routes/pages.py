@@ -20,7 +20,7 @@ def routes(ctx: Context) -> list[Route]:
     def overview(request: Request) -> Response:
         def read():
             checks, found, (prs, prs_error), rows = runner.together(
-                lambda: cluster.platform_checks(runner), lambda: cluster.units(runner), open_prs, lambda: ctx.apps())
+                ctx.platform_checks, lambda: cluster.units(runner), open_prs, lambda: ctx.apps())
             return {'checks': checks, 'units': found, 'apps': rows, 'problems': cluster.problems(checks, found),
                     'updating': cluster.updating(found),
                     'prs': prs, 'prs_error': prs_error, 'recent': [j for j in jobs.recent() if j.state != 'running'][:5]}
@@ -71,7 +71,7 @@ def routes(ctx: Context) -> list[Route]:
 
     def platform(request: Request) -> Response:
         def read():
-            checks, found = runner.together(lambda: cluster.platform_checks(runner), lambda: cluster.units(runner))
+            checks, found = runner.together(ctx.platform_checks, lambda: cluster.units(runner))
             layers = [(title, text, [u for u in found if u.layer == title])
                       for title, text in [(t, d) for _, t, d in cluster.LAYERS] + [(cluster.OTHER_LAYER, '')]]
             revisions = Counter(u.revision for u in found if u.revision).most_common(1)

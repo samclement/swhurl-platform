@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import replace
 
@@ -56,16 +55,7 @@ def read(runner: Runner, files: Files, units: list[dict], *, in_cluster: bool,
                 '--egress', v2.EGRESS, '--revision', revision, '--changes', str(changes), '--repo-root', str(root),
                 '--source', 'console', '--json']
         args += ['--app', app, '--env', 'staging', '--reviewed-digest', reviewed_digest] if app else ['--all']
-        if in_cluster:
-            args += ['--in-cluster']
-        else:
-            credential = runner.output(['kubectl', 'config', 'view', '--raw', '--minify', '--flatten', '-o', 'json'], secret_output=True)
-            runner.add_secret(credential)
-            path = root / 'kubeconfig.json'
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(descriptor, 'w') as output:
-                output.write(credential)
-            args += ['--kubeconfig', str(path)]
+        args += v2.credential(runner, root, in_cluster=in_cluster)
         result = v2.run(runner, root, args)
         decoded = observation.decode(result.stdout, revision, single=bool(app))
         if app and decoded['target']['namespace'] != f'{app}-staging':

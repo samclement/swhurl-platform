@@ -7,6 +7,9 @@ carries the records and everything v2 derives from them.
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from swhurl.console.actions import ActionError
 from swhurl.run import CommandError, Result, Runner
 
@@ -51,6 +54,20 @@ def resolve(argv: list[str], *, revision: str, expect: str = '') -> list[str]:
     if expect:
         resolved += ['--expect', expect]
     return resolved
+
+
+def credential(runner: Runner, root: Path, *, in_cluster: bool) -> list[str]:
+    """How a live command reads the cluster: the pod's own ServiceAccount, or (``--dev``) the host's current
+    kubeconfig written under ``root``, readable by this user only and registered as a secret so it is never shown."""
+    if in_cluster:
+        return ['--in-cluster']
+    document = runner.output(['kubectl', 'config', 'view', '--raw', '--minify', '--flatten', '-o', 'json'], secret_output=True)
+    runner.add_secret(document)
+    path = root / 'kubeconfig.json'
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, 'w') as output:
+        output.write(document)
+    return ['--kubeconfig', str(path)]
 
 
 def available(runner: Runner) -> bool:

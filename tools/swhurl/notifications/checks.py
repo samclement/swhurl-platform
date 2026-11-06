@@ -9,12 +9,10 @@ import json
 import time
 from pathlib import Path
 
-from swhurl import ROOT, kube
-from swhurl.apps import channels, helmrelease
+from swhurl import ROOT
+from swhurl.apps import channels
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
-
-from .heartbeat import CRONJOB_NAME, CRONJOB_NAMESPACE
 
 
 def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
@@ -56,48 +54,6 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
         if team and not routes.get(team):
             report.warn(f'team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '
                         f'reach nobody (make team-channel NAME={team})')
-
-
-def check_notify_service(runner: Runner, report: Report) -> None:
-    """The notify service is running, on the image the console runs (one pin moves both)."""
-    report.section('Notify service')
-    try:
-        deployment = runner.json(['kubectl', '-n', channels.NAMESPACE, 'get', 'deployment', 'notify', '-o', 'json'])
-        running = deployment['spec']['template']['spec']['containers'][0]['image']
-        ready = (deployment.get('status') or {}).get('readyReplicas', 0)
-        console = helmrelease.image(runner.json(['kubectl', '-n', 'console', 'get', 'helmrelease', 'console', '-o', 'json']))
-    except (CommandError, KeyError, TypeError, IndexError):
-        report.bad('cannot read the notify service (notify/notify): teams get no copies of their apps\' messages '
-                   '(make reconcile UNIT=platform-notify)')
-        return
-    if not ready:
-        report.bad('the notify service is not running: teams get no copies of their apps\' messages '
-                   '(kubectl -n notify get pods; make reconcile UNIT=platform-notify)')
-    elif f":{console.get('tag')}" not in running:
-        report.warn(f"the notify service runs {running.split('@')[0].rsplit(':', 1)[-1]}, not the console's "
-                    f"{console.get('tag')}: make console-image pins both, then commit and push")
-    else:
-        report.ok(f"the notify service is running {console.get('tag')}, as the console")
-
-
-def check_notifications(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
-    """A recent successful check proves the snapshot/outbox pass finished, not subscriber delivery."""
-    report.section('Notifications')
-    try:
-        state = kube.cronjob_run(runner, CRONJOB_NAMESPACE, CRONJOB_NAME, now)
-    except (CommandError, KeyError, ValueError, TypeError):
-        report.bad(f'cannot read notification checker status ({CRONJOB_NAMESPACE}/{CRONJOB_NAME}; '
-                   'make reconcile UNIT=platform-console)')
-        return
-    if state == 'suspended':
-        report.bad('notification checker is suspended, so no notifications are sent: kubectl -n '
-                   f'{CRONJOB_NAMESPACE} patch cronjob {CRONJOB_NAME} -p \'{{"spec":{{"suspend":false}}}}\'')
-    elif state == 'stale':
-        report.bad(f'notification checker has not succeeded in 5 minutes, so notifications may be late or lost '
-                   f'(kubectl -n {CRONJOB_NAMESPACE} get jobs; kubectl -n {CRONJOB_NAMESPACE} logs job/<newest '
-                   f'{CRONJOB_NAME}-...>); no new jobs at all: docs/operations.md#troubleshooting')
-    else:
-        report.ok('notification checker succeeded in the last 5 minutes')
 
 
 def check_notification_heartbeat(runner: Runner, report: Report,

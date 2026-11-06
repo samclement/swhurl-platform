@@ -32,15 +32,21 @@ func CollectionContract(t *testing.T, open func(*testing.T, []byte, string) kube
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			reader := open(t, []byte(test.body), test.reason)
-			list, err := reader.ListAllNamespaces(context.Background(), ref, "app.kubernetes.io/instance")
-			if err != nil || list.Status != test.status || list.Reason != test.wantReason || len(list.Items) != test.count {
-				t.Fatalf("%+v, %v", list, err)
-			}
 			scoped := ref
 			scoped.Namespace = "hello-staging"
-			list, err = reader.List(context.Background(), scoped, "app.kubernetes.io/instance")
-			if err != nil || list.Status != test.status || list.Reason != test.wantReason || len(list.Items) != test.count {
-				t.Fatalf("scoped: %+v, %v", list, err)
+			for name, read := range map[string]func() (observe.List, error){
+				"all": func() (observe.List, error) {
+					return reader.ListAllNamespaces(context.Background(), ref, "app.kubernetes.io/instance")
+				},
+				"scoped": func() (observe.List, error) {
+					return reader.List(context.Background(), scoped, "app.kubernetes.io/instance")
+				},
+				"namespace": func() (observe.List, error) { return reader.ListNamespace(context.Background(), scoped) },
+			} {
+				list, err := read()
+				if err != nil || list.Status != test.status || list.Reason != test.wantReason || len(list.Items) != test.count {
+					t.Fatalf("%s: %+v, %v", name, list, err)
+				}
 			}
 		})
 	}
@@ -59,7 +65,13 @@ func collectionRefusals(t *testing.T, reader kube.Reader) {
 	if _, err := reader.ListAllNamespaces(context.Background(), ref, ""); err == nil {
 		t.Fatal("empty selector accepted")
 	}
+	if _, err := reader.ListNamespace(context.Background(), ref); err == nil {
+		t.Fatal("namespace list accepted empty namespace")
+	}
 	ref.Namespace = "hello-staging"
+	if _, err := reader.ListNamespace(context.Background(), observe.Ref{APIVersion: "v1", Kind: "Pod", Namespace: ref.Namespace, Name: "main"}); err == nil {
+		t.Fatal("namespace list accepted name")
+	}
 	if _, err := reader.ListAllNamespaces(context.Background(), ref, "app.kubernetes.io/instance"); err == nil {
 		t.Fatal("all namespaces accepted namespace")
 	}

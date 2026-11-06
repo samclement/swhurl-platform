@@ -75,6 +75,7 @@ adapters/kube/kubetest: func (*Fake) Create(_ context.Context, ref observe.Ref, 
 adapters/kube/kubetest: func (*Fake) Delete(_ context.Context, ref observe.Ref) error
 adapters/kube/kubetest: func (*Fake) List(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube/kubetest: func (*Fake) ListAllNamespaces(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
+adapters/kube/kubetest: func (*Fake) ListNamespace(_ context.Context, ref observe.Ref) (observe.List, error)
 adapters/kube/kubetest: func (*Fake) Logs(_ context.Context, ref observe.Ref, _ int64) (string, error)
 adapters/kube/kubetest: func (*Fake) Patch(_ context.Context, ref observe.Ref, _ []byte) error
 adapters/kube/kubetest: func (*Fake) Read(_ context.Context, ref observe.Ref) (observe.Read, error)
@@ -89,7 +90,7 @@ adapters/kube/kubetest: func ReviewContract(t *testing.T, answers ReviewAnswers,
 adapters/kube/kubetest: func WriteContract(t *testing.T, log string, open func(*testing.T, string) kube.Writer)
 adapters/kube/kubetest: type Answers struct {Object observe.Ref Document []byte Missing observe.Ref Failed observe.Ref Malformed observe.Ref Mismatched observe.Ref Pods observe.Ref Selector string Collection []byte ListReason string Items [][]byte}
 adapters/kube/kubetest: type DataAnswers struct {Namespace, Labels string ConfigMap kube.ConfigMap Secret kube.Secret Other string}
-adapters/kube/kubetest: type Fake struct {Answers Answers Reads []observe.Ref Writes []observe.Ref ReadLogs []observe.Ref Log string Selectors []string Refuse error Objects map[observe.Ref][]byte Tokens map[string]kube.TokenReview ConfigMapData map[string][]kube.ConfigMap SecretData map[string][]kube.Secret Failing map[string]error Calls []string}
+adapters/kube/kubetest: type Fake struct {Answers Answers Reads []observe.Ref Writes []observe.Ref ReadLogs []observe.Ref Log string Selectors []string Refuse error Objects map[observe.Ref][]byte Collections map[observe.Ref][][]byte Tokens map[string]kube.TokenReview ConfigMapData map[string][]kube.ConfigMap SecretData map[string][]kube.Secret Failing map[string]error Calls []string}
 adapters/kube/kubetest: type ReviewAnswers struct {Token, Audience, Username string}
 adapters/kube: const BadCredentials = "credentials"
 adapters/kube: const Failed = "failed"
@@ -99,6 +100,7 @@ adapters/kube: func (*API) Create(ctx context.Context, ref observe.Ref, document
 adapters/kube: func (*API) Delete(ctx context.Context, ref observe.Ref) error
 adapters/kube: func (*API) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube: func (*API) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
+adapters/kube: func (*API) ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error)
 adapters/kube: func (*API) Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)
 adapters/kube: func (*API) Patch(ctx context.Context, ref observe.Ref, patch []byte) error
 adapters/kube: func (*API) Read(ctx context.Context, ref observe.Ref) (observe.Read, error)
@@ -124,7 +126,7 @@ adapters/kube: type Connection struct {Endpoint string Credentials Credentials T
 adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
 adapters/kube: type Data interface {ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error) // SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every // other key as it is. SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error}
 adapters/kube: type Error struct {Code, Subject, Reason string}
-adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)}
+adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error)}
 adapters/kube: type Reviewer interface {Review(ctx context.Context, token, audience string) (TokenReview, error)}
 adapters/kube: type Secret struct {Name string Labels map[string]string Data map[string][]byte}
 adapters/kube: type Selector struct {Name, Labels string}
@@ -512,6 +514,9 @@ observe: const BackupNotAssessed = "not_assessed"
 observe: const BackupStale = "stale"
 observe: const BackupSuspended = "suspended"
 observe: const BackupUnavailable = "unavailable"
+observe: const CheckBad CheckLevel = "bad"
+observe: const CheckOK CheckLevel = "ok"
+observe: const CheckWarn CheckLevel = "warn"
 observe: const Different = "different"
 observe: const IsNotRunning Verdict = "not_running"
 observe: const IsRunning Verdict = "running"
@@ -522,6 +527,8 @@ observe: const NotReady = "not_ready"
 observe: const NotReconciled = "not_reconciled"
 observe: const NotRunning = "not_running"
 observe: const NotSettled = "not_settled"
+observe: const PlatformKind = "v2-platform-checks"
+observe: const PlatformVersion = 1
 observe: const Present = "present"
 observe: const Ready = "ready"
 observe: const ReasonAnotherInstance = "metadata_names_another_instance"
@@ -599,6 +606,7 @@ observe: const Unknown Verdict = "unknown"
 observe: func (*Error) Error() string
 observe: func (Candidates) EvidenceFor(target Target) Evidence
 observe: func (Changes) Validate() error
+observe: func (PlatformReport) Passed() bool
 observe: func (RestorePlan) Ready() bool
 observe: func ArchiveMetadataOf(document []byte) (ArchiveMetadata, error)
 observe: func BackupTargetOf(cronJob []byte) (BackupTarget, error)
@@ -606,12 +614,15 @@ observe: func BulkPlan(targets []Target) []ListRequest
 observe: func CurrentnessOf(expected, literal, availability string, scope ChangeScope, changes *Changes) (Currentness, error)
 observe: func DecodeChanges(data []byte) (Changes, error)
 observe: func EncodeCollection(collection Collection) ([]byte, error)
+observe: func EncodePlatformReport(r PlatformReport) ([]byte, error)
 observe: func EncodeReport(report Report) ([]byte, error)
 observe: func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error)
 observe: func Explain(target Target, evidence Evidence) (Report, error)
 observe: func IndexCandidates(lists []List) (Candidates, error)
 observe: func IsPositive(outcome string) bool
 observe: func NewestRun(items [][]byte) (string, bool, error)
+observe: func PlatformChecks(e PlatformEvidence) []PlatformCheck
+observe: func PlatformText(r PlatformReport) string
 observe: func PromotionReadiness(report Report, reviewedDigest string) PromotionDecision
 observe: func RestoreOf(input RestoreInput) RestorePlan
 observe: func RouteTargetOf(ingress []byte) (RouteTarget, error)
@@ -631,6 +642,7 @@ observe: type Candidates struct {}
 observe: type Certificate struct {Name string Outcome string Reason string}
 observe: type ChangeScope struct {Files, Folders []string}
 observe: type Changes struct {Kind string `json:"kind"` Version int `json:"version"` Comparisons []Comparison `json:"comparisons"`}
+observe: type CheckLevel string
 observe: type Collection struct {Source, ObservedAt, Revision string Instances []InstanceReport}
 observe: type Comparison struct {From string `json:"from"` To string `json:"to"` Status string `json:"status"` Paths []string `json:"paths"`}
 observe: type Condition struct {Type string `json:"type"` Status string `json:"status"` Reason string `json:"reason"` ObservedGeneration *int64 `json:"observedGeneration"`}
@@ -643,6 +655,10 @@ observe: type InstanceReport struct {Application, Environment string Report Repo
 observe: type List struct {Ref Ref Selector string Status string Reason string Items [][]byte}
 observe: type ListRequest struct {Ref Ref Selector string}
 observe: type LiveFacts struct {Unit FluxFacts `json:"unit"` Release FluxFacts `json:"release"` Workload WorkloadFacts `json:"workload"` Running RunningFacts `json:"running"`}
+observe: type PlatformCheck struct {Name string `json:"name"` Section string `json:"section"` Entries []PlatformEntry `json:"entries"`}
+observe: type PlatformEntry struct {Level CheckLevel `json:"level"` Message string `json:"message"`}
+observe: type PlatformEvidence struct {Units, Alerts, Providers List Traefik, Notify, Console, Dashboards, Notifications Read Now time.Time}
+observe: type PlatformReport struct {Source string ObservedAt string Checks []PlatformCheck}
 observe: type Problem struct {Pod, Container, Reason, Message string}
 observe: type PromotionDecision struct {Ready bool `json:"ready"` Reason string `json:"reason"`}
 observe: type Read struct {Ref Ref Status string Reason string Object []byte}
@@ -658,6 +674,14 @@ observe: type State struct {Name, Field, Reason string}
 observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string Backup *BackupTarget Route *RouteTarget Scope *ChangeScope}
 observe: type Verdict string
 observe: type WorkloadFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` ReadyReplicas *int64 `json:"readyReplicas"`}
+observe: var PlatformAlerts = Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Alert", Namespace: "flux-system"}
+observe: var PlatformConsole = Ref{APIVersion: "helm.toolkit.fluxcd.io/v2", Kind: "HelmRelease", Namespace: "console", Name: "console"}
+observe: var PlatformDashboards = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-dashboards"}
+observe: var PlatformNotifications = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-notifications"}
+observe: var PlatformNotify = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "notify", Name: "notify"}
+observe: var PlatformProviders = Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Provider", Namespace: "flux-system"}
+observe: var PlatformTraefik = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "kube-system", Name: "traefik"}
+observe: var PlatformUnits = Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization", Namespace: "flux-system"}
 orchestration: const AppRunning = "running"
 orchestration: const AppStopped = "stopped"
 orchestration: const AppUnknown = "unknown"
@@ -687,6 +711,7 @@ orchestration: func ImageDeclaration(reader appsource.Reader, root string) (stri
 orchestration: func Migrate(ctx context.Context, inputs MigrationInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer) (Migration, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewNotifier(publisher ntfy.Publisher) *Notifier
+orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformReport, error)
 orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
 orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
@@ -713,6 +738,7 @@ orchestration: type MintOutcome struct {Application, Environment string Public, 
 orchestration: type Notifier struct {}
 orchestration: type NotifyCluster struct {Reviewer kube.Reviewer Data kube.Data Reader kube.Reader}
 orchestration: type NotifyConnect func() (NotifyCluster, error)
+orchestration: type PlatformInputs struct {Reader kube.Reader Source string Now func() time.Time}
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
 orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}
 orchestration: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}

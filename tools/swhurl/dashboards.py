@@ -28,13 +28,12 @@ account's key from MongoDB, as ``make clickstack-bootstrap`` reads the team key,
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import app_alerts, clickstack, clickstack_ntfy, interface, kube, statestore
+from swhurl import app_alerts, clickstack, clickstack_ntfy, interface, statestore
 from swhurl.apps import helmrelease
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import records, store
@@ -353,23 +352,3 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, report: Re
     except (CommandError, KeyError, ValueError, TypeError, NotificationError) as error:
         report.bad(runner.redact(str(error)))
         return report.exit_code()
-
-
-def check_dashboards(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
-    """The minute-by-minute sync of platform webhooks, app dashboards and alerts must be recent,
-    and scheduling enabled. Missing credentials or ambiguous webhooks also fail the job."""
-    report.section('App dashboards and alerts')
-    try:
-        state = kube.cronjob_run(runner, 'console', 'console-dashboards', now)
-    except (CommandError, KeyError, ValueError, TypeError):
-        report.bad('cannot read dashboard sync status (console/console-dashboards; make reconcile UNIT=platform-console)')
-        return
-    if state == 'suspended':
-        report.bad('dashboard and alert sync is suspended, so app dashboards and alerts do not follow Git: '
-                   'kubectl -n console patch cronjob console-dashboards -p \'{"spec":{"suspend":false}}\'')
-    elif state == 'stale':
-        report.bad('dashboard and alert sync has not succeeded in 5 minutes (kubectl -n console get jobs; kubectl -n '
-                   'console logs job/<newest console-dashboards-...>). To repair platform webhooks, dashboards and alerts: make '
-                   'clickstack-dashboards; no new jobs at all: docs/operations.md#troubleshooting')
-    else:
-        report.ok('dashboard and alert sync succeeded in the last 5 minutes')

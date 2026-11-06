@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import functools
-import io
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -16,15 +15,13 @@ from swhurl.apps.contract import (
 from swhurl.apps.instance import Instance
 from swhurl.apps.state import State, ready_reason, unit_state
 from swhurl.kube import ready_condition
-from swhurl.report import Entry, Report
+from swhurl.report import Entry
 from swhurl.run import CommandError, Runner
-from swhurl.verify import verify_platform
 
 UNITS = ['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io', '-o', 'json']
 RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']
 APP_NAMESPACES = ['kubectl', 'get', 'namespaces', '-l', interface.APP, '-o', 'json']
 INGRESSES = ['kubectl', 'get', 'ingresses.networking.k8s.io', '--all-namespaces', '-o', 'json']
-CONSOLE_CHECKS = frozenset({'cluster'})
 
 
 class ReadError(Exception):
@@ -327,13 +324,7 @@ def units(runner: Runner) -> list[Unit]:
 @dataclass(frozen=True)
 class Checks:
     passed: bool
-    sections: list[tuple[str, list[Entry]]]  # in the order verify-platform runs them
-    notes: list[str]  # which checks were skipped, and why
-
-    @property
-    def skipped(self) -> list[str]:
-        """The checks left to ``make verify-platform`` (they read Secrets, exec into pods or need the host)."""
-        return [name.strip() for note in self.notes if ':' in note for name in note.split(':', 1)[1].split(',')]
+    sections: list[tuple[str, list[Entry]]]  # in the order swhurl-v2 verify runs them
 
     @property
     def count(self) -> int:
@@ -392,16 +383,3 @@ def problems(checks: Checks, found: list[Unit]) -> list[Problem]:
             label, link = target(u.name)
             out.append(Problem('suspended', f'{label} is suspended: Git changes are not applied to it until it is resumed', link))
     return out
-
-
-def platform_checks(runner: Runner) -> Checks:
-    """The verify-platform checks the console's account can run."""
-    report = Report(io.StringIO())
-    code = verify_platform(runner, report, allowed=CONSOLE_CHECKS)
-    if code and not report.entries:
-        raise ReadError('kubectl cannot reach the cluster')
-    sections: dict[str, list[Entry]] = {}
-    for entry in report.entries:
-        if entry.level != 'info':
-            sections.setdefault(entry.section, []).append(entry)
-    return Checks(code == 0, list(sections.items()), [e.message for e in report.entries if e.level == 'info'])

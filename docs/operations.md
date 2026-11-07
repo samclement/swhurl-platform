@@ -199,7 +199,7 @@ Renovate does not see the tool versions: `kubectl` and `helm` are pinned in both
 
 The host timer checks the in-cluster `console-notifications` CronJob every five minutes. It posts a high-priority alert when the Job is missing, suspended or has not succeeded for 10 minutes, reminds once an hour while stale, and sends a normal-priority recovery after the checker succeeds again. The service uses the user's kubeconfig and reads the existing ntfy failure destination from `console/notification-ntfy` for each post; it stores only incident timestamps in `~/.local/state/swhurl-platform/notification-heartbeat.json` (directory mode 0700, file mode 0600). Its log is `/var/log/swhurl-platform/swhurl-notification-heartbeat.log` and is collected by ClickStack.
 
-The job it watches is the notification checker (10 minutes), listed in `WATCHED` in `tools/swhurl/notifications/heartbeat.py`. Add another row only after its CronJob is deployed and unsuspended, because a missing or suspended job is reported as stale. The timer runs the code in this checkout, so a change takes effect on the next run without reinstalling.
+The job it watches is the notification checker (10 minutes), listed in `Watched` in [`v2/heartbeat/heartbeat.go`](../v2/heartbeat/heartbeat.go). Add another row only after its CronJob is deployed and unsuspended, because a missing or suspended job is reported as stale. The timer runs `swhurl-v2 notifications-heartbeat`, built from this checkout on each run (Go is on the unit's `PATH`), so a change takes effect on the next run without reinstalling; a change to the unit template needs `make host-heartbeat` again.
 
 The heartbeat runs outside the console image, its deploy job and the Kubernetes scheduler. It still needs this host, the Kubernetes API, the Secret and ntfy to work. It cannot notify while the host or API is down. It alerts after 10 minutes without a successful checker Job plus up to one five-minute timer interval and one second. On this host, `make verify-platform` checks that the timer is active and the service's last run succeeded within 15 minutes.
 
@@ -209,12 +209,12 @@ Run installation and removal in your own terminal; both commands need `sudo`:
 make host-heartbeat
 systemctl status swhurl-notification-heartbeat.timer
 systemctl status swhurl-notification-heartbeat.service
-make notifications-heartbeat ARGS=--dry-run
+make notifications-heartbeat DRY_RUN=true
 tail -n 100 /var/log/swhurl-platform/swhurl-notification-heartbeat.log
 make host-heartbeat-delete
 ```
 
-Removal leaves the incident file and log in place. `make notifications-heartbeat ARGS="--max-age 1s"` deliberately sends a real stale message; after a successful checker Job, `make notifications-heartbeat` sends recovery.
+Removal leaves the incident file and log in place. To test delivery without touching the real incident flags, use a throwaway state file: `make notifications-heartbeat ARGS="--max-age 1s --state /tmp/hb.json"` sends a real stale message, and the same command without `--max-age 1s` then sends recovery.
 
 ## Incident reviewer
 

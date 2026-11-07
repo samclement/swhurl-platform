@@ -181,6 +181,53 @@ sys.exit(int(os.environ['GO_RC']))
                 for private in ('private-kubeconfig-fixture', str(caller), workpath.read_text()):
                     self.assertNotIn(private, result.stdout + result.stderr)
 
+    def test_heartbeat_recipe_is_private_silent_and_stops_on_input_failure(self):
+        """The host timer appends the recipe's output to a log file: it holds the program's lines only."""
+        caller = self.bin / 'caller-kubeconfig.json'
+        caller.write_text('{"caller-credential": "private-kubeconfig-fixture"}')
+        workpath = self.bin / 'workpath'
+        for name, source in {
+            'kubectl': r'''import os, sys
+from pathlib import Path
+assert sys.argv[1:] == ['config', 'view', '--raw', '-o', 'json'], sys.argv
+with open(os.environ['CALLS'], 'a') as f:
+    f.write('kubectl\n')
+if os.environ['CONFIG_RC'] != '0':
+    sys.exit(int(os.environ['CONFIG_RC']))
+print(Path(os.environ['KUBECONFIG']).read_text())
+''',
+            'heartbeat-recipe': r'''import os, stat, sys
+from pathlib import Path
+argv = sys.argv[1:]
+dry = ['--dry-run'] if os.environ['WANT_DRY'] == 'true' else []
+assert argv[:-1] == ['notifications-heartbeat', *dry, *os.environ['WANT_ARGS'].split(), '--kubeconfig'], argv
+config = Path(argv[-1])
+assert config.read_text().strip() == Path(os.environ['KUBECONFIG']).read_text()
+assert stat.S_IMODE(config.stat().st_mode) == 0o600
+with open(os.environ['CALLS'], 'a') as f:
+    f.write('go\n')
+print('{"message":"heartbeat"}')
+''',
+        }.items():
+            executable = self.bin / name
+            executable.write_text('#!/usr/bin/env python3\n' + source)
+            executable.chmod(0o700)
+        build = ('V2_BUILD=set -eu; work=$$(mktemp -d); trap \'rm -rf "$$work"\' EXIT; '
+                 f'printf "%s" "$$work" > {workpath}; cp {self.bin / "heartbeat-recipe"} "$$work/swhurl-v2"')
+        for dry, extra, config_rc, expected in (('false', '', '0', ['kubectl', 'go']), ('true', '', '0', ['kubectl', 'go']),
+                                                ('', '--max-age 1s --state /tmp/x', '0', ['kubectl', 'go']),
+                                                ('false', '', '1', ['kubectl'])):
+            with self.subTest(dry=dry, extra=extra, config_rc=config_rc):
+                self.calls.unlink(missing_ok=True)
+                env = dict(self.env, KUBECONFIG=str(caller), CONFIG_RC=config_rc, WANT_DRY=dry, WANT_ARGS=extra)
+                result = subprocess.run(['make', '--no-print-directory', 'notifications-heartbeat', build,
+                                         f'DRY_RUN={dry}', f'ARGS={extra}'], cwd=ROOT, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode != 0, config_rc != '0', result.stdout + result.stderr)
+                self.assertEqual(self.calls.read_text().splitlines(), expected)
+                self.assertEqual(result.stdout, '{"message":"heartbeat"}\n' if 'go' in expected else '')
+                self.assertFalse(Path(workpath.read_text()).exists(), 'temporary directory survived recipe exit')
+                self.assertNotIn('private-kubeconfig-fixture', result.stdout + result.stderr)
+
     def test_verify_recipe_supplies_hook_credential_and_host_facts_without_leaking(self):
         """The recipe hands swhurl-v2 the GitHub token, this checkout and the host heartbeat facts, and a failed token
         lookup stops nothing. What the checks then decide is Go's (v2/observe)."""

@@ -1439,3 +1439,69 @@ app. **Its state document and its wire contracts stay as they are**; everything 
 
 **Not in this slice:** the host heartbeat, the dashboard reconciler, new alerts (backups, certificates, disk), and
 any change to what raises a notice.
+
+## 14. The dashboard reconciler in Go (approved 7 November 2026)
+
+The operator approved porting the ClickStack dashboard reconciler (`console/console-dashboards`, every minute,
+and `make clickstack-dashboards`) to `swhurl-v2 clickstack-dashboards`, **offline only**; the live cutover is
+separately gated. It replaces `tools/swhurl/{dashboards,app_alerts,clickstack_ntfy}.py`. One pass finds the apps,
+repairs the two reserved webhooks, keeps one dashboard per app, records each app's dashboard for the console and
+keeps each app's default alerts.
+
+**Kept exactly** (each of the 40 Python cases has [Go coverage or a stated reason](../v2/dashboards/testdata/README.md#all-40-python-cases)):
+
+- **The objects:** dashboard names, queries and layout (Python-produced goldens); the default alerts
+  `swhurl:<app>:<preset>`, 5 per 5 minutes on the `Errors` and `Error logs` tiles, and an app's own thresholds
+  from the `platform.swhurl.com/alerts` annotation on its namespaces (a bad value falls back to the defaults);
+  both reserved webhooks, whose bodies are the Python job's bytes, so cutover rewrites neither.
+- **Stable ids:** a changed dashboard, webhook or alert is replaced in place by its id.
+- **Webhooks first:** both reserved names are checked (duplicate, other service, no id, truncated listing)
+  before either is written, and every alert names the notify webhook's id.
+- **Deletion:** only a dashboard tagged `swhurl-app` and named exactly `App: <app>` whose app is gone; a cluster
+  pass that finds no app release deletes no dashboard, alert or record entry, but still repairs the webhooks.
+- **The record:** `console/app-dashboards` key `dashboards.json`, `{"<app>": "<ObjectId>"}` in the Python job's
+  bytes, field manager `dashboard-sync`, written only when it changed.
+- **Credentials:** the admin email and MongoDB URI, the platform topic and the notify secret are read by name
+  every pass; the access key is read from MongoDB once per pass. Each travels only on an exec's stdin; no error,
+  log line or argument carries one, nor any HTTP answer body.
+- **`--dry-run`** reads and plans everything and writes nothing, the record included.
+
+**Deliberate differences, approved:**
+
+1. **Records mode reads `v2-records`**, not `apps/`; a missing or invalid release record, or a tree naming no
+   instance, stops the pass instead of reading as no apps.
+2. **No job dashboards.** v2 runs no scheduled job; an app release that is one stops the pass rather than
+   losing its dashboard to pruning.
+3. **Duplicate or incomplete listings stop the pass:** two tagged dashboards or two `swhurl:` alerts of one name,
+   one without an id, or a listing whose `meta.total` exceeds its items. Python kept the last dashboard and
+   deleted all but the first alert.
+4. **A failed read or write of the record stops the pass** before the alerts; Python carried on and exited 1.
+5. **Deletion is by exact name in both modes;** Python's records mode deleted any tagged dashboard.
+6. **Discovery selects:** HelmReleases by `kustomize.toolkit.fluxcd.io/namespace=flux-system` and namespaces by
+   `platform.swhurl.com/app`, within the existing list permissions. When staging and production disagree on the
+   kind or alert settings, staging's decide.
+
+**Boundaries.**
+
+| Layer | Owns |
+| --- | --- |
+| `dashboards` (pure, new) | Apps from HelmReleases and namespaces, or from records; the definitions; comparison with what HyperDX lists; the webhook, dashboard and alert plans with their preflight checks; the record's bytes |
+| `adapters/clickstack` (new, external effect, approved with this slice) | The external API (`/api/v2`) and the admin-key read, as Node and mongosh programs with credentials on stdin; complete listings or an error; an answer outside 2xx is an error naming its status only. A `Runner` supplied by the caller runs each program; a fake HyperDX and one `Contract` suite |
+| `adapters/kube` | `Data.GetSecret`: one Secret by named GET, because the job's Roles allow `get` on named Secrets only; 404 is absence, anything else a failure |
+| `orchestration` | One pass, `SyncDashboards`, in the order above, stopping at the first failure with a report of how far it got; `ClickStackRunners` puts the programs on the API server's exec (MongoDB's pod; the app Deployment's ready pod) |
+| `cmd/swhurl-v2` | `clickstack-dashboards (--cluster \| --records DIR) [--dry-run] (--kubeconfig PATH \| --in-cluster)`: reads the records tree, JSON log lines, exit 1 when the pass stopped |
+
+**Delivery, separate commits.**
+
+1. **Offline:** the package, the adapters with their contract suites and raw fixtures, the use case, the command
+   and the case map. `make check-v2` and `make check`; an independent read-only review. Nothing live.
+2. **Cutover, separately gated:** the CronJob's command becomes `[timeout, "50", swhurl-v2,
+   clickstack-dashboards, --cluster, --in-cluster]` and `make clickstack-dashboards` runs the Go command against
+   `v2-records`. Acceptance: a dry run against the live HyperDX plans no change to the existing webhooks,
+   dashboards, alerts or record; scheduled passes succeed; `make verify-platform` stays clean.
+3. **Retirement:** delete the three Python modules and their tests. The console's link reader
+   (`dashboards.recorded`, in `console/context.py`) is their only other importer; it moves into the console in
+   this step. `app_alerts.spec_of` already has no caller.
+
+**Not in this slice:** the host heartbeat, `clickstack-bootstrap`, new alert presets, and any change to what a
+dashboard shows.

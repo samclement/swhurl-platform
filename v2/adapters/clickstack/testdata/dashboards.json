@@ -1,0 +1,14 @@
+{"data": [
+  {"id": "6650a1f0c0ffee0000000020", "name": "App: web", "tags": ["swhurl-app"], "filters": [],
+   "tiles": [
+     {"id": "t-req", "name": "Requests per minute", "x": 0, "y": 0, "w": 8, "h": 9,
+      "config": {"displayType": "line", "sourceId": "6650a1f0c0ffee0000000001", "groupBy": "ResourceAttributes['k8s.namespace.name']",
+                 "fillNulls": true, "alignDateRangeToGranularity": true,
+                 "select": [{"aggFn": "count", "valueExpression": "", "where": "ResourceAttributes['k8s.namespace.name'] IN ('web-staging') AND SpanKind = 'Server'", "whereLanguage": "sql", "alias": "requests"}]}},
+     {"id": "t-logs", "name": "Latest logs", "x": 0, "y": 18, "w": 24, "h": 6,
+      "config": {"displayType": "search", "sourceId": "6650a1f0c0ffee0000000002", "whereLanguage": "sql",
+                 "where": "ResourceAttributes['k8s.namespace.name'] IN ('web-staging')", "select": "Timestamp, Body"}}
+   ]},
+  {"id": "6650a1f0c0ffee0000000021", "name": "Someone's board", "tags": ["team"],
+   "tiles": [{"id": "x", "name": "Odd", "x": 1.5, "y": 0, "w": 4, "h": 3, "config": {"displayType": "markdown", "markdown": "hi"}}]}
+]}

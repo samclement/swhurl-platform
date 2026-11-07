@@ -2,6 +2,29 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The dashboard reconciler in Go, offline (7 November 2026)
+
+- **Scope:** [the approved slice](iteration-2-plan.md#14-the-dashboard-reconciler-in-go-approved-7-november-2026),
+  offline step 1: the pure `dashboards` package, `adapters/clickstack` with its fake and contract suite,
+  `kube.Data.GetSecret`, `orchestration.SyncDashboards` and `swhurl-v2 clickstack-dashboards`. **Nothing live:**
+  the CronJob and `make clickstack-dashboards` still run the Python job; nothing was applied, pushed or run
+  against the cluster or HyperDX.
+- **Offline evidence:** 52 new Go tests (24 pure, 6 adapter and contract, 19 use case, 3 command) and the
+  named Secret GET in the kube data contract; every one of the 40 Python cases is
+  [mapped](../v2/dashboards/testdata/README.md#all-40-python-cases). Python-produced goldens pin the web and worker
+  definitions and both webhooks byte for byte, so cutover rewrites neither. `make check-v2` passes, and `make
+  check` passes (572 Python tests, 98 codegraph tests) once this entry and the commit exist.
+- **Review:** an independent read-only review accepted the slice with one P1: a failed webhook update was reported
+  as done. Fixed, with the report checked in the test. Also fixed from its P2s: discovery reads values only of app
+  releases and checks `service` before `cronjob`, as Python did; an app's dashboard listed without tiles stops the
+  alert plan instead of deleting its alerts; the exec failure's reason reaches the error; the fake gives tiles fresh
+  ids on every write, and a new test proves alerts on a dashboard created or rebuilt in the same pass name its new
+  tiles; the records mode is an explicit option. Not changed: duplicate alerts are found after the dashboard writes,
+  as in Python, because the alerts are listed again after those writes anyway; the invalid email or URI cases rely
+  on HyperDX finding no access key.
+- **Not exercised:** a real HyperDX answer, the real exec into ClickStack's pods, and the job's RBAC for the
+  requests after the first exec. The cutover's live dry run is that gate.
+
 ## Notification checker lifecycle acceptance and Python retirement (7 November 2026)
 
 - **Scope and confirmation:** the operator approved installing/removing only the existing no-data

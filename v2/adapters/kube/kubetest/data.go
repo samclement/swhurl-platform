@@ -65,6 +65,28 @@ func (f *Fake) Secrets(_ context.Context, namespace string, selector kube.Select
 	return found, nil
 }
 
+// GetSecret is the fake's named get of a Secret, distinct from the selected list and its permission: a copy, or nil
+// when the fake holds none of that name.
+func (f *Fake) GetSecret(_ context.Context, namespace, name string) (*kube.Secret, error) {
+	f.Calls = append(f.Calls, "get secret "+name)
+	if !namePattern.MatchString(namespace) || !namePattern.MatchString(name) {
+		return nil, &kube.Error{Code: kube.RefusedRequest, Subject: "secret", Reason: "invalid_name"}
+	}
+	if err := f.failing("get secret " + name); err != nil {
+		return nil, err
+	}
+	for _, secret := range f.SecretData[namespace] {
+		if secret.Name == name {
+			data := map[string][]byte{}
+			for key, value := range secret.Data {
+				data[key] = bytes.Clone(value)
+			}
+			return &kube.Secret{Name: secret.Name, Labels: maps.Clone(secret.Labels), Data: data}, nil
+		}
+	}
+	return nil, nil
+}
+
 // SetConfigMapKey sets the key of a ConfigMap the fake holds; one it does not hold is not found, as a patch of it is.
 func (f *Fake) SetConfigMapKey(_ context.Context, namespace, name, key, value, fieldManager string) error {
 	f.Calls = append(f.Calls, "set "+name)
@@ -182,6 +204,7 @@ func DataContract(t *testing.T, answers DataAnswers, open func(*testing.T, DataA
 		t.Fatalf("an absent ConfigMap: %+v, %v", absent, err)
 	}
 	secretsArePicked(t, data, answers)
+	secretIsGot(t, data, answers)
 	keyIsSet(t, data, answers)
 	dataRefusals(t, data, answers)
 }
@@ -222,6 +245,37 @@ func secretsArePicked(t *testing.T, data kube.Data, answers DataAnswers) {
 	other, err := data.Secrets(context.Background(), answers.Namespace, kube.Selector{Name: answers.Other})
 	if err != nil || len(other) != 1 || other[0].Name != answers.Other {
 		t.Fatalf("the other Secret by name: %d, %v", len(other), err)
+	}
+}
+
+// secretIsGot: a Secret by name is the one object with its data decoded, the caller owns it, and a Secret that is
+// not there is absence (nil), not an error.
+func secretIsGot(t *testing.T, data kube.Data, answers DataAnswers) {
+	t.Helper()
+	ctx := context.Background()
+	secret, err := data.GetSecret(ctx, answers.Namespace, answers.Secret.Name)
+	if err != nil || secret == nil || !reflect.DeepEqual(*secret, answers.Secret) {
+		t.Fatalf("a Secret by name: %v", err)
+	}
+	for key := range secret.Data {
+		secret.Data[key][0] ^= 0xff
+	}
+	again, err := data.GetSecret(ctx, answers.Namespace, answers.Secret.Name)
+	if err != nil || again == nil || !reflect.DeepEqual(*again, answers.Secret) {
+		t.Fatalf("a caller changed a later answer: %v", err)
+	}
+	secretAbsentOrRefused(t, data, answers)
+}
+
+// secretAbsentOrRefused: a Secret that is not there is nil, and a name that cannot be one is refused.
+func secretAbsentOrRefused(t *testing.T, data kube.Data, answers DataAnswers) {
+	t.Helper()
+	ctx := context.Background()
+	if absent, err := data.GetSecret(ctx, answers.Namespace, "absent"); err != nil || absent != nil {
+		t.Fatalf("an absent Secret: %v", err)
+	}
+	if _, err := data.GetSecret(ctx, answers.Namespace, "Not_A_Name"); !refused(err, "invalid_name") {
+		t.Fatalf("an invalid name: %v", err)
 	}
 }
 

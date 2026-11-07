@@ -1,0 +1,16 @@
+[
+  {
+    "name": "ntfy: platform",
+    "service": "generic",
+    "url": "https://ntfy.sh/",
+    "description": "ClickStack alerts to the platform ntfy topic",
+    "body": "{\"priority\":{{#if (eq state \"ALERT\")}}4{{else}}3{{/if}},\"topic\":\"swhurl-test-private-topic-012345\",\"title\":\"ClickStack: {{title}}\",\"message\":\"{{body}}\",\"click\":\"{{link}}\"}"
+  },
+  {
+    "name": "swhurl notify",
+    "service": "generic",
+    "url": "http://notify.notify.svc.cluster.local:8080/v1/alert",
+    "description": "Default app alerts, to the notify service and on to the app's team",
+    "body": "{\"secret\":\"private-alert-secret\",\"title\":\"{{title}}\",\"body\":\"{{body}}\",\"link\":\"{{link}}\",\"state\":\"{{state}}\"}"
+  }
+]

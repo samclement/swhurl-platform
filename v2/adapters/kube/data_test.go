@@ -71,6 +71,8 @@ func (s *dataServer) respond(request *http.Request, body []byte) (int, []byte) {
 		return http.StatusOK, s.list(segments[4], request.URL.Query())
 	case len(segments) == 6 && segments[3] == "notify" && segments[4] == "configmaps" && request.Method == http.MethodPatch:
 		return s.patch(segments[5], request, body)
+	case len(segments) == 6 && segments[3] == "notify" && segments[4] == "secrets" && request.Method == http.MethodGet:
+		return s.get("secrets", "Secret", segments[5])
 	}
 	// The service's role is the notify namespace's: anything else is forbidden.
 	return http.StatusForbidden, nil
@@ -97,6 +99,20 @@ func (s *dataServer) review(request *http.Request, body []byte) (int, []byte) {
 		return http.StatusCreated, vouched
 	}
 	return http.StatusCreated, document(s.t, "tokenreview-unauthenticated.json")
+}
+
+// get answers one named item as the API server does, with its apiVersion and kind, or not found.
+func (s *dataServer) get(collection, kind, name string) (int, []byte) {
+	for _, item := range s.items[collection] {
+		if item["metadata"].(map[string]any)["name"] == name {
+			encoded, err := json.Marshal(map[string]any{"apiVersion": "v1", "kind": kind, "metadata": item["metadata"], "data": item["data"]})
+			if err != nil {
+				s.t.Fatal(err)
+			}
+			return http.StatusOK, encoded
+		}
+	}
+	return http.StatusNotFound, nil
 }
 
 // list answers the collection's items the field or label selector picks.
@@ -376,5 +392,44 @@ func TestConfigMapPatchAndWriterResponseBounds(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A Secret by name is a GET of that one object, never a list: the dashboard job's Roles allow get alone. Every
+// answer other than the object or a 404 is a failure, and a value that is not base64 is a malformed read; no error
+// carries the answer.
+func TestSecretGetIsNamedAndFailsClosed(t *testing.T) {
+	server := newDataServer(t)
+	secret, err := server.api().GetSecret(context.Background(), "notify", "notify-alerts")
+	if err != nil || secret == nil || len(server.requests) != 1 {
+		t.Fatalf("named get: %v", err)
+	}
+	if request := server.requests[0]; request.Method != http.MethodGet ||
+		request.URL.Path != "/api/v1/namespaces/notify/secrets/notify-alerts" || request.URL.RawQuery != "" {
+		t.Fatalf("%s %s", request.Method, request.URL)
+	}
+	for status, body := range map[int]string{
+		http.StatusForbidden:  `{"kind":"Status","message":"private-answer"}`,
+		http.StatusOK:         `{"apiVersion":"v1","kind":"Secret","metadata":{"name":"notify-alerts","namespace":"notify"},"data":{"secret":"not-base64!"}}`,
+		http.StatusFound:      ``,
+		http.StatusBadGateway: `private-answer`,
+	} {
+		answered := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+			_, _ = io.WriteString(w, body)
+		}))
+		api, _ := kube.NewAPI(answered.URL, answered.Client(), "")
+		found, err := api.GetSecret(context.Background(), "notify", "notify-alerts")
+		answered.Close()
+		if err == nil || found != nil || strings.Contains(err.Error(), "private-answer") || strings.Contains(err.Error(), "not-base64") {
+			t.Errorf("status %d: %+v, %v", status, found, err)
+		}
+	}
+	other := `{"apiVersion":"v1","kind":"Secret","metadata":{"name":"other","namespace":"notify"},"data":{}}`
+	answered := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, other) }))
+	defer answered.Close()
+	api, _ := kube.NewAPI(answered.URL, answered.Client(), "")
+	if found, err := api.GetSecret(context.Background(), "notify", "notify-alerts"); err == nil || found != nil {
+		t.Fatalf("another object answered as the named one: %+v, %v", found, err)
 	}
 }

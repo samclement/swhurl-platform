@@ -1,0 +1,7 @@
+{"data": [
+  {"id": "6650a1f0c0ffee0000000001", "kind": "trace", "name": "Traces", "connection": "6650a1f0c0ffee00000000c1",
+   "from": {"databaseName": "default", "tableName": "otel_traces"}, "timestampValueExpression": "Timestamp"},
+  {"id": "6650a1f0c0ffee0000000002", "kind": "log", "name": "Logs", "connection": "6650a1f0c0ffee00000000c1",
+   "from": {"databaseName": "default", "tableName": "otel_logs"}, "timestampValueExpression": "TimestampTime"},
+  {"id": "6650a1f0c0ffee0000000003", "kind": "metric", "name": "Metrics", "from": {"databaseName": "default", "tableName": ""}}
+]}

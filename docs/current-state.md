@@ -113,6 +113,20 @@ What has been verified on the live cluster, and when: current facts first, then 
 
 ## ClickHouse merge rewrites (2 November 2026)
 
+- **Stuck merge, 7 November 2026:** `system.metric_log` retried one merge every 0.4 s from 6 November 13:05:40,
+  failing with `Code: 241` at progress 0 (partition `20261030`, four parts, 27.87 MiB, `Regular` plus `Horizontal`,
+  memory climbing past 2.5 GiB): 9,000 errors an hour, 53,836 `MEMORY_LIMIT_EXCEEDED` since the server started, and
+  85 queries killed with `241` in 24 hours (HyperDX's own dashboard reads; two of this session's diagnostic queries
+  also died). Two other merges and `text_log` flushes failed the same way, and partitions 12 to 14 days old were
+  still present because their TTL could not run. The same task had failed 10 to 12 times an hour since 1 November,
+  before both the 30 s and 60 s flush changes; what turned the retry into a loop at 13:05 is unknown, and no commit
+  matches it. Each day's part is under the 10 MiB `min_bytes_for_wide_part`, so it is Compact and merges
+  horizontally over all columns.
+- **Fix, applied by hand and then in Git:** `SYSTEM STOP MERGES system.metric_log` stopped the loop (0 errors in the
+  next 20 s), and `ALTER TABLE … DROP PARTITION ID '20261030'` removed the stuck parts, whose rows had passed the
+  7-day TTL a day earlier (86,400 rows); tracked memory fell from 3.6 GiB to 442 MiB and CPU from 645m to 340m.
+  The HelmRelease now sets `min_bytes_for_wide_part = 0`, so parts are Wide and vertical merges apply.
+
 - **Cause, read-only on `system.part_log`, `system.parts` and `system.metric_log`:** ClickHouse used 0.2 to 0.6
   cores an hour over 48 hours (1-second peaks 2.5 to 3.5 of 4), following merge time; HyperDX's selects used about
   50 CPU-seconds a day and insert flushes about 1,100. Each metrics table's daily partition held 2 to 9 parts, and
@@ -3516,7 +3530,7 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 
 ## Each area owns its live checks (12 October 2026)
 
-`4ed543c` moves each live check beside what it checks (`flux.py`, `clickstack.py`, [`apps/checks.py`](../tools/swhurl/apps/checks.py), [`notifications/checks.py`](../tools/swhurl/notifications/checks.py), [`console/checks.py`](https://github.com/samclement/swhurl-platform/blob/4ed543c87cf4111e237c6d2af57ff96e7edf3037/tools/swhurl/console/checks.py), `dashboards.py` and the backup modules) and leaves [`verify.py`](../tools/swhurl/verify.py) as the list of them (145 lines, from 835). A refactor: what `make verify-platform` checks and prints did not change. Console image `src-74fa58e2a48725ee` (`87eb773`).
+`4ed543c` moves each live check beside what it checks (`flux.py`, `clickstack.py`, [`apps/checks.py`](../tools/swhurl/apps/checks.py), `notifications/checks.py`, [`console/checks.py`](https://github.com/samclement/swhurl-platform/blob/4ed543c87cf4111e237c6d2af57ff96e7edf3037/tools/swhurl/console/checks.py), `dashboards.py` and the backup modules) and leaves `verify.py` as the list of them (145 lines, from 835). A refactor: what `make verify-platform` checks and prints did not change. Console image `src-74fa58e2a48725ee` (`87eb773`).
 
 - **Same output as before:** on the live cluster, the previous commit's `verify-platform` (from an export of `ba408e4`) and the new one printed the same 147 lines but one: the export is not a Git checkout, so it could not compare the console image with itself.
 - **After the deploy:** `make verify-platform` passed with 99 `[OK]` lines and no warnings, with the notify service and the console on the new image. The console's Platform page, read through a port-forward with the sign-in header, showed its checks from the new image (Ingress, Image Automation with 9 passing, Notify service, App dashboards and alerts, Notifications) and no error; a `console-dashboards` job on the new image succeeded.

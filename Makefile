@@ -11,7 +11,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help reconcile notifications-heartbeat verify-logs flux-install \
-	clickstack-bootstrap clickstack-dashboards \
+	clickstack-bootstrap \
 	app-repo app-hooks \
 	console-image console-dev \
 	platform-certs-staging platform-certs-prod destroy-data \
@@ -131,6 +131,16 @@ notifications-check:
 	fi; \
 	export CONSOLE_URL; \
 	"$$work/swhurl-v2" notifications-check --dry-run --kubeconfig "$$work/kubeconfig.json"
+
+# Keep the platform webhooks and each app's dashboard and alerts in ClickStack for the apps in v2's records
+# (swhurl-v2 clickstack-dashboards), deleting those of apps the records do not name; DRY_RUN=true plans and writes
+# nothing. The JSON kubeconfig is private and removed with the build directory. Needs Go 1.26.0.
+.PHONY: clickstack-dashboards
+clickstack-dashboards:
+	@$(V2_BUILD); \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	"$$work/swhurl-v2" clickstack-dashboards --records v2-records $(if $(filter true,$(DRY_RUN)),--dry-run) \
+		--kubeconfig "$$work/kubeconfig.json"
 
 # Every live platform check: swhurl-v2 verify --scope platform, which reads the cluster, this checkout, the registry,
 # S3, GitHub and the host facts this recipe supplies, with the caller's kubeconfig in the throwaway folder, readable

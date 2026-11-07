@@ -2,6 +2,27 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The host heartbeat runs Go and its Python is retired (7 November 2026)
+
+- **Scope:** [the approved slice](iteration-2-plan.md#15-the-host-heartbeat-in-go-approved-7-november-2026), step 2
+  (`c996613e`): `make notifications-heartbeat` builds and runs `swhurl-v2 notifications-heartbeat` with a private JSON
+  kubeconfig, silently, `DRY_RUN=true` as `--dry-run` and `ARGS` passed on; `tools/swhurl/notifications/`,
+  `tests/test_notification_heartbeat.py` and `tests/test_notice.py` are deleted. The operator reinstalled the timer
+  first (`make host-heartbeat`); the installed unit's `PATH` includes `/usr/local/go/bin`.
+- **Live acceptance:** scheduled runs at 20:21, 20:26, 20:31 and 20:36 UTC logged `Heartbeat for notification
+  checker: fresh` from logger `notifications-heartbeat` and the service's result was `success` (the timer runs this
+  checkout's working tree, so it ran Go from when the recipe was edited, before the push); no error line since. The
+  real state file still reads no incident, unchanged. A dry run planned nothing, and `ARGS="--max-age 1s"` with
+  `DRY_RUN=true` planned `notification checker stale (priority 4)`. With the operator's approval, one real pass with
+  `--max-age 1s` and a throwaway `--state` sent `notification checker stale` (state saved, mode 0600) and the next
+  sent `notification checker recovered` (state cleared); ntfy accepted both. After Validate deployed the console
+  image (`af0f11dc`) and `make flux-reconcile`, `make verify-platform` passed with no warning.
+- **Test harness fix:** `tests/test_commands.py`'s fake exec now stops like a real one; before, `make()` went on to
+  run the command in-process after the fake returned. While finding this, one test run started the real
+  `flux-install` path in-process before it was killed; the Flux deployments' generations, the `flux` field manager's
+  timestamps and the controller pods were unchanged, and `make verify-platform` passed.
+- **Not exercised:** the hourly reminder live (covered by Go tests), and a phone display check by the operator.
+
 ## The host heartbeat in Go, offline (7 November 2026)
 
 - **Scope:** [the approved slice](iteration-2-plan.md#15-the-host-heartbeat-in-go-approved-7-november-2026),

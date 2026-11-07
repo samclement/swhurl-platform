@@ -35,9 +35,21 @@ What has been verified on the live cluster, and when: current facts first, then 
   tests, 98 codegraph tests and 32 schema-validation entrypoints; `make check-v2`, focused tests,
   shell syntax and `git diff --check` passed. Independent read-only review found no code/retirement
   blockers, accounted for every legacy case, and independently passed 40 Python tests plus the four
-  focused Go packages. Its stale verification-status note is corrected here. Production Python is
-  **net −621 lines**; the 700-line checker test file is replaced by the retained Go coverage and a
-  14-line absence regression. Commit, image delivery and post-deploy verification remain pending.
+  focused Go packages. Production Python is **net −621 lines**; the 700-line checker test file is
+  replaced by the retained Go coverage and a 14-line absence regression.
+- **Delivered:** retirement `7e4f3086`; [Validate run 42361753469](https://github.com/samclement/swhurl-platform/actions/runs/42361753469)
+  passed all nine jobs and bot pin `94744ce5` deployed `src-ee9b79701ca915b4` to both console and notify.
+  `make flux-reconcile` reconciled all 31 units. Both Deployments rolled out; scheduled Go Job
+  `console-notifications-29900759` succeeded on the new image at 09:59 UTC, delivering `console deployed`
+  with 12 remembered identities, zero pending notices, version 1 and the original start time intact.
+  The twelfth identity is the removed fixture, retained for the normal history window.
+- **Post-deploy verification:** `make verify-platform` passed **84 OK, no warnings or failures**;
+  `make app-status APP=<app> ENV=<env>` reported all ten record-backed instances healthy at `94744ce5`.
+  An initial invocation without the required APP/ENV was refused before reading status; every instance
+  was then checked with explicit arguments. `make notifications-check` completed its Go dry run with
+  12 identities and zero pending notices. An import check inside the running console image confirmed
+  the retired checker exports/modules/forwarder are absent and shared notice/heartbeat imports work.
+  The fixture unit and namespace remain absent.
 - **Next gate:** scope and approve the dashboard reconciler's Go slice; the heartbeat and console remain
   separate Python retirements. `docs/v2-status.md` now marks the checker done and removes it from the
   remaining Python row. No real credential rotation, repository creation, stored-data deletion or

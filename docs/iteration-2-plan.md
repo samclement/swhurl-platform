@@ -1417,7 +1417,7 @@ app. **Its state document and its wire contracts stay as they are**; everything 
 1. **Offline:** the package, the adapters (with their contract suites and raw fixtures), the use case and the
    command, the kept cases as Go tests, and a decoding test over a real version-1 state document. `make check-v2`
    and `make check`; an independent read-only review. Nothing live. **Implemented and reviewed:**
-   [offline evidence](current-state.md#notification-checker-in-go-offline-implementation-reviewed-7-november-2026).
+   [evidence](current-state.md#notification-checker-scheduled-in-go-7-november-2026).
    The version-1 fixture is sanitized and Python-produced, not a live export; actual live-document decoding
    remains a cutover gate.
 2. **Cutover, confirmed by the operator on 7 November 2026:** the CronJob's command becomes
@@ -1428,7 +1428,9 @@ app. **Its state document and its wire contracts stay as they are**; everything 
    Installing/removing the existing no-data `smoke-worker` Helm fixture can exercise deployed/uninstalled
    platform notices and a team copy; this separate live fixture action needs confirmation before execution.
    Keep team-channel readback distinct from acceptance by the notify service, and report any namespace-removal
-   race rather than claiming an uninstall team copy was delivered.
+   race rather than claiming an uninstall team copy was delivered. **Go is now scheduled and verified:**
+   [live evidence](current-state.md#notification-checker-scheduled-in-go-7-november-2026); fixture/readback acceptance
+   remains open. Python stays available until that gate.
 3. **Retirement:** `notifications/__init__.py`'s `check` and `main`, `evaluate.py`, `state.py`, `delivery.py`,
    `notice.forward`, `tests/test_notifications.py` and the command's Python entry. `notice.py` (`Notice`, `Ntfy`,
    `platform_topic`) and `errors.py` stay for the host heartbeat, `clickstack_ntfy.py` and `dashboards.py`, which

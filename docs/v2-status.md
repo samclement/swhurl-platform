@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the dashboard reconciler's scheduled Go passes, then its Python retirement
+Gate: a scoped contract and approval for the next retirement slice
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -25,7 +25,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Python-free `check-apps` and explicit chart acquisition | done | [record](current-state.md#check-apps-leaves-python-5-november-2026) |
 | Notify service in Go, Python implementation retired | done | [retirement](current-state.md#the-python-notify-service-is-retired-5-november-2026), [live cutover](current-state.md#the-notify-service-switches-to-go-5-november-2026) |
 | Notification checker in Go, Python implementation retired | done | [lifecycle acceptance and retirement](current-state.md#notification-checker-lifecycle-acceptance-and-python-retirement-7-november-2026) |
-| Dashboard reconciler in Go (`swhurl-v2 clickstack-dashboards`): the CronJob and `make` run Go; its Python is not yet deleted | partial | [cutover record](current-state.md#the-dashboard-reconciler-switches-to-go-7-november-2026) |
+| Dashboard reconciler in Go (`swhurl-v2 clickstack-dashboards`), Python implementation retired | done | [retirement](current-state.md#the-dashboard-reconcilers-python-is-retired-7-november-2026), [live cutover](current-state.md#the-dashboard-reconciler-switches-to-go-7-november-2026) |
 | Git delivery and units | done | [record](current-state.md#first-v2-instance-live-25-october-2026) |
 | Observation | done | [record](current-state.md#first-v2-observation-of-a-live-instance-25-october-2026) |
 | Shadow bridge | done | [shadow](../v2/shadow) |
@@ -65,7 +65,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 What still runs Python, what replaces it, and where that port stands. This table is the distance to the
 goal; each row is its own approved slice. **Order matters here.** The 3 November import inventory found
 most Python reachable through the console, including `recovery`, `dashboards` and
-the notification checker, so those leave with or through the console port, not with a command; the remaining
+the notification checker (the last two since ported and retired), so those leave with or through the console port, not with a command; the remaining
 check-apps glue, the template checks and the notify service are console-free ([the brief](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026)). Little of it is only operator convenience: the commands that are one or two `kubectl` or `flux`
 calls are bash ([`host/ops.sh`](../host/ops.sh)), and the rest makes a safety decision, runs in the cluster or
 is shared with the console, so Go replaces it. A target that becomes bash keeps its row in `commands.py` and
@@ -75,10 +75,10 @@ loses its `run=` function.
 | --- | --- | --- |
 | Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2`, team/channel validation and all of `check-docs` (`swhurl-v2 workstreams`); the legacy fixture checker/API retirement is independently reviewed and live-verified, with the v1 model oracle and Go tests kept. `check-apps` runs no Python: explicit Go chart acquisition and shell sequencing replace its entrypoint glue and the CI fetch recipes. Python chart acquisition remains for OTel and ClickStack, not policy decisions; `check-templates` is shell over Go (`names`, the producer and `declaration`) with Copier its only Python, and the stack and name catalogues are v2's JSON (`v2/contract/`), which Python still reads; all twenty-four of `verify-platform`'s groups are `swhurl-v2 verify --scope platform`, host facts included (`flux-controllers` against `clusters/home/flux-system/install/flux.json`, `notification-heartbeat` from the `--heartbeat` file the recipe writes), and the console's Overview and Platform pages call its six cluster-only ones (`--scope cluster`); `verify.py`, the `verify-run` command, `notifications/checks.py` and `tests/test_verify.py` are deleted, leaving `platform_checks.py`, the report reader the console shares ([slice 4](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026), [delivered](current-state.md#every-platform-check-is-go-7-november-2026)) |
 | Recovery and backup tooling (`recovery.py`, `backupset.py`) | `make restore-sqlite` is `swhurl-v2 restore`, the backup image's Go tool runs the jobs, `backup-mongodb` and `backup-sqlite` are bash, and both freshness checks are `swhurl-v2 verify --scope platform`'s; MongoDB's restore test remains | partial: what remains is MongoDB's restore test (`live-test-restore-mongodb`) and the backup set it fetches with |
-| The dashboard reconciler (its Python modules), the host heartbeat and `clickstack-bootstrap` | Go | partial: the dashboard reconciler is `swhurl-v2 clickstack-dashboards`, and the CronJob and `make clickstack-dashboards` run it ([contract](iteration-2-plan.md#14-the-dashboard-reconciler-in-go-approved-7-november-2026), [evidence](current-state.md#the-dashboard-reconciler-switches-to-go-7-november-2026)); its Python (`dashboards.py`, `app_alerts.py`, `clickstack_ntfy.py`) is deleted next. The host heartbeat and `clickstack-bootstrap` are not started; the heartbeat still uses the Python notice helpers and `NotificationError` |
+| The host heartbeat and `clickstack-bootstrap` | Go | not started; the heartbeat still uses the Python notice helpers and `NotificationError`. The dashboard reconciler that shared this row is Go and its Python is retired ([evidence](current-state.md#the-dashboard-reconcilers-python-is-retired-7-november-2026)) |
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); `restore-sqlite` is `swhurl-v2 restore`; the team targets are bash over `swhurl-v2 team`; `destroy-data` stays Python, a safety decision with its own tests |
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
-| The v1 records model and its fixture oracle (`apps/model/*`) | delete as importers leave; keep the fixture oracle until then | bounded, not started: 1,541 lines, imported by 13 modules (8 under `apps/`, 3 under `console/`, `dashboards.py` and 1 live test) and 4 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
+| The v1 records model and its fixture oracle (`apps/model/*`) | delete as importers leave; keep the fixture oracle until then | bounded, not started: 1,541 lines, imported by 12 modules (8 under `apps/`, 3 under `console/` and 1 live test) and 4 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
 | Image-declaration producer | `swhurl-v2 image-declaration` | implemented, independently reviewed and rolled out to both template build workflows: Python producer/internal command and producer-only tests deleted; 35 full-label goldens and seven refusals preserve source behavior; the templates build and call the pinned Go binary, and the released catalogue pins are advanced. Existing apps' workflow pins stay unchanged until Copier updates them |
 | `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress: its readers and its promotion submission read `swhurl-v2 status` with the pod's credential, and its Overview and Platform checks `swhurl-v2 verify`. The server and its 18 templates go last |
 
@@ -122,9 +122,9 @@ not migration.
    runs only Go: lifecycle readback on the platform and team destinations passed and its Python is retired
    ([evidence](current-state.md#notification-checker-lifecycle-acceptance-and-python-retirement-7-november-2026)).
    The [dashboard reconciler](iteration-2-plan.md#14-the-dashboard-reconciler-in-go-approved-7-november-2026) is
-   run by Go: a live dry run planned no change, and the CronJob and `make clickstack-dashboards` switched. Next:
-   scheduled passes succeed, then delete its Python. The host heartbeat, console and remaining commands
-   each need their own slice. Existing apps' adoption of the new workflow releases is a separate gate.
+   run only by Go: a live dry run planned no change, scheduled passes succeeded after the switch, and its Python is
+   retired ([evidence](current-state.md#the-dashboard-reconcilers-python-is-retired-7-november-2026)). The host
+   heartbeat, `clickstack-bootstrap`, the console and the remaining commands each need their own slice. Existing apps' adoption of the new workflow releases is a separate gate.
 
 ## Deferred features
 

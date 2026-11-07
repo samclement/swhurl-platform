@@ -2,6 +2,7 @@
 helpers more than one group uses."""
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from contextvars import ContextVar
@@ -12,15 +13,20 @@ from markupsafe import Markup, escape
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from swhurl import dashboards
+from swhurl import statestore
 from swhurl.apps import contract, repo
 from swhurl.console import actions, catalogue, cluster, flagstore, repos
 from swhurl.console.github import GitHub, PullRequest
 from swhurl.console.reading import Files
-from swhurl.run import Runner, SharedReads
+from swhurl.run import CommandError, Runner, SharedReads
 
 HASH = re.compile(r'\b([0-9a-f]{12})[0-9a-f]{8,}\b')
 STACK_NAMES = {'typescript': 'TypeScript', 'kotlin': 'Kotlin'}  # a stack as the language it is
+# Where the dashboard job (swhurl-v2 clickstack-dashboards) records each app's dashboard id, and what the console
+# links from it: an app name and a MongoDB ObjectId, the rules the job records by (v2/dashboards).
+DASHBOARD_RECORD = {'namespace': 'console', 'name': 'app-dashboards', 'key': 'dashboards.json'}
+APP_NAME = re.compile(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?')
+DASHBOARD_ID = re.compile(r'[0-9a-f]{24}')
 
 
 def short_hashes(text: object) -> Markup:
@@ -35,8 +41,16 @@ def logs_url(app: str) -> str:
 
 def dashboard_urls(runner: Runner) -> dict[str, str]:
     """Each app's HyperDX dashboard, from the record the dashboard job keeps (``console/app-dashboards``).
-    Empty when it cannot be read: the pages then leave the link out."""
-    return {app: f'https://clickstack.{contract.COOKIE_DOMAIN}/dashboards/{ident}' for app, ident in dashboards.recorded(runner).items()}
+    Empty when it cannot be read: the pages then leave the link out. Only an app name and a dashboard id
+    become a link; any other entry is dropped."""
+    try:
+        doc = json.loads(statestore.read_key(runner, **DASHBOARD_RECORD) or '{}')
+    except (CommandError, ValueError):
+        return {}
+    if not isinstance(doc, dict):
+        return {}
+    return {app: f'https://clickstack.{contract.COOKIE_DOMAIN}/dashboards/{ident}' for app, ident in doc.items()
+            if isinstance(app, str) and isinstance(ident, str) and APP_NAME.fullmatch(app) and DASHBOARD_ID.fullmatch(ident)}
 
 
 def follow(url: str) -> Markup:

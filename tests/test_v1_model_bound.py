@@ -27,7 +27,6 @@ IMPORTERS = {
     'tools/swhurl/console/merge.py',
     'tools/swhurl/console/proposal.py',
     'tools/swhurl/console/records.py',
-    'tools/swhurl/dashboards.py',
     'tools/swhurl/livetests/team_scenario.py',
 }
 

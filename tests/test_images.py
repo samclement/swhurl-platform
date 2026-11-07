@@ -95,6 +95,23 @@ class ConsoleImageCommandTests(unittest.TestCase):
         self.assertEqual(job['serviceAccount']['name'], 'dashboard-sync')
         self.assertNotIn('envFrom', job['containers']['main'])
         self.assertEqual(job['cronjob']['concurrencyPolicy'], 'Forbid')
+        self.assertEqual(job['cronjob']['schedule'], '* * * * *')
+        self.assertEqual(job['containers']['main']['command'], ['timeout', '50', 'swhurl-v2', 'clickstack-dashboards', '--cluster', '--in-cluster'])
+
+    def test_dashboard_job_reads_only_its_named_secrets(self):
+        docs = list(yaml.safe_load_all((ROOT / 'platform/console/dashboard-rbac.yaml').read_text()))
+        roles = [d for d in docs if d['kind'] == 'Role' and d['metadata']['name'] == 'platform-dashboard-webhooks']
+        self.assertEqual(len(roles), 2)
+        for role, namespace, name in zip(roles, ('console', 'notify'), ('notification-ntfy', 'notify-alerts'), strict=True):
+            self.assertEqual(role['metadata']['namespace'], namespace)
+            self.assertEqual(role['rules'], [{'apiGroups': [''], 'resources': ['secrets'], 'resourceNames': [name], 'verbs': ['get']}])
+            binding = next(d for d in docs if d['kind'] == 'RoleBinding' and d['metadata']['name'] == role['metadata']['name']
+                           and d['metadata']['namespace'] == namespace)
+            self.assertEqual(binding['roleRef'], {'apiGroup': 'rbac.authorization.k8s.io', 'kind': 'Role', 'name': role['metadata']['name']})
+            self.assertEqual(binding['subjects'], [{'kind': 'ServiceAccount', 'name': 'dashboard-sync', 'namespace': 'console'}])
+        secret_rules = [rule for d in docs if d['kind'] in ('Role', 'ClusterRole') for rule in d['rules'] if 'secrets' in rule['resources']]
+        self.assertEqual(len(secret_rules), 3)  # the two webhook credentials and ClickStack's
+        self.assertTrue(all(rule['verbs'] == ['get'] and rule['resourceNames'] for rule in secret_rules))
 
     def lookup(self, head):
         return (FakeRunner().on('curl', '--silent', '--show-error', '--fail', stdout=json.dumps({'token': 'anon-token'}))

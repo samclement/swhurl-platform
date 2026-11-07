@@ -79,6 +79,7 @@ const usage = `usage:
   swhurl-v2 notifications-check [--dry-run] (--kubeconfig KUBECONFIG.json | --in-cluster)
   swhurl-v2 notifications-heartbeat [--dry-run] [--max-age DURATION] [--state FILE] --kubeconfig KUBECONFIG.json
   swhurl-v2 clickstack-dashboards (--cluster | --records DIR) [--dry-run] (--kubeconfig KUBECONFIG.json | --in-cluster)
+  swhurl-v2 clickstack-bootstrap [--dry-run] --kubeconfig KUBECONFIG.json
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
 platform's tag policy, and writes the record pair and the compiled files under --out. With --records it reads
@@ -169,6 +170,13 @@ either is written, then creates, updates and deletes dashboards tagged swhurl-ap
 each app's dashboard id in console/app-dashboards, and keeps each app's alerts. It reads its credentials by name
 each pass and reaches HyperDX and MongoDB by API-server exec with credentials only on stdin. --dry-run reads and
 plans, and writes nothing. Each outcome is a JSON log line; the exit status is 1 when the pass stopped.
+
+clickstack-bootstrap makes HyperDX's first account and its team's ingestion key the ones in
+observability/clickstack-runtime-inputs, which HyperDX has no setting for. It waits up to five minutes for the API,
+registers CLICKSTACK_ADMIN_EMAIL with CLICKSTACK_ADMIN_PASSWORD when no team exists, then sets the one team's key to
+CLICKSTACK_INGESTION_KEY when it differs; run again it changes nothing. Credentials travel only in the programs it
+runs by API-server exec, on stdin. --dry-run reads and decides, and writes nothing. It prints [OK], [INFO] and
+[WARN] lines, and [BAD] with exit status 1 where it stopped.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
@@ -449,6 +457,7 @@ var commands = map[string]func(cli, request) int{
 	"notifications-check":     cli.notificationsCheck,
 	"notifications-heartbeat": cli.notificationsHeartbeat,
 	"clickstack-dashboards":   cli.clickstackDashboards,
+	"clickstack-bootstrap":    cli.clickstackBootstrap,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -670,6 +679,9 @@ func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) boo
 		r.maxAgeFlag = &once{value: &r.maxAge}
 		flags.Var(r.maxAgeFlag, "max-age", "the age before a watched job is stale, for every job (default 10m; s, m or h)")
 		flags.Var(r.stateFlag, "state", "the state file (default ~/"+heartbeatStateFile+")")
+	case "clickstack-bootstrap":
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "read and decide without registering or setting the key")
 	case "clickstack-dashboards":
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount")
@@ -860,6 +872,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"notifications-check":     (*request).checkerNamed,
 	"notifications-heartbeat": (*request).heartbeatNamed,
 	"clickstack-dashboards":   (*request).dashboardsNamed,
+	"clickstack-bootstrap":    func(r *request) []string { return []string{r.kubeconfig} },
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one

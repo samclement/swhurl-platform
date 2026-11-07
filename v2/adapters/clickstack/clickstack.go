@@ -120,9 +120,17 @@ type fetchRequest struct {
 
 // call makes one request and returns the answer's body; any answer outside 2xx is an error naming its status.
 func (c *client) call(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
+	return fetch(ctx, c.app, method, apiBase, path, map[string]string{"authorization": "Bearer " + c.key}, body)
+}
+
+// fetch runs one request in the app's container: headers beside the content type, the body as JSON text. Any
+// answer outside 2xx is an error naming its status, never its body.
+func fetch(ctx context.Context, app Runner, method, base, path string, headers map[string]string, body any) (json.RawMessage, error) {
 	operation := method + " " + path
-	request := fetchRequest{Method: method, Redirect: "manual",
-		Headers: map[string]string{"content-type": "application/json", "authorization": "Bearer " + c.key}}
+	request := fetchRequest{Method: method, Redirect: "manual", Headers: map[string]string{"content-type": "application/json"}}
+	for name, value := range headers {
+		request.Headers[name] = value
+	}
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
@@ -132,10 +140,10 @@ func (c *client) call(ctx context.Context, method, path string, body any) (json.
 		request.Body = &text
 	}
 	options, _ := json.Marshal(request) // strings and a map of strings always encode
-	program := "const r = await fetch(" + literal(apiBase+path) + ", " + string(options) + ");\n" +
+	program := "const r = await fetch(" + literal(base+path) + ", " + string(options) + ");\n" +
 		"let body = null; try { body = await r.json(); } catch {}\n" +
 		`console.log("RESULT " + JSON.stringify({status: r.status, body}));` + "\n"
-	out, err := c.app(ctx, []byte(program))
+	out, err := app(ctx, []byte(program))
 	if err != nil {
 		return nil, &Error{operation, "exec failed: " + err.Error()}
 	}

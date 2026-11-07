@@ -67,6 +67,7 @@ var Layers = map[string]int{
 	"dashboards":                         0,
 	"incident":                           0,
 	"events":                             0,
+	"heartbeat":                          0,
 	"kernel":                             0,
 	"legacy":                             0,
 	"notify":                             0,
@@ -85,6 +86,8 @@ var Layers = map[string]int{
 	"adapters/git/gittest":               1,
 	"adapters/helm":                      1,
 	"adapters/helm/helmtest":             1,
+	"adapters/hoststate":                 1,
+	"adapters/hoststate/hoststatetest":   1,
 	"adapters/files":                     1,
 	"adapters/files/filestest":           1,
 	"adapters/kube":                      1,
@@ -113,7 +116,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"incident", "calls", "dashboards", "events", "kernel", "legacy", "notify", "observe", "policy", "producer", "shadow", "workstreams"}
+var Pure = []string{"incident", "calls", "dashboards", "events", "heartbeat", "kernel", "legacy", "notify", "observe", "policy", "producer", "shadow", "workstreams"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,

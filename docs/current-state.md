@@ -2,6 +2,26 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The host heartbeat in Go, offline (7 November 2026)
+
+- **Scope:** [the approved slice](iteration-2-plan.md#15-the-host-heartbeat-in-go-approved-7-november-2026),
+  offline step 1: the pure `heartbeat` package, `adapters/hoststate` with its fake and contract suite,
+  `orchestration.NotificationsHeartbeat` and `swhurl-v2 notifications-heartbeat`, and `/usr/local/go/bin` on the
+  heartbeat unit's `PATH` in its template. **Nothing live:** the timer still runs the Python through `make
+  notifications-heartbeat`; the installed unit is unchanged until the operator reinstalls it; nothing was pushed or
+  run against the cluster or ntfy.
+- **Offline evidence:** 35 new Go tests (12 pure, 6 adapter and fake, 11 use case, 6 command); all 13 Python
+  heartbeat cases and the heartbeat's use of the notice tests are [mapped](../v2/heartbeat/testdata/README.md).
+  Three state files written by Python's own `save_state` round-trip byte for byte, and the live state file has the
+  shape of one of them. `make check-v2` and `make check` pass.
+- **Review:** an independent read-only review found nothing blocking; it confirmed Go-written files read back in
+  Python's `read_state`, so a reverted cutover continues from Go's file. Fixed from its P2s: the destination's
+  Secret names are the package's existing constants; a use-case test now proves a reminder keeps the incident's
+  start; two unlisted differences (an address that is not an HTTPS topic, missing parent directories made 0700)
+  are in the case map. Carried to the cutover: the recipe stays silent and maps `DRY_RUN=true` to `--dry-run`.
+- **Not exercised:** a real CronJob read with the host kubeconfig, a real ntfy post, and the systemd run with Go
+  on `PATH`; the cutover's acceptance is that gate.
+
 ## The dashboard reconciler's Python is retired (7 November 2026)
 
 - **Scope:** step 3 of [the approved slice](iteration-2-plan.md#14-the-dashboard-reconciler-in-go-approved-7-november-2026):

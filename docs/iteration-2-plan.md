@@ -1505,3 +1505,75 @@ keeps each app's default alerts.
 
 **Not in this slice:** the host heartbeat, `clickstack-bootstrap`, new alert presets, and any change to what a
 dashboard shows.
+
+## 15. The host heartbeat in Go (approved 7 November 2026)
+
+The operator approved porting the [host heartbeat](operations.md#notification-checker-heartbeat) to `swhurl-v2
+notifications-heartbeat`. It is the watchdog for the notification checker: the host's
+`swhurl-notification-heartbeat.timer` runs `make notifications-heartbeat` every five minutes, outside the cluster,
+so whatever stops the checker does not stop it. Only the program changes; the timer, the target's name, the state
+file, the destination, the wording and the log shape stay. It replaces `tools/swhurl/notifications/` entirely.
+
+**Kept exactly** (each case of `tests/test_notification_heartbeat.py` and the heartbeat's use of `tests/test_notice.py`
+has Go coverage or a stated reason):
+
+- **The rule:** one watched job, `notification checker` (`console/console-notifications`, 600 s), a Go constant.
+  It is stale when the CronJob is missing, suspended, has no `lastSuccessfulTime`, has one that does not parse, or
+  last succeeded more than the maximum age ago (`last success was N minutes ago`); fresh otherwise. Transitions:
+  alert (stale, no incident), remind (stale, 3,600 s since the last alert), recover (fresh, incident open), none.
+- **The wording:** `<label> stale` with `The <name> CronJob is stale: <reason>. Check with make verify-platform.`,
+  priority 4, tag `warning`; `<label> recovered` with `The <name> CronJob is healthy again.`, priority 3, tag
+  `white_check_mark`; the same ntfy JSON document.
+- **The state:** `~/.local/state/swhurl-platform/notification-heartbeat.json`, the first job's flag
+  (`alerting_since`, `last_alert`: both null or both finite numbers) at the top level and any other job's under
+  `others`, so Go continues from Python's file. An absent file is no incident; an unreadable or invalid one is
+  refused, left unchanged and exits 1. Written atomically (temporary file, fsync, rename) with directory mode 0700
+  and file mode 0600.
+- **Delivery:** the destination is `console/notification-ntfy` key `NTFY_PLATFORM_URL`, read by named GET only when
+  a notice is due; the state is saved only after ntfy accepts, so a refused send is retried next run. A failed
+  CronJob read sends nothing, saves nothing and exits 1 (unknown is not stale). Each job is decided on its own; any
+  failure exits 1. Neither the address nor an answer body appears in a log line or error.
+- **The log:** the JSON lines `swhurl-v2`'s commands already write (`time`, `level`, `logger`, `message`), the
+  shape Python wrote, appended to the unit's log file.
+- **`--dry-run`** (`DRY_RUN=true`) reads and decides, logs `Would notify: <title> (priority N)`, and neither posts
+  nor saves.
+
+**Deliberate differences, approved:**
+
+1. **`--state PATH`** selects the state file (default unchanged), so acceptance can use a throwaway file.
+2. **`--max-age D`** stays (`s`, `m` or `h`, greater than zero), overriding every watched job's maximum age.
+3. **The unit's `PATH` gains `/usr/local/go/bin`**, where the host's Go is; the operator reinstalls once with
+   `make host-heartbeat`.
+
+**Smaller differences found in implementation** (each in the [case map](../v2/heartbeat/testdata/README.md)): a
+time Python wrote as an integer is written back as a float and `others` keys are sorted (Python reads both);
+`lastSuccessfulTime` must be RFC 3339, as Kubernetes writes it; a CronJob field of the wrong type is `<label> status
+is invalid` (exit 1, nothing sent); a state file over 1 MiB or containing `NaN` is refused as unreadable; a refused
+send or an address that is not an HTTPS topic names the adapter's fixed code (`failed: publish: status_403`); the log's `logger` is `notifications-heartbeat`;
+a pass is bounded to one minute; the temporary file is `.notification-heartbeat.json.*`, and a missing state
+directory's missing parents are made 0700 too.
+
+**Boundaries.**
+
+| Layer | Owns |
+| --- | --- |
+| `heartbeat` (pure, new) | Freshness, the transition, the notice, and decoding and encoding the state document |
+| `adapters/kube` | Unchanged: `Read` of one CronJob, `GetSecret` |
+| `adapters/ntfy` | Unchanged |
+| `adapters/hoststate` (new, external effect, approved with this slice) | Reads one local file (absent distinct from unreadable) and replaces it atomically with private modes; a contract suite and a fake |
+| `orchestration` | One pass over the watched jobs: read, decide, read the destination when due, send, save; a report per job |
+| `cmd/swhurl-v2` | `notifications-heartbeat [--dry-run] [--max-age D] [--state PATH] --kubeconfig PATH`: JSON log lines, exit status |
+
+**Delivery, two commits.** The heartbeat runs from the checkout and has no image, so a rollback is one revert.
+
+1. **Offline:** the package, the adapter, the use case, the command and the case map, plus the unit's `PATH`
+   line, which the Python run ignores. `make check-v2` and `make check`; an independent read-only review. The
+   operator then reinstalls the timer.
+2. **Cutover and retirement:** `make notifications-heartbeat` builds and runs the Go command with a private JSON
+   kubeconfig, silently (no echoed recipe or build output in the log file), passing `--dry-run` when
+   `DRY_RUN=true`; `tools/swhurl/notifications/`, its two test files and its `commands.py` entry are deleted.
+   Acceptance: scheduled runs log `fresh` and succeed; `--dry-run --max-age 1s` plans `notification checker stale`;
+   one real alert and recovery on the platform topic with `--max-age 1s --state <throwaway>`; `make
+   verify-platform` stays clean.
+
+**Not in this slice:** `clickstack-bootstrap`, more watched jobs, and removing `httpx` (the console uses it).

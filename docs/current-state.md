@@ -157,8 +157,16 @@ What has been verified on the live cluster, and when: current facts first, then 
   horizontally over all columns.
 - **Fix, applied by hand and then in Git:** `SYSTEM STOP MERGES system.metric_log` stopped the loop (0 errors in the
   next 20 s), and `ALTER TABLE … DROP PARTITION ID '20261030'` removed the stuck parts, whose rows had passed the
-  7-day TTL a day earlier (86,400 rows); tracked memory fell from 3.6 GiB to 442 MiB and CPU from 645m to 340m.
-  The HelmRelease now sets `min_bytes_for_wide_part = 0`, so parts are Wide and vertical merges apply.
+  7-day TTL a day earlier (86,400 rows); tracked memory fell from 3.6 GiB to 442 MiB and CPU from 645m to 340m. The
+  seven other expired partitions of the renamed table (`20261024` to `20261031`, 590k rows) were dropped the same
+  way, with its merges stopped.
+- **The Wide-part attempt failed and was reverted (`db6e4b29`, reverted next):** applying
+  `min_bytes_for_wide_part = 0` made the operator recreate `metric_log` (the old one became `metric_log_0`, so
+  HyperDX's own metrics start again from empty) and the loop moved to the renamed table until its merges were
+  stopped. The real effect was worse: a Wide part allocates a compression buffer per column, so every 60-row flush
+  of the 1,350-column table asked for 3.6 GiB, failed with `241`, and `metric_log` took no row at all for six hours
+  while its buffer grew past 21,600 entries. The setting is reverted and the parts stay Compact; the memory limit is
+  the remaining lever.
 
 - **Cause, read-only on `system.part_log`, `system.parts` and `system.metric_log`:** ClickHouse used 0.2 to 0.6
   cores an hour over 48 hours (1-second peaks 2.5 to 3.5 of 4), following merge time; HyperDX's selects used about

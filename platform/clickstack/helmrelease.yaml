@@ -139,13 +139,15 @@ spec:
               # day's part as new ones arrived; flushing a minute at a time cuts that
               # eightfold, for ClickHouse's own metrics arriving up to 60 s late.
               # A day's part is 20 to 28 MiB, under the 10 MiB that would make it Wide, so
-              # merges ran horizontally over all ~1,350 columns at once: on 6 November one
+              # merges run horizontally over all ~1,350 columns at once: on 6 November one
               # such merge asked for over 3.6 GiB, failed, and retried every 0.4 s until it
-              # starved every other query. min_bytes_for_wide_part = 0 stores every part
-              # Wide, which is what vertical merging needs.
+              # starved every other query. Keeping the parts Compact is deliberate: forcing
+              # Wide parts (min_bytes_for_wide_part = 0) makes each write allocate a
+              # compression buffer per column, about 3.6 GiB for one 60-row flush, and then
+              # nothing can be written at all. The memory limit is the lever, not the layout.
               metric_log:
                 partition_by: toYYYYMMDD(event_date)
-                settings: vertical_merge_algorithm_min_rows_to_activate = 1, ttl_only_drop_parts = 1, min_bytes_for_wide_part = 0
+                settings: vertical_merge_algorithm_min_rows_to_activate = 1, ttl_only_drop_parts = 1
                 flush_interval_milliseconds: 60000
               asynchronous_metric_log:
                 flush_interval_milliseconds: 60000

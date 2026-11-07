@@ -167,6 +167,11 @@ What has been verified on the live cluster, and when: current facts first, then 
   of the 1,350-column table asked for 3.6 GiB, failed with `241`, and `metric_log` took no row at all for six hours
   while its buffer grew past 21,600 entries. The setting is reverted and the parts stay Compact; the memory limit is
   the remaining lever.
+- **After the revert (`51cb9529`):** ClickHouse restarted at 06:45:57 UTC, `metric_log` took 181 rows in its first
+  three minutes, `min_bytes_for_wide_part` reads the default 10 MiB again, and five minutes of one-second samples
+  showed no `241`, tracked memory steady near 390 MiB (from 3.6 GiB) and CPU at 61m (from 645m). Each config change
+  recreated the table again, so the leftovers are `metric_log_0` (520,846 rows, 138 MiB, no longer written) and
+  `metric_log_1` (empty); nothing reads either. `make verify-platform` passed with 84 OK and no warning.
 
 - **Cause, read-only on `system.part_log`, `system.parts` and `system.metric_log`:** ClickHouse used 0.2 to 0.6
   cores an hour over 48 hours (1-second peaks 2.5 to 3.5 of 4), following merge time; HyperDX's selects used about

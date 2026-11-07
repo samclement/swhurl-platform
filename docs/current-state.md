@@ -10,6 +10,9 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Live acceptance** (working tree before commit, against the live cluster): `DRY_RUN=true` and then a real run
   each printed `HyperDX API is ready`, `a team exists; registration is closed`, the admin's account found and `team
   ingestion key matches CLICKSTACK_INGESTION_KEY`, and exited 0 in about five seconds; neither wrote anything.
+- **After the push** (`043bf835`): Validate deployed console image `src-2cbb3c74cca32644` (`7a4308df`); `make
+  flux-reconcile` had every unit Ready at that revision and `make verify-platform` passed with no warning, the console
+  check reporting the image built from the current tooling.
 - **Not exercised live:** registration and setting a differing key, which need a fresh ClickStack or a changed key;
   the Go tests cover both against the contract fake and the real adapter's programs.
 

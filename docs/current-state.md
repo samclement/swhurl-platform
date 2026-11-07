@@ -2,6 +2,39 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Every platform check is Go (7 November 2026)
+
+- **Scope:** slice 4, the last of [the approved verify retirement](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026).
+  All twenty-four `verify-platform` groups are `swhurl-v2 verify --scope platform`; `tools/swhurl/verify.py`, its
+  internal `verify-run`, `tools/swhurl/notifications/checks.py` and `tests/test_verify.py` are deleted, and
+  `make verify-platform` runs the binary itself. `platform_checks.py` stays: the console reads the report with it.
+- **Host facts as data:** the recipe writes `systemctl show --timestamp=unix` for the heartbeat timer and service to
+  a file the binary parses; Go decides every verdict with Python's wording (not supplied, unreadable, inactive
+  timer, failed run, unreadable timestamp, older than 15 minutes, clock skew over a minute). A systemctl failure
+  truncates the file to empty, which reads as "cannot read the host notification heartbeat", never as a fresh run.
+- **One Flux source:** `clusters/home/flux-system/install/flux.json` states the release, the extra and removed
+  components and the controller arguments, read by `make flux-install` and by `flux-controllers`. A Python test
+  pins its arguments to the kustomize patches, so the install and the check cannot drift. The catalogue is the
+  single source of each group's name, section, "Passes when" and "Reads"; Go tests compare the operations page
+  row for row and the real report in order.
+- **Review fix, deployed and proven:** independent review found that reading `flux.json` at import time broke the
+  console, whose image ships no checkout and whose `apps/state.py` imports `WAITING_REASONS` from `swhurl.flux`.
+  The read is now lazy. The console deploy from this push built `src-a662394ab0e65bf3`, the pod reached
+  `1/1 Running` and `/healthz` answered 200 — the path that would have crash-looped was exercised.
+- **Also restored from the deleted Python:** its only tests of `validate.check_config` (the SOPS-Secret and settings
+  rules `make check-repo` enforces) and the system-interpreter import guard now live in `tests/test_validate.py`;
+  the text report keeps the closing "Validation passed." line.
+- **Delivery:** commits `34b920fe` and `1f227771`; Validate run 42321076120 passed all nine jobs including the
+  console deploy; `make flux-reconcile` succeeded with `platform-console` Ready; the console runs
+  `src-a662394ab0e65bf3`, matching this checkout's content tag, and the fresh checker Jobs completed on that image.
+  `demo-shop/staging` reads healthy at `9938f91a`.
+- **Live comparison:** `make verify-platform` printed **24 sections, 83 OK, zero warnings and one `[BAD]`** — the
+  pre-existing ClickHouse failed-merge fault (1 in that hour, `default.otel_logs`), so it exits 2. Flux Controllers
+  reported all five controllers at v2.8.1 with kustomize-controller's Git settings, and Notification heartbeat
+  reported the active timer with a fresh success. The merge fault is reported, not fixed here.
+- **Not exercised:** `make flux-install` against a real `flux` CLI reading the new `flux.json`; it is covered
+  offline by `tests/test_flux.py` and a real `kustomize` render of the install folder.
+
 ## Pod-query platform checks move to Go (6 November 2026)
 
 - **Scope:** slice 3 of [the approved verify retirement](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026).

@@ -27,11 +27,23 @@ def doc_rows():
     return rows
 
 
+class Executed(Exception):
+    """Raised by the fake exec: a real one never returns, so make() must not go on to run the command itself."""
+
+
 def run_make(target, env):
     out, err = io.StringIO(), io.StringIO()
     executed = []
+
+    def execute(program, argv):
+        executed.append((program, argv))
+        raise Executed
+
     with redirect_stdout(out), redirect_stderr(err):
-        code = commands.make([target], env, execute=lambda program, argv: executed.append((program, argv)))
+        try:
+            code = commands.make([target], env, execute=execute)
+        except Executed:
+            code = 0
     return code, out.getvalue(), err.getvalue(), executed
 
 
@@ -151,7 +163,7 @@ class MakeTests(unittest.TestCase):
         code, out, err, executed = run_make('console-image', {'DRY_RUN': 'true'})
         self.assertEqual((code, out, executed), (2, '', []))
         self.assertIn('make console-image has no dry run', err)
-        code, _, _, executed = run_make('notifications-heartbeat', {'DRY_RUN': 'false'})
+        code, _, _, executed = run_make('console-dev', {'DRY_RUN': 'false'})  # under uv, so the fake executes it
         self.assertEqual(len(executed), 1, 'DRY_RUN=false runs it')
 
     def test_a_variable_the_command_reads_itself_is_left_to_it(self):
@@ -168,8 +180,8 @@ class MakeTests(unittest.TestCase):
                 self.assertEqual(TARGETS[target].arguments(env), expected)
 
     def test_a_command_that_needs_the_locked_dependencies_runs_under_uv(self):
-        code, _, _, executed = run_make('notifications-heartbeat', {})
-        self.assertEqual(executed, [('uv', ['uv', 'run', '--frozen', 'python', '-m', 'swhurl', 'notifications-heartbeat'])])
+        code, _, _, executed = run_make('console-dev', {})
+        self.assertEqual(executed, [('uv', ['uv', 'run', '--frozen', 'python', '-m', 'swhurl', 'console-dev', '--dev', '--port', '8080'])])
 
     def test_a_shared_function_gets_its_prefix_from_make_and_from_the_command_line(self):
         seen = []

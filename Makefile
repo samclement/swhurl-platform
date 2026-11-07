@@ -10,7 +10,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
-COMMANDS := help reconcile notifications-heartbeat verify-logs flux-install \
+COMMANDS := help reconcile verify-logs flux-install \
 	clickstack-bootstrap \
 	app-repo app-hooks \
 	console-image console-dev \
@@ -131,6 +131,17 @@ notifications-check:
 	fi; \
 	export CONSOLE_URL; \
 	"$$work/swhurl-v2" notifications-check --dry-run --kubeconfig "$$work/kubeconfig.json"
+
+# Alert on the platform topic if the notification checker's CronJob is stale (swhurl-v2 notifications-heartbeat; the
+# host timer runs this every five minutes and appends the output to its log file, so the recipe echoes nothing);
+# DRY_RUN=true decides and logs without posting or saving; ARGS passes --max-age D or --state PATH. The JSON kubeconfig is private and removed with the
+# build directory. Needs Go 1.26.0.
+.PHONY: notifications-heartbeat
+notifications-heartbeat:
+	@$(V2_BUILD); \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	"$$work/swhurl-v2" notifications-heartbeat $(if $(filter true,$(DRY_RUN)),--dry-run) $(ARGS) \
+		--kubeconfig "$$work/kubeconfig.json"
 
 # Keep the platform webhooks and each app's dashboard and alerts in ClickStack for the apps in v2's records
 # (swhurl-v2 clickstack-dashboards), deleting those of apps the records do not name; DRY_RUN=true plans and writes

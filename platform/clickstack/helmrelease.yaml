@@ -125,10 +125,15 @@ spec:
           containerTemplate:
             resources:
               limits:
-                # The chart's 2Gi is below what ClickHouse used on this node (1.9Gi).
-                memory: 4Gi
+                # The chart's 2Gi is below what ClickHouse used on this node (1.9Gi). 8Gi gives the server a
+                # 7.2 GiB accounting cap, enough for the merges of metric_log's ~1,350 columns that a 4Gi
+                # limit killed at 3.6 GiB. A limit reserves nothing: the request stays at 2Gi.
+                memory: 8Gi
           settings:
             extraConfig:
+              # Capped so the cache cannot grow into the room the merges need; metric_log is small, and the
+              # 5 GiB default could never fill under the old limit anyway.
+              mark_cache_size: 2147483648
               # Merged with the chart's ttl. metric_log has ~1,350 columns: a
               # horizontal merge into a Wide part needs more than the 3.6 GiB
               # server limit and retries forever; vertical merges one column at a time.

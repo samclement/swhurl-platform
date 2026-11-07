@@ -167,6 +167,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   of the 1,350-column table asked for 3.6 GiB, failed with `241`, and `metric_log` took no row at all for six hours
   while its buffer grew past 21,600 entries. The setting is reverted and the parts stay Compact; the memory limit is
   the remaining lever.
+- **Headroom, then cleanup:** the ClickHouse limit is now 8Gi (a 7.2 GiB accounting cap; request unchanged at 2Gi)
+  with `mark_cache_size` capped at 2 GiB, so the cache cannot take the room the merges need. `metric_log_0`
+  (520,846 rows) and the empty `metric_log_1` were dropped, leaving one `metric_log` that was still accepting rows
+  (842 in seven minutes).
 - **After the revert (`51cb9529`):** ClickHouse restarted at 06:45:57 UTC, `metric_log` took 181 rows in its first
   three minutes, `min_bytes_for_wide_part` reads the default 10 MiB again, and five minutes of one-second samples
   showed no `241`, tracked memory steady near 390 MiB (from 3.6 GiB) and CPU at 61m (from 645m). Each config change

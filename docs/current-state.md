@@ -19,7 +19,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   list and exec in `observability`, get and patch of the record) and refuses exec in `console`. No RBAC change.
 - **Image:** the offline commit `3d42b1d0` gave console image `src-77d032b5f13aa857` (`40b517b9`), which carries the
   subcommand; Validate passed.
-- **Live:** pending the scheduled passes after this commit reaches the cluster.
+- **Live:** after `e93fd47e` reconciled, the CronJob ran the Go command on `src-77d032b5f13aa857`: scheduled passes
+  at 13:45, 13:46 and 13:47 UTC succeeded and wrote nothing (every webhook and dashboard up to date, six apps'
+  alerts kept), and the record stayed byte-identical. Validate then pinned `src-2fd4681baa7a3214` (`8ef24823`);
+  the CronJob kept scheduling through that Helm update, and its 13:50 pass succeeded. `make verify-platform` passed
+  with no warnings, its dashboard check included.
+- **Not exercised:** a Go pass that writes (a new or removed app, a repaired webhook); the first real app change
+  shows it. The retirement step (delete the three Python modules and their tests) is next.
 
 ## The dashboard reconciler in Go, offline (7 November 2026)
 

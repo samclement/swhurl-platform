@@ -219,6 +219,7 @@ func (s *notifyService) pass(ctx context.Context) {
 
 // jsonLog writes one JSON line per event, in the console's shape: time, level, logger and message.
 type jsonLog struct {
+	name string
 	lock sync.Mutex
 	out  io.Writer
 	now  func() time.Time
@@ -230,7 +231,7 @@ func (l *jsonLog) write(level, message string) {
 		Level   string `json:"level"`
 		Logger  string `json:"logger"`
 		Message string `json:"message"`
-	}{l.now().UTC().Format("2006-01-02T15:04:05.000000-07:00"), level, "notify", message})
+	}{l.now().UTC().Format("2006-01-02T15:04:05.000000-07:00"), level, logName(l.name), message})
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	_, _ = l.out.Write(append(line, '\n'))
@@ -243,4 +244,11 @@ func compactJSON(document any) []byte {
 	encoder.SetEscapeHTML(false)
 	_ = encoder.Encode(document) // maps of strings and string fields always encode
 	return bytes.TrimSuffix(out.Bytes(), []byte("\n"))
+}
+
+func logName(name string) string {
+	if name != "" {
+		return name
+	}
+	return "notify"
 }

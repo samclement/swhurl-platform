@@ -185,6 +185,23 @@ The console's title is `console`. A successful Git revert or promotion of an old
 
 **Checker:** [`notifications` package](../tools/swhurl/notifications/__init__.py) reads Kubernetes once a minute as `console/notification-check`, through the bounded `console-notifications` CronJob in the [console HelmRelease](../platform/console/helmrelease.yaml). It discovers instances from app Flux paths (`./apps/<app>/<env>`, plus authorised app-template fixtures), not a manually maintained app list. It reads release events, desired/current release status, main-workload replicas and running images. It never reads Secrets, pod logs or GitHub credentials and cannot modify workloads. Its dedicated [RBAC](../platform/console/notification-rbac.yaml) permits list-only discovery and get/patch of one ConfigMap. It hands every message about an app to the [notify service](#notify-service) as well, which knows the [channels](#notification-channels) of the app's team.
 
+**Standalone Go checker (not scheduled yet):** `swhurl-v2 notifications-check --dry-run --kubeconfig KUBECONFIG.json`
+reads and evaluates the same version-1 state without posting or saving; `--in-cluster` is the alternative credential.
+The kubeconfig is the existing Go commands' **JSON** format. Supply `CONSOLE_URL` explicitly; a real pass also needs
+`NTFY_PLATFORM_URL`. `SWHURL_NOTIFY_URL` enables app copies, authenticated with the freshly read
+`SWHURL_NOTIFY_TOKEN_FILE` (default `/var/run/swhurl/tokens/notify/token`). No address, token or response body is logged.
+Without `--dry-run` this command **does** patch incident state and deliver notices: it is not an offline simulator.
+The CronJob and `make notifications-check` still use Python; switching them requires the separately approved
+[cutover](iteration-2-plan.md#13-the-notification-checker-in-go-approved-7-november-2026).
+
+Go additionally recognizes the current `./v2-apps/instances/<app>/<env>` unit paths, which Python's legacy discovery
+misses. It retains the two legacy roots, reads only Deployments/StatefulSets and filters core Events by
+`involvedObject.kind=HelmRelease` and `Kustomization` (field selectors, not labels); it has no scheduled-job path.
+Its state read is a **named GET**: the older `Data.ConfigMaps` API uses LIST even with a name selector, which the
+checker's existing named get/patch-only Role does not permit. No RBAC is expanded. Failed app copies stay present
+in **every** saved checkpoint while later platform messages proceed, fixing Python's temporary waiting-list loss.
+The [fixture/case map](../v2/incident/testdata/README.md) records retained behavior and these intentional differences.
+
 ```mermaid
 flowchart LR
     git[Git image or config change] --> flux[Flux and Helm]

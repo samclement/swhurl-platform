@@ -1,0 +1,1 @@
+{"app":"orders","env":"prod","key":"event:1@notify","title":"orders/prod unhealthy","message":"m","priority":"high","click":"https://console.example.test/apps/orders/prod"}

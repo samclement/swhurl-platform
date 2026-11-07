@@ -1346,3 +1346,89 @@ source. Python rollback now requires an image from before retirement containing 
 `src-043f8c6e6233b3ab`) **and** its former command `[python, -m, swhurl, notify-serve]`, through Git as usual.
 Reverting only the command on a post-retirement image cannot work. Neither direction migrates or resets the
 version-1 outbox. The [status page](v2-status.md#remaining-work) names the next gate.
+
+## 13. The notification checker in Go (approved 7 November 2026)
+
+The operator approved porting the [notification checker](services.md#alerts) (`console/console-notifications`, every
+minute, `python -m swhurl notifications-check`) to `swhurl-v2 notifications-check`, run from the console image it
+already uses. One pass reads the Flux units, HelmReleases, workloads, pods and lifecycle Events, decides lifecycle
+notices (deployed, failed, rolled back, uninstalled) and health incidents (unhealthy, stalled, recovered, hourly
+reminders), and delivers them to the platform topic, with a copy for the notify service when the notice is about an
+app. **Its state document and its wire contracts stay as they are**; everything else is v2's design.
+
+**Kept exactly** (each case of `tests/test_notifications.py` that the port keeps is a Go test, time an argument):
+
+- **The state:** `console/notification-state` key `state.json`, version 1, the same shape (`started`,
+  `last_success`, `instances`, `seen`, `pending`, `monitor`, `notify_service`) and the same notice keys, so Go
+  continues from the document Python leaves (no repeated notice, no reset incident clock) and Python can continue
+  from Go's. A document of another version or shape, or one over 700,000 bytes encoded, is refused, never reset;
+  written with field manager `notification-check`.
+- **The rules:** targets are the units whose path is an instance folder (the current
+  `./v2-apps/instances/<app>/<env>`, legacy `./apps/<app>/<env>`, and the generated fixtures' root) and the console's
+  unit; grace 300 s (600 s for the console), recovery after 120 s healthy, a
+  reminder every 3,600 s, a unit failure reported only after 60 s, history 7,200 s; the health rule as it is
+  (a completed rollback is healthy, a repository-wide revision change is ignored, a stopped instance clears its
+  incident, a suspended one silences it, a mismatched digest stalls unless Helm rolled back), the event filters
+  (controller, uid, attempt token, the last sixteen failed attempts, a deployment held until the workload is
+  ready), the wording, titles, priorities, tags and links.
+- **Unknown is not healthy:** a failed read keeps the previous state, clears every pending recovery, raises the
+  monitor's own incident (reported after its grace) and exits 1.
+- **Delivery:** the state is saved before any send; pending notices go in order, each checkpointed when accepted;
+  a copy for the notify service that is refused is retried for 7,200 s without holding up the platform topic, and
+  one refusal ends the pass's other copies; the operator hears on the platform topic when the notify service stops
+  accepting copies and when it accepts again. At least once. Failed copies remain in every saved checkpoint;
+  unlike Python's temporary retry list, stopping partway through a pass cannot lose an earlier failed copy.
+- **The wire:** ntfy gets the same JSON document; the notify service gets the same `POST /v1/notify` with the
+  checker's projected `notify` token, read anew each pass. The platform topic comes from `NTFY_PLATFORM_URL` and is
+  never logged; neither address nor any answer body appears in an error.
+- **`--dry-run`** reads and evaluates, logs what it would send, and neither posts nor saves. At cutover, `make
+  notifications-check` runs it from the host with the kubeconfig; the CronJob runs a real pass with the pod's
+  ServiceAccount. Step 1 leaves the existing Python make target unchanged.
+
+**Boundaries.**
+
+| Layer | Owns |
+| --- | --- |
+| `incident` (pure, new) | Targets from the units, the health rule, which events qualify, the incident transitions, the outbox, and decoding and encoding the state document. A pass is `Evaluate(previous, snapshot, now, base, copies)`; delivery transitions are functions over the state. It owns the persisted notice fields without a same-layer dependency on `notify` |
+| `adapters/kube` | Reads the kinds the snapshot needs across namespaces without a label selector, and core `Event` across namespaces by **field selector** `involvedObject.kind` (`HelmRelease`, then `Kustomization`). Writes the state through the existing `Data.SetConfigMapKey`; reads it with a named ConfigMap GET, not a list, preserving the checker's existing get/patch-only permission on that object |
+| `adapters/ntfy` | Unchanged: publishes to the platform topic |
+| `adapters/notifysvc` (new, external effect, approved with this slice) | Posts one copy to the notify service with the token it is given; reports accepted (202), refused (any other status) or unreachable, never the token or the body |
+| `orchestration` | One pass: read the state, read the snapshot, evaluate, deliver, report counts and what a dry run would send. Projects the persisted notice fields to the existing `notify.Publication` for ntfy; no exception to the same-layer import rule |
+| `cmd/swhurl-v2` | `notifications-check [--dry-run] (--kubeconfig PATH | --in-cluster)`: environment (`CONSOLE_URL`, `NTFY_PLATFORM_URL`, `SWHURL_NOTIFY_URL`, the token path), JSON log lines, exit status |
+
+**Deliberate differences, approved:**
+
+1. **Only lifecycle Events are read.** Python lists every Event (1.4 MB on 7 November 2026, almost all for Pods and
+   Jobs it discards); Go lists the two kinds it uses, which keeps the read inside the adapter's bound.
+2. **DaemonSets are not read**, and the checker's ClusterRole drops them: v2 renders only Deployments and
+   StatefulSets for an app, and the cluster's two DaemonSets are the platform's.
+3. **The scheduled-job path is dropped** (`job_health`, `run failed`): v2 refuses the `job` kind, so no instance
+   reaches it. It returns with the deferred `job` kind.
+4. **Direct Go invocation requires `CONSOLE_URL`.** It does not read checkout YAML for a fallback domain or
+   hardcode this cluster's address. The CronJob already supplies this variable; direct callers must set it.
+   This keeps console links explicit without adding a parser or profile boundary.
+5. **Discover current v2 app units.** Python's `Instance.of_path` recognizes only the legacy and fixture roots;
+   the current units point into `./v2-apps/instances/<app>/<env>`. Go recognizes that exact root too, tested against
+   current unit paths and unrelated folders. Retaining the omission would silently skip all v2 apps. The live
+   acceptance must distinguish newly discovered apps' eligible notices from duplicates of delivered keys.
+
+**Delivery, separate commits.**
+
+1. **Offline:** the package, the adapters (with their contract suites and raw fixtures), the use case and the
+   command, the kept cases as Go tests, and a decoding test over a real version-1 state document. `make check-v2`
+   and `make check`; an independent read-only review. Nothing live. **Implemented and reviewed:**
+   [offline evidence](current-state.md#notification-checker-in-go-offline-implementation-reviewed-7-november-2026).
+   The version-1 fixture is sanitized and Python-produced, not a live export; actual live-document decoding
+   remains a cutover gate.
+2. **Cutover, confirmed with the operator before the push:** the CronJob's command becomes
+   `[timeout, "50", swhurl-v2, notifications-check, --in-cluster]` and the ClusterRole drops DaemonSets.
+   Acceptance: the first Go pass reads the live state and sends nothing it already sent; scheduled passes succeed;
+   `make verify-platform` stays clean; `make live-test-lifecycle` produces deployed and uninstalled notices on the
+   platform topic and a copy accepted by the notify service.
+3. **Retirement:** `notifications/__init__.py`'s `check` and `main`, `evaluate.py`, `state.py`, `delivery.py`,
+   `notice.forward`, `tests/test_notifications.py` and the command's Python entry. `notice.py` (`Notice`, `Ntfy`,
+   `platform_topic`) and `errors.py` stay for the host heartbeat, `clickstack_ntfy.py` and `dashboards.py`, which
+   leave with their own rows.
+
+**Not in this slice:** the host heartbeat, the dashboard reconciler, new alerts (backups, certificates, disk), and
+any change to what raises a notice.

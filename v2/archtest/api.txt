@@ -86,11 +86,14 @@ adapters/helm: type Pin struct {Name, Version, Repository string}
 adapters/helm: type Renderer interface {Render(Request) ([]json.RawMessage, error)}
 adapters/helm: type Request struct {Chart, Release, Namespace string ChartName, ChartVersion string Values json.RawMessage}
 adapters/kube/kubetest: func (*Executor) Exec(ctx context.Context, r kube.ExecRequest) (kube.ExecResult, error)
+adapters/kube/kubetest: func (*Fake) CollectAllNamespaces(_ context.Context, ref observe.Ref) (observe.List, error)
 adapters/kube/kubetest: func (*Fake) ConfigMaps(_ context.Context, namespace string, selector kube.Selector) ([]kube.ConfigMap, error)
 adapters/kube/kubetest: func (*Fake) Create(_ context.Context, ref observe.Ref, _ []byte) error
 adapters/kube/kubetest: func (*Fake) Delete(_ context.Context, ref observe.Ref) error
+adapters/kube/kubetest: func (*Fake) GetConfigMap(_ context.Context, namespace, name string) (*kube.ConfigMap, error)
 adapters/kube/kubetest: func (*Fake) List(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube/kubetest: func (*Fake) ListAllNamespaces(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
+adapters/kube/kubetest: func (*Fake) ListEvents(ctx context.Context, kind string) (observe.List, error)
 adapters/kube/kubetest: func (*Fake) ListNamespace(_ context.Context, ref observe.Ref) (observe.List, error)
 adapters/kube/kubetest: func (*Fake) Logs(_ context.Context, ref observe.Ref, _ int64) (string, error)
 adapters/kube/kubetest: func (*Fake) Patch(_ context.Context, ref observe.Ref, _ []byte) error
@@ -99,6 +102,7 @@ adapters/kube/kubetest: func (*Fake) Review(_ context.Context, token, audience s
 adapters/kube/kubetest: func (*Fake) Secrets(_ context.Context, namespace string, selector kube.Selector) ([]kube.Secret, error)
 adapters/kube/kubetest: func (*Fake) SetConfigMapKey(_ context.Context, namespace, name, key, value, fieldManager string) error
 adapters/kube/kubetest: func (*Fake) SigningKeys(context.Context) (kube.SigningKeys, error)
+adapters/kube/kubetest: func CheckerCollectionContract(t *testing.T, open func(*testing.T) (kube.Collector, kube.Data))
 adapters/kube/kubetest: func CollectionContract(t *testing.T, open func(*testing.T, []byte, string) kube.Reader)
 adapters/kube/kubetest: func Contract(t *testing.T, answers Answers, open func(*testing.T, Answers) kube.Reader)
 adapters/kube/kubetest: func DataContract(t *testing.T, answers DataAnswers, open func(*testing.T, DataAnswers) kube.Data)
@@ -117,12 +121,15 @@ adapters/kube/kubetest: type ReviewAnswers struct {Token, Audience, Username str
 adapters/kube: const BadCredentials = "credentials"
 adapters/kube: const Failed = "failed"
 adapters/kube: const RefusedRequest = "refused_request"
+adapters/kube: func (*API) CollectAllNamespaces(ctx context.Context, ref observe.Ref) (observe.List, error)
 adapters/kube: func (*API) ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error)
 adapters/kube: func (*API) Create(ctx context.Context, ref observe.Ref, document []byte) error
 adapters/kube: func (*API) Delete(ctx context.Context, ref observe.Ref) error
 adapters/kube: func (*API) Exec(ctx context.Context, request ExecRequest) (ExecResult, error)
+adapters/kube: func (*API) GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error)
 adapters/kube: func (*API) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube: func (*API) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
+adapters/kube: func (*API) ListEvents(ctx context.Context, involvedKind string) (observe.List, error)
 adapters/kube: func (*API) ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error)
 adapters/kube: func (*API) Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)
 adapters/kube: func (*API) Patch(ctx context.Context, ref observe.Ref, patch []byte) error
@@ -147,10 +154,11 @@ adapters/kube: func RefOf(group, kind, namespace, name string) (observe.Ref, err
 adapters/kube: func ServiceAccount(token, ca []byte, host, port string) (Connection, error)
 adapters/kube: func WritableRefOf(group, kind, namespace, name string) (observe.Ref, error)
 adapters/kube: type API struct {}
+adapters/kube: type Collector interface {CollectAllNamespaces(ctx context.Context, ref observe.Ref) (observe.List, error) ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error) ListEvents(ctx context.Context, involvedKind string) (observe.List, error)}
 adapters/kube: type ConfigMap struct {Name string Labels map[string]string Data map[string]string}
 adapters/kube: type Connection struct {Endpoint string Credentials Credentials Token string Context string}
 adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
-adapters/kube: type Data interface {ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error) // SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every // other key as it is. SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error}
+adapters/kube: type Data interface {GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error) ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error) // SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every // other key as it is. SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error}
 adapters/kube: type Error struct {Code, Subject, Reason string}
 adapters/kube: type ExecRequest struct {Namespace, Pod, Container string Command []string Stdin []byte}
 adapters/kube: type ExecResult struct {Stdout []byte ExitCode int}
@@ -163,6 +171,18 @@ adapters/kube: type Selector struct {Name, Labels string}
 adapters/kube: type SigningKeys struct {Issuer string Keys []byte}
 adapters/kube: type TokenReview struct {Authenticated bool Audiences []string Username string}
 adapters/kube: type Writer interface {// Patch applies a JSON merge patch to one object: the shape the platform uses to suspend a release or // set a replica count. Patch(ctx context.Context, ref observe.Ref, patch []byte) error // Create creates one object from its document. Create(ctx context.Context, ref observe.Ref, document []byte) error // Delete removes one object. An object that is already gone is not an error. Delete(ctx context.Context, ref observe.Ref) error // Logs reads the last lines of one pod's log: the evidence a restore job leaves about what it did. Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)}
+adapters/notifysvc/notifysvctest: func (*Fake) Send(ctx context.Context, address, token string, request notifysvc.Request) error
+adapters/notifysvc/notifysvctest: func Contract(t *testing.T, request notifysvc.Request, open func(*testing.T, int) (notifysvc.Sender, func() Sent))
+adapters/notifysvc/notifysvctest: type Fake struct {Sent []Sent Fail error}
+adapters/notifysvc/notifysvctest: type Sent struct {Address, Token string Request notifysvc.Request}
+adapters/notifysvc: func (*Error) Error() string
+adapters/notifysvc: func (*Service) Send(ctx context.Context, address, token string, request Request) error
+adapters/notifysvc: func New(client *http.Client) Sender
+adapters/notifysvc: func ValidAddress(address string) bool
+adapters/notifysvc: type Error struct {Reason string}
+adapters/notifysvc: type Request struct {App string `json:"app"` Env string `json:"env"` Key string `json:"key"` Title string `json:"title"` Message string `json:"message"` Priority string `json:"priority"` Click string `json:"click"`}
+adapters/notifysvc: type Sender interface {Send(ctx context.Context, address, token string, request Request) error}
+adapters/notifysvc: type Service struct {}
 adapters/ntfy/ntfytest: func (*Fake) Publish(_ context.Context, address string, publication notify.Publication) error
 adapters/ntfy/ntfytest: func (*Fake) Received(address string) [][]byte
 adapters/ntfy/ntfytest: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) (ntfy.Publisher, func() [][]byte))
@@ -255,6 +275,35 @@ events: type Declaration struct {Application, Environment string Publishes []str
 events: type Error struct {Application, Environment, Field, Reason string}
 events: type Resolved struct {Connected []Subscription Pending []string}
 events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
+incident: const ConsoleGrace = 600
+incident: const FieldManager = "notification-check"
+incident: const Grace = 300
+incident: const History = 7200
+incident: const MaxStateBytes = 700_000
+incident: const Namespace = "console"
+incident: const Recovery = 120
+incident: const Reminder = 3600
+incident: const StateKey = "state.json"
+incident: const StateName = "notification-state"
+incident: func (*State) CopyHealth(accepted, refused int, now float64, base string)
+incident: func (*State) Encode() (string, error)
+incident: func (*State) Held() []string
+incident: func (*State) Instances() int
+incident: func (*State) Pending() []Entry
+incident: func (*State) Settle(sent bool, now float64) bool
+incident: func (Entry) About() []string
+incident: func (Entry) Click() string
+incident: func (Entry) Key() string
+incident: func (Entry) Message() string
+incident: func (Entry) Priority() int
+incident: func (Entry) Title() string
+incident: func DecodeState(raw string) (*State, error)
+incident: func Evaluate(previous *State, data Snapshot, now float64, base string, copies bool) (*State, error)
+incident: func Unknown(previous *State, now float64, base string) *State
+incident: type Entry struct {}
+incident: type Object = map[string]any
+incident: type Snapshot struct {Units []Object `json:"units"` Releases []Object `json:"releases"` Workloads []Object `json:"workloads"` Pods []Object `json:"pods"` Events []Object `json:"events"`}
+incident: type State struct {}
 kernel: const AddTeam TeamAction = "add"
 kernel: const AppRecordName = "app.json"
 kernel: const AppTree = "apps"
@@ -801,6 +850,7 @@ orchestration: func (*Notifier) Deliver(ctx context.Context, connect NotifyConne
 orchestration: func (*Refusal) Error() string
 orchestration: func AcquireChart(profile kernel.PlatformProfile, repositories []byte, cache string, acquirer helm.Acquirer) (string, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
+orchestration: func CheckNotifications(ctx context.Context, ports CheckerPorts, options CheckOptions) (CheckReport, error)
 orchestration: func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
 orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
@@ -823,6 +873,10 @@ orchestration: func StatusAll(ctx context.Context, inputs StatusInputs, instance
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Accepted struct {Request notify.Request Caller string Channels []string Failure error}
+orchestration: type CheckOptions struct {Now float64 Base, PlatformAddress, NotifyAddress, Token string DryRun bool}
+orchestration: type CheckReport struct {State *incident.State Offered []CheckerDelivery}
+orchestration: type CheckerDelivery struct {Entry incident.Entry Err error Retry bool}
+orchestration: type CheckerPorts struct {Cluster kube.Collector Data kube.Data Platform ntfy.Publisher Copies notifysvc.Sender}
 orchestration: type Checkout struct {Profile, Teams, Allocation []byte FluxSettings []byte Apps, Releases map[string][]byte Compiled []observe.CompiledInstance}
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}

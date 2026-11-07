@@ -2,6 +2,33 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Notification checker in Go: offline implementation reviewed (7 November 2026)
+
+- **Scope:** [the approved checker contract](iteration-2-plan.md#13-the-notification-checker-in-go-approved-7-november-2026),
+  step 1 only: Go implementation, retained-behaviour tests and independent review. The state document and delivery
+  wire contracts stay version 1; the unsupported scheduled-job path and DaemonSet discovery are intentionally omitted.
+- **Boundaries:** named ConfigMap GET and key patch preserve existing state RBAC; lifecycle Events use field selectors;
+  a new notify-service HTTP adapter carries team copies. Failed copies must remain in every saved checkpoint.
+- **Discovery correction:** current app units use `./v2-apps/instances/<app>/<env>`, a root absent from Python's
+  `Instance.of_path`. Go includes that root rather than reproducing the omission. Cutover acceptance must account
+  for newly discovered apps, not claim that Python had already observed them.
+- **Offline evidence:** the Go implementation is present with a 42-case map (40 retained cases, two scheduled-job
+  cases omitted), 139 frozen Python evaluations and Python-produced version-1 round-trip fixtures
+  ([fixture contract](../v2/incident/testdata/README.md)). After the review fix, `make check-v2`, `make check`
+  (612 Python tests, 98 codegraph tests, 32 schema-validation entrypoints), focused tests, `git diff --check` and
+  139 Python→Go→Python persisted-state/resume comparisons passed. All 157 generated files are unchanged.
+  The parent reran `make check-v2` and `make check-docs` successfully; shell syntax checks also passed.
+- **Review:** independent read-only review found and then verified the correction of a P1 decoder gap: missing
+  notice fields and wrongly typed incident fields now stop immediately after the state GET, before snapshot reads,
+  writes or sends. Unknown extensions remain intact. Two synthetic sparse notices in captures 80 and 135 were
+  completed with valid notice fields; every original field and the other 137 captures are unchanged. The final
+  review accepts offline step 1 with no blocking findings. The fixture is Python-produced, not a live-state export.
+- **Live:** unchanged. Python still runs `console-notifications`; neither its command nor RBAC is changed. No
+  deployment, test notification, state write or reconciliation has been performed for this slice.
+- **Next gate:** confirm the separate live cutover with the operator. Actual live-state decoding, first-pass
+  deduplication, scheduled-run health, real RBAC and lifecycle-message delivery remain unverified. The existing
+  live checker, Make target, Python sources/tests and RBAC are untouched by step 1.
+
 ## Every platform check is Go (7 November 2026)
 
 - **Scope:** slice 4, the last of [the approved verify retirement](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026).

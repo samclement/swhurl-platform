@@ -12,8 +12,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   Secret RBAC checks moved to `tests/test_images.py`; the 40 behaviour cases stay [mapped to Go](../v2/dashboards/testdata/README.md#all-40-python-cases).
 - **Offline evidence:** `make test` 533 tests (572 before: 40 deleted, 1 moved in), the console's dashboard-link
   test unchanged and passing; `make check`.
-- **Live:** the console image this commit builds runs the same `swhurl-v2` command; see the commit's Validate
-  deploy and the next scheduled passes. Nothing else changes on the cluster.
+- **Live:** `5c9c9195` built console image `src-51ea9009ad2cc8b0` (`c8c779bf`); after reconciling, the console and the
+  CronJob run it, and the 19:08 UTC scheduled pass succeeded on it with no writes. The moved reader, run against
+  the live record with the operator's kubeconfig, links all six apps. `make verify-platform` passed with no warnings.
+  Not exercised: the reader inside a signed-in console page (the unchanged console test covers its markup).
 
 ## The dashboard reconciler switches to Go (7 November 2026)
 

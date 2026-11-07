@@ -1,13 +1,13 @@
 # Notification checker fixtures and legacy-case map
 
-This is a test-fixture contract, not a progress log. The scheduled checker runs Go; the unchanged Python
-implementation and tests remain as compatibility evidence until separate retirement. See
+This is a test-fixture contract, not a progress log. The checker runs only Go; the Python implementation
+and tests are retired. Their frozen captures and the case map below remain the retained-behavior evidence. See
 [current notification behavior](../../../docs/services.md#current-notification-behavior).
 
 ## Provenance and boundaries
 
 - `legacy.json`: **139 captured Evaluate calls** (two synthetic pending notices normalized below), captured before Go implementation by running the **40 retained tests**
-  from `tests/test_notifications.py`, with inputs and expected output deep-copied at each call. Capture ran against
+  from [the retired Python tests](https://github.com/samclement/swhurl-platform/blob/25dbe522a87eeec16791b383c8c34a7a6ca6930a/tests/test_notifications.py), with inputs and expected output deep-copied at each call. Capture ran against
   the unchanged Python implementation; 40 tests passed. The two `JobTests` were deliberately excluded. Go's
   `TestLegacyEvaluations` checks every captured result and verifies input/previous-state ownership. Nothing regenerates
   the golden answers during a check; the Python implementation is evidence, not a runtime Go dependency.
@@ -16,7 +16,8 @@ implementation and tests remain as compatibility evidence until separate retirem
 - `state-v1.json`: a sanitized **real-shaped Python-produced** version-1 incident/outbox document taken from the frozen
   failure-retry scenario, with synthetic notify-service incident and unknown nested fields added for round-trip tests.
   It is **not a live-cluster state export**. Times, release UID and failure key agree with the scenario. The unknown large
-  integer proves unknown values do not round through float64. Cutover still needs decoding the actual live document.
+  integer proves unknown values do not round through float64. Actual live-document decoding and scheduled continuation
+  were verified separately at [cutover](../../../docs/current-state.md#notification-checker-scheduled-in-go-7-november-2026).
 
 Domain tests are under `v2/incident`; effect sequencing/failure/restart tests under `v2/orchestration`; command/environment
 and scheduled Git wiring tests under `v2/cmd/swhurl-v2`. The Kubernetes and notify-service adapters run shared HTTP/fake
@@ -40,7 +41,8 @@ input and matching `expected` output. Existing fields and the behavior those cas
 | `LifecycleTests.test_evaluation_leaves_nested_previous_state_and_snapshot_unchanged` (80) | `{"key":"pending","about":["example","staging"]}` | `title: "Synthetic pending notice"`, `message: ""`, `priority: 3`, `queued: 1791028800.0` (the previous state's start) |
 | `LifecycleTests.test_seen_expiry_is_strict_and_does_not_discard_pending_notices` (135) | `{"key":"pending","queued":1791021599.0}` | `title: "Synthetic pending notice"`, `message: ""`, `priority: 3`; original expired `queued` retained |
 
-No other captured input or expected output changed, and no Python source/test changed. Decoder refusal tests cover
+No other captured input or expected output changed during fixture preparation; the Python source/tests were unchanged
+at capture time and removed only after live acceptance. Decoder refusal tests cover
 missing delivery/retry fields and mistyped known fields; orchestration tests prove refusal happens after only the
 named state GET, before any snapshot read, save or send. These deliberately corrupt states are no longer allowed
 to borrow the permissive conventions of an ownership/expiry test fixture.
@@ -56,7 +58,7 @@ to borrow the permissive conventions of an ownership/expiry test fixture.
 4. The standalone Go command requires explicit `CONSOLE_URL`; it does not parse checkout YAML or hardcode a cluster domain.
 5. Current `./v2-apps/instances/<app>/<env>` paths are recognized alongside the two legacy roots, fixing Python discovery.
    A resumed state may therefore acquire app identities it never recorded before. Existing `started` and Event-history
-   boundaries still apply; only a truly absent state establishes a new baseline. Verify this explicitly at cutover.
+   boundaries still apply; only a truly absent state establishes a new baseline. Live state continuation was verified at cutover.
 
 The named state GET is an API/RBAC correction, **not expanded permissions**: a field-selected ConfigMap LIST still needs
 `list`, whereas the existing Role grants only `get`/`patch` on `notification-state`. Pending copies, notice keys, wording,

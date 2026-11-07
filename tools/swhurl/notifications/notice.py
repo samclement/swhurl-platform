@@ -1,22 +1,19 @@
 """A notice: one message for a person, and the senders that carry it.
 
-Every sender in the tooling (the checker, the notify service, the host heartbeat) builds a
-``Notice`` and hands it to a sender: ``Ntfy`` over HTTP, ``Recorded`` in tests. The Flux Alert and
-ClickStack's webhooks post to ntfy themselves, from templates of their own (platform/alerts,
-clickstack_ntfy.py).
+The host heartbeat builds a ``Notice`` and hands it to a sender: ``Ntfy`` over HTTP,
+``Recorded`` in tests. Dashboard tooling shares the topic reader. The checker and notify
+service are Go; Flux Alert and ClickStack's webhooks post to ntfy themselves, from
+templates of their own (platform/alerts, clickstack_ntfy.py).
 """
 from __future__ import annotations
 
 import base64
 import binascii
-import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from swhurl import interface
 from swhurl.run import CommandError, Runner
 
 from .errors import NotificationError
@@ -127,24 +124,3 @@ def platform_topic(runner: Runner, environ: Mapping[str, str] | None = None) -> 
     runner.add_secret(address)
     runner.add_secret(ntfy_target(address)[1])
     return address
-
-
-def forward(notice: Notice, app: str, env: str, key: str, *, transport: httpx.BaseTransport | None = None) -> None:
-    """Hand a notice about an app to the notify service, which sends it to the channels of the app's team.
-    The checker proves who it is with its service-account token for the audience ``notify``."""
-    import httpx
-    url = os.environ.get(interface.NOTIFY_VARIABLE, '').rstrip('/')
-    if not url:
-        raise NotificationError(f'{interface.NOTIFY_VARIABLE} is not set')
-    try:
-        token = Path(os.environ.get(interface.NOTIFY_TOKEN_VARIABLE, f'{interface.TOKENS_MOUNT}/notify/token')).read_text().strip()
-    except OSError:
-        raise NotificationError('no token file for the notify service') from None
-    try:
-        with httpx.Client(transport=transport, timeout=5) as client:
-            response = client.post(f'{url}/v1/notify', json=notice.to_notify_request(app, env, key),
-                                   headers={'Authorization': f'Bearer {token}'})
-    except httpx.HTTPError:
-        raise NotificationError('notify service unreachable') from None  # the exception can carry the token
-    if response.status_code != 202:
-        raise NotificationError(f'notify service answered {response.status_code}')

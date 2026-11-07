@@ -1350,13 +1350,13 @@ version-1 outbox. The [status page](v2-status.md#remaining-work) names the next 
 ## 13. The notification checker in Go (approved 7 November 2026)
 
 The operator approved porting the [notification checker](services.md#alerts) (`console/console-notifications`, every
-minute, `python -m swhurl notifications-check`) to `swhurl-v2 notifications-check`, run from the console image it
-already uses. One pass reads the Flux units, HelmReleases, workloads, pods and lifecycle Events, decides lifecycle
+minute) to `swhurl-v2 notifications-check`, run from the console image it already uses. The Python checker
+is retired after [live lifecycle acceptance](current-state.md#notification-checker-lifecycle-acceptance-and-python-retirement-7-november-2026). One pass reads the Flux units, HelmReleases, workloads, pods and lifecycle Events, decides lifecycle
 notices (deployed, failed, rolled back, uninstalled) and health incidents (unhealthy, stalled, recovered, hourly
 reminders), and delivers them to the platform topic, with a copy for the notify service when the notice is about an
 app. **Its state document and its wire contracts stay as they are**; everything else is v2's design.
 
-**Kept exactly** (each case of `tests/test_notifications.py` that the port keeps is a Go test, time an argument):
+**Kept exactly** (each retained case of the retired Python tests has [Go coverage](../v2/incident/testdata/README.md#all-42-legacy-cases), time an argument):
 
 - **The state:** `console/notification-state` key `state.json`, version 1, the same shape (`started`,
   `last_success`, `instances`, `seen`, `pending`, `monitor`, `notify_service`) and the same notice keys, so Go
@@ -1425,16 +1425,17 @@ app. **Its state document and its wire contracts stay as they are**; everything 
    Acceptance: the first Go pass reads the live state and sends nothing it already sent; scheduled passes succeed;
    `make verify-platform` stays clean. **Acceptance-plan correction:** `make live-test-lifecycle` uses a raw
    Deployment/PVC, not a HelmRelease or a discoverable app path, so it cannot prove checker lifecycle notices.
-   Installing/removing the existing no-data `smoke-worker` Helm fixture can exercise deployed/uninstalled
-   platform notices and a team copy; this separate live fixture action needs confirmation before execution.
-   Keep team-channel readback distinct from acceptance by the notify service, and report any namespace-removal
-   race rather than claiming an uninstall team copy was delivered. **Go is now scheduled and verified:**
-   [live evidence](current-state.md#notification-checker-scheduled-in-go-7-november-2026); fixture/readback acceptance
-   remains open. Python stays available until that gate.
-3. **Retirement:** `notifications/__init__.py`'s `check` and `main`, `evaluate.py`, `state.py`, `delivery.py`,
-   `notice.forward`, `tests/test_notifications.py` and the command's Python entry. `notice.py` (`Notice`, `Ntfy`,
-   `platform_topic`) and `errors.py` stay for the host heartbeat, `clickstack_ntfy.py` and `dashboards.py`, which
-   leave with their own rows.
+   The operator separately approved installation/removal of only the existing no-data `smoke-worker` Helm fixture.
+   Deployed and uninstalled notices were read back on both the platform topic and the team's distinct channel;
+   notify-service acceptance and delivery logs corroborate each team copy. The fixture is removed; no namespace-removal
+   race prevented this test's team copy. [Scheduled cutover](current-state.md#notification-checker-scheduled-in-go-7-november-2026)
+   and [lifecycle acceptance](current-state.md#notification-checker-lifecycle-acceptance-and-python-retirement-7-november-2026)
+   are recorded separately. Phone display, rollback and timed health/recovery are not claimed by this fixture.
+3. **Retirement:** removed `notifications/__init__.py`'s `check` and `main`, `evaluate.py`, `state.py`, `delivery.py`,
+   `notice.forward` and `tests/test_notifications.py`; the command has no Python implementation. `notice.py` (`Notice`,
+   `Ntfy`, `platform_topic`) and `errors.py` stay for the host heartbeat, `clickstack_ntfy.py` and `dashboards.py`, which
+   leave with their own rows. The Go case map, captured goldens, wiring and failure/restart tests remain. A Python
+   checker rollback requires both a pre-retirement image and its former command, not a command-only change.
 
 **Not in this slice:** the host heartbeat, the dashboard reconciler, new alerts (backups, certificates, disk), and
 any change to what raises a notice.

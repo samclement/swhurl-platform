@@ -72,7 +72,8 @@ const usage = `usage:
       [--description TEXT] [--rename NEW] [--transport ntfy]
   swhurl-v2 workstreams --repo-root DIR
   swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--scope cluster] [--source NAME] [--json]
-  swhurl-v2 verify --scope platform --kubeconfig KUBECONFIG.json --root DIR [--console-tag TAG] [--source NAME] [--json]
+  swhurl-v2 verify --scope platform --kubeconfig KUBECONFIG.json --root DIR [--console-tag TAG]
+      [--heartbeat FILE] [--source NAME] [--json]
   swhurl-v2 notify-serve [--listen ADDR]
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
@@ -143,7 +144,10 @@ the environment, and a backup is too old after BACKUP_MAX_AGE_HOURS (default 26)
 (the credentials, the tag) is a bad entry saying it was not supplied. It prints each check's section and [OK], [WARN]
 or [BAD] lines, or with --json the v2-platform-checks document (version 1). A failed read is a bad entry, never
 absence. The exit status is 1 when an entry is bad, after the report is printed, and 2 for a usage error, an unusable
-credential or a request an adapter refuses. make verify-platform runs the platform scope before the two remaining host checks.
+credential or a request an adapter refuses. The platform scope also judges the host: the Flux controllers against
+clusters/home/flux-system/install/flux.json in the checkout, and the notification heartbeat timer and service from
+--heartbeat FILE, the output of systemctl show --timestamp=unix for both units, which make verify-platform writes.
+The cluster scope reads neither, and refuses both flags.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
@@ -429,7 +433,7 @@ type request struct {
 	reviewedDigestSet                                  bool
 	command, instance, release, expected, profile, out string
 	revision, kubeconfig, source                       string
-	scope, root, consoleTag                            string
+	scope, root, consoleTag, heartbeat                 string
 	region                                             string
 	from                                               string
 	archive                                            bool
@@ -648,6 +652,7 @@ func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) boo
 		flags.Var(&once{value: &r.scope}, "scope", "cluster (the default) or platform")
 		flags.Var(&once{value: &r.root}, "root", "the checkout the platform scope compares the cluster with")
 		flags.Var(&once{value: &r.consoleTag}, "console-tag", "the checkout's console content tag (platform scope)")
+		flags.Var(&once{value: &r.heartbeat}, "heartbeat", "systemctl show output for the host heartbeat units (platform scope)")
 	case "restore":
 		r.registerLive(flags)
 		flags.Var(&once{value: &r.from}, "from", "the archive to restore (default: the newest)")
@@ -831,7 +836,7 @@ func (r *request) statusNamed() []string {
 func (r *request) verifyNamed() []string {
 	switch r.scope {
 	case "", "cluster":
-		if (r.kubeconfig != "") == r.inCluster || r.root != "" || r.consoleTag != "" {
+		if (r.kubeconfig != "") == r.inCluster || r.root != "" || r.consoleTag != "" || r.heartbeat != "" {
 			return []string{""}
 		}
 		return []string{}

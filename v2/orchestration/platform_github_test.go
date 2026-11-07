@@ -70,7 +70,7 @@ func TestGitHubMissingOperatorTokenDoesNotSkipOtherReads(t *testing.T) {
 	inputs, fake := gitHubInputs(t)
 	inputs.GitHubToken = ""
 	report, err := PlatformAll(context.Background(), inputs)
-	if err != nil || report.Passed() || len(report.Checks) != 22 {
+	if err != nil || report.Passed() || len(report.Checks) != 24 {
 		t.Fatalf("%+v %v", report, err)
 	}
 	for _, check := range report.Checks[15:17] {

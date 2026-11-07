@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -177,8 +180,11 @@ func platformReport(t *testing.T, stdout string) map[string][]struct{ Level, Mes
 		checks[check.Name] = check.Entries
 		names = append(names, check.Name)
 	}
-	if strings.Join(names, " ") != "flux-units ingress alerts notify-service dashboards notifications image-automation "+
-		"isolation signing-keys events egress channels backups sqlite-backups console push-webhook image-webhooks console-token runtime-secrets ingestion-key registration retention" {
+	catalogued := []string{}
+	for _, entry := range observe.PlatformCatalogue {
+		catalogued = append(catalogued, entry.Name)
+	}
+	if strings.Join(names, " ") != strings.Join(catalogued, " ") {
 		t.Fatalf("the checks and their order: %v", names)
 	}
 	return checks
@@ -263,6 +269,7 @@ func TestVerifyScopeUsage(t *testing.T) {
 		{"verify", "--scope", "platform", "--root", "."},
 		{"verify", "--kubeconfig", "k.json", "--root", "."},
 		{"verify", "--scope", "cluster", "--kubeconfig", "k.json", "--console-tag", "src-abc"},
+		{"verify", "--kubeconfig", "k.json", "--heartbeat", "heartbeat.txt"},
 		{"verify", "--scope", "everything", "--kubeconfig", "k.json"},
 		{"verify", "--scope", "platform", "--scope", "platform", "--kubeconfig", "k.json", "--root", "."},
 	} {
@@ -353,5 +360,94 @@ func TestVerifyPlatformReportsAllPodGroupsWhenInputsAreUnavailable(t *testing.T)
 	}
 	if executed != 3 {
 		t.Fatalf("expected three independent ClickHouse queries, got %d", executed)
+	}
+}
+
+// heartbeatFile is systemctl show --timestamp=unix's output for both units, with the service's last success at age.
+func heartbeatFile(t *testing.T, active string, age time.Duration) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "heartbeat.txt")
+	text := "Id=swhurl-notification-heartbeat.timer\nActiveState=" + active + "\n\n" +
+		"Id=swhurl-notification-heartbeat.service\nResult=success\nExecMainStatus=0\nExecMainExitTimestamp=@" +
+		strconv.FormatInt(time.Now().Add(-age).Unix(), 10) + "\n"
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// The platform scope judges the host: the heartbeat file the recipe wrote, and the Flux controllers against the
+// checkout's flux.json — which this test server has none of, so each one warns rather than passing unread.
+func TestVerifyPlatformJudgesTheHostFacts(t *testing.T) {
+	server, _ := platformAPI(t)
+	status, stdout, diagnostic, _ := verifyPlatform(t, server, "--heartbeat", heartbeatFile(t, "active", 5*time.Minute))
+	if status != 1 {
+		t.Fatalf("exit %d: %s", status, diagnostic)
+	}
+	checks := platformReport(t, stdout)
+	if beat := checks["notification-heartbeat"]; len(beat) != 1 || beat[0].Level != "ok" ||
+		beat[0].Message != "host notification heartbeat timer is active and its service succeeded within 15 minutes" {
+		t.Fatalf("heartbeat %+v", beat)
+	}
+	controllers := checks["flux-controllers"]
+	if len(controllers) != 5 {
+		t.Fatalf("flux-controllers %+v", controllers)
+	}
+	for _, entry := range controllers {
+		if entry.Level != "warn" || !strings.HasSuffix(entry.Message, "is not installed (run: make flux-install)") {
+			t.Fatalf("flux-controllers %+v", entry)
+		}
+	}
+}
+
+// Host facts that were not supplied, or a file this run cannot read, are bad entries that name the fault; neither
+// stops the rest of the report.
+func TestVerifyPlatformHostFactsMissingOrUnreadable(t *testing.T) {
+	for _, test := range []struct{ name, path, want string }{
+		{"not supplied", "", "host heartbeat facts not supplied"},
+		{"unreadable", filepath.Join(t.TempDir(), "absent.txt"),
+			"cannot read the host notification heartbeat (systemctl status swhurl-notification-heartbeat.timer)"},
+		{"inactive timer", heartbeatFile(t, "inactive", time.Minute),
+			"swhurl-notification-heartbeat.timer is not active, so nothing on this host watches the notification checker: " +
+				"make host-heartbeat in your own terminal"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server, _ := platformAPI(t)
+			extra := []string{}
+			if test.path != "" {
+				extra = []string{"--heartbeat", test.path}
+			}
+			status, stdout, diagnostic, _ := verifyPlatform(t, server, extra...)
+			if status != 1 {
+				t.Fatalf("exit %d: %s", status, diagnostic)
+			}
+			checks := platformReport(t, stdout)
+			beat := checks["notification-heartbeat"]
+			if len(beat) != 1 || beat[0].Level != "bad" || beat[0].Message != test.want {
+				t.Fatalf("%+v", beat)
+			}
+			if len(checks["retention"]) == 0 {
+				t.Fatal("a host fact stopped the cluster's own checks")
+			}
+		})
+	}
+}
+
+// The cluster scope reads the cluster and nothing else: no checkout file, no host facts, and no --root or
+// --heartbeat to give it any.
+func TestVerifyClusterScopeReadsNoFile(t *testing.T) {
+	server, paths := platformAPI(t)
+	c := cli{inCluster: podServiceAccount(), readFile: func(path string) ([]byte, error) {
+		if !strings.HasSuffix(path, "kubeconfig.json") {
+			t.Errorf("the cluster scope read %s", path)
+		}
+		return readInput(path)
+	}}
+	var out, diagnostic bytes.Buffer
+	if status := runWith([]string{"verify", "--kubeconfig", kubeconfig(t, server), "--json"}, &out, &diagnostic, c); status != 0 {
+		t.Fatalf("exit %d: %s", status, diagnostic.String())
+	}
+	if len(*paths) != 8 || !strings.Contains(out.String(), `"flux-units"`) || strings.Contains(out.String(), `"flux-controllers"`) {
+		t.Fatalf("paths %v: %s", *paths, out.String())
 	}
 }

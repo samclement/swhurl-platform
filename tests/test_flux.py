@@ -5,7 +5,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from swhurl import flux
+from swhurl import ROOT, flux, yamlio
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -133,11 +133,11 @@ class InstallTests(unittest.TestCase):
         code, text = self.install(runner)
         self.assertEqual(code, 0, text)
         self.assertEqual(seen['components'], '# exported components\n')
-        self.assertEqual(seen['files'], ['gotk-components.yaml', 'kustomization.yaml'])
+        self.assertEqual(seen['files'], ['flux.json', 'gotk-components.yaml', 'kustomization.yaml'])
         apply = next(c for c in runner.calls if c[:2] == ('kubectl', 'apply'))
         self.assertEqual(apply, ('kubectl', 'apply', '--server-side', '--field-manager=flux', '--force-conflicts',
                                  '-f', '-'))
-        self.assertEqual(sum('rollout' in c for c in runner.calls), len(flux.CONTROLLERS))
+        self.assertEqual(sum('rollout' in c for c in runner.calls), len(flux.controllers()))
         export = next(c for c in runner.calls if c[:3] == ('flux', 'install', '--export'))
         self.assertIn('--components-extra=image-reflector-controller', export)
         # A component the cluster no longer runs is deleted after the rollouts: applying never prunes.
@@ -166,10 +166,20 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(code, 0, text)
         self.assertIn('+ --requeue-dependency=5s', text)
         self.assertFalse([c for c in runner.calls if c[:2] == ('kubectl', 'apply') or 'rollout' in c])
-        self.assertEqual(len(runner.planned), 1 + len(flux.CONTROLLERS) + 2 * len(flux.REMOVED_COMPONENTS))  # apply, rollouts, deletes
+        self.assertEqual(len(runner.planned), 1 + len(flux.controllers()) + 2 * len(flux.removed_components()))  # apply, rollouts, deletes
 
-    def test_required_args_come_from_the_patch_files(self):
+    def test_required_args_come_from_flux_json(self):
         self.assertEqual(flux.required_args(), {'kustomize-controller': ['--requeue-dependency=5s']})
+
+    def test_flux_json_states_the_arguments_the_patches_add(self):
+        """flux.json is the one source of the settings; the kustomize patches must add exactly those arguments."""
+        kustomization = yamlio.load((ROOT / flux.INSTALL / 'kustomization.yaml').read_text())
+        patched: dict[str, list[str]] = {}
+        for patch in kustomization.get('patches') or []:
+            for op in yamlio.load(patch['patch']) or []:
+                if op.get('op') == 'add' and op.get('path', '').endswith('/args/-'):
+                    patched.setdefault(patch['target']['name'], []).append(op['value'])
+        self.assertEqual(patched, flux.required_args())
 
 
 if __name__ == '__main__':

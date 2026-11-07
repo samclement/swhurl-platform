@@ -127,7 +127,7 @@ func TestPodCheckFailuresNeverSerializeCredentialMaterial(t *testing.T) {
 				}
 			}
 			if test.name == "collector absent" || test.name == "invalid base64 or denied" {
-				for _, check := range report.Checks[18:20] {
+				for _, check := range groupsNamed(report, "runtime-secrets", "ingestion-key") {
 					if len(check.Entries) != 1 || check.Entries[0].Level != observe.CheckBad {
 						t.Fatal("both ingestion groups must fail")
 					}
@@ -210,8 +210,8 @@ func TestMongoVolumeMissingAndFailedReadsRemainBad(t *testing.T) {
 			if err := readRetention(context.Background(), inputs, &scope); err != nil {
 				t.Fatal(err)
 			}
-			report := observe.PlatformScopeChecks(observe.PlatformEvidence{}, scope)
-			entries := report[len(report)-1].Entries
+			report := observe.PlatformReport{Checks: observe.PlatformScopeChecks(observe.PlatformEvidence{}, scope)}
+			entries := groupsNamed(report, "retention")[0].Entries
 			if len(entries) != 4 || entries[3].Level != observe.CheckBad || len(executor.Requests) != 3 {
 				t.Fatal("retention failed to report volume independently")
 			}
@@ -220,4 +220,18 @@ func TestMongoVolumeMissingAndFailedReadsRemainBad(t *testing.T) {
 			}
 		})
 	}
+}
+
+// groupsNamed are the report's groups with these names, in the order asked for: a group is found by its name, never
+// by its position, so a new group elsewhere in the catalogue cannot silently change what a test reads.
+func groupsNamed(report observe.PlatformReport, names ...string) []observe.PlatformCheck {
+	found := []observe.PlatformCheck{}
+	for _, name := range names {
+		for _, check := range report.Checks {
+			if check.Name == name {
+				found = append(found, check)
+			}
+		}
+	}
+	return found
 }

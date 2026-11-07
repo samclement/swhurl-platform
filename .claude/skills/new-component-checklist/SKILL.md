@@ -15,7 +15,7 @@ Run through this when you plan the change, and again before reporting it done. I
 | Default credentials | Is there an admin login or key? How is it set without a manual UI step, and where is it stored? | SOPS Secret, `docs/services.md` |
 | Credential shape | Is each key encoded once (`stringData`) and used for one purpose only? | `make check-secrets` |
 | Logs and metrics | Do its logs reach ClickStack, including host timers and one-shot jobs? | `platform/otel`, `docs/services.md` |
-| Health check | Does `make verify-platform` fail when it is broken or stale? | `tools/swhurl/verify.py` |
+| Health check | Does `make verify-platform` fail when it is broken or stale? | `v2/observe/platform_scope.go`, `v2/observe/platform_catalogue.go` |
 | Backups | Is its data in a backup, and has a restore been exercised? | `docs/operations.md#backups-and-recovery`, `docs/current-state.md` "Not exercised" |
 | Restarts on change | Does a Secret or config change restart it (Reloader namespace, annotation)? | `platform/reloader` |
 | Failure behaviour | Do scripts stop on the first failure, including `sudo` with no terminal? Is that tested? | `host/*.sh`, `tests/` |

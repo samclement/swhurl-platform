@@ -70,9 +70,10 @@ func (c cli) verifyCluster(inputs orchestration.PlatformInputs) (observe.Platfor
 
 // verifyPlatform runs every check: the connection's other ports, the anonymous registry, the object store with the
 // operator's credentials when they are set, GitHub with explicit operator/console credentials, the checkout
-// at --root and the tag the caller supplied.
+// at --root, and the tag and host heartbeat facts the caller supplied.
 func (c cli) verifyPlatform(r request, connection kube.Connection, cluster orchestration.PlatformInputs) (observe.PlatformReport, int) {
-	inputs := orchestration.PlatformAllInputs{PlatformInputs: cluster, Registries: c.registries, ConsoleTag: r.consoleTag}
+	inputs := orchestration.PlatformAllInputs{PlatformInputs: cluster, Registries: c.registries, ConsoleTag: r.consoleTag,
+		Heartbeat: c.heartbeatFacts(r.heartbeat)}
 	inputs.GitHub, inputs.GitHubToken = c.github, strings.TrimSpace(os.Getenv("GH_TOKEN"))
 	if inputs.GitHub == nil {
 		inputs.GitHub = github.New(nil)
@@ -104,6 +105,19 @@ func (c cli) verifyPlatform(r request, connection kube.Connection, cluster orche
 		return report, fail(c.diagnostic, err)
 	}
 	return report, 0
+}
+
+// heartbeatFacts are the host heartbeat units as the caller read them: no --heartbeat is facts not supplied, and a
+// file this run cannot read is facts it could not read, which the check reports. Neither stops the other checks.
+func (c cli) heartbeatFacts(path string) observe.HeartbeatEvidence {
+	if path == "" {
+		return observe.HeartbeatEvidence{}
+	}
+	data, err := c.readFile(path)
+	if err != nil {
+		return observe.HeartbeatEvidence{Supplied: true}
+	}
+	return observe.HeartbeatEvidence{Supplied: true, Text: string(data)}
 }
 
 // backupMaxAge is how old the newest complete backup may be: BACKUP_MAX_AGE_HOURS, or 26 hours.

@@ -1,7 +1,10 @@
 """check-repo reports every problem in one run, offline, with FakeRunner."""
 import io
+import os
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -112,6 +115,56 @@ class SubstitutionTests(unittest.TestCase):
         manifests = self.render(self.SUBSTITUTES, 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x}\ndata: {host: "a.${BASE_DOMAIN}"}\n')
         self.assertIn('a.example.test', manifests)
         self.assertNotIn('${BASE_DOMAIN}', manifests)
+
+
+class CheckConfigTests(unittest.TestCase):
+    """check-repo's required Secrets and settings: every branch, on a minimal checkout."""
+
+    def make_root(self, *, secret=True, settings='  BASE_DOMAIN: example.test\n  CERT_ISSUER: letsencrypt-prod\n'):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        (root / 'clusters/home/flux-system/sources').mkdir(parents=True)
+        (root / 'clusters/home/flux-system/kustomizations.yaml').write_text('')
+        (root / 'clusters/home/platform.yaml').write_text(
+            'apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata: {name: homelab-svc}\n'
+            'spec: {path: ./svc, decryption: {provider: sops}}\n')
+        (root / 'svc').mkdir()
+        if secret:
+            (root / 'svc/secret.sops.yaml').write_text('kind: Secret\n')
+        (root / platform.SETTINGS).write_text(
+            'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: platform-settings}\ndata:\n' + settings)
+        return root
+
+    def run_config(self, root=None):
+        out = io.StringIO()
+        try:
+            validate.check_config(Report(out), **({'root': root} if root else {}))
+        except validate.ValidationError as error:
+            return 1, str(error)
+        return 0, out.getvalue()
+
+    def test_passes_on_this_repo(self):
+        self.assertEqual(self.run_config()[0], 0)
+
+    def test_passes_on_a_minimal_repo(self):
+        self.assertEqual(self.run_config(self.make_root())[0], 0)
+
+    def test_required_secrets_come_from_decrypting_units(self):
+        code, out = self.run_config(self.make_root(secret=False))
+        self.assertEqual(code, 1)
+        self.assertIn('homelab-svc decrypts SOPS but its path has no *.sops.yaml Secret', out)
+
+    def test_missing_settings_fail(self):
+        code, out = self.run_config(self.make_root(settings='  CERT_ISSUER: letsencrypt-prod\n'))
+        self.assertEqual(code, 1)
+        self.assertIn('BASE_DOMAIN missing', out)
+
+    def test_the_command_loads_with_the_system_interpreter(self):
+        """make runs check-repo without uv: no module it imports may need httpx or ruamel."""
+        code = "import sys; sys.modules['httpx'] = sys.modules['ruamel'] = None; import swhurl.validate"
+        loaded = subprocess.run([sys.executable, '-c', code], env=os.environ | {'PYTHONPATH': str(ROOT / 'tools')},
+                                capture_output=True, text=True)
+        self.assertEqual(loaded.returncode, 0, loaded.stderr)
 
 
 if __name__ == '__main__':

@@ -59,7 +59,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 - `platform-certs-*`, `app-new`, `team-add`, `team-edit`, `team-remove`, `team-channel` and `console-image` only edit files, and so do v2's `edit`, `promote`, `remove` and `team`: commit and push before reconciling. After changing `tools/`, `images/console/` or the lock file, Validate's deploy job deploys the console itself with a bot commit to `main` ([console](docs/console.md#deploy-a-new-console)): `git pull --rebase` before the next push; `make console-image` is the manual fallback. `make verify-platform` warns until the new image runs.
 - `host-dns` and `host-heartbeat` install system units with `sudo`: the operator runs them in their own terminal. The units run scripts from this checkout, so only template changes need a reinstall.
 - Root units in `clusters/home/flux-system/kustomizations.yaml` are not reconciled by Flux: apply changes with `make flux-bootstrap`.
-- Flux controllers come from `make flux-install` (`FLUX_VERSION` in `tools/swhurl/flux.py`, patches in `clusters/home/flux-system/install`); never plain `flux install`, which drops the patches.
+- Flux controllers come from `make flux-install` (version, extra components and controller arguments in `clusters/home/flux-system/install/flux.json`, patches beside it; `swhurl-v2 verify` checks the cluster against the same file); never plain `flux install`, which drops the patches.
 
 ## Lessons not obvious from the code
 

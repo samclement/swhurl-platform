@@ -1,10 +1,11 @@
 """Flux itself: install its controllers with our settings, and wait for its units.
 
 ``flux-install`` (``make flux-install``) renders ``flux install --export`` at the
-version pinned here (``FLUX_VERSION``), applies the patches in
-``clusters/home/flux-system/install`` with kustomize, and applies the result
-server-side as the ``flux`` field manager, like ``flux install`` does. A plain
-``flux install`` would drop the patches; ``verify-platform`` warns if it has.
+version pinned in ``clusters/home/flux-system/install/flux.json``, applies the
+patches in ``clusters/home/flux-system/install`` with kustomize, and applies the
+result server-side as the ``flux`` field manager, like ``flux install`` does. A plain
+``flux install`` would drop the patches; ``swhurl-v2 verify`` warns if it has, reading
+the same ``flux.json``.
 
 ``flux-wait`` (``make flux-reconcile``) waits for every unit to apply the current
 Git revision. ``cluster-stack`` does not wait for the units it defines, so a slow or failing
@@ -17,6 +18,8 @@ skipped. Read-only.
 from __future__ import annotations
 
 import argparse
+import functools
+import json
 import shutil
 import sys
 import tempfile
@@ -24,23 +27,47 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from swhurl import ROOT, yamlio
+from swhurl import ROOT
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 SOURCE = 'swhurl-platform'
 INSTALL = 'clusters/home/flux-system/install'
-# The Flux release the cluster runs: make flux-install installs it and refuses any other flux CLI.
-# Renovate does not see it; to upgrade, see docs/operations.md (chart and tool updates).
-FLUX_VERSION = '2.8.1'
-# Controllers beyond flux install's default four: the image reflector picks each app's newest staging
-# image, and its ImagePolicy report starts the Deploy workflow (docs/apps.md#deploy-a-new-image).
-EXTRA_COMPONENTS = ('image-reflector-controller',)
-# Components this cluster ran once and no longer does: make flux-install deletes what flux install
-# labelled with them (its Deployment, ServiceAccount and CRDs), since applying never prunes.
-REMOVED_COMPONENTS = ('image-automation-controller',)
-CONTROLLERS = ('source-controller', 'kustomize-controller', 'helm-controller', 'notification-controller',
-               *EXTRA_COMPONENTS)
+# The Flux release the cluster runs, the controllers beyond the default four and the arguments the install
+# patches add: one JSON file, read here and by swhurl-v2 verify's flux-controllers check. Renovate does not
+# see it; to upgrade, see docs/operations.md (chart and tool updates).
+SETTINGS = INSTALL + '/flux.json'
+# flux install's own components, which every installation has.
+DEFAULT_COMPONENTS = ('source-controller', 'kustomize-controller', 'helm-controller', 'notification-controller')
+
+
+@functools.cache
+def settings(root: Path = ROOT) -> dict:
+    """What ``flux.json`` states: the version, the extra and removed components and the controller arguments.
+
+    Read when a function needs it, never when this module is imported: the console imports ``swhurl.flux`` for
+    ``WAITING_REASONS`` and its image carries no checkout (``images/console/Dockerfile``).
+    """
+    return json.loads((root / SETTINGS).read_text())
+
+
+def extra_components(root: Path = ROOT) -> tuple[str, ...]:
+    """Controllers beyond flux install's default four: the image reflector picks each app's newest staging image,
+    and its ImagePolicy report starts the Deploy workflow (docs/apps.md#deploy-a-new-image)."""
+    return tuple(settings(root)['extraComponents'])
+
+
+def removed_components(root: Path = ROOT) -> tuple[str, ...]:
+    """Components this cluster ran once and no longer does: make flux-install deletes what flux install labelled
+    with them (its Deployment, ServiceAccount and CRDs), since applying never prunes."""
+    return tuple(settings(root)['removedComponents'])
+
+
+def controllers(root: Path = ROOT) -> tuple[str, ...]:
+    """Every Deployment flux-system runs: flux install's own components and the extra ones."""
+    return (*DEFAULT_COMPONENTS, *extra_components(root))
+
+
 KUSTOMIZATIONS = 'kustomizations.kustomize.toolkit.fluxcd.io'
 # Ready=False reasons that mean "not yet", not "failed at this revision".
 WAITING_REASONS = {'DependencyNotReady', 'Progressing', 'ProgressingWithRetry'}
@@ -138,30 +165,23 @@ class InstallError(Exception):
 
 
 def pinned_version(root: Path = ROOT) -> str:
-    """The Flux version the cluster must run (``FLUX_VERSION``)."""
-    return FLUX_VERSION
+    """The Flux version the cluster must run (``flux.json``'s ``version``)."""
+    return settings(root)['version']
 
 
 def required_args(root: Path = ROOT) -> dict[str, list[str]]:
-    """Controller arguments the install patches add, by Deployment name."""
-    kustomization = yamlio.load((root / INSTALL / 'kustomization.yaml').read_text())
-    required: dict[str, list[str]] = {}
-    for patch in kustomization.get('patches') or []:
-        name = patch['target']['name']
-        for op in yamlio.load(patch['patch']) or []:
-            if op.get('op') == 'add' and op.get('path', '').endswith('/args/-'):
-                required.setdefault(name, []).append(op['value'])
-    return required
+    """Controller arguments the install patches add, by Deployment name (``flux.json``'s ``args``)."""
+    return {name: list(args) for name, args in settings(root)['args'].items()}
 
 
 def render(runner: Runner, root: Path = ROOT) -> str:
     version = pinned_version(root)
     client = runner.output(['flux', 'version', '--client'])
     if f'v{version}' not in client.split():
-        raise InstallError(f'flux CLI is {client.strip() or "unknown"}, but tools/swhurl/flux.py pins {version}; '
-                           f'install flux {version} (or bump FLUX_VERSION to upgrade)')
+        raise InstallError(f'flux CLI is {client.strip() or "unknown"}, but {SETTINGS} pins {version}; '
+                           f'install flux {version} (or bump its version to upgrade)')
     components = runner.output(['flux', 'install', '--export', '--namespace', 'flux-system',
-                                f'--components-extra={",".join(EXTRA_COMPONENTS)}'])
+                                f'--components-extra={",".join(extra_components(root))}'])
     with tempfile.TemporaryDirectory() as tmp:
         shutil.copytree(root / INSTALL, tmp, dirs_exist_ok=True)
         (Path(tmp) / 'gotk-components.yaml').write_text(components)
@@ -184,10 +204,10 @@ def install_main(argv: list[str] | None = None, runner: Runner | None = None, ro
             print(diff.stdout or '[OK] no changes')
         runner.run(['kubectl', 'apply', '--server-side', '--field-manager=flux', '--force-conflicts', '-f', '-'],
                    input=rendered, mutating=True)
-        for name in CONTROLLERS:
+        for name in controllers(root):
             runner.run(['kubectl', '-n', 'flux-system', 'rollout', 'status', f'deployment/{name}', '--timeout=5m'],
                        mutating=True)
-        for name in REMOVED_COMPONENTS:
+        for name in removed_components(root):
             label = f'app.kubernetes.io/component={name},app.kubernetes.io/part-of=flux'
             runner.run(['kubectl', '-n', 'flux-system', 'delete', 'deployment,serviceaccount', '-l', label,
                         '--ignore-not-found'], mutating=True)
@@ -198,30 +218,3 @@ def install_main(argv: list[str] | None = None, runner: Runner | None = None, ro
     except (InstallError, CommandError, OSError, KeyError, TypeError) as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 1
-
-
-def check_controllers(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """The controllers run the pinned version with the settings in Git (a plain `flux install` drops them)."""
-    report.section('Flux Controllers')
-    version = pinned_version(root)
-    required = required_args(root)
-    for name in CONTROLLERS:
-        args = required.get(name, [])
-        try:
-            deployment = runner.json(['kubectl', '-n', 'flux-system', 'get', 'deployment', name, '-o', 'json'])
-        except CommandError:
-            report.warn(f'{name} is not installed (run: make flux-install)')
-            continue
-        try:
-            live = deployment['metadata'].get('labels', {}).get('app.kubernetes.io/version', '')
-            running = [a for c in deployment['spec']['template']['spec']['containers'] for a in c.get('args') or []]
-        except (KeyError, TypeError):
-            report.bad(f'cannot read flux-system/{name} (kubectl -n flux-system get deploy {name})')
-            continue
-        missing = [a for a in args if a not in running]
-        if missing or live != f'v{version}':
-            expected = f'v{version}' + (f' with {", ".join(args)}' if args else '')
-            report.warn(f'{name} is {live or "unknown"}' + (f' with {len(args) - len(missing)}/{len(args)} Git settings'
-                        if args else '') + f'; expected {expected} (run: make flux-install)')
-        else:
-            report.ok(f'{name} {live}' + (' with the settings in Git' if args else ''))

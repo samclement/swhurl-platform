@@ -66,7 +66,8 @@ func scopeCluster(t *testing.T) (*kubetest.Fake, PlatformAllInputs) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkout := Checkout{Profile: profile, Releases: map[string][]byte{"hello/staging": release, "hello/prod": database},
+	checkout := Checkout{Profile: profile, FluxSettings: []byte(`{"version":"2.8.1","extraComponents":["image-reflector-controller"]}`),
+		Releases: map[string][]byte{"hello/staging": release, "hello/prod": database},
 		Compiled: []observe.CompiledInstance{{Application: "hello", Environment: "staging", Files: map[string][]byte{
 			"namespace.json": []byte(`{"kind":"Namespace","metadata":{"name":"hello-staging"}}`),
 			"stream.json":    []byte(`{"kind":"Stream","metadata":{"name":"staging-hello","namespace":"hello-staging"}}`)}}}}
@@ -96,7 +97,7 @@ func TestPlatformAllReadsEveryCheck(t *testing.T) {
 	for _, check := range report.Checks {
 		names = append(names, check.Name)
 	}
-	if len(report.Checks) != 22 || names[6] != "image-automation" || names[14] != "console" || report.Source != "test" {
+	if len(report.Checks) != 24 || names[6] != "image-automation" || names[14] != "console" || report.Source != "test" {
 		t.Fatalf("%v", names)
 	}
 	reads := []string{}
@@ -104,7 +105,9 @@ func TestPlatformAllReadsEveryCheck(t *testing.T) {
 		reads = append(reads, ref.Namespace+"/"+ref.Name)
 	}
 	want := []string{"kube-system/traefik", "notify/notify", "console/console", "console/console-dashboards",
-		"console/console-notifications", "messaging/nats", "messaging/nats-controller", "egress/egress", "observability/backup-mongodb", "flux-system/swhurl-platform", "flux-system/github", "flux-system/app-images", "observability/clickstack-app", "observability/data-volume-clickstack-mongodb-0"}
+		"console/console-notifications", "messaging/nats", "messaging/nats-controller", "egress/egress", "observability/backup-mongodb", "flux-system/swhurl-platform", "flux-system/github", "flux-system/app-images", "observability/clickstack-app", "observability/data-volume-clickstack-mongodb-0",
+		"flux-system/source-controller", "flux-system/kustomize-controller", "flux-system/helm-controller",
+		"flux-system/notification-controller", "flux-system/image-reflector-controller"}
 	if !slices.Equal(reads, want) {
 		t.Fatalf("reads %v", reads)
 	}

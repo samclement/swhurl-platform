@@ -118,11 +118,12 @@ v2-reloader:
 v2-deploy:
 	@$(V2_BUILD); 	"$$work/swhurl-v2" deploy --records v2-records --profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json --out .
 
-# Every live platform check: swhurl-v2 verify --scope platform (the checks that read the cluster, this checkout, the
-# registry, S3 and GitHub, with the caller's kubeconfig in the throwaway folder, readable by the caller only, and removed on
-# exit), then the Python ones. AWS credentials come from the AWS CLI unless AWS_ACCESS_KEY_ID is set, and the console's
-# content tag from images/content-tag.sh. Hook listings use GH_TOKEN or gh auth token; missing inputs are BAD,
-# without stopping unrelated checks. Needs Go 1.26.0.
+# Every live platform check: swhurl-v2 verify --scope platform, which reads the cluster, this checkout, the registry,
+# S3, GitHub and the host facts this recipe supplies, with the caller's kubeconfig in the throwaway folder, readable
+# by the caller only, and removed on exit. AWS credentials come from the AWS CLI unless AWS_ACCESS_KEY_ID is set, and
+# the console's content tag from images/content-tag.sh. Hook listings use GH_TOKEN or gh auth token. The heartbeat
+# facts are systemctl's output for the two host units; a systemctl that fails leaves the file empty, which the check
+# reports. Missing inputs are BAD, without stopping unrelated checks. Needs Go 1.26.0.
 .PHONY: verify-platform
 verify-platform:
 	@$(V2_BUILD); \
@@ -133,8 +134,11 @@ verify-platform:
 	fi; \
 	if [ -z "$${GH_TOKEN:-}" ]; then GH_TOKEN=$$(gh auth token 2>/dev/null) || GH_TOKEN=; fi; \
 	export GH_TOKEN; \
-	SWHURL_V2="$$work/swhurl-v2" SWHURL_V2_KUBECONFIG="$$work/kubeconfig.json" \
-		SWHURL_V2_CONSOLE_TAG="$$(bash images/content-tag.sh console)" $(SWHURL) verify-run
+	systemctl show swhurl-notification-heartbeat.timer swhurl-notification-heartbeat.service --timestamp=unix \
+		--property=Id --property=ActiveState --property=Result --property=ExecMainStatus \
+		--property=ExecMainExitTimestamp > "$$work/heartbeat.txt" 2>/dev/null || : > "$$work/heartbeat.txt"; \
+	"$$work/swhurl-v2" verify --scope platform --kubeconfig "$$work/kubeconfig.json" --root "$(CURDIR)" \
+		--console-tag "$$(bash images/content-tag.sh console)" --heartbeat "$$work/heartbeat.txt" --source verify-platform
 
 # One instance's state from v2's records (swhurl-v2 status): what they say should run at HEAD, compared with the
 # cluster the caller's kubeconfig names. Its JSON form is written into the throwaway folder, readable by the caller

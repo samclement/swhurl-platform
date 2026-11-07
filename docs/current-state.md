@@ -2,10 +2,10 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
-## Notification checker in Go: offline implementation reviewed (7 November 2026)
+## Notification checker scheduled in Go (7 November 2026)
 
 - **Scope:** [the approved checker contract](iteration-2-plan.md#13-the-notification-checker-in-go-approved-7-november-2026),
-  step 1 only: Go implementation, retained-behaviour tests and independent review. The state document and delivery
+  Go implementation, retained-behaviour tests, independent review and scheduled cutover. The state document and delivery
   wire contracts stay version 1; the unsupported scheduled-job path and DaemonSet discovery are intentionally omitted.
 - **Boundaries:** named ConfigMap GET and key patch preserve existing state RBAC; lifecycle Events use field selectors;
   a new notify-service HTTP adapter carries team copies. Failed copies must remain in every saved checkpoint.
@@ -30,12 +30,28 @@ What has been verified on the live cluster, and when: current facts first, then 
   11 identities and zero pending notices.
 - **Image-first delivery:** pushed offline implementation `cb3e08e7`; Validate run 42356260006 passed all nine
   jobs and bot pin `49d769dd` deployed `src-f9f01a19ed9c3419`. The console is `1/1 Running`; its binary advertises
-  `notifications-check`, while the CronJob still runs Python successfully on that image. The command/RBAC switch
-  can now be pushed without an old image receiving an unknown Go command. Scheduled Go verification is pending.
+  `notifications-check`; the CronJob was still completing Python passes before the switch, avoiding an old image
+  receiving an unknown Go command.
+- **Live cutover:** `36e7a4f2` selects `[timeout, "50", swhurl-v2, notifications-check, --in-cluster]` and removes
+  DaemonSet/CronJob discovery permissions. Validate run 42356764702 passed all nine jobs; bot pin `c46ce811`
+  deployed `src-b47505268a6f9380`. `make flux-reconcile` succeeded and the console is `1/1 Running`.
+- **Scheduled continuation:** Jobs `console-notifications-29900686` and `-29900687` completed real Go passes,
+  each with 11 remembered identities and zero pending notices. The first delivered one notice; the next delivered
+  none. The state kept version 1 and its original `started`, with two seen keys and a success six seconds old.
+  On the final image, Job `console-notifications-29900689` also completed and delivered `console deployed`, with
+  zero pending notices. These sends prove transport acceptance, not subscriber readback or app-team forwarding.
+- **Live permissions:** the account can list the required collections and get/patch its named ConfigMap, but
+  cannot list Secrets, DaemonSets or CronJobs. Scheduled success exercised those real permissions, not just an
+  impersonated authorization check.
+- **Verification:** `make verify-platform` passed with **84 OK, no warnings and no failures**;
+  `make app-status APP=demo-shop ENV=staging` reported healthy at `c46ce811`. The Go Make preview completed with
+  11 identities and zero pending notices. Cutover tests passed `make check` (613 Python tests, 98 codegraph tests),
+  `make check-v2`, shell syntax and whitespace checks; independent wiring review found no blockers.
 - **Acceptance-plan gap:** `make live-test-lifecycle` uses a raw Deployment/PVC outside discoverable app roots;
   it cannot prove Helm lifecycle notices. The no-data worker fixture is a separate confirm-first live action.
-- **Next gate:** prove deployed Go scheduled runs, state continuation, RBAC and platform health; then obtain
-  confirmation for the lifecycle fixture. Python sources/tests stay available pending live acceptance.
+- **Next gate:** confirmation to install/remove only the existing no-data worker Helm fixture for deployed and
+  uninstalled platform-notice and team-copy readback. No such fixture was created or deleted in this cutover.
+  Python sources/tests remain available pending that acceptance; they have not been retired.
 
 ## Every platform check is Go (7 November 2026)
 

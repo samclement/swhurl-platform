@@ -1,5 +1,6 @@
 """A notice has one shape, whoever sends it and wherever it goes."""
 import base64
+import importlib.util
 import json
 import unittest
 
@@ -55,6 +56,19 @@ class NoticeTests(unittest.TestCase):
         self.assertEqual(sender.sent, [(ADDRESS, FAILED)])
         with self.assertRaisesRegex(NotificationError, 'down'):
             Recorded(refuse='down')(ADDRESS, FAILED)
+
+
+class CheckerRetirementTests(unittest.TestCase):
+    def test_python_checker_is_absent_but_shared_helpers_remain(self):
+        from swhurl import notifications
+        from swhurl.notifications import heartbeat, notice
+        for name in ('check', 'main'):
+            self.assertFalse(hasattr(notifications, name), name)
+        for module in ('evaluate', 'state', 'delivery'):
+            self.assertIsNone(importlib.util.find_spec(f'swhurl.notifications.{module}'), module)
+        self.assertFalse(hasattr(notice, 'forward'))
+        self.assertTrue(callable(heartbeat.main))
+        self.assertTrue(callable(notice.platform_topic))
 
 
 class PlatformTopicTests(unittest.TestCase):

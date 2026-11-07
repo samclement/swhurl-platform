@@ -733,7 +733,7 @@ Do not replace all status models with one enum. Different questions require diff
 
 The distinction between `state.verdict`, `stages.progress` and time-based notification evaluation is substantively justified, even where names and duplicated observations could improve.
 
-Evidence: [`state.py`](../tools/swhurl/apps/state.py), [`stages.py`](../tools/swhurl/console/stages.py) and [`notifications/evaluate.py`](../tools/swhurl/notifications/evaluate.py).
+Evidence: [`state.py`](../tools/swhurl/apps/state.py), [`stages.py`](../tools/swhurl/console/stages.py) and [the reviewed Python notification evaluator](https://github.com/samclement/swhurl-platform/blob/25dbe522a87eeec16791b383c8c34a7a6ca6930a/tools/swhurl/notifications/evaluate.py).
 
 ### Evidence primitive
 

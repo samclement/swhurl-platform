@@ -2,6 +2,47 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Notification checker lifecycle acceptance and Python retirement (7 November 2026)
+
+- **Scope and confirmation:** the operator approved installing/removing only the existing no-data
+  `smoke-worker-staging` Helm fixture, then retiring the checker Python after readback. The standard
+  `live-test-app-template` was not run because it also creates web and database fixtures. The existing
+  `fixture_unit` helper pointed only the worker unit at its pushed Git fixture; existing apps and data
+  were untouched. Namespace/unit absence was checked before creation; matching UIDs, app labels and
+  zero PVCs were checked before removal. The worker reached Ready and its unit and namespace are gone.
+- **Readback, not just HTTP acceptance:** the platform topic and demo team's `platform` channel are
+  distinct destinations. Each contained the fixture's notice; the notify service logged acceptance
+  for exactly one channel and delivery to `platform` for both actions. No address or Secret value was
+  printed or saved with the evidence.
+
+  | Notice | Platform readback (UTC, message ID) | Team readback (UTC, message ID) |
+  | --- | --- | --- |
+  | `smoke-worker/staging deployed` | 09:40:01, `SIMKUYE81tig` | 09:40:02, `KeU2xdAz42m0` |
+  | `smoke-worker/staging uninstalled` | 09:41:02, `jD9Y8eE1C4Om` | 09:41:02, `YN394xmC7VZA` |
+
+- **State continuity:** after removal, version 1 and the original `started` were preserved, with zero
+  pending notices. This test did not encounter the possible namespace-removal race: both team copies
+  were actually delivered and read back. It proves topic availability, not display on a subscriber's phone;
+  rollback and timed unhealthy/recovery delivery remain separate live exercises.
+- **Retirement:** removed the Python check/main entry point, evaluator, state and delivery modules,
+  checker-only forwarding and 700-line checker test file. The Make entry already invokes Go and the
+  command catalogue already has no Python `run` function. Shared `notice.py` and `errors.py` remain for
+  the heartbeat/dashboard importers. Go retains the 139 frozen evaluations, the 42-case coverage map
+  (two intentional scheduled-job omissions), wiring, decoding and effect/failure/restart tests.
+- **Verification before deletion:** 95 focused Python tests passed; Go `incident`, `orchestration`,
+  `adapters/notifysvc` and `cmd/swhurl-v2` passed. Retirement adds an absence regression and removes the
+  manifest-policy test's dependency on the retired state module. Post-change `make check` passed 572 Python
+  tests, 98 codegraph tests and 32 schema-validation entrypoints; `make check-v2`, focused tests,
+  shell syntax and `git diff --check` passed. Independent read-only review found no code/retirement
+  blockers, accounted for every legacy case, and independently passed 40 Python tests plus the four
+  focused Go packages. Its stale verification-status note is corrected here. Production Python is
+  **net −621 lines**; the 700-line checker test file is replaced by the retained Go coverage and a
+  14-line absence regression. Commit, image delivery and post-deploy verification remain pending.
+- **Next gate:** scope and approve the dashboard reconciler's Go slice; the heartbeat and console remain
+  separate Python retirements. `docs/v2-status.md` now marks the checker done and removes it from the
+  remaining Python row. No real credential rotation, repository creation, stored-data deletion or
+  change under `flux-system` was made.
+
 ## Notification checker scheduled in Go (7 November 2026)
 
 - **Scope:** [the approved checker contract](iteration-2-plan.md#13-the-notification-checker-in-go-approved-7-november-2026),

@@ -584,5 +584,5 @@ class PlatformWebhookTests(unittest.TestCase):
         self.assertEqual(job['serviceAccount']['name'], 'dashboard-sync')
         self.assertEqual(job['cronjob']['schedule'], '* * * * *')
         self.assertEqual(job['cronjob']['concurrencyPolicy'], 'Forbid')
-        self.assertEqual(job['containers']['main']['command'], ['timeout', '50', 'python', '-m', 'swhurl', 'clickstack-dashboards', '--cluster'])
+        self.assertEqual(job['containers']['main']['command'], ['timeout', '50', 'swhurl-v2', 'clickstack-dashboards', '--cluster', '--in-cluster'])
         self.assertEqual(job['containers']['main']['image'], controllers['main']['containers']['main']['image'])

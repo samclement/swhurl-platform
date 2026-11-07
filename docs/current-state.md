@@ -2,6 +2,25 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The dashboard reconciler switches to Go (7 November 2026)
+
+- **Scope:** step 2 of [the approved slice](iteration-2-plan.md#14-the-dashboard-reconciler-in-go-approved-7-november-2026):
+  the `console-dashboards` CronJob runs `timeout 50 swhurl-v2 clickstack-dashboards --cluster --in-cluster` and
+  `make clickstack-dashboards` runs the Go command against `v2-records`. `dashboards.py`, `app_alerts.py` and
+  `clickstack_ntfy.py` stay until the retirement step; nothing runs them on a schedule or from `make`.
+- **Live dry run before the switch:** `swhurl-v2 clickstack-dashboards --dry-run` with the operator's kubeconfig,
+  both `--cluster` and `--records v2-records`, exited 0 with identical plans: both reserved webhooks, all six app
+  dashboards (`demo-notifier`, `demo-orders`, `demo-shop`, `demo-shopper`, `swhurl-try-10`, `swhurl-try-30`) up to
+  date, six apps with their default alerts. A dry run skips the record, so the live `console/app-dashboards`
+  record was read and passed through `dashboards.Record` in a throwaway test: identical bytes, six entries.
+  `DRY_RUN=true make clickstack-dashboards` gave the same plan.
+- **The job's account:** `kubectl auth can-i --as system:serviceaccount:console:dashboard-sync` allows every request
+  the Go pass makes (HelmRelease and Namespace list, the four named Secrets, the `clickstack-app` Deployment, pod
+  list and exec in `observability`, get and patch of the record) and refuses exec in `console`. No RBAC change.
+- **Image:** the offline commit `3d42b1d0` gave console image `src-77d032b5f13aa857` (`40b517b9`), which carries the
+  subcommand; Validate passed.
+- **Live:** pending the scheduled passes after this commit reaches the cluster.
+
 ## The dashboard reconciler in Go, offline (7 November 2026)
 
 - **Scope:** [the approved slice](iteration-2-plan.md#14-the-dashboard-reconciler-in-go-approved-7-november-2026),

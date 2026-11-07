@@ -110,7 +110,7 @@ spec:
         containers:
           main:
             image: *operator-image
-            command: [timeout, "50", python, -m, swhurl, clickstack-dashboards, --cluster]
+            command: [timeout, "50", swhurl-v2, clickstack-dashboards, --cluster, --in-cluster]
             resources:
               requests:
                 cpu: 10m

@@ -6,11 +6,13 @@
   `swhurl-test-private-topic-012345` and the secret `private-alert-secret` (synthetic). `Destinations`
   must produce the same bytes, so the Go pass does not rewrite a webhook the Python job wrote.
 
-Regenerate both from `tests/` with the Python job on `PYTHONPATH=../tools`; neither is a live export.
+Both were produced by the retired Python job (deleted 7 November 2026, recoverable from Git before it) and are
+now the contract itself; neither is a live export.
 
 ## All 40 Python cases
 
-`tests/test_dashboards.py` (37) and `tests/test_clickstack_ntfy.py` (3). Where a case moved to a
+`tests/test_dashboards.py` (37) and `tests/test_clickstack_ntfy.py` (3), both deleted with the Python job; the
+job's manifest and Secret RBAC checks moved to `tests/test_images.py`. Where a case moved to a
 deliberate change, the Go test named covers the new behaviour.
 
 | # | Python case | Go coverage |

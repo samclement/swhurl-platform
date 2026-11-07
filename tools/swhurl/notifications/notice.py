@@ -1,9 +1,9 @@
 """A notice: one message for a person, and the senders that carry it.
 
 The host heartbeat builds a ``Notice`` and hands it to a sender: ``Ntfy`` over HTTP,
-``Recorded`` in tests. Dashboard tooling shares the topic reader. The checker and notify
-service are Go; Flux Alert and ClickStack's webhooks post to ntfy themselves, from
-templates of their own (platform/alerts, clickstack_ntfy.py).
+``Recorded`` in tests. The checker, the notify service and the dashboard job are Go;
+Flux Alert and ClickStack's webhooks post to ntfy themselves, from templates of their own
+(platform/alerts, v2/dashboards/webhooks.go).
 """
 from __future__ import annotations
 

@@ -16,12 +16,6 @@ def read_key(runner: Runner, *, namespace: str, name: str, key: str) -> str | No
     return (doc.get('data') or {}).get(key) or None
 
 
-def write_key(runner: Runner, *, namespace: str, name: str, key: str, raw: str, field_manager: str) -> None:
-    runner.run(['kubectl', '-n', namespace, 'patch', 'configmap', name,
-                '--type=merge', '--patch-file=/dev/stdin', f'--field-manager={field_manager}'],
-               input=json.dumps({'data': {key: raw}}), mutating=True)
-
-
 def read_keys(runner: Runner, *, namespace: str, name: str) -> dict[str, str]:
     """Every key of the ConfigMap; empty when it holds none yet."""
     doc = runner.json(['kubectl', '-n', namespace, 'get', 'configmap', name, '-o', 'json']) or {}

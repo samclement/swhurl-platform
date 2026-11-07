@@ -101,7 +101,7 @@ class Resources:
 
 @dataclass(frozen=True)
 class App:
-    """``apps/<app>/app.yaml``: who owns the app and its alert settings (app_alerts' spec; '' is the defaults)."""
+    """``apps/<app>/app.yaml``: who owns the app and its alert settings ('' is the defaults)."""
     team: str
     alerts: str = ''
 

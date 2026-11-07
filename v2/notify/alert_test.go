@@ -19,7 +19,8 @@ var alert = map[string]any{"secret": secret, "state": "ALERT", "title": "🚨 sw
 	"body": "Group: \"arrayElement(ResourceAttributes, 'k8s.namespace.name'):orders-staging\"\n16 meets or exceeds 5\n" +
 		"Time Range (UTC): [Oct 11 5:58:00 PM - Oct 11 5:59:00 PM)\n"}
 
-// Python's test_clickstack_ntfy.py checks that the actual webhook template produces these same bodies.
+// dashboards.TestTheWebhooksAreThePythonJobsAndTheNotifyServiceReadsThem checks that the actual webhook template
+// produces these same bodies.
 func TestClickStackWebhookBodiesAreReadAsMessages(t *testing.T) {
 	raw, err := os.ReadFile("testdata/clickstack-alerts.json")
 	if err != nil {

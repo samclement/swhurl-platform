@@ -203,3 +203,11 @@ func TestPlatformText(t *testing.T) {
 		t.Fatalf("%q", text)
 	}
 }
+
+// A report with no bad entry ends with the operator-visible line Python printed, warnings included.
+func TestPlatformTextClosesAPassingReport(t *testing.T) {
+	passed := PlatformText(PlatformReport{Checks: []PlatformCheck{{"ingress", "Ingress", []PlatformEntry{{CheckWarn, "perhaps"}}}}})
+	if passed != "\n== Ingress ==\n[WARN] perhaps\n\nValidation passed.\n" {
+		t.Fatalf("%q", passed)
+	}
+}

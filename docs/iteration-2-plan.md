@@ -542,7 +542,7 @@ Recorded responses suit reads. Changes need small **behavioural fakes** that imp
 v1 is evidence to evaluate, not the specification of v2 or an expected-output generator. Under the [design principles](#design-principles), classify relevant behaviour as **preserve**, **deliberately change**, **remove** or **not yet modelled**, using the [architecture review](architecture-review.md) and [model review](model-review.html). This is not a requirement to model every v1 feature now. Starting points:
 
 - [`tests/fixtures/instance`](../tests/fixtures/instance): a frozen staging/production example with records and rendered resources.
-- [`tests/fakecluster.py`](../tests/fakecluster.py): healthy-cluster responses across Flux, apps, observability, backups and notifications.
+- [`tests/fakecluster.py`](../tests/fakecluster.py): the report `swhurl-v2 verify`'s cluster scope gives a healthy platform, as the console's tests read it.
 - [`tests/test_console_stages.py`](../tests/test_console_stages.py): earlier targets, current intent and live observations combined.
 - [`v2/kernel/edit_test.go`](../v2/kernel/edit_test.go): deterministic rendering and relationship rules in the v2 model.
 
@@ -1241,7 +1241,11 @@ checks before Python's remaining ones, then Python's order returns. Webhooks mat
 substring or an impostor host; untrusted delivery messages retain only standard HTTP reasons, never URLs or credentials.
 An exec stream ends successfully only after a terminal status and an orderly close (code 1000/1001, or none): a
 valid error close (1002, 1008, 1011, …) fails the check even after a status, and a 101 selecting an extension this
-client never offered is refused, so a failed transport can never read as a passing check.
+client never offered is refused, so a failed transport can never read as a passing check. `flux-controllers` reads
+Flux's settings with the same convention as every other scope step: a Deployment the API does not answer for aborts
+the report (exit 2) where Python warned "is not installed" for any `kubectl` failure; a Deployment that is absent
+still warns, and one that cannot be parsed is bad. `tools/swhurl/flux.py` reads `flux.json` only when a function needs
+it, never at import, because the console imports `WAITING_REASONS` from it and the console image carries no checkout.
 
 **Delivery,** four slices, each committed, run live with `make verify-platform` (the platform page unchanged) and
 recorded in current state, Python's `CHECKS` shrinking with each and the deleted Python's test cases kept as Go

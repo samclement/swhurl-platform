@@ -1,0 +1,6 @@
+{
+  "version": "2.8.1",
+  "extraComponents": ["image-reflector-controller"],
+  "removedComponents": ["image-automation-controller"],
+  "args": {"kustomize-controller": ["--requeue-dependency=5s"]}
+}

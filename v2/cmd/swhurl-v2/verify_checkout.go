@@ -13,7 +13,8 @@ import (
 )
 
 // readCheckout reads the files the platform scope compares the cluster with from the checkout at root: the profile,
-// the team registry, the egress allocation, every app and release record, and each compiled instance's objects. A
+// the team registry, the egress allocation, the Flux install settings, every app and release record, and each
+// compiled instance's objects. A
 // file the checkout does not have is absent, which the checks report; one it cannot read stops the run.
 func (c cli) readCheckout(root string) (orchestration.Checkout, int) {
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
@@ -28,6 +29,7 @@ func (c cli) readCheckout(root string) (orchestration.Checkout, int) {
 		{observe.CheckoutProfile, &checkout.Profile},
 		{observe.CheckoutTeams, &checkout.Teams},
 		{observe.CheckoutAllocation, &checkout.Allocation},
+		{observe.CheckoutFluxSettings, &checkout.FluxSettings},
 	} {
 		data, status := c.checkoutFile(filepath.Join(root, file.path))
 		if status != 0 {

@@ -79,6 +79,8 @@ func healthyScope() ScopeEvidence {
 		Databases: DatabaseEvidence{Location: ArchiveQuery{Bucket: "bucket-a", Prefix: "app-sqlite/"},
 			Databases: []DatabaseBackup{{"hello-prod", listing("app-sqlite/hello-prod/", "sqlite", ".db.age")}}},
 		Console:     ConsoleEvidence{Jobs: true, Tag: "src-abc"},
+		Flux:        healthyFlux(),
+		Heartbeat:   healthyHeartbeat(),
 		Credentials: true,
 		MaxAge:      26 * time.Hour,
 	}
@@ -128,7 +130,7 @@ func runScopeCases(t *testing.T, check string, cases []scopeCase) {
 
 func unchanged(*ScopeEvidence) {}
 
-// The nine checks follow the six, in Python's order, and a healthy platform passes every one.
+// The scope's checks follow the six, in Python's order, and a healthy platform passes every one.
 func TestScopeChecksFollowTheClusterChecksAndPass(t *testing.T) {
 	checks := PlatformScopeChecks(healthy(), healthyScope())
 	names := []string{}
@@ -143,9 +145,11 @@ func TestScopeChecksFollowTheClusterChecksAndPass(t *testing.T) {
 			t.Errorf("%s has no entries", check.Name)
 		}
 	}
-	want := "flux-units ingress alerts notify-service dashboards notifications image-automation isolation signing-keys " +
-		"events egress channels backups sqlite-backups console push-webhook image-webhooks console-token runtime-secrets ingestion-key registration retention"
-	if strings.Join(names, " ") != want {
+	want := []string{}
+	for _, entry := range PlatformCatalogue {
+		want = append(want, entry.Name)
+	}
+	if strings.Join(names, " ") != strings.Join(want, " ") {
 		t.Fatalf("%v", names)
 	}
 }

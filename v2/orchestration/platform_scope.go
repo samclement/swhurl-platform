@@ -23,6 +23,8 @@ import (
 // nil document is a file the checkout does not have.
 type Checkout struct {
 	Profile, Teams, Allocation []byte
+	// FluxSettings is clusters/home/flux-system/install/flux.json: the version and arguments Flux is installed with.
+	FluxSettings []byte
 	// Apps are the app records, by app; Releases the release records, by "<app>/<env>".
 	Apps, Releases map[string][]byte
 	Compiled       []observe.CompiledInstance
@@ -45,6 +47,8 @@ type PlatformAllInputs struct {
 	// ConsoleTag is the checkout's console content tag; empty when it was not supplied.
 	ConsoleTag string
 	MaxAge     time.Duration
+	// Heartbeat is the host heartbeat facts the caller supplied, or that it supplied none.
+	Heartbeat observe.HeartbeatEvidence
 }
 
 // scopeStep makes one check's reads into the scope's evidence.
@@ -58,9 +62,10 @@ func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.Platfor
 	if err != nil {
 		return observe.PlatformReport{}, err
 	}
-	scope := observe.ScopeEvidence{Compiled: inputs.Checkout.Compiled, Credentials: inputs.Objects != nil, MaxAge: inputs.MaxAge}
+	scope := observe.ScopeEvidence{Compiled: inputs.Checkout.Compiled, Credentials: inputs.Objects != nil,
+		MaxAge: inputs.MaxAge, Heartbeat: inputs.Heartbeat}
 	for _, step := range []scopeStep{readImages, readIsolation, readSigning, readEvents, readEgress, readChannels,
-		readMongoBackups, readDatabases, readConsole, readGitHub, readPodChecks} {
+		readMongoBackups, readDatabases, readConsole, readGitHub, readPodChecks, readFluxControllers} {
 		if err := step(ctx, inputs, &scope); err != nil {
 			return observe.PlatformReport{}, err
 		}
@@ -412,6 +417,31 @@ func databaseLocation(data []byte) (observe.ArchiveQuery, bool, string) {
 		return observe.ArchiveQuery{}, false, observe.CheckoutProfile + ": the backup location must be s3://<bucket>/<prefix>/"
 	}
 	return location, true, ""
+}
+
+// readFluxControllers reads the settings the checkout installs Flux with and each controller's live Deployment.
+// Settings it cannot read leave the version unchecked rather than guessed.
+func readFluxControllers(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+	if inputs.Checkout.FluxSettings == nil {
+		scope.Flux = observe.FluxEvidence{Problem: "the checkout has no such file"}
+		return nil
+	}
+	settings, err := observe.DecodeFluxSettings(inputs.Checkout.FluxSettings)
+	if err != nil {
+		scope.Flux = observe.FluxEvidence{Problem: err.Error()}
+		return nil
+	}
+	scope.Flux = observe.FluxEvidence{Settings: settings, Deployments: map[string]observe.Read{}}
+	for _, name := range settings.Controllers() {
+		controller := observe.PlatformFluxController
+		controller.Name = name
+		read, err := inputs.Reader.Read(ctx, controller)
+		if err != nil {
+			return err
+		}
+		scope.Flux.Deployments[name] = read
+	}
+	return nil
 }
 
 // readConsole reads whether the console's job record exists; its HelmRelease is the cluster checks' read.

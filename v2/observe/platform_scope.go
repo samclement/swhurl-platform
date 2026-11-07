@@ -62,6 +62,8 @@ type ScopeEvidence struct {
 	Ingestion                  IngestionEvidence
 	Registration               RegistrationEvidence
 	Retention                  RetentionEvidence
+	Flux                       FluxEvidence
+	Heartbeat                  HeartbeatEvidence
 	// Credentials is whether object-store credentials were supplied: without them no backup listing is read.
 	Credentials bool
 	// MaxAge is how old the newest complete backup may be.
@@ -69,25 +71,27 @@ type ScopeEvidence struct {
 }
 
 // PlatformScopeChecks judges the cluster checks' evidence and the scope's, in the order the checks run: the six
-// cluster checks, then the scope's own.
+// cluster checks, then the scope's own. Each group's section is the catalogue's.
 func PlatformScopeChecks(e PlatformEvidence, s ScopeEvidence) []PlatformCheck {
 	return append(PlatformChecks(e),
-		PlatformCheck{"image-automation", "Image Automation", platformImages(s.Images)},
-		PlatformCheck{"isolation", "App isolation", platformIsolation(s.Isolation, s.Compiled)},
-		PlatformCheck{"signing-keys", "Call identity", platformSigning(s.Signing)},
-		PlatformCheck{"events", "Events", platformEvents(s.Events, s.Compiled)},
-		PlatformCheck{"egress", "Egress proxy", platformEgress(s.Egress, s.Compiled)},
-		PlatformCheck{"channels", "Notification channels", platformChannels(s.Channels)},
-		PlatformCheck{"backups", "Backups", platformBackups(s.Backups, s.Credentials, s.MaxAge, e.Now)},
-		PlatformCheck{"sqlite-backups", "App SQLite backups", platformDatabases(s.Databases, s.Credentials, s.MaxAge, e.Now)},
-		PlatformCheck{"console", "Console", platformConsole(e.Console, s.Console)},
-		PlatformCheck{"push-webhook", "Push Webhook", platformPushWebhook(s.PushWebhook)},
-		PlatformCheck{"image-webhooks", "Image Webhooks", platformImageWebhooks(s.ImageWebhooks)},
-		PlatformCheck{"console-token", "Console GitHub Token", platformConsoleTokens(s.ConsoleTokens, e.Now)},
-		PlatformCheck{"runtime-secrets", "Runtime Secrets", platformRuntimeSecrets(s.Ingestion)},
-		PlatformCheck{"ingestion-key", "Ingestion Key Sync", platformIngestion(s.Ingestion)},
-		PlatformCheck{"registration", "ClickStack Sign-up", platformRegistration(s.Registration)},
-		PlatformCheck{"retention", "Retention", platformRetention(s.Retention)},
+		platformCheck("image-automation", platformImages(s.Images)),
+		platformCheck("isolation", platformIsolation(s.Isolation, s.Compiled)),
+		platformCheck("signing-keys", platformSigning(s.Signing)),
+		platformCheck("events", platformEvents(s.Events, s.Compiled)),
+		platformCheck("egress", platformEgress(s.Egress, s.Compiled)),
+		platformCheck("channels", platformChannels(s.Channels)),
+		platformCheck("backups", platformBackups(s.Backups, s.Credentials, s.MaxAge, e.Now)),
+		platformCheck("sqlite-backups", platformDatabases(s.Databases, s.Credentials, s.MaxAge, e.Now)),
+		platformCheck("console", platformConsole(e.Console, s.Console)),
+		platformCheck("push-webhook", platformPushWebhook(s.PushWebhook)),
+		platformCheck("image-webhooks", platformImageWebhooks(s.ImageWebhooks)),
+		platformCheck("console-token", platformConsoleTokens(s.ConsoleTokens, e.Now)),
+		platformCheck("flux-controllers", platformFluxControllers(s.Flux)),
+		platformCheck("runtime-secrets", platformRuntimeSecrets(s.Ingestion)),
+		platformCheck("ingestion-key", platformIngestion(s.Ingestion)),
+		platformCheck("registration", platformRegistration(s.Registration)),
+		platformCheck("retention", platformRetention(s.Retention)),
+		platformCheck("notification-heartbeat", platformHeartbeat(s.Heartbeat, e.Now)),
 	)
 }
 

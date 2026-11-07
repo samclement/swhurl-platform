@@ -53,7 +53,7 @@ The Google OAuth client must allow the redirect URI `https://oauth.<BASE_DOMAIN>
 
 ```bash
 flux check --pre
-make flux-install     # Flux at FLUX_VERSION (tools/swhurl/flux.py), with the settings in Git
+make flux-install     # Flux at the version in clusters/home/flux-system/install/flux.json, with the settings in Git
 kubectl -n flux-system create secret generic sops-age \
   --from-file=age.agekey=./age.agekey --dry-run=client -o yaml | kubectl apply -f -
 make flux-bootstrap   # applies the two root units and the Git/Helm sources

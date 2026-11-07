@@ -4,22 +4,14 @@ Kept for what only a real process can show: exit codes, argument passing, dry
 runs and refusals that make no cluster calls, and nothing secret on stdout or
 stderr. Branch-by-branch behaviour is unit-tested with FakeRunner elsewhere.
 """
-import base64
-import datetime as dt
-import json
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from swhurl import ROOT, commands, flux
-from swhurl.apps import calling, channels
-
-KEY = 'fixture-private-ingestion-token'
-OTHER_KEY = 'fixture-other-private-token'
+from swhurl import ROOT, commands
 
 
 class CommandSafetyTests(unittest.TestCase):
@@ -28,93 +20,24 @@ class CommandSafetyTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.bin = Path(self.tmp.name)
         self.calls = self.bin / 'calls'
-        self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}',
-                        CALLS=str(self.calls), KEY=KEY, OTHER_KEY=OTHER_KEY)
-        stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')  # the fake bucket's backups are this fresh
-        self.env.update(STAMP=stamp)
-        self.env.update(FLUX_VERSION=f'v{flux.pinned_version()}',
-                        FLUX_ARGS=' '.join(flux.required_args()['kustomize-controller']))
-        # The console image tag is this checkout's commit, so the real git diff finds no change.
-        self.env['CONSOLE_TAG'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True,
-                                                 text=True, check=True).stdout.strip()
-        self.env['ROUTES'] = json.dumps(channels.routes(ROOT))
-        self.env['CHANNEL_SECRETS'] = '\n'.join(f'secret/channel-{name}' for name in channels.routes(ROOT)['channels'])
-        self.env['REPO'], self.env['ISSUER'] = str(ROOT), calling.ISSUER
-        self.env.update(SWHURL_V2='swhurl-v2', SWHURL_V2_KUBECONFIG=str(self.bin / 'kubeconfig.json'))
-        for name in ('kubectl', 'flux', 'aws', 'systemctl', 'swhurl-v2'):
+        self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}', CALLS=str(self.calls))
+        for name in ('kubectl', 'flux', 'systemctl'):
             path = self.bin / name
-            path.write_text('''#!/usr/bin/env python3
-import base64, datetime, json, os, sys
+            path.write_text("""#!/usr/bin/env python3
+import os, sys, time
 from pathlib import Path
+tool = Path(sys.argv[0]).name
 with open(os.environ['CALLS'], 'a') as f:
-    f.write(Path(sys.argv[0]).name + '\\n')
-scenario = os.environ.get('SCENARIO', 'match')
-argv = sys.argv[1:]
-def emit(obj):
-    print(json.dumps(obj))
-if Path(sys.argv[0]).name == 'swhurl-v2':  # verify: Go decides these checks, so here they are only an answer
-    level = 'bad' if scenario == 'unready' else 'ok'
-    emit({'kind': 'v2-platform-checks', 'version': 1, 'source': 'verify-platform', 'observedAt': '2026-11-06T12:00:00Z',
-          'passed': level == 'ok', 'checks': [{'name': 'flux-units', 'section': 'Flux Kustomizations',
-                                               'entries': [{'level': level, 'message': 'platform-clickstack'}]}]})
-    sys.exit(0 if level == 'ok' else 1)
-elif Path(sys.argv[0]).name == 'systemctl':
-    if argv[0] == 'is-active':
-        print('active')
-    elif argv[0] == 'show':
-        timestamp = datetime.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z')
-        print('Result=success\\nExecMainStatus=0\\nExecMainExitTimestamp=' + timestamp)
-elif Path(sys.argv[0]).name == 'aws':
-    prefix, stamp = argv[argv.index('--prefix') + 1], os.environ['STAMP']
-    names = ['clickstack-mongodb-' + stamp + s for s in ('.archive.gz.age', '.json')] if prefix.startswith('clickstack') \\
-        else ['sqlite-' + stamp + s for s in ('.db.age', '.json')]
-    emit([prefix + name for name in names])
-elif any(a.startswith('imagepolicies') for a in argv):
-    emit({'items': []})
-elif argv[:3] == ['-n', 'messaging', 'get']:
-    emit({'status': {'readyReplicas': 1}})
-elif argv[:3] == ['-n', 'egress', 'get']:
-    emit({'spec': {'replicas': 2}, 'status': {'readyReplicas': 2}})
-elif len(argv) > 1 and argv[0] == 'get' and argv[1].startswith('streams.jetstream'):
-    # every stream and consumer v2 rendered for this checkout's instances, Ready in NATS
-    folders = Path(os.environ['REPO']).glob('v2-apps/instances/*/*')
-    docs = [json.loads(p.read_text()) for f in folders for p in
-            [*sorted(f.glob('stream.json')), *sorted(f.glob('consumer-*.json'))]]
-    emit({'items': [d | {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}} for d in docs]})
-elif argv[:3] == ['get', '--raw', '/openid/v1/jwks']:
-    print(json.loads((Path(os.environ['REPO']) / 'v2/testdata/profile.json').read_text())['auth']['keys'])
-elif argv[:3] == ['get', '--raw', '/.well-known/openid-configuration']:
-    emit({'issuer': os.environ['ISSUER']})
-elif argv[:2] == ['get', 'namespaces']:  # isolation: a healthy cluster has what Git declares
-    folders = Path(os.environ['REPO']).glob('v2-apps/instances/*/*')
-    emit({'items': [json.loads((f / 'namespace.json').read_text()) for f in folders]})
-elif argv[:2] == ['get', 'resourcequotas']:
-    folders = Path(os.environ['REPO']).glob('v2-apps/instances/*/*')
-    emit({'items': [json.loads((f / 'resourcequota.json').read_text()) for f in folders]})
-elif any(a.startswith('networkpolicies') for a in argv):
-    folders = Path(os.environ['REPO']).glob('v2-apps/instances/*/*')
-    emit({'items': [json.loads((f / 'networkpolicy.json').read_text()) for f in folders]})
-elif argv[:2] == ['get', 'deployments']:  # backup-sqlite discovery: no app has a SQLite database
-    emit({'items': []})
-elif argv[:3] == ['-n', 'notify', 'get']:
-    if 'deployment' in argv:
-        emit({'spec': {'template': {'spec': {'containers': [{'image': 'ghcr.io/x/swhurl-console:' + os.environ['CONSOLE_TAG']}]}}},
-              'status': {'readyReplicas': 1}})
-    elif 'configmaps' in argv:
-        emit({'items': [{'metadata': {'name': 'notification-routes'}, 'data': {'routes.json': os.environ['ROUTES']}}]})
-    else:
-        print(os.environ['CHANNEL_SECRETS'])
-elif Path(sys.argv[0]).name == 'flux':
+    f.write(tool + '\\n')
+if tool == 'systemctl':  # the host heartbeat facts the recipe passes to swhurl-v2, which decides them
+    print('Id=swhurl-notification-heartbeat.timer\\nActiveState=active\\n')
+    print('Id=swhurl-notification-heartbeat.service\\nResult=success\\nExecMainStatus=0\\n'
+          'ExecMainExitTimestamp=@' + str(int(time.time())))
+elif tool == 'flux':
     sys.exit(1 if os.environ.get('FLUX_FAIL') else 0)
-elif 'console-jobs' in argv:
-    emit({'data': {}})
-elif 'helmrelease' in argv and 'console' in argv:
-    emit({'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
-        'tag': os.environ['CONSOLE_TAG']}}}}}}}})
-elif 'flux-system' in argv and 'deployment' in argv:
-    emit({'metadata': {'labels': {'app.kubernetes.io/version': os.environ['FLUX_VERSION']}},
-          'spec': {'template': {'spec': {'containers': [{'args': os.environ['FLUX_ARGS'].split()}]}}}})
-''')
+else:
+    print('{}')
+""")
             path.chmod(0o700)
 
     def test_destroy_data_refuses_without_exact_confirmation(self):
@@ -175,7 +98,9 @@ elif 'flux-system' in argv and 'deployment' in argv:
                 self.assertEqual(result.stdout.splitlines(), ['Plan (install):', *[f'  - make {s}' for s in steps]])
                 self.assertFalse(self.calls.exists())
 
-    def test_verify_recipe_supplies_hook_credential_without_leaking_or_stopping_on_lookup_failure(self):
+    def test_verify_recipe_supplies_hook_credential_and_host_facts_without_leaking(self):
+        """The recipe hands swhurl-v2 the GitHub token, this checkout and the host heartbeat facts, and a failed token
+        lookup stops nothing. What the checks then decide is Go's (v2/observe)."""
         gh = self.bin / 'gh'
         gh.write_text('#!/usr/bin/env bash\n'
                       'echo called >> "$CALLS"\n'
@@ -186,11 +111,17 @@ elif 'flux-system' in argv and 'deployment' in argv:
         verifier = self.bin / 'verify-recipe'
         verifier.write_text('#!/usr/bin/env python3\n'
                             'import os, sys\n'
-                            'assert sys.argv[1:] == ["verify-run"]\n'
+                            'argv = sys.argv[1:]\n'
+                            'assert argv[:4] == ["verify", "--scope", "platform", "--kubeconfig"], argv\n'
+                            'assert argv[argv.index("--root") + 1] == os.getcwd(), argv\n'
+                            'heartbeat = argv[argv.index("--heartbeat") + 1]\n'
+                            'assert open(heartbeat).read().startswith("Id="), heartbeat\n'
                             'expected = os.environ["EXPECTED_TOKEN"]\n'
                             'assert os.environ.get("GH_TOKEN", "") == expected\n'
                             'print("verifier ran")\n')
         verifier.chmod(0o700)
+        build = ('V2_BUILD=set -eu; work=$$(mktemp -d); trap \'rm -rf "$$work"\' EXIT; '
+                 f'cp {verifier} "$$work/swhurl-v2"')
         for supplied, lookup_rc, expected, looked_up in (
                 ('supplied-fixture', '0', 'supplied-fixture', False),
                 ('', '0', 'lookup-fixture', True), ('', '1', '', True)):
@@ -198,30 +129,15 @@ elif 'flux-system' in argv and 'deployment' in argv:
                 self.calls.unlink(missing_ok=True)
                 env = dict(self.env, GH_TOKEN=supplied, GH_RC=lookup_rc, EXPECTED_TOKEN=expected,
                            FIXTURE_TOKEN='lookup-fixture', AWS_ACCESS_KEY_ID='fixture-access-key')
-                result = subprocess.run(['make', 'verify-platform', f'SWHURL={verifier}',
-                                         'V2_BUILD=set -eu; work=$$(mktemp -d); trap \'rm -rf "$$work"\' EXIT'],
+                result = subprocess.run(['make', 'verify-platform', build],
                                         cwd=ROOT, env=env, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn('verifier ran', result.stdout)
                 calls = self.calls.read_text().splitlines()
                 self.assertEqual('called' in calls, looked_up)
+                self.assertIn('systemctl', calls, 'the recipe reads the host heartbeat facts itself')
                 for token in ('supplied-fixture', 'lookup-fixture'):
                     self.assertNotIn(token, result.stdout + result.stderr)
-
-    def test_verifier_preserves_go_report_exit_and_runs_host_checks(self):
-        # Ingestion byte/protocol/failure cases are in Go's platform_exec and exec adapter tests.
-        for scenario in ('match', 'unready'):
-            with self.subTest(scenario=scenario):
-                result = subprocess.run([sys.executable, '-m', 'swhurl', 'verify-run'], cwd=ROOT,
-                                        env=dict(self.env, SCENARIO=scenario, PYTHONPATH=str(ROOT / 'tools')),
-                                        capture_output=True, text=True)
-                output = result.stdout + result.stderr
-                self.assertEqual(result.returncode == 0, scenario == 'match', output)
-                self.assertIn('Flux Controllers', output)
-                self.assertIn('Notification heartbeat', output)
-                for value in (KEY, OTHER_KEY):
-                    self.assertNotIn(value, output)
-                    self.assertNotIn(base64.b64encode(value.encode()).decode(), output)
 
 
 class OpsScriptTests(unittest.TestCase):

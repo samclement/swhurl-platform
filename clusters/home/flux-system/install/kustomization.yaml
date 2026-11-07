@@ -1,6 +1,8 @@
 # Flux controller settings, applied by make flux-install (not by Flux and not by
 # make flux-bootstrap). gotk-components.yaml is not in Git: make flux-install writes
-# it from `flux install --export` at FLUX_VERSION in tools/swhurl/flux.py.
+# it from `flux install --export` at the version in flux.json beside this file, which
+# is also where the controller arguments the patch below adds are stated (swhurl-v2
+# verify's flux-controllers check reads it).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

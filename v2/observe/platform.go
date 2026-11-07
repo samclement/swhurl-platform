@@ -81,15 +81,15 @@ type PlatformEvidence struct {
 	Now                                                 time.Time
 }
 
-// PlatformChecks judges the evidence, in the order the checks run.
+// PlatformChecks judges the evidence, in the order the checks run. Each group's section comes from the catalogue.
 func PlatformChecks(e PlatformEvidence) []PlatformCheck {
 	return []PlatformCheck{
-		{"flux-units", "Flux Kustomizations", platformUnits(e.Units)},
-		{"ingress", "Ingress", platformIngress(e.Traefik)},
-		{"alerts", "Alerts", platformAlerts(e.Alerts, e.Providers)},
-		{"notify-service", "Notify service", platformNotifyService(e.Notify, e.Console)},
-		{"dashboards", "App dashboards and alerts", platformDashboards(e.Dashboards, e.Now)},
-		{"notifications", "Notifications", platformNotifications(e.Notifications, e.Now)},
+		platformCheck("flux-units", platformUnits(e.Units)),
+		platformCheck("ingress", platformIngress(e.Traefik)),
+		platformCheck("alerts", platformAlerts(e.Alerts, e.Providers)),
+		platformCheck("notify-service", platformNotifyService(e.Notify, e.Console)),
+		platformCheck("dashboards", platformDashboards(e.Dashboards, e.Now)),
+		platformCheck("notifications", platformNotifications(e.Notifications, e.Now)),
 	}
 }
 
@@ -427,6 +427,9 @@ func PlatformText(r PlatformReport) string {
 		for _, entry := range check.Entries {
 			fmt.Fprintf(&out, "[%s] %s\n", strings.ToUpper(string(entry.Level)), entry.Message)
 		}
+	}
+	if r.Passed() {
+		out.WriteString("\nValidation passed.\n")
 	}
 	return out.String()
 }

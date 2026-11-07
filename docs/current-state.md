@@ -171,6 +171,17 @@ What has been verified on the live cluster, and when: current facts first, then 
   with `mark_cache_size` capped at 2 GiB, so the cache cannot take the room the merges need. `metric_log_0`
   (520,846 rows) and the empty `metric_log_1` were dropped, leaving one `metric_log` that was still accepting rows
   (842 in seven minutes).
+- **8Gi live (`9f12c4fc`):** ClickHouse restarted at 07:01:51 UTC with the 8Gi limit; it reports
+  `max_server_memory_usage` 7.2 GiB and `mark_cache_size` 2 GiB, and the node's memory requests stayed at 20% while
+  its limits rose from 52% to 64%. In the 24 minutes after: no `241`, tracked memory 314 to 336 MiB, CPU 73m,
+  `metric_log` grew to 2,344 rows, every ClickStack pod running, and `make verify-platform` passed (84 OK, no
+  warning). The one error logged was unrelated (below).
+- **A failed login every four hours, an upstream bug:** ClickHouse logs `AUTHENTICATION_FAILED` for `app` from the
+  HyperDX pod at :14:33 every 4 hours (about 12 lines a day since at least 1 November). It is HyperDX's usage-stats
+  task (`tasks/usageStats.js`, `setInterval` 4h, on because `USAGE_STATS_ENABLED` is `true`): it reads the saved
+  connections with a plain `find()`, and the connection model declares `password` with `select: false`, so the task
+  logs in without one. The one saved connection (`Local ClickHouse`, user `app`) holds the live password, compared by
+  SHA-256 against `clickstack-runtime-inputs`, and HyperDX's own queries succeed. Harmless; nothing changed.
 - **After the revert (`51cb9529`):** ClickHouse restarted at 06:45:57 UTC, `metric_log` took 181 rows in its first
   three minutes, `min_bytes_for_wide_part` reads the default 10 MiB again, and five minutes of one-second samples
   showed no `241`, tracked memory steady near 390 MiB (from 3.6 GiB) and CPU at 61m (from 645m). Each config change

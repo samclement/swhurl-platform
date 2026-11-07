@@ -1577,3 +1577,38 @@ directory's missing parents are made 0700 too.
    verify-platform` stays clean.
 
 **Not in this slice:** `clickstack-bootstrap`, more watched jobs, and removing `httpx` (the console uses it).
+
+## 16. ClickStack bootstrap in Go (approved 7 November 2026)
+
+The operator approved porting `make clickstack-bootstrap` to `swhurl-v2 clickstack-bootstrap`, after weighing a bash
+version (shorter, but untested and handling credentials). HyperDX has no setting for its first account or its team's
+ingestion key; the command makes both the ones in `observability/clickstack-runtime-inputs` (SOPS). The target's name,
+its inputs and what it writes stay; `tools/swhurl/clickstack.py` keeps only what the MongoDB restore test,
+`verify-logs` and the team scenario still use, and `tests/test_clickstack.py` is deleted.
+
+**Kept exactly** (each case of `tests/test_clickstack.py` has a Go test in `orchestration/bootstrap_test.go`): both
+Secrets are read before anything else; the API is waited for (five minutes, every five seconds) before MongoDB is
+touched; the admin is registered only when no team exists; an admin with no account is a warning; the one team's key
+is set only when it differs, so a second run writes nothing; more than one team, a refused registration or an API that
+never answers stops with exit 1; `--dry-run` (`DRY_RUN=true`) reads and decides and writes nothing; no output line,
+error or argument holds the password, the key or MongoDB's address, and the current team key never leaves MongoDB's
+pod (the comparison runs there).
+
+**Deliberate differences:** a refused registration names its status, not HyperDX's message (the adapter never repeats
+an answer's body); any 2xx answers `/ready` and a registration, where Python wanted 200; an `/installation` answer
+without `isTeamExisting` stops the run instead of reading as no team; setting the key checks that exactly one team was
+updated; an account check that cannot be answered stops the run, and a dry run warns of a missing account too; a
+missing input names its first missing key; a dry run with no team says it would set the key and reads nothing more;
+`TIMEOUT_SECS` is gone (it was never documented), and the whole run is bounded to seven minutes.
+
+**Boundaries.**
+
+| Layer | Owns |
+| --- | --- |
+| `adapters/clickstack` (external effect, approved with this slice) | `Installer`: readiness, whether a team exists and registration on HyperDX's internal API, which needs no key; the account check and the team key's comparison and update as mongosh programs. Same exec runners and stdin-only credentials as the dashboard adapter; `InstallerContract` runs against the fake `Installation` and the real adapter |
+| `orchestration` | `BootstrapClickStack`: read, wait, register, check the account, compare and set the key; a report of lines, or the error where it stopped |
+| `cmd/swhurl-v2` | `clickstack-bootstrap [--dry-run] --kubeconfig PATH`: `[OK]`/`[INFO]`/`[WARN]` lines, `[BAD]` and exit 1 where it stopped |
+
+**Delivery, one commit:** the operator runs the command, nothing schedules it, and a rollback is one revert.
+Acceptance: `make check-v2` and `make check`; a live dry run and a live run both find everything in place and write
+nothing.

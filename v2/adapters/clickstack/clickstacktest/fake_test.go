@@ -18,3 +18,7 @@ func TestFakeContract(t *testing.T) {
 		return &held
 	})
 }
+
+func TestFakeInstallerContract(t *testing.T) {
+	InstallerContract(t, func(_ *testing.T, i *Installation) clickstack.Installer { return i })
+}

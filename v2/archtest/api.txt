@@ -10,6 +10,7 @@ adapters/appsource: func (Local) Declaration(root string) (producer.Object, erro
 adapters/appsource: func (Local) Events(root, name string) (producer.Object, []byte, error)
 adapters/appsource: type Local struct {}
 adapters/appsource: type Reader interface {Declaration(root string) (producer.Object, error) API(root, name string) ([]byte, error) Events(root, name string) (producer.Object, []byte, error)}
+adapters/clickstack/clickstacktest: const NewTeamKey = "random-team-key"
 adapters/clickstack/clickstacktest: func (*Fake) Alerts(context.Context) ([]dashboards.Alert, error)
 adapters/clickstack/clickstacktest: func (*Fake) CreateAlert(_ context.Context, alert dashboards.Alert) error
 adapters/clickstack/clickstacktest: func (*Fake) CreateDashboard(_ context.Context, board dashboards.Dashboard) (string, error)
@@ -24,16 +25,27 @@ adapters/clickstack/clickstacktest: func (*Fake) UpdateDashboard(_ context.Conte
 adapters/clickstack/clickstacktest: func (*Fake) UpdateWebhook(_ context.Context, id string, webhook dashboards.Webhook) error
 adapters/clickstack/clickstacktest: func (*Fake) Webhooks(context.Context) ([]dashboards.Webhook, error)
 adapters/clickstack/clickstacktest: func (*Fake) Writes() []string
+adapters/clickstack/clickstacktest: func (*Installation) AccountExists(_ context.Context, uri, email string) (bool, error)
+adapters/clickstack/clickstacktest: func (*Installation) Ready(context.Context) error
+adapters/clickstack/clickstacktest: func (*Installation) Register(_ context.Context, email, _ string) error
+adapters/clickstack/clickstacktest: func (*Installation) SetTeamKey(_ context.Context, uri, key string) error
+adapters/clickstack/clickstacktest: func (*Installation) TeamExists(context.Context) (bool, error)
+adapters/clickstack/clickstacktest: func (*Installation) TeamKey(_ context.Context, uri, key string) (clickstack.TeamKey, error)
 adapters/clickstack/clickstacktest: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, *Scenario) clickstack.Opener)
+adapters/clickstack/clickstacktest: func InstallerContract(t *testing.T, open func(*testing.T, *Installation) clickstack.Installer)
 adapters/clickstack/clickstacktest: type Fake struct {Key, URI, Email string Held Inventory Failing map[string]int Totals map[string]int Calls []string Bodies []any Opened int}
+adapters/clickstack/clickstacktest: type Installation struct {URI string Down bool Refused int Accounts []string TeamKeys []string Calls []string}
 adapters/clickstack/clickstacktest: type Inventory struct {Sources []dashboards.Source Dashboards []dashboards.Dashboard Webhooks []dashboards.Webhook Alerts []dashboards.Alert}
 adapters/clickstack/clickstacktest: type Scenario = Fake
 adapters/clickstack: func (*Error) Error() string
 adapters/clickstack: func New(mongo, app Runner) Opener
+adapters/clickstack: func NewInstaller(mongo, app Runner) Installer
 adapters/clickstack: type API interface {Sources(ctx context.Context) ([]dashboards.Source, error) Webhooks(ctx context.Context) ([]dashboards.Webhook, error) CreateWebhook(ctx context.Context, webhook dashboards.Webhook) (string, error) UpdateWebhook(ctx context.Context, id string, webhook dashboards.Webhook) error Dashboards(ctx context.Context) ([]dashboards.Dashboard, error) CreateDashboard(ctx context.Context, dashboard dashboards.Dashboard) (string, error) UpdateDashboard(ctx context.Context, id string, dashboard dashboards.Dashboard) error DeleteDashboard(ctx context.Context, id string) error Alerts(ctx context.Context) ([]dashboards.Alert, error) CreateAlert(ctx context.Context, alert dashboards.Alert) error UpdateAlert(ctx context.Context, id string, alert dashboards.Alert) error DeleteAlert(ctx context.Context, id string) error}
 adapters/clickstack: type Error struct {Operation, Reason string}
+adapters/clickstack: type Installer interface {// Ready is nil when the API answers its readiness probe with 200. Ready(ctx context.Context) error // TeamExists is whether HyperDX holds a team, which closes its registration. TeamExists(ctx context.Context) (bool, error) // Register creates the first account and its team; HyperDX refuses it while a team exists. Register(ctx context.Context, email, password string) error // AccountExists is whether an account with this email exists. AccountExists(ctx context.Context, uri, email string) (bool, error) // TeamKey is how the teams stand against the wanted ingestion key. TeamKey(ctx context.Context, uri, key string) (TeamKey, error) // SetTeamKey sets the one team's ingestion key; no team to set is an error. SetTeamKey(ctx context.Context, uri, key string) error}
 adapters/clickstack: type Opener interface {Open(ctx context.Context, uri, email string) (API, error)}
 adapters/clickstack: type Runner func(ctx context.Context, program []byte) ([]byte, error)
+adapters/clickstack: type TeamKey struct {Teams int Matches bool}
 adapters/clickstack: var ErrNoAccessKey = errors.New("the ClickStack admin account has no access key; sign in once, or run make clickstack-bootstrap")
 adapters/files/filestest: func (*Fake) Prune(dir, folder string, rendered []string) ([]files.Outcome, error)
 adapters/files/filestest: func (*Fake) Remove(dir, path string) ([]files.Outcome, error)
@@ -947,6 +959,9 @@ observe: var PlatformUnits = Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", K
 orchestration: const AppRunning = "running"
 orchestration: const AppStopped = "stopped"
 orchestration: const AppUnknown = "unknown"
+orchestration: const BootstrapInfo BootstrapLevel = "info"
+orchestration: const BootstrapOK BootstrapLevel = "ok"
+orchestration: const BootstrapWarn BootstrapLevel = "warn"
 orchestration: const JobComplete = "complete"
 orchestration: const JobFailed = "failed"
 orchestration: const JobRunning = "running"
@@ -961,6 +976,7 @@ orchestration: func (*Notifier) AcceptMessage(ctx context.Context, connect Notif
 orchestration: func (*Notifier) Deliver(ctx context.Context, connect NotifyConnect, now time.Time) ([]Delivered, error)
 orchestration: func (*Refusal) Error() string
 orchestration: func AcquireChart(profile kernel.PlatformProfile, repositories []byte, cache string, acquirer helm.Acquirer) (string, error)
+orchestration: func BootstrapClickStack(ctx context.Context, ports BootstrapPorts, options BootstrapOptions) (BootstrapReport, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
 orchestration: func CheckNotifications(ctx context.Context, ports CheckerPorts, options CheckOptions) (CheckReport, error)
 orchestration: func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
@@ -988,6 +1004,11 @@ orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, op
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Accepted struct {Request notify.Request Caller string Channels []string Failure error}
+orchestration: type BootstrapLevel string
+orchestration: type BootstrapLine struct {Level BootstrapLevel Text string}
+orchestration: type BootstrapOptions struct {DryRun bool Wait, Interval time.Duration}
+orchestration: type BootstrapPorts struct {Data kube.Data Installer clickstack.Installer}
+orchestration: type BootstrapReport struct {Lines []BootstrapLine}
 orchestration: type CheckOptions struct {Now float64 Base, PlatformAddress, NotifyAddress, Token string DryRun bool}
 orchestration: type CheckReport struct {State *incident.State Offered []CheckerDelivery}
 orchestration: type CheckerDelivery struct {Entry incident.Entry Err error Retry bool}

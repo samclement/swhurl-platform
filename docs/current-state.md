@@ -2,6 +2,17 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## ClickStack bootstrap runs Go (7 November 2026)
+
+- **Scope:** [the approved slice](iteration-2-plan.md#16-clickstack-bootstrap-in-go-approved-7-november-2026):
+  `make clickstack-bootstrap` builds and runs `swhurl-v2 clickstack-bootstrap` with a private JSON kubeconfig;
+  `tests/test_clickstack.py` and the bootstrap half of `tools/swhurl/clickstack.py` are deleted.
+- **Live acceptance** (working tree before commit, against the live cluster): `DRY_RUN=true` and then a real run
+  each printed `HyperDX API is ready`, `a team exists; registration is closed`, the admin's account found and `team
+  ingestion key matches CLICKSTACK_INGESTION_KEY`, and exited 0 in about five seconds; neither wrote anything.
+- **Not exercised live:** registration and setting a differing key, which need a fresh ClickStack or a changed key;
+  the Go tests cover both against the contract fake and the real adapter's programs.
+
 ## The host heartbeat runs Go and its Python is retired (7 November 2026)
 
 - **Scope:** [the approved slice](iteration-2-plan.md#15-the-host-heartbeat-in-go-approved-7-november-2026), step 2

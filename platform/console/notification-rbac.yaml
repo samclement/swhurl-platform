@@ -17,10 +17,7 @@ rules:
     resources: [helmreleases]
     verbs: [list]
   - apiGroups: [apps]
-    resources: [deployments, statefulsets, daemonsets]
-    verbs: [list]
-  - apiGroups: [batch]
-    resources: [cronjobs]  # a scheduled job's runs
+    resources: [deployments, statefulsets]
     verbs: [list]
   - apiGroups: [""]
     resources: [pods, events]

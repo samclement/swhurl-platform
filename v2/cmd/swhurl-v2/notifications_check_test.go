@@ -222,8 +222,29 @@ func TestCheckerStateRBACAndSourceAlertWiring(t *testing.T) {
 		t.Fatal("state permissions no longer named get/patch only")
 	}
 	cluster := strings.Split(strings.Split(rbac, "kind: ClusterRole\n")[1], "---")[0]
-	if strings.Contains(cluster, "secrets") || strings.Contains(cluster, "exec") || strings.Count(cluster, "verbs: [list]") != 5 {
+	if strings.Contains(cluster, "secrets") || strings.Contains(cluster, "exec") || strings.Count(cluster, "verbs: [list]") != 4 {
 		t.Fatal("checker read role gained other effects")
+	}
+	expected := `
+  - apiGroups: [kustomize.toolkit.fluxcd.io]
+    resources: [kustomizations]
+    verbs: [list]
+  - apiGroups: [helm.toolkit.fluxcd.io]
+    resources: [helmreleases]
+    verbs: [list]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets]
+    verbs: [list]
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [list]
+`
+	if strings.SplitN(cluster, "rules:", 2)[1] != expected {
+		t.Fatal("checker read role differs from its exact snapshot reads")
+	}
+	job := read("platform/console/helmrelease.yaml")
+	if !strings.Contains(job, `command: [timeout, "50", swhurl-v2, notifications-check, --in-cluster]`) {
+		t.Fatal("scheduled checker no longer runs the bounded Go in-cluster pass")
 	}
 	alerts := read("platform/alerts/alerts.yaml")
 	if strings.Count(alerts, "kind: Alert\n") != 1 || !strings.Contains(alerts, "- kind: Kustomization\n      name: '*'\n      matchLabels:\n        platform.swhurl.com/alert: failures") {

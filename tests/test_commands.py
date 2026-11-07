@@ -154,7 +154,7 @@ class MakeTests(unittest.TestCase):
         code, out, err, executed = run_make('console-image', {'DRY_RUN': 'true'})
         self.assertEqual((code, out, executed), (2, '', []))
         self.assertIn('make console-image has no dry run', err)
-        code, _, _, executed = run_make('notifications-check', {'DRY_RUN': 'false'})
+        code, _, _, executed = run_make('notifications-heartbeat', {'DRY_RUN': 'false'})
         self.assertEqual(len(executed), 1, 'DRY_RUN=false runs it')
 
     def test_a_variable_the_command_reads_itself_is_left_to_it(self):
@@ -166,14 +166,13 @@ class MakeTests(unittest.TestCase):
         for target, env, expected in (
                 ('verify-logs', {}, ['--minutes', '15']),
                 ('verify-logs', {'MINUTES': '60'}, ['--minutes', '60']),
-                ('notifications-check', {}, ['--dry-run']),
                 ('console-dev', {'PORT': '9000'}, ['--dev', '--port', '9000'])):
             with self.subTest(target=target, env=env):
                 self.assertEqual(TARGETS[target].arguments(env), expected)
 
     def test_a_command_that_needs_the_locked_dependencies_runs_under_uv(self):
-        code, _, _, executed = run_make('notifications-check', {})
-        self.assertEqual(executed, [('uv', ['uv', 'run', '--frozen', 'python', '-m', 'swhurl', 'notifications-check', '--dry-run'])])
+        code, _, _, executed = run_make('notifications-heartbeat', {})
+        self.assertEqual(executed, [('uv', ['uv', 'run', '--frozen', 'python', '-m', 'swhurl', 'notifications-heartbeat'])])
 
     def test_a_shared_function_gets_its_prefix_from_make_and_from_the_command_line(self):
         seen = []
@@ -183,7 +182,7 @@ class MakeTests(unittest.TestCase):
         self.assertEqual(seen, [['status', 'web']])
 
     def test_only_a_target_with_a_function_runs_through_make(self):
-        for target in ('flux-reconcile', 'console-merge', 'nothing'):
+        for target in ('flux-reconcile', 'notifications-check', 'console-merge', 'nothing'):
             with self.subTest(target=target):
                 code, _, err, _ = run_make(target, {})
                 self.assertEqual(code, 2)

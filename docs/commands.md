@@ -11,7 +11,7 @@ Every `make` target, grouped by task. Each is stated once, in [`tools/swhurl/com
 | `flux-reconcile` | Fetch Git, reconcile the source layer and the stack, then wait until every unit is Ready at that revision, or at a newer one if a commit lands meanwhile (`swhurl flux-wait`: stops at the first unit that fails, skips suspended ones) | Cluster |
 | `install` † | `flux-reconcile`, then `verify-platform` (`SKIP_VERIFY=1` skips the checks) | Cluster |
 | `verify-platform` | Every live check of the platform, listed in [operations](operations.md#check-health): builds `swhurl-v2` and runs all twenty-four as `swhurl-v2 verify --scope platform` (needs Go 1.26.0), which reads the cluster, this checkout, the registry, S3 and GitHub, runs fixed read-only pod queries and judges the host facts this recipe supplies — the console content tag and `systemctl show` of the heartbeat units (AWS credentials from `aws configure export-credentials` unless `AWS_ACCESS_KEY_ID` is set; hook listings use `GH_TOKEN` or `gh auth token`); warns or fails, never prints a key | Cluster (read), Secrets (read), S3 (list), GitHub (read), commands in pods, this host |
-| `notifications-check` | Preview [lifecycle and health notifications](services.md#alerts) from the live cluster without posting or changing incident state | Cluster (read) |
+| `notifications-check` | Build `swhurl-v2` and preview [lifecycle and health notifications](services.md#alerts) from the live cluster, always with `--dry-run`: no posts or incident-state changes (needs Go 1.26.0, kubectl and jq) | Cluster (read) |
 | `notifications-heartbeat [ARGS=--dry-run]` | Check `console-notifications`; by default alert on stale/missing/suspended status, remind hourly and send recovery when it succeeds again. Pass `ARGS=--dry-run` to preview without posting or saving state | Cluster (read); ntfy and local state on transitions |
 | `verify-logs [MINUTES=15]` | Summarize fresh ClickStack log parser, severity, trace and original-line coverage per running container; report quiet containers separately, without printing bodies. `MINUTES` is 1 to 1440 | Cluster (read) |
 | `clickstack-bootstrap` † | After a ClickStack install: register the admin from SOPS if no team exists, set the team ingestion key to `CLICKSTACK_INGESTION_KEY`; idempotent, never prints values ([services](services.md#clickstack-and-otel)) | Cluster |
@@ -20,11 +20,12 @@ Every `make` target, grouped by task. Each is stated once, in [`tools/swhurl/com
 | `flux-install` † | Install or upgrade the Flux controllers at the version in `clusters/home/flux-system/install/flux.json` with the patches beside it; refuses a different `flux` CLI; `DRY_RUN=true` prints the live diff | Cluster |
 | `flux-bootstrap` | Apply the root units and sources in `clusters/home/flux-system` (Flux must already be installed) | Cluster |
 
-The `notifications-check` Make target still invokes Python in dry-run mode. The standalone Go counterpart is
-`swhurl-v2 notifications-check [--dry-run] (--kubeconfig KUBECONFIG.json | --in-cluster)`; it requires `CONSOLE_URL`,
-and a real pass additionally requires `NTFY_PLATFORM_URL`. It is not wired into Make or the CronJob yet. See
-[notification behavior and credentials](services.md#current-notification-behavior) before running it: omitting
-`--dry-run` saves state and sends messages.
+The `notifications-check` recipe exports the caller's kubeconfig (`KUBECONFIG` or kubectl's default) as JSON into
+a private temporary file, removed on success or failure. Kubeconfig export or profile lookup failure stops before
+Go runs. Console links default to `https://console.<routing.baseDomain>` from `v2/testdata/profile.json`; set
+`CONSOLE_URL` to override without reading the profile. No notification topic or token is needed. The target always
+passes `--dry-run`, regardless of `DRY_RUN` or `ARGS`. For the scheduled command and direct Go invocation's delivery
+credentials and effects, see [current notification behavior](services.md#current-notification-behavior).
 
 ## Apps
 

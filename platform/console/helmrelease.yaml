@@ -136,7 +136,7 @@ spec:
         containers:
           main:
             image: *operator-image
-            command: [timeout, "50", python, -m, swhurl, notifications-check]
+            command: [timeout, "50", swhurl-v2, notifications-check, --in-cluster]
             env:
               CONSOLE_URL: https://console.${BASE_DOMAIN}
               # Messages about apps also go to the notify service, which sends them to the app's

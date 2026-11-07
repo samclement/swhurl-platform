@@ -19,6 +19,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/git"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/helm"
+	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
@@ -76,6 +77,7 @@ const usage = `usage:
       [--heartbeat FILE] [--source NAME] [--json]
   swhurl-v2 notify-serve [--listen ADDR]
   swhurl-v2 notifications-check [--dry-run] (--kubeconfig KUBECONFIG.json | --in-cluster)
+  swhurl-v2 notifications-heartbeat [--dry-run] [--max-age DURATION] [--state FILE] --kubeconfig KUBECONFIG.json
   swhurl-v2 clickstack-dashboards (--cluster | --records DIR) [--dry-run] (--kubeconfig KUBECONFIG.json | --in-cluster)
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
@@ -150,6 +152,15 @@ credential or a request an adapter refuses. The platform scope also judges the h
 clusters/home/flux-system/install/flux.json in the checkout, and the notification heartbeat timer and service from
 --heartbeat FILE, the output of systemctl show --timestamp=unix for both units, which make verify-platform writes.
 The cluster scope reads neither, and refuses both flags.
+
+notifications-heartbeat watches the notification checker from the host: it reads the console-notifications CronJob
+and alerts the platform topic when it is missing, suspended or has not succeeded within --max-age (10m by default; a
+number and s, m or h), reminds hourly while it stays stale and says when it recovers. The incident is kept in --state
+(default ~/.local/state/swhurl-platform/notification-heartbeat.json, the file the Python heartbeat kept), written
+atomically and privately only after ntfy accepts a notice; the topic's address is read from the console's
+notification-ntfy Secret only when a notice is due. A CronJob that cannot be read is unknown, not stale: nothing is
+sent. --dry-run reads and decides, and neither posts nor saves. Each job is a JSON log line; the exit status is 1
+when the state cannot be read or is invalid (it is left unchanged) or any job failed.
 
 clickstack-dashboards keeps one ClickStack dashboard per app, the app's default alerts and the two reserved
 webhooks. The apps are those whose HelmReleases Flux applied (--cluster; none found deletes nothing) or those the
@@ -404,39 +415,40 @@ func awsCredentials() (s3.Credentials, bool) {
 // commands is every command and the step that runs it, in one table so the dispatcher and the usage check
 // cannot disagree.
 var commands = map[string]func(cli, request) int{
-	"release-id":            func(c cli, r request) int { return c.releaseID(r.release) },
-	"instance-revision":     func(c cli, r request) int { return c.instanceRevision(r.instance) },
-	"select-release":        cli.selectRelease,
-	"deploy":                cli.deploy,
-	"promote":               cli.promote,
-	"compile":               cli.compile,
-	"status":                cli.status,
-	"preview":               cli.preview,
-	"shadow":                cli.shadow,
-	"resolve":               cli.resolve,
-	"render":                cli.render,
-	"policy":                cli.policy,
-	"chart":                 cli.acquireChart,
-	"egress":                cli.egress,
-	"proxy":                 cli.proxy,
-	"auth":                  cli.auth,
-	"users":                 cli.users,
-	"reloader":              cli.reloader,
-	"mint":                  cli.mint,
-	"create":                cli.create,
-	"declaration":           cli.declaration,
-	"names":                 cli.names,
-	"image-declaration":     cli.imageDeclaration,
-	"migrate":               cli.migrate,
-	"edit":                  cli.edit,
-	"remove":                cli.remove,
-	"restore":               cli.restore,
-	"team":                  cli.team,
-	"workstreams":           cli.workstreams,
-	"verify":                cli.verify,
-	"notify-serve":          cli.notifyServe,
-	"notifications-check":   cli.notificationsCheck,
-	"clickstack-dashboards": cli.clickstackDashboards,
+	"release-id":              func(c cli, r request) int { return c.releaseID(r.release) },
+	"instance-revision":       func(c cli, r request) int { return c.instanceRevision(r.instance) },
+	"select-release":          cli.selectRelease,
+	"deploy":                  cli.deploy,
+	"promote":                 cli.promote,
+	"compile":                 cli.compile,
+	"status":                  cli.status,
+	"preview":                 cli.preview,
+	"shadow":                  cli.shadow,
+	"resolve":                 cli.resolve,
+	"render":                  cli.render,
+	"policy":                  cli.policy,
+	"chart":                   cli.acquireChart,
+	"egress":                  cli.egress,
+	"proxy":                   cli.proxy,
+	"auth":                    cli.auth,
+	"users":                   cli.users,
+	"reloader":                cli.reloader,
+	"mint":                    cli.mint,
+	"create":                  cli.create,
+	"declaration":             cli.declaration,
+	"names":                   cli.names,
+	"image-declaration":       cli.imageDeclaration,
+	"migrate":                 cli.migrate,
+	"edit":                    cli.edit,
+	"remove":                  cli.remove,
+	"restore":                 cli.restore,
+	"team":                    cli.team,
+	"workstreams":             cli.workstreams,
+	"verify":                  cli.verify,
+	"notify-serve":            cli.notifyServe,
+	"notifications-check":     cli.notificationsCheck,
+	"notifications-heartbeat": cli.notificationsHeartbeat,
+	"clickstack-dashboards":   cli.clickstackDashboards,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -458,6 +470,8 @@ type request struct {
 	team, image, exposure                              string
 	action, description, rename, transport             string
 	listen, appDir, catalogue                          string
+	statePath                                          string
+	stateFlag, maxAgeFlag                              *once
 	rotate, check, json, inCluster, all, dryRun        bool
 	cluster                                            bool
 	confirm, ageKey                                    string
@@ -649,6 +663,13 @@ func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) boo
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod ServiceAccount")
 		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "read and evaluate without posting or saving")
+	case "notifications-heartbeat":
+		r.stateFlag = &once{value: &r.statePath}
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "read and decide without posting or saving state")
+		r.maxAgeFlag = &once{value: &r.maxAge}
+		flags.Var(r.maxAgeFlag, "max-age", "the age before a watched job is stale, for every job (default 10m; s, m or h)")
+		flags.Var(r.stateFlag, "state", "the state file (default ~/"+heartbeatStateFile+")")
 	case "clickstack-dashboards":
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount")
@@ -815,29 +836,30 @@ func (r *request) named() []string {
 // requiredFlags is what each command that names its inputs requires. A command that is not listed takes one file
 // argument instead, which is why the table is also the list of the two commands that do.
 var requiredFlags = map[string]func(*request) []string{
-	"policy":                func(r *request) []string { return []string{r.records, r.profile, r.out, r.chart} },
-	"chart":                 func(r *request) []string { return []string{r.profile, r.repositories, r.cache} },
-	"compile":               func(r *request) []string { return []string{r.instance, r.release, r.app, r.profile} },
-	"preview":               func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
-	"select-release":        func(r *request) []string { return []string{r.instance, r.release, r.expected} },
-	"mint":                  func(r *request) []string { return []string{r.instance, r.profile, r.out} },
-	"create":                func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
-	"image-declaration":     func(r *request) []string { return []string{r.appDir} },
-	"declaration":           func(r *request) []string { return []string{r.label, r.app, r.team} },
-	"names":                 func(r *request) []string { return []string{r.catalogue, r.appDir} },
-	"remove":                func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
-	"status":                (*request).statusNamed,
-	"restore":               func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
-	"migrate":               (*request).appNamed,
-	"promote":               (*request).appNamed,
-	"deploy":                (*request).deployNamed,
-	"edit":                  (*request).editNamed,
-	"team":                  (*request).teamNamed,
-	"workstreams":           func(r *request) []string { return []string{r.repoRoot} },
-	"verify":                (*request).verifyNamed,
-	"notify-serve":          func(r *request) []string { return []string{r.listen} },
-	"notifications-check":   (*request).checkerNamed,
-	"clickstack-dashboards": (*request).dashboardsNamed,
+	"policy":                  func(r *request) []string { return []string{r.records, r.profile, r.out, r.chart} },
+	"chart":                   func(r *request) []string { return []string{r.profile, r.repositories, r.cache} },
+	"compile":                 func(r *request) []string { return []string{r.instance, r.release, r.app, r.profile} },
+	"preview":                 func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
+	"select-release":          func(r *request) []string { return []string{r.instance, r.release, r.expected} },
+	"mint":                    func(r *request) []string { return []string{r.instance, r.profile, r.out} },
+	"create":                  func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
+	"image-declaration":       func(r *request) []string { return []string{r.appDir} },
+	"declaration":             func(r *request) []string { return []string{r.label, r.app, r.team} },
+	"names":                   func(r *request) []string { return []string{r.catalogue, r.appDir} },
+	"remove":                  func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
+	"status":                  (*request).statusNamed,
+	"restore":                 func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
+	"migrate":                 (*request).appNamed,
+	"promote":                 (*request).appNamed,
+	"deploy":                  (*request).deployNamed,
+	"edit":                    (*request).editNamed,
+	"team":                    (*request).teamNamed,
+	"workstreams":             func(r *request) []string { return []string{r.repoRoot} },
+	"verify":                  (*request).verifyNamed,
+	"notify-serve":            func(r *request) []string { return []string{r.listen} },
+	"notifications-check":     (*request).checkerNamed,
+	"notifications-heartbeat": (*request).heartbeatNamed,
+	"clickstack-dashboards":   (*request).dashboardsNamed,
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one
@@ -1007,6 +1029,8 @@ type cli struct {
 	git       git.Reader
 	appSource appsource.Reader
 	github    github.Reader
+	// platform publishes to the platform topic; nil is ntfy over HTTPS. A test supplies a fake.
+	platform ntfy.Publisher
 }
 
 func (c cli) releaseID(path string) int {

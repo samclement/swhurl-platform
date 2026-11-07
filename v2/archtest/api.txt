@@ -110,6 +110,22 @@ adapters/helm: type Error struct {Reason string}
 adapters/helm: type Pin struct {Name, Version, Repository string}
 adapters/helm: type Renderer interface {Render(Request) ([]json.RawMessage, error)}
 adapters/helm: type Request struct {Chart, Release, Namespace string ChartName, ChartVersion string Values json.RawMessage}
+adapters/hoststate/hoststatetest: func (*Fake) Read(path string) ([]byte, bool, error)
+adapters/hoststate/hoststatetest: func (*Fake) Replace(path string, data []byte) error
+adapters/hoststate/hoststatetest: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) hoststate.Store)
+adapters/hoststate/hoststatetest: func New() *Fake
+adapters/hoststate/hoststatetest: type Fake struct {Files map[string][]byte Unreadable map[string]bool Unwritable map[string]bool Reads []string Replaced []string}
+adapters/hoststate/hoststatetest: type Scenario struct {Existing string Held []byte Absent string Unreadable string Unwritable string}
+adapters/hoststate: const MaxBytes = 1 << 20
+adapters/hoststate: const Unreadable = "unreadable"
+adapters/hoststate: const Unwritable = "unwritable"
+adapters/hoststate: func (*Error) Error() string
+adapters/hoststate: func (Disk) Read(path string) ([]byte, bool, error)
+adapters/hoststate: func (Disk) Replace(path string, data []byte) error
+adapters/hoststate: func New() Store
+adapters/hoststate: type Disk struct {}
+adapters/hoststate: type Error struct {Code, Reason string}
+adapters/hoststate: type Store interface {Read(path string) ([]byte, bool, error) Replace(path string, data []byte) error}
 adapters/kube/kubetest: func (*Executor) Exec(ctx context.Context, r kube.ExecRequest) (kube.ExecResult, error)
 adapters/kube/kubetest: func (*Fake) CollectAllNamespaces(_ context.Context, ref observe.Ref) (observe.List, error)
 adapters/kube/kubetest: func (*Fake) ConfigMaps(_ context.Context, namespace string, selector kube.Selector) ([]kube.ConfigMap, error)
@@ -352,6 +368,25 @@ events: type Declaration struct {Application, Environment string Publishes []str
 events: type Error struct {Application, Environment, Field, Reason string}
 events: type Resolved struct {Connected []Subscription Pending []string}
 events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
+heartbeat: const Alert Action = "alert"
+heartbeat: const None Action = "none"
+heartbeat: const Recover Action = "recover"
+heartbeat: const Remind Action = "remind"
+heartbeat: const ReminderSeconds = 3600
+heartbeat: func (Decision) Notice(job Job) (Notice, bool)
+heartbeat: func (Job) Key() string
+heartbeat: func (State) Encode() []byte
+heartbeat: func Decide(cronjob []byte, flag Flag, now, maxAge float64) (Decision, error)
+heartbeat: func DecodeState(document []byte) (State, error)
+heartbeat: func Watched() []Job
+heartbeat: type Action string
+heartbeat: type Decision struct {Action Action Reason string Next Flag}
+heartbeat: type Flag struct {Alerting bool Since, LastAlert float64}
+heartbeat: type Job struct {Label string Namespace, Name string MaxAge float64}
+heartbeat: type Notice struct {Title, Message string Priority int Tag string}
+heartbeat: type State map[string]Flag
+heartbeat: var ErrInvalid = errors.New("heartbeat state is invalid; leaving it unchanged")
+heartbeat: var ErrUnreadable = errors.New("heartbeat state cannot be read; leaving it unchanged")
 incident: const ConsoleGrace = 600
 incident: const FieldManager = "notification-check"
 incident: const Grace = 300
@@ -940,6 +975,7 @@ orchestration: func ImageDeclaration(reader appsource.Reader, root string) (stri
 orchestration: func Migrate(ctx context.Context, inputs MigrationInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer) (Migration, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewNotifier(publisher ntfy.Publisher) *Notifier
+orchestration: func NotificationsHeartbeat(ctx context.Context, ports HeartbeatPorts, options HeartbeatOptions) ([]HeartbeatOutcome, error)
 orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformReport, error)
 orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.PlatformReport, error)
 orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
@@ -969,6 +1005,9 @@ orchestration: type Deploy struct {Tag string Release kernel.ReleaseBundle Insta
 orchestration: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
 orchestration: type Editable struct {InstanceInputs Change string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}
 orchestration: type Edition struct {Application, Environment, Change string Before, After kernel.InstanceSpec Compilation kernel.Compilation ResolutionStale bool Written []files.Outcome}
+orchestration: type HeartbeatOptions struct {Now float64 Jobs []heartbeat.Job StatePath string DryRun bool}
+orchestration: type HeartbeatOutcome struct {Job heartbeat.Job Decision heartbeat.Decision Notice heartbeat.Notice Due, Sent bool Err error}
+orchestration: type HeartbeatPorts struct {Cluster kube.Reader Data kube.Data Platform ntfy.Publisher State hoststate.Store}
 orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 orchestration: type InstanceInputs struct {Inputs InstancePath string}
 orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}

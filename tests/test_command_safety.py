@@ -4,6 +4,7 @@ Kept for what only a real process can show: exit codes, argument passing, dry
 runs and refusals that make no cluster calls, and nothing secret on stdout or
 stderr. Branch-by-branch behaviour is unit-tested with FakeRunner elsewhere.
 """
+import json
 import os
 import subprocess
 import tempfile
@@ -97,6 +98,88 @@ else:
                                         env=self.env, capture_output=True, text=True)
                 self.assertEqual(result.stdout.splitlines(), ['Plan (install):', *[f'  - make {s}' for s in steps]])
                 self.assertFalse(self.calls.exists())
+
+    def test_notifications_recipe_is_private_read_only_and_stops_on_input_failure(self):
+        """Only host glue is exercised: fake tools, a caller kubeconfig, and no topic or notify token."""
+        caller = self.bin / 'caller-kubeconfig.json'
+        caller.write_text('{"caller-credential": "private-kubeconfig-fixture"}')
+        receipt = self.bin / 'receipt.json'
+        workpath = self.bin / 'workpath'
+        for name, source in {
+            'kubectl': r'''import os, sys
+from pathlib import Path
+assert sys.argv[1:] == ['config', 'view', '--raw', '-o', 'json'], sys.argv
+with open(os.environ['CALLS'], 'a') as f:
+    f.write('kubectl\n')
+print(Path(os.environ['KUBECONFIG']).read_text())
+sys.exit(int(os.environ['CONFIG_RC']))
+''',
+            'jq': r'''import json, os, sys
+assert sys.argv[1:] == ['-er', '.routing.baseDomain | strings | select(length > 0)',
+                         'v2/testdata/profile.json'], sys.argv
+with open(os.environ['CALLS'], 'a') as f:
+    f.write('jq\n')
+if os.environ['JQ_RC'] != '0':
+    sys.exit(int(os.environ['JQ_RC']))
+with open(sys.argv[-1]) as f:
+    print(json.load(f)['routing']['baseDomain'])
+''',
+            'checker-recipe': r'''import json, os, stat, sys
+from pathlib import Path
+argv = sys.argv[1:]
+assert argv[:3] == ['notifications-check', '--dry-run', '--kubeconfig'], argv
+assert len(argv) == 4, argv
+config = Path(argv[3])
+assert config != Path(os.environ['KUBECONFIG'])
+assert config.read_text().strip() == Path(os.environ['KUBECONFIG']).read_text()
+assert stat.S_IMODE(config.stat().st_mode) == 0o600
+assert stat.S_IMODE(config.parent.stat().st_mode) == 0o700
+assert 'NTFY_PLATFORM_URL' not in os.environ
+assert 'SWHURL_NOTIFY_URL' not in os.environ
+with open(os.environ['CALLS'], 'a') as f:
+    f.write('go\n')
+Path(os.environ['RECEIPT']).write_text(json.dumps({'config': str(config), 'base': os.environ['CONSOLE_URL']}))
+print('checker dry run')
+sys.exit(int(os.environ['GO_RC']))
+''',
+        }.items():
+            executable = self.bin / name
+            executable.write_text('#!/usr/bin/env python3\n' + source)
+            executable.chmod(0o700)
+        build = ('V2_BUILD=set -eu; work=$$(mktemp -d); trap \'rm -rf "$$work"\' EXIT; '
+                 f'printf "%s" "$$work" > {workpath}; cp {self.bin / "checker-recipe"} "$$work/swhurl-v2"')
+        base = json.loads((ROOT / 'v2/testdata/profile.json').read_text())['routing']['baseDomain']
+        for override, dry, config_rc, jq_rc, go_rc, expected in (
+                ('', 'false', '0', '0', '0', ['kubectl', 'jq', 'go']),
+                ('', 'true', '0', '0', '0', ['kubectl', 'jq', 'go']),
+                ('https://console.example.test', 'false', '0', '127', '0', ['kubectl', 'go']),
+                ('', 'false', '1', '0', '0', ['kubectl']),
+                ('', 'false', '0', '1', '0', ['kubectl', 'jq']),
+                ('', 'false', '0', '127', '0', ['kubectl', 'jq']),
+                ('', 'false', '0', '0', '1', ['kubectl', 'jq', 'go'])):
+            with self.subTest(override=override, dry=dry, config_rc=config_rc, jq_rc=jq_rc, go_rc=go_rc):
+                self.calls.unlink(missing_ok=True)
+                receipt.unlink(missing_ok=True)
+                env = dict(self.env, KUBECONFIG=str(caller), CONSOLE_URL=override, CONFIG_RC=config_rc,
+                           JQ_RC=jq_rc, GO_RC=go_rc, RECEIPT=str(receipt),
+                           SWHURL_NOTIFY_TOKEN_FILE=str(self.bin / 'no-token-exists'))
+                for key in ('NTFY_PLATFORM_URL', 'SWHURL_NOTIFY_URL'):
+                    env.pop(key, None)
+                result = subprocess.run(['make', 'notifications-check', build, f'DRY_RUN={dry}',
+                                         'ARGS=--in-cluster'], cwd=ROOT, env=env, capture_output=True, text=True)
+                failed = config_rc != '0' or (not override and jq_rc != '0') or go_rc != '0'
+                self.assertEqual(result.returncode != 0, failed, result.stdout + result.stderr)
+                self.assertEqual(self.calls.read_text().splitlines(), expected)
+                self.assertFalse(Path(workpath.read_text()).exists(), 'temporary directory survived recipe exit')
+                self.assertEqual(caller.read_text(), '{"caller-credential": "private-kubeconfig-fixture"}')
+                if 'go' in expected:
+                    facts = json.loads(receipt.read_text())
+                    self.assertEqual(facts['base'], override or f'https://console.{base}')
+                    self.assertFalse(Path(facts['config']).exists(), 'private config survived recipe exit')
+                else:
+                    self.assertFalse(receipt.exists(), 'Go ran after an input failure')
+                for private in ('private-kubeconfig-fixture', str(caller), workpath.read_text()):
+                    self.assertNotIn(private, result.stdout + result.stderr)
 
     def test_verify_recipe_supplies_hook_credential_and_host_facts_without_leaking(self):
         """The recipe hands swhurl-v2 the GitHub token, this checkout and the host heartbeat facts, and a failed token

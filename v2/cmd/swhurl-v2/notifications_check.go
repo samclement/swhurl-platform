@@ -22,8 +22,8 @@ func (r *request) checkerNamed() []string {
 	return []string{}
 }
 
-// notificationsCheck is the standalone one-pass entry point. The shipped Make target and CronJob still run
-// Python until the separately confirmed cutover. Environment credentials are never included in logs.
+// notificationsCheck runs one pass: the CronJob uses in-cluster credentials; Make always uses a host dry run.
+// Environment credentials are never included in logs.
 func (c cli) notificationsCheck(r request) int {
 	logger := &jsonLog{out: c.out, now: time.Now, name: "notifications-check"}
 	options := checkerOptions(r.dryRun, os.Getenv)

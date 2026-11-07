@@ -1,6 +1,8 @@
 # Notification checker fixtures and legacy-case map
 
-This is a test-fixture contract, not a progress log. The Python checker remains unchanged and scheduled until cutover.
+This is a test-fixture contract, not a progress log. The scheduled checker runs Go; the unchanged Python
+implementation and tests remain as compatibility evidence until separate retirement. See
+[current notification behavior](../../../docs/services.md#current-notification-behavior).
 
 ## Provenance and boundaries
 
@@ -17,7 +19,7 @@ This is a test-fixture contract, not a progress log. The Python checker remains 
   integer proves unknown values do not round through float64. Cutover still needs decoding the actual live document.
 
 Domain tests are under `v2/incident`; effect sequencing/failure/restart tests under `v2/orchestration`; command/environment
-and unchanged Git wiring tests under `v2/cmd/swhurl-v2`. The Kubernetes and notify-service adapters run shared HTTP/fake
+and scheduled Git wiring tests under `v2/cmd/swhurl-v2`. The Kubernetes and notify-service adapters run shared HTTP/fake
 contracts over raw fixtures. ntfy's existing shared contract remains unchanged. Go tests need no Python process. A one-off offline differential check also fed all 139 Go-encoded results back through
 Python's actual `read_state` and next-pass `evaluate`; every resumed result agreed, and Python read/saved the unknown-field
 fixture without losing its exact large integer. Integral timestamps are written as JSON floats so Python keeps the same

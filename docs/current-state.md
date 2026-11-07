@@ -23,11 +23,19 @@ What has been verified on the live cluster, and when: current facts first, then 
   writes or sends. Unknown extensions remain intact. Two synthetic sparse notices in captures 80 and 135 were
   completed with valid notice fields; every original field and the other 137 captures are unchanged. The final
   review accepts offline step 1 with no blocking findings. The fixture is Python-produced, not a live-state export.
-- **Live:** unchanged. Python still runs `console-notifications`; neither its command nor RBAC is changed. No
-  deployment, test notification, state write or reconciliation has been performed for this slice.
-- **Next gate:** confirm the separate live cutover with the operator. Actual live-state decoding, first-pass
-  deduplication, scheduled-run health, real RBAC and lifecycle-message delivery remain unverified. The existing
-  live checker, Make target, Python sources/tests and RBAC are untouched by step 1.
+- **Cutover approved:** the operator confirmed step 2 on 7 November. Go decoded the actual live version-1
+  document (3,964 bytes, 11 identities, no pending or seen keys) and completed a real API dry run with 11
+  identities and zero notices to send. Its original `started` is `1791016404.8226876`. This read-only preflight
+  did not save state or send a notification. `make notifications-check` also completed its Go dry run with
+  11 identities and zero pending notices.
+- **Image-first delivery:** pushed offline implementation `cb3e08e7`; Validate run 42356260006 passed all nine
+  jobs and bot pin `49d769dd` deployed `src-f9f01a19ed9c3419`. The console is `1/1 Running`; its binary advertises
+  `notifications-check`, while the CronJob still runs Python successfully on that image. The command/RBAC switch
+  can now be pushed without an old image receiving an unknown Go command. Scheduled Go verification is pending.
+- **Acceptance-plan gap:** `make live-test-lifecycle` uses a raw Deployment/PVC outside discoverable app roots;
+  it cannot prove Helm lifecycle notices. The no-data worker fixture is a separate confirm-first live action.
+- **Next gate:** prove deployed Go scheduled runs, state continuation, RBAC and platform health; then obtain
+  confirmation for the lifecycle fixture. Python sources/tests stay available pending live acceptance.
 
 ## Every platform check is Go (7 November 2026)
 

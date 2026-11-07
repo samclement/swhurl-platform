@@ -10,7 +10,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
-COMMANDS := help reconcile notifications-check notifications-heartbeat verify-logs flux-install \
+COMMANDS := help reconcile notifications-heartbeat verify-logs flux-install \
 	clickstack-bootstrap clickstack-dashboards \
 	app-repo app-hooks \
 	console-image console-dev \
@@ -117,6 +117,20 @@ v2-reloader:
 .PHONY: v2-deploy
 v2-deploy:
 	@$(V2_BUILD); 	"$$work/swhurl-v2" deploy --records v2-records --profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json --out .
+
+# Preview one notification pass against the caller's cluster, never posting or saving state. The JSON
+# kubeconfig is private and removed with the build directory. No notification topic or token is needed.
+# Console links default to the profile's routing domain; CONSOLE_URL overrides it. Needs Go 1.26.0 and jq.
+.PHONY: notifications-check
+notifications-check:
+	@$(V2_BUILD); \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	if [ -z "$${CONSOLE_URL:-}" ]; then \
+		base=$$(jq -er '.routing.baseDomain | strings | select(length > 0)' v2/testdata/profile.json); \
+		CONSOLE_URL="https://console.$$base"; \
+	fi; \
+	export CONSOLE_URL; \
+	"$$work/swhurl-v2" notifications-check --dry-run --kubeconfig "$$work/kubeconfig.json"
 
 # Every live platform check: swhurl-v2 verify --scope platform, which reads the cluster, this checkout, the registry,
 # S3, GitHub and the host facts this recipe supplies, with the caller's kubeconfig in the throwaway folder, readable

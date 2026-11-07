@@ -1420,11 +1420,15 @@ app. **Its state document and its wire contracts stay as they are**; everything 
    [offline evidence](current-state.md#notification-checker-in-go-offline-implementation-reviewed-7-november-2026).
    The version-1 fixture is sanitized and Python-produced, not a live export; actual live-document decoding
    remains a cutover gate.
-2. **Cutover, confirmed with the operator before the push:** the CronJob's command becomes
+2. **Cutover, confirmed by the operator on 7 November 2026:** the CronJob's command becomes
    `[timeout, "50", swhurl-v2, notifications-check, --in-cluster]` and the ClusterRole drops DaemonSets.
    Acceptance: the first Go pass reads the live state and sends nothing it already sent; scheduled passes succeed;
-   `make verify-platform` stays clean; `make live-test-lifecycle` produces deployed and uninstalled notices on the
-   platform topic and a copy accepted by the notify service.
+   `make verify-platform` stays clean. **Acceptance-plan correction:** `make live-test-lifecycle` uses a raw
+   Deployment/PVC, not a HelmRelease or a discoverable app path, so it cannot prove checker lifecycle notices.
+   Installing/removing the existing no-data `smoke-worker` Helm fixture can exercise deployed/uninstalled
+   platform notices and a team copy; this separate live fixture action needs confirmation before execution.
+   Keep team-channel readback distinct from acceptance by the notify service, and report any namespace-removal
+   race rather than claiming an uninstall team copy was delivered.
 3. **Retirement:** `notifications/__init__.py`'s `check` and `main`, `evaluate.py`, `state.py`, `delivery.py`,
    `notice.forward`, `tests/test_notifications.py` and the command's Python entry. `notice.py` (`Notice`, `Ntfy`,
    `platform_topic`) and `errors.py` stay for the host heartbeat, `clickstack_ntfy.py` and `dashboards.py`, which

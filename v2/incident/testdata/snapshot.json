@@ -1,0 +1,107 @@
+{
+  "units": [
+    {
+      "metadata": {
+        "name": "app-example-staging"
+      },
+      "spec": {
+        "path": "./apps/example/staging"
+      },
+      "status": {
+        "conditions": [
+          {
+            "type": "Ready",
+            "status": "True"
+          }
+        ]
+      }
+    }
+  ],
+  "releases": [
+    {
+      "metadata": {
+        "namespace": "example-staging",
+        "name": "example",
+        "uid": "hr1",
+        "generation": 2
+      },
+      "spec": {
+        "values": {
+          "controllers": {
+            "main": {
+              "containers": {
+                "main": {
+                  "image": {
+                    "repository": "repo/app",
+                    "tag": "2-abcdef0",
+                    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "type": "Ready",
+            "status": "True",
+            "observedGeneration": 2,
+            "reason": "UpgradeSucceeded",
+            "message": "upgrade success"
+          }
+        ]
+      }
+    }
+  ],
+  "workloads": [
+    {
+      "kind": "Deployment",
+      "metadata": {
+        "namespace": "example-staging",
+        "name": "example",
+        "labels": {
+          "app.kubernetes.io/instance": "example",
+          "app.kubernetes.io/controller": "main"
+        }
+      },
+      "spec": {
+        "replicas": 1
+      },
+      "status": {
+        "readyReplicas": 1
+      }
+    }
+  ],
+  "pods": [
+    {
+      "metadata": {
+        "name": "pod1",
+        "namespace": "example-staging",
+        "labels": {
+          "app.kubernetes.io/instance": "example",
+          "app.kubernetes.io/controller": "main"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "main",
+            "image": "repo/app:2-abcdef0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      },
+      "status": {
+        "containerStatuses": [
+          {
+            "name": "main",
+            "imageID": "repo/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ready": true
+          }
+        ]
+      }
+    }
+  ],
+  "events": []
+}

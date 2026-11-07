@@ -416,6 +416,7 @@ func kinds() map[pathKey]resource {
 		{"", "Namespace"}:                                {"v1", "namespaces", false},
 		{"", "PersistentVolumeClaim"}:                    {"v1", "persistentvolumeclaims", true},
 		{"", "PersistentVolume"}:                         {"v1", "persistentvolumes", false},
+		{"", "Event"}:                                    {"v1", "events", true},
 		{"", "Pod"}:                                      {"v1", "pods", true},
 		{"", "ResourceQuota"}:                            {"v1", "resourcequotas", true},
 		{"apps", "Deployment"}:                           {"apps/v1", "deployments", true},

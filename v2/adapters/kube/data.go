@@ -14,8 +14,9 @@ import (
 
 // Data reads ConfigMaps and Secrets in one namespace, and sets one ConfigMap key: the state a service keeps
 // for itself. It is a port of its own, so Reader still never reads a Secret and an observing use case cannot reach
-// one. Each read is a whole list by a selector; a failed read is an error, never an empty list.
+// one. GetConfigMap is a named GET; the selected reads are lists. A failed read is never absence.
 type Data interface {
+	GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error)
 	ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error)
 	Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error)
 	// SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every
@@ -172,4 +173,27 @@ func dataItems(body []byte, namespace string) ([]dataItem, string) {
 		seen[item.Metadata.Name] = true
 	}
 	return *doc.Items, ""
+}
+
+// GetConfigMap reads one named object, requiring get, NOT list permission. ConfigMaps with Selector{Name:...}
+// remains a field-selected LIST for its existing callers; a resourceNames get/patch-only Role cannot use it.
+// Only a successful 404 is absence (nil); forbidden, malformed and oversized answers are errors.
+func (a *API) GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error) {
+	if !namePattern.MatchString(namespace) || !namePattern.MatchString(name) {
+		return nil, &Error{RefusedRequest, "configmap", "invalid_name"}
+	}
+	path := "/api/v1/namespaces/" + url.PathEscape(namespace) + "/configmaps/" + url.PathEscape(name)
+	answer := a.getBounded(ctx, path, nil, maxDataBytes)
+	if answer.status == http.StatusNotFound {
+		return nil, nil
+	}
+	if answer.status != http.StatusOK {
+		return nil, &Error{Failed, "configmap", answer.reason()}
+	}
+	var item dataItem
+	ref := observe.Ref{APIVersion: "v1", Kind: "ConfigMap", Namespace: namespace, Name: name}
+	if !identifies(ref, answer.body) || json.Unmarshal(answer.body, &item) != nil {
+		return nil, &Error{Failed, "configmap", observe.ReasonMalformed}
+	}
+	return &ConfigMap{Name: item.Metadata.Name, Labels: item.Metadata.Labels, Data: item.Data}, nil
 }

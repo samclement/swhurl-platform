@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "started": 1791028800.0,
+  "last_success": 1791028860.0,
+  "instances": {
+    "example-staging/example": {
+      "incident": {
+        "since": 1791028800.0,
+        "fault": "unhealthy",
+        "notified": true,
+        "last_notice": 1791028860.0
+      },
+      "title": "example/staging",
+      "unit": "app-example-staging",
+      "namespace": "example-staging",
+      "name": "example",
+      "console": false,
+      "last_active": 1791028860.0,
+      "uid": "hr1",
+      "generation": 2,
+      "retained": false,
+      "failed_actions": [
+        "failure:hr1:ev1:UpgradeFailed"
+      ],
+      "future_instance_field": "preserve me"
+    }
+  },
+  "seen": {},
+  "pending": [
+    {
+      "title": "example/staging deployment failed",
+      "message": "Flux UpgradeFailed for example-staging/example.",
+      "priority": 4,
+      "tags": [
+        "warning"
+      ],
+      "click": "https://console.example.test/apps/example/staging",
+      "key": "failure:hr1:ev1:UpgradeFailed",
+      "queued": 1791028860.0,
+      "future_entry_field": {
+        "opaque": "preserve me"
+      }
+    }
+  ],
+  "monitor": {},
+  "notify_service": {
+    "since": 1791028801.25,
+    "fault": "unreachable",
+    "last_notice": 1791029101.25,
+    "notified": true
+  },
+  "future_field": {
+    "integer": 9007199254740993,
+    "nested": [
+      "preserve me",
+      null
+    ]
+  }
+}

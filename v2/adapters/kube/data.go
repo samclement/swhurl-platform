@@ -14,9 +14,10 @@ import (
 
 // Data reads ConfigMaps and Secrets in one namespace, and sets one ConfigMap key: the state a service keeps
 // for itself. It is a port of its own, so Reader still never reads a Secret and an observing use case cannot reach
-// one. GetConfigMap is a named GET; the selected reads are lists. A failed read is never absence.
+// one. GetConfigMap and GetSecret are named GETs; the selected reads are lists. A failed read is never absence.
 type Data interface {
 	GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error)
+	GetSecret(ctx context.Context, namespace, name string) (*Secret, error)
 	ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error)
 	Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error)
 	// SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every
@@ -72,17 +73,26 @@ func (a *API) Secrets(ctx context.Context, namespace string, selector Selector) 
 	}
 	found := make([]Secret, 0, len(items))
 	for _, item := range items {
-		data := make(map[string][]byte, len(item.Data))
-		for key, encoded := range item.Data {
-			decoded, err := base64.StdEncoding.DecodeString(encoded)
-			if err != nil {
-				return nil, &Error{Failed, "secrets", observe.ReasonMalformed}
-			}
-			data[key] = decoded
+		secret, err := decodedSecret(item, "secrets")
+		if err != nil {
+			return nil, err
 		}
-		found = append(found, Secret{Name: item.Metadata.Name, Labels: item.Metadata.Labels, Data: data})
+		found = append(found, secret)
 	}
 	return found, nil
+}
+
+// decodedSecret is an item's data decoded from base64; one value that is not is a malformed read of the whole.
+func decodedSecret(item dataItem, subject string) (Secret, error) {
+	data := make(map[string][]byte, len(item.Data))
+	for key, encoded := range item.Data {
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return Secret{}, &Error{Failed, subject, observe.ReasonMalformed}
+		}
+		data[key] = decoded
+	}
+	return Secret{Name: item.Metadata.Name, Labels: item.Metadata.Labels, Data: data}, nil
 }
 
 // SetConfigMapKey patches one key of one ConfigMap.
@@ -196,4 +206,31 @@ func (a *API) GetConfigMap(ctx context.Context, namespace, name string) (*Config
 		return nil, &Error{Failed, "configmap", observe.ReasonMalformed}
 	}
 	return &ConfigMap{Name: item.Metadata.Name, Labels: item.Metadata.Labels, Data: item.Data}, nil
+}
+
+// GetSecret reads one named Secret, requiring get, NOT list permission: a Role naming the Secret in resourceNames
+// with get alone allows it. Only a successful 404 is absence (nil); forbidden, malformed and oversized answers, and a
+// value that is not base64, are errors. No error carries the answer's bytes.
+func (a *API) GetSecret(ctx context.Context, namespace, name string) (*Secret, error) {
+	if !namePattern.MatchString(namespace) || !namePattern.MatchString(name) {
+		return nil, &Error{RefusedRequest, "secret", "invalid_name"}
+	}
+	path := "/api/v1/namespaces/" + url.PathEscape(namespace) + "/secrets/" + url.PathEscape(name)
+	answer := a.getBounded(ctx, path, nil, maxDataBytes)
+	if answer.status == http.StatusNotFound {
+		return nil, nil
+	}
+	if answer.status != http.StatusOK {
+		return nil, &Error{Failed, "secret", answer.reason()}
+	}
+	var item dataItem
+	ref := observe.Ref{APIVersion: "v1", Kind: "Secret", Namespace: namespace, Name: name}
+	if !identifies(ref, answer.body) || json.Unmarshal(answer.body, &item) != nil {
+		return nil, &Error{Failed, "secret", observe.ReasonMalformed}
+	}
+	secret, err := decodedSecret(item, "secret")
+	if err != nil {
+		return nil, err
+	}
+	return &secret, nil
 }

@@ -1,0 +1,8 @@
+{"data": [
+  {"id": "6650a1f0c0ffee0000000030", "name": "swhurl:web:errors", "tags": ["swhurl-app", "web"], "source": "tile",
+   "dashboardId": "6650a1f0c0ffee0000000020", "tileId": "t-err", "threshold": 5, "thresholdType": "above",
+   "interval": "5m", "channel": {"type": "webhook", "webhookId": "6650a1f0c0ffee0000000012"},
+   "state": "OK", "silenced": null, "createdAt": "2026-10-11T09:12:41.000Z"},
+  {"id": "6650a1f0c0ffee0000000031", "name": "my own alert", "source": "saved_search", "threshold": 1.5,
+   "savedSearchId": "6650a1f0c0ffee0000000040", "state": "ALERT"}
+]}

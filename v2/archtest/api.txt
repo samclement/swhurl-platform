@@ -10,6 +10,31 @@ adapters/appsource: func (Local) Declaration(root string) (producer.Object, erro
 adapters/appsource: func (Local) Events(root, name string) (producer.Object, []byte, error)
 adapters/appsource: type Local struct {}
 adapters/appsource: type Reader interface {Declaration(root string) (producer.Object, error) API(root, name string) ([]byte, error) Events(root, name string) (producer.Object, []byte, error)}
+adapters/clickstack/clickstacktest: func (*Fake) Alerts(context.Context) ([]dashboards.Alert, error)
+adapters/clickstack/clickstacktest: func (*Fake) CreateAlert(_ context.Context, alert dashboards.Alert) error
+adapters/clickstack/clickstacktest: func (*Fake) CreateDashboard(_ context.Context, board dashboards.Dashboard) (string, error)
+adapters/clickstack/clickstacktest: func (*Fake) CreateWebhook(_ context.Context, webhook dashboards.Webhook) (string, error)
+adapters/clickstack/clickstacktest: func (*Fake) Dashboards(context.Context) ([]dashboards.Dashboard, error)
+adapters/clickstack/clickstacktest: func (*Fake) DeleteAlert(_ context.Context, id string) error
+adapters/clickstack/clickstacktest: func (*Fake) DeleteDashboard(_ context.Context, id string) error
+adapters/clickstack/clickstacktest: func (*Fake) Open(_ context.Context, uri, email string) (clickstack.API, error)
+adapters/clickstack/clickstacktest: func (*Fake) Sources(context.Context) ([]dashboards.Source, error)
+adapters/clickstack/clickstacktest: func (*Fake) UpdateAlert(_ context.Context, id string, alert dashboards.Alert) error
+adapters/clickstack/clickstacktest: func (*Fake) UpdateDashboard(_ context.Context, id string, board dashboards.Dashboard) error
+adapters/clickstack/clickstacktest: func (*Fake) UpdateWebhook(_ context.Context, id string, webhook dashboards.Webhook) error
+adapters/clickstack/clickstacktest: func (*Fake) Webhooks(context.Context) ([]dashboards.Webhook, error)
+adapters/clickstack/clickstacktest: func (*Fake) Writes() []string
+adapters/clickstack/clickstacktest: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, *Scenario) clickstack.Opener)
+adapters/clickstack/clickstacktest: type Fake struct {Key, URI, Email string Held Inventory Failing map[string]int Totals map[string]int Calls []string Bodies []any Opened int}
+adapters/clickstack/clickstacktest: type Inventory struct {Sources []dashboards.Source Dashboards []dashboards.Dashboard Webhooks []dashboards.Webhook Alerts []dashboards.Alert}
+adapters/clickstack/clickstacktest: type Scenario = Fake
+adapters/clickstack: func (*Error) Error() string
+adapters/clickstack: func New(mongo, app Runner) Opener
+adapters/clickstack: type API interface {Sources(ctx context.Context) ([]dashboards.Source, error) Webhooks(ctx context.Context) ([]dashboards.Webhook, error) CreateWebhook(ctx context.Context, webhook dashboards.Webhook) (string, error) UpdateWebhook(ctx context.Context, id string, webhook dashboards.Webhook) error Dashboards(ctx context.Context) ([]dashboards.Dashboard, error) CreateDashboard(ctx context.Context, dashboard dashboards.Dashboard) (string, error) UpdateDashboard(ctx context.Context, id string, dashboard dashboards.Dashboard) error DeleteDashboard(ctx context.Context, id string) error Alerts(ctx context.Context) ([]dashboards.Alert, error) CreateAlert(ctx context.Context, alert dashboards.Alert) error UpdateAlert(ctx context.Context, id string, alert dashboards.Alert) error DeleteAlert(ctx context.Context, id string) error}
+adapters/clickstack: type Error struct {Operation, Reason string}
+adapters/clickstack: type Opener interface {Open(ctx context.Context, uri, email string) (API, error)}
+adapters/clickstack: type Runner func(ctx context.Context, program []byte) ([]byte, error)
+adapters/clickstack: var ErrNoAccessKey = errors.New("the ClickStack admin account has no access key; sign in once, or run make clickstack-bootstrap")
 adapters/files/filestest: func (*Fake) Prune(dir, folder string, rendered []string) ([]files.Outcome, error)
 adapters/files/filestest: func (*Fake) Remove(dir, path string) ([]files.Outcome, error)
 adapters/files/filestest: func (*Fake) Write(dir string, docs []kernel.File) ([]files.Outcome, error)
@@ -91,6 +116,7 @@ adapters/kube/kubetest: func (*Fake) ConfigMaps(_ context.Context, namespace str
 adapters/kube/kubetest: func (*Fake) Create(_ context.Context, ref observe.Ref, _ []byte) error
 adapters/kube/kubetest: func (*Fake) Delete(_ context.Context, ref observe.Ref) error
 adapters/kube/kubetest: func (*Fake) GetConfigMap(_ context.Context, namespace, name string) (*kube.ConfigMap, error)
+adapters/kube/kubetest: func (*Fake) GetSecret(_ context.Context, namespace, name string) (*kube.Secret, error)
 adapters/kube/kubetest: func (*Fake) List(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube/kubetest: func (*Fake) ListAllNamespaces(_ context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube/kubetest: func (*Fake) ListEvents(ctx context.Context, kind string) (observe.List, error)
@@ -127,6 +153,7 @@ adapters/kube: func (*API) Create(ctx context.Context, ref observe.Ref, document
 adapters/kube: func (*API) Delete(ctx context.Context, ref observe.Ref) error
 adapters/kube: func (*API) Exec(ctx context.Context, request ExecRequest) (ExecResult, error)
 adapters/kube: func (*API) GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error)
+adapters/kube: func (*API) GetSecret(ctx context.Context, namespace, name string) (*Secret, error)
 adapters/kube: func (*API) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube: func (*API) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error)
 adapters/kube: func (*API) ListEvents(ctx context.Context, involvedKind string) (observe.List, error)
@@ -158,7 +185,7 @@ adapters/kube: type Collector interface {CollectAllNamespaces(ctx context.Contex
 adapters/kube: type ConfigMap struct {Name string Labels map[string]string Data map[string]string}
 adapters/kube: type Connection struct {Endpoint string Credentials Credentials Token string Context string}
 adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
-adapters/kube: type Data interface {GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error) ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error) // SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every // other key as it is. SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error}
+adapters/kube: type Data interface {GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error) GetSecret(ctx context.Context, namespace, name string) (*Secret, error) ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error) // SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every // other key as it is. SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error}
 adapters/kube: type Error struct {Code, Subject, Reason string}
 adapters/kube: type ExecRequest struct {Namespace, Pod, Container string Command []string Stdin []byte}
 adapters/kube: type ExecResult struct {Stdout []byte ExitCode int}
@@ -260,6 +287,56 @@ calls: type Pair struct {Caller, Callee, Environment string CalleePort int32}
 calls: type Refusal struct {Application, Environment, Callee, Reason string}
 calls: type Resolution struct {Pairs []Pair Waiting []Wait Refused []Refusal}
 calls: type Wait struct {Caller, Callee, Environment, Reason string}
+dashboards: const AlertPrefix = "swhurl:"
+dashboards: const AlertsAnnotation = "platform.swhurl.com/alerts"
+dashboards: const Create Action = "create"
+dashboards: const Delete Action = "delete"
+dashboards: const Keep Action = "keep"
+dashboards: const Leave Action = "leave"
+dashboards: const NotifyWebhook = "swhurl notify"
+dashboards: const PlatformWebhook = "ntfy: platform"
+dashboards: const RecordFieldManager = "dashboard-sync"
+dashboards: const RecordKey = "dashboards.json"
+dashboards: const RecordName = "app-dashboards"
+dashboards: const RecordNamespace = "console"
+dashboards: const Tag = "swhurl-app"
+dashboards: const Update Action = "update"
+dashboards: const Web = "web"
+dashboards: const Worker = "worker"
+dashboards: func (*TileConfig) UnmarshalJSON(data []byte) error
+dashboards: func (App) DashboardName() string
+dashboards: func (TileConfig) MarshalJSON() ([]byte, error)
+dashboards: func AlertName(app, presetKey string) string
+dashboards: func Definition(app App, traces, logs string) Dashboard
+dashboards: func Destinations(platformAddress string, alertSecret []byte) ([]Webhook, error)
+dashboards: func Discover(releases, namespaces [][]byte) ([]App, error)
+dashboards: func FromRecords(instances []Instance) ([]App, error)
+dashboards: func PickSources(sources []Source) (Sources, error)
+dashboards: func PlanAlerts(apps []App, live []Dashboard, existing []Alert, webhook string, prune bool) ([]AlertStep, error)
+dashboards: func PlanDashboards(apps []App, live []Dashboard, sources Sources, prune bool) ([]DashboardStep, error)
+dashboards: func PlanWebhooks(live []Webhook, wanted []Webhook) ([]WebhookStep, error)
+dashboards: func Record(ids map[string]string) string
+dashboards: func Recordable(ids map[string]string) map[string]string
+dashboards: func Same(live, wanted Dashboard) bool
+dashboards: func Tagged(live []Dashboard) []Dashboard
+dashboards: func Thresholds(spec string) (map[string]int, error)
+dashboards: type Action string
+dashboards: type Alert struct {ID string `json:"id,omitempty"` Name string `json:"name"` Tags []string `json:"tags"` Source string `json:"source"` DashboardID string `json:"dashboardId"` TileID string `json:"tileId"` Threshold int `json:"threshold"` ThresholdType string `json:"thresholdType"` Interval string `json:"interval"` Channel Channel `json:"channel"`}
+dashboards: type AlertStep struct {Action Action ID string Alert Alert}
+dashboards: type App struct {Name string Kind string Environments []string Alerts string}
+dashboards: type Channel struct {Type string `json:"type"` WebhookID string `json:"webhookId"`}
+dashboards: type Dashboard struct {ID string `json:"id,omitempty"` Name string `json:"name"` Tags []string `json:"tags"` Tiles []Tile `json:"tiles"`}
+dashboards: type DashboardStep struct {Action Action App string ID string Dashboard Dashboard}
+dashboards: type Instance struct {Application, Environment, Kind, Alerts string}
+dashboards: type Select struct {AggFn string `json:"aggFn"` Level float64 `json:"level,omitempty"` ValueExpression string `json:"valueExpression,omitempty"` Where string `json:"where"` WhereLanguage string `json:"whereLanguage"` Alias string `json:"alias,omitempty"`}
+dashboards: type Source struct {ID, Kind, Table string}
+dashboards: type Sources struct {Traces, Logs string}
+dashboards: type Tile struct {ID string `json:"id,omitempty"` Name string `json:"name"` X int `json:"x"` Y int `json:"y"` W int `json:"w"` H int `json:"h"` Config TileConfig `json:"config"`}
+dashboards: type TileConfig struct {DisplayType string SourceID string GroupBy string Select []Select Columns string Where string WhereLanguage string}
+dashboards: type Webhook struct {ID string `json:"id,omitempty"` Name string `json:"name"` Service string `json:"service"` URL string `json:"url"` Description string `json:"description"` Body string `json:"body"`}
+dashboards: type WebhookStep struct {Action Action ID string Webhook Webhook}
+dashboards: var ErrNoRecords = errors.New("the records name no app instance; no change made")
+dashboards: var ErrPlatformAddress = errors.New("the platform ntfy address is not an HTTPS topic URL without a query or fragment")
 events: const ConsumerCollision = "consumer_collision"
 events: const InvalidSubscription = "invalid_subscription"
 events: const NotPublished = "not_published"
@@ -853,6 +930,7 @@ orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, wr
 orchestration: func CheckNotifications(ctx context.Context, ports CheckerPorts, options CheckOptions) (CheckReport, error)
 orchestration: func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
 orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)
+orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
 orchestration: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
@@ -870,6 +948,7 @@ orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreO
 orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
 orchestration: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
 orchestration: func StatusAll(ctx context.Context, inputs StatusInputs, instances []Inputs) (observe.Collection, error)
+orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, options DashboardOptions) (DashboardReport, error)
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Accepted struct {Request notify.Request Caller string Channels []string Failure error}
@@ -881,6 +960,10 @@ orchestration: type Checkout struct {Profile, Teams, Allocation []byte FluxSetti
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}
 orchestration: type Created struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Public string Written []files.Outcome}
+orchestration: type DashboardLine struct {Changed bool Text string}
+orchestration: type DashboardOptions struct {FromRecords bool Records []RecordedInstance DryRun bool}
+orchestration: type DashboardPorts struct {Reader kube.Reader Data kube.Data ClickStack clickstack.Opener}
+orchestration: type DashboardReport struct {Lines []DashboardLine}
 orchestration: type Delivered struct {Entry notify.Entry Err error Retry bool}
 orchestration: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
 orchestration: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
@@ -900,6 +983,7 @@ orchestration: type PlatformInputs struct {Reader kube.Reader Source string Now 
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
 orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}
 orchestration: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
+orchestration: type RecordedInstance struct {Application, Environment string Release []byte}
 orchestration: type Refusal struct {Subject, Reason string}
 orchestration: type Registration struct {Path string Document []byte}
 orchestration: type RegistryInputs struct {Registry []byte RegistryPath string Apps, Instances [][]byte Profile []byte Change kernel.TeamChange Address string}

@@ -76,6 +76,7 @@ const usage = `usage:
       [--heartbeat FILE] [--source NAME] [--json]
   swhurl-v2 notify-serve [--listen ADDR]
   swhurl-v2 notifications-check [--dry-run] (--kubeconfig KUBECONFIG.json | --in-cluster)
+  swhurl-v2 clickstack-dashboards (--cluster | --records DIR) [--dry-run] (--kubeconfig KUBECONFIG.json | --in-cluster)
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
 platform's tag policy, and writes the record pair and the compiled files under --out. With --records it reads
@@ -149,6 +150,14 @@ credential or a request an adapter refuses. The platform scope also judges the h
 clusters/home/flux-system/install/flux.json in the checkout, and the notification heartbeat timer and service from
 --heartbeat FILE, the output of systemctl show --timestamp=unix for both units, which make verify-platform writes.
 The cluster scope reads neither, and refuses both flags.
+
+clickstack-dashboards keeps one ClickStack dashboard per app, the app's default alerts and the two reserved
+webhooks. The apps are those whose HelmReleases Flux applied (--cluster; none found deletes nothing) or those the
+v2 records tree names (--records; no app or a bad record is a failure). It repairs both webhooks, checked before
+either is written, then creates, updates and deletes dashboards tagged swhurl-app and named App: <app>, records
+each app's dashboard id in console/app-dashboards, and keeps each app's alerts. It reads its credentials by name
+each pass and reaches HyperDX and MongoDB by API-server exec with credentials only on stdin. --dry-run reads and
+plans, and writes nothing. Each outcome is a JSON log line; the exit status is 1 when the pass stopped.
 
 shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
 HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
@@ -395,38 +404,39 @@ func awsCredentials() (s3.Credentials, bool) {
 // commands is every command and the step that runs it, in one table so the dispatcher and the usage check
 // cannot disagree.
 var commands = map[string]func(cli, request) int{
-	"release-id":          func(c cli, r request) int { return c.releaseID(r.release) },
-	"instance-revision":   func(c cli, r request) int { return c.instanceRevision(r.instance) },
-	"select-release":      cli.selectRelease,
-	"deploy":              cli.deploy,
-	"promote":             cli.promote,
-	"compile":             cli.compile,
-	"status":              cli.status,
-	"preview":             cli.preview,
-	"shadow":              cli.shadow,
-	"resolve":             cli.resolve,
-	"render":              cli.render,
-	"policy":              cli.policy,
-	"chart":               cli.acquireChart,
-	"egress":              cli.egress,
-	"proxy":               cli.proxy,
-	"auth":                cli.auth,
-	"users":               cli.users,
-	"reloader":            cli.reloader,
-	"mint":                cli.mint,
-	"create":              cli.create,
-	"declaration":         cli.declaration,
-	"names":               cli.names,
-	"image-declaration":   cli.imageDeclaration,
-	"migrate":             cli.migrate,
-	"edit":                cli.edit,
-	"remove":              cli.remove,
-	"restore":             cli.restore,
-	"team":                cli.team,
-	"workstreams":         cli.workstreams,
-	"verify":              cli.verify,
-	"notify-serve":        cli.notifyServe,
-	"notifications-check": cli.notificationsCheck,
+	"release-id":            func(c cli, r request) int { return c.releaseID(r.release) },
+	"instance-revision":     func(c cli, r request) int { return c.instanceRevision(r.instance) },
+	"select-release":        cli.selectRelease,
+	"deploy":                cli.deploy,
+	"promote":               cli.promote,
+	"compile":               cli.compile,
+	"status":                cli.status,
+	"preview":               cli.preview,
+	"shadow":                cli.shadow,
+	"resolve":               cli.resolve,
+	"render":                cli.render,
+	"policy":                cli.policy,
+	"chart":                 cli.acquireChart,
+	"egress":                cli.egress,
+	"proxy":                 cli.proxy,
+	"auth":                  cli.auth,
+	"users":                 cli.users,
+	"reloader":              cli.reloader,
+	"mint":                  cli.mint,
+	"create":                cli.create,
+	"declaration":           cli.declaration,
+	"names":                 cli.names,
+	"image-declaration":     cli.imageDeclaration,
+	"migrate":               cli.migrate,
+	"edit":                  cli.edit,
+	"remove":                cli.remove,
+	"restore":               cli.restore,
+	"team":                  cli.team,
+	"workstreams":           cli.workstreams,
+	"verify":                cli.verify,
+	"notify-serve":          cli.notifyServe,
+	"notifications-check":   cli.notificationsCheck,
+	"clickstack-dashboards": cli.clickstackDashboards,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -449,6 +459,7 @@ type request struct {
 	action, description, rename, transport             string
 	listen, appDir, catalogue                          string
 	rotate, check, json, inCluster, all, dryRun        bool
+	cluster                                            bool
 	confirm, ageKey                                    string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
@@ -638,6 +649,12 @@ func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) boo
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod ServiceAccount")
 		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "read and evaluate without posting or saving")
+	case "clickstack-dashboards":
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount")
+		flags.Var(&onceBool{value: &r.cluster}, "cluster", "the apps whose releases Flux applied on the cluster")
+		flags.Var(&once{value: &r.records}, "records", "the apps of this v2 records tree")
+		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "read and plan without writing to ClickStack or the record")
 	case "status":
 		flags.Var(&once{value: &r.reviewedDigest}, "reviewed-digest", "submitted reviewed digest (single status only)")
 		flags.Var(&onceBool{value: &r.all}, "all", "observe all recorded instances; exclusive with --app/--env")
@@ -798,28 +815,29 @@ func (r *request) named() []string {
 // requiredFlags is what each command that names its inputs requires. A command that is not listed takes one file
 // argument instead, which is why the table is also the list of the two commands that do.
 var requiredFlags = map[string]func(*request) []string{
-	"policy":              func(r *request) []string { return []string{r.records, r.profile, r.out, r.chart} },
-	"chart":               func(r *request) []string { return []string{r.profile, r.repositories, r.cache} },
-	"compile":             func(r *request) []string { return []string{r.instance, r.release, r.app, r.profile} },
-	"preview":             func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
-	"select-release":      func(r *request) []string { return []string{r.instance, r.release, r.expected} },
-	"mint":                func(r *request) []string { return []string{r.instance, r.profile, r.out} },
-	"create":              func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
-	"image-declaration":   func(r *request) []string { return []string{r.appDir} },
-	"declaration":         func(r *request) []string { return []string{r.label, r.app, r.team} },
-	"names":               func(r *request) []string { return []string{r.catalogue, r.appDir} },
-	"remove":              func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
-	"status":              (*request).statusNamed,
-	"restore":             func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
-	"migrate":             (*request).appNamed,
-	"promote":             (*request).appNamed,
-	"deploy":              (*request).deployNamed,
-	"edit":                (*request).editNamed,
-	"team":                (*request).teamNamed,
-	"workstreams":         func(r *request) []string { return []string{r.repoRoot} },
-	"verify":              (*request).verifyNamed,
-	"notify-serve":        func(r *request) []string { return []string{r.listen} },
-	"notifications-check": (*request).checkerNamed,
+	"policy":                func(r *request) []string { return []string{r.records, r.profile, r.out, r.chart} },
+	"chart":                 func(r *request) []string { return []string{r.profile, r.repositories, r.cache} },
+	"compile":               func(r *request) []string { return []string{r.instance, r.release, r.app, r.profile} },
+	"preview":               func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
+	"select-release":        func(r *request) []string { return []string{r.instance, r.release, r.expected} },
+	"mint":                  func(r *request) []string { return []string{r.instance, r.profile, r.out} },
+	"create":                func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
+	"image-declaration":     func(r *request) []string { return []string{r.appDir} },
+	"declaration":           func(r *request) []string { return []string{r.label, r.app, r.team} },
+	"names":                 func(r *request) []string { return []string{r.catalogue, r.appDir} },
+	"remove":                func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
+	"status":                (*request).statusNamed,
+	"restore":               func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
+	"migrate":               (*request).appNamed,
+	"promote":               (*request).appNamed,
+	"deploy":                (*request).deployNamed,
+	"edit":                  (*request).editNamed,
+	"team":                  (*request).teamNamed,
+	"workstreams":           func(r *request) []string { return []string{r.repoRoot} },
+	"verify":                (*request).verifyNamed,
+	"notify-serve":          func(r *request) []string { return []string{r.listen} },
+	"notifications-check":   (*request).checkerNamed,
+	"clickstack-dashboards": (*request).dashboardsNamed,
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one

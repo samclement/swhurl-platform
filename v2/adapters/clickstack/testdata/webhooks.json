@@ -1,0 +1,7 @@
+{"data": [
+  {"id": "6650a1f0c0ffee0000000010", "name": "ntfy: platform", "service": "generic", "url": "https://ntfy.example.test/",
+   "description": "ClickStack alerts to the platform ntfy topic", "body": "{\"topic\":\"private-topic\"}",
+   "headers": {}, "queryParams": {}, "createdAt": "2026-10-11T09:12:41.000Z", "updatedAt": "2026-11-01T10:00:00.000Z"},
+  {"id": "6650a1f0c0ffee0000000011", "name": "my webhook", "service": "slack", "url": "https://hooks.slack.example/x",
+   "createdAt": "2026-10-11T09:12:41.000Z"}
+], "meta": {"total": 2}}

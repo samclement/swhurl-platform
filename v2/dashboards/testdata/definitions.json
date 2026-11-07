@@ -1,0 +1,250 @@
+{
+  "web": {
+    "name": "App: web",
+    "tags": [
+      "swhurl-app"
+    ],
+    "tiles": [
+      {
+        "name": "Requests per minute",
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 9,
+        "config": {
+          "displayType": "line",
+          "sourceId": "t1",
+          "groupBy": "ResourceAttributes['k8s.namespace.name']",
+          "select": [
+            {
+              "aggFn": "count",
+              "where": "ResourceAttributes['k8s.namespace.name'] IN ('web-staging', 'web-prod') AND SpanKind = 'Server'",
+              "whereLanguage": "sql",
+              "alias": "requests"
+            }
+          ]
+        }
+      },
+      {
+        "name": "Errors",
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 9,
+        "config": {
+          "displayType": "line",
+          "sourceId": "t1",
+          "groupBy": "ResourceAttributes['k8s.namespace.name']",
+          "select": [
+            {
+              "aggFn": "count",
+              "where": "ResourceAttributes['k8s.namespace.name'] IN ('web-staging', 'web-prod') AND SpanKind = 'Server' AND StatusCode = 'Error'",
+              "whereLanguage": "sql",
+              "alias": "errors"
+            }
+          ]
+        }
+      },
+      {
+        "name": "p95 duration (ms)",
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 9,
+        "config": {
+          "displayType": "line",
+          "sourceId": "t1",
+          "groupBy": "ResourceAttributes['k8s.namespace.name']",
+          "select": [
+            {
+              "aggFn": "quantile",
+              "level": 0.95,
+              "valueExpression": "Duration / 1e6",
+              "where": "ResourceAttributes['k8s.namespace.name'] IN ('web-staging', 'web-prod') AND SpanKind = 'Server'",
+              "whereLanguage": "sql",
+              "alias": "p95 ms"
+            }
+          ]
+        }
+      },
+      {
+        "name": "Error logs",
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9,
+        "config": {
+          "displayType": "line",
+          "sourceId": "l1",
+          "groupBy": "ResourceAttributes['k8s.namespace.name']",
+          "select": [
+            {
+              "aggFn": "count",
+              "where": "ResourceAttributes['k8s.namespace.name'] IN ('web-staging', 'web-prod') AND lower(SeverityText) IN ('error', 'fatal')",
+              "whereLanguage": "sql",
+              "alias": "errors"
+            }
+          ]
+        }
+      },
+      {
+        "name": "Log lines",
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 9,
+        "config": {
+          "displayType": "line",
+          "sourceId": "l1",
+          "groupBy": "ResourceAttributes['k8s.namespace.name']",
+          "select": [
+            {
+              "aggFn": "count",
+              "where": "ResourceAttributes['k8s.namespace.name'] IN ('web-staging', 'web-prod')",
+              "whereLanguage": "sql",
+              "alias": "lines"
+            }
+          ]
+        }
+      },
+      {
+        "name": "Latest logs",
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 6,
+        "config": {
+          "displayType": "search",
+          "sourceId": "l1",
+          "whereLanguage": "sql",
+          "where": "ResourceAttributes['k8s.namespace.name'] IN ('web-staging', 'web-prod')",
+          "select": "Timestamp, ResourceAttributes['k8s.namespace.name'] AS environment, SeverityText, Body"
+        }
+      }
+    ]
+  },
+  "worker": {
+    "name": "App: job",
+    "tags": [
+      "swhurl-app"
+    ],
+    "tiles": [
+      {
+        "name": "Runs per minute",
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 9,
+        "config": {
+          "displayType": "line",
+          "sourceId": "t1",
+          "groupBy": "ResourceAttributes['k8s.namespace.name']",
+          "select": [
+            {
+              "aggFn": "count",
+              "where": "ResourceAttributes['k8s.namespace.name'] IN ('job-staging') AND ParentSpanId = ''",
+              "whereLanguage": "sql",
+              "alias": "runs"
+            }
+          ]
+        }
+      },
+      {
+        "name": "Errors",
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 9,
+        "config": {
+          "displayType": "line",
+          "sourceId": "t1",
+          "groupBy": "ResourceAttributes['k8s.namespace.name']",
+          "select": [
+            {
+              "aggFn": "count",
+              "where": "ResourceAttributes['k8s.namespace.name'] IN ('job-staging') AND ParentSpanId = '' AND StatusCode = 'Error'",
+              "whereLanguage": "sql",
+              "alias": "errors"
+            }
+          ]
+        }
+      },
+      {
+        "name": "p95 duration (ms)",
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 9,
+        "config": {
+          "displayType": "line",
+          "sourceId": "t1",
+          "groupBy": "ResourceAttributes['k8s.namespace.name']",
+          "select": [
+            {
+              "aggFn": "quantile",
+              "level": 0.95,
+              "valueExpression": "Duration / 1e6",
+              "where": "ResourceAttributes['k8s.namespace.name'] IN ('job-staging') AND ParentSpanId = ''",
+              "whereLanguage": "sql",
+              "alias": "p95 ms"
+            }
+          ]
+        }
+      },
+      {
+        "name": "Error logs",
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9,
+        "config": {
+          "displayType": "line",
+          "sourceId": "l1",
+          "groupBy": "ResourceAttributes['k8s.namespace.name']",
+          "select": [
+            {
+              "aggFn": "count",
+              "where": "ResourceAttributes['k8s.namespace.name'] IN ('job-staging') AND lower(SeverityText) IN ('error', 'fatal')",
+              "whereLanguage": "sql",
+              "alias": "errors"
+            }
+          ]
+        }
+      },
+      {
+        "name": "Log lines",
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 9,
+        "config": {
+          "displayType": "line",
+          "sourceId": "l1",
+          "groupBy": "ResourceAttributes['k8s.namespace.name']",
+          "select": [
+            {
+              "aggFn": "count",
+              "where": "ResourceAttributes['k8s.namespace.name'] IN ('job-staging')",
+              "whereLanguage": "sql",
+              "alias": "lines"
+            }
+          ]
+        }
+      },
+      {
+        "name": "Latest logs",
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 6,
+        "config": {
+          "displayType": "search",
+          "sourceId": "l1",
+          "whereLanguage": "sql",
+          "where": "ResourceAttributes['k8s.namespace.name'] IN ('job-staging')",
+          "select": "Timestamp, ResourceAttributes['k8s.namespace.name'] AS environment, SeverityText, Body"
+        }
+      }
+    ]
+  }
+}

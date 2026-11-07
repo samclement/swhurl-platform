@@ -1,8 +1,8 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: slice 4's delivery live (commit, push, `make verify-platform`)
-Uncommitted: slice 4 (implemented, pending delivery): `.claude/skills/new-component-checklist/SKILL.md`, `AGENTS.md`, `Makefile`, `clusters/home/flux-system/install/flux.json`, `clusters/home/flux-system/install/kustomization.yaml`, `docs/bootstrap.md`, `docs/commands.md`, `docs/contributing.md`, `docs/current-state.md`, `docs/iteration-2-plan.md`, `docs/operations.md`, `docs/plan.md`, `docs/v2-status.md`, `docs/workstreams.md`, `tests/fakecluster.py`, `tests/test_command_safety.py`, `tests/test_flux.py`, `tests/test_validate.py`, `tests/test_verify.py`, `tools/swhurl/commands.py`, `tools/swhurl/flux.py`, `tools/swhurl/notifications/checks.py`, `tools/swhurl/verify.py`, `v2/archtest/api.txt`, `v2/cmd/swhurl-v2/main.go`, `v2/cmd/swhurl-v2/verify.go`, `v2/cmd/swhurl-v2/verify_checkout.go`, `v2/cmd/swhurl-v2/verify_test.go`, `v2/observe/platform.go`, `v2/observe/platform_catalogue.go`, `v2/observe/platform_catalogue_test.go`, `v2/observe/platform_host.go`, `v2/observe/platform_host_test.go`, `v2/observe/platform_scope.go`, `v2/observe/platform_scope_test.go`, `v2/observe/platform_test.go`, `v2/orchestration/platform_exec_test.go`, `v2/orchestration/platform_github_test.go`, `v2/orchestration/platform_scope.go`, `v2/orchestration/platform_scope_test.go`
+Gate: verify slice 4's delivery live, then the remaining Python surface
+Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
 kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl`

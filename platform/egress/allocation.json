@@ -1,7 +1,7 @@
 {
   "kind": "v2-egress",
   "version": 1,
-  "revision": "183d574f1bede122ff31ddf2c779f601437aaaf2",
+  "revision": "02fc9266a3f1ed71a22179708749ccaacf0e322f",
   "instances": [
     {
       "application": "demo-orders",

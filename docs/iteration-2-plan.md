@@ -1677,3 +1677,57 @@ deliberate baseline change, and `make check-v2` is the check that holds it.
 
 **Delivery, one commit.** `make check`, `make check-repo`, `make check-repo SCHEMA=1`, `make check-v2`,
 `make check-docs`, and `bash -n` over `host/*.sh tests/fixtures/*.sh`.
+
+## 18. The snapshot export and the migration tools are retired (approved 8 November 2026)
+
+The operator chose the larger of two options: retire `make v2-snapshot` and, with it, v2's commands that only read
+its file and the migration tooling that has nothing left to act on. The Python exporter exists only to feed v2:
+`tools/swhurl/v2snapshot.py` (259 lines) wrote one pinned revision's records and object identities as JSON, and seven
+commands read it with `--snapshot`. Two facts made it removable. Everything it produced is already rendered by
+`swhurl-v2 render`, which builds the same value in memory from `v2-records/` and calls the same Go helpers to write
+the resolution, the egress allocation, `platform/auth`, NATS's users and Reloader's list; only `make v2-users` and
+`make v2-reloader` still took the Python route, and their caller was the Deploy v2 bot. And the migration tools have
+nothing left to convert: `apps/` holds only a README and every unit in `clusters/home/` is a v2 JSON unit, so
+`shadow`, `migrate` and `preview` cannot run on anything real.
+
+**Before and after.** The bot's step becomes one render:
+
+| | Deploy v2's step | What writes the derived files |
+| --- | --- | --- |
+| before | `make v2-deploy`, then `make v2-users` and `make v2-reloader` | each target exported a snapshot of the working tree through Python, then one Go command read it |
+| after | `make v2-deploy`, then `make v2-render` | one Go render reads `v2-records/` and writes every file derived from it |
+
+**Semantics.** v2's records tree is the only input. `render` is the only producer of the files derived from it, and
+`render --check` remains the freshness check. "Snapshot" survives only as `render`'s internal value: the records it
+reads, named and shaped as the helpers already take them. A predecessor's record shape leaves the command surface
+with the migration tools; the v1 model oracle keeps its own fixtures.
+
+**Boundaries.** v2 owns rendering. `bots.py` stays Python glue for now (its own later slice) and calls
+`make -s v2-render`; Python remains installed in `deploy-v2.yml` for that bot, and the step's comment stops claiming
+`check-v2` needs PyYAML, because `check-render.sh` runs no Python. Deleting the migration tools removes v2's last
+reader of a predecessor's YAML records, so `legacy` and `shadow` leave the layer map, `Pure` and the API baseline.
+
+**Contract.** A deploy commit holds deploy's record and compiled-file changes plus whatever render derives from
+them. `check-v2` already compares the result with `render --check`, so the new path cannot diverge from what the
+checks expect. `render` records `--revision` in `calls.json` and the allocation, so the one observed risk was that
+the bot's commit starts touching those two fields; parity is measured before the old targets are deleted, and churn
+in those two files stops the slice for the operator.
+
+**Deleted with it.** `tools/swhurl/v2snapshot.py` and `tests/test_v2_snapshot.py`; the `v2-snapshot`, `v2-users` and
+`v2-reloader` targets and their `commands.py` rows; the command entries for `auth`, `users`, `reloader`, `resolve`,
+`egress`, `shadow`, `migrate` and `preview`, whose helpers stay because `render` calls them; the `legacy` and `shadow`
+packages and `orchestration/migrate.go` with their tests; `identity`, `notCovered` and the request fields only those
+commands used. `archtest/api.txt`, the layers map and `Pure` shrink. What stays: `proxy` (render's output is its
+input), `compile`/`deploy`/`promote`/`status` with `--calls` and `--egress`, and `render`'s helpers.
+
+**Acceptance.** Parity on a scratch worktree: `make v2-deploy` followed by the old `v2-users` and `v2-reloader`
+writes the same `platform/nats/users.json` and `platform/reloader/values.json` bytes as `make v2-deploy` followed by
+`make v2-render`, and the comparison names any other path render touches. A `FakeRunner` test has `deploy_v2` call
+`v2-render`, and the Go tests pass on the slimmer command set. `make check`, `make check-v2` (with the `api.txt`,
+rule and layer changes) and `bash -n` over the scripts. A search finds `--snapshot` and `v2-snapshot` only in dated
+history ([current state](current-state.md), [deleting v1](v2-deletion-plan.md)). Live: the next scheduled Deploy v2
+run succeeds through the new path, which is the only live path this changes.
+
+**Delivery, one commit after the contract.** Docs change with the code: [commands](commands.md), [services](services.md),
+the egress lesson in `AGENTS.md`, [v2 status](v2-status.md) and the [workstream registry](workstreams.md), plus a
+dated entry in [current state](current-state.md).

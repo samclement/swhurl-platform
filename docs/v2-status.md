@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: a scoped contract and approval for the next retirement slice
+Gate: implementation of §18, the snapshot export and migration-tool retirement (approved 8 November 2026)
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —

@@ -1808,7 +1808,8 @@ filtered by `owns`.
 `settings_of`, `checked_host`, `team_commands`, `channel_commands`, `SCALE_FIELDS`), the `auto-merge.yml` workflow, the
 `console-merge` command, the console's label and comment plumbing (`AUTO_MERGE_LABEL`, `refusal()`,
 `PullRequest.labels`/`refused`/`auto`), the "merges itself" and "Hold for manual review" wording, and
-`promotion.merge_mode`'s label branches. The pull request body keeps one line, **Merge plan**, carrying the reason alone.
+`promotion.merge_mode`'s label branches. The pull request body keeps one optional line, **Merge plan:** it <reason>.,
+present only when a person must do something beyond merging it.
 
 **Contracts.**
 - No console pull request carries `auto-merge`, and no comment starting `Auto-merge refused:` is written or read.

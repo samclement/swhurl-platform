@@ -1,0 +1,1 @@
+{"server_id":"NDTESTLOCAL","server_name":"test","version":"2.11.0","proto":1,"go":"go1.25.4","host":"0.0.0.0","port":4222,"headers":true,"max_payload":1048576,"jetstream":true,"nonce":"a-nonce-from-the-server"}

@@ -1,0 +1,1 @@
+{"type":"io.nats.jetstream.api.v1.stream_info_response","config":{"name":"KV_flags-staging","subjects":["$KV.flags-staging.\u003e"]},"created":"2026-10-01T09:00:00Z","state":{"messages":2,"bytes":40,"first_seq":1,"last_seq":2,"num_subjects":2,"subjects":{"$KV.flags-staging.staging.demo-shop.banner":1,"$KV.flags-staging.staging.demo-shop.shout":1}}}

@@ -1,0 +1,1 @@
+{"type":"io.nats.jetstream.api.v1.stream_msg_get_response","message":{"subject":"$KV.flags-staging.staging.demo-shop.shout","seq":2,"data":"dHJ1ZQ==","time":"2026-11-09T09:30:00.123456789Z"}}

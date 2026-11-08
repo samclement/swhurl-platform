@@ -235,6 +235,25 @@ adapters/manifests/manifeststest: type Fake struct {Answers map[string][]checkre
 adapters/manifests: func (YAML) Documents(text []byte) ([]checkrepo.Document, error)
 adapters/manifests: type Decoder interface {Documents(text []byte) ([]checkrepo.Document, error)}
 adapters/manifests: type YAML struct {}
+adapters/nats/natstest: const ClearedKey = Prefix + "banner"
+adapters/nats/natstest: const OtherKey = "$KV.flags-staging.staging.demo-orders.shout"
+adapters/nats/natstest: const Prefix = "$KV.flags-staging.staging.demo-shop."
+adapters/nats/natstest: const StoredAt = "2026-11-09T09:30:00.123456789Z"
+adapters/nats/natstest: const StoredKey = Prefix + "shout"
+adapters/nats/natstest: const Stream = "KV_flags-staging"
+adapters/nats/natstest: func (*Fake) Close() error
+adapters/nats/natstest: func (*Fake) Get(_ context.Context, _ string, key string) (nats.Message, error)
+adapters/nats/natstest: func (*Fake) Keys(_ context.Context, _ string, prefix string) ([]string, error)
+adapters/nats/natstest: func (*Fake) Put(_ context.Context, subject string, value []byte, headers map[string]string) error
+adapters/nats/natstest: func Contract(t *testing.T, open func(*testing.T) nats.KV)
+adapters/nats/natstest: func New() *Fake
+adapters/nats/natstest: type Fake struct {Entries map[string]nats.Message Fail error Closed bool Writes []Write}
+adapters/nats/natstest: type Write struct {Subject string Value []byte Headers map[string]string}
+adapters/nats: const Timeout = 5 * time.Second
+adapters/nats: func Open(ctx context.Context, url, seed, inbox string) (KV, error)
+adapters/nats: type KV interface {// Keys is the subjects stored under a prefix, in the server's answer. Keys(ctx context.Context, stream, prefix string) ([]string, error) // Get is the newest message at a key: ErrAbsent when there is none. Get(ctx context.Context, stream, key string) (Message, error) // Put publishes one value at a subject and waits for JetStream's acknowledgement. Put(ctx context.Context, subject string, value []byte, headers map[string]string) error // Close ends the connection. Close() error}
+adapters/nats: type Message struct {Value []byte Headers map[string]string StoredAt string}
+adapters/nats: var ErrAbsent = errors.New("the store holds no such key")
 adapters/notifysvc/notifysvctest: func (*Fake) Send(ctx context.Context, address, token string, request notifysvc.Request) error
 adapters/notifysvc/notifysvctest: func Contract(t *testing.T, request notifysvc.Request, open func(*testing.T, int) (notifysvc.Sender, func() Sent))
 adapters/notifysvc/notifysvctest: type Fake struct {Sent []Sent Fail error}
@@ -459,6 +478,7 @@ kernel: const AppTree = "apps"
 kernel: const ChannelTaken Code = "channel_taken"
 kernel: const ChannelsFolder = NotifyFolder + "/channels"
 kernel: const Connected = "connected"
+kernel: const ConsoleInbox = "_INBOX.console"
 kernel: const DataMount = "/data"
 kernel: const DatabasePath = DataMount + "/app.db"
 kernel: const DeclarationLabel = "platform.swhurl.com/declaration"
@@ -539,6 +559,7 @@ kernel: func DecodeNameCatalogue(data []byte) (NameCatalogue, error)
 kernel: func DecodeProfile(data []byte) (PlatformProfile, error)
 kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
 kernel: func DecodeTeams(data []byte) (TeamRegistry, error)
+kernel: func DecodeUserSeed(text string) ([32]byte, error)
 kernel: func EgressGrants(grants []string) ([]string, error)
 kernel: func EncodeApp(app AppSpec) ([]byte, error)
 kernel: func EncodeCompilation(c Compilation) []byte
@@ -547,6 +568,10 @@ kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
 kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
 kernel: func EncodeTeams(registry TeamRegistry) ([]byte, error)
 kernel: func EventsSecret(spec InstanceSpec, pair UserKey) ([]byte, error)
+kernel: func FlagSubject(environment, application, flag string) string
+kernel: func FlagsBucket(environment string) string
+kernel: func FlagsPrefix(environment, application string) string
+kernel: func FlagsStream(environment string) string
 kernel: func ImageParts(image string) (host, repository string, err error)
 kernel: func ImagePolicyName(application string) string
 kernel: func ImageRepository(image string) string
@@ -569,6 +594,7 @@ kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func RevisionOf(tag ImageTag, revision string) (string, error)
 kernel: func SelectPromotion(staging, target InstanceSpec, current, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
+kernel: func Sign(seed [32]byte, message []byte) []byte
 kernel: func SplitImage(reference string) (string, ImageTag, error)
 kernel: func SubscribersOf(data []byte, application, environment string) ([]string, error)
 kernel: func UnitPath(application, environment string, profile PlatformProfile) string
@@ -1096,13 +1122,20 @@ policy: type Finding struct {Rule string `json:"rule"` Object string `json:"obje
 policy: type Platform struct {Pods, RequestsCPUMilli, RequestsMemoryMiB, LimitsMemoryMiB int64 StorageClass, CookieDomain, Middleware string}
 producer: const LabelKey = "platform.swhurl.com/declaration"
 producer: const MaxLabelBytes = 120 * 1024
+producer: func (Flag) Declared(environment string) any
+producer: func (Flag) Description() string
+producer: func (Flag) Text(input string) (any, error)
+producer: func (Flag) Type() string
 producer: func (Object) Get(name string) any
+producer: func Declarations(document []byte) ([]Flag, error)
 producer: func FlagsDocument(flags Object) []byte
 producer: func Label(s Source, publications []string, documents []Document) (string, error)
 producer: func Parse(o Object) (Source, error)
 producer: func Publications(doc Object, name string) ([]string, error)
+producer: func ValidFlagName(name string) bool
 producer: type Document struct {Role string Bytes []byte}
 producer: type Field struct {Name any Value any}
+producer: type Flag struct {Name string Declaration Object}
 producer: type Object []Field
 producer: type Source struct {Runtime Object Telemetry bool Database string DatabaseSizeMiB, MemoryMiB json.Number Secrets []any Description, APIPath, APIFile, EventsFile string Flags Object}
 workstreams: const MaxLines = 250

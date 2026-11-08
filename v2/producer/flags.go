@@ -2,35 +2,44 @@ package producer
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"math/big"
 	"slices"
 	"strconv"
 )
 
-func flags(o Object) error {
+// flagRules states the rules once, naming the file they are applied to: swhurl.yaml's flags block when a source is
+// checked, and flags.json when an image's offered document is read back (Declarations).
+type flagRules struct{ source string }
+
+func (r flagRules) issue(field any, detail string) error {
+	return fmt.Errorf("%s: %v: %s", r.source, field, detail)
+}
+
+func (r flagRules) flags(o Object) error {
 	for _, f := range o {
 		name, ok := f.Name.(string)
 		if !ok || len(name) > 40 || !matches(`[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*`, name) {
-			return issue("flags."+scalarText(f.Name), "name must be kebab case, at most 40 characters")
+			return r.issue("flags."+scalarText(f.Name), "name must be kebab case, at most 40 characters")
 		}
 		flag, ok := f.Value.(Object)
 		if !ok {
-			return issue("flags."+scalarText(f.Name), "must be a mapping with type and default")
+			return r.issue("flags."+scalarText(f.Name), "must be a mapping with type and default")
 		}
-		if err := flagShape(name, flag); err != nil {
+		if err := r.flagShape(name, flag); err != nil {
 			return err
 		}
-		if err := flagValues(name, flag); err != nil {
+		if err := r.flagValues(name, flag); err != nil {
 			return err
 		}
 	}
 	return nil
 }
-func flagShape(name string, o Object) error {
+func (r flagRules) flagShape(name string, o Object) error {
 	kind := text(o.Get("type"))
 	if !slices.Contains([]string{"boolean", "integer", "number", "string"}, kind) {
-		return issue("flags."+name+".type", "must be boolean, integer, number or string")
+		return r.issue("flags."+name+".type", "must be boolean, integer, number or string")
 	}
 	allowed := []string{"type", "description", "default", "staging", "prod"}
 	if kind == "number" || kind == "integer" {
@@ -41,43 +50,43 @@ func flagShape(name string, o Object) error {
 	}
 	for _, f := range o {
 		if !slices.Contains(allowed, text(f.Name)) {
-			return issue("flags."+name+"."+scalarText(f.Name), "unknown field")
+			return r.issue("flags."+name+"."+scalarText(f.Name), "unknown field")
 		}
 	}
 	if o.has("description") {
 		if _, ok := o.Get("description").(string); !ok {
-			return issue("flags."+name+".description", "must be text")
+			return r.issue("flags."+name+".description", "must be text")
 		}
 	}
 	if !o.has("default") {
-		return issue("flags."+name+".default", "required")
+		return r.issue("flags."+name+".default", "required")
 	}
-	return flagBounds(name, o, kind)
+	return r.flagBounds(name, o, kind)
 }
-func flagBounds(name string, o Object, kind string) error {
+func (r flagRules) flagBounds(name string, o Object, kind string) error {
 	for _, key := range []string{"min", "max"} {
 		if o.has(key) && !bound(o.Get(key), kind) {
-			return issue("flags."+name+"."+key, "wrong numeric type")
+			return r.issue("flags."+name+"."+key, "wrong numeric type")
 		}
 	}
 	if o.has("min") && o.has("max") && greater(o.Get("min"), o.Get("max")) {
-		return issue("flags."+name+".min", "above its max")
+		return r.issue("flags."+name+".min", "above its max")
 	}
-	return flagEnum(name, o.Get("enum"))
+	return r.flagEnum(name, o.Get("enum"))
 }
-func flagEnum(name string, v any) error {
+func (r flagRules) flagEnum(name string, v any) error {
 	if v == nil {
 		return nil
 	}
 	values, ok := v.([]any)
 	if !ok || len(values) == 0 {
-		return issue("flags."+name+".enum", "must list distinct strings")
+		return r.issue("flags."+name+".enum", "must list distinct strings")
 	}
 	seen := map[string]bool{}
 	for _, v := range values {
 		s, ok := v.(string)
 		if !ok || seen[s] {
-			return issue("flags."+name+".enum", "must list distinct strings")
+			return r.issue("flags."+name+".enum", "must list distinct strings")
 		}
 		seen[s] = true
 	}
@@ -120,7 +129,7 @@ func typed(v any, kind string) bool {
 	}
 	return false
 }
-func flagValues(name string, o Object) error {
+func (r flagRules) flagValues(name string, o Object) error {
 	kind := text(o.Get("type"))
 	for _, key := range []string{"default", "staging", "prod"} {
 		if !o.has(key) {
@@ -128,14 +137,14 @@ func flagValues(name string, o Object) error {
 		}
 		v := o.Get(key)
 		if !typed(v, kind) {
-			return issue("flags."+name+"."+key, "must be a "+kind)
+			return r.issue("flags."+name+"."+key, "must be a "+kind)
 		}
 		if outsideBounds(o, v, kind) {
-			return issue("flags."+name+"."+key, "outside min and max")
+			return r.issue("flags."+name+"."+key, "outside min and max")
 		}
 
 		if enum, ok := o.Get("enum").([]any); ok && !slices.Contains(enum, v) {
-			return issue("flags."+name+"."+key, "must be one of enum")
+			return r.issue("flags."+name+"."+key, "must be one of enum")
 		}
 	}
 	return nil

@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the operator's approval of §22 (the feature flags slice in Go)
+Gate: the flags slice's live evidence, then the operator's approval of §23 (the console server)
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -37,6 +37,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Backup and restore | done | [record](current-state.md#the-first-content-changing-restore-swhurl-try-10-staging-moved-back-a-day-27-october-2026) |
 | Promotion and rollback | done | [record](current-state.md#a-rollback-exercised-live-2-november-2026) |
 | Image declaration producer in Go | done | [workflow rollout](current-state.md#go-producer-adoption-by-template-workflows-5-november-2026) |
+| Feature-flag overrides: the NATS key-value adapter, kernel signing and `flags.json` declarations in Go | partial | [adapter](../v2/adapters/nats/nats.go), [contract suite](../v2/adapters/nats/nats_test.go), [declarations](../v2/producer/declared.go); the rows, the command and the console's card follow in this slice ([§22](iteration-2-plan.md#22-feature-flags-in-go-the-overrides-adapter-and-the-consoles-card-approved-9-november-2026)) |
 | Platform verification in Go (`swhurl-v2 verify`: all twenty-four groups, six of them the console's cluster scope) | done | [record](current-state.md#every-platform-check-is-go-7-november-2026) |
 | Template check without Python but Copier | done | [record](current-state.md#the-template-check-leaves-python-5-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
@@ -84,7 +85,7 @@ loses its `run=` function.
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
 | The v1 records model and its fixture oracle (`apps/model/*`) | delete as importers leave; keep the fixture oracle until then | bounded: 1,541 lines, imported by 11 modules (8 under `apps/`, 2 under `console/` and 1 live test) and 4 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last ([§21](iteration-2-plan.md#21-the-apps-inventory-and-connections-in-go-approved-8-november-2026)) |
 | Image-declaration producer | `swhurl-v2 image-declaration` | implemented, independently reviewed and rolled out to both template build workflows: Python producer/internal command and producer-only tests deleted; 35 full-label goldens and seven refusals preserve source behavior; the templates build and call the pinned Go binary, and the released catalogue pins are advanced. Existing apps' workflow pins stay unchanged until Copier updates them |
-| `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress, in two slices: the feature-flag card first (`flagstore.py` → `swhurl-v2 flags`, [§22](iteration-2-plan.md#22-feature-flags-in-go-the-overrides-adapter-and-the-consoles-card-proposed-9-november-2026)), then the server; today: every row of the Apps list, the map, the Egress page, the catalogue, the Teams page and the app page is `swhurl-v2 status --all`'s `inventory` block, so the console runs no `kubectl` list of its own for them and `records.py` is deleted (a grant outside the cluster keeps its `host:port` in the row's What column); its promotion submission reads `swhurl-v2 status` with the pod's credential, and its Overview and Platform checks `swhurl-v2 verify`; its merge gate is retired rather than ported ([§21](iteration-2-plan.md#21-the-apps-inventory-and-connections-in-go-approved-8-november-2026), [§20](iteration-2-plan.md#20-the-merge-gate-is-retired-approved-8-november-2026)). The server and its 18 templates go last |
+| `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress, in two slices: the feature-flag card first (`flagstore.py` → `swhurl-v2 flags`, [§22](iteration-2-plan.md#22-feature-flags-in-go-the-overrides-adapter-and-the-consoles-card-approved-9-november-2026)), then the server; the slice's adapter half is built in Go — a signed NATS key-value client with a contract suite over raw frames and a fake, `flags.json` declarations in the producer, seed decode and sign in the kernel — while `flagstore.py` still serves the card until the model, command and route land; today: every row of the Apps list, the map, the Egress page, the catalogue, the Teams page and the app page is `swhurl-v2 status --all`'s `inventory` block, so the console runs no `kubectl` list of its own for them and `records.py` is deleted (a grant outside the cluster keeps its `host:port` in the row's What column); its promotion submission reads `swhurl-v2 status` with the pod's credential, and its Overview and Platform checks `swhurl-v2 verify`; its merge gate is retired rather than ported ([§21](iteration-2-plan.md#21-the-apps-inventory-and-connections-in-go-approved-8-november-2026), [§20](iteration-2-plan.md#20-the-merge-gate-is-retired-approved-8-november-2026)). The server and its 18 templates go last |
 
 ## Remaining work
 
@@ -137,7 +138,7 @@ not migration.
    (`SCHEMA=1`), and `validate.py` is deleted ([evidence](current-state.md#check-repo-runs-go-and-validatepy-is-retired-8-november-2026)). [§18](iteration-2-plan.md#18-the-snapshot-export-and-the-migration-tools-are-retired-approved-8-november-2026)
    retires the Python snapshot export, v2's snapshot-only commands and its migration tools, leaving one render
    ([evidence](current-state.md#the-snapshot-export-leaves-python-and-v2s-migration-tools-are-retired-8-november-2026)). The console and the remaining commands each need their own slice: the console's is two, the flag
-   card ([§22](iteration-2-plan.md#22-feature-flags-in-go-the-overrides-adapter-and-the-consoles-card-proposed-9-november-2026))
+   card ([§22](iteration-2-plan.md#22-feature-flags-in-go-the-overrides-adapter-and-the-consoles-card-approved-9-november-2026))
    and then the server. Existing apps' adoption of the new workflow releases is a separate gate.
 
 ## Deferred features

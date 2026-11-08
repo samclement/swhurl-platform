@@ -116,7 +116,7 @@ func Parse(o Object) (Source, error) {
 	return s, nil
 }
 func sourceOffers(o Object, s Source) error {
-	if err := flags(s.Flags); err != nil {
+	if err := (flagRules{"swhurl.yaml"}).flags(s.Flags); err != nil {
 		return err
 	}
 	return sourceEvents(object(o.Get("events")))

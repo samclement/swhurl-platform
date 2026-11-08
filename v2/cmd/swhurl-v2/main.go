@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/git"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/helm"
+	"github.com/samclement/swhurl-platform/v2/adapters/nats"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
@@ -71,6 +73,7 @@ const usage = `usage:
   swhurl-v2 notifications-heartbeat [--dry-run] [--max-age DURATION] [--state FILE] --kubeconfig KUBECONFIG.json
   swhurl-v2 clickstack-dashboards (--cluster | --records DIR) [--dry-run] (--kubeconfig KUBECONFIG.json | --in-cluster)
   swhurl-v2 clickstack-bootstrap [--dry-run] --kubeconfig KUBECONFIG.json
+  swhurl-v2 flags --records DIR --app APPLICATION --env ENVIRONMENT [--set FLAG=TEXT | --clear FLAG] [--json]
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
 platform's tag policy, and writes the record pair and the compiled files under --out. With --records it reads
@@ -370,6 +373,10 @@ func registryReader(image string) (registry.Reader, error) {
 	return registry.New(image, &http.Client{Timeout: 30 * time.Second})
 }
 
+// defaultNATSURL is where the platform's broker answers inside the cluster, which the console's own environment names
+// on every request; a local run port-forwards and states its own.
+const defaultNATSURL = "nats://nats.messaging.svc.cluster.local:4222"
+
 // archiveReader is the object-store reader the command builds from the operator's own credentials. They are
 // read from the environment and never written down, and the region is the bucket's own when none is given.
 func archiveReader(bucket, region string) (s3.Reader, error) {
@@ -418,6 +425,7 @@ var commands = map[string]func(cli, request) int{
 	"notifications-heartbeat": cli.notificationsHeartbeat,
 	"clickstack-dashboards":   cli.clickstackDashboards,
 	"clickstack-bootstrap":    cli.clickstackBootstrap,
+	"flags":                   cli.flags,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -443,7 +451,7 @@ type request struct {
 	stateFlag, maxAgeFlag                              *once
 	rotate, check, json, inCluster, all, dryRun        bool
 	cluster                                            bool
-	confirm, ageKey                                    string
+	confirm, ageKey, cleared                           string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
 	outFlag                                            *once
@@ -517,6 +525,15 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 	}
 	if command == "workstreams" {
 		flags.Var(&once{value: &r.repoRoot}, "repo-root", "the top of the checkout whose workstream record is checked")
+		return
+	}
+	if command == "flags" {
+		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
+		flags.Var(&once{value: &r.app}, "app", "application")
+		flags.Var(&once{value: &r.env}, "env", "environment: staging or prod")
+		flags.Var(&once{value: &r.change}, "set", "one flag's new value as the form's text, FLAG=TEXT")
+		flags.Var(&once{value: &r.cleared}, "clear", "one flag whose override is removed, declared or not")
+		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-flags document instead of the rows")
 		return
 	}
 	if command == "check-repo" {
@@ -802,6 +819,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"notifications-heartbeat": (*request).heartbeatNamed,
 	"clickstack-dashboards":   (*request).dashboardsNamed,
 	"clickstack-bootstrap":    func(r *request) []string { return []string{r.kubeconfig} },
+	"flags":                   (*request).flagsNamed,
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one
@@ -825,6 +843,14 @@ func (r *request) checkRepoNamed() []string {
 		return []string{""}
 	}
 	return []string{r.root}
+}
+
+// flagsNamed is one instance's records, and one write at most: a set and a clear together are a usage error.
+func (r *request) flagsNamed() []string {
+	if r.change != "" && r.cleared != "" {
+		return []string{""}
+	}
+	return []string{r.records, r.app, r.env}
 }
 
 // verifyNamed is the cluster scope's exactly one credential, a kubeconfig or the pod's own ServiceAccount (neither or
@@ -972,6 +998,28 @@ type cli struct {
 	github    github.Reader
 	// platform publishes to the platform topic; nil is ntfy over HTTPS. A test supplies a fake.
 	platform ntfy.Publisher
+	// getenv reads the environment the flags card signs in with; nil is os.Getenv, and a test supplies its own.
+	getenv func(string) string
+	// natsStore signs in to the event service; nil is the protocol's own adapter, and a test supplies a fake store.
+	natsStore func(context.Context, string, string, string) (nats.KV, error)
+	// clock is the time an override's age is measured from; nil is the wall clock.
+	clock func() time.Time
+}
+
+// environment is one variable of this process's environment.
+func (c cli) environment(name string) string {
+	if c.getenv == nil {
+		return os.Getenv(name)
+	}
+	return c.getenv(name)
+}
+
+// now is the instant an override's age is measured from.
+func (c cli) now() time.Time {
+	if c.clock == nil {
+		return time.Now()
+	}
+	return c.clock()
 }
 
 func (c cli) releaseID(path string) int {

@@ -3,7 +3,7 @@
 An app proves who it is to NATS by signing a challenge with its seed (a secret, in the app's
 encrypted Secret); the server's configuration lists only public keys, so it holds no secret and
 can live in Git, and a new app's key needs nothing decrypted. The console also signs in itself, to
-write feature flag overrides (console/flagstore.py), so it signs NATS's challenge here too.
+write feature flag overrides, so it signs NATS's challenge here too.
 
 Pure Python on purpose: the console image has no crypto library or openssl binary, and a key is
 derived once per app. The curve arithmetic is RFC 8032's reference; tests pin its test vectors.

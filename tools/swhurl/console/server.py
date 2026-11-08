@@ -41,7 +41,6 @@ from swhurl.console import (
     catalogue,
     changes,
     cluster,
-    flagstore,
     health,
     jobstore,
     logconfig,
@@ -159,11 +158,8 @@ def job_store(runner: Runner, dev_identity: str | None) -> jobstore.JobStore | N
 
 def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions.Jobs | None = None,
                github: gh.GitHub | None = None, app_repos: repos.AppReposToken | None = None,
-               repo_opener: repo.Opener | None = None, documents: catalogue.Reader | None = None,
-               flags: flagstore.FlagStore | None = None) -> Starlette:
-    """``github`` and ``app_repos`` default to the tokens in the environment (none: the new-app form says so),
-    ``flags`` to the console's NATS key (none: the flag form says so)."""
-    flags = flags or flagstore.FlagStore.from_env()
+               repo_opener: repo.Opener | None = None, documents: catalogue.Reader | None = None) -> Starlette:
+    """``github`` and ``app_repos`` default to the tokens in the environment (none: the new-app form says so)."""
     jobs = jobs or actions.Jobs(runner, store=job_store(runner, dev_identity))
     github = github or gh.github_from_env(runner)
     app_repos = app_repos or repos.token_from_env(runner)
@@ -482,7 +478,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         if not await asyncio.to_thread(jobs.drain):
             logging.getLogger('swhurl.console.jobs').error('Stopping with jobs still running: they will show as interrupted')
 
-    ctx = Context(runner, github, jobs, flags, app_repos, repo_opener, described, document_source, file_source, platform_file,
+    ctx = Context(runner, github, jobs, app_repos, repo_opener, described, document_source, file_source, platform_file,
                   request_files, page, reading, open_prs, change_rows, stacks, platform_teams, platform_channels, teams_cache,
                   channels_cache, connectable, propose, resumable, app_rows, promotion_status, platform_checks)
     return Starlette(

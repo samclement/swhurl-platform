@@ -101,7 +101,8 @@ block, and `platform/auth/` is rendered from it, so a rotated key has one source
 
 ### 2.2 Console
 
-`tools/swhurl/console/` is the larger part: **15 modules import `swhurl.apps`**. They split into two jobs.
+`tools/swhurl/console/` is the larger part: **14 modules import `swhurl.apps`** (`flagstore.py` left with
+`swhurl-v2 flags`). They split into two jobs.
 
 **Read / render** (must move to v2 records):
 
@@ -113,7 +114,6 @@ block, and `platform/auth/` is rendered from it, so a rotated key has one source
 | `stages.py` | `apps.model.render`, `store`, `Settings` | `v2-records` + `swhurl-v2 compile`/preview |
 | `pages.py` | `apps.contract`, `apps.instance` | v2 app/instance records |
 | `checks.py` | `apps.helmrelease` | compiled `v2-apps` |
-| `flagstore.py` | `apps.events`, `nkeys` | v2 events records |
 | `repos.py` | `apps.hooks`, `repo` | kept (v1-only facts) |
 
 **Write / propose** (must move to v2 or be disabled):

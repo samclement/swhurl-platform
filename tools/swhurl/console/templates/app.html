@@ -152,17 +152,17 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
     <table class="compact flags">
       <tr><th>Flag</th><th>Type</th><th>Declared</th><th>Override</th><th>Now</th><th><span class="sr-only">Change</span></th></tr>
       {% for f in flag_rows %}
-      {% set fl = f.flag %}
+      {% set fl = f.declaration or {} %}
       <tr class="{% if f.name == flag_changed %}changed{% endif %}{% if f.undeclared %} undeclared{% endif %}">
         <td><code>{{ f.name }}</code>{% if fl.description %}<br><span class="muted">{{ fl.description }}</span>{% endif %}</td>
         {% if f.undeclared %}
         <td colspan="2"><span class="pill attention" title="The image {{ i.env }} runs does not declare this flag, so the app ignores the override">not declared</span></td>
         {% else %}
         <td><span class="pill">{{ fl.type }}</span>{% if fl.min is defined or fl.max is defined %} <span class="muted">{{ fl.min if fl.min is defined else '' }}…{{ fl.max if fl.max is defined else '' }}</span>{% endif %}</td>
-        <td><code>{{ f.declared | tojson }}</code></td>
+        <td><code>{{ fl.value | tojson }}</code></td>
         {% endif %}
-        <td>{% if f.overridden %}<span class="pill attention" title="Set from the console; clear it to return to the declared value">{{ f.override | tojson if f.override is not none else 'not JSON' }}</span>
-          {%- if f.age is not none %}<br><span class="{{ 'warn' if f.stale else 'muted' }}"{% if f.stale %} title="Older than 14 days: make it the declared value in swhurl.yaml, or remove the flag, then clear it"{% endif %}>set {{ 'today' if f.age == 0 else (f.age ~ ' day' ~ ('' if f.age == 1 else 's') ~ ' ago') }}</span>{% endif %}
+        <td>{% if f.overridden %}<span class="pill attention" title="Set from the console; clear it to return to the declared value">{{ f.override.value | tojson if f.override.readable else 'not JSON' }}</span>
+          {%- if f.ageDays is defined %}<br><span class="{{ 'warn' if f.stale else 'muted' }}"{% if f.stale %} title="Older than 14 days: make it the declared value in swhurl.yaml, or remove the flag, then clear it"{% endif %}>set {{ 'today' if f.ageDays == 0 else (f.ageDays ~ ' day' ~ ('' if f.ageDays == 1 else 's') ~ ' ago') }}</span>{% endif %}
           {%- else %}<span class="muted">none</span>{% endif %}</td>
         <td>{% if f.undeclared %}<span class="muted">unused</span>{% else %}<code>{{ f.effective | tojson }}</code>{% endif %}</td>
         <td class="actions">

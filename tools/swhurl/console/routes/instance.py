@@ -1,8 +1,6 @@
 """An app instance's page and its changes: flags, promotion review, and the pull requests that scale, expose, connect or remove it."""
 from __future__ import annotations
 
-import asyncio
-import datetime as dt
 import json
 import logging
 from urllib.parse import parse_qs
@@ -11,11 +9,12 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
-from swhurl.apps import contract, declaration, ops
+from swhurl.apps import contract, ops
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
-from swhurl.console import actions, changes, cluster, flagstore, observation, promotion, proposal, stages, v2
+from swhurl.console import actions, changes, cluster, observation, promotion, proposal, stages, v2
 from swhurl.console import github as gh
+from swhurl.console.actions import ActionError
 from swhurl.console.context import STACK_NAMES, Context, dashboard_urls, logs_url
 from swhurl.run import CommandError
 
@@ -23,9 +22,9 @@ V2_SCALE_FIELDS = (('replicas', 'replicas', 'Replicas'), ('memory', 'memoryMiB',
 
 
 def routes(ctx: Context) -> list[Route]:
-    runner, github, jobs, flags, described, page, open_prs, change_rows, stacks, connectable, propose = (
-        ctx.runner, ctx.github, ctx.jobs, ctx.flags, ctx.described, ctx.page, ctx.open_prs, ctx.change_rows, ctx.stacks,
-        ctx.connectable, ctx.propose)
+    runner, github, jobs, page, open_prs, change_rows, stacks, connectable, propose = (
+        ctx.runner, ctx.github, ctx.jobs, ctx.page, ctx.open_prs, ctx.change_rows, ctx.stacks, ctx.connectable,
+        ctx.propose)
     document_source, request_files = ctx.document_source, ctx.request_files
 
     def read_app(request: Request) -> Response:
@@ -54,14 +53,14 @@ def routes(ctx: Context) -> list[Route]:
         shown = row.connections if row else cluster.Connections()
         files = request_files.get()
         declared = cluster.Declared(row.inventory if row else None)
-        flag_list, flag_problem = flag_rows(found, shown.offers)
+        card = flag_card(found)
         instance = json.loads(files(f'v2-records/{found.app}/{found.env}/instance.json') or '{}')
         desired_helm = files(f'v2-apps/instances/{found.app}/{found.env}/helmrelease.json')
         variables = ops.shown_variables(json.loads(desired_helm))[0] if desired_helm is not None else None
         teams, teams_error = registered_teams() if declared.declared else ({}, '')
         return page(request, 'app.html', i=found, report=report, desired_image=declared.image_reference,
                     settings=instance.get('configuration', {}), database=declared.database,
-                    variables=variables, exposure=(instance.get('grants') or {}).get('exposure', ''), flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
+                    variables=variables, exposure=(instance.get('grants') or {}).get('exposure', ''), flag_rows=card['rows'], flag_problem=card['problem'], flags_writable=card['writable'],
                     writable=declared.declared and not declared.problem, v2=declared.declared,
                     flag_changed=request.query_params.get('flag', ''), team=row.team if row else '',
                     teams=teams, teams_error=teams_error,
@@ -72,6 +71,11 @@ def routes(ctx: Context) -> list[Route]:
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=proposal.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=observation.state(report), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
+
+    def effective(report: dict, name: str) -> object:
+        """The value the write left the flag at, as v2 read it back: the card states what is stored, not what was asked."""
+        row = next((row for row in report.get('rows') or [] if row.get('name') == name), {})
+        return (row.get('override') or {}).get('value')
 
     def declared_of(app: str, env: str) -> cluster.Declared:
         """The instance's own records, as the Go document reports them: an instance it does not report has none."""
@@ -138,33 +142,16 @@ def routes(ctx: Context) -> list[Route]:
                 raise actions.ActionError(f'{app} already belongs to {team}: that changes nothing')
         return changes.ACTIONS[action].commands(app, env, form)
 
-    def flag_rows(found: Instance, offers_commit: str) -> tuple[list[dict], str]:
-        """Each flag the instance's image declares, with its override, then each override of a flag it does
-        not declare; and why overrides could not be read. An override older than STALE_DAYS is ``stale``."""
-        images = described.of(found.app, found.env, offers_commit)
-        problem, overrides = '', {}
-        if flags is None:
-            problem = 'This console has no NATS key (console-nats Secret), so overrides cannot be read or set.' if images.flags else ''
-        else:
-            try:
-                overrides = flags.overrides(found.env, found.app)
-            except flagstore.FlagStoreError as error:
-                problem = f'Overrides could not be read: {error}'
-        if not images.flags and not overrides:
-            return [], problem or images.problem
-        now = dt.datetime.now(dt.UTC)
+    def flag_card(found: Instance) -> dict:
+        """The Feature flags card, as `swhurl-v2 flags` reports it: every row, and why it could not read them all.
 
-        def row(name: str, flag: dict | None) -> dict:
-            value = flag.get(found.env, flag['default']) if flag else None
-            override = overrides.get(name)
-            age = (now - override.at).days if override and override.at else None
-            return {'name': name, 'flag': flag or {}, 'declared': value, 'undeclared': flag is None,
-                    'override': override.value if override else flagstore.NO_VALUE, 'overridden': override is not None,
-                    'age': age, 'stale': age is not None and age >= flagstore.STALE_DAYS,
-                    'effective': value if override is None else override.value}
-        declared_flags = images.flags or {}
-        return [row(name, flag) for name, flag in declared_flags.items()] + \
-            [row(name, None) for name in overrides if name not in declared_flags], problem
+        v2 holds the declaration and the rules; this route passes on the document it printed, and its problem, in
+        v2's own words. The declaration is the record's own copy of the image's offers document, so a page cannot show
+        one commit's declaration beside another's rows."""
+        _, root = request_files.get().inputs()
+        answer = v2.run(runner, root, ['flags', '--records', v2.RECORDS, '--app', found.app,
+                                       f'--env={found.env}', '--json'])
+        return json.loads(answer.stdout)
 
     async def change_flag(request: Request) -> Response:
         """Set or clear one flag's override: written to NATS at once (no PR), and to the audit log."""
@@ -172,29 +159,17 @@ def routes(ctx: Context) -> list[Route]:
         found = Instance.named(app, env)
         if found is None:
             return page(request, 'error.html', status_code=404, error='No such app instance.')
-        if flags is None:
-            return page(request, 'error.html', status_code=409, error='This console has no NATS key (console-nats Secret).')
         form = {k: v[0] for k, v in parse_qs((await request.body()).decode(), keep_blank_values=True).items()}
+        action = form.get('action', '')
+        write = ['--set', f'{name}={form.get("value", "")}'] if action == 'set' else ['--clear', name]
         try:
-            rows = await asyncio.to_thread(ctx.apps)
-            row = next((r for r in rows if r.instance == found), None)
-            declared = described.of(app, env, row.connections.offers if row else '').flags or {}
-            if form.get('action') == 'clear':
-                if not declaration.FLAG_NAME.fullmatch(name):
-                    raise ValueError('not a flag name')
-                await asyncio.to_thread(flags.clear, env, app, name)
-                done = 'cleared'
-            elif name not in declared:
-                raise ValueError(f'{app}/{env} runs an image that does not declare {name}')
-            else:
-                value = flagstore.typed(declared[name], form.get('value', ''))
-                await asyncio.to_thread(flags.set, env, app, name, value)
-                done = f'= {json.dumps(value)}'
-        except ValueError as error:
+            _, root = request_files.get().inputs()
+            report = json.loads(v2.run(runner, root, ['flags', '--records', v2.RECORDS, '--app', app,
+                                                      f'--env={env}', '--json', *write]).stdout)
+        except ActionError as error:
             return page(request, 'error.html', status_code=400, error=f'{name}: {error}')
-        except (flagstore.FlagStoreError, cluster.ReadError, CommandError) as error:
-            return page(request, 'error.html', status_code=502, error=str(error))
         identity = request.state.identity
+        done = 'cleared' if action == 'clear' else f'= {json.dumps(effective(report, name))}'
         logging.getLogger('swhurl.console.audit').info(
             f'[AUDIT] {identity} flag {app}/{env} {name} {done}',
             extra={'identity': identity, 'action': 'flag', 'unit': f'{app}/{env}', 'state': 'done', 'flag': name})

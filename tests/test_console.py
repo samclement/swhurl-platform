@@ -235,40 +235,64 @@ operations:
              'max-items': {'type': 'integer', 'min': 1, 'max': 100, 'default': 20},
              'banner': {'type': 'string', 'enum': ['none', 'sale'], 'default': 'none'}}
 
-    class Flags:
-        """Stands in for the console's NATS key-value store."""
-        def __init__(self, overrides=None, fail=None):
-            self.stored, self.fail, self.calls = dict(overrides or {}), fail, []
-
-        def overrides(self, env, app):
-            from swhurl.console import flagstore
-            if self.fail:
-                raise self.fail
-            return {n: v if isinstance(v, flagstore.Override) else flagstore.Override(v, dt.datetime.now(dt.UTC))
-                    for (e, a, n), v in self.stored.items() if (e, a) == (env, app)}
-
-        def set(self, env, app, name, value):
-            self.calls.append(('set', env, app, name, value))
-            self.stored[(env, app, name)] = value
-
-        def clear(self, env, app, name):
-            self.calls.append(('clear', env, app, name))
-            self.stored.pop((env, app, name), None)
-
     def flags_page_cluster(self):
+        """The page's cluster, with this app's declaration in the pinned records the binary reads."""
         runner = self.described_cluster()
+        runner.status_inputs['v2-records/orders/staging/offers/flags.json'] = json.dumps(self.FLAGS)
         runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit('app-orders-staging')))
         runner.on('kubectl', '-n', 'orders-staging', 'get', stdout=json.dumps({'items': []}))
         runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
         return runner
 
-    def flag_documents(self):
-        files = {'v2-apps/instances/orders/staging/offers/flags.json': json.dumps(self.FLAGS)}
-        return files.get
+    def flag_rows(self):
+        """The rows `swhurl-v2 flags` reports for FLAGS with no override stored: each flag's declared value."""
+        return [{'name': 'shout', 'declaration': {'type': 'boolean', 'description': 'Say hello in capitals',
+                                                  'default': False, 'value': True}, 'undeclared': False,
+                 'overridden': False, 'stale': False, 'effective': True},
+                {'name': 'max-items', 'declaration': {'type': 'integer', 'default': 20, 'value': 20, 'min': 1,
+                                                      'max': 100}, 'undeclared': False, 'overridden': False,
+                 'stale': False, 'effective': 20},
+                {'name': 'banner', 'declaration': {'type': 'string', 'default': 'none', 'value': 'none',
+                                                   'enum': ['none', 'sale']}, 'undeclared': False,
+                 'overridden': False, 'stale': False, 'effective': 'none'}]
+
+    def flag_card(self, rows=None, *, problem='', writable=True):
+        """The document `swhurl-v2 flags --json` prints: the rows, and why it could not read them all."""
+        return {'kind': 'v2-flags', 'version': 1, 'instance': {'application': 'orders', 'environment': 'staging'},
+                'writable': writable, 'problem': problem, 'rows': self.flag_rows() if rows is None else rows}
+
+    def stored(self, rows, name, value, *, age=None, stale=False):
+        """The same rows with one flag overridden, as v2 states an override and its age."""
+        row = next(row for row in rows if row['name'] == name)
+        row.update({'overridden': True, 'override': {'value': value, 'readable': True}, 'effective': value,
+                    'stale': stale})
+        if age is not None:
+            row['ageDays'] = age
+        return rows
+
+    def undeclared(self, name, value, *, age=20, stale=True):
+        """An override of a flag the image does not declare: the app ignores it, and only a clear reaches it."""
+        return {'name': name, 'undeclared': True, 'overridden': True, 'override': {'value': value, 'readable': True},
+                'effective': value, 'ageDays': age, 'stale': stale}
+
+    def flags_runner(self, card=None, refusals=None):
+        """The page's cluster with `swhurl-v2 flags` answering its card, and v2's own words for a write it refuses."""
+        runner = self.flags_page_cluster()
+        card, refusals = card or self.flag_card(), refusals or {}
+
+        def answer(args, _input):
+            write = next((args[index + 1] for index, arg in enumerate(args) if arg in ('--set', '--clear')), '')
+            if write in refusals:
+                return Result(args, 2, '', refusals[write])
+            return Result(args, 0, json.dumps(card), '')
+
+        runner.on('swhurl-v2', 'flags', handler=answer)
+        runner._rules.insert(0, runner._rules.pop())  # this page's card, before the installed default
+        return runner
 
     def test_the_app_page_shows_each_declared_flag_with_its_override(self):
-        store = self.Flags({('staging', 'orders', 'shout'): False})
-        text = client(self.flags_page_cluster(), documents=self.flag_documents(), flags=store).get('/apps/orders/staging', headers=WHO).text
+        card = self.flag_card(self.stored(self.flag_rows(), 'shout', False))
+        text = client(self.flags_runner(card)).get('/apps/orders/staging', headers=WHO).text
         self.assertIn('<h2>Feature flags</h2>', text)
         row = text[text.index('<code>shout</code>'):text.index('<code>max-items</code>')]
         self.assertIn('Say hello in capitals', row)
@@ -281,33 +305,35 @@ operations:
         self.assertNotIn('value="clear"', others, 'nothing to clear without an override')
 
     def test_a_flag_is_set_and_cleared_as_its_declared_type_and_audited(self):
-        store = self.Flags()
-        c = client(self.flags_page_cluster(), documents=self.flag_documents(), flags=store)
+        runner = self.flags_runner(self.flag_card(self.stored(self.flag_rows(), 'max-items', 42)))
+        c = client(runner)
         with self.assertLogs('swhurl.console.audit', 'INFO') as logged:
             reply = c.post('/apps/orders/staging/flags/max-items', data={'action': 'set', 'value': '42'}, headers=ORIGIN, follow_redirects=False)
             c.post('/apps/orders/staging/flags/shout', data={'action': 'clear'}, headers=ORIGIN, follow_redirects=False)
         self.assertEqual((reply.status_code, reply.headers['location']), (303, '/apps/orders/staging?flag=max-items#flags'))
-        self.assertEqual(store.calls, [('set', 'staging', 'orders', 'max-items', 42), ('clear', 'staging', 'orders', 'shout')])
         self.assertEqual([r.getMessage() for r in logged.records],
                          ['[AUDIT] sam@swhurl.com flag orders/staging max-items = 42', '[AUDIT] sam@swhurl.com flag orders/staging shout cleared'])
+        writes = [call for call in runner.calls if call[:2] == ('swhurl-v2', 'flags') and
+                  ('--set' in call or '--clear' in call)]
+        self.assertEqual([call[-2:] for call in writes], [('--set', 'max-items=42'), ('--clear', 'shout')],
+                         'v2 types, checks and writes the value')
         for name, value, message in (('max-items', '500', 'outside min and max'), ('max-items', '1.5', 'give a whole number'),
                                      ('banner', 'loud', 'must be one of none, sale'), ('shout', 'yes', 'choose true or false'),
                                      ('gone', 'true', 'does not declare gone')):
             with self.subTest(name=name, value=value):
-                reply = c.post(f'/apps/orders/staging/flags/{name}', data={'action': 'set', 'value': value}, headers=ORIGIN)
+                refused = self.flags_runner(refusals={f'{name}={value}': message})
+                reply = client(refused).post(f'/apps/orders/staging/flags/{name}', data={'action': 'set', 'value': value}, headers=ORIGIN)
                 self.assertEqual(reply.status_code, 400)
                 self.assertIn(message, reply.text)
-        self.assertEqual(len(store.calls), 2, 'a refused value is not written')
         self.assertEqual(c.post('/apps/orders/staging/flags/shout', data={'action': 'clear'}, headers=WHO).status_code, 403,
                          'only from a console page')
 
     def test_an_old_override_and_one_the_image_no_longer_declares_are_marked_and_can_be_cleared(self):
-        from swhurl.console import flagstore
-        old = dt.datetime.now(dt.UTC) - dt.timedelta(days=20)
-        store = self.Flags({('staging', 'orders', 'max-items'): flagstore.Override(50, old),
-                            ('staging', 'orders', 'shout'): flagstore.Override(False, dt.datetime.now(dt.UTC)),
-                            ('staging', 'orders', 'old-banner'): flagstore.Override('sale', old)})
-        c = client(self.flags_page_cluster(), documents=self.flag_documents(), flags=store)
+        rows = self.stored(self.flag_rows(), 'max-items', 50, age=20, stale=True)
+        self.stored(rows, 'shout', False, age=0)
+        rows = [*rows, self.undeclared('old-banner', 'sale')]
+        runner = self.flags_runner(self.flag_card(rows))
+        c = client(runner)
         text = c.get('/apps/orders/staging', headers=WHO).text
         shout = text[text.index('<code>shout</code>'):text.index('<code>max-items</code>')]
         self.assertIn('<span class="muted">set today</span>', shout)
@@ -321,22 +347,29 @@ operations:
         self.assertIn('value="clear"', gone)
         reply = c.post('/apps/orders/staging/flags/old-banner', data={'action': 'clear'}, headers=ORIGIN, follow_redirects=False)
         self.assertEqual(reply.status_code, 303)
-        self.assertEqual(store.calls, [('clear', 'staging', 'orders', 'old-banner')])
+        writes = [call for call in runner.calls if call[:2] == ('swhurl-v2', 'flags') and
+                  ('--set' in call or '--clear' in call)]
+        self.assertEqual([call[-2:] for call in writes], [('--clear', 'old-banner')])
+        refused = self.flags_runner(refusals={'old-banner=x': 'orders/staging runs an image that does not declare old-banner',
+                                             'a.b': 'not a flag name'})
+        c = client(refused)
         self.assertEqual(c.post('/apps/orders/staging/flags/old-banner', data={'action': 'set', 'value': 'x'}, headers=ORIGIN).status_code, 400)
         self.assertEqual(c.post('/apps/orders/staging/flags/a.b', data={'action': 'clear'}, headers=ORIGIN).status_code, 400,
                          'a clear names one key, never a wildcard')
 
     def test_without_its_nats_key_the_console_says_so_and_writes_nothing(self):
-        from swhurl.console import flagstore
-        c = client(self.flags_page_cluster(), documents=self.flag_documents())
-        with mock.patch.dict('os.environ', {flagstore.SEED_VARIABLE: ''}):
-            c = client(self.flags_page_cluster(), documents=self.flag_documents())
-            text = c.get('/apps/orders/staging', headers=WHO).text
-            self.assertIn('This console has no NATS key', text)
-            self.assertIn('<button type="submit" disabled>Set</button>', text)
-            self.assertEqual(c.post('/apps/orders/staging/flags/shout', data={'action': 'clear'}, headers=ORIGIN).status_code, 409)
-        broken = client(self.flags_page_cluster(), documents=self.flag_documents(), flags=self.Flags(fail=flagstore.FlagStoreError('NATS did not answer in time')))
-        self.assertIn('Overrides could not be read: NATS did not answer in time', broken.get('/apps/orders/staging', headers=WHO).text)
+        card = self.flag_card(problem='This console has no NATS key (console-nats Secret), so overrides cannot be read or set.',
+                              writable=False)
+        text = client(self.flags_runner(card)).get('/apps/orders/staging', headers=WHO).text
+        self.assertIn('This console has no NATS key', text)
+        self.assertIn('<button type="submit" disabled>Set</button>', text)
+        reason = 'This console has no NATS key (console-nats Secret), so overrides cannot be read or set.'
+        refused = self.flags_runner(card, refusals={'shout': reason})
+        self.assertEqual(client(refused).post('/apps/orders/staging/flags/shout', data={'action': 'clear'},
+                                              headers=ORIGIN).status_code, 400)
+        broken = self.flag_card(problem='Overrides could not be read: NATS did not answer in time')
+        self.assertIn('Overrides could not be read: NATS did not answer in time',
+                      client(self.flags_runner(broken)).get('/apps/orders/staging', headers=WHO).text)
 
     def test_the_catalogue_lists_every_api_and_event_with_what_its_app_says_about_it(self):
         from swhurl.console import catalogue

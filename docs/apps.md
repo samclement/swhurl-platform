@@ -684,7 +684,7 @@ flowchart LR
 | Which value wins | The override, then the value declared for the environment, then the default |
 | A restart | Keeps the override: the watch first delivers every stored value. A web app's `/healthz` reports not ready until they arrive, at most 5 seconds; after that it serves its declared values and logs why |
 | A wrong override | One that does not fit the declared type or bounds, or names a flag the image does not declare, is ignored and logged (`flag overrides`) |
-| Who may write | Only the console, from the app page's **Feature flags** card ([console](console.md#use-it)), which checks the value against the declaration and records each change in its audit log; an app may watch only its own keys |
+| Who may write | Only the console, from the app page's **Feature flags** card ([console](console.md#use-it)); `swhurl-v2 flags` types the value against the declaration, writes it and reads the card back, and the console records each change in its audit log. An app may watch only its own keys |
 | Templates | `v0.2.7` and later; an app on an older template ignores overrides |
 
 The card marks an override older than 14 days (make the value the declared one in `swhurl.yaml`, or remove the flag, then clear it) and one for a flag the running image no longer declares, which the app ignores; neither is removed for you.

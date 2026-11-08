@@ -2,6 +2,47 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Feature flags are Go's, and the console's card asks it (8 November 2026)
+
+- **Scope:** [§22](iteration-2-plan.md#22-feature-flags-in-go-the-overrides-adapter-and-the-consoles-card-approved-8-november-2026),
+  approved: the console's Feature flags card moves to `swhurl-v2 flags`, and the one dependency v2 lacked — NATS's
+  key-value store — becomes `adapters/nats`, an external-effect adapter the operator approved with the slice.
+- **What changed:** `adapters/nats` is the protocol only: a signed CONNECT over the server's nonce, one request at a
+  time on the console's inbox, `MSG`/`HMSG` with a status line, JetStream's `STREAM.INFO` listing, `MSG.GET` read and
+  a write's acknowledgement, with `natstest.Contract` held to raw frames by a scripted server and to an in-memory
+  fake. The kernel gained `DecodeUserSeed` and `Sign` beside the seed it already wrote, and `ConsoleInbox`,
+  `FlagsBucket`, `FlagsStream`, `FlagsPrefix` and `FlagSubject` are exported where the users' permissions already
+  stated them. `producer.Declarations` reads the image's `flags.json` with the rules `swhurl.yaml` already had.
+  `orchestration/flags.go` states the card (declared flags in name order with their environment's value, then
+  overrides of flags the image no longer declares; a tombstone is not an override; an override's age in whole days,
+  stale at 14; an unreadable stored value leaves the declared value effective) and both writes (a set types the
+  form's text before publishing, a clear writes the `DEL` tombstone). `swhurl-v2 flags` prints the rows or the
+  `v2-flags` document and prints the card it read back after a write, and its declaration is the record's own
+  `offers/flags.json`, not GitHub at the cluster's annotation. The console's app page and its form call it through
+  the pinned bundle, so `console/flagstore.py` (237 lines) and `tests/test_flagstore.py` are deleted, the template
+  reads v2's field names, and the console's flag tests script the binary and assert its words.
+- **Offline:** `make check` passed (475 Python tests, four fewer than before, lint, `check-repo`, `check-apps`,
+  `check-otel`, the code graph's 98 tests and `check-docs`), `make check-v2` passed (gofmt, vet, Go tests, 157
+  rendered files unchanged, archtest layers, budgets and API) and `make test` ran every dry run. `api.txt` gained the
+  kernel, adapter and orchestration names above, and both new packages are layer 1.
+- **Live, in the console pod against the real broker:** `swhurl-v2 flags --records … --app demo-shop --env=prod`
+  listed `shout = false` with no problem, and `--json` reported the declaration, `writable: true` and no override.
+  Through the deployed console (an in-cluster request with the forward-auth header): the card rendered `shout`,
+  `boolean`, declared `false`, no override, effective `false`; a **Set** of `true` answered 303, logged
+  `[AUDIT] sam@swhurl.com flag demo-shop/prod shout = true`, the app logged
+  `{"flag":"shout","value":true,"msg":"flag override set"}` without a restart, and the card then showed the override
+  `set today`; a **Clear** logged `… shout cleared`, the app logged `flag override cleared`, and the card returned to
+  the declared `false`. A value of `yes` was refused with `shout: choose true or false` and `gone` with
+  `gone: demo-shop/prod runs an image that does not declare gone`, both a 400 page in v2's own words; the binary
+  answered the same two refusals with exit 2, and `--clear 'Not A Flag'` with `not a flag name`.
+- **Found live and fixed in the same change:** a JetStream answer arrives as `MSG <inbox> <sid> <size>`, with no
+  reply-to, and the client was matching the reply-to field, so it discarded every answer and each read timed out
+  while the rows still came from the declaration. The contract suite had emitted the permissive frame, so it could
+  not see it; it emits the real one now. `a451d007`. The text card also said `set today ago`.
+- **Not exercised live:** a throwaway instance of its own (this ran against `demo-shop/prod`, whose one flag was set
+  and cleared in the same minute), an override at the 14-day mark, an override of a flag the image no longer
+  declares, a malformed `flags.json`, and the card's no-NATS-key state.
+
 ## The console reads its apps from Go's inventory (8 November 2026)
 
 - **Scope:** [§21](iteration-2-plan.md#21-the-apps-inventory-and-connections-in-go-approved-8-november-2026),

@@ -2,7 +2,7 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
-## check-repo leaves Python, offline (8 November 2026)
+## check-repo runs Go and validate.py is retired (8 November 2026)
 
 - **Scope:** [the approved slice](iteration-2-plan.md#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026)
   (reviewed and committed 8 November 2026): `swhurl-v2 check-repo` (pure `v2/checkrepo`, the new `adapters/manifests` decoder,
@@ -20,8 +20,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   `SCHEMA=1` (`/spec: additional properties 'valuez' not allowed`), as the contract decided. The read-only review
   injected four faults together (a broken anchor, a plaintext Secret, no `CERT_ISSUER`, `${BASE_DOMAINX}`): all
   seven problems were named in one run, which exited 1.
-- **Not exercised:** CI on the new script (`auto-merge.yml` has no Go setup step, though its merge gate already ran
-  `check-apps`, which builds `swhurl-v2`), and the console's merge gate running it.
+- **Delivery:** commit `276a3bd3`. Validate run 42470114210 passed all nine jobs on its fourth attempt, the new
+  script in the manifests job from the first; the tooling job's first three attempts failed only on GitHub release
+  downloads (`setup-uv` 504 twice, then `helm pull` of the ClickStack chart 502, the scheduled Deploy v2 run hitting
+  the same 504 on `sops`). The console deploy pinned `src-e31eb1a4ffd45af3` (`09fd8d84`); `make flux-reconcile`
+  succeeded and `make verify-platform` passed (84 OK, no warning), console and notify service on that image.
+- **Not exercised:** the auto-merge gate running the new script (`auto-merge.yml` has no Go setup step, though it
+  already ran `check-apps`, which builds `swhurl-v2`).
 
 ## ClickStack bootstrap runs Go (7 November 2026)
 

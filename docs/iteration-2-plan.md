@@ -1898,14 +1898,14 @@ rather than assumed; signed-out redirects and signed-in pages checked.
 map's layout, the team registry and its channels, the compiled variables table the app page prints, the Platform
 page's unit list, and every write path.
 
-## 22. Feature flags in Go: the overrides adapter and the console's card (approved 9 November 2026)
+## 22. Feature flags in Go: the overrides adapter and the console's card (approved 8 November 2026)
 
 **Decision.** The console's **Feature flags** card stops being Python. The one dependency v2 lacks is NATS's
 key-value store, so this slice adds `adapters/nats` — an external-effect adapter, proposed here — together with
 the pure flags model, the use case, the command and the console's switch to it. The operator agreed the split
-on 9 November 2026: the flags work lands first, so the console server slice contains no new external effect
+on 8 November 2026: the flags work lands first, so the console server slice contains no new external effect
 and a wrong write to a live app's flag cannot hide inside a template port. The operator approved this contract,
-the adapter's external effect included, on 9 November 2026.
+the adapter's external effect included, on 8 November 2026.
 
 **Meaning.** The card's own words, unchanged, with the states now stated once in Go:
 

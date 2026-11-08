@@ -2,7 +2,7 @@
 
 Status: in progress
 Gate: a scoped contract and operator approval for the next console slice (the server and its templates)
-Uncommitted: `tools/swhurl/console/cluster.py`, `tests/test_console.py`
+Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
 kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl`

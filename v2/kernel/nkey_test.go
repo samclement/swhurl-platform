@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"testing"
@@ -114,4 +115,39 @@ func instanceSpec(t *testing.T) InstanceSpec {
 	t.Helper()
 	return InstanceSpec{SchemaVersion: 1, Application: "example", Environment: "staging",
 		Configuration: Configuration{Replicas: 1, MemoryMiB: 128}}
+}
+
+// A seed the caller holds is read back, and signs the server's nonce: the adapter's sign-in is these two calls and
+// nothing else, so the encoding is pinned in both directions. A nkeys value that is not a user seed is refused.
+func TestDecodeUserSeedAndSign(t *testing.T) {
+	nonce := []byte("a-nonce-from-the-server")
+	for _, vector := range []struct{ seed, seedText string }{
+		{"9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+			"SUAJ2YNRTXX72WTAXKCEV5ES5QWMIRCJYVUXWMTJDFYDXLADDSXH6YALCA"},
+		{"4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+			"SUAEZTIITMUP7FW2TW3MGRXMCFHA6W4KGGPTLK5GETNIZ5XNJ64KN63OVI"},
+	} {
+		raw, _ := hex.DecodeString(vector.seed)
+		seed, err := DecodeUserSeed(vector.seedText)
+		if err != nil || !bytes.Equal(seed[:], raw) {
+			t.Fatalf("decode %s: %v, %x", vector.seedText, err, seed)
+		}
+		key := ed25519.NewKeyFromSeed(seed[:])
+		if !ed25519.Verify(key.Public().(ed25519.PublicKey), nonce, Sign(seed, nonce)) {
+			t.Errorf("the signature of %s does not verify against its own public key", vector.seedText)
+		}
+		if NewUserKey(seed).Seed != vector.seedText {
+			t.Errorf("the decoded seed re-encodes as %s", NewUserKey(seed).Seed)
+		}
+	}
+	// The last character carries two significant bits, so an altered one can decode the same bytes: corrupt one in
+	// the middle, where the CRC catches it.
+	corrupted := "SUAJ2YNRTXX72WTAXKCEV5ES5QWMIRCJYVUXWMTJDFYDXLADDSXH6YALCA"
+	corrupted = corrupted[:20] + "A" + corrupted[21:]
+	for _, refused := range []string{"", "UDLVVGABQKYQVN6VJP7NHSLEA45A5YLS6PNKMIZFV4BBU2HXA5IRUVAL", corrupted,
+		"not-a-seed"} {
+		if _, err := DecodeUserSeed(refused); err == nil {
+			t.Errorf("accepted %q", refused)
+		}
+	}
 }

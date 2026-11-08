@@ -74,7 +74,7 @@ func TestFlagsRules(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"BadName", "too--many", "a-1", "", "a" + strings.Repeat("b", 40)} {
-		if err := flags(Object{{name, cases[0]}}); err == nil {
+		if err := (flagRules{"swhurl.yaml"}).flags(Object{{name, cases[0]}}); err == nil {
 			t.Error(name)
 		}
 	}

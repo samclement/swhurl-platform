@@ -4,6 +4,9 @@ import (
 	"crypto/ed25519"
 	"encoding/base32"
 	"encoding/binary"
+	"errors"
+	"slices"
+	"strings"
 )
 
 // NATS nkeys are Ed25519 pairs in a text form: the public key is what the server lists, and the seed — the
@@ -33,6 +36,26 @@ func NewUserKey(seed [32]byte) UserKey {
 		// The user's prefix byte is first, then the 32-byte Ed25519 public key.
 		Public: encodeNKey([]byte{byte(nkeyUser)}, public),
 	}
+}
+
+// DecodeUserSeed is the 32-byte seed a user seed in text form ("SU…") states: the encoding NewUserKey
+// writes, read back. A value that is not one is refused without saying what it held, because it is a secret.
+func DecodeUserSeed(text string) ([32]byte, error) {
+	var seed [32]byte
+	raw, err := base32.NewEncoding(nkeyBase32).WithPadding(base32.NoPadding).DecodeString(strings.TrimSpace(text))
+	prefix := []byte{byte(nkeyUserSeed | nkeyUser>>5), byte((nkeyUser & 31) << 3)}
+	if err != nil || len(raw) != 34+2 || !slices.Equal(raw[:2], prefix) ||
+		binary.LittleEndian.Uint16(raw[34:]) != crc16(raw[:34]) {
+		return seed, errors.New("not a user nkey seed")
+	}
+	copy(seed[:], raw[2:34])
+	return seed, nil
+}
+
+// Sign is the signature a seed gives one message: what a client proves to the server that answers with a nonce.
+// The seed is a secret and is never part of an error.
+func Sign(seed [32]byte, message []byte) []byte {
+	return ed25519.Sign(ed25519.NewKeyFromSeed(seed[:]), message)
 }
 
 // encodeNKey is a prefix, the key and its CRC-16/XMODEM checksum, in base32 without padding.

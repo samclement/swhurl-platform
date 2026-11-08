@@ -91,6 +91,8 @@ var Layers = map[string]int{
 	"adapters/files/filestest":           1,
 	"adapters/manifests":                 1,
 	"adapters/manifests/manifeststest":   1,
+	"adapters/nats":                      1,
+	"adapters/nats/natstest":             1,
 	"adapters/kube":                      1,
 	"adapters/kube/kubetest":             1,
 	"adapters/notifysvc":                 1,

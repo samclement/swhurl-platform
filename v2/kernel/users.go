@@ -18,7 +18,8 @@ const (
 	usersFolder     = "nats"
 	usersKey        = "values.yaml"
 	natsNamespace   = "messaging"
-	consoleInbox    = "_INBOX.console"
+	// ConsoleInbox is where the console's own requests are answered: its own prefix, so no app can read them.
+	ConsoleInbox = "_INBOX.console"
 	// usersOwner is the platform: the object names no instance, and one claiming it would be a second owner.
 	usersOwner = "platform"
 )
@@ -137,9 +138,9 @@ func appUser(user NATSUser) manifest {
 // flagAllow is what an app needs to watch its own flag overrides, and nothing else in the bucket: an ordered
 // consumer whose filter is in the request subject, so the server refuses a watch of any other key.
 func flagAllow(environment, application string) []string {
-	bucket := flagsStream(environment)
+	bucket := FlagsStream(environment)
 	return []string{"$JS.API.INFO", "$JS.API.STREAM.INFO." + bucket,
-		"$JS.API.CONSUMER.CREATE." + bucket + ".*." + flagKey(environment, application),
+		"$JS.API.CONSUMER.CREATE." + bucket + ".*." + FlagsPrefix(environment, application) + ">",
 		"$JS.API.CONSUMER.DELETE." + bucket + ".*", "$JS.API.CONSUMER.INFO." + bucket + ".*"}
 }
 
@@ -154,25 +155,32 @@ func controllerUser(nkey string) manifest {
 func consoleUser(nkey string) manifest {
 	allow := []any{"$JS.API.INFO"}
 	for _, environment := range []string{"staging", "prod"} {
-		bucket := flagsStream(environment)
-		allow = append(allow, "$KV."+flagsBucket(environment)+".>", "$JS.API.STREAM.INFO."+bucket,
+		bucket := FlagsStream(environment)
+		allow = append(allow, "$KV."+FlagsBucket(environment)+".>", "$JS.API.STREAM.INFO."+bucket,
 			"$JS.API.DIRECT.GET."+bucket+".>", "$JS.API.STREAM.MSG.GET."+bucket,
 			"$JS.API.CONSUMER.CREATE."+bucket+".>", "$JS.API.CONSUMER.DELETE."+bucket+".*",
 			"$JS.API.CONSUMER.INFO."+bucket+".*")
 	}
 	return manifest{"nkey": nkey, "permissions": manifest{
-		"publish": manifest{"allow": allow}, "subscribe": manifest{"allow": []any{consoleInbox + ".>"}}}}
+		"publish": manifest{"allow": allow}, "subscribe": manifest{"allow": []any{ConsoleInbox + ".>"}}}}
 }
 
-// flagsBucket is one environment's key-value bucket for feature-flag overrides, as a subject prefix.
-func flagsBucket(environment string) string { return "flags-" + environment }
+// FlagsBucket is one environment's key-value bucket for feature-flag overrides.
+func FlagsBucket(environment string) string { return "flags-" + environment }
 
-// flagsStream is that bucket's own stream, which is what the JetStream API names.
-func flagsStream(environment string) string { return "KV_" + flagsBucket(environment) }
+// FlagsStream is that bucket's own stream, which is what the JetStream API names: the key-value layer's name
+// for the same bucket, so a reader asks the server for a stream it can name.
+func FlagsStream(environment string) string { return "KV_" + FlagsBucket(environment) }
 
-// flagKey is one instance's keys in that bucket.
-func flagKey(environment, application string) string {
-	return "$KV." + flagsBucket(environment) + "." + environment + "." + application + ".>"
+// FlagsPrefix is the subject prefix of one instance's overrides in that bucket: every flag of the instance, and
+// none of another's.
+func FlagsPrefix(environment, application string) string {
+	return "$KV." + FlagsBucket(environment) + "." + environment + "." + application + "."
+}
+
+// FlagSubject is one instance's override of one flag: the key the key-value store reads and writes.
+func FlagSubject(environment, application, flag string) string {
+	return FlagsPrefix(environment, application) + flag
 }
 
 // inbox is where replies to an app's requests arrive: its own prefix, so no app can read another's.

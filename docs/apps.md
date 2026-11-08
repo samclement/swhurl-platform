@@ -544,8 +544,10 @@ Every instance reaches the internet through the [egress proxy](services.md#egres
 **Setting a grant.** `swhurl-v2 edit --records v2-records --app <app> --env <env> --set egress=<host>[,<host>…]`, an
 empty value clearing it, then `make v2-render` and a commit. The edit writes the record and says `allocationStale`,
 because the proxy's port and its configuration belong to the whole tree's render rather than to one record's change:
-until that render the instance's release carries neither. A new instance's first render gives it the lowest free port,
-and a re-render never moves it. The record states outside hosts only: when the release keeps a database, the platform
+until that render the instance's release carries neither. A new instance that needs a way out gets the lowest free port,
+and a re-render never moves it. The proxy reads its configuration from a ConfigMap whose checksum the chart rolls the
+pods on, so the grant reaches the cluster with no restart of your own; the instance's own pod rolls too, because its
+proxy variables changed. The record states outside hosts only: when the release keeps a database, the platform
 adds its own backup host to the allocation, which no record states ([egress proxy](services.md#egress-proxy)). Grants
 are per environment, so staging may reach a sandbox host production may not, and a promotion never widens production.
 

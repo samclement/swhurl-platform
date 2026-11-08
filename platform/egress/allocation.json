@@ -1,7 +1,7 @@
 {
   "kind": "v2-egress",
   "version": 1,
-  "revision": "6a54901430591e7d2329cbcd6af3fbe58646063f",
+  "revision": "ae62431cf99f083f1a4307514bcda87052abb801",
   "instances": [
     {
       "application": "demo-orders",
@@ -97,7 +97,9 @@
       "application": "swhurl-try-30",
       "environment": "staging",
       "port": 30109,
-      "grants": []
+      "grants": [
+        "example.com"
+      ]
     },
     {
       "application": "swhurl-try-31",

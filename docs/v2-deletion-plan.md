@@ -184,7 +184,9 @@ rollout; phase 2's first live edit is confirmed with the operator.
 the test inventory are in §2.3; the decision the inventory changed is in §2.1 and §5. The ratchet test moved to
 phase 3 (§2.3).
 
-**Phase 1 — the console reads v2. Done 31 October 2026.**
+**Phase 1 — the console reads v2. Done 31 October 2026. Superseded 8 November 2026:** `records.py` and the
+console's own cluster lists are deleted; every page reads `status --all`'s `inventory` block
+([§21](iteration-2-plan.md#21-the-apps-inventory-and-connections-in-go-approved-8-november-2026)).
 - **`tools/swhurl/console/records.py`** is the one reader: `Declared` (the instance's declared facts and the
   `problem` that says which part Git does not hold) from `v2-records/<app>/{app.json,<env>/instance.json,release.json}`,
   `of(app, env, read)` trying v2 first and v1 second, and `rows(...)` composing the declared connections (with why

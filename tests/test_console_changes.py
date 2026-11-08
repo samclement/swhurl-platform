@@ -258,9 +258,7 @@ def tree_fake(edit=None, staging=()):
     # Nonstatus inventory lists; Teams receives its instance decisions from Go report fixtures;
     # any other kubectl call is still unexpected.
     for prefix, found in ((cluster.UNITS[:5], [unit for unit, _ in staging]),
-                          (cluster.RELEASES[:3], [release for _, release in staging]),
-                          (('kubectl', 'get', 'namespaces'), []),
-                          (cluster.INGRESSES[:4], [])):
+                          (('kubectl', 'get', 'namespaces'), [])):
         runner.on(*prefix, stdout=json.dumps({'items': found}))
     runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
     from console_observation import install
@@ -572,8 +570,10 @@ class TeamsPageTests(unittest.TestCase):
         staging = (staging_app('orders'), staging_app('billing'), staging_app('ghost'))
         self.runner = tree_fake(staging=staging)
         labels = namespaces or {'orders-staging': 'payments', 'billing-staging': 'payments', 'ghost-staging': 'retired'}
-        self.runner._rules.insert(0, (('kubectl', 'get', 'namespaces'), Result((), 0, json.dumps({'items': [
-            {'metadata': {'name': name, 'labels': {'platform.swhurl.com/team': team}}} for name, team in labels.items()]}))))
+        # Each app's team comes with the block Go reports; the page reads no namespace list of its own.
+        for name, team in labels.items():
+            app, _, env = name.rpartition('-')
+            self.runner.inventories[app, env] = {**self.runner.inventories[app, env], 'team': team}
         self.jobs = actions.Jobs(self.runner, audit=lambda line: None, inline=True)
         self.api = FakeGitHub()
         return TestClient(app_under_test(self.runner, jobs=self.jobs, github=self.api.github, **kwargs))

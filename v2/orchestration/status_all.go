@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 type statusInstance struct {
 	application, environment string
 	target                   observe.Target
+	declaration              kernel.Declared
 }
 
 // StatusAll compiles pinned instances before reading anything live, batches each necessary list once,
@@ -42,8 +44,13 @@ func StatusAll(ctx context.Context, inputs StatusInputs, instances []Inputs) (ob
 		if err != nil {
 			return observe.Collection{}, err
 		}
-		result.Instances = append(result.Instances, observe.InstanceReport{Application: instance.application, Environment: instance.environment, Report: report})
+		declaration, err := json.Marshal(instance.declaration)
+		if err != nil {
+			return observe.Collection{}, err
+		}
+		result.Instances = append(result.Instances, observe.InstanceReport{Application: instance.application, Environment: instance.environment, Report: report, Inventory: declaration})
 	}
+	result.Removing = candidates.Removed(targets)
 	return result, nil
 }
 
@@ -57,16 +64,17 @@ func statusInstances(inputs StatusInputs, instances []Inputs) ([]statusInstance,
 		if err != nil {
 			return nil, err
 		}
-		spec, err := kernel.DecodeInstance(instance.Instance)
+		declared, err := declaredInstance(instance)
 		if err != nil {
 			return nil, err
 		}
-		identity := spec.Application + "/" + spec.Environment
+		identity := declared.application + "/" + declared.environment
 		if seen[identity] {
 			return nil, &observe.Error{Field: "instances", Reason: "duplicate_identity"}
 		}
 		seen[identity] = true
-		result = append(result, statusInstance{spec.Application, spec.Environment, target})
+		declared.target = target
+		result = append(result, declared)
 	}
 	slices.SortFunc(result, func(a, b statusInstance) int {
 		if order := strings.Compare(a.application, b.application); order != 0 {
@@ -75,6 +83,34 @@ func statusInstances(inputs StatusInputs, instances []Inputs) ([]statusInstance,
 		return strings.Compare(a.environment, b.environment)
 	})
 	return result, nil
+}
+
+// declaredInstance is one instance's identity and the declaration its records state: the compiler's own facts and
+// the two committed resolution documents, never a read of the cluster.
+func declaredInstance(instance Inputs) (statusInstance, error) {
+	spec, err := kernel.DecodeInstance(instance.Instance)
+	if err != nil {
+		return statusInstance{}, err
+	}
+	profile, err := kernel.DecodeProfile(instance.Profile)
+	if err != nil {
+		return statusInstance{}, err
+	}
+	release, err := kernel.DecodeRelease(instance.Release)
+	if err != nil {
+		return statusInstance{}, err
+	}
+	app := kernel.AppSpec{}
+	if instance.App != nil {
+		if app, err = kernel.DecodeApp(instance.App); err != nil {
+			return statusInstance{}, err
+		}
+	}
+	declaration, err := kernel.Declare(spec, release, app, profile, instance.Calls, instance.Egress)
+	if err != nil {
+		return statusInstance{}, err
+	}
+	return statusInstance{application: spec.Application, environment: spec.Environment, declaration: declaration}, nil
 }
 
 func readCandidates(ctx context.Context, inputs StatusInputs, targets []observe.Target) (observe.Candidates, error) {

@@ -8,6 +8,9 @@ from swhurl.console.actions import ActionError
 
 STATES = {'healthy', 'updating', 'failing', 'suspended', 'unknown', 'stopped'}
 AVAILABILITY = {'present', 'absent', 'unavailable', 'not_read'}
+ROLES = {'calls', 'called-by', 'publishes', 'subscribes', 'subscriber', 'reaches'}
+OUTCOMES = {'', 'connected', 'waiting', 'refused'}
+REMOVED_REASONS = {'unit', 'release', 'unit_and_release'}
 
 
 def require(value, kind) -> None:
@@ -143,6 +146,31 @@ def unique(pairs):
     return found
 
 
+def inventory_block(value: dict) -> None:
+    """What an instance's records state, beside its report: the facts a row shows, never a second verdict."""
+    fields(value, 'team kind exposure port hosts address api artifact database offers egress calls allows callers publishes subscriptions connections')
+    for key in ('team', 'kind', 'exposure', 'address', 'api', 'offers'):
+        require(value[key], str)
+    require(value['port'], int)
+    strings(value['hosts'])
+    for block in ('artifact', 'database'):
+        fields(value[block], 'image digest' if block == 'artifact' else 'kind path')
+        for text in value[block].values():
+            require(text, str)
+    fields(value['egress'], 'port grants')
+    require(value['egress']['port'], int)
+    strings(value['egress']['grants'])
+    for key in ('calls', 'allows', 'callers', 'publishes', 'subscriptions'):
+        strings(value[key])
+    require(value['connections'], list)
+    for row in value['connections']:
+        fields(row, 'role', 'app event host outcome reason')
+        if row['role'] not in ROLES or row.get('outcome', '') not in OUTCOMES:
+            raise ValueError('unknown connection row')
+        for text in row.values():
+            require(text, str)
+
+
 def decode(text: str, revision: str, *, single: bool = False) -> dict:
     try:
         value = json.loads(text, object_pairs_hook=unique)
@@ -151,8 +179,8 @@ def decode(text: str, revision: str, *, single: bool = False) -> dict:
             if found['target'].get('revision') != revision:
                 raise ValueError('wrong observation revision')
             return found
-        fields(value, 'kind version source observedAt revision instances')
-        if value['kind'] != 'v2-observations' or type(value['version']) is not int or value['version'] != 1:
+        fields(value, 'kind version source observedAt revision instances removing')
+        if value['kind'] != 'v2-observations' or type(value['version']) is not int or value['version'] != 2:
             raise ValueError('unsupported observations version')
         if value['revision'] != revision:
             raise ValueError('wrong observations revision')
@@ -161,16 +189,26 @@ def decode(text: str, revision: str, *, single: bool = False) -> dict:
         require(value['instances'], list)
         found = {}
         for instance in value['instances']:
-            fields(instance, 'application environment report')
+            fields(instance, 'application environment report inventory')
             require(instance['application'], str)
             require(instance['environment'], str)
             key = (instance['application'], instance['environment'])
             if key in found:
                 raise ValueError('duplicate instance')
-            found[key] = report(instance['report'])
-            if found[key]['target'].get('revision') != revision:
+            inventory_block(instance['inventory'])
+            found[key] = {'report': report(instance['report']), 'inventory': instance['inventory']}
+            if found[key]['report']['target'].get('revision') != revision:
                 raise ValueError('wrong observation revision')
-        return found
+        require(value['removing'], list)
+        removing = []
+        for gone in value['removing']:
+            fields(gone, 'application environment reason')
+            for text in gone.values():
+                require(text, str)
+            if gone['reason'] not in REMOVED_REASONS:
+                raise ValueError('unknown removal reason')
+            removing.append((gone['application'], gone['environment'], gone['reason']))
+        return {'instances': found, 'removing': tuple(removing)}
     except (ValueError, TypeError, KeyError) as error:
         raise ActionError(f'Go status unavailable: invalid report ({type(error).__name__})') from None
 

@@ -12,9 +12,10 @@ from pathlib import Path
 from unittest import mock
 
 import httpx
+from console_observation import inventory, report
 from test_console import WHO, client, fake, release, unit
 
-from swhurl.console import actions, changes, cluster, proposal, v2
+from swhurl.console import actions, changes, proposal, v2
 from swhurl.console import github as gh
 from swhurl.run import FakeRunner, Result
 
@@ -79,6 +80,20 @@ def running():
         {'metadata': {'name': 'hello-staging', 'labels': {'platform.swhurl.com/team': 'demo'}}}]})
     runner = fake(units=[unit('app-hello-staging')], releases=[helmrelease()], **answers)
     runner.status_reports['hello', 'staging']['routes'] = [{'name': 'hello', 'outcome': 'present', 'hosts': ['staging-hello.homelab.swhurl.com']}]
+    # What Go reports for the three instances these records state: hello in both environments, and the app it calls.
+    runner.inventories['hello', 'staging'].update({
+        'hosts': ['staging-hello.homelab.swhurl.com'], 'exposure': 'authenticated-web', 'offers': 'abc1234',
+        'api': 'https://staging-hello.homelab.swhurl.com', 'calls': ['other'], 'allows': ['team:demo'],
+        'publishes': ['visited'], 'subscriptions': ['other.created'],
+        'connections': [{'role': 'publishes', 'event': 'visited'},
+                        {'role': 'calls', 'app': 'other', 'outcome': 'waiting', 'reason': 'no_consent'},
+                        {'role': 'subscribes', 'app': 'other', 'event': 'created', 'outcome': 'connected'}]})
+    for app, env, team, columns in (('hello', 'prod', 'demo', {}),
+                                    ('other', 'staging', 'payments', {'publishes': ['created']})):
+        runner.status_reports[app, env] = report(app, env)
+        runner.inventories[app, env] = inventory(app, env, team=team, **columns)
+    runner.inventories['hello', 'prod']['artifact'] = {'image': 'ghcr.io/x/hello', 'digest': 'sha256:' + '0' * 64}
+    runner.inventories['hello', 'staging']['artifact'] = {'image': 'ghcr.io/x/hello', 'digest': 'sha256:1'}
     runner.on(v2.BINARY, '--help', stdout='usage\n')
     return runner
 
@@ -110,7 +125,7 @@ class PageTests(unittest.TestCase):
     def test_what_it_declares_is_a_row_with_why_it_is_not_connected_yet(self):
         text = self.page()
         self.assertIn('waiting for other to allow it', text, "other's record does not allow hello (or its team)")
-        self.assertIn('receives, ', text)
+        self.assertIn('receives', text)
         self.assertIn('<code>created</code>', text, 'other publishes it, so the subscription connects')
         self.assertNotIn('waiting for other to publish created', text)
         self.assertIn('<span class="pill">team:demo</span>', text, 'the grant as it is recorded, not expanded')
@@ -123,9 +138,11 @@ class PageTests(unittest.TestCase):
         self.assertIn('none: v2 does not model secrets', text)
 
     def test_records_that_are_not_there_say_so_instead_of_claiming_none(self):
+        """Go read the records at the pinned commit: the page states them with no Git reader of its own."""
         text = client(running(), documents={}.get).get('/apps/hello/staging', headers=WHO).text
-        self.assertIn('its records are not in Git, so what it declares is unknown', text)
-        self.assertNotIn('Allowed callers', text, 'nothing declares who may call it')
+        self.assertIn('waiting for other to allow it', text, "the block carries other's refusal")
+        self.assertIn('<span class="pill">team:demo</span>', text)
+        self.assertNotIn('its records are not in Git', text)
 
 
 class CallerTests(unittest.TestCase):
@@ -137,7 +154,9 @@ class CallerTests(unittest.TestCase):
             'SWHURL_SERVICE_HELLO_URL': 'http://hello.hello-staging.svc.cluster.local:8080'}
         runner = fake(units=[unit('app-hello-staging'), unit('app-caller-staging')],
                       releases=[helmrelease(), caller])
-        rows = {row.instance.app: row for row in cluster.apps(runner)}
+        # Go resolves the pair from both records: the caller's call, and the callee's inbound row.
+        from console_observation import rows as scenario_rows
+        rows = {row.instance.app: row for row in scenario_rows(runner)}
         self.assertEqual(rows['hello'].connections.callers, ('caller',))
         self.assertEqual(rows['caller'].connections.calls, ('hello',))
         self.assertNotIn('configmaps', ' '.join(' '.join(call) for call in runner.calls),

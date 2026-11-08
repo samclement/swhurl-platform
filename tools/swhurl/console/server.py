@@ -225,10 +225,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     def app_rows() -> list[cluster.AppRow]:
         files = request_files.get()
         def read():
-            inventory = cluster.apps(runner, include_removing=True)
             try:
-                reports = status.read(runner, files, cluster.items(runner, cluster.UNITS), in_cluster=in_cluster)
-                return status.rows(inventory, reports)
+                return status.rows(status.read(runner, files, cluster.items(runner, cluster.UNITS), in_cluster=in_cluster))
             except (actions.ActionError, CommandError, OSError, ValueError) as error:
                 raise cluster.ReadError(f'Go status unavailable: {error}') from None
         return files.once('@rows', read)
@@ -443,7 +441,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         ``<app>.<event>`` with its publisher, and why they could not be read (the form still renders).
         For an existing ``app``, without itself and what it is connected to already."""
         try:
-            rows = [row for row in cluster.apps(runner) if row.instance.env == env]
+            rows = [row for row in app_rows() if row.instance.env == env]
         except cluster.ReadError as problem:
             return [], [], str(problem)
         mine = next((row.connections for row in rows if row.instance.app == app), cluster.Connections())

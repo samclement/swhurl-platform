@@ -237,39 +237,60 @@ func matchesSelector(labels map[string]string, selector string) bool {
 	return true
 }
 
-// InstanceReport binds a report to the record identity, never to a candidate discovered in Kubernetes.
+// InstanceReport binds a report to the record identity, never to a candidate discovered in Kubernetes. Inventory is
+// the declaration the records state for that instance, as its own encoder wrote it: this package carries it and does
+// not interpret it.
 type InstanceReport struct {
 	Application, Environment string
 	Report                   Report
+	Inventory                json.RawMessage
 }
 
 // Collection is one bulk invocation, including the stable empty-records answer.
 type Collection struct {
 	Source, ObservedAt, Revision string
 	Instances                    []InstanceReport
+	// Removing is what the cluster still shows and the records no longer name, so a page keeps an instance visible
+	// until its namespace goes.
+	Removing []Removed
 }
 
-// EncodeCollection wraps v5 individual reports in a versioned v2-observations envelope.
+// EncodeCollection wraps v5 individual reports in a versioned v2-observations envelope, each beside its instance's
+// declaration.
 func EncodeCollection(collection Collection) ([]byte, error) {
 	type entry struct {
 		Application string          `json:"application"`
 		Environment string          `json:"environment"`
 		Report      json.RawMessage `json:"report"`
+		Inventory   json.RawMessage `json:"inventory"`
+	}
+	type removedEntry struct {
+		Application string `json:"application"`
+		Environment string `json:"environment"`
+		Reason      string `json:"reason"`
 	}
 	document := struct {
-		Kind       string  `json:"kind"`
-		Version    int     `json:"version"`
-		Source     string  `json:"source"`
-		ObservedAt string  `json:"observedAt"`
-		Revision   string  `json:"revision"`
-		Instances  []entry `json:"instances"`
-	}{Kind: "v2-observations", Version: 1, Source: collection.Source, ObservedAt: collection.ObservedAt, Revision: collection.Revision, Instances: []entry{}}
+		Kind       string         `json:"kind"`
+		Version    int            `json:"version"`
+		Source     string         `json:"source"`
+		ObservedAt string         `json:"observedAt"`
+		Revision   string         `json:"revision"`
+		Instances  []entry        `json:"instances"`
+		Removing   []removedEntry `json:"removing"`
+	}{Kind: "v2-observations", Version: 2, Source: collection.Source, ObservedAt: collection.ObservedAt,
+		Revision: collection.Revision, Instances: []entry{}, Removing: []removedEntry{}}
 	for _, instance := range collection.Instances {
+		if len(instance.Inventory) == 0 {
+			return nil, invalid("inventory", "required")
+		}
 		report, err := EncodeReport(instance.Report)
 		if err != nil {
 			return nil, err
 		}
-		document.Instances = append(document.Instances, entry{instance.Application, instance.Environment, report})
+		document.Instances = append(document.Instances, entry{instance.Application, instance.Environment, report, instance.Inventory})
+	}
+	for _, removal := range collection.Removing {
+		document.Removing = append(document.Removing, removedEntry{removal.Application, removal.Environment, removal.Reason})
 	}
 	return json.Marshal(document)
 }

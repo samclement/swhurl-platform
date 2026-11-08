@@ -88,6 +88,10 @@ type ConnectionsDocument struct {
 	// because they are the same decision — which relationships an instance takes part in — and a compilation
 	// takes one document rather than two.
 	Subscriptions []ConnectionsSubscription `json:"subscriptions"`
+	// EventWaiting and EventRefused are the events' own answers, beside the calls': a subscription whose publisher
+	// is not there yet waits, and one whose publisher does not publish the event is refused.
+	EventWaiting []ConnectionsWaiting `json:"eventWaiting"`
+	EventRefused []ConnectionsRefusal `json:"eventRefused"`
 }
 
 // ConnectionsSubscription is one connected subscription with every name a stream, a consumer and a user's

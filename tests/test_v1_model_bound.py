@@ -26,7 +26,6 @@ IMPORTERS = {
     'tools/swhurl/apps/repo.py',
     'tools/swhurl/console/changes.py',
     'tools/swhurl/console/proposal.py',
-    'tools/swhurl/console/records.py',
     'tools/swhurl/livetests/team_scenario.py',
 }
 

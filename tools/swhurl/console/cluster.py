@@ -1,17 +1,10 @@
 """What the console reads from the cluster: read-only, through a Runner, no Secrets and no exec."""
 from __future__ import annotations
 
-import functools
 import re
-from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from swhurl import interface
-from swhurl.apps import calling, egress, events, helmrelease, ops
 from swhurl.apps import connections as links
-from swhurl.apps.contract import (
-    AUTO_DEPLOY_TAG_PATTERN,
-)
 from swhurl.apps.instance import Instance
 from swhurl.apps.state import State, ready_reason, unit_state
 from swhurl.kube import ready_condition
@@ -19,29 +12,36 @@ from swhurl.report import Entry
 from swhurl.run import CommandError, Runner
 
 UNITS = ['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io', '-o', 'json']
-RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']
-APP_NAMESPACES = ['kubectl', 'get', 'namespaces', '-l', interface.APP, '-o', 'json']
-INGRESSES = ['kubectl', 'get', 'ingresses.networking.k8s.io', '--all-namespaces', '-o', 'json']
 
 
 class ReadError(Exception):
     """The cluster could not be read; the message is already redacted."""
 
 
+WORDING = {
+    'callee_absent': 'waiting for {app}/{env} to exist',
+    'no_consent': 'waiting for {app} to allow it',
+    'callee_not_web': 'a worker: it has no address to call',
+    'self_call': 'it calls itself',
+    'publisher_not_ready': 'waiting for {app} to publish {event}',
+}
+
+
 @dataclass(frozen=True)
 class Connections:
-    """How an instance and the other apps of its environment reach each other."""
-    address: str = ''  # inside the cluster; '' for a worker
-    api: str = ''  # where its API description is, if it says so
+    """The rows an instance's records state, as `swhurl-v2 status --all` reports them: nothing derived here."""
+
+    address: str = ''
+    api: str = ''
     calls: tuple[str, ...] = ()
     callers: tuple[str, ...] = ()
-    publishes: tuple[str, ...] = ()  # its own event names
-    subscribes: tuple[str, ...] = ()  # <app>.<event>
-    subscribers: tuple[tuple[str, str], ...] = ()  # (its event, the app receiving it)
-    rows: tuple[links.Connection, ...] = ()  # the same, one row per connection: what every list shows
-    offers: str = ''  # the commit its API and event documents were read at (make app-offers); '' if it has none
-    egress: tuple[str, ...] = ()  # host:port outside the cluster it may reach (make app-egress)
-    proxy_port: int | None = None  # its own port on the egress proxy; None when it has none
+    publishes: tuple[str, ...] = ()
+    subscribes: tuple[str, ...] = ()
+    subscribers: tuple[str, ...] = ()
+    rows: tuple[links.Connection, ...] = ()
+    offers: str = ''
+    egress: tuple[str, ...] = ()
+    proxy_port: int = 0
 
     @property
     def summary(self) -> str:
@@ -50,22 +50,130 @@ class Connections:
                  (len(self.subscribes), 'subscribes to {}'), (len(self.egress), 'reaches {} outside')]
         return ' · '.join(text.format(count) for count, text in parts if count)
 
+    @classmethod
+    def of(cls, inventory: dict | None, teams: dict | None, env: str) -> Connections:
+        """The block as rows: a waiting row says why, in the words the page already used."""
+        if not inventory:
+            return cls()
+        rows = []
+        for row in inventory['connections']:
+            reason = row.get('reason', '')
+            peer = row.get('app', '')
+            status = WORDING[reason].format(app=peer, env=env, event=row.get('event', '')) if reason else ''
+            rows.append(links.Connection(row['role'], app=peer, event=row.get('event', ''),
+                                         team=(teams or {}).get(peer, ''), status=status))
+        return cls(address=inventory['address'], api=inventory['api'],
+                   calls=tuple(inventory['calls']), callers=tuple(inventory['callers']),
+                   publishes=tuple(inventory['publishes']), subscribes=tuple(inventory['subscriptions']),
+                   subscribers=tuple((row.get('event', ''), row.get('app', '')) for row in inventory['connections'] if row['role'] == 'subscriber'),
+                   rows=tuple(rows), offers=inventory['offers'],
+                   egress=tuple(inventory['egress']['grants']), proxy_port=inventory['egress']['port'])
+
+
+@dataclass(frozen=True)
+class Declared:
+    """One instance's own records, as the app page shows them: the block `status --all` reports for it."""
+
+    inventory: dict | None = None
+    V2 = 'v2'
+    GIT = 'git'
+
+    @property
+    def source(self) -> str:
+        return self.V2
+
+    @property
+    def problem(self) -> str:
+        return '' if self.inventory is not None else 'its records are not in Git, so what it declares is unknown'
+
+    @property
+    def declared(self) -> bool:
+        return self.inventory is not None
+
+    @property
+    def team(self) -> str:
+        return self.value.get('team', '')
+
+    @property
+    def kind(self) -> str:
+        return self.value.get('kind', '')
+
+    @property
+    def calls(self) -> tuple[str, ...]:
+        return tuple(self.value.get('calls') or ())
+
+    @property
+    def subscriptions(self) -> tuple[str, ...]:
+        return tuple(self.value.get('subscriptions') or ())
+
+    @property
+    def allows(self) -> tuple[str, ...]:
+        return tuple(self.value.get('allows') or ())
+
+    @property
+    def database(self) -> str | None:
+        return (self.value.get('database') or {}).get('kind') or None
+
+    @property
+    def image_reference(self) -> str:
+        artifact = self.value.get('artifact') or {}
+        return f'{artifact.get("image", "")}@{artifact.get("digest", "")}' if artifact.get('digest') else artifact.get('image', '')
+
+    @property
+    def value(self) -> dict:
+        return self.inventory or {}
+
 
 @dataclass(frozen=True)
 class AppRow:
+    """One deployed instance as the pages show it: the Go report, and the block its records state."""
+
     instance: Instance
-    state: State  # Go observation, attached by the request status reader
-    suspended: bool | None  # its Flux unit: what the row's button resumes
-    image: str
-    tag: str = ''
-    digest: str = ''
-    hosts: tuple[str, ...] = ()
-    database_path: str | None = None  # None: release missing; empty: no SQLite configured
-    team: str = ''  # from the namespace label; '' when unknown
-    connections: Connections = Connections()
-    applied_revision: str = ''  # the Git revision its Flux unit last applied
-    render_hash: str = ''
-    report: dict | None = None  # versioned Go observation; absent for inventory-only/removing rows
+    state: State
+    suspended: bool | None = None
+    inventory: dict | None = None
+    applied_revision: str = ''
+    report: dict | None = None
+    teams: dict = field(default_factory=dict)
+
+    @property
+    def value(self) -> dict:
+        return self.inventory or {}
+
+    @property
+    def team(self) -> str:
+        return self.value.get('team', '')
+
+    @property
+    def image(self) -> str:
+        return (self.value.get('artifact') or {}).get('image', '')
+
+    @property
+    def tag(self) -> str:
+        return ''
+
+    @property
+    def digest(self) -> str:
+        return (self.value.get('artifact') or {}).get('digest', '')
+
+    @property
+    def hosts(self) -> tuple[str, ...]:
+        return tuple(self.value.get('hosts') or ())
+
+    @property
+    def database_path(self) -> str | None:
+        """The declared path; ``None`` when nothing is known: no record, or no HelmRelease yet to run it."""
+        if not self.value or (self.report or {}).get('live', {}).get('release', {}).get('status') == 'absent':
+            return None
+        return (self.value.get('database') or {}).get('path', '')
+
+    @property
+    def render_hash(self) -> str:
+        return ''
+
+    @property
+    def connections(self) -> Connections:
+        return Connections.of(self.value, self.teams, self.instance.env)
 
 
 @dataclass(frozen=True)
@@ -77,16 +185,14 @@ class AppSummary:
     @property
     def team(self) -> str:
         return next((row.team for row in self.envs.values() if row.team), '')
-    comparison: str  # 'same', 'ahead' (staging has a newer run), 'differs', or '' with one environment
+    comparison: str  # 'same', 'differs', or '' with one environment
 
 
 def compare(staging: AppRow, prod: AppRow) -> str:
-    if (staging.digest or prod.digest) and staging.digest == prod.digest or staging.image == prod.image:
+    """The same image, by digest: v2 names no tag, so there is no run to count."""
+    if (staging.digest or prod.digest) and staging.digest == prod.digest:
         return 'same'
-    runs = [re.match(AUTO_DEPLOY_TAG_PATTERN, row.tag) for row in (staging, prod)]
-    if all(runs) and int(runs[0]['run']) > int(runs[1]['run']):
-        return 'ahead'
-    return 'differs'
+    return 'same' if staging.image == prod.image and not (staging.digest or prod.digest) else 'differs'
 
 
 def summaries(rows: list[AppRow]) -> list[AppSummary]:
@@ -158,86 +264,6 @@ def items(runner: Runner, args: list[str]) -> list[dict]:
     except CommandError as error:
         raise ReadError(str(error)) from None
 
-
-NOT_READ = State('unknown', 'its state was not read for this page')
-
-
-def apps(runner: Runner, *, include_removing: bool = False) -> list[AppRow]:
-    """Non-status inventory and connections. The request reader attaches Go's observations."""
-    def namespaces() -> list[dict]:
-        try:
-            return items(runner, APP_NAMESPACES)
-        except ReadError:  # an account that may not list namespaces still gets the rest
-            return []
-
-    read = runner.together(functools.partial(items, runner, RELEASES), namespaces,
-                           functools.partial(items, runner, UNITS), functools.partial(items, runner, INGRESSES))
-    releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in read[0]}
-    teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(interface.TEAM, '') for n in read[1]}
-    ingresses = read[3]
-    found = [(instance, unit, releases.get((instance.namespace, instance.app)))
-             for unit in read[2] if (instance := Instance.of_unit(unit['metadata']['name']))]
-    # A unit may disappear before Helm finishes uninstalling its release. Keep it visible until both are gone.
-    known = {instance for instance, _, _ in found}
-    if include_removing:
-        found += [(instance, {}, release) for (namespace, name), release in releases.items()
-                  if (instance := Instance.of_namespace(namespace)) and instance.app == name and instance not in known]
-    subscribed = [(instance.env, publisher, event, instance.app) for instance, _, release in found
-                  for publisher, event in events.subscribed(helmrelease.variables(release))]
-    # Who calls an instance: v2 renders an allow-list as a resolved pair, so the caller carries the callee's
-    # address in its own variables. Read the callers' variables rather than the callee's allow-list, which v2
-    # keeps in a ConfigMap of its own the console does not read.
-    called: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for instance, _, release in found:
-        for callee in calling.declared_calls(helmrelease.variables(release)):
-            if callee != instance.app:
-                called[instance.env, callee].append(instance.app)
-    rows = []
-    for instance, unit, release in found:
-        variables, port, image = helmrelease.variables(release), helmrelease.port(release), helmrelease.image(release)
-        hosts = helmrelease.hosts(release) or ingress_hosts(ingresses, instance)
-        address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
-        annotations = ((release or {}).get('metadata') or {}).get('annotations') or {}
-        path = str(annotations.get(interface.API_ANNOTATION, '')) if address else ''
-        calls = calling.declared_calls(variables)
-        callers = calling.allowed_callers(variables) or called[instance.env, instance.app]
-        publishes, subscribes = events.published(variables), events.subscribed(variables)
-        subscribers = [(event, subscriber) for env, publisher, event, subscriber in subscribed
-                       if (env, publisher) == (instance.env, instance.app)]
-        connections = Connections(
-            address, (f'https://{hosts[0]}{path}' if hosts else address + path) if path else '',
-            tuple(calls), tuple(callers), tuple(publishes), tuple('.'.join(pair) for pair in subscribes), tuple(subscribers),
-            links.rows(calls, callers, publishes, subscribes, subscribers,
-                       {other.app: teams.get(other.namespace, '') for other, _, _ in found if other.env == instance.env},
-                       egress.granted(release)),
-            str(annotations.get(interface.OFFERS_ANNOTATION, '')),
-            tuple(egress.granted(release)), egress.port_of(variables))
-        rows.append(AppRow(instance, NOT_READ, (unit.get('spec') or {}).get('suspend'),
-                           ops.desired_image(release) if release else 'no HelmRelease',
-                           image.get('tag', ''), image.get('digest', ''), hosts,
-                           str(variables.get(interface.DATABASE_PATH_VARIABLE, '')) if release else None,
-                           teams.get(instance.namespace, ''), connections,
-                           (unit.get('status') or {}).get('lastAppliedRevision', ''),
-                           ((release or {}).get('metadata', {}).get('annotations') or {}).get(interface.RENDER_ANNOTATION, '')))
-    return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
-
-
-def ingress_hosts(ingresses: list[dict], instance: Instance) -> tuple[str, ...]:
-    """The hosts an instance's Ingress routes: v2 keeps the Ingress apart from the HelmRelease (so its values
-    carry none), v1's chart rendered it. The Ingress is named after the app, or (a chart's) routes to its
-    Service; either way it is the one object in the instance's namespace that publishes the app's addresses."""
-    here = [each for each in ingresses if (each.get('metadata') or {}).get('namespace') == instance.namespace]
-    chosen = [each for each in here if (each.get('metadata') or {}).get('name') == instance.app] or \
-        [each for each in here
-         if any(_backend(rule) == instance.app for rule in (each.get('spec') or {}).get('rules') or [])]
-    return tuple(dict.fromkeys(host for each in chosen for rule in (each.get('spec') or {}).get('rules') or []
-                               if (host := rule.get('host'))))
-
-
-def _backend(rule: dict) -> str:
-    """The Service an Ingress rule's first path sends to."""
-    paths = ((rule.get('http') or {}).get('paths') or [{}])
-    return str((((paths[0] if paths else {}).get('backend') or {}).get('service') or {}).get('name') or '')
 
 
 @dataclass(frozen=True)

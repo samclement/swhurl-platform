@@ -2,9 +2,9 @@
 {% import "_status.html" as st %}
 {% block title %}Deployments{% endblock %}
 {% macro link(view_, team_, env_, show_='') %}/apps?{{ ({'view': view_, 'team': team_, 'env': env_} | urlencode) ~ ('&show=' ~ show_ if show_) }}{% endmacro %}
-{# One environment in an app's row: its state, the running tag (the link to its page) and an arrow to its web address. #}
+{# One environment in an app's row: its state, the image (the link to its page) and an arrow to its web address. #}
 {% macro env_cell(a, env) %}{% set row = a.envs.get(env) %}
-    <span class="cell" data-label="{{ env | capitalize }}">{% if row %}{{ st.state(row.state, detail=false, quiet=true) }} <a href="/apps/{{ a.app }}/{{ env }}" title="{{ a.app }}/{{ env }}: {{ row.image }}" aria-label="{{ a.app }}/{{ env }}, {{ row.tag or row.image }}"><code>{{ row.tag or row.image }}</code></a>{% if row.hosts %} <a class="open" href="https://{{ row.hosts[0] }}" title="Open {{ row.hosts[0] }}"><span class="sr-only">Open {{ row.hosts[0] }}</span>{{ st.icon('external') }}</a>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</span>
+    <span class="cell" data-label="{{ env | capitalize }}">{% if row %}{{ st.state(row.state, detail=false, quiet=true) }} <a href="/apps/{{ a.app }}/{{ env }}" title="{{ a.app }}/{{ env }}: {{ row.image }}" aria-label="{{ a.app }}/{{ env }}, {{ row.image }}"><code>{{ row.image }}</code></a>{% if row.hosts %} <a class="open" href="https://{{ row.hosts[0] }}" title="Open {{ row.hosts[0] }}"><span class="sr-only">Open {{ row.hosts[0] }}</span>{{ st.icon('external') }}</a>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</span>
 {% endmacro %}
 {# The same environment in the opened row: each fact on its own line, then what you can do to it. #}
 {% macro env_panel(a, env) %}{% set row = a.envs.get(env) %}
@@ -78,8 +78,7 @@
       <span class="cell" data-label="Team">{% if a.team %}<a class="plain" href="{{ link('list', a.team, env) }}" title="Show only team {{ a.team }}">{{ a.team }}</a>{% else %}<span class="warn">unknown</span>{% endif %}</span>
       {{ env_cell(a, 'staging') }}
       {{ env_cell(a, 'prod') }}
-      <span class="cell" data-label="Promotion">{% if a.comparison == 'ahead' %}<span class="pill attention" title="Staging runs a newer build than production">Prod behind</span>
-        {% elif a.comparison == 'differs' %}<span class="pill attention" title="Staging and production run different images, and staging is not known to be the newer">Images differ</span>
+      <span class="cell" data-label="Promotion">{% if a.comparison == 'differs' %}<span class="pill attention" title="Staging and production run different images">Images differ</span>
         {% elif a.comparison == 'same' %}<span class="pill ok" title="Staging and production run the same image">In sync</span>
         {% elif staging %}<span class="pill" title="Not in production yet">Staging only</span>
         {% else %}<span class="muted">—</span>{% endif %}</span>

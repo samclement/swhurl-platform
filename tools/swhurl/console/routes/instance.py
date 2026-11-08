@@ -5,7 +5,6 @@ import asyncio
 import datetime as dt
 import json
 import logging
-from dataclasses import replace
 from urllib.parse import parse_qs
 
 from starlette.requests import Request
@@ -17,7 +16,6 @@ from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
 from swhurl.console import actions, changes, cluster, flagstore, observation, promotion, proposal, stages, v2
 from swhurl.console import github as gh
-from swhurl.console import records as declared_records
 from swhurl.console.context import STACK_NAMES, Context, dashboard_urls, logs_url
 from swhurl.run import CommandError
 
@@ -55,29 +53,30 @@ def routes(ctx: Context) -> list[Route]:
         row = summary.envs.get(found.env) if summary else None
         shown = row.connections if row else cluster.Connections()
         files = request_files.get()
-        declared = declared_records.of(found.app, found.env, document_source)
+        declared = cluster.Declared(row.inventory if row else None)
         flag_list, flag_problem = flag_rows(found, shown.offers)
         instance = json.loads(files(f'v2-records/{found.app}/{found.env}/instance.json') or '{}')
-        release = json.loads(files(f'v2-records/{found.app}/{found.env}/release.json') or '{}')
         desired_helm = files(f'v2-apps/instances/{found.app}/{found.env}/helmrelease.json')
         variables = ops.shown_variables(json.loads(desired_helm))[0] if desired_helm is not None else None
-        relation_rows, relation_problem = declared_records.rows(declared, shown.rows, document_source,
-                                                                together=files.together), declared.problem
-        shown = replace(shown, rows=relation_rows)
-        teams, teams_error = registered_teams() if declared.source == declared_records.V2 else ({}, '')
+        teams, teams_error = registered_teams() if declared.declared else ({}, '')
         return page(request, 'app.html', i=found, report=report, desired_image=declared.image_reference,
-                    settings=instance.get('configuration', {}), database=release.get('database'),
+                    settings=instance.get('configuration', {}), database=declared.database,
                     variables=variables, exposure=(instance.get('grants') or {}).get('exposure', ''), flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
-                    writable=declared.source == declared_records.V2 and not declared.problem, v2=declared.source == declared_records.V2,
-                    flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
+                    writable=declared.declared and not declared.problem, v2=declared.declared,
+                    flag_changed=request.query_params.get('flag', ''), team=row.team if row else '',
                     teams=teams, teams_error=teams_error,
-                    connections=shown, relation_problem=relation_problem, allows=declared.allows if declared.declared else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
+                    connections=shown, relation_problem='', allows=declared.allows if declared.declared else None, connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
                     scale_fields=V2_SCALE_FIELDS,
                     declared=declared, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=proposal.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=observation.state(report), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
+
+    def declared_of(app: str, env: str) -> cluster.Declared:
+        """The instance's own records, as the Go document reports them: an instance it does not report has none."""
+        row = next((r for r in ctx.apps() if r.instance == Instance.named(app, env)), None)
+        return cluster.Declared(row.inventory if row else None)
 
     def registered_teams() -> tuple[dict[str, str], str]:
         """``(registered teams, problem)`` at the commit the page reads the records at; none on a problem."""
@@ -100,7 +99,7 @@ def routes(ctx: Context) -> list[Route]:
                     error=f'v2 writes {label}, and this console has no swhurl-v2 binary: run `{command}` in your own terminal.')
 
     def v2_commands(change: str, app: str, env: str, form: dict,
-                    declared: declared_records.Declared) -> tuple[changes.Command, ...]:
+                    declared: cluster.Declared) -> tuple[changes.Command, ...]:
         """The v2 commands for one console change, with the whole declaration a v2 edit names."""
         action = changes.V2_ACTION[change]
         if change == 'connect':
@@ -177,7 +176,7 @@ def routes(ctx: Context) -> list[Route]:
             return page(request, 'error.html', status_code=409, error='This console has no NATS key (console-nats Secret).')
         form = {k: v[0] for k, v in parse_qs((await request.body()).decode(), keep_blank_values=True).items()}
         try:
-            rows = await asyncio.to_thread(cluster.apps, runner)
+            rows = await asyncio.to_thread(ctx.apps)
             row = next((r for r in rows if r.instance == found), None)
             declared = described.of(app, env, row.connections.offers if row else '').flags or {}
             if form.get('action') == 'clear':
@@ -216,13 +215,13 @@ def routes(ctx: Context) -> list[Route]:
             existing = [pr for pr in gh.console_prs(runner, github) if promotion.matching(pr, app)]
             if existing:
                 return page(request, 'promotion.html', review={'app': app}, prs=existing)
-            declared = declared_records.of(app, 'staging', document_source)
+            declared = declared_of(app, 'staging')
             if declared.problem:
                 raise actions.ActionError(declared.problem)
-            if declared.source == declared_records.V2:
+            if declared.declared:
                 if refused := v2_read_only(request, app, 'staging', 'promote'):
                     return refused
-                production = declared_records.of(app, 'prod', document_source)
+                production = declared_of(app, 'prod')
                 if not production.declared:
                     raise actions.ActionError('v2 has no first promotion: production has no records yet')
                 reports = ctx.apps()
@@ -253,8 +252,11 @@ def routes(ctx: Context) -> list[Route]:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
         fields = parse_qs((await request.body()).decode(), keep_blank_values=True)
         form = {k: v[0] for k, v in fields.items()}
-        declared = declared_records.of(app, env, document_source)
-        if declared.source != declared_records.V2 or declared.problem:
+        try:
+            declared = declared_of(app, env)
+        except cluster.ReadError as error:
+            return page(request, 'error.html', status_code=502, error=str(error))
+        if not declared.declared or declared.problem:
             return page(request, 'error.html', status_code=409,
                         error=declared.problem or f'{app}/{env} has no v2 records')
         if change == 'egress':

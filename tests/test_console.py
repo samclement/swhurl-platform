@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from console_observation import install, report
+from console_observation import rows as scenario_rows
 from fakecluster import HEALTHY_CHECKS, verify_report
 from starlette.routing import Route
 from starlette.testclient import TestClient
@@ -23,6 +24,9 @@ from swhurl.run import FakeRunner, Result, is_read
 
 REV = 'main@sha1:abc1234def'
 WHO = {'X-Auth-Request-Email': 'sam@swhurl.com'}
+
+
+RELEASE_LIST = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']
 
 
 def unit(name, depends=(), ready='True', message='Applied', suspend=False):
@@ -51,18 +55,17 @@ CHECKS = {'swhurl-v2 verify': json.dumps(verify_report(*HEALTHY_CHECKS))}
 """swhurl-v2 verify's answer for a healthy platform (Overview and Platform show it)."""
 
 
-def fake(units=UNITS, releases=RELEASES, **extra):
+def fake(units=UNITS, releases=RELEASES, inventories=None, **extra):
     runner = FakeRunner()
     runner.on('kubectl', 'get', 'namespace', stdout=json.dumps({'metadata': {'labels': {'platform.swhurl.com/team': 'payments'}}}))
     if not any(key.startswith('kubectl get namespaces') for key in extra):
         runner.on('kubectl', 'get', 'namespaces', stdout=json.dumps({'items': []}))
     runner.on(*cluster.UNITS[:5], stdout=json.dumps({'items': units}))
-    runner.on(*cluster.RELEASES[:3], stdout=json.dumps({'items': releases}))
     for prefix, stdout in extra.items():
         runner.on(*prefix.split(), stdout=stdout)
-    runner.on(*cluster.INGRESSES[:4], stdout=json.dumps({'items': []}))
     runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
     install(runner, units, releases)
+    runner.inventories.update(inventories or {})
     return runner
 
 
@@ -105,30 +108,29 @@ class ConnectionsTests(unittest.TestCase):
     """One list of apps serves every reader: team and connections on the list, a map, and Connect on the app page."""
 
     def cluster(self):
-        def web(ns, name, variables=None, host=None, api=None):
-            doc = release(ns, name)
-            if api:  # where it serves its API description: an annotation, not a variable
-                doc['metadata']['annotations'] = {'platform.swhurl.com/api-description': api}
-            values = doc['spec']['values']
-            values['service'] = {'main': {'ports': {'http': {'port': 9000}}}}
-            values['controllers']['main']['containers']['main']['env'] = variables or {}
-            if host:
-                values['ingress'] = {'main': {'hosts': [{'host': host}]}}
-            return doc
-        releases = [
-            web('orders-staging', 'orders', {'SWHURL_ALLOWED_CALLERS': 'reports', 'SWHURL_EVENTS_PUBLISH': 'created,paid'},
-                host='staging-orders.homelab.swhurl.com', api='/openapi.json'),
-            web('orders-prod', 'orders', api='/openapi.json'),
-            web('reports-staging', 'reports', {'SWHURL_SERVICE_ORDERS_URL': 'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000'}),
-            release('job-staging', 'job'),
-        ]
-        releases[-1]['spec']['values']['controllers']['main']['containers']['main']['env'] = {
-            'SWHURL_EVENTS_SUBSCRIBE': 'orders.created'}
+        from console_observation import inventory
+        inventories = {
+            ('orders', 'staging'): inventory(
+                'orders', 'staging', team='payments', port=9000, hosts=['staging-orders.homelab.swhurl.com'],
+                api='https://staging-orders.homelab.swhurl.com/openapi.json',
+                callers=['reports'], publishes=['created', 'paid'],
+                connections=[{'role': 'publishes', 'event': 'created'}, {'role': 'publishes', 'event': 'paid'},
+                             {'role': 'called-by', 'app': 'reports', 'outcome': 'connected'},
+                             {'role': 'subscriber', 'app': 'job', 'event': 'created', 'outcome': 'connected'}]),
+            ('orders', 'prod'): inventory(
+                'orders', 'prod', team='payments', port=9000,
+                api='http://orders.orders-prod.svc.cluster.local:9000/openapi.json',
+                publishes=['created', 'paid'],
+                connections=[{'role': 'publishes', 'event': 'created'}, {'role': 'publishes', 'event': 'paid'}]),
+            ('reports', 'staging'): inventory(
+                'reports', 'staging', team='<b>insights', calls=['orders'],
+                connections=[{'role': 'calls', 'app': 'orders', 'outcome': 'connected'}]),
+            ('job', 'staging'): inventory(
+                'job', 'staging', team='payments', kind='worker', port=0, address='', subscriptions=['orders.created'],
+                connections=[{'role': 'subscribes', 'app': 'orders', 'event': 'created', 'outcome': 'connected'}]),
+        }
         units = [unit(f'app-{name}') for name in ('orders-staging', 'orders-prod', 'reports-staging', 'job-staging')]
-        namespaces = {'items': [{'metadata': {'name': 'orders-staging', 'labels': {'platform.swhurl.com/team': 'payments'}}},
-                                {'metadata': {'name': 'job-staging', 'labels': {'platform.swhurl.com/team': 'payments'}}},
-                                {'metadata': {'name': 'reports-staging', 'labels': {'platform.swhurl.com/team': '<b>insights'}}}]}
-        return fake(units=units, releases=releases, **{'kubectl get namespaces -l platform.swhurl.com/app': json.dumps(namespaces)})
+        return fake(units=units, releases=[], inventories=inventories)
 
     def test_the_list_shows_each_apps_team_and_filters_by_team(self):
         runner = self.cluster()
@@ -153,7 +155,7 @@ class ConnectionsTests(unittest.TestCase):
                             for call in runner.calls), 'the pages only read')
 
     def test_the_map_draws_calls_and_events_left_to_right(self):
-        found = cluster.app_map(cluster.apps(self.cluster()), 'staging')
+        found = cluster.app_map(scenario_rows(self.cluster()), 'staging')
         positions = {node.row.instance.app: (node.x, node.y) for node in found.nodes}
         self.assertEqual(set(positions), {'orders', 'reports', 'job'}, 'staging only')
         self.assertLess(positions['reports'][0], positions['orders'][0], 'a caller is left of its callee')
@@ -175,7 +177,7 @@ class ConnectionsTests(unittest.TestCase):
         self.assertEqual((response.status_code, response.headers['location']), (301, '/apps?view=map'))
 
     def test_connections_read_the_same_whichever_side_declares_them(self):
-        rows = {(row.instance.app, row.instance.env): row.connections for row in cluster.apps(self.cluster())}
+        rows = {(row.instance.app, row.instance.env): row.connections for row in scenario_rows(self.cluster())}
         orders = rows['orders', 'staging']
         self.assertEqual((orders.address, orders.api), ('http://orders.orders-staging.svc.cluster.local:9000',
                                                         'https://staging-orders.homelab.swhurl.com/openapi.json'))
@@ -212,10 +214,7 @@ operations:
 
     def described_cluster(self, commit='abc1234'):
         runner = self.cluster()
-        releases = runner.json(list(cluster.RELEASES))['items']
-        next(r for r in releases if r['metadata']['namespace'] == 'orders-staging')['metadata']['annotations'] = {
-            'platform.swhurl.com/offers': commit}
-        runner._rules.insert(0, (tuple(cluster.RELEASES[:3]), Result((), 0, json.dumps({'items': releases}), '')))
+        runner.inventories['orders', 'staging']['offers'] = commit
         return runner
 
     def documents(self, commit='abc1234', reads=None):
@@ -254,9 +253,7 @@ operations:
 
     def flags_page_cluster(self):
         runner = self.described_cluster()
-        release = next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == 'orders-staging')
         runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit('app-orders-staging')))
-        runner.on('kubectl', '-n', 'orders-staging', 'get', 'helmrelease', stdout=json.dumps(release))
         runner.on('kubectl', '-n', 'orders-staging', 'get', stdout=json.dumps({'items': []}))
         runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
         return runner
@@ -341,7 +338,7 @@ operations:
         from swhurl.console import catalogue
         reads = []
         documents = catalogue.Documents(self.documents(reads=reads))
-        found = catalogue.entries(cluster.apps(self.described_cluster()), 'staging', documents)
+        found = catalogue.entries(scenario_rows(self.described_cluster()), 'staging', documents)
         self.assertEqual([(e.kind, e.name, e.described, e.description, e.used_by) for e in found], [
             ('api', 'orders', True, 'Create and read orders', ('reports',)),
             ('api', 'reports', False, '', ()),
@@ -352,14 +349,14 @@ operations:
         self.assertEqual((json.loads(created.schema)['required'], json.loads(created.example)), (['id'], {'id': 'o-1'}))
         self.assertEqual([name for name, _ in api.could_use], ['job'], 'not itself, not who calls it already')
         self.assertEqual([name for name, _ in paid.could_use], ['job', 'reports'])
-        catalogue.entries(cluster.apps(self.described_cluster()), 'staging', documents)
+        catalogue.entries(scenario_rows(self.described_cluster()), 'staging', documents)
         self.assertEqual(len(reads), 3, 'the documents of a commit are read once')
-        self.assertEqual(catalogue.entries(cluster.apps(self.described_cluster()), 'prod', documents)[0].described, False,
+        self.assertEqual(catalogue.entries(scenario_rows(self.described_cluster()), 'prod', documents)[0].described, False,
                          'production has its own image and documents')
 
     def test_the_catalogue_groups_offers_by_app_and_says_what_each_app_uses(self):
         from swhurl.console import catalogue
-        rows = cluster.apps(self.described_cluster())
+        rows = scenario_rows(self.described_cluster())
         found = catalogue.entries(rows, 'staging', catalogue.Documents(self.documents()))
         groups = catalogue.groups(rows, 'staging', found)
         self.assertEqual([(g.app, [e.name for e in g.entries]) for g in groups],
@@ -437,7 +434,7 @@ operations:
                                 (self.documents(commit='0000000'), '')):
             with self.subTest(message=message):
                 documents = catalogue.Documents(reader, clock=lambda: clock[0])
-                found = catalogue.entries(cluster.apps(self.described_cluster()), 'staging', documents)
+                found = catalogue.entries(scenario_rows(self.described_cluster()), 'staging', documents)
                 self.assertEqual(len(found), 4)
                 self.assertIn(message, found[0].problem)
         calls = []
@@ -454,20 +451,20 @@ operations:
 
     def test_an_account_that_cannot_list_namespaces_still_gets_the_apps(self):
         runner = fake(**{'kubectl get namespaces -l platform.swhurl.com/app': ''})
-        runner._rules.insert(0, (('kubectl', 'get', 'namespaces'), Result((), 1, '', 'forbidden')))
-        rows = cluster.apps(runner)
+        rows = scenario_rows(runner)
         self.assertTrue(rows)
-        self.assertEqual({row.team for row in rows}, {''})
+        self.assertEqual({row.team for row in rows}, {'demo'}, 'teams come with the block, not a namespace list')
+        self.assertFalse([call for call in runner.calls if call[:3] == ('kubectl', 'get', 'namespaces')],
+                         'no namespace list is read')
 
 
 class AppsTests(unittest.TestCase):
     def test_lists_app_units_only_with_state_and_image(self):
         text = client(fake()).get('/apps', headers=WHO).text
         self.assertIn('href="/apps/web/prod"', text)
-        self.assertIn('docker.io/x/web:1.0', text)
+        self.assertIn('docker.io/x/web', text)
         self.assertIn('href="/apps/my-api/staging"', text)
         self.assertIn('Suspended', text)
-        self.assertIn('no HelmRelease', text)
         self.assertNotIn('infra-base</a>', text)
 
     def test_the_egress_page_lists_each_instances_port_and_grants(self):
@@ -587,9 +584,9 @@ class StateTests(unittest.TestCase):
 
     def test_a_ready_unit_with_no_release_is_not_a_healthy_app(self):
         runner = fake(units=[unit('app-web-prod')], releases=[])
-        from swhurl.console import status
-        row = status.rows(cluster.apps(runner), runner.status_reports)[0]
-        self.assertEqual((row.state.key, row.image), ('unknown', 'no HelmRelease'))
+        row = scenario_rows(runner)[0]
+        self.assertEqual((row.state.key, row.image), ('unknown', 'docker.io/x/web'),
+                         'the image is what Git states; the missing release is the state')
 
     def test_the_list_and_the_page_give_one_verdict_from_the_same_facts(self):
         units, releases = [unit('app-web-prod')], [release('web-prod', 'web')]
@@ -647,10 +644,11 @@ class StateTests(unittest.TestCase):
 
 class AppSummaryTests(unittest.TestCase):
     def row(self, env, tag, digest='', app='hello-ts'):
-        return cluster.AppRow(Instance(app, env), state.State('healthy'), False, f'ghcr.io/x/{app}:{tag}', tag, digest)
+        return cluster.AppRow(Instance(app, env), state.State('healthy'), False,
+                              {'artifact': {'image': f'ghcr.io/x/{app}:{tag}', 'digest': digest}})
 
     def test_compares_staging_with_prod(self):
-        cases = {('5-aaaaaaa', 'sha256:1', '4-bbbbbbb', 'sha256:2'): 'ahead',
+        cases = {('5-aaaaaaa', 'sha256:1', '4-bbbbbbb', 'sha256:2'): 'differs',
                  ('4-bbbbbbb', 'sha256:2', '5-aaaaaaa', 'sha256:1'): 'differs',
                  ('1.27', 'sha256:1', '1.27', 'sha256:1'): 'same',
                  ('1.28', 'sha256:3', '1.27', 'sha256:1'): 'differs'}
@@ -685,7 +683,7 @@ class AppSummaryTests(unittest.TestCase):
             return client(fake(units=units, releases=releases)).get('/apps', headers=WHO).text
         for tags, label in ((('5-aaaaaaa', None), '<span class="pill" title="Not in production yet">Staging only</span>'),
                             (('5-aaaaaaa', '5-aaaaaaa'), 'class="pill ok" title="Staging and production run the same image">In sync</span>'),
-                            (('5-aaaaaaa', '4-bbbbbbb'), 'class="pill attention" title="Staging runs a newer build than production">Prod behind</span>'),
+                            (('5-aaaaaaa', '4-bbbbbbb'), 'title="Staging and production run different images">Images differ</span>'),
                             (('4-bbbbbbb', '5-aaaaaaa'), '>Images differ</span>')):
             with self.subTest(tags=tags):
                 self.assertIn(label, page(*tags))
@@ -1105,6 +1103,7 @@ class ActionTests(unittest.TestCase):
                 return httpx.Response(200, json={'status': 'ahead', 'files': [{'filename': 'docs/x.md'}]})
             return httpx.Response(200, json={'state': 'closed', 'merged_at': dt.datetime.now(dt.UTC).isoformat(), 'merge_commit_sha': 'merged'})
 
+        from console_observation import inventory as supplied
         runner = fake()
         jobs = actions.Jobs(runner, inline=True)
         jobs._jobs[3] = actions.Job(3, 'promote', 'web/prod', 'sam@swhurl.com', jobs.now(), ['Downloading', 'Opened'], 'succeeded',
@@ -1113,11 +1112,11 @@ class ActionTests(unittest.TestCase):
         c = client(runner, jobs=jobs, github=gh.GitHub('samclement/swhurl-platform', 'tok', transport=httpx.MockTransport(handle)))
         with mock.patch.object(server.Files, 'revision', return_value='a' * 40), \
                 mock.patch.object(server.Files, 'inputs', return_value=('a' * 40, Path('/unused'))), \
-                mock.patch('swhurl.console.status.read', return_value={('web', 'prod'): report()}), \
+                mock.patch('swhurl.console.status.read', return_value={
+                    'instances': {('web', 'prod'): {'report': report(), 'inventory': supplied('web', 'prod')}},
+                    'removing': ()}), \
                 mock.patch.object(stages, 'render_targets',
-                                  return_value={'web/prod': stages.Target('records-1', 'settings-1', 'sha256:x', 'h', 'sha256:x', 'h')}), \
-                mock.patch.object(cluster, 'apps', return_value=[cluster.AppRow(Instance('web', 'prod'), state.State('healthy'), False, 'x',
-                    digest='sha256:x', render_hash='h', report=report())]):
+                                  return_value={'web/prod': stages.Target('records-1', 'settings-1', 'sha256:x', 'h', 'sha256:x', 'h')}):
             activity = c.get('/activity', headers=WHO).text
             page = c.get('/jobs/3', headers=WHO).text
         self.assertIn('<span class="state healthy">Live in prod</span>', activity, 'the job opened a pull request; the change ended in production')

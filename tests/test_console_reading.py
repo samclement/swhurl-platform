@@ -257,14 +257,16 @@ class AppFileTests(unittest.TestCase):
             revision = args[args.index('--revision') + 1]
             for report in runner.status_reports.values():
                 report['target']['revision'] = revision
-            return answer(args, runner.status_reports)
+            return answer(args, runner.status_reports, runner.inventories, runner.removing)
+        runner.inventories['web', 'prod']['connections'] = [
+            {'role': 'calls', 'app': 'other', 'outcome': 'waiting', 'reason': 'callee_absent'}]
         runner._rules.insert(0, (('swhurl-v2', 'status'), observed))
         c = client(runner, github=github)
         with mock.patch.object(server, 'Files', side_effect=owner):
             for _ in range(2):
                 response = c.get('/apps/web/prod', headers=WHO)
                 self.assertEqual(response.status_code, 200)
-                self.assertIn('connected in Git, not yet observed live', response.text)
+                self.assertIn('waiting for other/prod to exist', response.text, 'one row, in Go\'s words for a pending call')
         self.assertEqual(len(heads), 2)
         expected = set()  # every input, the team registry too, comes from the one archive Go reads
         for head in heads:
@@ -287,31 +289,25 @@ class AppFileTests(unittest.TestCase):
             self.assertNotIn("The image's minimum", response.text)
         self.assertEqual(asked, ['/repos/x/y/git/ref/heads/main'] * 2)
 
-    def test_injected_reader_deduplicates_missing_invalid_and_failed_files(self):
-        for settings, expected in ((None, 'its records are not in Git'),
-                                   ('version: [', 'its records could not be read'),
-                                   (OSError('unavailable'), 'its records could not be read')):
-            asked = []
+    def test_injected_reader_deduplicates_what_it_asks_for(self):
+        """The records are Go's document now; the one thing the page still reads from Git per app is its offers."""
+        asked = []
 
-            def source(path, asked=asked, settings=settings):
-                asked.append(path)
-                if path.endswith('instance.json'):
-                    if isinstance(settings, Exception):
-                        raise settings
-                    return settings
-                if path.endswith('release.json'):
-                    return OWNED_RELEASE
-                return None
+        def source(path, asked=asked):
+            asked.append(path)
+            if path.endswith('/offers/flags.json'):
+                raise OSError('unavailable')
+            return None
 
-            c = client(app_runner(), documents=source)
-            response = c.get('/apps/web/prod', headers=WHO)
-            self.assertEqual(response.status_code, 200 if settings is None else 502)
-            if settings is None:
-                self.assertIn(expected, response.text)
-            # What Git does say is shown even when one of the three records is not there; a reader that fails
-            # says nothing, so nothing is claimed.
-            self.assertNotIn('memory request', response.text)
-            self.assertTrue(all(count == 1 for count in Counter(asked).values()), asked)
+        runner = app_runner()
+        runner.inventories['web', 'prod']['offers'] = HEAD
+        c = client(runner, documents=source)
+        response = c.get('/apps/web/prod', headers=WHO)
+        self.assertEqual(response.status_code, 200)
+        # A reader that fails claims nothing: the page says the image declares no flags rather than an empty list.
+        self.assertIn('declares no feature flags', response.text)
+        self.assertNotIn('memory request', response.text)
+        self.assertTrue(all(count == 1 for count in Counter(asked).values()), asked)
 
     def test_template_reads_use_the_same_scope_and_client_closes_on_template_failure(self):
         owned = []
@@ -322,8 +318,8 @@ class AppFileTests(unittest.TestCase):
             owned.append(files)
             return files
 
-        row = cluster.AppRow(Instance('other', 'prod'), State('healthy'), False, '',
-                             connections=cluster.Connections(offers=HEAD))
+        from console_observation import inventory
+        row = cluster.AppRow(Instance('other', 'prod'), State('healthy'), False, inventory('other', 'prod', offers=HEAD))
         documents = {
             'v2-apps/instances/other/prod/offers/openapi.json': '{"openapi":"3.1.0","info":{"title":"Other","description":"Template description"},"paths":{}}',
         }

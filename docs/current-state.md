@@ -22,9 +22,17 @@ What has been verified on the live cluster, and when: current facts first, then 
   `check-docs`), and `make test` ran every dry run. The two broken links the change left were found by `check-repo`
   (a removed workflow and a renamed heading): `console.md`'s `## Auto-merge` is now `## Review and merge`, and its
   anchors moved with it in `README.md`, `apps.md`, `architecture.md`, `contributing.md`, `plan.md` and here.
-- **Not exercised live:** the deployed console opening a change with no label, and Activity's row saying it waits for a
-  person. `main` was never protected before this change and is not now; every bot that pushes to it directly is
-  unchanged.
+- **Live:** the console's own write path, from a local `console --dev` with the console's GitHub token and a
+  `swhurl-v2` on `PATH`. Opening a scale change on `swhurl-try-30/staging` (`memory=192`) created **#105** with no
+  label, no comment, and no `Auto-merge` run among its workflow runs (the workflow's newest run anywhere is from
+  before this commit); its job page said *Merge plan: you merge it on GitHub* and Activity said
+  *Waiting for you: merge #105 on GitHub; then live in staging*. The pull request carried four files (the record, the
+  derived HelmRelease, the allocation and `calls.json`), merged by hand as `c8421cdc`, and `make flux-reconcile` left
+  the instance **healthy** at that revision with the deployment requesting **192Mi**. A second change (`memory=128`)
+  merged the same way as **#106** (`3d2791b7`) returned it to 128Mi, healthy, so nothing is left scaled.
+- **Not exercised live:** the pages behind browser sign-in (the deployed pod serves the same code, but the forms were
+  driven through `--dev`), and `main`'s protection state, which is unchanged: unprotected, as the bots that push to it
+  need.
 
 ## An instance's egress grants are its record's (8 November 2026)
 

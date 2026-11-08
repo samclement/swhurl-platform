@@ -1612,3 +1612,68 @@ missing input names its first missing key; a dry run with no team says it would 
 **Delivery, one commit:** the operator runs the command, nothing schedules it, and a rollback is one revert.
 Acceptance: `make check-v2` and `make check`; a live dry run and a live run both find everything in place and write
 nothing.
+
+## 17. `check-repo` in Go: the decisions, not the subprocesses (approved 8 November 2026)
+
+The operator approved splitting `make check-repo` by **who decides**, not by language, after weighing a full port and
+a bare deletion. `validate.py`'s work has two halves: decisions about this checkout (documentation links and their
+anchors, the Flux units table, the app-interface table, emitted names against `v2/contract/names.json`, SOPS Secret
+structure, the settings the platform substitutes, and which paths Flux renders with what each substitutes), and three
+steps where a tool verifies itself (`kubectl kustomize`, `flux-schema validate`, `bash -n`). Only the first half is
+v2's. The second stays bash glue in `v2/check-repo.sh`, so v2 starts no new process, names no `kubectl` or `flux`, and
+the `no-subprocess` guardrail is unchanged.
+
+**The schema step leaves the standing check.** `flux-schema` validated 253 platform documents over 32 paths in 11.5 s,
+beside 5.3 s of rendering. It catches required fields, enums, CEL rules and the one class nothing else catches:
+misspelled fields, which the API server prunes silently (`/spec: additional properties 'valuez' not allowed`), leaving
+the unit Ready and the platform running something other than the file says. Every other class fails on the cluster,
+where Flux refuses the object and `make verify-platform` reports the unit. The operator's judgement, recorded:
+platform services are stable and fail loudly in the cluster, and userland manifests are compiler output tested in Go,
+so the standing check keeps the cheap render and substitution discipline and `flux-schema` becomes opt-in
+(`make check-repo SCHEMA=1`). Measured while deciding, 8 November 2026: 267 commits in 120 days touched a hand-written
+manifest after excluding the four v2-rendered platform folders and bot image pins, 121 of them a Flux/CRD-shaped
+object — churn is not stability, but no commit in that window was a field typo.
+
+**Boundaries.**
+
+| Layer | Owns |
+| --- | --- |
+| `adapters/manifests` (new; approved with this slice, and its one guardrail diff) | `Read(path)` over Kubernetes YAML: decoded documents with kind, name, string fields and their spec. Raw fixtures in `testdata/`, a fake and one `Contract` suite. It is the fourth approved importer of `go.yaml.in/yaml/v3`, added to `archtest/rules_test.go`'s allowlist and to the guardrails table |
+| `v2/checkrepo` (pure, layer 0) | Each check as a function of the documents and file text it is given: `docs-links`, `flux-units-table`, `app-interface-table`, `emitted-names`, `sops-secrets`, `platform-settings`, `render-paths`, and the substitution of one path |
+| `adapters/git` (unchanged) | The tracked and untracked file lists the documentation and shell checks need |
+| `orchestration` | `CheckRepo`: read, run every check, collect the failures, report |
+| `cmd/swhurl-v2` | `check-repo [--root DIR] [--rendered PATH] [--json]` |
+| `v2/check-repo.sh` (bash) | The three subprocess steps, over the paths Go lists |
+
+**Contract.**
+
+- `swhurl-v2 check-repo` prints `[OK]` for each check and then the active render paths with their substitution values;
+  `--json` prints the same as one document (`kind: v2-check-repo`, version 1, checks, paths, values). Every check runs
+  even when an earlier one failed; exit 1 if any failed, 2 for usage or an unreadable tree. It writes nothing, fetches
+  nothing and reads no cluster.
+- `--rendered PATH` reads that path's rendered output on stdin, applies the path's substitution and prints the result;
+  an unresolved `${...}` is exit 1 naming the token and the escaping rule (`$${...}`). The substitution decision lives
+  in Go, so bash never parses a token.
+- `make check-repo` is `bash v2/check-repo.sh`: the binary, then for each path
+  `kubectl kustomize PATH | swhurl-v2 check-repo --rendered PATH`, then `bash -n` on `git ls-files '*.sh'`. `SCHEMA=1`
+  adds `flux-schema validate --schema-location default --schema-location ecosystem --skip-json-path /sops` on the same
+  stream. The `commands.py` row loses its `run=` and gains the `SCHEMA` variable.
+- The pinned `flux-schema` install leaves `validate.yml`, `render.yml` and `auto-merge.yml`; [contributing](contributing.md)
+  lists it as what `SCHEMA=1` needs, and [commands](commands.md) says what each form checks.
+- Deleted with it: `tools/swhurl/validate.py` (296 lines) and `tests/test_validate.py` (171); `platform.py`'s
+  `flux_unit_documents`, `decrypted_secret_files`, `BOOTSTRAP_PATHS` and `UNITS_DOC` (`tests/test_manifest_policy.py`
+  takes the render helper it still needs); `interface.unlisted` (v2 reads the same catalogue already, and
+  `interface.py` stays for the console); and validate's last read of the v1 `apps/contract.py` constants — the backup
+  writer, file and label become v2's own.
+
+**Acceptance.** Go table tests carry every case of `tests/test_validate.py`: each kind of drift is named, every check
+still runs after a failure, a substituting unit is resolved and a unit without substitution keeps its `${...}`, a
+decrypting unit with no Secret file fails, and a missing setting fails. Parity is shown on this tree — the Python
+`validate.py` and the Go command both pass — and on one injected fault per check (a broken anchor, a unit missing from
+the table, an unlisted emitted name, an unencrypted Secret value, an absent setting, a path that escapes the
+repository, an unresolved substitution), where both fail naming it. `SCHEMA=1` passes on the same tree and fails a
+copied rendered document with one misspelled field. The `adapters/manifests` allowlist change is reviewed as a
+deliberate baseline change, and `make check-v2` is the check that holds it.
+
+**Delivery, one commit.** `make check`, `make check-repo`, `make check-repo SCHEMA=1`, `make check-v2`,
+`make check-docs`, and `bash -n` over `host/*.sh tests/fixtures/*.sh`.

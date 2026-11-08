@@ -105,7 +105,6 @@ class FakeGitHub:
                 'platform': {'description': 'The platform itself'}, 'payments': {}}}).encode()).decode()},
             'GET /contents/platform/notify/routes.json': {'content': base64.b64encode(ROUTES.encode()).decode()},
             'POST /pulls': {'html_url': 'https://github.com/x/pull/7', 'number': 7},
-            'POST /issues/7/labels': [{'name': 'auto-merge'}],
             'GET /pulls': [{'number': 7, 'title': '[console] apps: add weather-api staging', 'html_url': 'https://github.com/x/pull/7',
                             'head': {'ref': 'console/new-weather-api-staging-abc1234'}, 'created_at': '2026-10-01T07:00:00Z'},
                            {'number': 8, 'title': 'chore(deps): bump', 'html_url': 'https://github.com/x/pull/8',

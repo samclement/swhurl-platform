@@ -2,6 +2,29 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console has no merge gate (8 November 2026)
+
+- **Scope:** [§20](iteration-2-plan.md#20-the-merge-gate-is-retired-approved-8-november-2026), approved: the merge gate
+  is deleted rather than ported. Every console change kind had long been `gated=False` (the New app on 1 November, the
+  teams and every `v2-*` kind on 2 November), so the gate's queue held no labelled branch and the Auto-merge workflow
+  skipped every pull request that woke it.
+- **What changed:** `tools/swhurl/console/merge.py` became `console/changes.py` (654 → 318 lines). Deleted: the merge
+  engine and its constants, the v1 rule leftovers no caller reached (`recipients`, `new_app_records`, `check_events_key`,
+  `settings_of`, `checked_host`, `team_commands`, `channel_commands`, `SCALE_FIELDS`), `judge` and the two `manual_*`
+  stand-ins, `.github/workflows/auto-merge.yml`, the internal `console-merge` command, the console's label and comment
+  plumbing (`AUTO_MERGE_LABEL`, `refusal()`, `PullRequest.labels`/`refused`/`auto`), `promotion.merge_mode`'s label
+  branches, the "merges itself" and "Hold for manual review" wording, and the Activity branch that said the gate was
+  checking a pull request. `Action` lost `gated`, `again`, `kind`, `read` and `rule`. The pull request body keeps one
+  line, **Merge plan**, carrying only the reason (`changes.encrypted_reason`: a changed `*.sops.yaml` needs its values
+  set), which `proposal.merge_plan` reads back for Activity's row.
+- **Offline:** `make check` passed (481 Python tests, lint, `check-repo`, `check-apps`, `check-otel`, the code graph and
+  `check-docs`), and `make test` ran every dry run. The two broken links the change left were found by `check-repo`
+  (a removed workflow and a renamed heading): `console.md`'s `## Auto-merge` is now `## Review and merge`, and its
+  anchors moved with it in `README.md`, `apps.md`, `architecture.md`, `contributing.md`, `plan.md` and here.
+- **Not exercised live:** the deployed console opening a change with no label, and Activity's row saying it waits for a
+  person. `main` was never protected before this change and is not now; every bot that pushes to it directly is
+  unchanged.
+
 ## An instance's egress grants are its record's (8 November 2026)
 
 - **Scope:** [the approved slice](iteration-2-plan.md#19-egress-grants-an-instance-declares-approved-8-november-2026):
@@ -3640,7 +3663,7 @@ Commit `f1a7278` gave every app two [default alerts](apps.md#alerts), kept by th
 
 ## Promotion merge gate runs two checks (11 October 2026)
 
-Commit `d7782fe` (console image `src-e188ff509a5edf6b`, pinned in `ccbc8db`) made the [auto-merge gate](console.md#auto-merge) check a promotion's merge result with `make check-repo` and `make check-apps` only; a new app still gets all of `make check`.
+Commit `d7782fe` (console image `src-e188ff509a5edf6b`, pinned in `ccbc8db`) made the [auto-merge gate](console.md#review-and-merge) check a promotion's merge result with `make check-repo` and `make check-apps` only; a new app still gets all of `make check`.
 
 - Why: promoting `test-3` to production at 19:45:17 UTC (`8f23bf8`) reached `main` at 19:46:20 and its `test-3/prod deployed` message at 19:48:05. The gate's merge step took 41 s of that, nearly all of it `make check`; Flux fetched the push in 2 s and Helm finished 21 s later.
 - The checker's 19:47:06 pass sent nothing because an unrelated push to `main` (19:46:55) had the `app-test-3-prod` unit waiting on its dependencies between 19:46:59 and 19:47:10, and a "deployed" message needs the unit Ready; the next pass sent it.
@@ -3953,7 +3976,7 @@ Stages of [plan section 19](plan.md#19-conditional-readability--approved-13-octo
 
 ## First promotion that changes the apps it calls (13 October 2026)
 
-`dcbeaac`: the console opens a first promotion for manual merge when the apps it calls already run in production ([apps](apps.md#promote-to-production), [console](console.md#auto-merge)). Console image `src-c41e1691520eee5c` (`f5a82ce`).
+`dcbeaac`: the console opens a first promotion for manual merge when the apps it calls already run in production ([apps](apps.md#promote-to-production), [console](console.md#review-and-merge)). Console image `src-c41e1691520eee5c` (`f5a82ce`).
 
 - **What prompted it:** PR #59 (`swhurl-try-11` to production) was labelled `auto-merge`, and the merge gate refused it with `diff includes encrypted files, infrastructure or unrelated edits`: it also added `swhurl-try-11` to the allowed callers and network policy of `swhurl-try-10/prod` and `swhurl-try-12/prod`. Activity showed `merge verification failed`.
 - **PR #59 merged by hand (`7ad2b67`):** its merge result on the then-current `main` passed `make check-repo` and `make check-apps` first. `make app-status APP=swhurl-try-11 ENV=prod` reports Healthy, desired and applied revisions matching, 1/1 ready, TLS ready, the reviewed image running.
@@ -3962,7 +3985,7 @@ Stages of [plan section 19](plan.md#19-conditional-readability--approved-13-octo
 - **Offline:** `make check` passed (697 tests); `Validate` passed on `dcbeaac`.
 - **Exercised live with `demo-shop` (PR #61, `ed3c97f`):** **Promote to production** on the deployed console (image `src-fd3b804091dcf99e`) opened the pull request with no label; the job log said `Not merging automatically: it also lets demo-shop call demo-orders in production`, the pull request body named `demo-orders/prod`, and Activity showed `Awaiting setup or manual review` and `By you, on GitHub`. Validate passed and it was merged by hand. `make app-status APP=demo-shop ENV=prod` reports Healthy, 1/1 ready, the reviewed image running. A signed-in `GET /` on `demo-shop/prod` answered 200, and `demo-orders/prod` logged the same trace's `GET /orders` as 200 from an app caller.
 - **Not exercised:** a call from `swhurl-try-11/prod` to its callees, and `POST /buy` on `demo-shop/prod` (it would write a production order).
-- **The gate's reason on Activity (`00f0041`):** the gate comments `Auto-merge refused: <reason>` on a pull request it holds and Activity shows the newest such comment from the workflow as the status ([console](console.md#auto-merge)). `make check` passed (700 tests); `Validate` passed on `00f0041`. Image `src-11d59e917fd20abe` (`ca11503`) deployed; `make flux-reconcile` and `make verify-platform` passed with no warnings and jobs of both CronJobs ran on it. **Not exercised:** a live refusal (no held pull request is open; the comment and its reading are unit-tested, including a look-alike comment from another account being ignored).
+- **The gate's reason on Activity (`00f0041`):** the gate comments `Auto-merge refused: <reason>` on a pull request it holds and Activity shows the newest such comment from the workflow as the status ([console](console.md#review-and-merge)). `make check` passed (700 tests); `Validate` passed on `00f0041`. Image `src-11d59e917fd20abe` (`ca11503`) deployed; `make flux-reconcile` and `make verify-platform` passed with no warnings and jobs of both CronJobs ran on it. **Not exercised:** a live refusal (no held pull request is open; the comment and its reading are unit-tested, including a look-alike comment from another account being ignored).
 
 ## A commit elsewhere does not hold a promotion (13 October 2026)
 

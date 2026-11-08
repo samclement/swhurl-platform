@@ -120,7 +120,7 @@ block, and `platform/auth/` is rendered from it, so a rotated key has one source
 
 | Module | Today | v2 path |
 | --- | --- | --- |
-| `merge.py` | applies v1 `Settings`/`Release` edits | `swhurl-v2 edit` |
+| `changes.py` (was `merge.py`) | the console's change kinds: branch, commands, input ownership, and the reason a person must set a Secret first (it merges nothing) | stays Python until the console's server is ported ([§20](iteration-2-plan.md#20-the-merge-gate-is-retired-approved-8-november-2026)) |
 | `proposal.py` | builds a v1 proposal | v2 record pair + compile |
 | `promotion.py` | `apps.promotion` | `swhurl-v2 promote` |
 | `routes/instance.py`, `routes/new_app.py` | v1 edit/new | v2 `edit` / create |

@@ -7,7 +7,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 
-from swhurl.console import actions, cluster, merge
+from swhurl.console import actions, changes, cluster
 from swhurl.console.context import STACK_NAMES, Context, dashboard_urls
 
 
@@ -53,9 +53,9 @@ def routes(ctx: Context) -> list[Route]:
         form = {k: v[0] for k, v in parse_qs((await request.body()).decode(), keep_blank_values=True).items()}
         try:
             key, name = f'team-{action}', form.get('name', '').strip()
-            if key not in merge.ACTIONS or action not in ('add', 'edit', 'remove'):
+            if key not in changes.ACTIONS or action not in ('add', 'edit', 'remove'):
                 raise actions.ActionError('no such team change')
-            commands = merge.ACTIONS[key].commands(name, '', form)
+            commands = changes.ACTIONS[key].commands(name, '', form)
         except actions.ActionError as error:
             return teams_page(request, 400, str(error))
         return propose(request, key, name, '', commands, then=(teams_cache, channels_cache))  # the next page reads the registry again
@@ -71,9 +71,9 @@ def routes(ctx: Context) -> list[Route]:
         runner.add_secret(form.get('address', '').strip())
         try:
             key, name = f'team-channel-{action}', form.get('name', '').strip()
-            if key not in merge.ACTIONS:
+            if key not in changes.ACTIONS:
                 raise actions.ActionError('no such channel change')
-            commands = merge.ACTIONS[key].commands(name, '', form)
+            commands = changes.ACTIONS[key].commands(name, '', form)
         except actions.ActionError as error:
             return teams_page(request, 400, str(error))
         return propose(request, key, name, '', commands, then=(channels_cache,))

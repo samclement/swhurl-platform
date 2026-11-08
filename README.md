@@ -39,9 +39,9 @@ The console is where you see the platform and change it without a terminal. Sign
 | New app | Create the app's repository from a template, wait for its first image and open the pull request that adds it to staging |
 | Activity | Follow each change from pull request through merge to the cluster running it |
 
-Reconcile, suspend, resume and feature flag overrides take effect at once. Every other button opens a pull request against this repository, and the ones that are easy to undo merge themselves once checks pass. Outside this repository the console creates one thing, a new app's GitHub repository.
+Reconcile, suspend, resume and feature flag overrides take effect at once. Every other button opens a pull request against this repository, which you merge yourself on GitHub. Outside this repository the console creates one thing, a new app's GitHub repository.
 
-Details: [pages and buttons](docs/console.md#use-it), [stages of a change](docs/console.md#stages-of-a-change), [auto-merge](docs/console.md#auto-merge), [how the console deploys itself](docs/console.md#deploy-a-new-console), [how it is protected](docs/console.md#how-it-is-protected).
+Details: [pages and buttons](docs/console.md#use-it), [stages of a change](docs/console.md#stages-of-a-change), [review and merge](docs/console.md#review-and-merge), [how the console deploys itself](docs/console.md#deploy-a-new-console), [how it is protected](docs/console.md#how-it-is-protected).
 
 ## Apps
 

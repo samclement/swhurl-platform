@@ -218,12 +218,12 @@ class PullStageTests(unittest.TestCase):
     def track(self, landed=None, action='promote', unit='web/prod', **pull):
         return stages.track(job(action, unit), stages.Pull(9, URL, **pull), landed)
 
-    def test_open_review_validation_failure_and_auto_merge(self):
-        self.assertEqual(self.track(state='open', checks='running', auto=True).status, 'running')
-        manual = self.track(state='open', checks='passed', reason='held by you')
+    def test_open_review_waits_for_the_person_and_says_why(self):
+        self.assertEqual(self.track(state='open', checks='running').status, 'waiting')
+        manual = self.track(state='open', checks='passed', plan='needs Secret values to be set')
         self.assertEqual(manual.status, 'waiting')
-        self.assertIn('merge #9 on GitHub (held by you)', manual.outcome)
-        self.assertEqual(self.track(state='open', checks='failed', auto=True).status, 'blocked')
+        self.assertIn('merge #9 on GitHub (needs Secret values to be set)', manual.outcome)
+        self.assertEqual(self.track(state='open', checks='failed').status, 'blocked')
         self.assertIn('conflicts with main', self.track(state='open', checks='conflict').outcome)
         self.assertEqual(self.track().status, 'unknown')
 
@@ -260,7 +260,7 @@ class PullStageTests(unittest.TestCase):
         self.assertIn('nothing changed', stages.track(job('scale', 'web/staging'), closed).outcome)
         for action in (stages.NEW_APP_JOB, stages.FINISH_JOB):
             self.assertIn('repository and image made for it still exist', stages.track(job(action, 'web/staging'), closed).outcome)
-        track = stages.pull_track(stages.Pull(9, URL, 'open', 'passed', auto=True), 'console/v2-promote-web-staging-abc1234')
+        track = stages.pull_track(stages.Pull(9, URL, 'open', 'passed'), 'console/v2-promote-web-staging-abc1234')
         self.assertEqual(track.stages[-1].label, 'Live in prod')
         self.assertEqual(stages.target_of('console/new-my-app-staging-abc1234'), ('new', 'my-app/staging'))
 

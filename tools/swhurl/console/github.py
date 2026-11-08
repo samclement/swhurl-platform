@@ -19,17 +19,12 @@ import httpx
 from swhurl import platform
 from swhurl.apps import channels
 from swhurl.apps.contract import TEAMS_FILE, registered_teams
-from swhurl.console import merge
 from swhurl.console.actions import ActionError
-from swhurl.console.merge import REFUSAL, REFUSAL_LIMIT
 from swhurl.run import Runner
 
 DEFAULT_REPO = platform.GITHUB_REPO
 BASE = 'main'
 BRANCH_PREFIX = 'console/'
-AUTO_MERGE_LABEL = 'auto-merge'
-GATE_AUTHOR = 'github-actions[bot]'  # the Auto-merge workflow comments with GITHUB_TOKEN
-"""A console PR with this label merges itself once Validate passes (.github/workflows/auto-merge.yml)."""
 UNSET = ('', 'REPLACE_ME')
 
 
@@ -103,35 +98,16 @@ class PullRequest:
     branch: str
     opened: str  # YYYY-MM-DD
     body: str = ''
-    labels: tuple[str, ...] = ()
     checks_url: str = ''
     checks: str = ''  # Validate on its head: passed, failed, running, pending, conflict, or '' (not read)
-    refused: str = ''  # why the merge gate held it (its comment), when it did and the label is off
 
 
-def refusal(runner: Runner, github: GitHub, number: int) -> str:
-    """Why the merge gate held a PR: the newest reason it left as a comment, or '' (none, or unreadable).
-    Anyone can comment on a public repository, so only the workflow's own comments count."""
-    api = GitHubAPI(runner, github)
-    try:
-        comments = api.json('GET', f'/issues/{number}/comments?per_page=100')
-    except ActionError:
-        return ''
-    finally:
-        api.client.close()
-    for comment in reversed(comments):
-        first = (comment.get('body') or '').split('\n', 1)[0]
-        if comment.get('user', {}).get('login') == GATE_AUTHOR and first.startswith(REFUSAL):
-            return first.removeprefix(REFUSAL)[:REFUSAL_LIMIT]
-    return ''
-
-
-def pull_checks(runner: Runner, github: GitHub, pull: dict, labels: tuple[str, ...]) -> tuple[str, str, str]:
-    """Facts about an open PR: its best checks link, how Validate went on its head (``PullRequest.checks``,
-    read whoever merges it) and, without the auto-merge label, why the merge gate held it (``PullRequest.refused``)."""
+def pull_checks(runner: Runner, github: GitHub, pull: dict) -> tuple[str, str]:
+    """Facts about an open PR: its best checks link and how Validate went on its head
+    (``PullRequest.checks``, read whoever merges it)."""
     checks_url, checks = pull['html_url'] + '/checks', ''
     if not pull['head'].get('sha'):
-        return checks_url, checks, ''
+        return checks_url, checks
     api = GitHubAPI(runner, github)
     try:
         runs = api.json('GET', f"/actions/runs?head_sha={pull['head']['sha']}&event=pull_request&per_page=30")
@@ -147,8 +123,7 @@ def pull_checks(runner: Runner, github: GitHub, pull: dict, labels: tuple[str, .
         checks = ''
     finally:
         api.client.close()
-    gated = AUTO_MERGE_LABEL not in labels and merge.gated(pull['head']['ref'])
-    return checks_url, checks, refusal(runner, github, pull['number']) if gated else ''
+    return checks_url, checks
 
 
 def pull_state(runner: Runner, github: GitHub, number: int) -> tuple[str, str, str]:
@@ -206,9 +181,8 @@ def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:
     for p in pulls:
         if not p['head']['ref'].startswith(BRANCH_PREFIX):
             continue
-        labels = tuple(label['name'] for label in p.get('labels', []))
         out.append(PullRequest(p['number'], p['title'], p['html_url'], p['head']['ref'], p['created_at'][:10],
-                               p.get('body') or '', labels, *pull_checks(runner, github, p, labels)))
+                               p.get('body') or '', *pull_checks(runner, github, p)))
     return out
 
 def platform_channels(runner: Runner, github: GitHub) -> tuple[dict[str, str], dict[str, list[str]]]:

@@ -942,7 +942,8 @@ Rejected: keeping the console in Python, which contradicts the [goal](v2-status.
 (namespace, Flux unit, source, HelmRelease, pods, workloads, Ingress, Certificate); `observe` reads four with no
 pod-level facts, so slice one widens observation (a deferred feature) and adds `swhurl-v2 status` on the host
 (kubeconfig, no new adapter) in place of `make app-status`. Slice two adds the in-cluster credential and points the console at it. Later slices take the
-merge gate (with the v1 model's three console importers) and the checks; the server and templates go last. It
+checks; the server and templates go last. The merge gate leaves first, by being retired rather than ported
+([§20](#20-the-merge-gate-is-retired-approved-8-november-2026)). It
 costs a JSON contract per read that the final Go server calls as a function instead, and one process start per
 read, where the console already starts `kubectl`. Option 2's modules stay worth doing in between, as fillers.
 
@@ -1658,7 +1659,7 @@ object — churn is not stability, but no commit in that window was a field typo
   `kubectl kustomize PATH | swhurl-v2 check-repo --rendered PATH`, then `bash -n` on `git ls-files '*.sh'`. `SCHEMA=1`
   adds `flux-schema validate --schema-location default --schema-location ecosystem --skip-json-path /sops` on the same
   stream. The `commands.py` row loses its `run=` and gains the `SCHEMA` variable.
-- The pinned `flux-schema` install leaves `validate.yml`, `render.yml` and `auto-merge.yml`; [contributing](contributing.md)
+- The pinned `flux-schema` install leaves `validate.yml` and `render.yml`; [contributing](contributing.md)
   lists it as what `SCHEMA=1` needs, and [commands](commands.md) says what each form checks.
 - Deleted with it: `tools/swhurl/validate.py` (296 lines), `tests/test_validate.py` (171) and `apps/checks.py`, which
   held only validate's compiled-tree path; `platform.py`'s `decrypted_secret_files`, `BOOTSTRAP_PATHS` and `UNITS_DOC`
@@ -1780,3 +1781,49 @@ declares nothing. `make check-v2` (Go tests, guardrails, `render --check`), `mak
 `make check-docs`. Live: one throwaway instance is granted a host it could not reach, the granted host answers 200 and
 an ungranted one 403 with `granted=-` in the proxy's log, from a pod in that instance's namespace, then the grant is
 cleared and re-rendered ([current state](current-state.md)).
+
+## 20. The merge gate is retired (approved 8 November 2026)
+
+**Decision.** The console's merge gate leaves by being deleted, not ported. Nothing it did was reachable: every kind in
+its table is `gated=False` (the `new` kind since 1 November 2026, the teams and every `v2-*` kind since 2 November), so
+its queue held no labelled branch and the Auto-merge workflow skipped every pull request that woke it. Porting it would
+need v2's first *writing* Git adapter (merge, commit, push) and a GitHub write adapter (label, comment) for a mechanism
+with no caller.
+
+**What a console pull request is now.** A person merges every one. The console adds no label, writes no comment and has
+no merge path: GitHub's **Merge** button is the only way a `console/*` branch reaches `main`. The bots that push to
+`main` directly (Render, Deploy, Validate's console image pin) keep `bots.push_main` and its own
+`make check-repo check-apps`. Validate's app-only fast path is unchanged; it was never the gate's.
+
+**What stays.** `console/merge.py` becomes `console/changes.py` (654 → 318 lines): the table of console change kinds
+(`Action`), the branch grammar (`parse`, `branch`, `target`), each kind's `owns`, `keeps`, `commands` and `title`,
+`Connections` (what the New app and Connect forms choose, and what a new app's flags are checked against) and
+`encrypted_reason` — a changed `*.sops.yaml` needs its values set, which a new app's own generated seed does not. That
+rule is a statement to a person now, not a hold. `Action` loses `gated`, `again`, `kind`, `read` and `rule`; `judge` and
+the two `manual_*` stand-ins go with the gate, whose ownership verdict could not fire because the file list was already
+filtered by `owns`.
+
+**What goes.** The merge engine (`eligible`, `validated`, `fetch_head`, `merge`, `merge_records`, `refuse`, `main`,
+`Hold`, `Skip`, its constants), the v1 leftovers no caller reached (`recipients`, `new_app_records`, `check_events_key`,
+`settings_of`, `checked_host`, `team_commands`, `channel_commands`, `SCALE_FIELDS`), the `auto-merge.yml` workflow, the
+`console-merge` command, the console's label and comment plumbing (`AUTO_MERGE_LABEL`, `refusal()`,
+`PullRequest.labels`/`refused`/`auto`), the "merges itself" and "Hold for manual review" wording, and
+`promotion.merge_mode`'s label branches. The pull request body keeps one line, **Merge plan**, carrying the reason alone.
+
+**Contracts.**
+- No console pull request carries `auto-merge`, and no comment starting `Auto-merge refused:` is written or read.
+- Activity's Merge stage reads one thing from an open pull request: it waits for you, with the reason from the body when
+  there is one. The **Validate** and **Checks** facts are unchanged.
+- A merge made by a person's token starts Validate on `main`, and the Render workflow renders any records it merged
+  untouched. `main` stays unprotected and directly pushable, which the bots need.
+- The retained rule reaches three places from one value: the pull request body, the job log and the Activity row
+  (`proposal.merge_plan`).
+
+**Verification.** `make check` (Python tests updated: no label call, no `auto`/`refused` field, the plan line read from
+the body), `make check-repo` (documentation links and anchors follow the renamed section), `make test` and
+`make check-docs`. Live: the deployed console opens a change on `swhurl-try-30/staging` that carries no label and says it
+waits for a person; the operator merges it on GitHub, Render renders it, and the instance returns Healthy.
+
+**Not in this slice.** Auto-merge of any kind — deferred, and if it returns it should be GitHub's required checks and
+native auto-merge rather than a bot that pushes merge commits; the promotion review page's unreachable v1 branches; and
+the console's remaining Python, which leaves with the server and templates (`changes.py` included).

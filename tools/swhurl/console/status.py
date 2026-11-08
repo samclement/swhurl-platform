@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import replace
 
 from swhurl.apps.instance import Instance
 from swhurl.apps.state import State
@@ -64,16 +63,25 @@ def read(runner: Runner, files: Files, units: list[dict], *, in_cluster: bool,
     return files.once('@status' if not app else '@promotion', invoke)
 
 
-def rows(inventory: list[cluster.AppRow], reports: dict) -> list[cluster.AppRow]:
-    found = {(row.instance.app, row.instance.env): row for row in inventory}
-    for key, report in reports.items():
+REMOVED = {'unit_and_release': 'removed from Git; live cleanup in progress',
+           'unit': 'removed from Git; live cleanup in progress, its unit is still there',
+           'release': 'removed from Git; live cleanup in progress, its HelmRelease is still there'}
+
+
+def rows(document: dict) -> list[cluster.AppRow]:
+    """The Go document as the pages show it: one row per instance it reports, and one per instance only the cluster
+    still has, so an app removed from Git stays visible until its namespace goes."""
+    found, teams = {}, {}
+    for key, entry in document['instances'].items():
         instance = Instance.named(*key)
-        if instance is None or report['target']['namespace'] != instance.namespace:
+        if instance is None or entry['report']['target']['namespace'] != instance.namespace:
             raise ActionError('Go status unavailable: invalid instance identity')
-        row = found.get(key, cluster.AppRow(instance, State('unknown'), False, 'not applied'))
-        found[key] = replace(row, state=observation.state(report), report=report,
-                             suspended=report['live']['unit']['suspended'],
-                             applied_revision=report['currentness']['appliedRevision'])
-    for key in found.keys() - reports.keys():
-        found[key] = replace(found[key], state=State('unknown', 'removed from Git; live cleanup in progress'))
+        teams[instance.app] = entry['inventory']['team']
+        found[key] = cluster.AppRow(instance, observation.state(entry['report']),
+                                    entry['report']['live']['unit']['suspended'], entry['inventory'],
+                                    entry['report']['currentness']['appliedRevision'], entry['report'], teams)
+    for app, env, reason in document['removing']:
+        instance = Instance.named(app, env)
+        if instance is not None:
+            found.setdefault((app, env), cluster.AppRow(instance, State('unknown', REMOVED[reason])))
     return sorted(found.values(), key=lambda row: (row.instance.app, row.instance.env))

@@ -87,7 +87,8 @@ TARGET, ABSENT = target(), stages.Target()
 
 def row(state=HEALTHY, digest='sha256:a'):
     observed = report(state=state.key, reason=state.detail)
-    return cluster.AppRow(Instance('web', 'prod'), state, False, 'x', digest=digest, report=observed)
+    return cluster.AppRow(Instance('web', 'prod'), state, False, {'artifact': {'image': 'x', 'digest': digest}},
+                          report=observed)
 
 
 class RenderProgressTests(unittest.TestCase):

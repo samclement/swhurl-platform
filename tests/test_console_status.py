@@ -193,8 +193,8 @@ class SchemaTests(unittest.TestCase):
 
     def test_bulk_envelope_requires_its_version_and_array(self):
         valid = json.loads(answer(('--revision', HEAD, '--all'), {}).stdout)
-        self.assertEqual(observation.decode(json.dumps(valid), HEAD), {})
-        for key, value in (('version', 2), ('instances', None), ('revision', OLD), ('kind', 'v2-observation')):
+        self.assertEqual(observation.decode(json.dumps(valid), HEAD), {'instances': {}, 'removing': ()})
+        for key, value in (('version', 1), ('instances', None), ('revision', OLD), ('kind', 'v2-observation'), ('removing', None)):
             with self.assertRaises(actions.ActionError):
                 observation.decode(json.dumps({**valid, key: value}), HEAD)
 
@@ -203,6 +203,11 @@ class PageAndPromotionTests(unittest.TestCase):
     def setUp(self):
         self.remote = Repository()
         self.runner = fake(units=[unit('app-web-staging')], releases=[])
+        from console_observation import inventory
+        # Production has records in Git and no unit yet: Go compiles it from the records it is given.
+        self.runner.status_reports['web', 'prod'] = report(env='prod')
+        self.runner.inventories['web', 'prod'] = inventory('web', 'prod', digest='sha256:' + '9' * 64)
+        self.runner.inventories['web', 'staging']['database'] = {'kind': 'sqlite', 'path': '/data/app.db'}
         self.observed = report(env='staging')
         self.captured = []
         self.runner._rules.insert(0, (('swhurl-v2', 'status'), self.observe))
@@ -213,9 +218,12 @@ class PageAndPromotionTests(unittest.TestCase):
 
     def observe(self, args, _input):
         self.captured.append(args)
+        reports = {key: copy.deepcopy(value) for key, value in self.runner.status_reports.items()}
         found = copy.deepcopy(self.observed)
-        found['target']['revision'] = args[args.index('--revision') + 1]
-        return answer(args, {('web', 'staging'): found})
+        reports['web', 'staging'] = found
+        for value in reports.values():
+            value['target']['revision'] = args[args.index('--revision') + 1]
+        return answer(args, reports, self.runner.inventories, self.runner.removing)
 
     def test_list_detail_agree_and_desired_settings_variables_worker_routes_are_explicit(self):
         self.observed['state'] = {'name': 'updating', 'reason': 'replicas_not_ready'}
@@ -269,7 +277,8 @@ class PageAndPromotionTests(unittest.TestCase):
         self.observed['live']['unit']['status'] = 'absent'
         reply = self.client.get('/apps/web/staging', headers=WHO)
         self.assertIn('Deployment pending', reply.text)
-        self.runner._rules.insert(0, (('swhurl-v2', 'status'), lambda args, _: answer(args, {})))
+        # Go reports the unit and release of an instance no record names: the app stays visible while it is removed.
+        self.runner._rules.insert(0, (('swhurl-v2', 'status'), lambda args, _: answer(args, {}, {}, [('web', 'staging', 'unit_and_release')])))
         self.assertIn('removing live resources', self.client.get('/apps/web/staging', headers=WHO).text)
         self.assertIn('live cleanup in progress', self.client.get('/apps', headers=WHO).text)
 
@@ -323,7 +332,7 @@ class PageAndPromotionTests(unittest.TestCase):
         with mock.patch.object(self.jobs, 'submit') as propose:
             reply = self.client.post('/apps/web/staging/promote', data={'image': f'ghcr.io/x/web@{DIGEST}'}, headers=ORIGIN)
             self.assertEqual(reply.status_code, 502, 'a report that could not be produced is unavailable, not a refusal')
-            self.assertIn('Go promotion readiness unavailable', reply.text)
+            self.assertIn('Go status unavailable', reply.text)
             propose.assert_not_called()
 
     def test_post_failed_units_read_is_unavailable_not_a_crash(self):
@@ -333,7 +342,7 @@ class PageAndPromotionTests(unittest.TestCase):
         with mock.patch.object(self.jobs, 'submit') as propose:
             reply = self.client.post('/apps/web/staging/promote', data={'image': f'ghcr.io/x/web@{DIGEST}'}, headers=ORIGIN)
             self.assertEqual(reply.status_code, 502)
-            self.assertIn('Go promotion readiness unavailable', reply.text)
+            self.assertIn('flux-system is unreachable', reply.text)
             propose.assert_not_called()
 
     def test_post_passes_only_on_go_ready_and_preserves_held_pr_flow(self):

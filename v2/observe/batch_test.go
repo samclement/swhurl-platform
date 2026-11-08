@@ -71,11 +71,14 @@ func TestCandidatesReadItemsWithoutTheirOwnType(t *testing.T) {
 
 func TestBulkCollectionEmptyEnvelopeAndIndividualReportVersion(t *testing.T) {
 	empty, err := observe.EncodeCollection(observe.Collection{Revision: commit})
-	if err != nil || !strings.Contains(string(empty), `"instances":[]`) {
+	if err != nil || !strings.Contains(string(empty), `"instances":[]`) || !strings.Contains(string(empty), `"removing":[]`) {
 		t.Fatalf("%s %v", empty, err)
 	}
 	report := explain(t, healthy(t))
-	data, err := observe.EncodeCollection(observe.Collection{Instances: []observe.InstanceReport{{Application: "hello", Environment: "staging", Report: report}}})
+	entry := observe.InstanceReport{Application: "hello", Environment: "staging", Report: report,
+		Inventory: json.RawMessage(`{"team":"demo"}`)}
+	data, err := observe.EncodeCollection(observe.Collection{Instances: []observe.InstanceReport{entry},
+		Removing: []observe.Removed{{Application: "gone", Environment: "prod", Reason: observe.RemovedUnit}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,12 +92,29 @@ func TestBulkCollectionEmptyEnvelopeAndIndividualReportVersion(t *testing.T) {
 				Version     int
 				Currentness observe.Currentness
 			}
+			Inventory json.RawMessage
 		}
+		Removing []observe.Removed
 	}
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.Kind != "v2-observations" || document.Version != 1 || document.Instances[0].Report.Kind != "v2-observation" || document.Instances[0].Report.Version != 5 || document.Instances[0].Application != "hello" || document.Instances[0].Report.Currentness.AppliedRevision != "main@sha1:"+commit {
+	if document.Kind != "v2-observations" || document.Version != 2 || document.Instances[0].Report.Kind != "v2-observation" ||
+		document.Instances[0].Report.Version != 5 || document.Instances[0].Application != "hello" ||
+		document.Instances[0].Report.Currentness.AppliedRevision != "main@sha1:"+commit ||
+		string(document.Instances[0].Inventory) != `{"team":"demo"}` ||
+		len(document.Removing) != 1 || document.Removing[0].Reason != observe.RemovedUnit {
 		t.Fatalf("%s", data)
+	}
+}
+
+// TestBulkCollectionRefusesAnInstanceWithoutItsDeclaration: every instance in the collection states what its records
+// declare, so a caller cannot leave the block out and have a page read a report alone.
+func TestBulkCollectionRefusesAnInstanceWithoutItsDeclaration(t *testing.T) {
+	report := explain(t, healthy(t))
+	_, err := observe.EncodeCollection(observe.Collection{Instances: []observe.InstanceReport{{Application: "hello",
+		Environment: "staging", Report: report}}})
+	if err == nil {
+		t.Fatal("an instance with no declaration was encoded")
 	}
 }

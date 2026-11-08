@@ -1322,7 +1322,8 @@ and verification. Policy remains a read-only Git check, not live admission enfor
   1 November (`f6ba34a8`). **Phase 5 is closed with no external change, and the deletion plan's phases 0–5 are
   done.**
 - **What is actually left:** a new app's create. `make app-new` still writes `apps/<app>/<env>/` and its unit, and
-  the console keeps its v1 record reader until v2 has `create` (`tools/swhurl/console/records.py:10`); `swhurl-v2`
+  the console kept its own v1 record reader until v2 had `create` (that reader is deleted by
+  [§21](iteration-2-plan.md#21-the-apps-inventory-and-connections-in-go-approved-8-november-2026)); `swhurl-v2`
   has no create command. The next gate is a decision brief for it, not an external repository edit.
 - **Docs corrected in the same change:** the gate in [v2 status](v2-status.md), the deletion plan's status, phase 5,
   decision 3 and new-session prompt, the registry row in [workstreams](workstreams.md), the stale "one live" rows

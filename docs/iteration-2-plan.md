@@ -1828,3 +1828,72 @@ waits for a person; the operator merges it on GitHub, Render renders it, and the
 **Not in this slice.** Auto-merge of any kind — deferred, and if it returns it should be GitHub's required checks and
 native auto-merge rather than a bot that pushes merge commits; the promotion review page's unreachable v1 branches; and
 the console's remaining Python, which leaves with the server and templates (`changes.py` included).
+
+## 21. The Apps inventory and connections in Go (approved 8 November 2026)
+
+**Decision.** The console stops deriving an instance from the cluster. One pinned `swhurl-v2 status --all`
+returns, beside each instance's unchanged version-5 report, the **declaration** the records state, and one
+entry for a live unit or release that no record names. The console keeps only presentation: it draws rows,
+the map and the catalogue from Go's document, and reads none of its facts from `kubectl`.
+
+Options were put to the operator and decided: the block rides on the existing `status --all` call rather than a
+second command (one process, one pinned bundle, one compile); a connection row states what the records say and
+loses the *connected in Git, not yet observed live* and *removed in Git, still observed live* wording; and a live
+unit or release with no record is still reported, as `removing`, so an instance stays visible until its namespace
+goes.
+
+**Why it is a projection, not a new authority.** Every fact is one the compiler already has: the host from
+`routeHost`, the addresses from the names the compiler writes, the database path from `DatabasePath`, the team
+from the app record, the artifact from the release, the connected pairs and refusals from the committed resolution
+(`v2-calls`), and the port and grants from the committed allocation (`v2-egress`). Nothing is re-derived by a
+second reader, in either language.
+
+```text
+records + profile + calls.json + allocation.json ─┐
+                                                  ├→ status --all → v2-observations v2
+Kubernetes (units, releases, pods, routes) ──────┘     ├ instances[]: report (v5) + inventory
+                                                       └ removing[]: {application, environment, reason}
+                                     console: rows, map, catalogue, egress — presentation only
+```
+
+**Contract.** `status --all --json` prints `{"kind":"v2-observations","version":2,…}`. Each `instances[]` entry
+keeps `report` exactly as version 5 defines it and adds `inventory`:
+
+- `team`, `kind`, `exposure`, `port`; `hosts` (`[]` for a private instance or a worker); `address` (the Service
+  address the app's own env carries, `""` for a worker); `api` (its API document's address, `""` when it
+  publishes none); `artifact {image, digest}`; `database {kind, path}` (`kind` empty when it keeps none);
+  `offers` (the source commit its documents are read at, `""` when it offers none);
+  `egress {port, grants}` (`port` 0 when the allocation names it none; `grants` is the allocation's list,
+  so a database's backup host appears without the record naming it).
+- `calls`, `allows`, `callers`, `publishes`, `subscriptions`: the declaration and the resolution's answer.
+- `connections`: one row each — `{role, app, event, outcome, reason}` — `role` is `calls`, `called-by`,
+  `publishes`, `subscribes`, `subscriber` or `reaches`; `outcome` is `connected`, `waiting`, `refused` or empty
+  for a row that is only a declaration (`publishes`, `reaches`); `reason` is a fixed code the console renders as
+  words (`callee_absent`, `no_consent`, `self_call`, `callee_not_web`, `publisher_not_ready`). A team is a grant,
+  not a row, and a peer's team is the peer's own row.
+- `removing`: `[{application, environment, reason}]`, sorted, from the units and releases the observation
+  already lists that no record names. `reason` is `unit_and_release`, `unit` or `release`.
+- Single status, `make app-status`'s text, `--changes` and every promotion decision are unchanged: only the bulk
+  JSON changes version, and its only consumer is the console, which is updated in the same change.
+
+**Deliberate changes.** A connection row no longer reports what the *running* release still does: currentness and
+the page's revision line already say a change is unapplied, once, instead of on every row that differs. The Apps
+list compares staging with production by digest — v2's release identity — because v2 renders no image tag.
+
+**Deletions.** `console/records.py`; `console/cluster.py`'s read path (`apps`, `ingress_hosts`, its four
+`kubectl` lists, the row assembly); the app page's own `instance.json`/`release.json` reads; the console tests
+that pinned the old derivation, whose cases become Go table tests. `apps/calling|egress|events|helmrelease|ops|
+connections` and `interface` stay while the bounded v1 oracle and the live tests import them; the console importers
+leave with this change and [`test_v1_model_bound`](../tests/test_v1_model_bound.py) shrinks by them.
+
+**Verification.** Go table tests for every field and every row (connected, each waiting and refused reason,
+declaration-only rows, private and worker instances, a team grant, a subscription waiting on its publisher, a
+database's backup grant, a record with no release, empty records, and `removing` from a unit, a release and both);
+`make check-v2`, `make check`, `make test`, `make check-docs`. Live: every instance's rows compared field by
+field with the pages before the change; a deliberately pending call created on a throwaway and removed; the
+`removing` row seen by removing one throwaway instance; cold and warm Apps-list latency measured and reported
+rather than assumed; signed-out redirects and signed-in pages checked.
+
+**Not in this slice.** Document parsing and the catalogue's offers (`catalogue.Documents`, `apps/offers.py`), the
+map's layout, the team registry and its channels, the compiled variables table the app page prints, the Platform
+page's unit list, and every write path.

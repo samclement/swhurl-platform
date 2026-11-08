@@ -215,18 +215,28 @@ func TestStatusAllCLIStableCollectionAndSingleAgreement(t *testing.T) {
 		Instances        []struct {
 			Application, Environment string
 			Report                   map[string]any
+			Inventory                map[string]any
 		}
+		Removing []struct{ Application, Environment, Reason string }
 	}
 	if err := json.Unmarshal([]byte(stdout), &bulk); err != nil {
 		t.Fatal(err)
 	}
-	if bulk.Kind != "v2-observations" || bulk.Version != 1 || bulk.Source != "homelab" || bulk.Revision != observedRevision || len(bulk.Instances) != 2 || len(api.requests) != 4 {
+	if bulk.Kind != "v2-observations" || bulk.Version != 2 || bulk.Source != "homelab" || bulk.Revision != observedRevision || len(bulk.Instances) != 2 || len(api.requests) != 4 {
 		t.Fatalf("%s, requests %d", stdout, len(api.requests))
+	}
+	// The unit of an instance no record names is still there, so the collection keeps it visible. Its release is not
+	// this app's (the fixture names another application), so only the unit is unaccounted for.
+	if len(bulk.Removing) != 1 || bulk.Removing[0].Application != "foreign" || bulk.Removing[0].Environment != "staging" || bulk.Removing[0].Reason != observe.RemovedUnit {
+		t.Fatalf("removing %+v", bulk.Removing)
 	}
 	for i, env := range []string{"prod", "staging"} {
 		entry := bulk.Instances[i]
 		if entry.Application != "demo-orders" || entry.Environment != env || entry.Report["state"].(map[string]any)["name"] != observe.StateHealthy {
 			t.Fatalf("%+v", entry)
+		}
+		if entry.Inventory["team"] != "demo" || entry.Inventory["kind"] != "web" || entry.Inventory["port"] != float64(8080) {
+			t.Fatalf("inventory %+v", entry.Inventory)
 		}
 		singleArgs := []string{}
 		for _, arg := range args {

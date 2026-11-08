@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -122,7 +123,7 @@ func TestDeploySelectsAndWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Instance.Configuration != current.Configuration || result.Instance.Grants != current.Grants ||
+	if result.Instance.Configuration != current.Configuration || !reflect.DeepEqual(result.Instance.Grants, current.Grants) ||
 		len(result.Instance.Calls) != len(current.Calls) || len(result.Instance.Allows) != len(current.Allows) {
 		t.Fatalf("the instance changed beyond its release: %+v", result.Instance)
 	}

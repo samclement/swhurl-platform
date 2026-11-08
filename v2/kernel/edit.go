@@ -52,6 +52,18 @@ func WithAllows(spec InstanceSpec, allows []string) (InstanceSpec, error) {
 	return changedInstance(spec)
 }
 
+// WithEgress replaces the hosts the instance may reach outside the cluster. It states what the instance needs, not
+// what the proxy allows: the allocation gives it a port at the next render, and the proxy's configuration is rendered
+// from the allocation. An empty value clears them, leaving the platform's backup host the only thing it reaches.
+func WithEgress(spec InstanceSpec, grants []string) (InstanceSpec, error) {
+	declared, err := EgressGrants(grants)
+	if err != nil {
+		return InstanceSpec{}, err
+	}
+	spec.Grants.Egress = declared
+	return changedInstance(spec)
+}
+
 // WithSubscriptions replaces the events the instance receives. An instance signs in to the broker with its own
 // key, so one that has no key cannot subscribe: there would be nothing to sign in with.
 func WithSubscriptions(spec InstanceSpec, subscriptions []string) (InstanceSpec, error) {

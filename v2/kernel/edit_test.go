@@ -1,7 +1,9 @@
 package kernel_test
 
 import (
+	"bytes"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/kernel"
@@ -36,7 +38,7 @@ func TestWithReplicasSetsOnlyReplicas(t *testing.T) {
 	if changed.Configuration.Replicas != 5 {
 		t.Errorf("replicas are %d, want 5", changed.Configuration.Replicas)
 	}
-	if changed.Configuration.MemoryMiB != spec.Configuration.MemoryMiB || changed.Grants != spec.Grants ||
+	if changed.Configuration.MemoryMiB != spec.Configuration.MemoryMiB || !reflect.DeepEqual(changed.Grants, spec.Grants) ||
 		len(changed.Allows) != len(spec.Allows) {
 		t.Error("the change carried a second setting")
 	}
@@ -151,5 +153,69 @@ func TestWithTeam(t *testing.T) {
 	}
 	if _, err := kernel.WithTeam(app, ""); err == nil {
 		t.Error("an empty team was accepted")
+	}
+}
+
+// The hosts an instance may reach are its record's, written as the proxy reads them: one form each, in one order, so
+// the same authority never appears twice.
+func TestWithEgressWritesTheGrantsTheProxyReads(t *testing.T) {
+	spec := stagingInstance(t)
+	declared, err := kernel.WithEgress(spec, []string{"API.Stripe.COM:8443", "*.github.com", "example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"*.github.com", "example.com", "api.stripe.com:8443"}
+	if !reflect.DeepEqual(declared.Grants.Egress, want) {
+		t.Fatalf("the grants are %q, want %q", declared.Grants.Egress, want)
+	}
+	if declared.Grants.Exposure != spec.Grants.Exposure {
+		t.Error("the change carried the exposure")
+	}
+	if spec.Grants.Egress != nil {
+		t.Error("the record the caller gave was modified")
+	}
+	cleared, err := kernel.WithEgress(declared, nil)
+	if err != nil || cleared.Grants.Egress != nil {
+		t.Errorf("clearing the grants left %q (%v)", cleared.Grants.Egress, err)
+	}
+	for _, refused := range [][]string{
+		{"example.com", "example.com"},     // granted twice
+		{"*.stripe.com", "api.stripe.com"}, // a wildcard already covers it
+		{"10.0.0.1"},                       // only a host name is a grant
+		{"example.com:0"},                  // no port a proxy could listen on
+		{"example.com", "*.example.com"},   // the wildcard covers the name beside it, in either order
+		{""},                               // an empty entry is not a grant
+		{"https://example.com/path"},       // a grant is a host and a port, never a URL
+	} {
+		if _, err := kernel.WithEgress(spec, refused); err == nil {
+			t.Errorf("%q was accepted", refused)
+		}
+	}
+}
+
+// A record's grants are part of what the record is: two instances that reach different hosts have different
+// revisions, and a hand-written record is held to the same rules as an edit.
+func TestEgressGrantsAreTheRecordsOwn(t *testing.T) {
+	spec := stagingInstance(t)
+	declared, err := kernel.WithEgress(spec, []string{"example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := spec.Revision()
+	after, _ := declared.Revision()
+	if before == after {
+		t.Fatal("the grants do not take part in the identity")
+	}
+	data, err := kernel.EncodeInstance(declared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernel.DecodeInstance(data)
+	if err != nil || !reflect.DeepEqual(decoded.Grants.Egress, []string{"example.com"}) {
+		t.Fatalf("the record round-trip lost its grants: %v %v", decoded.Grants.Egress, err)
+	}
+	twice := string(bytes.Replace(data, []byte(`"egress": [`), []byte(`"egress": [ "example.com", `), 1))
+	if _, err := kernel.DecodeInstance([]byte(twice)); err == nil {
+		t.Error("a hand-written record granted a host twice")
 	}
 }

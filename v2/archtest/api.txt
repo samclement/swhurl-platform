@@ -529,6 +529,7 @@ kernel: func DecodeNameCatalogue(data []byte) (NameCatalogue, error)
 kernel: func DecodeProfile(data []byte) (PlatformProfile, error)
 kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
 kernel: func DecodeTeams(data []byte) (TeamRegistry, error)
+kernel: func EgressGrants(grants []string) ([]string, error)
 kernel: func EncodeApp(app AppSpec) ([]byte, error)
 kernel: func EncodeCompilation(c Compilation) []byte
 kernel: func EncodeEgressDocument(document EgressDocument) ([]byte, error)
@@ -564,6 +565,7 @@ kernel: func UnitPath(application, environment string, profile PlatformProfile) 
 kernel: func WithAllows(spec InstanceSpec, allows []string) (InstanceSpec, error)
 kernel: func WithBrokerKey(spec InstanceSpec, pair UserKey, rotate bool) (InstanceSpec, error)
 kernel: func WithCalls(spec InstanceSpec, calls []string) (InstanceSpec, error)
+kernel: func WithEgress(spec InstanceSpec, grants []string) (InstanceSpec, error)
 kernel: func WithExposure(spec InstanceSpec, release ReleaseBundle, exposure string) (InstanceSpec, error)
 kernel: func WithMemory(spec InstanceSpec, memoryMiB int32) (InstanceSpec, error)
 kernel: func WithReplicas(spec InstanceSpec, replicas int32) (InstanceSpec, error)
@@ -607,7 +609,7 @@ kernel: type Error struct {Code Code Field string Reason string}
 kernel: type EventSubscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
 kernel: type Events struct {Key string `json:"key,omitempty"` Subscriptions []string `json:"subscriptions,omitempty"`}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
-kernel: type Grants struct {Exposure string `json:"exposure"`}
+kernel: type Grants struct {Exposure string `json:"exposure"` Egress []string `json:"egress,omitempty"`}
 kernel: type ImageTag struct {Name string Run int64 Commit string}
 kernel: type Inputs struct {App AppID `json:"app"` Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"` Calls ConnectionsID `json:"calls"`}
 kernel: type InstanceFacts struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string Broker BrokerIdentity Description string Offers *Offers}
@@ -1035,7 +1037,7 @@ orchestration: type Delivered struct {Entry notify.Entry Err error Retry bool}
 orchestration: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
 orchestration: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
 orchestration: type Editable struct {InstanceInputs Change string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}
-orchestration: type Edition struct {Application, Environment, Change string Before, After kernel.InstanceSpec Compilation kernel.Compilation ResolutionStale bool Written []files.Outcome}
+orchestration: type Edition struct {Application, Environment, Change string Before, After kernel.InstanceSpec Compilation kernel.Compilation ResolutionStale bool AllocationStale bool Written []files.Outcome}
 orchestration: type HeartbeatOptions struct {Now float64 Jobs []heartbeat.Job StatePath string DryRun bool}
 orchestration: type HeartbeatOutcome struct {Job heartbeat.Job Decision heartbeat.Decision Notice heartbeat.Notice Due, Sent bool Err error}
 orchestration: type HeartbeatPorts struct {Cluster kube.Reader Data kube.Data Platform ntfy.Publisher State hoststate.Store}

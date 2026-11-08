@@ -22,8 +22,9 @@ green commit.
 
 **One writer per fact.** A fact v2 models is written only by v2; a fact v2 does not model has v1 as its only
 writer until v2 models it. There is never a fact with two writers. That is why keeping `app-egress` or
-`app-schedule` is not a compatibility layer: v2 renders neither fact, so v1 remains its single writer. The
-moment v2 models one of them, its v1 command is deleted in that v2 change.
+`app-schedule` was not a compatibility layer: at the time v2 rendered neither fact, so v1 remained its single writer.
+The moment v2 models one of them, its v1 command is deleted in that v2 change — as `app-egress` went, and as egress
+grants became the record's on 8 November 2026 ([the slice](iteration-2-plan.md#19-egress-grants-an-instance-declares-approved-8-november-2026)).
 
 That is the **transition** rule, not the goal: the goal is one Go implementation and no Python ([v2
 status](v2-status.md)). `apps/` stays as the home of the unmodeled facts and the shared team registry; it
@@ -52,7 +53,7 @@ it. The writer functions are in `tools/swhurl/apps/cli.py`, `new.py`, `offers.py
 | `app-check` | v1 render + policy | `compile` and `status` | **delete** |
 | `platform-signing-keys` | `apps/signing-keys.json` | `auth` (profile-owned) | **delete** |
 | `app-offers` | offered documents | v2 records/offers and `deploy` | **delete** |
-| `app-egress` | egress grants | none (v2 has no egress-grant field) | **delete** (inert, below) |
+| `app-egress` | egress grants | `swhurl-v2 edit --set egress=` (v2's field landed 8 November 2026) | **deleted** |
 | `app-alerts` | alert settings | none (v2 renders no alert) | **delete** (inert, below) |
 | `app-schedule` | job schedule | none (no `job` kind) | **delete** (inert, below) |
 | `app-secret` | secret names/values | none (secrets are not modelled) | **delete** (inert, below) |

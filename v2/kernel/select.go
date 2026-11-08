@@ -28,5 +28,6 @@ func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected Insta
 	// A record with declarations carries reference-bearing members: the result owns its lists, so a caller
 	// that edits what it was given cannot reach back into the record it came from.
 	current.Calls, current.Allows = slices.Clone(current.Calls), slices.Clone(current.Allows)
+	current.Grants.Egress = slices.Clone(current.Grants.Egress)
 	return current, nil
 }

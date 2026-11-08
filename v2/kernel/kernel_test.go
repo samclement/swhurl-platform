@@ -535,11 +535,12 @@ func TestTeamGrants(t *testing.T) {
 
 func TestRecordsAreValues(t *testing.T) {
 	// A record is made of values — strings, int32s and nested structs of them — so copying one cannot alias
-	// another. The exceptions are lists: `calls`, `allows`, the events a release publishes and the subscriptions
-	// an instance receives are slices because the resolver and the renderer read them as such, and each is
-	// canonicalised by sorting. A record carrying one is therefore not comparable, and every seam that returns a
-	// record clones those lists (TestSelectionDoesNotAliasDeclarations).
-	declarations := map[string]bool{"Calls": true, "Allows": true, "Publishes": true, "Subscriptions": true, "Documents": true}
+	// another. The exceptions are lists: `calls`, `allows`, the events a release publishes, the subscriptions an
+	// instance receives and the hosts its grants declare are slices because the resolver and the renderer read
+	// them as such, and each is canonicalised by sorting. A record carrying one is therefore not comparable, and
+	// every seam that returns a record clones those lists (TestSelectionDoesNotAliasDeclarations).
+	declarations := map[string]bool{"Calls": true, "Allows": true, "Publishes": true, "Subscriptions": true,
+		"Documents": true, "Egress": true}
 	var check func(typ reflect.Type, owner string)
 	check = func(typ reflect.Type, owner string) {
 		switch typ.Kind() {
@@ -565,6 +566,7 @@ func TestRecordsAreValues(t *testing.T) {
 func TestSelectionDoesNotAliasDeclarations(t *testing.T) {
 	current := instance(t, "prod.json")
 	current.Calls, current.Allows = []string{"beta", "alpha"}, []string{"gamma"}
+	current.Grants.Egress = []string{"example.com"}
 	revision, err := current.Revision()
 	if err != nil {
 		t.Fatal(err)
@@ -574,8 +576,9 @@ func TestSelectionDoesNotAliasDeclarations(t *testing.T) {
 		t.Fatal(err)
 	}
 	selected.Calls[0], selected.Allows[0] = "changed", "changed"
-	if current.Calls[0] != "beta" || current.Allows[0] != "gamma" {
-		t.Fatalf("the result aliases its input: %v %v", current.Calls, current.Allows)
+	selected.Grants.Egress[0] = "changed"
+	if current.Calls[0] != "beta" || current.Allows[0] != "gamma" || current.Grants.Egress[0] != "example.com" {
+		t.Fatalf("the result aliases its input: %v %v %v", current.Calls, current.Allows, current.Grants.Egress)
 	}
 	encoded, err := EncodeInstance(current)
 	if err != nil {

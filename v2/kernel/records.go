@@ -90,6 +90,10 @@ type Configuration struct {
 
 type Grants struct {
 	Exposure string `json:"exposure"`
+	// Egress is the hosts this instance may reach outside the cluster, each a host name with an optional port
+	// (`*.domain` allows any name under a domain). An instance that reaches nothing declares none: the platform's
+	// own backup host is the profile's grant, never the record's, so only an outside host is written here.
+	Egress []string `json:"egress,omitempty"`
 }
 
 // Bindings has no supported members in phase 1. The codec refuses non-empty objects.
@@ -288,10 +292,19 @@ func (s InstanceSpec) validate() error {
 	if s.Storage.ClaimName != "" && !labelPattern.MatchString(s.Storage.ClaimName) {
 		return refuse(Invalid, "storage.claimName", "expected a DNS label")
 	}
-	if s.Grants.Exposure != "private" && s.Grants.Exposure != "authenticated-web" {
-		return refuse(Unsupported, "grants.exposure", "only private and authenticated-web exposure are supported")
+	if err := s.Grants.validate(); err != nil {
+		return err
 	}
 	return s.validateEventsAndDeclarations()
+}
+
+// validate checks what the instance is granted: how it is reached, and the hosts it may reach outside the cluster.
+func (g Grants) validate() error {
+	if g.Exposure != "private" && g.Exposure != "authenticated-web" {
+		return refuse(Unsupported, "grants.exposure", "only private and authenticated-web exposure are supported")
+	}
+	_, err := EgressGrants(g.Egress)
+	return err
 }
 
 // validateEventsAndDeclarations checks an instance's own lists: its broker identity, then the apps it calls and

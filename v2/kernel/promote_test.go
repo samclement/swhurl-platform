@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -39,7 +40,7 @@ func TestSelectPromotionReplacesOnlyTheRelease(t *testing.T) {
 	if selected.Release != candidate.ReleaseID {
 		t.Fatalf("production selects %s, want %s", selected.Release, candidate.ReleaseID)
 	}
-	if selected.Configuration != prod.Configuration || selected.Grants != prod.Grants ||
+	if selected.Configuration != prod.Configuration || !reflect.DeepEqual(selected.Grants, prod.Grants) ||
 		selected.Storage != prod.Storage || len(selected.Calls) != len(prod.Calls) ||
 		len(selected.Allows) != len(prod.Allows) || selected.Events.Key != prod.Events.Key ||
 		len(selected.Events.Subscriptions) != len(prod.Events.Subscriptions) {

@@ -29,11 +29,15 @@ type Editable struct {
 // instance calls, admits or subscribes to — so the committed resolution predates the record and the compiled files
 // still show the relationships it names. Regenerating it is the caller's next step, not this use case's: the
 // resolution is decided from every instance in a pinned revision, which is more than one record pair.
+// AllocationStale says the change altered what the instance may reach, which the whole tree's render decides: the
+// allocation gives it a proxy port and the proxy's configuration copies its grants, so the committed documents
+// predate the record until that render runs.
 type Edition struct {
 	Application, Environment, Change string
 	Before, After                    kernel.InstanceSpec
 	Compilation                      kernel.Compilation
 	ResolutionStale                  bool
+	AllocationStale                  bool
 	Written                          []files.Outcome
 }
 
@@ -63,7 +67,8 @@ func Edit(editable Editable, destination string, writer files.Writer) (Edition, 
 		return Edition{Compilation: compiled}, err
 	}
 	result := Edition{Application: after.Application, Environment: after.Environment, Change: editable.Change,
-		Before: before, After: after, Compilation: compiled, ResolutionStale: relationshipsChanged(before, after)}
+		Before: before, After: after, Compilation: compiled, ResolutionStale: relationshipsChanged(before, after),
+		AllocationStale: !equal(before.Grants.Egress, after.Grants.Egress)}
 	written := append([]kernel.File{{Path: editable.InstancePath, Document: record}}, files...)
 	result.Written, err = writeCompiled(destination, compiled, written, writer)
 	return result, err

@@ -117,7 +117,7 @@ def routes(ctx: Context) -> list[Route]:
             elif role == 'publishes':
                 raise actions.ActionError('publications come from the release: v2 does not remove one on the platform')
             elif role == 'reaches':
-                raise actions.ActionError('v2 records no egress grant, so this cannot be removed here')
+                raise actions.ActionError('an egress grant is set with swhurl-v2 edit --set egress=, so this cannot be removed here')
             else:
                 raise actions.ActionError('no such connection to remove')
         elif change == 'allow':

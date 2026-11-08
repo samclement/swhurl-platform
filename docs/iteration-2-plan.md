@@ -1897,3 +1897,116 @@ rather than assumed; signed-out redirects and signed-in pages checked.
 **Not in this slice.** Document parsing and the catalogue's offers (`catalogue.Documents`, `apps/offers.py`), the
 map's layout, the team registry and its channels, the compiled variables table the app page prints, the Platform
 page's unit list, and every write path.
+
+## 22. Feature flags in Go: the overrides adapter and the console's card (proposed 9 November 2026)
+
+**Decision.** The console's **Feature flags** card stops being Python. The one dependency v2 lacks is NATS's
+key-value store, so this slice adds `adapters/nats` — an external-effect adapter, proposed here — together with
+the pure flags model, the use case, the command and the console's switch to it. The operator agreed the split
+on 9 November 2026: the flags work lands first, so the console server slice contains no new external effect
+and a wrong write to a live app's flag cannot hide inside a template port. This contract, including the adapter
+approval, is what the operator reads before the slice starts.
+
+**Meaning.** The card's own words, unchanged, with the states now stated once in Go:
+
+- A **declaration** is the app's `offers/flags.json` beside its record: `{name: {type, description, default,
+  staging?, prod?, min?, max?, enum?}}`. No file means the image declares no flags, which is not a problem; a
+  file that cannot be read is a `problem` the card shows, and nothing is set from it.
+- The **declared value** in an environment is the `staging` or `prod` key when the declaration has one, else
+  `default`. An **override** is one key-value entry in bucket `flags-<env>` under `<env>.<app>.<flag>`, its value
+  as JSON. A tombstone is not an override. A stored value that is not JSON is an override with no usable value,
+  which the app ignores too. **Effective** is the override when there is one, else the declared value.
+- An **undeclared override** is listed after the declared flags and can only be cleared. An override **age** is
+  whole days since NATS stored it, and **stale** at 14 days or more: a mark on the card, never a refusal.
+- **Set** writes a declared flag only, and only a value the declaration admits: `true`/`false` for a boolean,
+  a whole number inside 32 bits and within `min`/`max`, a finite number within `min`/`max`, a string inside
+  `enum` when it has one. **Clear** takes one flag name (kebab case, at most 40 characters) and needs no
+  declaration. Both are idempotent, so re-running one after a lost reply is safe, and neither is retried by v2.
+- The bucket, the stream and the subject are the kernel's names already (`kernel/users.go` states them for the
+  app users and the console user); the adapter receives subjects and re-derives nothing.
+
+**Boundaries.**
+
+- `kernel/flags.go` (layer 0): decode and validate `flags.json`; a flag's declared value for an environment;
+  whether a stored value fits its declaration; the form's text as the declared type; and the report's rows from
+  a declaration, its overrides and an explicit time. Exported names move out of `users.go` unchanged in meaning
+  (`FlagsBucket`, `FlagsStream`, `FlagSubject`, `ConsoleInbox`) so that no reader restates them.
+- `kernel/nkey.go` gains the decode beside the encode it already has — `DecodeUserSeed(text) ([32]byte, error)`
+  and `Sign(seed [32]byte, data []byte) []byte` — because the base32 alphabet, the prefixes and the CRC-16 the
+  seed is written with are the kernel's. Nothing else of the seed is used; it is never printed, recorded or put
+  in an error.
+- `adapters/nats` (layer 1) is the protocol, and only the protocol: `Open(ctx, url, seed) (KV, error)`, then
+  `KV.Info(ctx, stream, filter)`, `KV.Get(ctx, stream, key)` and `KV.Put(ctx, subject, value, headers)`, and
+  `Close()`. The standard library covers it (`crypto/ed25519`, `encoding/base32`, `net`), so `stdlib-only` is
+  untouched. One connection per `Open`, no pool, the same 5 s timeout: the console opens one per request, as it
+  does today. Sign-in signs the server's nonce with the seed; `no_responders`, headers and protocol 1 are asked
+  for as now, and a `503` answer means nothing listens on the subject (the bucket is missing).
+- `orchestration/flags.go` (layer 2): records → declaration → overrides → rows, and the same decision once more
+  for one write before anything is published. It prints nothing, chooses no exit status, and takes the time and
+  the store as arguments.
+- `cmd/swhurl-v2/flags.go` (layer 3): `swhurl-v2 flags --records DIR --app APP --env ENV [--set FLAG=TEXT |
+  --clear FLAG] [--json]`. `NATS_URL` (default the in-cluster address) and `NATS_SEED` come from the
+  environment, as the console's own adapter reads them; there is no kubeconfig and no `--in-cluster`, because
+  NATS is not Kubernetes. `--set` takes the form's text, not a typed value, so typing and its refusals have one
+  home; it splits at the first `=`.
+
+**Contract.**
+
+```text
+swhurl-v2 flags --records v2-records --app demo-shop --env prod            # the card's rows, as text
+swhurl-v2 flags … --set shout=true                                        # write, then print the rows
+swhurl-v2 flags … --clear old-banner  /  … --json
+{"kind":"v2-flags","version":1,"instance":{"application","environment"},
+ "writable":true,"problem":"","rows":[…]}
+```
+
+- A row: `name`, `declaration` (`type`, `description`, `default`, `value` for this environment, `min`, `max`,
+  `enum`, each omitted when the declaration has none), `undeclared`, `overridden`, `override` (omitted when
+  none), `storedAt` (RFC 3339 or empty), `ageDays` (a number, or absent when the time could not be read),
+  `stale`, `effective`. Declared flags come first, each sorted by name, then undeclared overrides sorted by name.
+  `writable` is true exactly when a seed is configured — so the card disables **Set** and **Clear** for the same
+  reason it does today — and does not depend on whether a read succeeded.
+- `problem` is empty when the declaration and the overrides were both read. A declaration that cannot be read
+  sets it and still lists every override, clearable; NATS unreachable sets it and still lists the declaration.
+- Exit 0 whenever a report is printed, whatever the state; 2 for a refusal — no such record, an environment
+  that is not `staging` or `prod`, a flag name, type or key the declaration refuses, an undeclared flag, a
+  value outside its declaration, a write with no seed, or NATS refusing — with v2's own words on stderr, which
+  the console shows unchanged.
+- `--set` and `--clear` print the report they read back after the write, so the card states what is stored and
+  not what was asked for.
+- **Words preserved:** a refusal keeps today's wording (`choose true or false`, `give a whole number`,
+  `give a number`, `must be one of …`, `outside min and max`, `does not declare …`), and a transport failure
+  keeps `cannot reach NATS at …`, `NATS did not answer in time` and `nothing answers … (is the bucket there?)`.
+  The audit line is the console's and is unchanged: `[AUDIT] <who> flag <app>/<env> <flag> = <json>` or `…
+  cleared`.
+
+**Deliberate changes.**
+
+- The card reads its declaration from the pinned input bundle's `v2-records/<app>/<env>/offers/flags.json` —
+  the record's own copy, which the render copies byte for byte — instead of from GitHub at the cluster's offers
+  annotation. One page can no longer show a declaration from a different commit than its own rows; the bundle's
+  filter gains the offers documents' fixed names.
+- A malformed `flags.json` no longer empties the card: the problem is shown and the overrides are still listed
+  and clearable, which is what an operator needs to remove an override of a flag the image stopped declaring.
+- The browser's text is typed and checked in Go, so the route no longer carries a second copy of the rules.
+
+**Deletions.** `tools/swhurl/console/flagstore.py` (237 lines) and `tests/test_flagstore.py`, whose fake NATS
+server becomes `adapters/nats`'s raw fixtures and scripted-server contract test; `flagstore` from the
+console's context, server and app-page route and their fakes; `apps/nkeys.py`'s console use (the module stays
+while the live tests and `model/write.py` still sign in with it, and leaves with them).
+
+**Verification.** Go: table tests for every row state — declared with and without an override, an undeclared
+override, a tombstone, a stored value that is not JSON, an unreadable stored time, both environment keys, a
+stale boundary at 13 and 14 days, no document, a malformed document, no seed, NATS unreachable — and for every
+refusal; the adapter's `Contract` suite, run against the real adapter on a scripted in-process server and
+against its fake, covering INFO with a nonce, the CONNECT fields, PING/PONG, `MSG` and `HMSG` replies, a
+status line, `-ERR`, a closed connection and a timeout. `make check-v2` with `Layers` and `api.txt` updated in
+the same change (say why in the change). `make check` for the console, whose flag tests lose their Python
+store and assert their words through a fake command. Live, on a throwaway instance: `flags` lists the rows;
+a set reaches the running app without a restart; a clear returns the declared value; an undeclared flag and a
+value outside its declaration are refused with those words; the same two writes go through the deployed
+console's card in an in-cluster request with the forward-auth header, and the audit lines appear in the pod's
+log. Signed-in browser and promotion of a changed declaration stay unexercised until they are.
+
+**Not in this slice.** A record that owns a flag's *state* (the deferred row stays), retention of overrides,
+flags in a rendered variable, the console's server and its 18 templates, and `apps/nkeys.py`'s removal.

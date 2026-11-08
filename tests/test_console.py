@@ -115,6 +115,7 @@ class ConnectionsTests(unittest.TestCase):
                 api='https://staging-orders.homelab.swhurl.com/openapi.json',
                 callers=['reports'], publishes=['created', 'paid'],
                 connections=[{'role': 'publishes', 'event': 'created'}, {'role': 'publishes', 'event': 'paid'},
+                             {'role': 'reaches', 'host': 'api.stripe.com:443'},
                              {'role': 'called-by', 'app': 'reports', 'outcome': 'connected'},
                              {'role': 'subscriber', 'app': 'job', 'event': 'created', 'outcome': 'connected'}]),
             ('orders', 'prod'): inventory(
@@ -190,9 +191,12 @@ class ConnectionsTests(unittest.TestCase):
         self.assertEqual(rows['reports', 'staging'].summary, 'calls 1')
         self.assertEqual([(r.direction, r.kind, r.app, r.event, r.team) for r in orders.rows],
                          [('out', 'event', '', 'created', ''), ('out', 'event', '', 'paid', ''),
+                          ('out', 'host', '', 'api.stripe.com:443', ''),
                           ('in', 'call', 'reports', '', '<b>insights'), ('in', 'event', 'job', 'created', 'payments')],
                          'what it declared first, then what others declared about it')
         self.assertEqual([(r.role, r.app, r.event) for r in rows['job', 'staging'].rows], [('subscribes', 'orders', 'created')])
+        self.assertEqual([(r.role, r.event) for r in orders.rows if r.role == 'reaches'],
+                         [('reaches', 'api.stripe.com:443')], 'a host outside the cluster keeps its host:port')
 
 
 

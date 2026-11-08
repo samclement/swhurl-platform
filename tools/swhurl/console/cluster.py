@@ -60,7 +60,8 @@ class Connections:
             reason = row.get('reason', '')
             peer = row.get('app', '')
             status = WORDING[reason].format(app=peer, env=env, event=row.get('event', '')) if reason else ''
-            rows.append(links.Connection(row['role'], app=peer, event=row.get('event', ''),
+            # A host outside the cluster is a row too, and its host:port is the column an event name takes.
+            rows.append(links.Connection(row['role'], app=peer, event=row.get('event') or row.get('host', ''),
                                          team=(teams or {}).get(peer, ''), status=status))
         return cls(address=inventory['address'], api=inventory['api'],
                    calls=tuple(inventory['calls']), callers=tuple(inventory['callers']),

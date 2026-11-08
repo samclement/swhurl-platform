@@ -212,12 +212,14 @@ resolution and the allocation record is provenance, not content, so it is not co
 
 edit applies one named change to one v2-owned instance's record, compiles the edited record, and writes the
 record and the files it renders under --out in one effect: the settings are replicas, memoryMiB, exposure,
-calls, allows and subscriptions, each the whole new value (an empty list clears it), and team, which is the app
-record's fact and so names no environment and re-renders every one of the app's. A change the record or its
-release does not permit is refused by name, and so is one that leaves the record as it was. egress and alerts are
-named settings v2 does not model yet: they are refused rather than accepted as another fact. A change to calls,
+calls, allows, subscriptions and egress, each the whole new value (an empty list clears it), and team, which is the
+app record's fact and so names no environment and re-renders every one of the app's. A change the record or its
+release does not permit is refused by name, and so is one that leaves the record as it was. alerts is a named
+setting v2 does not model yet: it is refused rather than accepted as another fact. A change to calls,
 allows or subscriptions writes the record the resolution predates: the report says so (resolutionStale) and the
-operator regenerates v2-records/calls.json from the edited tree.
+operator regenerates v2-records/calls.json from the edited tree. A change to egress writes the record the
+allocation predates: the proxy's port and configuration are the whole tree's render, so the report says so
+(allocationStale) and the operator renders the tree before committing.
 
 create states a new app's first instance from the image its repository published: the image resolves through the
 registry, states its own declaration and the commit it was built from, and its records are written under --records.

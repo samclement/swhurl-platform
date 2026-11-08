@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -332,6 +333,60 @@ func TestRenderGrantsADatabaseItsBackupOrRefusesIt(t *testing.T) {
 	}
 	if writer.Writes != 0 || writer.Prunes != 0 {
 		t.Errorf("%d writes and %d prunes", writer.Writes, writer.Prunes)
+	}
+}
+
+// An instance's declared hosts reach the cluster through one path: the record states them, the allocation gives the
+// instance a port and carries them, the proxy's configuration allows exactly those hosts on that port, and the
+// instance's own annotation and variables point at its port. An instance that declares none and keeps no database
+// gets no port at all, so nothing is served for an instance that reaches nothing.
+func TestRenderGrantsAnInstanceTheHostsItsRecordDeclares(t *testing.T) {
+	out, records := renderTree(t)
+	renderInstance(t, records, kernel.InstanceSpec{Application: "demo-external", Environment: "staging",
+		Configuration: kernel.Configuration{Replicas: 1, MemoryMiB: 128},
+		Grants:        kernel.Grants{Exposure: "private", Egress: []string{"api.stripe.com", "*.github.com:8443"}}},
+		renderRelease(t, "demo-external", ""))
+	writer := filestest.New()
+	if status, _, diagnostic := renderRun(t, writer, renderArgs(out, records, "--revision", renderRevision)...); status != 0 {
+		t.Fatalf("render exited %d: %s", status, diagnostic)
+	}
+	allocation, err := kernel.DecodeEgressDocument(writer.Contents[allocationPath])
+	if err != nil {
+		t.Fatal(err)
+	}
+	granted, err := allocation.EgressOf("demo-external", "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"*.github.com:8443", "api.stripe.com"}; !slices.Equal(granted.Grants, want) {
+		t.Fatalf("the instance is allocated %q, want %q", granted.Grants, want)
+	}
+	if _, err := allocation.EgressOf("demo-orders", "staging"); err == nil {
+		t.Error("an instance with no grant and no database was allocated a port")
+	}
+	// The proxy allows the hosts on the instance's port, and nothing else is named for it.
+	configuration := writer.Contents["platform/egress/configmap.json"]
+	for _, want := range []string{"http_port " + strconv.Itoa(int(granted.Port)) + " name=demo-external-staging",
+		"acl demo-external-staging-443 dstdomain -n api.stripe.com",
+		"acl demo-external-staging-8443 dstdomain -n .github.com"} {
+		if !strings.Contains(string(configuration), want) {
+			t.Errorf("the proxy's configuration has no %q", want)
+		}
+	}
+	policy := string(writer.Contents["platform/egress/networkpolicy.json"])
+	if !strings.Contains(policy, "demo-external-staging") {
+		t.Error("the proxy's policy does not admit the instance's namespace")
+	}
+	// The instance is told its port, and its release states what it may reach.
+	release := string(writer.Contents["v2-apps/instances/demo-external/staging/helmrelease.json"])
+	if want := `"platform.swhurl.com/egress":"*.github.com:8443,api.stripe.com"`; !strings.Contains(release, want) {
+		t.Errorf("the release does not state its grants:\n%s", release)
+	}
+	if want := "http://" + "egress.egress.svc.cluster.local:" + strconv.Itoa(int(granted.Port)); !strings.Contains(release, want) {
+		t.Errorf("the instance's clients are not pointed at %q", want)
+	}
+	if orders := string(writer.Contents["v2-apps/instances/demo-orders/staging/helmrelease.json"]); strings.Contains(orders, "platform.swhurl.com/egress") {
+		t.Error("an instance that declares no grant states one")
 	}
 }
 

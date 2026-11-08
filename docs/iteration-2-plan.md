@@ -1731,3 +1731,52 @@ run succeeds through the new path, which is the only live path this changes.
 **Delivery, one commit after the contract.** Docs change with the code: [commands](commands.md), [services](services.md),
 the egress lesson in `AGENTS.md`, [v2 status](v2-status.md) and the [workstream registry](workstreams.md), plus a
 dated entry in [current state](current-state.md).
+
+## 19. Egress grants an instance declares (approved 8 November 2026)
+
+The operator chose this over the next retirement slice: it is the one deferred feature that blocks an ordinary request
+(an app that needs Stripe), and the machinery it needs already exists and is enforced. The proxy, its configuration, the
+allocation and the policy were v2's from 26 October 2026; what was missing was a way for a record to state a host.
+
+**Semantics.** A grant is one host an instance may reach outside the cluster, held in that environment's instance record
+under `grants`, beside the exposure that says who may reach it: `"grants": {"exposure": "private", "egress":
+["api.stripe.com", "*.github.com:8443"]}`. It is the operator's statement of what the instance needs, never the app's:
+an app's `swhurl.yaml` cannot declare one, and a grant is per environment, so a promotion never widens production.
+
+**The one form the platform reads.** `kernel.EgressGrants` reads a record's list and writes what it read: lowercase, a
+wildcard as `*.domain`, 443 written by its absence, sorted by port and then host, and nothing for an empty list (the
+field is absent, not `[]`). Three refusals, at field `grants.egress`: something that is not a host and port (an IP
+address, a URL, a path), a port outside 1–65535, and the same authority stated twice — a host granted twice, or a host
+a wildcard grant on the same port already covers. The third is where a record differs from the allocation: the
+allocation's reader reduces such a pair instead, because the platform adds a database's backup host, which a wildcard
+grant may legitimately cover.
+
+**Boundaries.** The record states outside hosts only; the backup host stays the profile's fact. The allocation decides
+ports and carries the grants; the proxy's configuration and policy, and the instance's `platform.swhurl.com/egress`
+annotation and proxy variables, are rendered from it. So the three writes are separate by design:
+
+| Step | Writes | What it decides |
+| --- | --- | --- |
+| `swhurl-v2 edit --set egress=…` | the instance record, and the files it compiles from the committed allocation | the hosts, and only the hosts |
+| `make v2-render` | the allocation, the proxy's two documents, the instance's folder and unit | the port, the proxy's ACLs, the annotation and the variables |
+| `git commit` and Flux | nothing of its own | the cluster, through the proxy's ConfigMap |
+
+`edit` therefore reports `allocationStale` and prints the render to run, exactly as a declaration change reports
+`resolutionStale`. A port is given to any instance that declares a grant or keeps a database, and to nothing else.
+
+**Identity.** The grants take part in the instance revision, last in the canonical instance array, so two records that
+reach different hosts have different revisions; the record's list is cloned wherever a record is returned, like the
+declaration lists. This changed every instance's revision without changing a rendered file: the revision is the
+compilation's input identity, not part of a manifest, and the checks compare the tree that way (`render --check`: 157
+files, 0 differ).
+
+**Not in this slice.** A console form (the **Connect** and **Egress** pages keep showing what is rendered), grants at
+creation, a per-instance "no egress" instruction, and any change to the proxy's own deployment. The first is a
+console-port slice of its own.
+
+**Verification.** Kernel and command tests: the normalised form, each refusal, the round trip, the identity, the
+allocation entry, the proxy's ACLs and the annotation for a declared grant, and no allocation for an instance that
+declares nothing. `make check-v2` (Go tests, guardrails, `render --check`), `make check-repo`, `make test` and
+`make check-docs`. Live: one throwaway instance is granted a host it could not reach, the granted host answers 200 and
+an ungranted one 403 with `granted=-` in the proxy's log, from a pod in that instance's namespace, then the grant is
+cleared and re-rendered ([current state](current-state.md)).

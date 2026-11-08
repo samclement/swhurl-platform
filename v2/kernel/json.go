@@ -126,7 +126,7 @@ func DecodeInstance(data []byte) (InstanceSpec, error) {
 		optional []string
 	}{
 		{"configuration", []string{"replicas", "memoryMiB"}, nil},
-		{"grants", []string{"exposure"}, nil},
+		{"grants", []string{"exposure"}, []string{"egress"}},
 		{"bindings", nil, nil},
 		// An instance's broker identity is one block: the key it signs in with and the subscriptions it grants
 		// itself, both optional inside it.

@@ -16,15 +16,27 @@ func allocationAt(pinned snapshot, previous kernel.EgressDocument, profile kerne
 	return kernel.EgressDocument{Kind: "v2-egress", Version: 1, Revision: pinned.Revision, Instances: allocations}, nil
 }
 
-// egressFacts is what the records say about each instance's way out: a database's backup must upload, and no
-// record declares another host.
+// egressFacts is what the records say about each instance's way out: the hosts its grants declare, and a database
+// whose nightly backup must upload through the same port.
 func egressFacts(pinned snapshot) []kernel.EgressFacts {
 	facts := make([]kernel.EgressFacts, 0, len(pinned.Instances))
 	for _, instance := range pinned.Instances {
 		facts = append(facts, kernel.EgressFacts{Application: instance.Application, Environment: instance.Environment,
-			Database: declaredDatabase(instance)})
+			Grants: declaredEgress(instance), Database: declaredDatabase(instance)})
 	}
 	return facts
+}
+
+// declaredEgress is the hosts the instance's own record grants it. The platform's backup host is not among them: it is
+// the profile's grant, added to every instance that keeps a database.
+func declaredEgress(instance snapshotInstance) []string {
+	var record struct {
+		Grants struct{ Egress []string }
+	}
+	if json.Unmarshal(instance.Records["instance"], &record) != nil {
+		return nil
+	}
+	return record.Grants.Egress
 }
 
 // declaredDatabase is whether the instance's release keeps a database, whose nightly backup uploads through

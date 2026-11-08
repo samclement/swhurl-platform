@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -44,7 +45,7 @@ func TestPromoteSelectsStagingsReleaseForProduction(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Instance.Configuration != before.Configuration || result.Instance.Storage != before.Storage ||
-		result.Instance.Grants != before.Grants || len(result.Instance.Calls) != len(before.Calls) {
+		!reflect.DeepEqual(result.Instance.Grants, before.Grants) || len(result.Instance.Calls) != len(before.Calls) {
 		t.Fatalf("production changed beyond its release: %+v", result.Instance)
 	}
 	release, err := kernel.DecodeRelease(writer.Contents["v2-records/demo-orders/prod/release.json"])

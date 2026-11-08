@@ -10,6 +10,7 @@ An app's life, and where each step is described. Every app comes from a stack te
 | Ship a new version | — | push to the app's repository | [Deploy a new image](#deploy-a-new-image) |
 | Promote to production | **Promote to production** | `swhurl-v2 promote` (the console runs it) | [Promote to production](#promote-to-production) |
 | Choose who can reach it | **Change access** | `swhurl-v2 edit --set exposure=…` | [Who can reach it](#who-can-reach-it) |
+| Let it reach a host outside | — (shown on **Connect**) | `swhurl-v2 edit --set egress=…`, then `make v2-render` | [Reaching outside the cluster](#reaching-outside-the-cluster) |
 | Move it to another team | **Change team** | `swhurl-v2 edit --set team=…` | [Teams and isolation](#teams-and-isolation) |
 | Give it secrets | — | not modelled by v2 ([secrets](#secrets)) | [Secrets](#secrets) |
 | Keep dependencies current | — | Renovate pull requests in the app's repository | [Dependency updates](#dependency-updates-in-app-repositories) |
@@ -283,8 +284,8 @@ provides: {api: /openapi.json}   # optional, web only: where its API description
 #   also apiFile: openapi.json and eventsFile: asyncapi.yaml: where the repository keeps its OpenAPI and AsyncAPI documents (what an app offers)
 flags:                  # optional: feature flags, typed, with a value per environment (see Feature flags)
   new-checkout: {type: boolean, default: false, staging: true}
-# Grants (team, exposure, calls, events.subscribe) are refused here. Set them on the platform: create states
-# flags, then the app page or swhurl-v2 edit --set (team, exposure, calls, allows, subscriptions).
+# Grants (team, exposure, egress, calls, events.subscribe) are refused here. Set them on the platform: create states
+# flags, then the app page or swhurl-v2 edit --set (team, exposure, egress, calls, allows, subscriptions).
 ```
 
 | Field | Kind | Read | After creation |
@@ -305,6 +306,7 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `flags` | offer | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
 | `team` | grant | refused | the app page's **Change team** or `swhurl-v2 edit --set team=…` (one change for every environment), or `--team` at creation |
 | `exposure` | grant | refused | `swhurl-v2 edit --set exposure=…`, or `--exposure` at creation (default: web apps signed-in, workers private) |
+| `egress` | grant | refused | `swhurl-v2 edit --set egress=<host>[,<host>…]`, then the render ([reaching outside the cluster](#reaching-outside-the-cluster)) |
 | `alerts` | grant | refused | Nothing: v2 has no alert setting, and `edit --set alerts` refuses it by name |
 | `calls` | grant | refused | `swhurl-v2 edit --set calls=…` |
 | `events.subscribe` | grant | refused | `swhurl-v2 edit --set subscriptions=…` |
@@ -537,19 +539,21 @@ Rotation is **one-step replacement**, not a dual-key handover: the old user leav
 
 ## Reaching outside the cluster
 
-Every instance reaches the internet through the [egress proxy](services.md#egress-proxy), on a port of its own. Which hosts it may reach is a grant, held on the platform per instance, never in the app's repository.
+Every instance reaches the internet through the [egress proxy](services.md#egress-proxy), on a port of its own. Which hosts it may reach is a grant in that environment's record (`grants.egress`), never in the app's repository: an app that needs Stripe is granted `api.stripe.com` here, and its own code only reads the proxy port the platform gives it.
 
-**v2 records no grant.** An instance's records say nothing about the hosts it may reach, and no command or console form
-grants one: the only host granted today is the platform's backup endpoint, which the profile names for every instance
-that keeps a database ([deletion plan](v2-deletion-plan.md#21-commands)). An app that needs Stripe cannot be granted it
-yet. The console's **Egress** page (from **Platform**) and each app page's connections still show the grants that are
-rendered ([egress proxy](services.md#egress-proxy)); they do not change them.
+**Setting a grant.** `swhurl-v2 edit --records v2-records --app <app> --env <env> --set egress=<host>[,<host>…]`, an
+empty value clearing it, then `make v2-render` and a commit. The edit writes the record and says `allocationStale`,
+because the proxy's port and its configuration belong to the whole tree's render rather than to one record's change:
+until that render the instance's release carries neither. A new instance's first render gives it the lowest free port,
+and a re-render never moves it. The record states outside hosts only: when the release keeps a database, the platform
+adds its own backup host to the allocation, which no record states ([egress proxy](services.md#egress-proxy)). Grants
+are per environment, so staging may reach a sandbox host production may not, and a promotion never widens production.
 
 **Which clients follow the proxy** by themselves, and how to point Micronaut's client or an SDK with its own at it: the generated app's README, section *Reaching outside the cluster*.
 
 **What a grant does.** The proxy refuses a request whose host and port no grant of that instance names: the client gets `403`, the line is logged `granted=-`, and the app's log shows the failed request. A grant is therefore required before an app depends on a host. In ClickStack, search service `egress` for `granted=-` to find traffic nothing covers; the platform's own backup jobs reach the backup bucket through their instance's grant ([services](services.md#egress-proxy)).
 
-**Rules.** A grant is a host name with a port (443 when none is given); `*.stripe.com` is any name under `stripe.com` and `stripe.com` itself. IP addresses are refused: only HTTP(S) through the proxy is planned, and only host names are checked, never the path inside HTTPS. A name already inside a wildcard grant of the same port is refused, as is granting a host twice. Grants are per environment: a promotion never widens production (staging may use a sandbox host). Grants are v2's (an instance's record grants the platform's backup host; an outside host is not modelled), so `make check-apps` no longer checks their format: `make check-v2` fails when the proxy's committed configuration is not what the records and the allocation render (CI regenerates it and fails on a diff), and `make verify-platform` reports every instance's port.
+**Rules.** A grant is a host name with a port (443 when none is given); `*.stripe.com` is any name under `stripe.com` and `stripe.com` itself. IP addresses are refused: only HTTP(S) through the proxy is planned, and only host names are checked, never the path inside HTTPS. A host granted twice, or one a wildcard grant on the same port already covers, is refused rather than reduced, so a record states each authority once; an edit writes them lowercase and sorted. `v2/kernel/proxy.go` is the one reader of that form, and `make check-v2` fails when the proxy's committed configuration is not what the records and the allocation render (CI regenerates it and fails on a diff). `make verify-platform` reports every instance's port. The console's **Egress** page (from **Platform**) and each app page's connections show the grants the rendered release carries; they do not change them, and the `edit` above is the one way to.
 
 ## What an app offers
 
@@ -833,7 +837,7 @@ make app-status APP=<app> ENV=prod
 
 or **Review promotion** in the console, which runs the same command and opens a held pull request. Promotion always means staging → production, and v2 needs production's records to exist already. The command refuses a release staging does not select, a stale expectation, a user change on an instance with a volume, and anything the compiler refuses. Production runs staging's release: the image and what it declares (its needs, description, API path and offered documents). A first promotion creates production's records from staging's; a later one keeps production's own settings and capacity and renders the files again, so only what the release changes differs. Resources rise to the image's minimum where it is above production's capacity; a minimum production's quota cannot hold at its replicas is refused. Equal digests are the same image regardless of tag: no files change. Different repositories require a reviewed Git edit. An older known build is labelled a rollback; database migrations are not reversed.
 
-v2 copies nothing but the release: production's replicas, exposure, calls, subscriptions, memory and volume stay its own, it has its own address, its own egress port and its own empty database, and staging must be what its records render (the command refuses a stale expectation).
+v2 copies nothing but the release: production's replicas, exposure, calls, subscriptions, egress, memory and volume stay its own, it has its own address, its own egress port and its own empty database, and staging must be what its records render (the command refuses a stale expectation).
 
 Production gets independent, initially empty storage. Startup applies database migrations normally. Staging data, PV bindings and credential values are never copied. A public app needs a distinct production host; signed-in apps use the generated production address (`<app>.homelab.swhurl.com`). Runtime configuration changes are edits on production's own records, and the render writes what they decide.
 
@@ -950,7 +954,7 @@ Every instance is rendered from three records and one compiled folder, which onl
 | `v2-records/<app>/<env>/instance.json` | grants (exposure, calls, allows, subscriptions), the settings the record owns (replicas, memory MiB) and allocations (NATS public key, database claim) | `swhurl-v2 edit` and `remove`, promotion, creation |
 | `v2-apps/instances/<app>/<env>/` | the compiled folder: HelmRelease, quota, NetworkPolicy, route, stream and consumers, the offered documents | v2's render, from those records; never by hand |
 
-The console's app page shows the instance's state (in the same vocabulary as `make app-status`) and offers **Reconcile** and **Scale**. Its forms run `swhurl-v2 edit` (one named change) or `swhurl-v2 remove`/`promote`, then `swhurl-v2 render`, in a scratch checkout; the pull request carries the records and the files they render, and every v2 pull request is held for a person. An edit refuses, without writing, a change v2 does not model — `egress` and `alerts` by name — and an instance whose committed files are not what its records render; `make check-apps` reports the same difference. Resources render as the larger of the record's value and the image's minimum (or the platform's default when the image states none), so a scale edit refuses a value below either, and the **Scale** form shows what the record states.
+The console's app page shows the instance's state (in the same vocabulary as `make app-status`) and offers **Reconcile** and **Scale**. Its forms run `swhurl-v2 edit` (one named change) or `swhurl-v2 remove`/`promote`, then `swhurl-v2 render`, in a scratch checkout; the pull request carries the records and the files they render, and every v2 pull request is held for a person. An edit refuses, without writing, a change v2 does not model — `alerts` by name — and an instance whose committed files are not what its records render; `make check-apps` reports the same difference. Resources render as the larger of the record's value and the image's minimum (or the platform's default when the image states none), so a scale edit refuses a value below either, and the **Scale** form shows what the record states.
 
 Each instance's egress port is kept in [`platform/egress/allocation.json`](../platform/egress/allocation.json), carried from the previous allocation, so a re-render never moves it and a new instance takes the lowest free one; the database claim's name is in the record, so an existing volume keeps its data. One render writes every instance's compiled folder and unit, the resolution, the allocation and the proxy's configuration, `platform/auth`, the broker's user list and Reloader's watch list ([v2 status](v2-status.md#where-it-stands)); there are no separate egress, auth, users or Reloader commands left to run.
 

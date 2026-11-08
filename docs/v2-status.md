@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: a scoped contract and approval for the next retirement slice
+Gate: the live proof of §19's grants, then a scoped contract for the next retirement slice
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -62,6 +62,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Create | done | [record](current-state.md#a-new-app-created-from-its-own-image-live-1-november-2026) |
 | Console writes v2's records | done | [record](current-state.md#the-consoles-new-app-is-v2s-live-1-november-2026) |
 | Interface catalogue: templates and v2's tree | done | [record](current-state.md#the-interface-catalogue-checks-the-templates-and-v2s-tree-2-november-2026) |
+| Egress grants an instance declares (`edit --set egress=`, rendered to the proxy) | done | [record](current-state.md#an-instances-egress-grants-are-its-records-8-november-2026) |
 
 ## Remaining Python
 
@@ -88,8 +89,8 @@ loses its `run=` function.
 ## Remaining work
 
 Ordered; each item is small enough to land and verify alone. The order follows what a real app needs and
-what Python each slice deletes, not feature parity: v2 changes seven things after creation (`replicas`,
-`memoryMiB`, `exposure`, `calls`, `allows`, `subscriptions`, `team`), and the deferred list is capability,
+what Python each slice deletes, not feature parity: v2 changes eight things after creation (`replicas`,
+`memoryMiB`, `exposure`, `calls`, `allows`, `subscriptions`, `egress`, `team`), and the deferred list is capability,
 not migration.
 
 **A. The record.** One claim left to settle, and it changes no code.
@@ -145,7 +146,6 @@ operator decides against it.
 
 | Feature | v2 today | Reopen when |
 | --- | --- | --- |
-| Egress grants declared by an instance record | Only the platform's backup host; `edit --set egress=` is refused by name | An instance must reach an outside host of its own |
 | An instance that must not reach outside | Every instance that needs one gets a proxy port; nothing withholds one | A kind that must not egress |
 | The egress namespace's own egress | Not restricted (the rendered policy states Ingress only) | Default-deny for the platform's own namespaces |
 | Routes: `public`, a host override | `authenticated-web` and `private` only; no host is stored; status reads the expected route and certificates by name | An instance needs a public route or an unusual host |

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -20,6 +21,7 @@ type editReport struct {
 	Environment     string `json:"environment"`
 	Before, After   string
 	ResolutionStale bool     `json:"resolutionStale"`
+	AllocationStale bool     `json:"allocationStale"`
 	Instances       []string `json:"instances"`
 	Files           []struct {
 		Path  string `json:"path"`
@@ -84,8 +86,8 @@ func TestEditCLI(t *testing.T) {
 func TestEditCLIRefusals(t *testing.T) {
 	root := editTree(t)
 	for _, refused := range []struct{ setting, want string }{
-		{"egress=example.com", "refused: egress: not_modelled"},
 		{"alerts=none", "refused: alerts: not_modelled"},
+		{"egress=10.0.0.1", "invalid: grants.egress: expected a host name or *.domain"},
 		{"replicas=2", "refused: replicas: already_set"},
 		{"replicas=x", "invalid: replicas: expected an integer"},
 		{"hosts=a", `invalid: set: unknown setting "hosts"`},
@@ -97,6 +99,35 @@ func TestEditCLIRefusals(t *testing.T) {
 		if writer.Writes != 0 {
 			t.Errorf("%s wrote something", refused.setting)
 		}
+	}
+}
+
+// An egress change writes the hosts the record grants and says the allocation is older than it: the proxy's port and
+// configuration are the whole tree's render, so nothing else of this edit reaches the cluster's documents.
+func TestEditCLIEgress(t *testing.T) {
+	root := editTree(t)
+	status, report, diagnostic, writer := editRun(t, root, "--env", "staging",
+		"--set", "egress=API.Stripe.COM,example.com:8443")
+	if status != 0 {
+		t.Fatalf("edit exited %d: %s", status, diagnostic)
+	}
+	if !report.AllocationStale || report.ResolutionStale || !strings.Contains(diagnostic, "egress allocation is older") {
+		t.Fatalf("the report is %+v (%s)", report, diagnostic)
+	}
+	instance, err := kernel.DecodeInstance(writer.Contents["v2-records/demo-orders/staging/instance.json"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"api.stripe.com", "example.com:8443"}
+	if !reflect.DeepEqual(instance.Grants.Egress, want) {
+		t.Fatalf("the record grants %q, want %q", instance.Grants.Egress, want)
+	}
+	if _, written := writer.Contents["v2-apps/instances/demo-orders/staging/helmrelease.json"]; !written {
+		t.Error("the compiled files were not written")
+	}
+	cleared, err := kernel.WithEgress(instance, nil)
+	if err != nil || cleared.Grants.Egress != nil {
+		t.Fatalf("clearing the grants left %q (%v)", cleared.Grants.Egress, err)
 	}
 }
 

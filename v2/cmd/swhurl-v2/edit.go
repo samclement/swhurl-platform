@@ -27,6 +27,7 @@ type editDocument struct {
 	Before          string          `json:"before"`
 	After           string          `json:"after"`
 	ResolutionStale bool            `json:"resolutionStale"`
+	AllocationStale bool            `json:"allocationStale"`
 	Instances       []string        `json:"instances,omitempty"`
 	Files           []files.Outcome `json:"files"`
 	Note            string          `json:"note,omitempty"`
@@ -46,9 +47,14 @@ type editChange struct {
 const resolutionStaleNote = "the resolution is older than this change: regenerate v2-records/calls.json from the " +
 	"edited tree and compile again before committing"
 
+// allocationStaleNote is what an egress change leaves to the operator: the allocation gives the instance its proxy port
+// and copies its grants into the proxy's configuration, and it is the whole tree's render that decides both.
+const allocationStaleNote = "the egress allocation is older than this change: run `make v2-render` to give the instance " +
+	"its port and render the proxy's configuration and the instance's annotation before committing"
+
 // editSettings is every setting an edit names, with the parser that reads its value. A setting v2 does not model is
-// named too, so it is refused by name instead of being mistaken for another fact: an egress grant is a record field
-// v2 does not have, and an alert is a platform document it does not render yet.
+// named too, so it is refused by name instead of being mistaken for another fact: an alert is a platform document it
+// does not render yet.
 var editSettings = map[string]func(string) (editChange, error){
 	"replicas":      instanceSetting("replicas", kernel.WithReplicas),
 	"memoryMiB":     instanceSetting("memoryMiB", kernel.WithMemory),
@@ -57,7 +63,7 @@ var editSettings = map[string]func(string) (editChange, error){
 	"allows":        listSetting("allows", kernel.WithAllows),
 	"subscriptions": listSetting("subscriptions", kernel.WithSubscriptions),
 	"team":          teamSetting,
-	"egress":        notModelled("egress"),
+	"egress":        listSetting("egress", kernel.WithEgress),
 	"alerts":        notModelled("alerts"),
 }
 
@@ -185,6 +191,9 @@ func (c cli) edit(r request) int {
 		len(result.Written))
 	if result.ResolutionStale {
 		fmt.Fprintln(c.diagnostic, resolutionStaleNote)
+	}
+	if result.AllocationStale {
+		fmt.Fprintln(c.diagnostic, allocationStaleNote)
 	}
 	return emit(c.out, c.diagnostic, document)
 }
@@ -339,9 +348,12 @@ func encodeEdit(result orchestration.Edition) ([]byte, error) {
 	document := editDocument{Kind: "v2-edit", Version: 1, Change: result.Change,
 		Application: result.Application, Environment: result.Environment,
 		Before: string(before), After: string(after), ResolutionStale: result.ResolutionStale,
-		Files: nonNilOutcomes(result.Written)}
+		AllocationStale: result.AllocationStale, Files: nonNilOutcomes(result.Written)}
 	if result.ResolutionStale {
 		document.Note = resolutionStaleNote
+	}
+	if result.AllocationStale {
+		document.Note = allocationStaleNote
 	}
 	return encodeDocument(document)
 }

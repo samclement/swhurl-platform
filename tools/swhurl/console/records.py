@@ -82,8 +82,8 @@ def rows(declared: Declared, live: tuple[Connection, ...], read: Reader | None =
     What Git declares comes first, each row carrying why it does not connect yet — the same reasons v1's
     relation evaluator gave, because they are the platform's, not a renderer's: a target that is absent, a
     target that does not allow this app, an event the target does not publish. Then what only the cluster
-    shows: a removal Git has made and the cluster has not applied, an egress grant (which v2 does not record)
-    and the subscribers other apps declare.
+    shows: a removal Git has made and the cluster has not applied, an egress grant (which only
+    ``swhurl-v2 edit --set egress=`` writes) and the subscribers other apps declare.
 
     ``team:<name>`` grants are not rows: a grant names a rule, and which apps satisfy it is the resolver's
     answer, not this page's guess. The Allowed callers list shows them as the grants they are.
@@ -115,7 +115,7 @@ def rows(declared: Declared, live: tuple[Connection, ...], read: Reader | None =
             continue
         if row.role in ('calls', 'subscribes'):  # Git no longer declares it, the cluster still runs it
             shown.append(replace(row, status='removed in Git, still observed live'))
-        elif row.role in ('reaches', 'subscriber'):  # observed only: v2 records no egress grant, no subscriber list
+        elif row.role in ('reaches', 'subscriber'):  # observed only: no page edits a grant or a subscriber list
             shown.append(row)
     return tuple(shown)
 

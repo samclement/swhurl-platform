@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -176,6 +177,78 @@ func parseGrant(text string) (parsedGrant, error) {
 		return parsedGrant{}, refuse(Invalid, "egress.grant", "expected a host name or *.domain, optionally with a port")
 	}
 	return parsedGrant{Host: host, Port: int32(port)}, nil
+}
+
+// EgressGrants is an instance's declared way out as the record keeps it: each grant a host name with its port,
+// lowercase, sorted by port and then host, 443 written by its absence, and a wildcard as `*.domain`. The record's
+// grants are the operator's statement of what the instance may reach, so this refuses one the proxy could only
+// read as the same authority twice — a host granted twice, or one a wildcard on the same port already covers —
+// where the allocation's own reader reduces it instead: a database's backup host can sit inside a wildcard grant
+// without the operator having stated it.
+func EgressGrants(grants []string) ([]string, error) {
+	parsed, err := declaredGrants(grants)
+	if err != nil || len(parsed) == 0 {
+		return nil, err
+	}
+	declared := make([]string, 0, len(parsed))
+	for _, grant := range parsed {
+		declared = append(declared, grantText(grant))
+	}
+	return declared, nil
+}
+
+// declaredGrants is one record's grants parsed, in the record's order and once each: a host stated twice, or one a
+// wildcard on the same port covers, is the same authority written two ways and is refused rather than reduced.
+func declaredGrants(grants []string) ([]parsedGrant, error) {
+	parsed := make([]parsedGrant, 0, len(grants))
+	for _, text := range grants {
+		grant, err := parseGrant(text)
+		if err != nil {
+			return nil, recordGrantRefusal(err)
+		}
+		parsed = append(parsed, grant)
+	}
+	slices.SortFunc(parsed, func(a, b parsedGrant) int {
+		if a.Port != b.Port {
+			return int(a.Port - b.Port)
+		}
+		return strings.Compare(a.Host, b.Host)
+	})
+	for i, grant := range parsed {
+		if (i > 0 && parsed[i-1] == grant) || coveredByWildcard(parsed, grant) {
+			return nil, refuse(Invalid, "grants.egress", "the host is granted twice or a wildcard already covers it")
+		}
+	}
+	return parsed, nil
+}
+
+// coveredByWildcard is whether another of the same record's grants already allows the host on its port.
+func coveredByWildcard(grants []parsedGrant, grant parsedGrant) bool {
+	return slices.ContainsFunc(grants, func(other parsedGrant) bool {
+		return other.Port == grant.Port && other.Host != grant.Host && wildcardCovers(other.Host, grant.Host)
+	})
+}
+
+// recordGrantRefusal names the record's field where the proxy's parser names its own: one parser, and the field
+// that says where the mistake is.
+func recordGrantRefusal(err error) error {
+	var refusal *Error
+	if errors.As(err, &refusal) {
+		return &Error{Code: refusal.Code, Field: "grants.egress", Reason: refusal.Reason}
+	}
+	return err
+}
+
+// grantText is a parsed grant as a record writes it: a wildcard with its `*.` back, and the default port implied.
+func grantText(grant parsedGrant) string {
+	host := strings.TrimPrefix(grant.Host, ".")
+	if strings.HasPrefix(grant.Host, ".") {
+		host = grantWildcard + "." + host
+	}
+	if grant.Port == grantDefaultPort {
+		return host
+	}
+	return fmt.Sprintf("%s:%d", host, grant.Port)
 }
 
 // grantedPorts is every port any grant names, in order: the configuration declares one port ACL per

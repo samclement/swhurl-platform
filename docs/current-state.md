@@ -2,6 +2,25 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## An instance's egress grants are its record's (8 November 2026)
+
+- **Scope:** [the approved slice](iteration-2-plan.md#19-egress-grants-an-instance-declares-approved-8-november-2026):
+  an instance record's `grants.egress` states the hosts it may reach outside the cluster, `swhurl-v2 edit --set egress=`
+  writes them in one normalised form, and the render carries them through the allocation into the proxy's
+  configuration and the instance's annotation. No record declares a grant yet, so nothing on the cluster changed.
+- **Offline:** `make check-v2` passed — `gofmt`, `go vet`, every Go test, and `check-rendered.sh` (157 files, 0 differ:
+  the new field and the revision it takes part in change no rendered file, because a revision is a compilation input
+  and not a manifest value). `archtest/api.txt` gained `kernel.EgressGrants`, `kernel.WithEgress`,
+  `Grants.Egress` and `orchestration.Edition.AllocationStale`; no budget entry was added. New tests: the normalised
+  form (lowercase, port implied, sorted), each refusal (not a host, a port outside range, granted twice, covered by a
+  wildcard in either order), the record round trip and identity, an edit reporting `allocationStale`, a render carrying
+  a declared grant to the allocation, the proxy's `dstdomain` ACLs, the annotation and the proxy variables, and no
+  allocation for an instance that declares nothing. The instance revision of every record moved (`prod.json`
+  `inst-sha256:3df1beaf…` → `inst-sha256:6f3f654a…`, verified independently in Python), so a `--expect` revision from
+  before this commit is stale, as any record-shape change makes it.
+- **Not exercised yet:** the live proof — a granted host answering through the proxy, an ungranted one refused with
+  `granted=-`, and the grant cleared again.
+
 ## The snapshot export leaves Python and v2's migration tools are retired (8 November 2026)
 
 - **Scope:** [the approved slice](iteration-2-plan.md#18-the-snapshot-export-and-the-migration-tools-are-retired-approved-8-november-2026):

@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the live proof of §19's grants, then a scoped contract for the next retirement slice
+Gate: a live grant and its refusal on a throwaway instance, then a scoped contract for the next retirement slice
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —

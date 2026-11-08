@@ -70,12 +70,10 @@ var Layers = map[string]int{
 	"events":                             0,
 	"heartbeat":                          0,
 	"kernel":                             0,
-	"legacy":                             0,
 	"notify":                             0,
 	"observe":                            0,
 	"policy":                             0,
 	"producer":                           0,
-	"shadow":                             0,
 	"workstreams":                        0,
 	"adapters/appsource":                 1,
 	"adapters/appsource/appsourcetest":   1,
@@ -119,7 +117,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"incident", "calls", "checkrepo", "dashboards", "events", "heartbeat", "kernel", "legacy", "notify", "observe", "policy", "producer", "shadow", "workstreams"}
+var Pure = []string{"incident", "calls", "checkrepo", "dashboards", "events", "heartbeat", "kernel", "notify", "observe", "policy", "producer", "workstreams"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,

@@ -10,9 +10,9 @@ import (
 	"github.com/samclement/swhurl-platform/v2/events"
 )
 
-// resolutionDocument is the versioned document `resolve` writes and `compile --calls` reads: every connected
-// pair, every declaration that waits, every refusal, and every event subscription that connected, from one
-// pinned snapshot. Relationships are one decision, so they are one document.
+// resolutionDocument is the versioned document render writes to calls.json and `compile --calls` reads: every
+// connected pair, every declaration that waits, every refusal, and every event subscription that connected.
+// Relationships are one decision, so they are one document.
 type resolutionDocument struct {
 	Kind          string                 `json:"kind"`
 	Version       int                    `json:"version"`
@@ -61,32 +61,7 @@ type refusedDocument struct {
 	Reason      string `json:"reason"`
 }
 
-// resolve reads a snapshot's declarations and reports which pairs are connected. Consent is a declaration's
-// fact, so this needs no cluster, no preview and no credential: a worker can be declared and still refuse.
-func (c cli) resolve(r request) int {
-	data, status := c.read(r.snapshot, "snapshot")
-	if status != 0 {
-		return status
-	}
-	pinned, err := decodeSnapshot(data)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	document, err := resolutionOf(pinned)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	encoded, err := encodeResolution(document)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	fmt.Fprintf(c.diagnostic, "resolve: %d connected pair(s), %d waiting, %d refused; %d event subscription(s), %d waiting\n",
-		len(document.Pairs), len(document.Waiting), len(document.Refused), len(document.Subscriptions),
-		len(document.EventWaiting))
-	return emit(c.out, c.diagnostic, encoded)
-}
-
-// resolutionOf is one snapshot's relationships as the document states them: the calls' pairs, waits and refusals,
+// resolutionOf is the records' relationships as the document states them: the calls' pairs, waits and refusals,
 // and the event subscriptions that connected or wait.
 func resolutionOf(pinned snapshot) (resolutionDocument, error) {
 	declarations, err := declarationsOf(pinned)
@@ -106,8 +81,8 @@ func resolutionOf(pinned snapshot) (resolutionDocument, error) {
 	return document, nil
 }
 
-// declarationsOf is every instance's side of the pairs it takes part in, read from the records the
-// snapshot holds. An instance with no release record states no kind, so a call to it is not connected.
+// declarationsOf is every instance's side of the pairs it takes part in, read from its records. An instance
+// with no release record states no kind, so a call to it is not connected.
 func declarationsOf(pinned snapshot) ([]calls.Declaration, error) {
 	declarations := make([]calls.Declaration, 0, len(pinned.Instances))
 	for _, instance := range pinned.Instances {
@@ -120,14 +95,9 @@ func declarationsOf(pinned snapshot) ([]calls.Declaration, error) {
 	return declarations, nil
 }
 
-// declarationOf is one v2-owned instance's side of every pair it takes part in: its own record states the
-// declarations and nests the runtime facts. A predecessor's records are refused, so a resolution cannot keep
-// describing a shape v1 no longer writes.
+// declarationOf is one instance's side of every pair it takes part in: its own record states the declarations
+// and nests the runtime facts.
 func declarationOf(instance snapshotInstance) (calls.Declaration, error) {
-	if instance.Format != "v2" {
-		return calls.Declaration{}, fmt.Errorf("unsupported: snapshot: instance %s/%s is not v2-owned",
-			instance.Application, instance.Environment)
-	}
 	declaration := calls.Declaration{Application: instance.Application, Environment: instance.Environment}
 	var settings struct {
 		Calls, Allows []string
@@ -185,9 +155,9 @@ func encodeResolution(document resolutionDocument) ([]byte, error) {
 }
 
 // eventDeclarationsOf is every instance's side of the event relationships: the events its release publishes and
-// the subscriptions its own record grants. Both record shapes state the publications a release has — a v2 release
-// renders its stream and its publish variable from them, so an absent list means none — and a subscription to an
-// instance that does not publish that event is refused rather than left waiting for something that will never come.
+// the subscriptions its own record grants. A release renders its stream and its publish variable from its
+// publications, so an absent list means none, and a subscription to an instance that does not publish that event
+// is refused rather than left waiting for something that will never come.
 func eventDeclarationsOf(pinned snapshot) []events.Declaration {
 	declarations := make([]events.Declaration, 0, len(pinned.Instances))
 	for _, instance := range pinned.Instances {

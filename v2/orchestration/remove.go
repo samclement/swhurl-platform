@@ -143,14 +143,11 @@ func removalPaths(inputs RemovalInputs) []string {
 	return paths
 }
 
-// removalNotes is what the removal left to the platform's own renderers, named as the command that regenerates each.
+// removalNotes is what the removal left to the platform's own renderer, named as the command that regenerates it.
 func removalNotes(release kernel.ReleaseBundle) []string {
 	notes := []string{
-		"the egress allocation and the proxy's objects still name the instance: swhurl-v2 egress, then swhurl-v2 proxy",
-		"the resolution still names its relationships: swhurl-v2 resolve",
-		"the broker's user list: make v2-users",
-		"the Reloader's watch list: make v2-reloader",
-		"the platform's auth fan-out: swhurl-v2 auth",
+		"the platform documents that still name the instance — the resolution, the allocation and the proxy, auth, " +
+			"the broker's user list and the Reloader's watch list: make v2-render",
 	}
 	if release.Database == "sqlite" {
 		notes = append(notes, "a retained volume outlives the instance: remove it only when its data is wanted gone")

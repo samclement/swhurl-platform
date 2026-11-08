@@ -109,7 +109,7 @@ func TestRemoveCLI(t *testing.T) {
 			t.Errorf("the auth list lost a resource it did not name: %s", document)
 		}
 	}
-	if len(report.Notes) == 0 || !strings.Contains(strings.Join(report.Notes, " "), "v2-users") {
+	if len(report.Notes) == 0 || !strings.Contains(strings.Join(report.Notes, " "), "v2-render") {
 		t.Errorf("the report leaves nothing to the platform: %v", report.Notes)
 	}
 }

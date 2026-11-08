@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/kernel"
@@ -116,6 +117,22 @@ func encodeDeploy(result orchestration.Deploy, previous string) ([]byte, error) 
 }
 
 // deploySummary is the one line stderr carries; the document on stdout has the whole answer.
+// short is an identity for a one-line summary — its prefix and enough hex to recognise it — while the
+// document has the whole value.
+func short(identity string) string {
+	prefix, digest, found := strings.Cut(identity, ":")
+	if !found {
+		prefix, digest = "", identity
+	}
+	if len(digest) > 12 {
+		digest = digest[:12]
+	}
+	if prefix == "" {
+		return digest
+	}
+	return prefix + ":" + digest
+}
+
 func deploySummary(result orchestration.Deploy) string {
 	if !result.Changed {
 		return fmt.Sprintf("deploy: %s/%s runs its newest image %s", result.Instance.Application,

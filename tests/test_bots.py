@@ -108,8 +108,8 @@ class PushMainTests(unittest.TestCase):
         self.assertNotIn('refused', message)
         self.assertIn(('make', 'check-v2'), runner.calls)
         self.assertFalse([c for c in runner.calls if c[:2] == ('make', '-j2')], "v1's checks are not v2's")
-        self.assertIn(('make', '-s', 'v2-users'), runner.calls, 'a release that publishes needs the broker user list')
-        self.assertIn(('make', '-s', 'v2-reloader'), runner.calls)
+        self.assertIn(('make', '-s', 'v2-render'), runner.calls, "v2's one render writes the platform documents a deploy can change")
+        self.assertFalse([c for c in runner.calls if c[:2] in (('make', 'v2-users'), ('make', 'v2-reloader'))])
 
     def test_deploy_v2_pushes_nothing_when_no_instance_moved(self):
         report = ('{"kind":"v2-deploy-records","version":1,"records":"v2-records","instances":['

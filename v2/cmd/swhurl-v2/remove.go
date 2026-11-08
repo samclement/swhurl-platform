@@ -108,3 +108,11 @@ func encodeRemoval(result orchestration.Removal) ([]byte, error) {
 		Environment: result.Environment, Files: nonNilOutcomes(result.Written),
 		Removed: nonNilOutcomes(result.Removed), Notes: nonNil(result.Notes)})
 }
+
+// nonNil is a report's list: empty rather than absent, so a reader sees "nothing" instead of "unknown".
+func nonNil(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}

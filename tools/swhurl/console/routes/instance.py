@@ -236,7 +236,7 @@ def routes(ctx: Context) -> list[Route]:
                           'rollback': False, 'secrets': [], 'storage': None, 'needs_host': False, 'admits': [],
                           'setup': False}
                 return page(request, 'promotion.html', review=review, prs=existing)
-            raise actions.ActionError('this instance is still v1\'s: migrate it with `swhurl-v2 migrate` before promoting it here')
+            raise actions.ActionError('this instance is not v2\'s: its records are not a v2 record pair, so it cannot be promoted here')
         except actions.ActionError as error:
             return page(request, 'error.html', status_code=409, error=str(error))
         except (CommandError, cluster.ReadError) as error:

@@ -31,16 +31,11 @@ const usage = `usage:
   swhurl-v2 release-id RELEASE.json
   swhurl-v2 instance-revision INSTANCE.json
   swhurl-v2 select-release --instance INSTANCE.json --release RELEASE.json --expect REVISION
-  swhurl-v2 auth --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
-  swhurl-v2 users --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
-  swhurl-v2 reloader --snapshot SNAPSHOT.json --profile PROFILE.json [--out DIR]
   swhurl-v2 mint --instance INSTANCE.json --profile PROFILE.json --out DIR [--rotate]
-  swhurl-v2 resolve --snapshot SNAPSHOT.json
   swhurl-v2 render --records DIR --profile PROFILE.json --out DIR [--revision REVISION] [--previous EGRESS.json] \
       [--check]
   swhurl-v2 policy --records DIR --profile PROFILE.json --out ROOT --chart LOCAL_DIR
   swhurl-v2 chart --profile PROFILE.json --repositories HELMREPOSITORIES.yaml --cache DIR
-  swhurl-v2 egress --snapshot SNAPSHOT.json --profile PROFILE.json [--previous EGRESS.json]
   swhurl-v2 proxy --allocation EGRESS.json --profile PROFILE.json [--out DIR]
   swhurl-v2 deploy --instance INSTANCE.json --release RELEASE.json --app APP.json --profile PROFILE.json \
       --expect REVISION --out DIR [--calls CALLS.json] [--egress EGRESS.json]
@@ -60,11 +55,6 @@ const usage = `usage:
   swhurl-v2 status --records DIR (--app APPLICATION --env ENVIRONMENT | --all) --profile PROFILE.json --revision COMMIT \
       (--kubeconfig KUBECONFIG.json | --in-cluster) [--calls CALLS.json] [--egress EGRESS.json] [--source NAME] \
       [--max-age DURATION] [--archive [--region REGION]] [--changes FILE [--repo-root DIR]] [--reviewed-digest DIGEST] [--json]
-  swhurl-v2 preview --app APP.json --settings INSTANCE.json --release RELEASE.json \
-      --committed HELMRELEASE.json --profile PROFILE.json
-  swhurl-v2 shadow --snapshot SNAPSHOT.json --profile PROFILE.json [--kubeconfig KUBECONFIG.json]
-  swhurl-v2 migrate --snapshot SNAPSHOT.json --app APPLICATION --env ENVIRONMENT --profile PROFILE.json \
-      --source-repository OWNER/NAME --source-commit COMMIT --out DIR [--calls CALLS.json] [--egress EGRESS.json]
   swhurl-v2 restore --instance INSTANCE.json --release RELEASE.json --profile PROFILE.json \
       --revision COMMIT --kubeconfig KUBECONFIG.json [--calls CALLS.json] [--egress EGRESS.json] \
       [--max-age DURATION] [--from KEY] [--region REGION] \
@@ -179,13 +169,6 @@ CLICKSTACK_INGESTION_KEY when it differs; run again it changes nothing. Credenti
 runs by API-server exec, on stdin. --dry-run reads and decides, and writes nothing. It prints [OK], [INFO] and
 [WARN] lines, and [BAD] with exit status 1 where it stopped.
 
-shadow analyses one pinned snapshot: every instance is previewed and compared with its own committed
-HelmRelease, and the whole snapshot's ownership is checked, so a preview's collision with what the
-predecessor already declares is reported rather than assumed away. It reads only the two named files.
-The snapshot is the JSON document "make v2-snapshot REVISION= OUT=" writes. With --kubeconfig it also
-reads every object a preview would create from that API server, read-only, and reports each as present,
-absent or unavailable; a failed read is never reported as absence.
-
 policy is read-only: it validates the complete records tree and team/channel availability under --out,
 then templates the explicit local --chart for every compiled instance, production included. Chart metadata
 must match the profile and compiled release. It reports sorted accumulated findings and separate redacted
@@ -199,12 +182,10 @@ charts must have matching Chart.yaml metadata. Helm's repository config/index ca
 the private pull directory, so only --cache is written. No cluster access or installation occurs. Resolution
 or acquisition failures exit 1 with fixed diagnostics, not Helm output. The renderer still accepts only an explicit local chart.
 
-egress allocates one proxy port per instance, keeping every port the previous document gave and giving a
-new instance the lowest free one. Every instance whose release keeps a database is granted the
-profile's backup host, so its nightly upload passes the proxy. compile takes the document with --egress.
-
-compile refuses a database instance without --egress: its backup job may reach only the proxy, so it
-could not upload. A database instance also renders its backup from the profile's backup facts.
+egress is render's allocation: one proxy port per instance, keeping every port the previous allocation gave and
+granting each database instance the profile's backup host, so its nightly upload passes the proxy. compile refuses a
+database instance without --egress: its backup job may reach only the proxy, so it could not upload. A database
+instance also renders its backup from the profile's backup facts.
 
 proxy renders the platform's egress proxy from one allocation: its configuration, with a port per
 instance and the hosts each instance's grants allow, and a policy admitting each port from that
@@ -212,27 +193,12 @@ instance's namespace only. Grants are enforced, so an instance reaches what it d
 else. The proxy's deployment stays the platform's hand-written HelmRelease, which reads what proxy
 writes; --out writes the rendered files under DIR and nothing else.
 
-users renders the NATS server's user list: the platform's two service identities, and one entry per keyed
-instance with the permissions each needs — its own feature-flag overrides, its own subject when its release
-publishes, and the consumer calls for the subscriptions that connected. The profile states the broker, the
-decryption Secret and the two public keys; no seed is read or written. The list is the
-ConfigMap the NATS HelmRelease reads, so a cutover replaces that file and nothing else.
-
 mint gives one v2-owned instance a broker identity: it draws a seed, derives the nkey pair, encrypts the
 Secret that holds the seed to the profile's SOPS recipient with sops, writes that file beside the instance's
 record, and then writes the record that states the public key. The seed is never printed. It refuses an
 instance that already has a key unless --rotate is given, and --rotate without a key. The encrypted file goes
 first, so a failure leaves a record that states no key rather than a key with no seed; compile still refuses
 that folder until the file and the record agree. sops must be on PATH and no private key is read.
-
-reloader renders the namespaces Reloader watches: the platform's own as the profile states them, then one per
-instance that declares a Secret a change must restart it for — its broker key or a Secret its release names.
-The list is the ConfigMap the Reloader HelmRelease merges as values, so the HelmRelease keeps no list of its own.
-
-resolve reads one snapshot's v2-owned instances and writes the resolved connections as a v2-calls document:
-which pairs are connected, which wait for the other side and why, and which are refused. A snapshot
-instance that is still a predecessor's records is refused. compile takes
-that document with --calls and renders only the pairs it names for the instance being compiled.
 
 render renders every file v2 derives from its records in one run: the resolution at DIR/calls.json, every instance's
 compiled files and unit, the egress allocation (keeping the ports --previous gives, else the ones the allocation under
@@ -243,22 +209,6 @@ refuses writes nothing. A write needs --revision, the commit the records are rea
 allocation record. It never touches the cluster, and DIR must be under --out. --check writes nothing at all: it compares
 every file it renders with the one under --out, names each that differs, and exits 1 if any do; the revision the
 resolution and the allocation record is provenance, not content, so it is not compared.
-
-preview renders one predecessor instance from its records and compares the result with the HelmRelease
-that predecessor committed, writing a v2-preview document to stdout. It reads only the five named JSON
-files and applies nothing: the legacy records are given as JSON, so no legacy YAML is read here.
-
-migrate turns one instance out of a pinned snapshot into v2's own records, compiles them with the profile
-and the optional resolution and allocation, and writes both under --out: the record pair at
-v2-records/APPLICATION/ENVIRONMENT/ and the compiled files. The source repository and the full commit
-its image was built from are the operator's, because the records keep only an abbreviation: they are
-checked against it, never expanded from it. The image's own facts are read from the registry: the digest a
-predecessor's record states is a tag's or an index's, and the record states the linux/amd64 manifest the
-cluster runs, so a registry the migration cannot read fails it before anything is written. The report on
-stdout says which files it wrote, where every recorded fact came from, which of the predecessor's
-declarations the resolution does not connect, and every legacy fact the pair cannot carry. It deletes
-nothing: removing v1's records, manifests and unit is the handover step, and the unit's registration stays
-a reviewed edit.
 
 edit applies one named change to one v2-owned instance's record, compiles the edited record, and writes the
 record and the files it renders under --out in one effect: the settings are replicas, memoryMiB, exposure,
@@ -445,23 +395,15 @@ var commands = map[string]func(cli, request) int{
 	"promote":                 cli.promote,
 	"compile":                 cli.compile,
 	"status":                  cli.status,
-	"preview":                 cli.preview,
-	"shadow":                  cli.shadow,
-	"resolve":                 cli.resolve,
 	"render":                  cli.render,
 	"policy":                  cli.policy,
 	"chart":                   cli.acquireChart,
-	"egress":                  cli.egress,
 	"proxy":                   cli.proxy,
-	"auth":                    cli.auth,
-	"users":                   cli.users,
-	"reloader":                cli.reloader,
 	"mint":                    cli.mint,
 	"create":                  cli.create,
 	"declaration":             cli.declaration,
 	"names":                   cli.names,
 	"image-declaration":       cli.imageDeclaration,
-	"migrate":                 cli.migrate,
 	"edit":                    cli.edit,
 	"remove":                  cli.remove,
 	"restore":                 cli.restore,
@@ -486,8 +428,8 @@ type request struct {
 	region                                             string
 	from                                               string
 	archive                                            bool
-	app, settings, committed, snapshot, callFile       string
-	env, sourceRepository, sourceCommit, maxAge        string
+	app, callFile                                      string
+	env, maxAge                                        string
 	previous, egressFile, allocation                   string
 	records, changes, repoRoot, reviewedDigest         string
 	chart, repositories, cache                         string
@@ -556,8 +498,6 @@ func (r *request) registerInputs(flags *flag.FlagSet) {
 	case "select-release", "deploy", "compile", "restore", "mint":
 		flags.Var(&once{value: &r.instance}, "instance", "instance file")
 		flags.Var(&once{value: &r.release}, "release", "release file")
-	case "preview":
-		flags.Var(&once{value: &r.release}, "release", "legacy release record")
 	}
 }
 
@@ -648,11 +588,6 @@ func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool 
 		flags.Var(&once{value: &r.eventsSecret}, "events-secret", "the instance's encrypted events Secret (optional)")
 		flags.Var(&once{value: &r.offers}, "offers", "the folder holding the documents the instance publishes (optional)")
 		r.registerOut(flags)
-	case "preview":
-		flags.Var(&once{value: &r.app}, "app", "legacy app record")
-		flags.Var(&once{value: &r.settings}, "settings", "legacy instance record")
-		flags.Var(&once{value: &r.committed}, "committed", "the HelmRelease the predecessor committed")
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 	default:
 		return false
 	}
@@ -749,15 +684,9 @@ func (r *request) registerInstanceFlags(flags *flag.FlagSet, command string) boo
 	return true
 }
 
-// registerBridgeFlags adds the flags of the commands that read a snapshot or render the platform's own files.
+// registerBridgeFlags adds the flags of the commands that render the platform's own files.
 func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 	switch command {
-	case "shadow":
-		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON (enables the live ownership check)")
-	case "resolve":
-		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
 	case "policy":
 		flags.Var(&once{value: &r.records}, "records", "the complete v2 records tree")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
@@ -770,33 +699,9 @@ func (r *request) registerBridgeFlags(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.previous}, "previous", "a previous allocation to keep ports from (optional)")
 		flags.Var(&onceBool{value: &r.check}, "check", "compare with the files under --out and write nothing")
 		r.registerOut(flags)
-	case "egress":
-		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-		flags.Var(&once{value: &r.previous}, "previous", "a previous allocation to keep ports from (optional)")
 	case "proxy":
 		flags.Var(&once{value: &r.allocation}, "allocation", "egress allocation document")
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-		r.registerOut(flags)
-	case "auth":
-		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-		r.registerOut(flags)
-	case "users", "reloader":
-		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-		r.registerOut(flags)
-	case "migrate":
-		flags.Var(&once{value: &r.snapshot}, "snapshot", "snapshot document")
-		flags.Var(&once{value: &r.app}, "app", "application to migrate")
-		flags.Var(&once{value: &r.env}, "env", "environment to migrate")
-		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
-		flags.Var(&once{value: &r.sourceRepository}, "source-repository", "the app's source repository, owner/name")
-		flags.Var(&once{value: &r.sourceCommit}, "source-commit", "the full commit its image was built from")
-		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
-		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
-		flags.Var(&once{value: &r.eventsSecret}, "events-secret", "the instance's encrypted events Secret, as Git holds it")
-		flags.Var(&once{value: &r.offers}, "offers", "the folder holding the documents the instance publishes, as Git holds it")
 		r.registerOut(flags)
 	}
 }
@@ -874,7 +779,6 @@ var requiredFlags = map[string]func(*request) []string{
 	"policy":                  func(r *request) []string { return []string{r.records, r.profile, r.out, r.chart} },
 	"chart":                   func(r *request) []string { return []string{r.profile, r.repositories, r.cache} },
 	"compile":                 func(r *request) []string { return []string{r.instance, r.release, r.app, r.profile} },
-	"preview":                 func(r *request) []string { return []string{r.app, r.settings, r.release, r.committed, r.profile} },
 	"select-release":          func(r *request) []string { return []string{r.instance, r.release, r.expected} },
 	"mint":                    func(r *request) []string { return []string{r.instance, r.profile, r.out} },
 	"create":                  func(r *request) []string { return []string{r.records, r.app, r.team, r.image, r.profile, r.out} },
@@ -884,7 +788,6 @@ var requiredFlags = map[string]func(*request) []string{
 	"remove":                  func(r *request) []string { return []string{r.records, r.app, r.env, r.profile, r.callFile, r.out} },
 	"status":                  (*request).statusNamed,
 	"restore":                 func(r *request) []string { return []string{r.instance, r.release, r.profile, r.revision, r.kubeconfig} },
-	"migrate":                 (*request).appNamed,
 	"promote":                 (*request).appNamed,
 	"deploy":                  (*request).deployNamed,
 	"edit":                    (*request).editNamed,
@@ -941,12 +844,9 @@ func (r *request) verifyNamed() []string {
 	return []string{""}
 }
 
-// appNamed is what a command that works on one app needs: migrate reads a snapshot, promote the records tree; both
-// name the application and its environment, the profile and where to write, and migrate adds its source.
+// appNamed is what a promotion needs: the tree both instances keep their records in, the application and the
+// environment promoted into, the revision the caller reviewed, and where to write.
 func (r *request) appNamed() []string {
-	if r.command == "migrate" {
-		return []string{r.snapshot, r.app, r.env, r.profile, r.sourceRepository, r.sourceCommit, r.out}
-	}
 	return []string{r.records, r.app, r.env, r.profile, r.expected, r.out}
 }
 
@@ -972,20 +872,14 @@ func (r *request) deployNamed() []string {
 	return []string{r.records, r.profile, r.out}
 }
 
-// platformNamed is the flags a command that renders or reads the platform's own documents requires: one snapshot,
-// and whatever the platform's fact is for that document.
+// platformNamed is the flags a command that renders or reads the platform's own documents requires: the records
+// tree, or the allocation the proxy renders from.
 func (r *request) platformNamed() ([]string, bool) {
 	switch r.command {
-	case "resolve":
-		return []string{r.snapshot}, true
 	case "render":
 		return []string{r.records, r.profile, r.out}, true
 	case "proxy":
 		return []string{r.allocation, r.profile}, true
-	case "egress", "auth", "shadow":
-		return []string{r.snapshot, r.profile}, true
-	case "users", "reloader":
-		return []string{r.snapshot, r.profile}, true
 	}
 	return nil, false
 }

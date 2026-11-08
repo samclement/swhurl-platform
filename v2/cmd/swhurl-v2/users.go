@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -9,55 +8,8 @@ import (
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// usersDocument is what `users` writes: the server's user list, the revision its facts were read at, and the
-// object it claims. The list itself is the evidence — keys and permissions, never a seed.
-type usersDocument struct {
-	Kind      string         `json:"kind"`
-	Version   int            `json:"version"`
-	Revision  string         `json:"revision"`
-	Users     int            `json:"users"`
-	Files     []kernel.File  `json:"files"`
-	Inventory []kernel.Claim `json:"inventory"`
-}
-
-// users renders the NATS server's user list from one pinned snapshot. The two service identities are the
-// platform's own published public keys, given as the files they are; the instances' facts come from the snapshot,
-// so the list says what that revision of Git says.
-func (c cli) users(r request) int {
-	profile, status := c.profile(r.profile)
-	if status != 0 {
-		return status
-	}
-	data, status := c.read(r.snapshot, "snapshot")
-	if status != 0 {
-		return status
-	}
-	pinned, err := decodeSnapshot(data)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	instances, rendered, err := renderUsers(pinned, profile)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	document := usersDocument{Kind: "v2-users", Version: 1, Revision: pinned.Revision, Users: len(instances) + 2,
-		Files: rendered.Files, Inventory: rendered.Inventory}
-	var out bytes.Buffer
-	encoder := json.NewEncoder(&out)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(document); err != nil {
-		return fail(c.diagnostic, err)
-	}
-	encoded := bytes.TrimSuffix(out.Bytes(), []byte{'\n'})
-	fmt.Fprintf(c.diagnostic, "users: %d user(s), %d file(s)\n", document.Users, len(document.Files))
-	if r.out != "" {
-		return c.writeFiles(r.out, rendered.Files)
-	}
-	return emit(c.out, c.diagnostic, encoded)
-}
-
-// renderUsers is the server's user list for one snapshot, and the instances it lists.
+// renderUsers is the server's user list for the records, and the instances it lists. The two service identities are
+// the platform's own published public keys, given as the files they are.
 func renderUsers(pinned snapshot, profile kernel.PlatformProfile) ([]kernel.NATSUser, kernel.ResourceSet, error) {
 	instances, err := usersFactOf(pinned)
 	if err != nil {
@@ -95,22 +47,15 @@ func usersFactOf(pinned snapshot) ([]kernel.NATSUser, error) {
 }
 
 // eventsKey is the public key an instance signs in with, or empty when it has none. Every instance the platform
-// renders has one, whether or not it declares events: the same identity reads its feature-flag overrides. A
-// predecessor states it with its other allocations; a v2 instance states it in its own `events` block.
+// renders has one, whether or not it declares events: the same identity reads its feature-flag overrides.
 func eventsKey(instance snapshotInstance) string {
 	var settings struct {
-		Allocations struct {
-			EventsKey string `json:"eventsKey"`
-		} `json:"allocations"`
 		Events struct{ Key string }
 	}
 	if err := json.Unmarshal(instance.Records["instance"], &settings); err != nil {
 		return ""
 	}
-	if settings.Events.Key != "" {
-		return settings.Events.Key
-	}
-	return settings.Allocations.EventsKey
+	return settings.Events.Key
 }
 
 // declaredPublishes is the events an instance's release publishes, from the list its image's AsyncAPI document
@@ -126,19 +71,14 @@ func declaredPublishes(instance snapshotInstance) []string {
 }
 
 // declaredSubscriptions is the events an instance's own record grants it, each spelled `<publisher>.<event>`.
-// A predecessor states them at the top level; a v2 instance states them in its own `events` block.
 func declaredSubscriptions(instance snapshotInstance) []string {
 	var settings struct {
-		Subscriptions []string
-		Events        struct{ Subscriptions []string }
+		Events struct{ Subscriptions []string }
 	}
 	if err := json.Unmarshal(instance.Records["instance"], &settings); err != nil {
 		return []string{}
 	}
-	if settings.Subscriptions == nil {
-		return settings.Events.Subscriptions
-	}
-	return settings.Subscriptions
+	return settings.Events.Subscriptions
 }
 
 // subscriptions is one instance's answer as the renderer's own type: a connected subscription carries every name

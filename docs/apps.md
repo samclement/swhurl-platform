@@ -327,7 +327,7 @@ The independent API fields are intentional: `provides.api` links a running descr
 
 ## Scheduled jobs
 
-**v2 does not model the job kind yet.** No command creates one (no app type is a job): an image whose declaration says `job` is refused, and `swhurl-v2 migrate` refuses a v1 instance of this kind. The rest of this section describes the v1 rendering such an instance had.
+**v2 does not model the job kind yet.** No command creates one (no app type is a job): an image whose declaration says `job` is refused. The rest of this section describes the v1 rendering such an instance had.
 
 A job (`kind: job`) has no web address and no running pod between runs: Kubernetes starts one pod per run, on the schedule, from a CronJob the chart makes (`controllers.main.type: cronjob`). The run calls the app's `work()` once and ends: status 0 is a successful run, anything else a failed one. For example, a job that runs every ten minutes in staging:
 
@@ -443,7 +443,7 @@ For a connected pair, rendering writes both instances:
 | Callee | `SWHURL_ALLOWED_CALLERS=demo-shop` | Who it accepts |
 | Callee | Its NetworkPolicy admits `demo-shop`' pods | Anything undeclared is blocked before it reaches the app |
 
-The keys are one platform object, `swhurl-auth`, rendered for every managed namespace by `swhurl-v2 auth` (a ConfigMap cannot cross namespaces, so it is one identical object per namespace); the allow-list is the instance's own (`<app>-callers`). A v2-rendered callee gets both **only as files**, under `/var/run/swhurl/auth` and `/var/run/swhurl/callers`, which the kubelet refreshes in place, so a rotated key or a new caller takes effect in about a minute **without a restart** and changes no pod template. Its image must read the file variables (templates TypeScript `v0.2.19`, Kotlin `v0.2.18` on, through a [template update](#template-updates)); an older image finds no keys and refuses every token. The declarations themselves are fields of the instances' own records (`calls`, `allows`), and both sides of a call are rendered from them; no instance gets the values as environment variables, so no pod restarts when a caller or a key changes.
+The keys are one platform object, `swhurl-auth`, rendered for every managed namespace by `swhurl-v2 render` (a ConfigMap cannot cross namespaces, so it is one identical object per namespace); the allow-list is the instance's own (`<app>-callers`). A v2-rendered callee gets both **only as files**, under `/var/run/swhurl/auth` and `/var/run/swhurl/callers`, which the kubelet refreshes in place, so a rotated key or a new caller takes effect in about a minute **without a restart** and changes no pod template. Its image must read the file variables (templates TypeScript `v0.2.19`, Kotlin `v0.2.18` on, through a [template update](#template-updates)); an older image finds no keys and refuses every token. The declarations themselves are fields of the instances' own records (`calls`, `allows`), and both sides of a call are rendered from them; no instance gets the values as environment variables, so no pod restarts when a caller or a key changes.
 
 Every instance is also told who it is (`SWHURL_APP`, `SWHURL_ENV`), and every web app gets what it needs to check a token: `SWHURL_AUTH_ISSUER` and `SWHURL_AUTH_KEYS`, the cluster's public signing keys. Apps cannot fetch those keys themselves (the API server refuses anonymous requests and apps carry no API token), so they live in the profile's `auth` block, from which v2 renders `platform/auth` into every managed namespace; `make verify-platform` fails if the profile differs from the cluster's key set ([operations](operations.md#signing-keys)).
 
@@ -581,7 +581,7 @@ flowchart LR
 | The commit they were read at | The annotation `platform.swhurl.com/offers` on the instance's HelmRelease | The console sees that the app describes itself; an annotation does not restart the app |
 | The events the app publishes | `SWHURL_EVENTS_PUBLISH`, set from the channels `asyncapi.yaml` sends to (a channel's `address` is the event's name) | The AsyncAPI document is the declaration: nobody lists the events a second time. Everything that follows from the list is [as for any event](#events) |
 
-**When it happens.** At creation (the image's declaration states them, and `swhurl-v2 migrate` carries a predecessor's). With every new staging image: the [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) runs `swhurl-v2 deploy`, which reads them at the new image's commit and commits them with the tag ([deploy a new image](#deploy-a-new-image)). Offers already read at an image's commit are not read again. At promotion: `swhurl-v2 promote` copies staging's documents to production and sets what production publishes; a promotion that changes what the app publishes waits for review. There is no offers command: a document reaches Git through the workflow or a migration, never by hand.
+**When it happens.** At creation (the image's declaration states them). With every new staging image: the [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) runs `swhurl-v2 deploy`, which reads them at the new image's commit and commits them with the tag ([deploy a new image](#deploy-a-new-image)). Offers already read at an image's commit are not read again. At promotion: `swhurl-v2 promote` copies staging's documents to production and sets what production publishes; a promotion that changes what the app publishes waits for review. There is no offers command: a document reaches Git through the workflow, never by hand.
 
 **A new event works at once.** The new image starts in the same commit that keeps its document. NATS already lets the app publish anything under its own name and its stream keeps everything under that name, so the event is stored from the first publish; the helper in the app refuses anything its own `asyncapi.yaml` does not describe. Other apps can subscribe once the workflow's commit is applied. The exception is an app's first event ever (it has no key or stream yet): the templates' `events` feature ships an example event, so an app created with the feature has both from the start.
 
@@ -595,8 +595,7 @@ flowchart LR
 (`compile --offers v2-records/<app>/<env>/offers`): declared inputs, byte for byte, never parsed. The release states
 what they are — its description, the path it serves its API description on, and the commit the documents were read at
 — and the compiled HelmRelease carries the same two annotations and the `SWHURL_DESCRIPTION` variable, so the app page
-and the Catalogue show it exactly as they show a v1 instance. v2 **copies** the documents and never fetches them:
-`swhurl-v2 migrate --offers DIR` takes the predecessor's folder, and a repository read is still planned
+and the Catalogue show it exactly as they show a v1 instance. v2 **copies** the documents and never fetches them: a repository read is still planned
 ([the gap list](iteration-2-plan.md#6-deliberately-deferred)). A v2-owned staging instance that has followed a new
 image therefore still shows the documents of the commit they were read at, and the annotation says so.
 
@@ -690,7 +689,7 @@ Overrides are not in Git and not backed up: if NATS loses them, every app return
 
 ## Secrets
 
-**v2 does not model secrets yet.** An app lists the secret variables it reads in `swhurl.yaml` (`secrets: [API_TOKEN]`), and an image that adds a name is what the release would state — but v2 refuses a release that declares secret names, so no v2 instance has one: `create` refuses such an image, and `swhurl-v2 migrate` stops on such an app. No instance has such a name today; the app page states that secrets are unsupported and does not infer values or files.
+**v2 does not model secrets yet.** An app lists the secret variables it reads in `swhurl.yaml` (`secrets: [API_TOKEN]`), and an image that adds a name is what the release would state — but v2 refuses a release that declares secret names, so no v2 instance has one: `create` refuses such an image. No instance has such a name today; the app page states that secrets are unsupported and does not infer values or files.
 
 **A v1 instance's value** was set with `make app-secret` — a command phase 3 deleted, so today the encrypted `apps/<app>/<env>/secret.sops.yaml` file is only restorable from Git, and nothing new writes one. Until v2 gains the capability, an app that needs a secret cannot be v2's.
 
@@ -921,7 +920,7 @@ sequenceDiagram
 
 The review captures the staging image, but its health check is advisory. A new promotion job checks readiness once after preparing the change and before writing any blob, commit, branch or PR to GitHub; it fails without publication if staging stopped being healthy and current, runs another image, or cannot be read. Failed preparation never reaches that check or writes to GitHub. Reusing an existing PR does not prepare or check again. It also refuses the same digest (tags may differ while the digest is the same) and refuses a changed image repository. A known older `<run>-<sha>` image is called out as a rollback; database migrations are not rolled back. After the PR is open, a newer staging build or another app/tooling change on `main` does not refuse it: the PR carries records, and `main` renders them when it is merged.
 
-**Creating a production is not modelled by v2.** `swhurl-v2 promote` moves a production whose records already exist (its `v2-records/<app>/prod/` pair and compiled folder), and the console's **Promote to production** runs it; nothing creates the first one. A first production is still made the way all thirteen existing instances were: create it while v1 owns the app, then `swhurl-v2 migrate` it, and promote afterwards ([the cutover](v2-status.md#where-it-stands)). A first promotion creates production's address, credentials and settings, which a person reviews, so it is never automatic.
+**Creating a production is not modelled by v2.** `swhurl-v2 promote` moves a production whose records already exist (its `v2-records/<app>/prod/` pair and compiled folder), and the console's **Promote to production** runs it; nothing creates the first one. A first production needs its record pair and compiled folder written, which no command does yet: a promotion refuses an environment with no record ([the deferred list](v2-status.md#deferred-features)). A first promotion creates production's address, credentials and settings, which a person reviews, so it is never automatic.
 
 A promotion is always merged by a person (no v2 pull request is auto-merged). For a public app, review the chosen distinct host. An app that publishes or receives [events](#events) gets its production events key (`events.sops.yaml`), generated and already encrypted, so nothing is left to set. An app that [calls another app](#calling-another-app) already in production also changes that app's allowed callers and network policy once `main` renders it; the review page, the job log and the PR name the apps.
 
@@ -946,7 +945,7 @@ Every instance is rendered from three records and one compiled folder, which onl
 
 | File | Holds | Written by |
 | --- | --- | --- |
-| `v2-records/<app>/app.json` | the app's identity hash and its team, the same in every environment | `create`, or `migrate` for a predecessor; `edit --set team=…` |
+| `v2-records/<app>/app.json` | the app's identity hash and its team, the same in every environment | `create`, then `edit --set team=…` |
 | `v2-records/<app>/<env>/release.json` | the image and what it declares: kind, port, health path, uid, telemetry, resource minimum, database, description, API path, published events, the commit its offers were read at | the v2 Deploy workflow (`swhurl-v2 deploy`), promotion, creation |
 | `v2-records/<app>/<env>/instance.json` | grants (exposure, calls, allows, subscriptions), the settings the record owns (replicas, memory MiB) and allocations (NATS public key, database claim) | `swhurl-v2 edit` and `remove`, promotion, creation |
 | `v2-apps/instances/<app>/<env>/` | the compiled folder: HelmRelease, quota, NetworkPolicy, route, stream and consumers, the offered documents | v2's render, from those records; never by hand |

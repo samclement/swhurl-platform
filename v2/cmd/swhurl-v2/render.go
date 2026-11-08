@@ -188,18 +188,31 @@ func (c cli) renderPrevious(r request) (kernel.EgressDocument, int) {
 	return c.allocation(path, "previous allocation")
 }
 
-// snapshotOf is the records tree as the snapshot readers take it: every instance in v2's own record shape.
+// snapshot is the records tree as the platform's helpers take it: every instance's pair, in v2's own shape. It is
+// render's own value and never a file: the tree under --records is the only input.
+type snapshot struct {
+	Revision  string
+	Instances []snapshotInstance
+}
+
+// snapshotInstance is one instance's records, as the resolution, the allocation and the platform files read them.
+type snapshotInstance struct {
+	Application, Environment string
+	Records                  map[string]json.RawMessage
+}
+
+// snapshotOf is the records tree as the platform's helpers take it.
 func snapshotOf(revision string, folders []recordsEdit) snapshot {
-	pinned := snapshot{Version: 1, Revision: revision, Instances: make([]snapshotInstance, 0, len(folders))}
+	pinned := snapshot{Revision: revision, Instances: make([]snapshotInstance, 0, len(folders))}
 	for _, one := range folders {
 		pinned.Instances = append(pinned.Instances, snapshotInstance{Application: one.application,
-			Environment: one.environment, Format: "v2", Records: map[string]json.RawMessage{
+			Environment: one.environment, Records: map[string]json.RawMessage{
 				"instance": one.instance, "release": one.release, "app": one.app}})
 	}
 	return pinned
 }
 
-// renderPlatform decides the platform's documents from one snapshot: the resolution, the allocation, and the files
+// renderPlatform decides the platform's documents from the records: the resolution, the allocation, and the files
 // rendered from them and from the records — the proxy, the auth folder, NATS's users and Reloader's values.
 func renderPlatform(pinned snapshot, previous kernel.EgressDocument, profile kernel.PlatformProfile) (rendering, error) {
 	resolution, err := resolutionOf(pinned)

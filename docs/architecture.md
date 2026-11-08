@@ -103,7 +103,7 @@ flowchart LR
 | `platform-clickstack` | ClickStack release and its Secret | infra-base, clickstack-operators, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `platform-otel` | Both collectors, the ingestion Secret | infra-base | SOPS |
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
-| `platform-auth` | The token-verification keys as one `swhurl-auth` ConfigMap in every managed namespace (`platform/auth`, rendered by `swhurl-v2 auth`) | infra-base | |
+| `platform-auth` | The token-verification keys as one `swhurl-auth` ConfigMap in every managed namespace (`platform/auth`, rendered by `swhurl-v2 render`) | infra-base | |
 | `platform-backup` | The backup jobs' upload-only key (`backup-writer`, in `flux-system` for app units to substitute and in `observability`) and the ClickStack MongoDB backup CronJob (`platform/backup`) | infra-base | SOPS |
 | `platform-alerts` | The ntfy Provider and the infrastructure/source failure Alert, with their SOPS Secret (`platform/alerts`) | infra-base | SOPS |
 | `platform-notify` | The [notify service](services.md#notify-service) with its RBAC, outbox ConfigMap and NetworkPolicy, one SOPS Secret per [notification channel](services.md#notification-channels) (`platform/notify/channels`) and the team routes v2 renders from `v2-records/teams.json` (`platform/notify`). Defined in its own file, `clusters/home/platform-notify.yaml` | infra-base | SOPS |

@@ -18,15 +18,15 @@ func runProxy(t *testing.T, extra ...string) (int, string, string) {
 	return status, out.String(), diagnostic.String()
 }
 
-// allocationFile writes an allocation over a snapshot with one granted instance and returns its path.
+// allocationFile writes the allocation render decides: two instances behind the proxy, the first with a host of its
+// own and the second with none.
 func allocationFile(t *testing.T) string {
 	t.Helper()
-	status, stdout, stderr := runEgress(t, writeSnapshot(t, snapshotWithEgress(t, []string{"api.stripe.com"})))
-	if status != 0 {
-		t.Fatalf("egress exit %d: %s", status, stderr)
-	}
+	document := `{"kind":"v2-egress","version":1,"revision":"` + strings.Repeat("a", 40) + `","instances":[` +
+		`{"application":"shop","environment":"staging","port":30101,"grants":["api.stripe.com:443"]},` +
+		`{"application":"orders","environment":"staging","port":30102,"grants":[]}]}`
 	path := filepath.Join(t.TempDir(), "egress.json")
-	if err := os.WriteFile(path, []byte(stdout), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path

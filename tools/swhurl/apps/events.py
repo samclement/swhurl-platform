@@ -14,7 +14,7 @@ On NATS, staging and production share one server and are kept apart by name and 
 
 Every instance signs in to NATS with its own nkey (apps/nkeys.py), whether or not it declares
 events: the public key is a variable on its HelmRelease, and the server's user list is v2's output
-(platform/nats/users.json, rendered from a snapshot by `swhurl-v2 users`); the seed is in the app's own
+(platform/nats/users.json, rendered from the records by `swhurl-v2 render`); the seed is in the app's own
 encrypted Secret. The same identity reads the instance's feature flag overrides (docs/apps.md#feature-flags):
 
     bucket    flags-<env>                  NATS key-value store, one per environment (platform/flags)

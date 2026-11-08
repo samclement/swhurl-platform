@@ -2,6 +2,27 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The snapshot export leaves Python and v2's migration tools are retired (8 November 2026)
+
+- **Scope:** [the approved slice](iteration-2-plan.md#18-the-snapshot-export-and-the-migration-tools-are-retired-approved-8-november-2026):
+  `make v2-snapshot`, `v2-users` and `v2-reloader` are gone with `tools/swhurl/v2snapshot.py` and its test, and
+  `render` is now the only producer of the files derived from the records. The Deploy v2 bot runs `make v2-deploy` and
+  then `make v2-render`. v2's `auth`, `users`, `reloader`, `resolve`, `egress`, `shadow`, `migrate` and `preview`
+  commands are deleted, and with them the `legacy` and `shadow` packages and `orchestration.Migrate`.
+- **Parity in a scratch worktree** at `7ac63363`, before the deletion: `make v2-deploy` left every staging instance
+  unchanged; `make v2-users` and `make v2-reloader` afterwards and `make v2-render` afterwards both wrote nothing, and
+  `platform/nats/users.json` (`b0a26ac4…`) and `platform/reloader/values.json` (`1d9460f0…`) were the same bytes. On a
+  synthetic record change that adds a subscription, both routes wrote the same user list (`e07e0bf9…`); the render
+  route also wrote `v2-records/calls.json`, the allocation and the compiled consumer, and moved the two documents'
+  recorded revision from `6a549014…` to `7ac63363…`. A delivery cannot change those inputs — an image cannot add a
+  secret, change a database or declare a subscription — so a Deploy v2 commit gains no such churn.
+- **Offline:** `make check-v2` passed (`gofmt`, `go vet`, every Go test with the smaller `archtest/api.txt` and layer
+  maps, and `check-rendered.sh`: 157 files, 0 differ); `make test` ran 481 tests; `make check-repo`, `make check-apps`,
+  `make check-lint`, `make check-codegraph`, `make check-otel` (two deprecation warnings, no failure) and `bash -n`
+  over `host/*.sh tests/fixtures/*.sh` passed. `bots.py`'s test proves the bot calls `make -s v2-render`.
+- **Not exercised live:** the next scheduled Deploy v2 run, the only live path this changes; it runs the new step.
+- **Delivery:** this commit; its live acceptance is the next scheduled Deploy v2 run.
+
 ## check-repo runs Go and validate.py is retired (8 November 2026)
 
 - **Scope:** [the approved slice](iteration-2-plan.md#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026)

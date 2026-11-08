@@ -12,54 +12,52 @@ import (
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// eventSnapshot is a v2 snapshot with a publisher, a subscriber, a v2 publisher that publishes nothing, and a
-// name no instance answers to: the resolver connects the first two, refuses the third's event and leaves the
-// fourth waiting.
-func eventSnapshot(t *testing.T) map[string]any {
+// eventInstance is one instance's record pair as render holds it.
+func eventInstance(t *testing.T, application string, events, release map[string]any) snapshotInstance {
 	t.Helper()
-	instance := func(application string, events map[string]any, release map[string]any) map[string]any {
-		return map[string]any{"application": application, "environment": "staging", "format": "v2",
-			"missing": []any{}, "objects": []any{},
-			"records": map[string]any{"instance": map[string]any{"schemaVersion": 1,
-				"application": application, "environment": "staging", "events": events}, "release": release}}
+	records := map[string]json.RawMessage{}
+	for role, value := range map[string]any{
+		"instance": map[string]any{"schemaVersion": 1, "application": application, "environment": "staging",
+			"events": events},
+		"release": release,
+	} {
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		records[role] = data
 	}
-	return map[string]any{"version": 1, "revision": strings.Repeat("a", 40), "residual": []any{},
-		"instances": []any{
-			instance("orders", map[string]any{"key": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"},
-				map[string]any{"schemaVersion": 1, "publishes": []any{"created"}}),
-			instance("notifier", map[string]any{
-				"key":           "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
-				"subscriptions": []any{"orders.created", "absent.created"}}, map[string]any{"schemaVersion": 1}),
-			instance("quiet", map[string]any{}, map[string]any{"schemaVersion": 1}),
-		}}
+	return snapshotInstance{Application: application, Environment: "staging", Records: records}
 }
 
-// resolve records the connected subscription with every name a consumer, a stream and a permission need, and
+// eventSnapshot is the records with a publisher, a subscriber, a publisher that publishes nothing, and a name no
+// instance answers to: the resolver connects the first two, leaves the third's event refused for its own
+// publisher to answer and the fourth waiting.
+func eventSnapshot(t *testing.T) snapshot {
+	t.Helper()
+	return snapshot{Revision: strings.Repeat("a", 40), Instances: []snapshotInstance{
+		eventInstance(t, "orders", map[string]any{"key": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"},
+			map[string]any{"schemaVersion": 1, "publishes": []any{"created"}}),
+		eventInstance(t, "notifier", map[string]any{
+			"key":           "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
+			"subscriptions": []any{"orders.created", "absent.created"}}, map[string]any{"schemaVersion": 1}),
+		eventInstance(t, "quiet", map[string]any{}, map[string]any{"schemaVersion": 1}),
+	}}
+}
+
+// The resolution records the connected subscription with every name a consumer, a stream and a permission need, and
 // reports the one whose publisher no instance answers to as waiting rather than refused.
-func TestResolveRecordsSubscriptions(t *testing.T) {
-	snapshot := writeSnapshot(t, eventSnapshot(t))
-	var out, diagnostic bytes.Buffer
-	if status := run([]string{"resolve", "--snapshot", snapshot}, &out, &diagnostic, os.ReadFile, files.New()); status != 0 {
-		t.Fatalf("exit %d: %s", status, diagnostic.String())
-	}
-	var document struct {
-		Subscriptions []struct {
-			Subscriber, Publisher, Event, Environment string
-			Stream, Consumer, Subject, Object         string
-		}
-		EventWaiting []struct{ Caller, Callee, Environment, Reason string }
-	}
-	if err := json.Unmarshal(out.Bytes(), &document); err != nil {
-		t.Fatalf("the resolution is not JSON: %v", err)
+func TestResolutionRecordsSubscriptions(t *testing.T) {
+	document, err := resolutionOf(eventSnapshot(t))
+	if err != nil {
+		t.Fatalf("resolution: %v", err)
 	}
 	if len(document.Subscriptions) != 1 {
 		t.Fatalf("subscriptions: %+v", document.Subscriptions)
 	}
-	want := struct {
-		Subscriber, Publisher, Event, Environment string
-		Stream, Consumer, Subject, Object         string
-	}{"notifier", "orders", "created", "staging", "staging-orders", "notifier_created",
-		"staging.orders.created", "orders-created"}
+	want := subscriptionDocument{Subscriber: "notifier", Publisher: "orders", Event: "created",
+		Environment: "staging", Stream: "staging-orders", Consumer: "notifier_created",
+		Subject: "staging.orders.created", Object: "orders-created"}
 	if document.Subscriptions[0] != want {
 		t.Fatalf("the subscription: %+v", document.Subscriptions[0])
 	}
@@ -67,22 +65,20 @@ func TestResolveRecordsSubscriptions(t *testing.T) {
 		document.EventWaiting[0].Reason != "publisher_not_ready" {
 		t.Fatalf("waiting: %+v", document.EventWaiting)
 	}
-	if !strings.Contains(diagnostic.String(), "1 event subscription(s), 1 waiting") {
-		t.Errorf("the summary: %s", diagnostic.String())
-	}
 }
 
-// A v2 instance's release states what it publishes — an absent list is none — so a subscription to an event it does
-// not publish is refused rather than left waiting for something that can never arrive.
-func TestResolveRefusesAnEventItsV2PublisherDoesNotPublish(t *testing.T) {
-	snapshot := eventSnapshot(t)
-	instances := snapshot["instances"].([]any)
-	notifier := instances[1].(map[string]any)["records"].(map[string]any)["instance"].(map[string]any)
-	notifier["events"].(map[string]any)["subscriptions"] = []any{"quiet.created"}
-	var out, diagnostic bytes.Buffer
-	status := run([]string{"resolve", "--snapshot", writeSnapshot(t, snapshot)}, &out, &diagnostic, os.ReadFile, files.New())
-	if status != 2 || !strings.Contains(diagnostic.String(), "not_published") {
-		t.Fatalf("exit %d: %s", status, diagnostic.String())
+// A release states what it publishes — an absent list is none — so a subscription to an event it does not publish
+// is refused rather than left waiting for something that can never arrive.
+func TestResolutionRefusesAnEventItsPublisherDoesNotPublish(t *testing.T) {
+	pinned := snapshot{Revision: strings.Repeat("a", 40), Instances: []snapshotInstance{
+		eventInstance(t, "quiet", map[string]any{"key": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"},
+			map[string]any{"schemaVersion": 1}),
+		eventInstance(t, "notifier", map[string]any{
+			"key":           "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
+			"subscriptions": []any{"quiet.created"}}, map[string]any{"schemaVersion": 1}),
+	}}
+	if _, err := resolutionOf(pinned); err == nil || !strings.Contains(err.Error(), "not_published") {
+		t.Fatalf("resolution: %v", err)
 	}
 }
 
@@ -215,33 +211,37 @@ func TestProfileStatesThePlatformsBroker(t *testing.T) {
 // a subscription it grants itself and the user list gives it the consumer's permission.
 func TestOwnRecordsStateTheBrokerIdentity(t *testing.T) {
 	key := "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI"
-	snapshot := map[string]any{"version": 1, "revision": strings.Repeat("a", 40), "residual": []any{},
-		"instances": []any{
-			map[string]any{"application": "orders", "environment": "staging", "format": "v2", "missing": []any{},
-				"objects": []any{}, "records": map[string]any{"instance": map[string]any{"events": map[string]any{
-					"key": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"}},
-					"release": map[string]any{"publishes": []any{"created"}}}},
-			map[string]any{"application": "notifier", "environment": "staging", "format": "v2", "missing": []any{},
-				"objects": []any{}, "records": map[string]any{"instance": map[string]any{
-					"events": map[string]any{"key": key, "subscriptions": []any{"orders.created"}}},
-					"release": map[string]any{}}},
-		}}
-	path := writeSnapshot(t, snapshot)
-	var out, diagnostic bytes.Buffer
-	if status := run([]string{"resolve", "--snapshot", path}, &out, &diagnostic, os.ReadFile, files.New()); status != 0 {
-		t.Fatalf("resolve exit %d: %s", status, diagnostic.String())
+	pinned := snapshot{Revision: strings.Repeat("a", 40), Instances: []snapshotInstance{
+		eventInstance(t, "orders", map[string]any{"key": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"},
+			map[string]any{"schemaVersion": 1, "publishes": []any{"created"}}),
+		eventInstance(t, "notifier", map[string]any{"key": key, "subscriptions": []any{"orders.created"}},
+			map[string]any{"schemaVersion": 1}),
+	}}
+	document, err := resolutionOf(pinned)
+	if err != nil {
+		t.Fatalf("resolution: %v", err)
 	}
-	if !strings.Contains(out.String(), `"durableName"`) && !strings.Contains(out.String(), `"notifier_created"`) {
-		t.Fatalf("the v2 instance's subscription did not connect:\n%s", out.String())
+	connected := false
+	for _, subscription := range document.Subscriptions {
+		connected = connected || subscription.Consumer == "notifier_created"
 	}
-	out.Reset()
-	diagnostic.Reset()
-	if status := run([]string{"users", "--snapshot", path, "--profile", profilePath(t)}, &out, &diagnostic,
-		os.ReadFile, files.New()); status != 0 {
-		t.Fatalf("users exit %d: %s", status, diagnostic.String())
+	if !connected {
+		t.Fatalf("the v2 instance's subscription did not connect: %+v", document.Subscriptions)
 	}
-	if !strings.Contains(out.String(), key) ||
-		!strings.Contains(out.String(), "$JS.API.CONSUMER.MSG.NEXT.staging-orders.notifier_created") {
-		t.Fatalf("the v2 instance is not a user with its consumer's permission:\n%s", out.String())
+	profile, err := kernel.DecodeProfile(fixture(t, "profile.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, rendered, err := renderUsers(pinned, profile)
+	if err != nil {
+		t.Fatalf("users: %v", err)
+	}
+	if len(rendered.Files) != 1 {
+		t.Fatalf("files: %+v", rendered.Files)
+	}
+	list := string(rendered.Files[0].Document)
+	if !strings.Contains(list, key) ||
+		!strings.Contains(list, "$JS.API.CONSUMER.MSG.NEXT.staging-orders.notifier_created") {
+		t.Fatalf("the v2 instance is not a user with its consumer's permission:\n%s", list)
 	}
 }

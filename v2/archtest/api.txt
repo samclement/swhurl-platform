@@ -648,22 +648,6 @@ kernel: type UserKey struct {Seed string Public string}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
 kernel: type WorkloadFacts struct {Kind string Image, Digest string Source string Port int32 HealthPath string UID int32 Telemetry bool Publishes []string}
 kernel: var DocumentRoles = map[string]string{"api": "openapi.json", "events": "asyncapi.yaml", "flags": "flags.json"}
-legacy: const Invalid = "invalid"
-legacy: const Missing = "missing"
-legacy: const Unsupported = "unsupported"
-legacy: func (*Error) Error() string
-legacy: func Migrate(records Records, supplied Supplied) (Migration, error)
-legacy: func Translate(records Records) (Translation, error)
-legacy: type Error struct {Code, Field, Reason string}
-legacy: type Gap struct {Where, Fact, Owner string}
-legacy: type Instance struct {Exposure string Replicas int32 MemoryMiB int32 Team string}
-legacy: type Migration struct {Application, Environment string Source Source Workload Workload Instance Instance Database string Claim string Corroborated []string Calls, Allows []string EventsKey string Subscriptions []string Offered Offered Sources map[string]string Gaps []Gap}
-legacy: type Offered struct {Description, APIPath, Commit string}
-legacy: type Records struct {App, Instance, Release, Committed []byte}
-legacy: type Source struct {Repository, Commit string}
-legacy: type Supplied struct {Repository, Commit string}
-legacy: type Translation struct {Application, Environment string Workload Workload Instance Instance Sources map[string]string Gaps []Gap}
-legacy: type Workload struct {Image, Tag, Digest string Kind string Port int32 HealthPath string UID int32 Telemetry bool Publishes []string}
 notify: const AddressKey = "address"
 notify: const AlertSecret = "notify-alerts"
 notify: const AlertSecretKey = "secret"
@@ -1014,7 +998,6 @@ orchestration: func Create(ctx context.Context, inputs CreateInputs, images func
 orchestration: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 orchestration: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
 orchestration: func ImageDeclaration(reader appsource.Reader, root string) (string, error)
-orchestration: func Migrate(ctx context.Context, inputs MigrationInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer) (Migration, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewNotifier(publisher ntfy.Publisher) *Notifier
 orchestration: func NotificationsHeartbeat(ctx context.Context, ports HeartbeatPorts, options HeartbeatOptions) ([]HeartbeatOutcome, error)
@@ -1058,8 +1041,6 @@ orchestration: type HeartbeatOutcome struct {Job heartbeat.Job Decision heartbea
 orchestration: type HeartbeatPorts struct {Cluster kube.Reader Data kube.Data Platform ntfy.Publisher State hoststate.Store}
 orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 orchestration: type InstanceInputs struct {Inputs InstancePath string}
-orchestration: type Migration struct {Facts legacy.Migration Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Compilation kernel.Compilation Rendered kernel.Connections UnmetCalls []string UnmetCallers []string Egress *kernel.Egress Written []files.Outcome}
-orchestration: type MigrationInputs struct {Records legacy.Records Supplied legacy.Supplied Profile, Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
 orchestration: type Notifier struct {}
@@ -1100,12 +1081,6 @@ producer: type Document struct {Role string Bytes []byte}
 producer: type Field struct {Name any Value any}
 producer: type Object []Field
 producer: type Source struct {Runtime Object Telemetry bool Database string DatabaseSizeMiB, MemoryMiB json.Number Secrets []any Description, APIPath, APIFile, EventsFile string Flags Object}
-shadow: func (*Error) Error() string
-shadow: func CompareHTTP(before, after []byte, choices ResourceChoices) (HTTPComparison, error)
-shadow: type Error struct {Field, Reason string}
-shadow: type Finding struct {Field, Outcome, Reason string}
-shadow: type HTTPComparison struct {Findings []Finding AssessedScope []string UnassessedScope []string}
-shadow: type ResourceChoices struct {CPURequestMilli, MemoryMiB int32}
 workstreams: const MaxLines = 250
 workstreams: const Registry = "docs/workstreams.md"
 workstreams: func Check(c Checkout) []Result

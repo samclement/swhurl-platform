@@ -14,7 +14,7 @@ COMMANDS := help reconcile verify-logs flux-install \
 	app-repo app-hooks \
 	console-image console-dev \
 	platform-certs-staging platform-certs-prod destroy-data \
-	check-otel check-secrets v2-snapshot \
+	check-otel check-secrets \
 	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb \
 	live-test-call-identity live-test-network-policy live-test-team-scenario
 
@@ -95,12 +95,6 @@ check-v2:
 		&& unformatted=$$(gofmt -l .) && { [ -z "$$unformatted" ] || { echo "gofmt: run gofmt -w on: $$unformatted"; exit 1; }; } \
 		&& go vet ./... && go test -count=1 ./... && ./check-rendered.sh
 
-# Render NATS's user list, platform/nats/users.json, from the records: v2 owns the file (docs/services.md#nats).
-# It reads a snapshot of the working tree, so an uncommitted record change counts, and writes that one file.
-.PHONY: v2-users
-v2-users:
-	@$(V2_BUILD); 	revision=$$(git stash create); 	$(MAKE) -s v2-snapshot REVISION="$${revision:-HEAD}" OUT="$$work/snapshot.json" >/dev/null; 	"$$work/swhurl-v2" users --snapshot "$$work/snapshot.json" --profile v2/testdata/profile.json --out platform
-
 # Render the whole tree from v2's records: the resolution, every compiled folder and unit, the egress allocation and
 # the proxy's objects, platform/auth, NATS's user list and Reloader's watch list. It writes only when the tree
 # disagrees with them -- the check ignores the commit the two documents record -- so the Render workflow, which runs
@@ -108,12 +102,6 @@ v2-users:
 .PHONY: v2-render
 v2-render:
 	@$(V2_BUILD); 	if "$$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --check >/dev/null; then echo "the tree is what the records render; nothing written"; else "$$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --revision "$$(git rev-parse HEAD)"; fi
-
-# Render Reloader's watch list, platform/reloader/values.json, from the records: v2 owns the file (docs/services.md#reloader).
-# It reads a snapshot of the working tree, so an uncommitted record change counts, and writes that one file.
-.PHONY: v2-reloader
-v2-reloader:
-	@$(V2_BUILD); 	revision=$$(git stash create); 	$(MAKE) -s v2-snapshot REVISION="$${revision:-HEAD}" OUT="$$work/snapshot.json" >/dev/null; 	"$$work/swhurl-v2" reloader --snapshot "$$work/snapshot.json" --profile v2/testdata/profile.json --out platform
 
 # Bring every v2-owned staging instance to the newest image its repository publishes, with v2's own records and
 # files: swhurl-v2 deploy --records reads v2-records/<app>/staging, delivers each instance on its own, and fails the

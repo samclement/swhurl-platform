@@ -20,7 +20,7 @@ import (
 // health port) are asserted against it and the pinned chart, never guessed.
 //
 // Two facts decide what the configuration says. The allocation decides which instance sits on which
-// port; the port is the identity, so it is decided once by `swhurl-v2 egress` and read here, never
+// port; the port is the identity, so it is decided once by render and read here, never
 // chosen or moved while rendering. The instance's grants decide the hosts and ports it may reach: they
 // are enforced, so the configuration allows each instance its own grants and refuses everything else.
 const (

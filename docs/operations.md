@@ -147,7 +147,7 @@ cd .. && make check-apps
 git add platform v2/testdata v2-apps && git commit -m "keys: refresh the token signing keys" && git push
 ```
 
-The keys live in `platform/auth`, one `swhurl-auth` ConfigMap per managed namespace, rendered by `swhurl-v2 auth` from the profile and applied by the `platform-auth` unit — so a rotation rewrites that one folder, and every managed namespace gets it together. A v1-rendered callee verifies with them from its environment, which only a new pod reads, so it restarts when Flux
+The keys live in `platform/auth`, one `swhurl-auth` ConfigMap per managed namespace, rendered by `swhurl-v2 render` from the profile and applied by the `platform-auth` unit — so a rotation rewrites that one folder, and every managed namespace gets it together. A v1-rendered callee verifies with them from its environment, which only a new pod reads, so it restarts when Flux
 applies the commit. A v2-rendered callee mounts the keys and its allow-list only as files (`SWHURL_AUTH_KEYS_FILE`,
 `SWHURL_ALLOWED_CALLERS_FILE`) and picks a rotation up in about a minute **without a restart**; its image must be
 built from a template that reads them (TypeScript `v0.2.19`, Kotlin `v0.2.18` on), or it refuses every token.

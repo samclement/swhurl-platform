@@ -26,6 +26,16 @@ func fixture(t *testing.T, name string) []byte {
 	return b
 }
 
+// profilePath writes the platform profile to a temporary file, for the commands that take one by path.
+func profilePath(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "profile.json")
+	if err := os.WriteFile(path, fixture(t, "profile.json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestCLI(t *testing.T) {
 	prod, r42, r41, profile := fixture(t, "prod.json"), fixture(t, "r42.json"), fixture(t, "r41.json"), fixture(t, "profile.json")
 	before := bytes.Clone(prod)

@@ -39,19 +39,11 @@ jobs:
         with:
           fetch-depth: 0   # the bot starts each attempt from a worktree of the newest main
 
+      # The bot that deploys and pushes is Python (tools/swhurl/bots.py); every check it runs is Go or shell.
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: pyproject.toml
-
-      # make check-v2's freshness check renders a snapshot of the tree, which reads YAML through PyYAML.
-      - name: Install the checks' dependencies
-        run: |
-          set -Eeuo pipefail
-          python3 -m pip install --upgrade 'pip>=25.1'
-          python3 -m pip install --group check
 
       - name: Setup Go
         uses: actions/setup-go@v7

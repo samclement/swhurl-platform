@@ -179,19 +179,28 @@ func declaredFlag(environment string, flag producer.Flag) *flagDeclarationOut {
 // flagsLine is one row as text: the flag, what the app runs with, and the override it came from.
 func flagsLine(row flagsDocumentRow) []byte {
 	line := fmt.Sprintf("%s = %s", row.Name, rendered(row.Effective))
-	switch {
-	case row.Undeclared:
-		line += " (not declared: the app ignores this override)"
-	case row.Overridden:
-		line += " (override " + rendered(row.Override.Value) + ") "
+	if row.Overridden {
+		line += " (override " + jsonText(row.Override.Value) + ")"
 		if row.AgeDays != nil {
-			line += fmt.Sprintf("set %s ago", days(*row.AgeDays))
+			line += ", set " + days(*row.AgeDays)
 		}
 		if row.Stale {
 			line += ", stale"
 		}
 	}
+	if row.Undeclared {
+		line += " (not declared: the app ignores this override)"
+	}
 	return []byte(line + "\n")
+}
+
+// jsonText is a value exactly as JSON states it, a string in its quotes.
+func jsonText(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprint(value)
+	}
+	return string(encoded)
 }
 
 // rendered is a JSON value as a line shows it: a string bare, anything else as JSON, nothing as "none".
@@ -209,15 +218,15 @@ func rendered(value any) string {
 	return string(encoded)
 }
 
-// days is an age as a card says it: today, one day, or a count.
+// days is an age as a card says it: today, one day ago, or a count of days ago.
 func days(age int) string {
 	switch age {
 	case 0:
 		return "today"
 	case 1:
-		return "1 day"
+		return "1 day ago"
 	}
-	return fmt.Sprintf("%d days", age)
+	return fmt.Sprintf("%d days ago", age)
 }
 
 // splitSetting splits --set at its first = and is the name and the form's text, which the declaration types.

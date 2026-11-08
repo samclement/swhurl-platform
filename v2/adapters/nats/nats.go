@@ -307,7 +307,7 @@ func (c *connection) handle(ctx context.Context, line, reply, subject string) ([
 		if err != nil {
 			return nil, false, err
 		}
-		if message.reply != reply {
+		if message.subject != reply {
 			return nil, false, nil // this connection asks one thing at a time; another answer is not this one
 		}
 		switch {
@@ -321,15 +321,15 @@ func (c *connection) handle(ctx context.Context, line, reply, subject string) ([
 	return nil, false, nil
 }
 
-// answer is one MSG or HMSG frame: its reply subject, its status line and its payload.
+// answer is one MSG or HMSG frame: the subject it was delivered to, its status line and its payload.
 type answer struct {
-	reply, status string
-	payload       []byte
+	subject, status string
+	payload         []byte
 }
 
 // message reads the frame whose first line was just read: the header block of an HMSG, then the body.
 func (c *connection) message(ctx context.Context, line string) (answer, error) {
-	reply, headSize, size, err := frameSizes(strings.Fields(line))
+	subject, headSize, size, err := frameSizes(strings.Fields(line))
 	if err != nil {
 		return answer{}, err
 	}
@@ -337,52 +337,38 @@ func (c *connection) message(ctx context.Context, line string) (answer, error) {
 	if err != nil {
 		return answer{}, err
 	}
-	found := answer{reply: reply, payload: body[headSize:]}
+	found := answer{subject: subject, payload: body[headSize:]}
 	if headSize > 0 {
 		found.status = statusOf(body[:headSize])
 	}
 	return found, nil
 }
 
-// frameSizes is a frame's reply subject and its two sizes. A frame is MSG subject sid [reply] size, or HMSG subject
-// sid [reply] headerSize size: the reply subject is there only when the publisher asked for one.
+// frameSizes is a frame's own subject and its two sizes. A frame is MSG subject sid size, or HMSG subject sid
+// headerSize size: the reply-to a publisher may have set is not read, because this client asks one thing at a time
+// and recognises its answer by the subject the server delivered it to.
 func frameSizes(parts []string) (string, int, int, error) {
-	reply, words, headered, err := frameWords(parts)
-	if err != nil {
-		return "", 0, 0, err
+	headered := len(parts) > 0 && parts[0] == "HMSG"
+	wanted := 4
+	if headered {
+		wanted = 5
+	}
+	if len(parts) != wanted {
+		return "", 0, 0, fmt.Errorf("NATS sent a frame this client cannot read: %.80s", strings.Join(parts, " "))
 	}
 	head := 0
 	if headered {
-		size, err := strconv.Atoi(words[2])
+		size, err := strconv.Atoi(parts[3])
 		if err != nil {
-			return "", 0, 0, fmt.Errorf("NATS sent a header size that is not a number: %s", words[2])
+			return "", 0, 0, fmt.Errorf("NATS sent a header size that is not a number: %s", parts[3])
 		}
 		head = size
 	}
-	size, err := strconv.Atoi(words[len(words)-1])
+	size, err := strconv.Atoi(parts[len(parts)-1])
 	if err != nil || size < head || size > maxFrame {
-		return "", 0, 0, fmt.Errorf("NATS sent a message size this client will not read: %s", words[len(words)-1])
+		return "", 0, 0, fmt.Errorf("NATS sent a message size this client will not read: %s", parts[len(parts)-1])
 	}
-	return reply, head, size, nil
-}
-
-// frameWords is a frame's reply subject and the words left once it is taken out: the sizes are the last of them.
-func frameWords(parts []string) (string, []string, bool, error) {
-	headered := len(parts) > 0 && parts[0] == "HMSG"
-	words := parts[1:] // subject, subscription, [reply], [header size], size
-	reply := ""
-	if headered && len(words) == 5 || !headered && len(words) == 4 {
-		reply = words[2]
-		words = append(words[:2], words[3:]...)
-	}
-	sizes := 3
-	if headered {
-		sizes = 4
-	}
-	if len(words) != sizes {
-		return "", nil, false, fmt.Errorf("NATS sent a frame this client cannot read: %v", parts)
-	}
-	return reply, words, headered, nil
+	return parts[1], head, size, nil
 }
 
 // statusOf is an HMSG head's status line, without the protocol's own prefix.

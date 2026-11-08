@@ -154,6 +154,36 @@ func TestFlagsClearRemovesTheOverride(t *testing.T) {
 	}
 }
 
+// The text output says what a row means: the value, where it came from, and how old the override is.
+func TestFlagsTextStatesEachRow(t *testing.T) {
+	fake := natstest.New()
+	fake.Entries[kernel.FlagSubject("staging", "demo-shop", "theme")] = nats.Message{Value: []byte(`"dark"`),
+		StoredAt: flagsClock.Format(time.RFC3339Nano)}
+	fake.Entries[kernel.FlagSubject("staging", "demo-shop", "old-banner")] = nats.Message{Value: []byte("true"),
+		StoredAt: flagsClock.AddDate(0, 0, -20).Format(time.RFC3339Nano)}
+	var out, diagnostic bytes.Buffer
+	status := runWith([]string{"flags", "--records", flagsRecords(t, flagsTestDocument), "--app", "demo-shop",
+		"--env", "staging"}, &out, &diagnostic, flagsCLI("a-seed", fake))
+	if status != 0 {
+		t.Fatalf("status %d: %s", status, diagnostic.String())
+	}
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	wanted := []string{
+		"batch-size = 100",
+		"checkout = false",
+		`theme = dark (override "dark"), set today`,
+		"old-banner = true (override true), set 20 days ago, stale (not declared: the app ignores this override)",
+	}
+	if len(lines) != len(wanted) {
+		t.Fatalf("the lines: %q", lines)
+	}
+	for index, want := range wanted {
+		if lines[index] != want {
+			t.Fatalf("line %d: %q, want %q", index, lines[index], want)
+		}
+	}
+}
+
 // A malformed declaration is the card's problem, and the overrides are still listed.
 func TestFlagsShowsAProblemAndStillListsOverrides(t *testing.T) {
 	fake := natstest.New()

@@ -136,14 +136,14 @@ func (b *bucket) reply(found request) []byte {
 	switch {
 	case strings.HasPrefix(found.subject, "$JS.API.STREAM.INFO."):
 		prefix := strings.TrimSuffix(requested(b.t, found.body, "subjects_filter"), "*")
-		return msgFrame(found.subject, found.reply, b.listing(prefix))
+		return msgFrame(found.reply, b.listing(prefix))
 	case strings.HasPrefix(found.subject, "$JS.API.STREAM.MSG.GET."):
-		return msgFrame(found.subject, found.reply, b.read(requested(b.t, found.body, "last_by_subj")))
+		return msgFrame(found.reply, b.read(requested(b.t, found.body, "last_by_subj")))
 	case strings.HasPrefix(found.subject, "$KV."):
 		b.write(found)
-		return msgFrame(found.subject, found.reply, fixture(b.t, "ack.json"))
+		return msgFrame(found.reply, fixture(b.t, "ack.json"))
 	}
-	return hmsgFrame(found.subject, found.reply, []byte("NATS/1.0 503\r\n\r\n"))
+	return hmsgFrame(found.reply, []byte("NATS/1.0 503\r\n\r\n"))
 }
 
 // write stores one value, remembering a clear by the operation header the frame carries.
@@ -242,14 +242,15 @@ func requested(t *testing.T, payload []byte, field string) string {
 // text is a JetStream request's flat body.
 type text map[string]string
 
-// msgFrame is one answer without a head: MSG, subject, subscription, the reply subject and the size.
-func msgFrame(subject, reply string, body []byte) []byte {
-	return []byte(fmt.Sprintf("MSG %s 1 %s %d\r\n%s\r\n", subject, reply, len(body), body))
+// msgFrame is one answer without a head, delivered to the inbox: the server sends MSG subject sid size, never the
+// reply-to a publisher set.
+func msgFrame(reply string, body []byte) []byte {
+	return []byte(fmt.Sprintf("MSG %s 1 %d\r\n%s\r\n", reply, len(body), body))
 }
 
 // hmsgFrame is one answer whose status line is its whole head.
-func hmsgFrame(subject, reply string, head []byte) []byte {
-	return []byte(fmt.Sprintf("HMSG %s 1 %s %d %d\r\n%s\r\n", subject, reply, len(head), len(head), head))
+func hmsgFrame(reply string, head []byte) []byte {
+	return []byte(fmt.Sprintf("HMSG %s 1 %d %d\r\n%s\r\n", reply, len(head), len(head), head))
 }
 
 // A seed the server does not know is refused, and the refusal says so: a failed sign-in is never an empty store.

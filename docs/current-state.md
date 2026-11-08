@@ -18,8 +18,26 @@ What has been verified on the live cluster, and when: current facts first, then 
   allocation for an instance that declares nothing. The instance revision of every record moved (`prod.json`
   `inst-sha256:3df1beaf…` → `inst-sha256:6f3f654a…`, verified independently in Python), so a `--expect` revision from
   before this commit is stale, as any record-shape change makes it.
-- **Not exercised yet:** the live proof — a granted host answering through the proxy, an ungranted one refused with
-  `granted=-`, and the grant cleared again.
+- **Live:** `swhurl-try-30/staging`, granted one host and then cleared again. `swhurl-v2 edit --set egress=example.com`
+  wrote the record (13 files, `allocationStale: true`, the note asking for the render); the render kept the instance's
+  port **30109** and put the grant behind it — `acl swhurl-try-30-staging-443 dstdomain -n example.com` and its
+  `http_access allow` in the proxy's configuration, the `platform.swhurl.com/egress` annotation and the proxy variables
+  in the release, and the proxy port in the instance's policy. Committed as `183d574f`, pushed, `make flux-reconcile`:
+  the proxy rolled on the ConfigMap's checksum and served the new configuration, the app pod rolled with
+  `HTTPS_PROXY=http://egress.egress.svc.cluster.local:30109`, and from a `kubectl debug` container in that pod (the
+  pod's own network, so its policy applied) `https://example.com` answered **200** while `https://example.org` failed
+  with `curl: (56) CONNECT tunnel failed, response 403`. The proxy logged both:
+  `granted=yes … host=example.com:443 status=200/TCP_TUNNEL` and
+  `granted=- … host=example.org:443 status=403/TCP_DENIED`.
+- **Cleared:** `edit --set egress=` then the render put the tree back — the allocation keeps port 30109 with no hosts in
+  it, the ACL and allow line are gone from the proxy, the release's annotation and proxy variables are gone, and the
+  compiled files are byte-identical to `ae62431c`. Committed as `02b43637` (rebased past the console image deploy
+  `4da3ebe7`, which the two corrected console messages triggered), reconciled: the proxy rolled again and
+  `make app-status APP=swhurl-try-30 ENV=staging` is healthy. `make verify-platform` passed.
+- **Not exercised:** an app's own SDK or HTTP client using the proxy (the check passed `-x` to curl from a debug
+  container), a wildcard grant live, the `granted=-` line read in ClickStack rather than the proxy pod's stdout, and a
+  grant on an instance that had no allocation before it (30109 already existed with no hosts behind it).
+- **Delivery:** the slice is `1982d519`; the grant and its revert are the two live-check commits above.
 
 ## The snapshot export leaves Python and v2's migration tools are retired (8 November 2026)
 

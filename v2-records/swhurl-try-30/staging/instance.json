@@ -8,7 +8,10 @@
     "memoryMiB": 128
   },
   "grants": {
-    "exposure": "private"
+    "exposure": "private",
+    "egress": [
+      "example.com"
+    ]
   },
   "bindings": {},
   "storage": {},

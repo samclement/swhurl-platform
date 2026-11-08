@@ -1,0 +1,1 @@
+{"apiVersion":"kustomize.toolkit.fluxcd.io/v1","kind":"Kustomization","metadata":{"name":"app-example-staging","namespace":"flux-system"},"spec":{"path":"./v2-apps/instances/example/staging","postBuild":{"substituteFrom":[{"kind":"Secret","name":"backup-writer","optional":false}]},"prune":true,"wait":true}}

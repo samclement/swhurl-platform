@@ -1,0 +1,27 @@
+# Two units in one file, and a document of another kind between them, as clusters/home/*.yaml hold them.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-example
+  namespace: flux-system
+spec:
+  path: ./platform/example
+  decryption:
+    provider: sops
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: not-a-unit
+data:
+  enabled: on
+  quoted: "on"
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-other
+  namespace: flux-system
+spec:
+  path: ./platform/other
+---

@@ -164,8 +164,8 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn('swhurl console-image', pin['run'])
         self.assertIn('--expect "src-${{ needs.console-image.outputs.content }}" --commit', pin['run'])
         uses = {step['uses'].split('@')[0] for step in steps if 'uses' in step}
-        self.assertLessEqual({'azure/setup-kubectl', 'azure/setup-helm'}, uses, 'push_main runs check-repo check-apps')
-        self.assertTrue(any('flux-schema' in step.get('run', '') for step in steps))
+        self.assertLessEqual({'azure/setup-kubectl', 'azure/setup-helm', 'actions/setup-go'}, uses,
+                             'push_main runs check-repo check-apps, which build swhurl-v2')
 
 
 class WorkflowPinTests(unittest.TestCase):

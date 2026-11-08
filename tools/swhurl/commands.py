@@ -171,8 +171,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     )),
     ('Offline checks', (
         Command('check', 'The offline checks in parallel; CI also renders the templates (check-templates)', LOCAL),
-        Command('check-repo', 'Render active Flux paths; schemas, SOPS structure, required Secrets and settings, shell syntax, doc links', LOCAL,
-                'swhurl.validate:main'),
+        Command('check-repo', 'Doc links and tables, SOPS structure, settings and render paths (swhurl-v2); render and substitute each path, shell syntax; SCHEMA=1 adds flux-schema (needs Go)',
+                LOCAL, takes=(Var('SCHEMA', '1', required=False, env=True),)),
         Command('test', 'Unit tests for the tooling, console, manifests and command safety; K= runs only matching classes (needs uv)', LOCAL,
                 takes=(Var('K', '<pattern>', required=False, flag='-k'),)),
         Command('check-apps', "v2's records match Git and every compiled instance passes Go Kubernetes policy (needs Go and Helm; no arguments)", LOCAL),

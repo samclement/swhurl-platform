@@ -366,7 +366,7 @@ stdout to 16 MiB, stderr to 64 KiB (discarded), subprocess duration to 30 second
 to another second. A missing executable, timeout, nonzero exit, oversized stream or malformed later
 document returns no partial result.
 
-The operator approved one maintained YAML parser, `go.yaml.in/yaml/v3` v3.0.6, confined to Helm and the explicitly approved [app-source adapter](#producer-first-python-retirement-approved-5-november-2026).
+The operator approved one maintained YAML parser, `go.yaml.in/yaml/v3` v3.0.6, confined to Helm, the explicitly approved [app-source adapter](#producer-first-python-retirement-approved-5-november-2026) and the [manifest decoder](#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026) `check-repo` reads the checkout through.
 Its [README](https://github.com/yaml/go-yaml/blob/v3.0.6/README.md) identifies YAML-organization maintenance
 after the original repository became unmaintained; the [tag changes](https://github.com/yaml/go-yaml/compare/v3.0.5...v3.0.6)
 include removing its upstream test dependency (there is no GitHub release-note entry for the tag).
@@ -512,7 +512,7 @@ change is anything `git status` reports, so a new untracked file under a workstr
 - A failed request (forbidden, unavailable, timeout) is unavailable evidence; only a successful `404` means absent.
 - Raw fixtures are API JSON. That is the shape `kubectl get -o json` prints, so recorded v1 outputs can be reused.
 
-**Decided 25 October 2026: a thin `net/http` client, not `client-go`.** It is the reader [`adapters/kube`](../v2/adapters/kube/kube.go), uses only the standard library (`stdlib-only` outside the approved Helm/app-source parser boundaries), and takes the k3s material it needs as arguments: a CA bundle, a client certificate or key, and a bearer token. `client-go` would be complete but adds a large dependency tree and binary size for four kinds and two verbs. Resolving a kubeconfig or an in-cluster service-account token is **not** in that adapter: the YAML parser approval is confined to Helm and app-source reading, not kubeconfig reading; the `observe` command resolves it and hands the adapter its ingredients.
+**Decided 25 October 2026: a thin `net/http` client, not `client-go`.** It is the reader [`adapters/kube`](../v2/adapters/kube/kube.go), uses only the standard library (`stdlib-only` outside the approved Helm, app-source and manifest parser boundaries), and takes the k3s material it needs as arguments: a CA bundle, a client certificate or key, and a bearer token. `client-go` would be complete but adds a large dependency tree and binary size for four kinds and two verbs. Resolving a kubeconfig or an in-cluster service-account token is **not** in that adapter: the YAML parser approval is confined to Helm, app-source and checkout-manifest reading, not kubeconfig reading; the `observe` command resolves it and hands the adapter its ingredients.
 
 ### Fixtures and fakes
 
@@ -593,7 +593,7 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 
 | Rule | What it enforces |
 | --- | --- |
-| `stdlib-only` | v2 imports only the standard library and its own packages except `go.yaml.in/yaml/v3` **v3.0.6**, approved 4 November 2026, imported only by `adapters/helm` and `adapters/appsource` (including their tests; the latter approved 5 November 2026). The check refuses other imports, modules, versions and module replacement directives. Pure packages remain standard-library-only; this does not approve YAML kubeconfigs. |
+| `stdlib-only` | v2 imports only the standard library and its own packages except `go.yaml.in/yaml/v3` **v3.0.6**, approved 4 November 2026, imported only by `adapters/helm`, `adapters/appsource` and `adapters/manifests` (including their tests; `adapters/appsource` approved 5 November 2026, and `adapters/manifests`, which decodes the checkout's Kubernetes manifests for `check-repo`, [8 November 2026](#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026)). The check refuses other imports, modules, versions and module replacement directives. Pure packages remain standard-library-only; this does not approve YAML kubeconfigs. |
 | `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
 | `pure` | Pure packages import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments: `time` is allowed for parsing and comparing a *supplied* timestamp, and its clock functions (`time.Now`, `time.Since`, `time.Until`, timers and ticks) are refused by call. |
 | `no-subprocess` | v2 code (not its tests) starts processes only in the encryption adapter `adapters/sops`, the approved chart-rendering adapter `adapters/helm` and the read-only checkout adapter `adapters/git`, and names no `kubectl` or `flux` command anywhere ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine; Git avoids a second reader of its index and object store. The Git exception, approved 5 November 2026, is [four fixed reads of one checkout](#the-workstream-check-in-go-approved-5-november-2026), with no write, fetch or general command runner. The Helm exception, approved 4 November 2026, is `helm template` for app-policy checks and, approved 5 November 2026, explicit profile-pinned `helm pull` for the check cache ([contract](#chart-acquisition-approved-5-november-2026)): no cluster reads, install, upgrade, implicit dependency fetching or arbitrary command runner. The checked allowlist admits exactly the three adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm invocation. |
@@ -1638,7 +1638,7 @@ object — churn is not stability, but no commit in that window was a field typo
 
 | Layer | Owns |
 | --- | --- |
-| `adapters/manifests` (new; approved with this slice, and its one guardrail diff) | `Read(path)` over Kubernetes YAML: decoded documents with kind, name, string fields and their spec. Raw fixtures in `testdata/`, a fake and one `Contract` suite. It is the fourth approved importer of `go.yaml.in/yaml/v3`, added to `archtest/rules_test.go`'s allowlist and to the guardrails table |
+| `adapters/manifests` (new; approved with this slice, and its one guardrail diff) | `Decoder.Documents(text)` over Kubernetes YAML: decoded documents with kind, name and their fields, a plain YAML 1.1 boolean read as Kubernetes reads it; it reads no file (the command reads them inside the checkout). Raw fixtures in `testdata/`, a fake and one `Contract` suite. It is the third approved importer of `go.yaml.in/yaml/v3`, added to `archtest/rules_test.go`'s allowlist and to the guardrails table |
 | `v2/checkrepo` (pure, layer 0) | Each check as a function of the documents and file text it is given: `docs-links`, `flux-units-table`, `app-interface-table`, `emitted-names`, `sops-secrets`, `platform-settings`, `render-paths`, and the substitution of one path |
 | `adapters/git` (unchanged) | The tracked and untracked file lists the documentation and shell checks need |
 | `orchestration` | `CheckRepo`: read, run every check, collect the failures, report |
@@ -1660,11 +1660,11 @@ object — churn is not stability, but no commit in that window was a field typo
   stream. The `commands.py` row loses its `run=` and gains the `SCHEMA` variable.
 - The pinned `flux-schema` install leaves `validate.yml`, `render.yml` and `auto-merge.yml`; [contributing](contributing.md)
   lists it as what `SCHEMA=1` needs, and [commands](commands.md) says what each form checks.
-- Deleted with it: `tools/swhurl/validate.py` (296 lines) and `tests/test_validate.py` (171); `platform.py`'s
-  `flux_unit_documents`, `decrypted_secret_files`, `BOOTSTRAP_PATHS` and `UNITS_DOC` (`tests/test_manifest_policy.py`
-  takes the render helper it still needs); `interface.unlisted` (v2 reads the same catalogue already, and
-  `interface.py` stays for the console); and validate's last read of the v1 `apps/contract.py` constants — the backup
-  writer, file and label become v2's own.
+- Deleted with it: `tools/swhurl/validate.py` (296 lines), `tests/test_validate.py` (171) and `apps/checks.py`, which
+  held only validate's compiled-tree path; `platform.py`'s `decrypted_secret_files`, `BOOTSTRAP_PATHS` and `UNITS_DOC`
+  (`flux_unit_documents` stays: `platform.units()` and `tests/test_manifest_policy.py` read it); `interface.unlisted`
+  and `NAME_RE` with their test (v2 reads the same catalogue, and `interface.py` stays for the console); and validate's
+  last read of the v1 `apps/contract.py` constants — the backup writer, file and label are v2's own.
 
 **Acceptance.** Go table tests carry every case of `tests/test_validate.py`: each kind of drift is named, every check
 still runs after a failure, a substituting unit is resolved and a unit without substitution keeps its `${...}`, a

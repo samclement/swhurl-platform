@@ -127,6 +127,13 @@ def install(runner, units, releases):
     runner.on('git', 'archive', handler=lambda args, _input: write_archive(args, runner.status_inputs))
     runner.on('kubectl', 'config', 'view', stdout='{"kind":"Config"}')
     runner.on(v2.BINARY, 'status', handler=lambda args, _input: answer(args, runner.status_reports, runner.inventories, runner.removing))
+    runner.on(v2.BINARY, 'flags', stdout=flags_card())
+
+
+def flags_card(rows=(), *, problem='', writable=True, app='', env=''):
+    """The document `swhurl-v2 flags --json` prints: a page with no override stored, unless a test says more."""
+    return json.dumps({'kind': 'v2-flags', 'version': 1, 'instance': {'application': app, 'environment': env},
+                       'writable': writable, 'problem': problem, 'rows': list(rows)})
 
 
 def rows(runner):

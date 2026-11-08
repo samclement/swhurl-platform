@@ -15,7 +15,7 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from swhurl import statestore
 from swhurl.apps import contract, repo
-from swhurl.console import actions, catalogue, cluster, flagstore, repos
+from swhurl.console import actions, catalogue, cluster, repos
 from swhurl.console.github import GitHub, PullRequest
 from swhurl.console.reading import Files
 from swhurl.run import CommandError, Runner, SharedReads
@@ -91,7 +91,6 @@ class Context:
     runner: SharedReads
     github: GitHub | None
     jobs: actions.Jobs
-    flags: flagstore.FlagStore | None
     app_repos: repos.AppReposToken | None
     repo_opener: repo.Opener | None
     described: catalogue.Documents

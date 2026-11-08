@@ -2,6 +2,42 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console reads its apps from Go's inventory (8 November 2026)
+
+- **Scope:** [§21](iteration-2-plan.md#21-the-apps-inventory-and-connections-in-go-approved-8-november-2026),
+  approved: `swhurl-v2 status --all` carries an `inventory` block per instance and a `removing` list, and the console
+  reads its rows from them instead of listing HelmReleases, namespaces and Ingresses itself.
+- **What changed:** `swhurl-v2 status --all` is `v2-observations` version 2 (single status stays version 5). Each entry
+  keeps its report and adds `inventory`: team, kind, exposure, port, hosts, cluster address, API address, artifact,
+  database path, offers commit, egress port and grants, calls/allows/callers/publishes/subscriptions, and one row per
+  connection with `role`, and `outcome` (`connected`, `waiting`, `refused`, or empty for a declaration with no
+  counterpart) plus a `reason` code. Deleted with it: `console/records.py` (166 lines), `cluster.apps` and its four
+  `kubectl` lists, `cluster.ingress_hosts`, the HelmRelease variable parsing behind them, and the app page's own
+  `release.json` read. The Apps list compares staging with production by digest; the rows that said "connected in Git,
+  not yet observed live" are gone, because the page's revision line states currentness once.
+- **Offline:** `make check` passed (481 Python tests over 170 console ones, lint, `check-repo`, `check-apps`,
+  `check-otel`, the code graph, `check-docs`) and `make check-v2` passed (gofmt, vet, Go tests, 157 rendered files
+  unchanged, archtest budgets and API). The new Go tests pin every field and every row outcome, and the console's
+  pinned scenarios became blocks.
+- **Live, 10 instances:** `swhurl-v2 status --all --json` against the cluster and the real records reports 10
+  instances, `removing: []`, and blocks that match the pages: `demo-orders/prod` is `web`, `authenticated-web`, port
+  8080, host `demo-orders.homelab.swhurl.com`, team `demo`, egress port 30111 with the backups bucket granted;
+  `demo-shopper/staging` is a `worker` with no host and one outgoing call; `demo-notifier/staging` subscribes to
+  `demo-orders/created`, and `demo-orders/staging` shows it as a subscriber. Three runs of the binary took 919, 1001
+  and 1059 ms.
+- **Live, the pages** (in-cluster request with the forward-auth header, after the console image redeploy): `/apps`
+  showed every app with its team, host and promotion pill, `/apps?view=map`, `/egress`, `/teams`,
+  `/apps/demo-shop/staging` and `/apps/demo-orders/prod` rendered without an error page, and the project's
+  `demo-orders.prod` page showed the backups bucket's `host:port` as a reaches row. Warm latency: `/apps` 622 ms,
+  `/egress` 607 ms, the map 732 ms, an app page 662 ms; the first request after a rollout took 6.9 s (its caches
+  cold), and the catalogue 4.2 s. `https://console.homelab.swhurl.com/apps` signed out is a 302 to Google's consent
+  page.
+- **Found live and fixed in the same change:** a `reaches` row keeps its host in `host`, which the console mapped to
+  the event column only, so every grant rendered with an empty What column. `f20147db`.
+- **Not exercised live:** a row that is `waiting` and one that is `removing` (both covered by Go's tests and the
+  console's fixture, which states a pending call and a unit-and-release removal); signing in through Google itself,
+  which the header-authenticated in-cluster read stands in for.
+
 ## The console has no merge gate (8 November 2026)
 
 - **Scope:** [§20](iteration-2-plan.md#20-the-merge-gate-is-retired-approved-8-november-2026), approved: the merge gate

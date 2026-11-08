@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: a scoped contract and operator approval for the next console slice (the server and its templates)
+Gate: the operator's approval of §22 (the feature flags slice in Go)
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -84,7 +84,7 @@ loses its `run=` function.
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
 | The v1 records model and its fixture oracle (`apps/model/*`) | delete as importers leave; keep the fixture oracle until then | bounded: 1,541 lines, imported by 11 modules (8 under `apps/`, 2 under `console/` and 1 live test) and 4 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last ([§21](iteration-2-plan.md#21-the-apps-inventory-and-connections-in-go-approved-8-november-2026)) |
 | Image-declaration producer | `swhurl-v2 image-declaration` | implemented, independently reviewed and rolled out to both template build workflows: Python producer/internal command and producer-only tests deleted; 35 full-label goldens and seven refusals preserve source behavior; the templates build and call the pinned Go binary, and the released catalogue pins are advanced. Existing apps' workflow pins stay unchanged until Copier updates them |
-| `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress: every row of the Apps list, the map, the Egress page, the catalogue, the Teams page and the app page is `swhurl-v2 status --all`'s `inventory` block, so the console runs no `kubectl` list of its own for them and `records.py` is deleted (a grant outside the cluster keeps its `host:port` in the row's What column); its promotion submission reads `swhurl-v2 status` with the pod's credential, and its Overview and Platform checks `swhurl-v2 verify`; its merge gate is retired rather than ported ([§21](iteration-2-plan.md#21-the-apps-inventory-and-connections-in-go-approved-8-november-2026), [§20](iteration-2-plan.md#20-the-merge-gate-is-retired-approved-8-november-2026)). The server and its 18 templates go last |
+| `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress, in two slices: the feature-flag card first (`flagstore.py` → `swhurl-v2 flags`, [§22](iteration-2-plan.md#22-feature-flags-in-go-the-overrides-adapter-and-the-consoles-card-proposed-9-november-2026)), then the server; today: every row of the Apps list, the map, the Egress page, the catalogue, the Teams page and the app page is `swhurl-v2 status --all`'s `inventory` block, so the console runs no `kubectl` list of its own for them and `records.py` is deleted (a grant outside the cluster keeps its `host:port` in the row's What column); its promotion submission reads `swhurl-v2 status` with the pod's credential, and its Overview and Platform checks `swhurl-v2 verify`; its merge gate is retired rather than ported ([§21](iteration-2-plan.md#21-the-apps-inventory-and-connections-in-go-approved-8-november-2026), [§20](iteration-2-plan.md#20-the-merge-gate-is-retired-approved-8-november-2026)). The server and its 18 templates go last |
 
 ## Remaining work
 
@@ -136,8 +136,9 @@ not migration.
    delivered: the render, schema and `bash -n` steps stay in bash, schema validation is opt-in
    (`SCHEMA=1`), and `validate.py` is deleted ([evidence](current-state.md#check-repo-runs-go-and-validatepy-is-retired-8-november-2026)). [§18](iteration-2-plan.md#18-the-snapshot-export-and-the-migration-tools-are-retired-approved-8-november-2026)
    retires the Python snapshot export, v2's snapshot-only commands and its migration tools, leaving one render
-   ([evidence](current-state.md#the-snapshot-export-leaves-python-and-v2s-migration-tools-are-retired-8-november-2026)). The console and the remaining commands each need their own slice. Existing
-   apps' adoption of the new workflow releases is a separate gate.
+   ([evidence](current-state.md#the-snapshot-export-leaves-python-and-v2s-migration-tools-are-retired-8-november-2026)). The console and the remaining commands each need their own slice: the console's is two, the flag
+   card ([§22](iteration-2-plan.md#22-feature-flags-in-go-the-overrides-adapter-and-the-consoles-card-proposed-9-november-2026))
+   and then the server. Existing apps' adoption of the new workflow releases is a separate gate.
 
 ## Deferred features
 
@@ -195,7 +196,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
 - Each backup location is stated once, where its job reads it (MongoDB's in `platform/backup/mongodb.yaml`,
   the apps' in the profile), and no environment variable overrides it (3 November 2026).
 - The console leaves by strangling: one `swhurl-v2` subcommand per slice, called through `console/v2.py` and
-  deleting that Python; its server and templates go last (3 November 2026).
+  deleting that Python; its server and templates go last (3 November 2026). That last part is two slices, the
+  feature-flag card and its NATS key-value adapter first, so the server adds no external effect (9 November 2026).
 - The binary is built, never committed: make targets build it into a throwaway folder, and a local build in
   `v2/` is ignored (3 November 2026).
 - The team registry is a v2 record (`v2-records/teams.json`): a team has at most one channel and a channel one

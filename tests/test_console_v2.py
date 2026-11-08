@@ -290,7 +290,10 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(captured, [])
         response, _ = self.post('/apps/hello/staging/egress', {'hosts': 'api.example.com'})
         self.assertEqual(response.status_code, 400)
-        self.assertIn('v2 does not model egress', response.text)
+        self.assertIn('the console offers no egress form', response.text)
+        response, _ = self.post('/apps/hello/staging/schedule', {'cron': '0 3 * * *'})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('v2 does not model a schedule', response.text)
 
 
 class PullRequestTests(unittest.TestCase):

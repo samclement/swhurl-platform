@@ -4,7 +4,7 @@
 {% block main %}
 <p class="crumbs"><a href="/platform">Platform</a> › Egress</p>
 <h1>Egress</h1>
-{% call st.about() %}Every request an app sends outside the cluster goes through the egress proxy, on a port of the app's own, so the proxy knows which app is asking. A grant is a host the app may reach, per environment, held in the platform's records: v2 models no egress-grant setting yet, so nothing here or in a record adds one. A host without a grant is refused: the proxy answers 403 and logs <code>granted=-</code>. The last column opens that app's refused requests, the hosts it will need granted.{% endcall %}
+{% call st.about() %}Every request an app sends outside the cluster goes through the egress proxy, on a port of the app's own, so the proxy knows which app is asking. A grant is a host the app may reach, per environment, held in each instance's record (<code>grants.egress</code>) and written there by <code>swhurl-v2 edit --set egress=&lt;host&gt;</code>, whose render carries it to this proxy. This page shows what the platform has rendered; it offers no form. A host without a grant is refused: the proxy answers 403 and logs <code>granted=-</code>. The last column opens that app's refused requests, the hosts it will need granted.{% endcall %}
 <p class="verdict">{{ granted }} of {{ instances }} instance{{ 's' if instances != 1 }} {{ 'is' if granted == 1 else 'are' }} granted a host outside the cluster{% if hosts %} <span class="muted">· {{ hosts }} host{{ 's' if hosts != 1 }} in all</span>{% endif %}</p>
 {% for env, found in by_env %}
 <h2>{{ env }}</h2>

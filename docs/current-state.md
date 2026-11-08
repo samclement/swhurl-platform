@@ -30,6 +30,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   derived HelmRelease, the allocation and `calls.json`), merged by hand as `c8421cdc`, and `make flux-reconcile` left
   the instance **healthy** at that revision with the deployment requesting **192Mi**. A second change (`memory=128`)
   merged the same way as **#106** (`3d2791b7`) returned it to 128Mi, healthy, so nothing is left scaled.
+- **One copy fix, made false by §19:** `templates/egress.html` said v2 models no egress grant. It now says a grant is
+  the instance record's `grants.egress`, written by `swhurl-v2 edit --set egress=<host>` and carried to the proxy by the
+  render; a hand-made POST to `/apps/<app>/<env>/egress` answers with that command, and a schedule POST still says v2 has
+  no schedule.
 - **Not exercised live:** the pages behind browser sign-in (the deployed pod serves the same code, but the forms were
   driven through `--dev`), and `main`'s protection state, which is unchanged: unprotected, as the bots that push to it
   need.

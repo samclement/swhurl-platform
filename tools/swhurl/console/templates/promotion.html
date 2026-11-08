@@ -18,7 +18,7 @@
 </dl>
 <form class="wizard promotion-form" method="post" action="/apps/{{ review.app }}/staging/promote">
 <input type="hidden" name="image" value="{{ review.image }}">
-<p class="muted">This PR does not merge itself: it {{ review.held }}. You merge it on GitHub; it already carries what <code>swhurl-v2 render</code> derives, so Flux applies it when it is merged.</p>
+<p class="muted">You merge it on GitHub: no console pull request merges itself. It already carries what <code>swhurl-v2 render</code> derives, so Flux applies it when it is merged.</p>
 {% if review.problem %}<p class="warn" role="alert">{{ review.problem }}</p>{% endif %}
 <button class="primary"{% if review.problem %} disabled{% endif %}>Promote to production</button>
 </form>
@@ -43,8 +43,7 @@
 {% if review.needs_host %}<div class="field"><label for="host">Production public hostname</label><input id="host" name="host" required placeholder="app.example.com"><span class="muted hint">A distinct host outside the shared sign-in domain. Review DNS and TLS before manually merging this PR.</span></div>{% endif %}
 {% if review.admits %}<p class="warn">This also lets {{ review.app }} call {{ review.admits | join(', ') }} in production: once main renders it, each gains it in its allowed callers and network policy. Review that and merge the PR yourself on GitHub.</p>{% endif %}
 {% if review.setup %}<p class="muted">This PR {{ 'needs setup and manual review' if review.secrets or review.needs_host else 'does not merge itself: you merge it on GitHub' }}; main renders production when it is merged.</p>
-{% elif review.held %}<p class="muted">This PR does not merge itself: it {{ review.held }}. You merge it on GitHub; main renders it when it is merged.</p>
-{% else %}<label class="check"><input type="checkbox" name="hold"> Hold for manual review</label><p class="muted">Otherwise it merges itself after validation. Production is deployed when Flux applies the merge and reports Ready.</p>{% endif %}
+{% elif review.held %}<p class="muted">You merge it on GitHub; main renders it when it is merged.</p>{% endif %}
 <button class="primary">Promote to production</button>
 </form>
 {% endif %}

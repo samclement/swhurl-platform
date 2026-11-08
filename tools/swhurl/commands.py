@@ -216,7 +216,6 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
 INTERNAL = (
     Command('make', 'Run a make target: its arguments come from the make variables in the environment', run='swhurl.commands:make', internal=True),
     Command('console', 'Serve the web console (the pod; --dev: loopback, fixed identity)', run='swhurl.console.server:main', internal=True),
-    Command('console-merge', 'CI: validate and merge an eligible console pull request', run='swhurl.console.merge:main', internal=True),
     Command('bot-render', 'CI (Render): render the newest main from its records, check it and push it', run='swhurl.bots:main_render', internal=True),
     Command('bot-deploy-v2', 'CI (Deploy v2): bring every v2-owned staging instance to its newest image, check it and push it',
             run='swhurl.bots:main_deploy_v2', internal=True),

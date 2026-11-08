@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: a scoped contract and approval for the next retirement slice
+Gate: a scoped contract and approval for the next console slice (its checks, then the server)
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -84,7 +84,7 @@ loses its `run=` function.
 | `app-repo` and `app-hooks` (Copier and the GitHub API) | v2, or a kept GitHub step in bash | not started; the console imports `apps/repo.py` and `apps/hooks.py`, so part of it leaves with the console |
 | The v1 records model and its fixture oracle (`apps/model/*`) | delete as importers leave; keep the fixture oracle until then | bounded, not started: 1,541 lines, imported by 12 modules (8 under `apps/`, 3 under `console/` and 1 live test) and 4 test files; [`test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins both, so it only shrinks, and it leaves as its importers are ported, the console's last |
 | Image-declaration producer | `swhurl-v2 image-declaration` | implemented, independently reviewed and rolled out to both template build workflows: Python producer/internal command and producer-only tests deleted; 35 full-label goldens and seven refusals preserve source behavior; the templates build and call the pinned Go binary, and the released catalogue pins are advanced. Existing apps' workflow pins stay unchanged until Copier updates them |
-| `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress: its readers and its promotion submission read `swhurl-v2 status` with the pod's credential, and its Overview and Platform checks `swhurl-v2 verify`. The server and its 18 templates go last |
+| `console/` (Starlette and its templates) | a Go server that keeps the HTMX markup, CSS and JS (the Jinja templates are rewritten) | in progress: its readers and its promotion submission read `swhurl-v2 status` with the pod's credential, and its Overview and Platform checks `swhurl-v2 verify`; its merge gate is retired rather than ported ([§20](iteration-2-plan.md#20-the-merge-gate-is-retired-approved-8-november-2026), [evidence](current-state.md#the-console-has-no-merge-gate-8-november-2026)). The server and its 18 templates go last |
 
 ## Remaining work
 

@@ -27,7 +27,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from swhurl.console import bundle, merge, observation
+from swhurl.console import bundle, changes, observation
 from swhurl.console.actions import ActionError, Job
 from swhurl.console.github import GitHub, GitHubAPI
 from swhurl.run import Runner
@@ -99,8 +99,7 @@ class Pull:
     state: str = 'unknown'  # open, merged, closed, or unknown (it could not be read)
     checks: str = ''  # Validate on its head: passed, failed, running, pending, conflict, or '' (not read)
     checks_url: str = ''
-    auto: bool = False  # labelled to merge itself
-    reason: str = ''  # why it waits for a person, when known
+    plan: str = ''  # why it needs a person beyond merging it, from the PR body ('' when nothing else)
     when: str = ''  # when it was merged or closed, as words ("3 h ago")
     commit: str = ''  # the commit that merged it into main
 
@@ -372,18 +371,13 @@ def after_pull(pull: Pull, action: str, target: str, landed: Progress | None) ->
 
     name = f'#{pull.number}'
     if pull.state == 'open':
-        why = f' ({pull.reason})' if pull.reason else ''
+        why = f' ({pull.plan})' if pull.plan else ''
         if pull.checks == 'conflict':
             return track(Stage('merge', 'Merged', 'waiting', 'merge conflict', pull.url), 'waiting',
                          f'Waiting for you: {name} conflicts with main. Resolve it on the pull request, or close it and start again.')
         if pull.checks == 'failed':
             return track(Stage('merge', 'Merged', 'todo', link=pull.url), 'blocked',
                          f'Validate failed on {name}: nothing is merged. Fix it on the pull request, or close it.')
-        if pull.auto:
-            verifying = pull.checks == 'passed'
-            return track(Stage('merge', 'Merged', 'running' if verifying else 'todo',
-                               'the merge gate is checking it' if verifying else 'merges itself', pull.url), 'running',
-                         f'{name} merges itself once its checks pass, {then}.')
         return track(Stage('merge', 'Merged', 'waiting', 'you merge it', pull.url), 'waiting',
                      f'Waiting for you: merge {name} on GitHub{why}; it is {then.removeprefix("and is ")}.'
                      if not instance else f'Waiting for you: merge {name} on GitHub{why}; {then}.')
@@ -449,9 +443,9 @@ def track(job: Job, pull: Pull | None = None, landed: Progress | None = None) ->
 
 
 def target_of(branch: str) -> tuple[str, str]:
-    """``(action, target)`` of a console pull request, from its branch (merge.parse); ``('', '')`` for any other."""
-    found = merge.parse(branch)
-    return (found[0], merge.target(*found)) if found else ('', '')
+    """``(action, target)`` of a console pull request, from its branch (changes.parse); ``('', '')`` for any other."""
+    found = changes.parse(branch)
+    return (found[0], changes.target(*found)) if found else ('', '')
 
 
 def pull_track(pull: Pull, branch: str) -> Track:

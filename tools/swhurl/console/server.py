@@ -39,13 +39,12 @@ from swhurl.apps.instance import Instance
 from swhurl.console import (
     actions,
     catalogue,
+    changes,
     cluster,
     flagstore,
     health,
     jobstore,
     logconfig,
-    merge,
-    promotion,
     proposal,
     repos,
     stages,
@@ -77,7 +76,7 @@ TEMPLATES.env.globals['target'] = cluster.target
 TEMPLATES.env.globals['default_host'] = contract.default_host
 TEMPLATES.env.globals['logs_url'] = logs_url
 TEMPLATES.env.globals['follow'] = follow
-TEMPLATES.env.globals['merge_mode'] = promotion.merge_mode
+TEMPLATES.env.globals['merge_mode'] = proposal.merge_mode
 
 
 def ungranted_url(instance: Instance) -> str:
@@ -282,10 +281,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return [], f'Could not list open pull requests: {error}'
 
     def pull_view(pr: gh.PullRequest) -> stages.Pull:
-        auto = gh.AUTO_MERGE_LABEL in pr.labels
-        reason = '' if auto else promotion.merge_mode(pr).removeprefix('Manual merge required').removeprefix(': ')
-        return stages.Pull(pr.number, pr.url, 'open', pr.checks, pr.checks_url or pr.url, auto,
-                           reason.split('. ')[0].rstrip('.'))
+        return stages.Pull(pr.number, pr.url, 'open', pr.checks, pr.checks_url or pr.url,
+                           proposal.merge_plan(pr.body))
 
     # Facts that never change once read, kept across page reads; never progress verdicts.
     renders: dict[str, dict[str, stages.Target]] = {}  # a commit's render targets
@@ -464,15 +461,15 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         later = any(j.unit == found.unit and j.id > found.id and j.state in ('running', 'succeeded') for j in jobs.recent())
         return None if later else told
 
-    def propose(request: Request, action: str, name: str, env: str, commands: tuple[merge.Command, ...], *,
-                then: tuple = (), auto_merge: bool = True) -> Response:
+    def propose(request: Request, action: str, name: str, env: str, commands: tuple[changes.Command, ...], *,
+                then: tuple = ()) -> Response:
         """Run the action as a job that opens its pull request, then clear the ``then`` caches it made stale."""
         def work(job: actions.Job) -> None:
-            job.link = proposal.open_action(runner, github, job, action, name, env, commands, auto_merge=auto_merge)
+            job.link = proposal.open_action(runner, github, job, action, name, env, commands)
             for cache in then:
                 cache.clear()
         try:
-            job = jobs.submit(merge.ACTIONS[action].job or action, merge.target(action, name, env), request.state.identity, work)
+            job = jobs.submit(changes.ACTIONS[action].job or action, changes.target(action, name, env), request.state.identity, work)
         except actions.ActionError as error:
             return page(request, 'error.html', status_code=409, error=str(error))
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)

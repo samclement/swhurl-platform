@@ -15,7 +15,7 @@ from starlette.routing import Route
 from swhurl.apps import contract, declaration, ops
 from swhurl.apps.errors import EditError
 from swhurl.apps.instance import Instance
-from swhurl.console import actions, cluster, flagstore, merge, observation, promotion, proposal, stages, v2
+from swhurl.console import actions, changes, cluster, flagstore, observation, promotion, proposal, stages, v2
 from swhurl.console import github as gh
 from swhurl.console import records as declared_records
 from swhurl.console.context import STACK_NAMES, Context, dashboard_urls, logs_url
@@ -100,18 +100,18 @@ def routes(ctx: Context) -> list[Route]:
                     error=f'v2 writes {label}, and this console has no swhurl-v2 binary: run `{command}` in your own terminal.')
 
     def v2_commands(change: str, app: str, env: str, form: dict,
-                    declared: declared_records.Declared) -> tuple[merge.Command, ...]:
+                    declared: declared_records.Declared) -> tuple[changes.Command, ...]:
         """The v2 commands for one console change, with the whole declaration a v2 edit names."""
-        action = merge.V2_ACTION[change]
+        action = changes.V2_ACTION[change]
         if change == 'connect':
-            chosen = merge.Connections.from_form(form)
+            chosen = changes.Connections.from_form(form)
             form = {**form, 'calls': ','.join(dict.fromkeys([*declared.calls, *chosen.calls])),
                     'subscriptions': ','.join(dict.fromkeys([*declared.subscriptions, *chosen.subscribe]))}
         elif change == 'disconnect':
             role, other, event = (form.get(key, '').strip() for key in ('role', 'app', 'event'))
-            if role == 'calls' and merge.records.NAME_RE.fullmatch(other):
+            if role == 'calls' and changes.records.NAME_RE.fullmatch(other):
                 form = {**form, 'calls': ','.join(name for name in declared.calls if name != other)}
-            elif role == 'subscribes' and merge.records.SUBSCRIPTION_RE.fullmatch(f'{other}.{event}'):
+            elif role == 'subscribes' and changes.records.SUBSCRIPTION_RE.fullmatch(f'{other}.{event}'):
                 form = {**form, 'subscriptions': ','.join(
                     name for name in declared.subscriptions if name != f'{other}.{event}')}
             elif role == 'publishes':
@@ -121,8 +121,8 @@ def routes(ctx: Context) -> list[Route]:
             else:
                 raise actions.ActionError('no such connection to remove')
         elif change == 'allow':
-            add = merge.v2_names(form.get('add', ''), merge.ALLOW_RE, 'an allowed caller is an app name or team:<team>')
-            remove = set(merge.v2_names(form.get('remove', ''), merge.ALLOW_RE,
+            add = changes.v2_names(form.get('add', ''), changes.ALLOW_RE, 'an allowed caller is an app name or team:<team>')
+            remove = set(changes.v2_names(form.get('remove', ''), changes.ALLOW_RE,
                                         'an allowed caller is an app name or team:<team>'))
             allows = ','.join(dict.fromkeys([*(name for name in declared.allows if name not in remove), *add]))
             if allows == ','.join(declared.allows):
@@ -137,7 +137,7 @@ def routes(ctx: Context) -> list[Route]:
                 raise actions.ActionError(f'choose a registered team: one of {", ".join(teams) or "none"}')
             if team == declared.team:
                 raise actions.ActionError(f'{app} already belongs to {team}: that changes nothing')
-        return merge.ACTIONS[action].commands(app, env, form)
+        return changes.ACTIONS[action].commands(app, env, form)
 
     def flag_rows(found: Instance, offers_commit: str) -> tuple[list[dict], str]:
         """Each flag the instance's image declares, with its override, then each override of a flag it does
@@ -247,7 +247,7 @@ def routes(ctx: Context) -> list[Route]:
         v2's binary. v2's records are the only ones the console writes."""
         app, env, change = (request.path_params[k] for k in ('app', 'env', 'change'))
         found = Instance.named(app, env)
-        if found is None or change not in ('remove', 'promote', 'egress', 'schedule', *merge.V2_ACTION):
+        if found is None or change not in ('remove', 'promote', 'egress', 'schedule', *changes.V2_ACTION):
             return page(request, 'error.html', status_code=404, error='No such app instance or change.')
         if github is None:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
@@ -262,10 +262,10 @@ def routes(ctx: Context) -> list[Route]:
                         error=f'v2 does not model {change}: the form is not offered for this instance')
         if refused := v2_read_only(request, app, env, change):
             return refused
-        action = merge.V2_ACTION[change]
+        action = changes.V2_ACTION[change]
         try:
-            if env not in merge.ACTIONS[action].envs:
-                raise actions.ActionError(f'{change} from the {" or ".join(merge.ACTIONS[action].envs)} instance')
+            if env not in changes.ACTIONS[action].envs:
+                raise actions.ActionError(f'{change} from the {" or ".join(changes.ACTIONS[action].envs)} instance')
             if change == 'connect':
                 for ticked in ('calls', 'subscribe'):  # one checkbox per app or event
                     form[ticked] = ','.join(value for value in fields.get(ticked, []) if value)
@@ -279,13 +279,13 @@ def routes(ctx: Context) -> list[Route]:
                 callable_apps, offered_events, problem = connectable(env, app)
                 if problem:
                     raise actions.ActionError(f'cannot check the apps and events chosen: {problem}')
-                merge.Connections.from_form(form).check_offered({row.instance.app for row in callable_apps},
+                changes.Connections.from_form(form).check_offered({row.instance.app for row in callable_apps},
                                                                   {name for name, _ in offered_events})
         except actions.ActionError as error:
             return page(request, 'error.html', status_code=400, error=str(error))
         except (CommandError, cluster.ReadError) as error:
             return page(request, 'error.html', status_code=502, error=str(error))
-        return propose(request, action, app, env, commands, auto_merge=False)
+        return propose(request, action, app, env, commands)
 
     async def use_offer(request: Request) -> Response:
         """The catalogue's Use: the app chosen there connects, as its own Connect to an app would."""

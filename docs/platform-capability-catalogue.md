@@ -39,7 +39,7 @@ This column describes **the current POC**, not the proposed AKS platform:
 | Immutable image promotion | **Yes** | Promote the exact image tested in staging to production without rebuilding it. |
 | Independent environment configuration and data | **Yes** | Use separate production credentials, settings and databases rather than copying staging values or data. |
 | GitOps reconciliation | **Yes** | Keep deployed configuration aligned with reviewed, version-controlled desired state. |
-| Pull-request change review and conditional auto-merge | **Yes** | Automate routine changes while retaining review for access changes, first production deployments and other higher-risk operations. |
+| Pull-request change review | **Yes** — no auto-merge | Put a routine change behind a pull request without letting a bot merge one: every change is reviewed and merged by a person. |
 | End-to-end deployment progress | **Yes** | Distinguish “PR opened”, “merged”, “applied” and “the requested image is running”. |
 | Safe rollback experience | **Partial** — older-image promotion and Helm remediation | Recover a release through an explicit workflow that also checks configuration and database compatibility. |
 | Pull-request preview environments | **No** | Give reviewers a temporary URL and isolated environment for each proposed change. |

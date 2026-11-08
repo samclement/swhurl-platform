@@ -191,7 +191,7 @@ class MakeTests(unittest.TestCase):
         self.assertEqual(seen, [['status', 'web']])
 
     def test_only_a_target_with_a_function_runs_through_make(self):
-        for target in ('flux-reconcile', 'notifications-check', 'console-merge', 'nothing'):
+        for target in ('flux-reconcile', 'notifications-check', 'bot-render', 'nothing'):
             with self.subTest(target=target):
                 code, _, err, _ = run_make(target, {})
                 self.assertEqual(code, 2)

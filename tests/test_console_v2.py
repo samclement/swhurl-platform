@@ -14,7 +14,7 @@ from unittest import mock
 import httpx
 from test_console import WHO, client, fake, release, unit
 
-from swhurl.console import actions, cluster, merge, proposal, v2
+from swhurl.console import actions, changes, cluster, proposal, v2
 from swhurl.console import github as gh
 from swhurl.run import FakeRunner, Result
 
@@ -166,11 +166,11 @@ class WriteRefusalTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertIn('run `swhurl-v2 promote hello` in your own terminal', response.text)
 
-    def test_a_v2_promotion_review_is_held_and_names_v2(self):
+    def test_a_v2_promotion_review_says_a_person_merges_it(self):
         response = client(running(), documents=records(), github=GHTransport().github).get(
             '/apps/hello/staging/promotion', headers=WHO)
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertIn('This PR does not merge itself: it needs manual review.', response.text)
+        self.assertIn('You merge it on GitHub: no console pull request merges itself.', response.text)
         self.assertIn('ghcr.io/x/hello@sha256:1', response.text)
 
 
@@ -196,7 +196,7 @@ class CommandTests(unittest.TestCase):
             '--egress', 'platform/egress/allocation.json'])
 
     def test_a_change_is_the_edit_then_the_render_that_writes_what_it_derives(self):
-        commands = merge.ACTIONS['v2-scale'].commands('hello', 'staging', {'replicas': '2'})
+        commands = changes.ACTIONS['v2-scale'].commands('hello', 'staging', {'replicas': '2'})
         self.assertEqual([command.tool for command in commands], ['v2', 'v2'])
         self.assertEqual([command.name for command in commands], ['edit', 'render'])
         self.assertEqual(commands[0].argv[:8], ('edit', '--records', 'v2-records', '--app', 'hello',
@@ -207,13 +207,13 @@ class CommandTests(unittest.TestCase):
                          'the render records the commit the pull request is built on')
 
     def test_a_whole_list_is_written_once_and_the_team_names_no_environment(self):
-        self.assertEqual(merge.v2_connection_settings({'calls': 'other, billing', 'subscriptions': ''}),
+        self.assertEqual(changes.v2_connection_settings({'calls': 'other, billing', 'subscriptions': ''}),
                          ('calls=other,billing', 'subscriptions='))
-        self.assertEqual(merge.v2_connection_settings({'calls': '', 'subscriptions': 'other.created'}),
+        self.assertEqual(changes.v2_connection_settings({'calls': '', 'subscriptions': 'other.created'}),
                          ('calls=', 'subscriptions=other.created'))
-        self.assertIn('--set', merge.v2_commands('hello', '', ('team=payments',))[0].argv)
-        self.assertEqual(merge.v2_commands('hello', '', ('team=payments',))[0].argv[5], '--set')
-        self.assertNotIn('--env=', merge.v2_commands('hello', '', ('team=payments',))[0].argv)
+        self.assertIn('--set', changes.v2_commands('hello', '', ('team=payments',))[0].argv)
+        self.assertEqual(changes.v2_commands('hello', '', ('team=payments',))[0].argv[5], '--set')
+        self.assertNotIn('--env=', changes.v2_commands('hello', '', ('team=payments',))[0].argv)
 
 
 class RouteTests(unittest.TestCase):
@@ -247,7 +247,6 @@ class RouteTests(unittest.TestCase):
                 self.assertEqual(found_action, action)
                 self.assertEqual([command.name for command in commands], names)
                 self.assertTrue(all(command.tool == 'v2' for command in commands))
-                self.assertFalse(kwargs['auto_merge'], 'every v2 pull request waits for a person')
                 self.assertEqual(response.headers['location'], '/jobs/1')
 
     def test_scale_writes_memory_in_v2s_unit_and_refuses_v1_only_fields(self):
@@ -279,10 +278,10 @@ class RouteTests(unittest.TestCase):
 
     def test_a_team_change_may_carry_both_environments_and_a_scale_only_its_own(self):
         prod = 'v2-apps/instances/hello/prod/helmrelease.json'
-        self.assertTrue(merge.ACTIONS['v2-team'].owns('hello', 'staging', prod))
-        self.assertTrue(merge.ACTIONS['v2-team'].owns('hello', 'staging', 'v2-records/hello/app.json'))
-        self.assertFalse(merge.ACTIONS['v2-team'].owns('hello', 'staging', 'v2-records/other/app.json'))
-        self.assertFalse(merge.ACTIONS['v2-scale'].owns('hello', 'staging', prod))
+        self.assertTrue(changes.ACTIONS['v2-team'].owns('hello', 'staging', prod))
+        self.assertTrue(changes.ACTIONS['v2-team'].owns('hello', 'staging', 'v2-records/hello/app.json'))
+        self.assertFalse(changes.ACTIONS['v2-team'].owns('hello', 'staging', 'v2-records/other/app.json'))
+        self.assertFalse(changes.ACTIONS['v2-scale'].owns('hello', 'staging', prod))
 
     def test_expose_refuses_a_host_and_an_unknown_v2_fact(self):
         response, captured = self.post('/apps/hello/staging/expose', {'exposure': 'public', 'host': 'hello.example.com'})
@@ -327,11 +326,10 @@ class PullRequestTests(unittest.TestCase):
         return runner, work
 
     def open(self, runner, api, action='v2-scale', form=None):
-        commands = merge.ACTIONS[action].commands('hello', 'staging', form or {'replicas': '2'})
-        job = actions.Job(1, action, merge.target(action, 'hello', 'staging'), 'sam@swhurl.com', None)
+        commands = changes.ACTIONS[action].commands('hello', 'staging', form or {'replicas': '2'})
+        job = actions.Job(1, action, changes.target(action, 'hello', 'staging'), 'sam@swhurl.com', None)
         with mock.patch.object(proposal, 'download', side_effect=lambda _api, _revision, _workdir: runner.tree):
-            return proposal.open_action(runner, api.github, job, action, 'hello', 'staging', commands,
-                                        auto_merge=True), job
+            return proposal.open_action(runner, api.github, job, action, 'hello', 'staging', commands), job
 
     def test_a_change_is_held_and_carries_only_v2_records_and_rendered_files(self):
         runner, work = self.prepare()
@@ -343,8 +341,8 @@ class PullRequestTests(unittest.TestCase):
         self.assertEqual(paths, ['v2-apps/instances/hello/staging/helmrelease.json', 'v2-records/calls.json',
                                  'v2-records/hello/staging/instance.json'])
         self.assertFalse([path for path in paths if path.startswith('apps/')], 'a v2 pull request carries no v1 record')
-        self.assertEqual(api.labels, [], 'every v2 pull request waits for a person')
-        self.assertTrue(any('needs manual review' in line for line in job.lines), job.lines)
+        self.assertEqual(api.labels, [], 'the console labels no pull request: a person merges every one')
+        self.assertTrue(any('Merge plan: you merge it on GitHub' in line for line in job.lines), job.lines)
         self.assertIn('swhurl-v2', api.commits[0]['message'])
 
     def test_v2s_refusal_is_the_job_s_refusal_and_nothing_is_published(self):

@@ -12,6 +12,7 @@ import base64
 import hashlib
 import io
 import os
+import re
 import shutil
 import sys
 import tarfile
@@ -25,13 +26,26 @@ from swhurl.apps import repo
 from swhurl.apps.calling import NOTIFY
 from swhurl.apps.contract import APP_OWNER, APP_TYPES, STACKS, TEAMS_FILE, type_answers
 from swhurl.apps.model import records
-from swhurl.console import merge, v2
+from swhurl.console import changes, v2
 from swhurl.console.actions import ActionError, Job
-from swhurl.console.github import AUTO_MERGE_LABEL, BASE, GitHub, GitHubAPI
-from swhurl.console.merge import ACTIONS
+from swhurl.console.changes import ACTIONS
+from swhurl.console.github import BASE, GitHub, GitHubAPI
 from swhurl.run import Runner
 
 AUTHOR = ('swhurl console', 'console@users.noreply.github.com')
+PLAN = re.compile(r'(?m)^\*\*Merge plan:\*\* it (.+)\.$')
+
+
+def merge_plan(body: str) -> str:
+    """What a person needs before merging this pull request, from its own body: '' when merging is all."""
+    found = PLAN.search(body or '')
+    return found[1] if found else ''
+
+
+def merge_mode(pr) -> str:
+    """How an open console pull request merges: a person, and what it needs first when its body says."""
+    plan = merge_plan(pr.body)
+    return f'You merge it on GitHub; it {plan}' if plan else 'You merge it on GitHub'
 
 EXPOSURE_LABELS = {
     'authenticated-web': ('Signed in', 'A web address under {domain}, behind Google sign-in: only the accounts on the sign-in list.'),
@@ -61,8 +75,8 @@ def download(api: GitHubAPI, revision: str, workdir: Path) -> Path:
 
 
 def publish(api: GitHubAPI, job: Job, tree: Path, before: dict, after: dict, changed: list[str],
-            head: str, branch: str, title: str, body: str, auto_merge: bool, plan: str) -> str:
-    """Publish a prepared, judged proposal. No policy or preparation callbacks cross this boundary."""
+            head: str, branch: str, title: str, body: str, plan: str) -> str:
+    """Publish a prepared proposal as one commit on its branch and the pull request that asks for it."""
     entries = []
     for path in changed:
         if path not in after:
@@ -79,18 +93,11 @@ def publish(api: GitHubAPI, job: Job, tree: Path, before: dict, after: dict, cha
     job.lines.append(f'Committed {commit[:7]} [console] {title}')
     job.lines.append(f'Creating branch {branch}')
     api.call('POST', '/git/refs', {'ref': f'refs/heads/{branch}', 'sha': commit})
-    note = ('\n\nMerges itself when Validate and the trusted merge checks pass (label `auto-merge`; '
-            'remove it to merge by hand).') if auto_merge else f'\n\n**Merge plan:** {plan}'
+    note = f'\n\n**Merge plan:** it {plan}.' if plan else ''
     pr = api.json('POST', '/pulls', {'title': f'[console] {title}', 'head': branch, 'base': BASE,
                                      'body': f'{body}{note}\n\nRequested-by: {job.identity}'})
     url = pr['html_url']
     job.lines.append(f'Opened {url}')
-    if auto_merge:
-        try:
-            api.call('POST', f"/issues/{pr['number']}/labels", {'labels': [AUTO_MERGE_LABEL]})
-            job.lines.append('Labelled auto-merge: it merges itself when Validate passes')
-        except ActionError as error:  # the PR stands; it just waits for a person
-            job.lines.append(f'Could not label it auto-merge ({error}); merge it yourself')
     return url
 
 
@@ -112,22 +119,21 @@ def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str
         raise ActionError(f'{command} refused this change (see above); nothing was written to GitHub')
 
 def open_action(runner: Runner, github: GitHub, job: Job, action: str, name: str, env: str,
-                commands: tuple[merge.Command, ...], *, preface: str = '', auto_merge: bool = True) -> str:
-    """Prepare and judge sequentially, then publish only owned inputs. Failed preparation or reads
-    make no GitHub writes; promotion readiness is checked once, last, before the first write."""
+                commands: tuple[changes.Command, ...], *, preface: str = '') -> str:
+    """Prepare, then publish only owned inputs. Failed preparation or reads make no GitHub writes;
+    promotion readiness is checked once, last, before the first write."""
     api = GitHubAPI(runner, github)
     workdir = Path(tempfile.mkdtemp(prefix='console-'))
     try:
         head = api.json('GET', f'/git/ref/heads/{BASE}')['object']['sha']
         try:
-            branch = merge.branch(action, name, env, head[:7])
+            branch = changes.branch(action, name, env, head[:7])
         except ValueError as error:
             raise ActionError(str(error)) from None
         entry = ACTIONS[action]
         job.lines.append(f'Downloading {github.repo} {BASE} ({head[:7]})')
         tree = download(api, head, workdir)
         before = snapshot(tree)
-        previous = entry.read(tree, name, env)
         for command in commands:
             argv = list(command.argv)
             if command.tool == 'v2':  # the commit and the reviewed revision come from the tree just downloaded
@@ -135,29 +141,22 @@ def open_action(runner: Runner, github: GitHub, job: Job, action: str, name: str
                           if command.name == 'promote' else '')
                 argv = v2.resolve(argv, revision=head, expect=expect)
             run_tool(runner, job, tree, command.name, argv, input=command.input, tool=command.tool)
-        proposed = entry.read(tree, name, env)
         after = snapshot(tree)
         statuses = {p: 'D' if p not in after else 'A' if p not in before else 'M'
                     for p in after.keys() | before.keys() if after.get(p) != before.get(p)}
         changed = sorted(p for p, status in statuses.items() if status in entry.keeps and entry.owns(name, env, p))
         if not changed:
             raise ActionError('the change left no files changed; nothing to propose')
-        reason = merge.judge(action, name, env, changed, previous, proposed)
-        encrypted = merge.encrypted_reason(action, name, env, {p: statuses[p] for p in changed}, tree)
-        auto_merge = auto_merge and entry.gated and not (reason or encrypted)
-        plan = ''
+        plan = changes.encrypted_reason(action, {p: statuses[p] for p in changed})
         for path in changed:
             job.lines.append(f'{statuses[path]} {path}')
-        if not auto_merge:
-            why = ' and '.join(dict.fromkeys(filter(None, (reason, encrypted)))) or 'needs manual review'
-            plan = f'Manual merge required: this pull request {why}. Review the changes, then merge it yourself.'
-            job.lines.append(f'Merge plan: {plan}')
+        job.lines.append('Merge plan: you merge it on GitHub' + (f'; it {plan}' if plan else ''))
         body = preface + 'Generated by the console with:\n\n    ' + ' && '.join(c.as_make() for c in commands)
         if runner.dry_run:
             job.lines.append(f'Dry run: would commit {len(changed)} file(s) to {branch}; no PR opened')
             return ''
         return publish(api, job, tree, before, after, changed, head, branch,
-                       entry.title.format(name=name, env=env), body, auto_merge, plan)
+                       entry.title.format(name=name, env=env), body, plan)
     finally:
         api.client.close()
         shutil.rmtree(workdir, ignore_errors=True)
@@ -226,7 +225,7 @@ class NewApp:
             if exposure not in EXPOSURE_LABELS:
                 raise ActionError(f'exposure must be one of {", ".join(records.EXPOSURES)}')
             settings.append(f'exposure={exposure}')
-        chosen = merge.Connections.from_form(form)
+        chosen = changes.Connections.from_form(form)
         if callable_apps is not None and offered_events is not None:
             chosen.check_offered(callable_apps, offered_events)
         return cls(name, stack, description, answers, (*settings, *chosen.new_app_flags()))
@@ -250,7 +249,7 @@ class NewApp:
 
     @property
     def target(self) -> str:
-        return merge.target('new', self.name, 'staging')
+        return changes.target('new', self.name, 'staging')
 
     @property
     def request(self) -> repo.Request:

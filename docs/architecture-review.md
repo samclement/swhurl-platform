@@ -68,7 +68,7 @@ Implementation anchors:
 - [`write.py`](../tools/swhurl/apps/model/write.py): preparation (`prepare`).
 - [`render.py`](../tools/swhurl/apps/model/render.py): instance compilation.
 - [`relations.py`](../tools/swhurl/apps/model/relations.py): relationship resolution (`evaluate`).
-- [`merge.py`](../tools/swhurl/console/merge.py): console action contracts (`Action`).
+- `merge.py` (since renamed `tools/swhurl/console/changes.py`): console action contracts (`Action`).
 
 These should not be discarded simply because some surrounding modules are large.
 

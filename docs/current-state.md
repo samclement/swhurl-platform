@@ -15,8 +15,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   plumbing (`AUTO_MERGE_LABEL`, `refusal()`, `PullRequest.labels`/`refused`/`auto`), `promotion.merge_mode`'s label
   branches, the "merges itself" and "Hold for manual review" wording, and the Activity branch that said the gate was
   checking a pull request. `Action` lost `gated`, `again`, `kind`, `read` and `rule`. The pull request body keeps one
-  line, **Merge plan**, carrying only the reason (`changes.encrypted_reason`: a changed `*.sops.yaml` needs its values
-  set), which `proposal.merge_plan` reads back for Activity's row.
+  optional line, **Merge plan:** it <reason>., written only when a person must do something beyond merging it
+  (`changes.encrypted_reason`: a changed `*.sops.yaml` needs its values set); `proposal.merge_plan` reads it back for
+  Activity's row, and a change that needs nothing else has no line.
 - **Offline:** `make check` passed (481 Python tests, lint, `check-repo`, `check-apps`, `check-otel`, the code graph and
   `check-docs`), and `make test` ran every dry run. The two broken links the change left were found by `check-repo`
   (a removed workflow and a renamed heading): `console.md`'s `## Auto-merge` is now `## Review and merge`, and its

@@ -17,13 +17,11 @@ from swhurl import ROOT, yamlio
 
 # Repository paths (relative to the repository root).
 CLUSTER = Path('clusters/home')
-UNITS_DOC = Path('docs/architecture.md')  # its Flux units table is checked against units() (make check-repo)
 ROOT_UNITS = CLUSTER / 'flux-system/kustomizations.yaml'
 SOURCES = CLUSTER / 'flux-system/sources'
 SETTINGS = SOURCES / 'configmap-platform-settings.yaml'
 HELM_REPOSITORIES = SOURCES / 'helmrepositories.yaml'
 GIT_REPOSITORIES = SOURCES / 'gitrepositories.yaml'
-BOOTSTRAP_PATHS = (CLUSTER / 'flux-system', SOURCES)
 ISSUERS = Path('infra/issuers')
 INGESTION_SECRET = Path('platform/otel/secret.sops.yaml')
 # The backup-mongodb CronJob: its BACKUP_S3_URI is where the MongoDB backups are (backup_s3_uri).
@@ -132,8 +130,3 @@ def namespaces(root: Path = ROOT) -> set[str]:
             for file in sorted((root / unit.path).rglob('*.yaml'))
             for doc in yamlio.load_all(file.read_text()) if isinstance(doc, dict) and doc.get('kind') == 'Namespace'}
 
-
-def decrypted_secret_files(root: Path = ROOT) -> dict[str, list[Path]]:
-    """For each unit that decrypts SOPS, the encrypted Secret files under its path."""
-    return {unit.name: sorted(p.relative_to(root) for p in (root / unit.path).rglob('*.sops.y*ml'))
-            for unit in units(root) if unit.decrypts}

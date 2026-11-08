@@ -226,6 +226,15 @@ adapters/kube: type Selector struct {Name, Labels string}
 adapters/kube: type SigningKeys struct {Issuer string Keys []byte}
 adapters/kube: type TokenReview struct {Authenticated bool Audiences []string Username string}
 adapters/kube: type Writer interface {// Patch applies a JSON merge patch to one object: the shape the platform uses to suspend a release or // set a replica count. Patch(ctx context.Context, ref observe.Ref, patch []byte) error // Create creates one object from its document. Create(ctx context.Context, ref observe.Ref, document []byte) error // Delete removes one object. An object that is already gone is not an error. Delete(ctx context.Context, ref observe.Ref) error // Logs reads the last lines of one pod's log: the evidence a restore job leaves about what it did. Logs(ctx context.Context, ref observe.Ref, tailLines int64) (string, error)}
+adapters/manifests/manifeststest: func (*Fake) Documents(text []byte) ([]checkrepo.Document, error)
+adapters/manifests/manifeststest: func Contract(t *testing.T, open func(*testing.T) manifests.Decoder)
+adapters/manifests/manifeststest: func Known() *Fake
+adapters/manifests/manifeststest: func Scenario() []Case
+adapters/manifests/manifeststest: type Case struct {Name, Text string Documents []checkrepo.Document Invalid bool}
+adapters/manifests/manifeststest: type Fake struct {Answers map[string][]checkrepo.Document Calls int}
+adapters/manifests: func (YAML) Documents(text []byte) ([]checkrepo.Document, error)
+adapters/manifests: type Decoder interface {Documents(text []byte) ([]checkrepo.Document, error)}
+adapters/manifests: type YAML struct {}
 adapters/notifysvc/notifysvctest: func (*Fake) Send(ctx context.Context, address, token string, request notifysvc.Request) error
 adapters/notifysvc/notifysvctest: func Contract(t *testing.T, request notifysvc.Request, open func(*testing.T, int) (notifysvc.Sender, func() Sent))
 adapters/notifysvc/notifysvctest: type Fake struct {Sent []Sent Fail error}
@@ -315,6 +324,22 @@ calls: type Pair struct {Caller, Callee, Environment string CalleePort int32}
 calls: type Refusal struct {Application, Environment, Callee, Reason string}
 calls: type Resolution struct {Pairs []Pair Waiting []Wait Refused []Refusal}
 calls: type Wait struct {Caller, Callee, Environment, Reason string}
+checkrepo: const Catalogue = "v2/contract/names.json"
+checkrepo: func (*Finding) Error() string
+checkrepo: func Check(r Repository, names Names) Report
+checkrepo: func Complete(path Path, documents []Document) error
+checkrepo: func Needs(present []string) (text, manifests []string)
+checkrepo: func PathNeeds(present []string) []string
+checkrepo: func Paths(r Repository) ([]Path, []string)
+checkrepo: func Substitute(path Path, rendered string) (string, error)
+checkrepo: type Decoded struct {Documents []Document Err string}
+checkrepo: type Document struct {Kind, Name string Value map[string]any}
+checkrepo: type Finding struct {Problem string}
+checkrepo: type Names interface {Unlisted(text []byte) []string}
+checkrepo: type Path struct {Path string Values map[string]string}
+checkrepo: type Report struct {Results []Result Paths []Path}
+checkrepo: type Repository struct {Present []string Text map[string]string Manifests map[string]Decoded}
+checkrepo: type Result struct {Check, Okay string Problems []string}
 dashboards: const AlertPrefix = "swhurl:"
 dashboards: const AlertsAnnotation = "platform.swhurl.com/alerts"
 dashboards: const Create Action = "create"
@@ -980,6 +1005,7 @@ orchestration: func BootstrapClickStack(ctx context.Context, ports BootstrapPort
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
 orchestration: func CheckNotifications(ctx context.Context, ports CheckerPorts, options CheckOptions) (CheckReport, error)
 orchestration: func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
+orchestration: func CheckRepo(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error)) (checkrepo.Report, error)
 orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
@@ -996,6 +1022,7 @@ orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observ
 orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.PlatformReport, error)
 orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
 orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
+orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
 orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
 orchestration: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)

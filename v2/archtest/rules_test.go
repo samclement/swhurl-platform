@@ -28,8 +28,8 @@ type Rule struct {
 }
 
 var Rules = []Rule{
-	{"stdlib-only", "v2 imports only the Go standard library and its own packages except pinned YAML in adapters/helm and adapters/appsource",
-		"remove the import; only adapters/helm and adapters/appsource may import go.yaml.in/yaml/v3 v3.0.6",
+	{"stdlib-only", "v2 imports only the Go standard library and its own packages except pinned YAML in adapters/helm, adapters/appsource and adapters/manifests",
+		"remove the import; only adapters/helm, adapters/appsource and adapters/manifests may import go.yaml.in/yaml/v3 v3.0.6",
 		"kubernetes-the-api-server-not-kubectl"},
 	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers",
 		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down",
@@ -64,6 +64,7 @@ var Rules = []Rule{
 // (one per external dependency, speaking domain terms), 2 commands that wire adapters to the model.
 var Layers = map[string]int{
 	"calls":                              0,
+	"checkrepo":                          0,
 	"dashboards":                         0,
 	"incident":                           0,
 	"events":                             0,
@@ -90,6 +91,8 @@ var Layers = map[string]int{
 	"adapters/hoststate/hoststatetest":   1,
 	"adapters/files":                     1,
 	"adapters/files/filestest":           1,
+	"adapters/manifests":                 1,
+	"adapters/manifests/manifeststest":   1,
 	"adapters/kube":                      1,
 	"adapters/kube/kubetest":             1,
 	"adapters/notifysvc":                 1,
@@ -116,7 +119,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"incident", "calls", "dashboards", "events", "heartbeat", "kernel", "legacy", "notify", "observe", "policy", "producer", "shadow", "workstreams"}
+var Pure = []string{"incident", "calls", "checkrepo", "dashboards", "events", "heartbeat", "kernel", "legacy", "notify", "observe", "policy", "producer", "shadow", "workstreams"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
@@ -139,6 +142,10 @@ var pureBannedCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "time.N
 
 // Where each layer lives: adapters under adapters/, use cases under orchestration/, commands under cmd/.
 const adapterRoot, orchestrationRoot, commandRoot = "adapters/", "orchestration/", "cmd/"
+
+// yamlImporters are the only directories that may import the pinned YAML module: chart values, app sources and the
+// checkout's Kubernetes manifests. Each was approved with its slice (docs/iteration-2-plan.md#guardrails).
+var yamlImporters = []string{"adapters/helm", "adapters/appsource", "adapters/manifests"}
 
 var subprocessImports = []string{"os/exec", "syscall"}
 var subprocessCalls = []string{"os.StartProcess"}
@@ -292,7 +299,7 @@ func checkStdlibOnly(m *Module) []Violation {
 	for _, dir := range m.Dirs() {
 		for _, file := range m.Packages[dir].Files {
 			for _, spec := range file.AST.Imports {
-				if path := importPath(spec); !isStd(path) && m.local(path) == "" && !((dir == "adapters/helm" || dir == "adapters/appsource") && path == "go.yaml.in/yaml/v3") {
+				if path := importPath(spec); !isStd(path) && m.local(path) == "" && !(slices.Contains(yamlImporters, dir) && path == "go.yaml.in/yaml/v3") {
 					found = append(found, Violation{"stdlib-only", m.at(file, spec.Pos()), "imports " + path})
 				}
 			}

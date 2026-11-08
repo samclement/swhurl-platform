@@ -101,6 +101,7 @@ func f(count int) int {
 		"kernel/b.go":        "package kernel\n\nfunc g() { count = 2 }\n",
 		"producer/a.go":      "package producer\n",
 		"calls/calls.go":     "package calls\n",
+		"checkrepo/a.go":     "package checkrepo\n",
 		"dashboards/a.go":    "package dashboards\n",
 		"events/events.go":   "package events\n",
 		"heartbeat/a.go":     "package heartbeat\n",
@@ -310,7 +311,8 @@ func TestCheckDocumented(t *testing.T) {
 }
 
 func TestYAMLApprovalIsNarrow(t *testing.T) {
-	for _, dir := range []string{"kernel", "adapters/kube", "adapters/helm/helmtest", "adapters/appsource/appsourcetest", "adapters/appsource/other", "cmd/swhurl-v2"} {
+	for _, dir := range []string{"kernel", "adapters/kube", "adapters/helm/helmtest", "adapters/appsource/appsourcetest", "adapters/appsource/other",
+		"adapters/manifests/manifeststest", "checkrepo", "cmd/swhurl-v2"} {
 		m := fixture(t, map[string]string{dir + "/a.go": "package probe\nimport \"go.yaml.in/yaml/v3\"\n"})
 		if len(checkStdlibOnly(m)) != 1 {
 			t.Errorf("YAML escaped into %s", dir)
@@ -319,9 +321,11 @@ func TestYAMLApprovalIsNarrow(t *testing.T) {
 	m := fixture(t, map[string]string{"adapters/helm/a.go": "package helm\nimport \"go.yaml.in/yaml/v3\"\n"})
 	m.GoMod += "require go.yaml.in/yaml/v3 v3.0.6\n"
 	expect(t, checkStdlibOnly(m))
-	approved := fixture(t, map[string]string{"adapters/appsource/a.go": "package appsource\nimport \"go.yaml.in/yaml/v3\"\n"})
-	approved.GoMod += "require go.yaml.in/yaml/v3 v3.0.6\n"
-	expect(t, checkStdlibOnly(approved))
+	for _, dir := range []string{"adapters/appsource", "adapters/manifests"} {
+		approved := fixture(t, map[string]string{dir + "/a.go": "package probe\nimport \"go.yaml.in/yaml/v3\"\n"})
+		approved.GoMod += "require go.yaml.in/yaml/v3 v3.0.6\n"
+		expect(t, checkStdlibOnly(approved))
+	}
 	for _, requirement := range []string{
 		"require go.yaml.in/yaml/v3 v3.0.5", "require example.com/other v1.0.0",
 		"require (\n go.yaml.in/yaml/v3 v3.0.6\n example.com/other v1.0.0\n)",

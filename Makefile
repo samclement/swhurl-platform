@@ -14,7 +14,7 @@ COMMANDS := help reconcile verify-logs flux-install \
 	app-repo app-hooks \
 	console-image console-dev \
 	platform-certs-staging platform-certs-prod destroy-data \
-	check-repo check-otel check-secrets v2-snapshot \
+	check-otel check-secrets v2-snapshot \
 	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb \
 	live-test-call-identity live-test-network-policy live-test-team-scenario
 
@@ -75,6 +75,11 @@ v2-deps:
 .PHONY: check-docs
 check-docs:
 	@$(V2_BUILD); "$$work/swhurl-v2" workstreams --repo-root .
+
+# swhurl-v2 decides; the script renders each path, substitutes it and parses the shell (SCHEMA=1 adds flux-schema).
+.PHONY: check-repo
+check-repo:
+	@bash v2/check-repo.sh
 
 .PHONY: check-apps
 check-apps:

@@ -72,6 +72,7 @@ const usage = `usage:
   swhurl-v2 team --records DIR --team TEAM --action ACTION --profile PROFILE.json --out DIR \
       [--description TEXT] [--rename NEW] [--transport ntfy]
   swhurl-v2 workstreams --repo-root DIR
+  swhurl-v2 check-repo [--root DIR] [--rendered PATH | --json]
   swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--scope cluster] [--source NAME] [--json]
   swhurl-v2 verify --scope platform --kubeconfig KUBECONFIG.json --root DIR [--console-tag TAG]
       [--heartbeat FILE] [--source NAME] [--json]
@@ -322,10 +323,24 @@ under a workstream's paths that also changes its page, and each progress page's 
 never written (not even the index), and only the Markdown files the check uses are opened, inside DIR. It prints one
 line per check and exits 1 when any problem is found or a read fails, and 2 when DIR is not the top of a checkout.
 
+check-repo decides what make check-repo checks in the checkout at --root (default the working directory), which must
+be the top of a Git working tree: every relative Markdown link names a file the checkout holds and, for Markdown, a
+heading it has; docs/architecture.md's Flux units table names exactly the shared units Git defines and their inputs;
+docs/apps.md's app interface table is the names catalogue (v2/contract/names.json); v2's compiled tree gives apps only
+listed names; every Secret under clusters, infra, platform and apps is SOPS age ciphertext in a .sops.yaml file and
+every unit that decrypts holds one; platform-settings is strings and sets BASE_DOMAIN and CERT_ISSUER; and every folder
+Flux renders is local, holds a kustomization and substitutes from a source this check maps. It prints one line per
+check, then the active render paths, or with --json the v2-check-repo document (version 1) with each path's values.
+Every check runs even when an earlier one failed, and a finding exits 1; a checkout that cannot be opened or read
+exits 2. It renders nothing and starts no process: v2/check-repo.sh renders each path with Kustomize and passes the
+result to --rendered PATH, which reads it on stdin, applies that path's substitution and prints what Flux applies; an
+unresolved ${...} or a document without apiVersion, kind or metadata is a [BAD] line on stderr and exit 1. Git is
+only read, and only files inside DIR are opened.
+
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
 started but did not complete, a render --check that found a difference, a name the catalogue does not list, a
-policy render/rule failure, a workstream record that disagrees with its checkout, chart dependency
+policy render/rule failure, a workstream record that disagrees with its checkout, a check-repo finding, chart dependency
 resolution/acquisition failure, or file and output I/O failure.
 `
 
@@ -452,6 +467,7 @@ var commands = map[string]func(cli, request) int{
 	"restore":                 cli.restore,
 	"team":                    cli.team,
 	"workstreams":             cli.workstreams,
+	"check-repo":              cli.checkRepo,
 	"verify":                  cli.verify,
 	"notify-serve":            cli.notifyServe,
 	"notifications-check":     cli.notificationsCheck,
@@ -478,7 +494,7 @@ type request struct {
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
 	action, description, rename, transport             string
-	listen, appDir, catalogue                          string
+	listen, appDir, catalogue, rendered                string
 	statePath                                          string
 	stateFlag, maxAgeFlag                              *once
 	rotate, check, json, inCluster, all, dryRun        bool
@@ -559,6 +575,13 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 	}
 	if command == "workstreams" {
 		flags.Var(&once{value: &r.repoRoot}, "repo-root", "the top of the checkout whose workstream record is checked")
+		return
+	}
+	if command == "check-repo" {
+		r.root = "."
+		flags.Var(&once{value: &r.root}, "root", "the top of the checkout to check (default: the working directory)")
+		flags.Var(&once{value: &r.rendered}, "rendered", "an active render path whose rendered manifests are on stdin")
+		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-check-repo document instead of the text")
 		return
 	}
 	if command == "notify-serve" {
@@ -867,6 +890,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"edit":                    (*request).editNamed,
 	"team":                    (*request).teamNamed,
 	"workstreams":             func(r *request) []string { return []string{r.repoRoot} },
+	"check-repo":              (*request).checkRepoNamed,
 	"verify":                  (*request).verifyNamed,
 	"notify-serve":            func(r *request) []string { return []string{r.listen} },
 	"notifications-check":     (*request).checkerNamed,
@@ -888,6 +912,14 @@ func (r *request) statusNamed() []string {
 		return []string{r.records, r.profile, r.revision}
 	}
 	return []string{r.records, r.app, r.env, r.profile, r.revision}
+}
+
+// checkRepoNamed is the checkout check-repo reads; --rendered prints manifests, so it takes no --json.
+func (r *request) checkRepoNamed() []string {
+	if r.rendered != "" && r.json {
+		return []string{""}
+	}
+	return []string{r.root}
 }
 
 // verifyNamed is the cluster scope's exactly one credential, a kubeconfig or the pod's own ServiceAccount (neither or

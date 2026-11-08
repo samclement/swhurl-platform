@@ -56,17 +56,11 @@ jobs:
         with:
           version: 'v3.19.0'
 
-      - name: Install validation dependencies and flux-schema
+      - name: Install validation dependencies
         run: |
           set -Eeuo pipefail
           python3 -m pip install --upgrade 'pip>=25.1'
           python3 -m pip install --group check
-          curl -fsSLo "$RUNNER_TEMP/flux-schema.tar.gz" \
-            https://github.com/fluxcd/flux-schema/releases/download/v0.9.0/flux-schema_0.9.0_linux_amd64.tar.gz
-          echo "104b764a53bcec30ec856a6a3efaecd13abf606099f0b057932027d755313cdb  $RUNNER_TEMP/flux-schema.tar.gz" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/bin"
-          tar -xzf "$RUNNER_TEMP/flux-schema.tar.gz" -C "$RUNNER_TEMP/bin" flux-schema
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Cache checksum-verified OTel collectors
         uses: actions/cache@v4

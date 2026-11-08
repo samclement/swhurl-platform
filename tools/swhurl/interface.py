@@ -1,12 +1,11 @@
 """Names the platform provides to apps, not capability selection or rendering.
 
 Standard library only: importing this catalogue reads no file; entries() reads v2/contract/names.json on first use.
-entries() maps each name (or documented family) to its surface, meaning and availability; docs/apps.md is checked
-against it.
-Optional reader overrides are inputs, not environment variables emitted by the renderers.
-Recovery and test labels use label(), but are not app capabilities. unlisted() is the one test of a name
-against the catalogue here, applied by check-repo to what v2 emits; check-templates applies swhurl-v2 names to what
+entries() maps each name (or documented family) to its surface, meaning and availability; swhurl-v2 check-repo
+checks docs/apps.md and v2's compiled tree against the same file, and check-templates applies swhurl-v2 names to what
 each app type reads.
+Optional reader overrides are inputs, not environment variables emitted by the renderers.
+Recovery and test labels use label(), but are not app capabilities.
 """
 import functools
 import json
@@ -74,18 +73,6 @@ RESERVED_VARIABLE_PREFIXES = ('OTEL_', 'SWHURL_', 'KUBERNETES_')
 def callee_variable(app: str) -> str:
     """orders-api -> SWHURL_SERVICE_ORDERS_API_URL."""
     return SERVICE_VARIABLE.replace('<APP>', app.upper().replace('-', '_'))
-
-
-# A platform name anywhere in a file: an app reads it, or the platform writes it.
-NAME_RE = re.compile(r'SWHURL_[A-Z0-9_]+|' + re.escape(LABEL_DOMAIN) + r'/[a-z0-9-]+')
-
-
-def unlisted(names) -> set[str]:
-    """The names the catalogue does not list. A family member counts as listed, and so does the family's
-    prefix alone (``SWHURL_SERVICE_``), which a reader builds the rest of at run time."""
-    prefix = SERVICE_VARIABLE.partition('<')[0]
-    return {name for name in names
-            if name not in entries() and name != prefix and not SERVICE_VARIABLE_RE.match(name)}
 
 
 # The catalogue itself is v2's file, which swhurl-v2 names also reads: one writer for both languages.

@@ -2,6 +2,27 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## check-repo leaves Python, offline (8 November 2026)
+
+- **Scope:** [the approved slice](iteration-2-plan.md#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026)
+  (reviewed and committed 8 November 2026): `swhurl-v2 check-repo` (pure `v2/checkrepo`, the new `adapters/manifests` decoder,
+  `orchestration.CheckRepo` and `RenderPath`) decides; `make check-repo` is `v2/check-repo.sh`; `validate.py`,
+  `tests/test_validate.py` and `apps/checks.py` are deleted, and the pinned `flux-schema` install leaves Validate,
+  Render and auto-merge. Nothing on the cluster changed.
+- **Parity on this tree:** the Python `make check-repo` and the Go one both passed with the same counts (relative links,
+  21 shared units, 46 interface entries, 128 compiled files, 17 Secrets) and the same 32 render paths in the same
+  order; for every path, `--rendered` printed byte for byte what `validate.py` substituted. The standing check took
+  7.6 s (Python with `flux-schema`, about 20 s); `make check-repo SCHEMA=1` passed all 32 paths in 16.5 s.
+- **Parity on faults**, one at a time in a scratch clone: a broken anchor, a unit missing from the Flux units table, an
+  unlisted emitted name, an unencrypted Secret value, a `spec.path` escaping the repository and an unresolved `${...}`
+  in a substituting unit each failed both and were named by both. An absent `BASE_DOMAIN` crashed `validate.py`
+  (`KeyError`) and is named by Go. A misspelled `HelmRelease` field (`valuez`) now passes the standing check and fails
+  `SCHEMA=1` (`/spec: additional properties 'valuez' not allowed`), as the contract decided. The read-only review
+  injected four faults together (a broken anchor, a plaintext Secret, no `CERT_ISSUER`, `${BASE_DOMAINX}`): all
+  seven problems were named in one run, which exited 1.
+- **Not exercised:** CI on the new script (`auto-merge.yml` has no Go setup step, though its merge gate already ran
+  `check-apps`, which builds `swhurl-v2`), and the console's merge gate running it.
+
 ## ClickStack bootstrap runs Go (7 November 2026)
 
 - **Scope:** [the approved slice](iteration-2-plan.md#16-clickstack-bootstrap-in-go-approved-7-november-2026):
@@ -3813,7 +3834,7 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 
 ## Each area owns its live checks (12 October 2026)
 
-`4ed543c` moves each live check beside what it checks (`flux.py`, `clickstack.py`, [`apps/checks.py`](../tools/swhurl/apps/checks.py), `notifications/checks.py`, [`console/checks.py`](https://github.com/samclement/swhurl-platform/blob/4ed543c87cf4111e237c6d2af57ff96e7edf3037/tools/swhurl/console/checks.py), `dashboards.py` and the backup modules) and leaves `verify.py` as the list of them (145 lines, from 835). A refactor: what `make verify-platform` checks and prints did not change. Console image `src-74fa58e2a48725ee` (`87eb773`).
+`4ed543c` moves each live check beside what it checks (`flux.py`, `clickstack.py`, [`apps/checks.py`](https://github.com/samclement/swhurl-platform/blob/4ed543c87cf4111e237c6d2af57ff96e7edf3037/tools/swhurl/apps/checks.py), `notifications/checks.py`, [`console/checks.py`](https://github.com/samclement/swhurl-platform/blob/4ed543c87cf4111e237c6d2af57ff96e7edf3037/tools/swhurl/console/checks.py), `dashboards.py` and the backup modules) and leaves `verify.py` as the list of them (145 lines, from 835). A refactor: what `make verify-platform` checks and prints did not change. Console image `src-74fa58e2a48725ee` (`87eb773`).
 
 - **Same output as before:** on the live cluster, the previous commit's `verify-platform` (from an export of `ba408e4`) and the new one printed the same 147 lines but one: the export is not a Git checkout, so it could not compare the console image with itself.
 - **After the deploy:** `make verify-platform` passed with 99 `[OK]` lines and no warnings, with the notify service and the console on the new image. The console's Platform page, read through a port-forward with the sign-in header, showed its checks from the new image (Ingress, Image Automation with 9 passing, Notify service, App dashboards and alerts, Notifications) and no error; a `console-dashboards` job on the new image succeeded.

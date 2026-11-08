@@ -20,8 +20,14 @@ What has been verified on the live cluster, and when: current facts first, then 
   maps, and `check-rendered.sh`: 157 files, 0 differ); `make test` ran 481 tests; `make check-repo`, `make check-apps`,
   `make check-lint`, `make check-codegraph`, `make check-otel` (two deprecation warnings, no failure) and `bash -n`
   over `host/*.sh tests/fixtures/*.sh` passed. `bots.py`'s test proves the bot calls `make -s v2-render`.
-- **Not exercised live:** the next scheduled Deploy v2 run, the only live path this changes; it runs the new step.
-- **Delivery:** this commit; its live acceptance is the next scheduled Deploy v2 run.
+- **Live:** Deploy v2 run
+  [`42488012065`](https://github.com/samclement/swhurl-platform/actions/runs/42488012065) on `8be327e8` (a manual
+  dispatch of the scheduled job) completed every step: the bot ran `make v2-deploy` and then `make -s v2-render`,
+  which exited 0 and wrote nothing because the tree already matched the records, so it pushed no commit. The hourly
+  schedule runs the same job. After the push, `make flux-reconcile` settled every unit and `make verify-platform`
+  passed with no warning.
+- **Not exercised live:** the scheduled trigger itself, which runs exactly the job the dispatch ran.
+- **Delivery:** commit `8be327e8`.
 
 ## check-repo runs Go and validate.py is retired (8 November 2026)
 

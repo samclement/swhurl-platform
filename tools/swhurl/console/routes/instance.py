@@ -257,9 +257,13 @@ def routes(ctx: Context) -> list[Route]:
         if declared.source != declared_records.V2 or declared.problem:
             return page(request, 'error.html', status_code=409,
                         error=declared.problem or f'{app}/{env} has no v2 records')
-        if change in ('egress', 'schedule'):
+        if change == 'egress':
             return page(request, 'error.html', status_code=400,
-                        error=f'v2 does not model {change}: the form is not offered for this instance')
+                        error='the console offers no egress form: grant a host with '
+                              f'`swhurl-v2 edit --app {app} --env={env} --set egress=<host>` and run the render it asks for')
+        if change == 'schedule':
+            return page(request, 'error.html', status_code=400,
+                        error='v2 does not model a schedule: the console offers no schedule form')
         if refused := v2_read_only(request, app, env, change):
             return refused
         action = changes.V2_ACTION[change]

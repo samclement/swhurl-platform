@@ -2360,7 +2360,9 @@ second pod must not lose both changes; `SetConfigMapKey` is that call with one k
 **The job lifecycle, ported and unwired.** `orchestration.Jobs` is the console's job registry in Go: one running job per
 target, `running`/`succeeded`/`failed`/`interrupted`, a job's lines as its record, the newest 30 kept front-trimmed to
 20 kB, each line redacted and capped at 1,000 characters, every state change one `[AUDIT]` line, a returning pod calling
-another pod's unfinished job interrupted, and a stopping pod draining its jobs. Its record JSON keys are
+another pod's unfinished job interrupted, and a stopping pod draining its jobs. A job outlives the request that
+started it (its context is not cancelled with the request's), and another pod's records are read again only while one
+the registry remembers is running, as `jobs.py` does. Its record JSON keys are
 `jobstore.py`'s, so a page and a reader cannot disagree about what a record says. It has no caller until the cutover:
 the console's running jobs are still Python's, and nothing in this slice writes a record. `swhurl-v2 console`'s job-event
 route now streams a job this server runs, and answers 404 while no command gives it a registry — which is what it

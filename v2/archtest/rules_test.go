@@ -8,10 +8,12 @@
 package archtest
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -182,7 +184,11 @@ type Module struct {
 	Packages          map[string]*Package
 }
 
-func loadModule(root string) (*Module, error) {
+// loadModule parses a module's Go files. files is nil to walk the directory, or the paths (relative,
+// '/' separators) to read instead, so a caller can read a tree as Git carries it rather than as the
+// disk holds it. Both count the same files: "go.mod" decides the module, and a .go file under
+// testdata, a dot directory or an underscore one belongs to no package.
+func loadModule(root string, files []string) (*Module, error) {
 	gomod, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	if err != nil {
 		return nil, err
@@ -197,33 +203,67 @@ func loadModule(root string) (*Module, error) {
 		return nil, fmt.Errorf("go.mod has no module line")
 	}
 	m := &Module{Root: root, Path: path, GoMod: string(gomod), Fset: token.NewFileSet(), Packages: map[string]*Package{}}
+	if files != nil {
+		return m, m.addFiles(files)
+	}
 	err = filepath.WalkDir(root, func(file string, entry os.DirEntry, err error) error {
-		if err != nil {
+		if err != nil || entry.IsDir() {
 			return err
 		}
-		name := entry.Name()
-		if entry.IsDir() {
-			if file != root && (name == "testdata" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")) {
-				return filepath.SkipDir
-			}
-			return nil
+		rel, relErr := filepath.Rel(root, file)
+		if relErr != nil {
+			return relErr
 		}
-		if !strings.HasSuffix(name, ".go") {
-			return nil
-		}
-		parsed, err := parser.ParseFile(m.Fset, file, nil, parser.ParseComments)
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(root, file)
-		dir := filepath.ToSlash(filepath.Dir(rel))
-		if m.Packages[dir] == nil {
-			m.Packages[dir] = &Package{Dir: dir}
-		}
-		m.Packages[dir].Files = append(m.Packages[dir].Files, File{filepath.ToSlash(rel), strings.HasSuffix(name, "_test.go"), parsed})
-		return nil
+		return m.addFile(filepath.ToSlash(rel))
 	})
 	return m, err
+}
+
+// addFiles parses the Go files among rel, in the order given; addFile is one of them.
+func (m *Module) addFiles(rel []string) error {
+	for _, path := range rel {
+		if err := m.addFile(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// addFile parses one file (relative, '/' separators) into its package, unless it is not Go or not
+// part of the module: the walk and the given paths must count the same files, or a report of one
+// tree would describe packages the other never sees.
+func (m *Module) addFile(rel string) error {
+	if !strings.HasSuffix(rel, ".go") || !inModule(rel) {
+		return nil
+	}
+	source := filepath.Join(m.Root, filepath.FromSlash(rel))
+	if _, err := os.Stat(source); errors.Is(err, fs.ErrNotExist) {
+		return nil // a listed path that is gone is a removal, not a file to parse
+	}
+	parsed, err := parser.ParseFile(m.Fset, source, nil, parser.ParseComments)
+	if err != nil {
+		return err
+	}
+	dir := filepath.ToSlash(filepath.Dir(rel))
+	if m.Packages[dir] == nil {
+		m.Packages[dir] = &Package{Dir: dir}
+	}
+	m.Packages[dir].Files = append(m.Packages[dir].Files, File{rel, strings.HasSuffix(rel, "_test.go"), parsed})
+	return nil
+}
+
+// inModule is whether a path is one the module holds: its directories are none of testdata, a dot
+// directory or an underscore one.
+func inModule(rel string) bool {
+	for _, dir := range strings.Split(filepath.ToSlash(filepath.Dir(rel)), "/") {
+		if dir == "." || dir == "" {
+			continue
+		}
+		if dir == "testdata" || strings.HasPrefix(dir, ".") || strings.HasPrefix(dir, "_") {
+			return false
+		}
+	}
+	return true
 }
 
 // Dirs is every package directory, sorted.

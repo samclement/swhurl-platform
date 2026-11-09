@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -45,7 +47,7 @@ func with(files map[string]string, changes map[string]string) map[string]string 
 
 func readFixture(t *testing.T, files map[string]string) Tree {
 	t.Helper()
-	tree, err := readTree(writeFiles(t, files))
+	tree, err := readTree(writeFiles(t, files), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,6 +228,79 @@ func TestReportSummaryShowsAFewItems(t *testing.T) {
 	}
 }
 
+func TestReportReadsOnlyThePathsItIsGiven(t *testing.T) {
+	dir := writeFiles(t, with(baseFiles(), map[string]string{"swhurl-v2": "a build binary"}))
+	listed, err := readTree(dir, slices.Collect(maps.Keys(baseFiles())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files := compareTrees(Side{"base", true}, listed, Side{"working tree", true}, listed); len(files.Files.Added) != 0 {
+		t.Errorf("a listed tree compared with itself has no added file: %q", files.Files.Added)
+	}
+	walked, err := readTree(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := compareTrees(Side{"base", true}, listed, Side{"working tree", true}, walked)
+	if len(r.Files.Added) != 1 || r.Files.Added[0].Path != "swhurl-v2" {
+		t.Errorf("an artefact the paths leave out is still on disk: %q", r.Files.Added)
+	}
+}
+
+func TestReportCountsAListedPathThatIsGoneAsRemoved(t *testing.T) {
+	dir := writeFiles(t, with(baseFiles(), map[string]string{"kernel/a.go": ""}))
+	listed := slices.Collect(maps.Keys(baseFiles()))
+	before, err := readTree(writeFiles(t, baseFiles()), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := readTree(dir, listed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := compareTrees(Side{"base", true}, before, Side{"working tree", true}, after)
+	if len(r.Files.Removed) != 1 || r.Files.Removed[0].Path != "kernel/a.go" {
+		t.Errorf("removed: %q", r.Files.Removed)
+	}
+}
+
+func TestReportListsPathsOutsideTheModuleWithoutPackages(t *testing.T) {
+	files := with(baseFiles(), map[string]string{"kernel/testdata/helper.go": "package helper\n"})
+	tree := readFixture(t, files)
+	listed, err := readTree(writeFiles(t, files), slices.Sorted(maps.Keys(files)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := listed.Packages["kernel/testdata"]; ok {
+		t.Error("a file under testdata is listed and hashed, not parsed into a package")
+	}
+	if _, ok := tree.Packages["kernel/testdata"]; ok {
+		t.Error("the walk counts the same files as the list")
+	}
+	if len(listed.Files) != len(files) {
+		t.Errorf("hashed %d of %d files", len(listed.Files), len(files))
+	}
+}
+
+func TestReadPathsKeepsOnlyTheTreesOwnFiles(t *testing.T) {
+	list := filepath.Join(t.TempDir(), "paths")
+	data := "v2/kernel/a.go\x00v2/swhurl-v2\x00docs/apps.md\x00v2/\x00"
+	if err := os.WriteFile(list, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := readPaths(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectLines(t, "paths", paths, "kernel/a.go", "swhurl-v2")
+	if empty, err := readPaths(""); err != nil || empty != nil {
+		t.Errorf("no list is no restriction, not an error: %v %v", empty, err)
+	}
+	if _, err := readPaths(filepath.Join(t.TempDir(), "absent")); err == nil {
+		t.Error("a list that cannot be read is an error, not an unrestricted tree")
+	}
+}
+
 func TestReportRefusesWhatItCannotRead(t *testing.T) {
 	cases := map[string]map[string]string{
 		"rule settings that are not literals": with(baseFiles(), map[string]string{
@@ -239,12 +314,12 @@ func TestReportRefusesWhatItCannotRead(t *testing.T) {
 	}
 	for name, files := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := readTree(writeFiles(t, files)); err == nil {
+			if _, err := readTree(writeFiles(t, files), nil); err == nil {
 				t.Error("read without an error")
 			}
 		})
 	}
-	if _, err := readTree(t.TempDir() + "/missing"); err == nil {
+	if _, err := readTree(t.TempDir()+"/missing", nil); err == nil {
 		t.Error("a missing directory is an error, not an absent v2")
 	}
 }

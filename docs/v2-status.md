@@ -200,7 +200,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   deleting that Python; its server and templates go last (3 November 2026). That last part is two slices, the
   feature-flag card and its NATS key-value adapter first, so the server adds no external effect (8 November 2026).
 - The binary is built, never committed: make targets build it into a throwaway folder, and a local build in
-  `v2/` is ignored (3 November 2026).
+  `v2/` is ignored — so the change report reads the working tree as Git carries it, not as the disk holds it,
+  and an artifact left there is not a change to v2 (3 November 2026; 8 November 2026).
 - The team registry is a v2 record (`v2-records/teams.json`): a team has at most one channel and a channel one
   team, `swhurl-v2 team` writes it and its channel Secrets, and `render` refuses a record or grant naming a team it
   does not hold (4 November 2026).

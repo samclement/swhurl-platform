@@ -17,7 +17,7 @@ const root = ".."
 
 func module(t *testing.T) *Module {
 	t.Helper()
-	m, err := loadModule(root)
+	m, err := loadModule(root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,9 +6,16 @@ import (
 	"strings"
 )
 
-// Publications checks AsyncAPI 3 send operations and returns addresses in channel order, not operation order.
+// Emitted is one event an AsyncAPI 3 document says its app sends: the channel's address, what the channel or its first
+// message says about it, and the payload schema and first example its subscribers read.
+type Emitted struct {
+	Name, Description string
+	Payload, Example  any // the schema and the example payload as the document writes them: an Object, []any, a scalar or nil
+}
+
+// EmittedEvents checks AsyncAPI 3 send operations and returns what they send, in channel order, not operation order.
 // References have the source producer's one-hop semantics; receives are checked but never published.
-func Publications(doc Object, name string) ([]string, error) {
+func EmittedEvents(doc Object, name string) ([]Emitted, error) {
 	fail := func(detail string) error { return fmt.Errorf("%s: %s", name, detail) }
 	if !strings.HasPrefix(scalarText(doc.Get("asyncapi")), "3.") {
 		return nil, fail("must be an AsyncAPI 3 document (asyncapi: 3.x)")
@@ -25,7 +32,21 @@ func Publications(doc Object, name string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return publicationNames(doc, channels, sends, name)
+	return emittedEvents(doc, channels, sends, name)
+}
+
+// Publications is the events an AsyncAPI 3 document says its app sends, by name: EmittedEvents' names, so what a
+// document publishes and what a catalogue shows about it cannot disagree.
+func Publications(doc Object, name string) ([]string, error) {
+	events, err := EmittedEvents(doc, name)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(events))
+	for _, event := range events {
+		names = append(names, event.Name)
+	}
+	return names, nil
 }
 func sentChannels(doc, channels, operations Object, name string) (map[int]bool, error) {
 	sends := map[int]bool{}
@@ -40,9 +61,9 @@ func sentChannels(doc, channels, operations Object, name string) (map[int]bool, 
 	}
 	return sends, nil
 }
-func publicationNames(doc, channels Object, sends map[int]bool, name string) ([]string, error) {
+func emittedEvents(doc, channels Object, sends map[int]bool, name string) ([]Emitted, error) {
 	fail := func(detail string) error { return fmt.Errorf("%s: %s", name, detail) }
-	found := []string{}
+	found := []Emitted{}
 	seen := map[string]bool{}
 	for i, f := range channels {
 		if !sends[i] {
@@ -63,12 +84,65 @@ func publicationNames(doc, channels Object, sends map[int]bool, name string) ([]
 			return nil, fail(event + " is described twice")
 		}
 		seen[event] = true
-		if err := messageReferences(doc, channel, name); err != nil {
+		described, err := emittedMessage(doc, channel, name)
+		if err != nil {
 			return nil, err
 		}
-		found = append(found, event)
+		described.Name = event
+		found = append(found, described)
 	}
 	return found, nil
+}
+
+// emittedMessage is what a channel and its first message say about an event: the channel's description or the
+// message's summary, and the payload schema and first example a subscriber reads. A channel with no messages is
+// described by itself alone, so a document may state a publication without a payload.
+func emittedMessage(doc, channel Object, name string) (Emitted, error) {
+	messages, err := mappingField(channel, "messages", name)
+	if err != nil {
+		return Emitted{}, err
+	}
+	found := Emitted{Description: spoken(channel, "description")}
+	if len(messages) == 0 {
+		return found, nil
+	}
+	message, err := settled(doc, messages[0].Value, name)
+	if err != nil {
+		return Emitted{}, err
+	}
+	if found.Payload, err = messagePayload(doc, message, name); err != nil {
+		return Emitted{}, err
+	}
+	if found.Description == "" {
+		found.Description = spoken(message, "summary")
+	}
+	found.Example = firstExample(message)
+	return found, nil
+}
+
+// messagePayload is a message's payload schema, followed through its reference: nil without one.
+func messagePayload(doc, message Object, name string) (any, error) {
+	if !truth(message.Get("payload")) {
+		return nil, nil
+	}
+	return settled(doc, message.Get("payload"), name)
+}
+
+// firstExample is the payload of a message's first example: nil without one.
+func firstExample(message Object) any {
+	examples, ok := message.Get("examples").([]any)
+	if !ok || len(examples) == 0 {
+		return nil
+	}
+	return object(examples[0]).Get("payload")
+}
+
+// spoken is what an object says about itself under one key, in Python's text: ” when it says nothing.
+func spoken(o Object, key string) string {
+	if !truth(o.Get(key)) {
+		return ""
+	}
+	return scalarText(o.Get(key))
 }
 func scalarText(v any) string {
 	switch v := v.(type) {
@@ -146,21 +220,4 @@ func operation(doc, channels Object, f Field, name string) (int, bool, error) {
 		return i, action == "send", err
 	}
 	return fail("channel must reference an existing #/channels/ entry")
-}
-func messageReferences(doc, channel Object, name string) error {
-	messages, err := mappingField(channel, "messages", name)
-	if err != nil {
-		return err
-	}
-	if len(messages) == 0 {
-		return nil
-	}
-	message, err := settled(doc, messages[0].Value, name)
-	if err != nil {
-		return err
-	}
-	if truth(message.Get("payload")) {
-		_, err = settled(doc, message.Get("payload"), name)
-	}
-	return err
 }

@@ -41,23 +41,40 @@ PAGES = {
     'egress.html': '/egress',
     'unit.html': '/units/infra-base',
     'teams.html': '/teams',
+    'catalogue.html': '/catalogue',
 }
+
+DESCRIBED = {
+    'catalogue-described.html': '/catalogue',
+    'catalogue-empty.html': '/catalogue?env=prod&kind=event&team=nobody',
+}
+"""The catalogue's states, from the fixture that gives apps their own OpenAPI and AsyncAPI documents
+(test_console.py's catalogue cases): what an app describes, a worker that offers no API, and a filter that leaves
+nothing."""
+
+
+def render(client, pages: dict[str, str]) -> int:
+    for name, path in pages.items():
+        response = client.get(path, headers=tc.WHO)
+        if response.status_code != 200:
+            print(f'{name}: {path} answered {response.status_code}', file=sys.stderr)
+            return 1
+        (GOLDENS / name).write_text(response.text)
+        print(f'{name}: {path} ({len(response.text)} bytes)')
+    return 0
 
 
 def main() -> int:
     runner = tc.fake(**tc.CHECKS)
     client = tc.client(runner)
+    described = tc.ConnectionsTests()
     frozen = SimpleNamespace(**{name: getattr(tc.server.dt, name) for name in dir(tc.server.dt) if not name.startswith('_')})
     frozen.datetime = FixedClock
     GOLDENS.mkdir(parents=True, exist_ok=True)
     with mock.patch.object(tc.server, 'dt', frozen):
-        for name, path in PAGES.items():
-            response = client.get(path, headers=tc.WHO)
-            if response.status_code != 200:
-                print(f'{name}: {path} answered {response.status_code}', file=sys.stderr)
-                return 1
-            (GOLDENS / name).write_text(response.text)
-            print(f'{name}: {path} ({len(response.text)} bytes)')
+        if status := render(client, PAGES):
+            return status
+        return render(tc.client(described.described_cluster(), documents=described.documents()), DESCRIBED)
     return 0
 
 

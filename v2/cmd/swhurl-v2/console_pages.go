@@ -31,6 +31,45 @@ type egressData struct {
 	pages.EgressPage
 }
 
+// catalogueData is the Catalogue page: what one environment's apps offer each other.
+type catalogueData struct {
+	shell
+	pages.CataloguePage
+}
+
+// catalogue serves every API and event of one environment, with what each app's own documents say about it.
+func (s *consoleServer) catalogue(w http.ResponseWriter, r *http.Request) {
+	if !readable(w, r) {
+		return
+	}
+	query := r.URL.Query()
+	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
+	defer cancel()
+	data, err := s.readCatalogue(ctx, query.Get("env"), query.Get("kind"), query.Get("team"))
+	if err != nil {
+		s.failure(w, r, http.StatusBadGateway, err.Error())
+		return
+	}
+	data.shell = s.page(r, false)
+	s.render(w, http.StatusOK, "catalogue.html", data)
+}
+
+// readCatalogue reads the cluster, the pinned tree and the documents of the environment the page shows, then computes
+// it: only the environment a page shows has its documents decoded.
+func (s *consoleServer) readCatalogue(ctx context.Context, env, kind, team string) (catalogueData, error) {
+	tree, rows, err := s.readRows(ctx)
+	if err != nil {
+		return catalogueData{}, err
+	}
+	site, err := orchestration.ConsoleSite(tree, s.repository)
+	if err != nil {
+		return catalogueData{}, err
+	}
+	input := pages.CatalogueInput{Rows: rows, Env: env, Kind: kind, Team: team, Site: site, Github: s.hasGitHub}
+	input.Offers = orchestration.ConsoleOffers(tree, rows, pages.EnvironmentNamed(env))
+	return catalogueData{CataloguePage: pages.CataloguePageOf(input)}, nil
+}
+
 // unitData is one Flux unit's page.
 type unitData struct {
 	shell

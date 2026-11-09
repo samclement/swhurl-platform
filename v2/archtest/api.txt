@@ -8,6 +8,7 @@ adapters/appsource/appsourcetest: type Fake struct {Root string Source producer.
 adapters/appsource: func (Local) API(root, name string) ([]byte, error)
 adapters/appsource: func (Local) Declaration(root string) (producer.Object, error)
 adapters/appsource: func (Local) Events(root, name string) (producer.Object, []byte, error)
+adapters/appsource: func Describe(api, events []byte) (pages.Offers, error)
 adapters/appsource: func Parse(data []byte, name string) (producer.Object, error)
 adapters/appsource: type Local struct {}
 adapters/appsource: type Reader interface {Declaration(root string) (producer.Object, error) API(root, name string) ([]byte, error) Events(root, name string) (producer.Object, []byte, error)}
@@ -1085,6 +1086,7 @@ orchestration: func CompileInto(inputs Inputs, destination string, writer files.
 orchestration: func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now func() time.Time) (pages.Checks, error)
 orchestration: func ConsoleDashboards(ctx context.Context, data kube.Data) map[string]string
 orchestration: func ConsoleJobs(ctx context.Context, data kube.Data, reader kube.Reader, now time.Time) []pages.Job
+orchestration: func ConsoleOffers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]pages.Offers
 orchestration: func ConsoleRows(collection observe.Collection) ([]pages.AppRow, error)
 orchestration: func ConsoleSite(files map[string][]byte, repository string) (pages.Site, error)
 orchestration: func ConsoleStack(ctx context.Context, console github.Console, owner, app string) (stack string, reachable bool)
@@ -1184,6 +1186,13 @@ pages: const StateStopped = "stopped"
 pages: const StateSuspended = "suspended"
 pages: const StateUnknown = "unknown"
 pages: const StateUpdating = "updating"
+pages: const ValueAbsent ValueKind = iota
+pages: const ValueArray
+pages: const ValueBool
+pages: const ValueNull
+pages: const ValueNumber
+pages: const ValueObject
+pages: const ValueString
 pages: func (AppRow) Connections() Connections
 pages: func (AppRow) DatabasePath() (path string, known bool)
 pages: func (AppRow) Digest() string
@@ -1212,6 +1221,7 @@ pages: func (Unit) Layer() string
 pages: func Ago(value string, now time.Time) string
 pages: func AppMapOf(rows []AppRow, env string) AppMap
 pages: func AppsPageOf(input AppsInput) AppsPage
+pages: func CataloguePageOf(input CatalogueInput) CataloguePage
 pages: func CheckGroups(checks Checks) []Group
 pages: func ChecksOf(checks []Check) Checks
 pages: func CommonRevision(units []Unit) string
@@ -1220,6 +1230,7 @@ pages: func Condensed(entries []Entry) []Entry
 pages: func ConnectionsOf(inventory *Inventory, teams map[string]string, env string) Connections
 pages: func DecodeReport(data []byte) (Report, error)
 pages: func EgressPageOf(rows []AppRow, site Site) EgressPage
+pages: func EnvironmentNamed(name string) string
 pages: func InstanceOf(unit string) (Instance, bool)
 pages: func LayerOf(name string) string
 pages: func Named(app, env string) (Instance, bool)
@@ -1240,6 +1251,10 @@ pages: type AppView struct {App, Team, Comparison string Staging, Prod *EnvView 
 pages: type AppsInput struct {Rows []AppRow View string Team string Env string Attention bool RefreshURL string Stacks map[string]string Dashboards map[string]string Running []Job Site Site}
 pages: type AppsPage struct {Apps []AppView Teams []Link AllTeams Link ShowAll Link ShowAttention Link ListView Link MapView Link Envs []Link Tally Tally Attention bool Team, View string Env string StackNames map[string]string Map *AppMap Site Site}
 pages: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"`}
+pages: type CatalogueGroup struct {App, Team, TeamLabel string Uses []Used Offers []Offer}
+pages: type CatalogueInput struct {Rows []AppRow Offers map[string]Offers Env string Kind string Team string Site Site Github bool}
+pages: type CataloguePage struct {Envs []Link AllKinds Link APIs, Events Link AllTeams Link Teams []Link Groups []CatalogueGroup Tally CatalogueTally Env, Kind, Team string Site Site Github bool}
+pages: type CatalogueTally struct {APIs, Events, Described int}
 pages: type Certificate struct {Name string `json:"name"` Outcome string `json:"outcome"` Reason string `json:"reason"`}
 pages: type Check struct {Section string Entries []Entry}
 pages: type Checks struct {Passed bool Sections []Section}
@@ -1264,6 +1279,13 @@ pages: type Link struct {Name, Href string Here bool}
 pages: type Live struct {Unit Evidence `json:"unit"` Release Evidence `json:"release"` Workload Workload `json:"workload"` Running Running `json:"running"`}
 pages: type MapEdge struct {Kind, Path, From, To string}
 pages: type MapNode struct {Row *AppRow X, Y int TextX, NameY, SubY int Label string}
+pages: type Offer struct {Kind, Name, App string KindLabel string Event string Team, TeamLabel string Description string Described bool UsedBy []OfferUser UsedByTitle string FirstTwo string More int Address, Link string LinkExternal bool Operations []Operation RoutesLabel string SamplePath string Fields []PayloadField Schema, Example string Commit, CommitURL, Problem string CouldUse []OfferUser HiddenName string FormID, Confirm, Hint string}
+pages: type OfferUser struct {Name, Team string}
+pages: type OfferedAPI struct {Description string Operations []Operation}
+pages: type OfferedEvent struct {Name, Description string Payload, Example Value}
+pages: type Offers struct {API *OfferedAPI Events []OfferedEvent Problem string}
+pages: type Operation struct {Method, Path, Summary string}
+pages: type PayloadField struct {Name, Type string Required bool Meaning string}
 pages: type Problem struct {Level string Text string Link string}
 pages: type ProblemRow struct {Pod, Container, Reason, Message string}
 pages: type Promotion struct {Ready bool `json:"ready"` Reason string `json:"reason"`}
@@ -1286,6 +1308,10 @@ pages: type Unit struct {Name string Ready State Condition State Suspended bool 
 pages: type UnitRow struct {Unit Unit Open bool AppLabel string AppLink string At bool RevisionText string Waits string Applies string AppliedRevision string Interval string Needed []string}
 pages: type Unregistered struct {Team string Apps []UnregisteredApp}
 pages: type UnregisteredApp struct {App string Envs []string}
+pages: type Used struct {Kind, Name, Href, Label string}
+pages: type Value struct {Kind ValueKind Fields []ValueField Items []Value Text string}
+pages: type ValueField struct {Name string Value Value}
+pages: type ValueKind int
 pages: type Workload struct {Status string `json:"status"` ReadyReplicas *int32 `json:"readyReplicas"`}
 pages: var Layers = []struct{Prefix, Title, Text string}{{"cluster-", "Cluster", "Flux's own Git source and unit list, applied by make flux-bootstrap"}, {"infra-", "Infrastructure", "Namespaces, certificates and the ingress controller"}, {"platform-", "Platform services", "Sign-in, observability, this console and automation"}, {"app-", "Deployments", "One unit per app instance"},}
 pages: var RefusedUnits = map[string]string{"cluster-sources": "applied by make flux-bootstrap, not by Flux", "cluster-stack": "applied by make flux-bootstrap, not by Flux",}
@@ -1301,12 +1327,14 @@ producer: func (Flag) Text(input string) (any, error)
 producer: func (Flag) Type() string
 producer: func (Object) Get(name string) any
 producer: func Declarations(document []byte) ([]Flag, error)
+producer: func EmittedEvents(doc Object, name string) ([]Emitted, error)
 producer: func FlagsDocument(flags Object) []byte
 producer: func Label(s Source, publications []string, documents []Document) (string, error)
 producer: func Parse(o Object) (Source, error)
 producer: func Publications(doc Object, name string) ([]string, error)
 producer: func ValidFlagName(name string) bool
 producer: type Document struct {Role string Bytes []byte}
+producer: type Emitted struct {Name, Description string Payload, Example any}
 producer: type Field struct {Name any Value any}
 producer: type Flag struct {Name string Declaration Object}
 producer: type Object []Field

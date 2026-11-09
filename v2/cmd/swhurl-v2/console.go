@@ -233,6 +233,12 @@ func consoleTemplates() (map[string]*template.Template, error) {
 		"href": func(address string) template.HTMLAttr {
 			return template.HTMLAttr(`href="` + html.EscapeString(address) + `"`)
 		},
+		// filterHref is a filter bar's link as the console's Jinja macro wrote it: the macro's own text was never
+		// escaped, so the "&" between parameters stays, and the values interpolated into it were, so a team name's
+		// markup becomes entities. A value that itself holds "&" is the one case this writes differently.
+		"filterHref": func(address string) template.HTMLAttr {
+			return template.HTMLAttr(`href="` + macroEscaped(address) + `"`)
+		},
 		// notLast separates a list's entries but the last, as Jinja's loop.last does.
 		"notLast": func(i, count int) bool { return i < count-1 },
 		// raw is a page's own text, written as HTML the way Jinja's caller() block is Markup.
@@ -272,6 +278,7 @@ func (s *consoleServer) serve(out io.Writer, address string) int {
 	mux.Handle("/static/", http.StripPrefix("/static/", staticHandler(s.static)))
 	mux.HandleFunc("/platform", s.platform)
 	mux.HandleFunc("/apps", s.apps)
+	mux.HandleFunc("/catalogue", s.catalogue)
 	mux.HandleFunc("/egress", s.egress)
 	mux.HandleFunc("/units/", s.unit)
 	mux.HandleFunc("/teams", s.teams)
@@ -344,6 +351,12 @@ func withIdentity(r *http.Request, email string) *http.Request {
 func identityOf(r *http.Request) string {
 	found, _ := r.Context().Value(identityKey{}).(consoleIdentity)
 	return found.Email
+}
+
+// macroEscaped is text as html escaping writes it, except that "&" stays: a console macro's own address text was
+// never escaped, and only the values inside it were.
+func macroEscaped(text string) string {
+	return strings.NewReplacer("<", "&lt;", ">", "&gt;", `"`, "&#34;", "'", "&#39;").Replace(text)
 }
 
 // staticHandler serves the embedded assets with their content-hashed URLs cached for ever.

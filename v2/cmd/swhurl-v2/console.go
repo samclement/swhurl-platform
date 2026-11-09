@@ -39,7 +39,17 @@ const (
 	devIdentity    = "operator@localhost (dev)"
 	consoleRepo    = "samclement/swhurl-platform"
 	consoleToken   = "GITHUB_TOKEN"
+	appReposToken  = "APP_REPOS_TOKEN" // creates app repositories: only whether it is set is read here
 )
+
+// realToken is a token from the environment, or empty when it is unset or still the placeholder a Secret starts as.
+func realToken(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "REPLACE_ME" {
+		return ""
+	}
+	return value
+}
 
 // console is the read-only server: it writes nothing, and every read carries the request's deadline.
 func (c cli) console(r request) int {
@@ -62,7 +72,8 @@ func (c cli) console(r request) int {
 	}
 	data, _ := reader.(kube.Data)
 	server, err := newConsoleServer(consoleConfig{Reader: reader, Collector: collector, Data: data, Dev: r.dev,
-		Git: c.git, Repository: os.Getenv("CONSOLE_REPO"), Token: strings.TrimSpace(os.Getenv(consoleToken))})
+		Git: c.git, Repository: os.Getenv("CONSOLE_REPO"), Token: realToken(os.Getenv(consoleToken)),
+		AppRepos: realToken(os.Getenv(appReposToken)) != ""})
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -84,6 +95,7 @@ type consoleConfig struct {
 	Snapshots  git.Snapshots
 	Repository string
 	Token      string
+	AppRepos   bool // whether a token that creates app repositories is configured (a new app can be finished)
 	Now        func() time.Time
 }
 
@@ -96,6 +108,8 @@ type consoleServer struct {
 	github     github.Console
 	appConsole github.Console // anonymous reads of app repositories (their swhurl.yaml)
 	repository string
+	token      string
+	appRepos   bool
 	templates  map[string]*template.Template
 	static     fs.FS
 	assets     string
@@ -105,6 +119,10 @@ type consoleServer struct {
 
 	stackMu sync.Mutex
 	stacks  map[string]stackEntry
+
+	factsMu sync.Mutex
+	merged  map[int]pages.Pull // merged pull requests, by number
+	reached map[int]string     // when this server first saw a job's change at its end, by job
 }
 
 func newConsoleServer(config consoleConfig) (*consoleServer, error) {
@@ -112,9 +130,15 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 		config.Now = time.Now
 	}
 	server := &consoleServer{reader: config.Reader, collector: config.Collector, data: config.Data, now: config.Now,
-		appConsole: github.NewConsole(nil), repository: config.Repository, stacks: map[string]stackEntry{}}
+		appConsole: github.NewConsole(nil), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
+		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{}}
 	if server.repository == "" {
 		server.repository = consoleRepo
+	}
+	// A token reads pull requests either way, as the Python console's --dev does; --dev pins the checkout instead.
+	if config.Token != "" {
+		server.github = github.NewConsole(nil)
+		server.hasGitHub = true
 	}
 	if config.Dev {
 		snapshots := config.Snapshots
@@ -124,10 +148,6 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 		server.bundle = &orchestration.ConsoleBundle{Source: localConsole{snapshots: snapshots, root: "."}}
 		server.identity = devIdentity
 	} else {
-		if config.Token != "" {
-			server.github = github.NewConsole(nil)
-			server.hasGitHub = true
-		}
 		server.bundle = &orchestration.ConsoleBundle{Source: orchestration.ConsoleSourceOf{
 			Console: server.github, Repository: config.Repository, Token: config.Token}}
 	}
@@ -282,6 +302,9 @@ func (s *consoleServer) serve(out io.Writer, address string) int {
 	mux.HandleFunc("/egress", s.egress)
 	mux.HandleFunc("/units/", s.unit)
 	mux.HandleFunc("/teams", s.teams)
+	mux.HandleFunc("/activity", s.activity)
+	mux.HandleFunc("/jobs/{id}", s.job)
+	mux.HandleFunc("/jobs/{id}/events", s.jobEvents)
 	// The addresses the console moved: the old page names still lead to the page that replaced them.
 	mux.HandleFunc("/services", redirect("/apps?view=map"))
 	mux.HandleFunc("/units", redirect("/platform#units"))
@@ -515,10 +538,18 @@ type errorData struct {
 	Error string
 }
 
+// page is the shell around a page, with the jobs running now read for the header.
 func (s *consoleServer) page(r *http.Request, autoRefresh bool) shell {
+	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
+	defer cancel()
+	return s.pageWith(r, autoRefresh, s.jobsOf(ctx))
+}
+
+// pageWith is the shell around a page that has read the jobs already.
+func (s *consoleServer) pageWith(r *http.Request, autoRefresh bool, jobs []pages.Job) shell {
 	readAt := s.now().Format("15:04")
 	return shell{Path: r.URL.Path, Identity: identityOf(r), ReadAt: readAt, Assets: s.assets,
-		AutoRefresh: autoRefresh, HasGithub: s.hasGitHub, RefreshURL: r.URL.RequestURI()}
+		AutoRefresh: autoRefresh, HasGithub: s.hasGitHub, RefreshURL: r.URL.RequestURI(), Running: runningJobs(jobViewsOf(jobs))}
 }
 
 func (s *consoleServer) render(w http.ResponseWriter, status int, name string, data any) {
@@ -558,8 +589,13 @@ func (s *consoleServer) overview(w http.ResponseWriter, r *http.Request) {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	data.shell = s.page(r, true)
-	data.shell.Running = nil
+	jobs := s.jobsOf(ctx)
+	data.shell = s.pageWith(r, true, jobs)
+	for _, job := range jobViewsOf(jobs) {
+		if job.State != "running" && len(data.Recent) < recentJobs {
+			data.Recent = append(data.Recent, job)
+		}
+	}
 	s.render(w, http.StatusOK, "overview.html", data)
 }
 
@@ -672,21 +708,14 @@ func (s *consoleServer) compare(from, to string) ([]string, bool, error) {
 	if s.github == nil {
 		return nil, false, errors.New("no GitHub token")
 	}
-	return s.github.Compare(context.Background(), os.Getenv("CONSOLE_REPO"), strings.TrimSpace(os.Getenv(consoleToken)), from, to)
+	return s.github.Compare(context.Background(), s.repository, s.token, from, to)
 }
 
 // openPulls lists the console's open pull requests, or says why it could not.
 func (s *consoleServer) openPulls(ctx context.Context) ([]pullView, string) {
-	if s.github == nil {
-		return nil, "No GitHub token is configured, so open pull requests are not listed."
-	}
-	repository := os.Getenv("CONSOLE_REPO")
-	if repository == "" {
-		repository = consoleRepo
-	}
-	pulls, err := s.github.OpenPulls(ctx, repository, strings.TrimSpace(os.Getenv(consoleToken)))
-	if err != nil {
-		return nil, "Could not list open pull requests: " + err.Error()
+	pulls, problem := s.consolePulls(ctx)
+	if problem != "" {
+		return nil, problem
 	}
 	found := make([]pullView, 0, len(pulls))
 	for _, pull := range pulls {

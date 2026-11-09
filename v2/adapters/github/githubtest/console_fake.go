@@ -3,6 +3,7 @@ package githubtest
 import (
 	"context"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
@@ -22,11 +23,15 @@ type ConsoleFake struct {
 	ByNumber map[int]github.Pull
 	Err      error
 	Reads    []string
+
+	mu sync.Mutex // a page reads at once, as it does through the real API
 }
 
 var _ github.Console = (*ConsoleFake)(nil)
 
 func (f *ConsoleFake) read(path string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Reads = append(f.Reads, path)
 	return f.Err
 }

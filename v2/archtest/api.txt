@@ -1083,10 +1083,12 @@ orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, a
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
+orchestration: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads ChangeReads, others bool) ([]pages.ChangeRow, string)
 orchestration: func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now func() time.Time) (pages.Checks, error)
 orchestration: func ConsoleDashboards(ctx context.Context, data kube.Data) map[string]string
 orchestration: func ConsoleJobs(ctx context.Context, data kube.Data, reader kube.Reader, now time.Time) []pages.Job
 orchestration: func ConsoleOffers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]pages.Offers
+orchestration: func ConsoleRenders(tree map[string][]byte) (map[string]pages.Render, error)
 orchestration: func ConsoleRows(collection observe.Collection) ([]pages.AppRow, error)
 orchestration: func ConsoleSite(files map[string][]byte, repository string) (pages.Site, error)
 orchestration: func ConsoleStack(ctx context.Context, console github.Console, owner, app string) (stack string, reachable bool)
@@ -1123,6 +1125,7 @@ orchestration: type BootstrapLine struct {Level BootstrapLevel Text string}
 orchestration: type BootstrapOptions struct {DryRun bool Wait, Interval time.Duration}
 orchestration: type BootstrapPorts struct {Data kube.Data Installer clickstack.Installer}
 orchestration: type BootstrapReport struct {Lines []BootstrapLine}
+orchestration: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(context.Context, string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
 orchestration: type CheckOptions struct {Now float64 Base, PlatformAddress, NotifyAddress, Token string DryRun bool}
 orchestration: type CheckReport struct {State *incident.State Offered []CheckerDelivery}
 orchestration: type CheckerDelivery struct {Entry incident.Entry Err error Retry bool}
@@ -1178,7 +1181,9 @@ orchestration: type Result struct {Compilation kernel.Compilation Written []file
 orchestration: type StatusInputs struct {Inputs Revision string RecordsRoot string SharedPaths []string Changes *observe.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
+pages: const FinishAppJob = "finish new app"
 pages: const FluxSection = "Flux Kustomizations"
+pages: const NewAppJob = "new app and repository"
 pages: const OtherLayer = "Other"
 pages: const StateFailing = "failing"
 pages: const StateHealthy = "healthy"
@@ -1209,18 +1214,26 @@ pages: func (Instance) Namespace() string
 pages: func (Instance) Unit() string
 pages: func (Job) Interrupted(finished time.Time) Job
 pages: func (Job) Running() bool
+pages: func (Progress) Reached() bool
+pages: func (Render) Pending() bool
 pages: func (Site) DashboardURL(id string) string
 pages: func (Site) LogsURL(app string) string
 pages: func (Site) RepositoryURL(app string) string
 pages: func (Site) UngrantedURL(instance Instance) string
+pages: func (Stage) Mark() string
+pages: func (Stage) Words() string
 pages: func (State) Label() string
 pages: func (Summary) Team() string
 pages: func (Tally) Busy() int
+pages: func (Track) Label() string
+pages: func (Track) Mark() string
+pages: func (Track) Settled() bool
 pages: func (Unit) Healthy() bool
 pages: func (Unit) Layer() string
 pages: func Ago(value string, now time.Time) string
 pages: func AppMapOf(rows []AppRow, env string) AppMap
 pages: func AppsPageOf(input AppsInput) AppsPage
+pages: func BranchTarget(branch string) (action, target string)
 pages: func CataloguePageOf(input CatalogueInput) CataloguePage
 pages: func CheckGroups(checks Checks) []Group
 pages: func ChecksOf(checks []Check) Checks
@@ -1232,15 +1245,25 @@ pages: func DecodeReport(data []byte) (Report, error)
 pages: func EgressPageOf(rows []AppRow, site Site) EgressPage
 pages: func EnvironmentNamed(name string) string
 pages: func InstanceOf(unit string) (Instance, bool)
+pages: func Landing(action string, live Observed, target Render) Progress
+pages: func Lands(action, target string) bool
 pages: func LayerOf(name string) string
+pages: func MergeMode(body string) string
+pages: func MergePlan(body string) string
 pages: func Named(app, env string) (Instance, bool)
+pages: func Prepared(job Job) Stage
 pages: func Problems(checks Checks, units []Unit) []Problem
+pages: func ProgressOf(action string, merged, main *Render, live Observed, reached string) Progress
+pages: func PullNumber(job Job) int
+pages: func PullOf(open OpenPull) Pull
+pages: func PullTrack(pull Pull, branch string) Track
 pages: func RemovedRow(app, env, reason string) (AppRow, bool)
 pages: func StateOf(name, reason string) State
 pages: func Summaries(rows []AppRow) []Summary
 pages: func Target(name string) (label, link string)
 pages: func TeamsPageOf(registry map[string]TeamInfo, registered bool, rows []AppRow, site Site, stacks, dashboards map[string]string) TeamsPage
 pages: func Took(started, finished time.Time) string
+pages: func TrackOf(job Job, pull *Pull, landed *Progress) Track
 pages: func UnitRowOf(unit Unit, revision string) UnitRow
 pages: func Units(items [][]byte) ([]Unit, error)
 pages: func Updating(units []Unit) []Problem
@@ -1256,6 +1279,7 @@ pages: type CatalogueInput struct {Rows []AppRow Offers map[string]Offers Env st
 pages: type CataloguePage struct {Envs []Link AllKinds Link APIs, Events Link AllTeams Link Teams []Link Groups []CatalogueGroup Tally CatalogueTally Env, Kind, Team string Site Site Github bool}
 pages: type CatalogueTally struct {APIs, Events, Described int}
 pages: type Certificate struct {Name string `json:"name"` Outcome string `json:"outcome"` Reason string `json:"reason"`}
+pages: type ChangeRow struct {ID string Track Track Job *Job PR *OpenPull}
 pages: type Check struct {Section string Entries []Entry}
 pages: type Checks struct {Passed bool Sections []Section}
 pages: type Condition struct {Type string `json:"type"` Status string `json:"status"` Reason string `json:"reason"` ObservedGeneration *int32 `json:"observedGeneration"`}
@@ -1279,16 +1303,21 @@ pages: type Link struct {Name, Href string Here bool}
 pages: type Live struct {Unit Evidence `json:"unit"` Release Evidence `json:"release"` Workload Workload `json:"workload"` Running Running `json:"running"`}
 pages: type MapEdge struct {Kind, Path, From, To string}
 pages: type MapNode struct {Row *AppRow X, Y int TextX, NameY, SubY int Label string}
+pages: type Observed struct {Read bool Row *AppRow}
 pages: type Offer struct {Kind, Name, App string KindLabel string Event string Team, TeamLabel string Description string Described bool UsedBy []OfferUser UsedByTitle string FirstTwo string More int Address, Link string LinkExternal bool Operations []Operation RoutesLabel string SamplePath string Fields []PayloadField Schema, Example string Commit, CommitURL, Problem string CouldUse []OfferUser HiddenName string FormID, Confirm, Hint string}
 pages: type OfferUser struct {Name, Team string}
 pages: type OfferedAPI struct {Description string Operations []Operation}
 pages: type OfferedEvent struct {Name, Description string Payload, Example Value}
 pages: type Offers struct {API *OfferedAPI Events []OfferedEvent Problem string}
+pages: type OpenPull struct {Number int Title, URL, Branch, Opened string Body, Checks, ChecksURL string}
 pages: type Operation struct {Method, Path, Summary string}
 pages: type PayloadField struct {Name, Type string Required bool Meaning string}
 pages: type Problem struct {Level string Text string Link string}
 pages: type ProblemRow struct {Pod, Container, Reason, Message string}
+pages: type Progress struct {State string Detail string Applied bool Newer string}
 pages: type Promotion struct {Ready bool `json:"ready"` Reason string `json:"reason"`}
+pages: type Pull struct {Number int URL string State string Checks string ChecksURL string Plan string When string Commit string}
+pages: type Render struct {Records string Settings string Digest string Release bool Runs string}
 pages: type Report struct {State ReportState `json:"state"` Verdict string `json:"verdict"` Currentness Currentness `json:"currentness"` Promotion Promotion `json:"promotion"` Live Live `json:"live"` Findings []Finding `json:"findings"` Problems []ProblemRow `json:"problems"` Routes []Route `json:"routes"` Certificates []Certificate `json:"certificates"` Target ReportTarget `json:"target"`}
 pages: type ReportState struct {Name string `json:"name"` Reason string `json:"reason"`}
 pages: type ReportTarget struct {Namespace string `json:"namespace"` Replicas int32 `json:"replicas"` Revision string `json:"revision"`}
@@ -1296,6 +1325,7 @@ pages: type Route struct {Name string `json:"name"` Outcome string `json:"outcom
 pages: type Running struct {Status string `json:"status"` Digests *[]string `json:"digests"`}
 pages: type Section struct {Title string Entries []Entry}
 pages: type Site struct {Domain, Owner string}
+pages: type Stage struct {Key, Label string State string Note, Link string}
 pages: type State struct {Key, Detail string}
 pages: type Summary struct {App string Envs map[string]*AppRow Order []string Compare string}
 pages: type Tally struct {Healthy, Updating, Apps, Attention int}
@@ -1304,6 +1334,7 @@ pages: type TeamInfo struct {Description string Channel string Transport string}
 pages: type TeamJob struct {ID int Action string State string Link string}
 pages: type TeamView struct {Name, Description string Channel string Transport string Count int Names string Apps []TeamApp Job *TeamJob RenameHint string}
 pages: type TeamsPage struct {Teams []TeamView AppCount int Unregistered []Unregistered RegistryError string Error string Github bool}
+pages: type Track struct {Stages []Stage Status string Outcome string}
 pages: type Unit struct {Name string Ready State Condition State Suspended bool DependsOn []string Revision string ReadyStatus, ReadyMessage string Level int Path string Interval string NeededBy []string}
 pages: type UnitRow struct {Unit Unit Open bool AppLabel string AppLink string At bool RevisionText string Waits string Applies string AppliedRevision string Interval string Needed []string}
 pages: type Unregistered struct {Team string Apps []UnregisteredApp}

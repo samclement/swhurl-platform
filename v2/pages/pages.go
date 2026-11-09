@@ -5,6 +5,7 @@ package pages
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -552,12 +553,8 @@ func Ago(value string, now time.Time) string {
 	return fmt.Sprintf("%d days ago", int(round(seconds/86400)))
 }
 
-func round(value float64) float64 {
-	if value < 0 {
-		return -round(-value)
-	}
-	return float64(int64(value + 0.5))
-}
+// round is Python's round: a half goes to the even neighbour, so 150 s is "2 min" on either console.
+func round(value float64) float64 { return math.RoundToEven(value) }
 
 // Took is how long a finished job ran.
 func Took(started, finished time.Time) string {

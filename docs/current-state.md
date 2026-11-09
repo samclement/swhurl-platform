@@ -2,6 +2,30 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Activity and a job's page are the console's (9 November 2026)
+
+- **Scope:** `swhurl-v2 console`'s `/activity`, `/jobs/{id}` and `/jobs/{id}/events`, §23 step 1. `pages` holds the
+  one model of how far a change has got (`stages.py`'s, for the renders v2 makes: records and HelmRelease in one
+  commit, so its v1 render-hash cases are gone): a job's stages, its pull request's, and a merged change's progress
+  against main's render and the cluster. `orchestration.ConsoleRenders` reads an instance's render from a pinned tree
+  and `ConsoleChanges` makes the rows, reading closed pull requests and merge-commit trees eight at a time. Overview's
+  **Recent activity** and the header's running-jobs badge now read the jobs too (both were empty in Go). Nothing is
+  written: when a change is first seen at its end is remembered in memory only, since the job record stays the
+  writing pod's until step 2. The events route is 404 for every job, because this server runs none. `--dev` reads pull
+  requests when a token is set, as the Python console's does. Nothing is deployed.
+- **What was verified:** `go test -race ./...` in `v2/`: six pages compared byte for byte against the Python console's
+  render of one fixture (`v2/cmd/swhurl-v2/testdata/activity.html` and `job-*.html`, from
+  `tests/render_console_goldens.py`), with jobs running, waiting for a merge, live, failed, interrupted and
+  resumable, closed and on main, and an open pull request no job opened; `pages` table tests ported from
+  `tests/test_console_stages.py`; `orchestration` tests for the renders and for reads that fail or have no token.
+  `make check-v2`, `make check-docs` and `make check`.
+- **Live side-by-side:** the Go server (`--dev`, host kubeconfig, the console's GitHub token in its environment)
+  beside a port-forward of the deployed console. `/activity` (30 changes, 190 KB) and `/jobs/43`, `/42`, `/27`, `/23`
+  differ only in the `--dev` identity line; `/jobs/1` is the same 404. A first read took 3.5 s, then 1.4 s
+  (the deployed console: 1.7–1.8 s).
+- **What was not:** a running job or an open pull request on the live cluster (there were none at the time), the job
+  page's live stream (step 2 runs jobs), the resume POST, and the operator's signed-in pass.
+
 ## The catalogue is the console's, documents and all (9 November 2026)
 
 - **Scope:** `swhurl-v2 console`'s `/catalogue`, §23 step 1: every API and event of one environment, filtered by

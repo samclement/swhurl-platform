@@ -1,0 +1,19 @@
+{{define "title"}}Activity{{end}}
+{{define "main"}}
+<h1>Activity</h1>
+{{template "about" "Every change started here, as the stages it goes through and where it ends. A change is more than its job: a promotion is finished when production runs it, not when its pull request is open. The last stage of each row is where it ends; the sentence under it says what happens next. ✓ done · ↻ running · ‖ waiting for you · ✕ failed · ○ not reached · ◎ where it ends · ◉ it got there."}}
+
+<h2>In progress or waiting for you</h2>
+{{if .Moving}}
+{{template "changes_list" .Moving}}
+{{else}}<p class="muted">Nothing is running, nothing waits for you and nothing that failed is left open.</p>{{end}}
+{{if .PRsError}}<p class="muted">{{.PRsError}}</p>{{end}}
+
+<h2>Finished</h2>
+{{if .Ended}}
+{{template "changes_list" .Ended}}
+{{else}}
+<p class="muted">Nothing yet. A change is a reconcile, suspend or resume (from a unit's page) or a pull request (from New app or an app's page).</p>
+{{end}}
+<p class="muted">The newest 30 jobs are kept; each job's audit line stays in ClickStack (search <code>[AUDIT]</code>).</p>
+{{end}}

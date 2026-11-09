@@ -5,3 +5,44 @@
 {{define "job"}}{{template "mark" (jobMark .State)}}{{end}}
 {{define "check"}}{{template "mark" (checkMark .)}}{{end}}
 {{define "items"}}<ul class="items">{{range .}}<li>{{template "mark" .Level}} {{if .Link}}<a href="{{.Link}}">{{short .Text}}</a>{{else}}{{short .Text}}{{end}}</li>{{end}}</ul>{{end}}
+{{define "checks"}}{{if eq . "passed"}}Checks passed{{else if eq . "failed"}}Checks failed{{else if eq . "running"}}Checks running{{else if eq . "pending"}}Checks pending{{else if eq . "conflict"}}Merge conflict{{else}}Checks on GitHub{{end}}{{end}}
+{{define "merging"}}<span class="merging">{{.}}</span>{{end}}
+{{define "track"}}
+<ol class="track" aria-label="Stages">
+  {{range .Stages}}<li class="stage {{.State}}"><span class="node">{{template "mark" .Mark}}<span class="what"><span class="name">{{if .Link}}<a href="{{.Link}}">{{.Label}}</a>{{else}}{{.Label}}{{end}}<span class="sr-only"> ({{.Words}})</span></span>{{if .Note}}<span class="note">{{short .Note}}</span>{{end}}</span></span></li>
+  {{end}}
+</ol>
+<p class="outcome">{{short .Outcome}}</p>
+{{end}}
+{{define "change_state"}}<span class="status {{.Mark}}">{{template "mark" .Mark}}<span class="state {{.Mark}}">{{.Label}}</span></span>{{end}}
+{{define "changes_list"}}
+{{/* One row per change: its state, what it is, and its path. A row opens to its pull request's controls and its job's output. */}}
+<div class="openlist changes">
+  {{range .}}
+  <details class="openrow change" id="{{.ID}}"{{if .Open}} open{{end}}>
+    <summary title="Show or hide {{with .Job}}the output of job #{{.ID}}{{else}}pull request #{{.PR.Number}}{{end}}">
+      <span class="chev" aria-hidden="true"></span>
+      <div class="about-change">
+        <div class="top">
+          {{template "change_state" .Track}}
+          {{with .Job}}<span class="title">{{.Title}} <a href="{{.Link}}">{{.Label}}</a></span>
+          <span class="muted when" title="{{.StartedAt}} UTC">job #{{.ID}} · {{.Ago}}{{if .Finished}} · took {{.Took}}{{end}} · {{.Identity}}</span>
+          {{else}}<span class="title"><a href="{{.PR.URL}}" title="{{.PR.Branch}}">#{{.PR.Number}} {{.PR.Title}}</a></span>
+          <span class="muted when" title="{{.PR.Opened}}">opened {{.PR.OpenedAgo}}</span>{{end}}
+        </div>
+        {{template "track" .Track}}
+      </div>
+    </summary>
+    <div class="panel">
+      {{if .PR}}<p class="pull"><a href="{{.PR.URL}}">Pull request #{{.PR.Number}} {{template "icon" "external"}}</a> · <a href="{{.PR.ChecksURL}}" title="Its checks on GitHub">{{template "checks" .PR.Checks}} {{template "icon" "external"}}</a></p>
+      <p>{{template "merging" .PR.Merging}}</p>
+      {{else if and .Job .Job.PullLink}}<p class="pull"><a href="{{.Job.PullLink}}">Pull request {{template "icon" "external"}}</a></p>{{end}}
+      {{with .Job}}<pre>{{range .Lines}}{{short .}}
+{{else}}<span class="muted">no output yet</span>{{end}}</pre>
+      <p class="muted"><a href="/jobs/{{.ID}}">Job #{{.ID}} on its own page</a>, with its output under each stage{{if .Running}} as it arrives{{end}}.</p>
+      {{else}}<p class="muted">The job that opened this is no longer remembered (the newest 30 are kept); its audit line is in ClickStack.</p>{{end}}
+    </div>
+  </details>
+  {{end}}
+</div>
+{{end}}

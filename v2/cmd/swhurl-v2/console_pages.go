@@ -350,7 +350,7 @@ func (s *consoleServer) jobsOf(ctx context.Context) []pages.Job {
 	if s.data == nil {
 		return nil
 	}
-	return orchestration.ConsoleJobs(ctx, s.data, s.reader, s.now())
+	return s.withReached(orchestration.ConsoleJobs(ctx, s.data, s.reader, s.now()))
 }
 
 // jobViewsOf is every job as a row shows it.

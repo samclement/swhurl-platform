@@ -28,8 +28,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   environment, NATS port-forwarded to the host) beside a port-forward of the deployed console. `/apps/demo-shop/staging`,
   `/apps/demo-shop/prod` and `/apps/demo-orders/staging` differ only in the `--dev` identity line, and
   `/apps/demo-shop/staging/promotion` is the same; `/apps/demo-shop/staging` shows the live flag override (`shout`,
-  set 21 days ago) and the same disabled Set, because the flags card reads NATS. `/new` waited for the console
-  image to carry the template change below.
+  set 21 days ago) and the same disabled Set, because the flags card reads NATS. `/new` is the same once the console
+  image carried the template change (`f98b322e`): 17,587 bytes against 17,597, the identity line only. An instance
+  neither server knows answers the same 404 on both.
 - **Found live and fixed:** a HelmRelease's environment as a map (not the list form) lost a `valueFrom`'s source, so
   `HOST_IP` read "from a reference" where the Python console says "from the pod (status.hostIP)"; the object form now
   reads its own `valueFrom`, with a test for both forms.

@@ -1,0 +1,282 @@
+{{define "title"}}{{.Instance.App}}/{{.Instance.Env}}{{end}}
+{{define "main"}}
+
+{{$c := .Connections}}
+<p class="crumbs"><a href="/apps">Deployments</a> › {{.Instance.App}}</p>
+<h1>{{.Instance.App}}{{if .Stack}} <span class="pill" title="The stack in {{.Instance.App}}'s swhurl.yaml">{{.StackLabel}}</span>{{end}}</h1>
+<nav class="tabs" aria-label="Environment">
+{{range .Tabs}}<a href="{{.Href}}"{{if .Here}} class="here" aria-current="page"{{end}}>{{.Name}}</a>{{end}}
+</nav>
+
+{{/* What this environment is, at a glance: one fact per column. */}}
+<section class="card" aria-label="Summary">
+  <div class="card-body facts">
+    <div><span>State</span><span class="verdict">{{template "state" (stateOf .State false false)}}</span></div>
+    <div><span>Team</span>{{if .Team}}<a href="/apps?team={{.Team}}" title="The apps of team {{.Team}}">{{.Team}}</a>{{else}}<span class="warn">unknown</span>{{end}}</div>
+    <div><span>Image (desired)</span><code title="{{.DesiredImage}}">{{short .DesiredImage}}</code></div>
+    <div><span>Replicas</span><span>{{replicas .Row.Report.Live.Workload.ReadyReplicas}}/{{.Row.Report.Target.Replicas}} ready</span></div>
+    <div><span>Database (desired)</span><span>{{if .Database}}{{.Database}}{{else}}none{{end}}</span></div>
+    <div><span>Promotion</span>{{if .Summary}}{{if eq .Summary.Compare "differs"}}<span class="pill attention" title="Staging and production run different images, and staging is not known to be the newer">Images differ</span>
+      {{else if eq .Summary.Compare "same"}}<span class="pill ok" title="Staging and production run the same image">In sync</span>
+      {{else if eq .Instance.Env "staging"}}<span class="pill" title="Not in production yet">Staging only</span>
+      {{else}}<span class="muted">—</span>{{end}}{{else}}{{if eq .Instance.Env "staging"}}<span class="pill" title="Not in production yet">Staging only</span>{{else}}<span class="muted">—</span>{{end}}{{end}}</div>
+  </div>
+  {{if .State.Detail}}<div class="card-body"><p class="reason {{if eq .State.Key "failing"}}bad{{else}}muted{{end}}">{{short .State.Detail}}</p></div>{{end}}
+  {{if .Problems}}
+  <div class="card-body">
+    <h3 class="bad">Failing pods</h3>
+    <table class="compact">
+      <tr><th>Pod</th><th>Reason</th><th>Message</th></tr>
+      {{range .Problems}}<tr><td class="mono">{{.Pod}}</td><td class="bad">{{.Reason}}</td><td class="muted">{{.Message}}</td></tr>
+{{end}}
+    </table>
+  </div>
+  {{end}}
+</section>
+
+<nav class="anchors" aria-label="On this page"><a href="#use">Use</a><a href="#connect">Connect</a><a href="#operate">Operate</a><a href="#jobs">Jobs</a></nav>
+
+{{/* Each part is a card: its facts one per line, its changes at the top right. A change opens its form in
+   the card (one at a time); the form's own button, with the pull-request icon, opens the pull request. */}}
+<section class="card" id="use" style="--acts: {{if .Writable}}{{if .Hosts}}2{{else}}1{{end}}{{else}}0{{end}}; --pitch: 9.5rem">
+  <div class="card-head">
+    <h2>Use</h2>
+    <p class="muted">Its web address, and who can reach it: granted here, not in the app's repository.</p>
+    {{if .Hosts}}<a class="button primary act" style="--slot: 0; --wide: 9rem" href="https://{{index .Hosts 0}}">Open {{template "icon" "external"}}</a>{{end}}
+    {{if .Writable}}<details class="act" name="app-form" style="--slot: {{if .Hosts}}1{{else}}0{{end}}; --wide: 9rem">
+      <summary class="button">{{template "icon" "edit"}} Change access</summary>
+      <form class="wizard" method="post" action="/apps/{{.Instance.App}}/{{.Instance.Env}}/expose">
+        <fieldset>
+          {{template "exposureChoices" (exposuresOf .Exposures .Exposure "now")}}
+          <p class="muted hint">v2 derives the address from the app name and the exposure; it does not model a host.</p>
+        </fieldset>
+        {{template "submit" (submitOf .Github "Open access PR" "Private removes the web address. You review and merge it on GitHub." false)}}
+      </form>
+    </details>{{end}}
+  </div>
+  <div class="card-body">
+    <dl class="plain">
+      <dt>Web address</dt><dd>{{range .Hosts}}<div><a href="https://{{.}}">https://{{.}} {{template "icon" "external"}}</a></div>{{else}}{{if .Routes}}{{range .Routes}}<span class="muted">{{.Outcome}}: {{routeReason .Reason}}</span>{{end}}{{else}}<span class="muted">none: {{if eq .Row.Inventory.Kind "worker"}}a worker, with nothing to open{{else}}private, reachable only by the apps that declare a call to it{{end}}</span>{{end}}{{end}}</dd>
+      <dt>Who can reach it (desired)</dt><dd class="{{if eq .Exposure "public"}}warn{{end}}">{{.ExposureWord}}</dd>
+      <dt>Route evidence</dt><dd>{{range .Routes}}<div>{{.Name}}: {{.Outcome}} {{spaced .Reason}}</div>{{else}}<span class="muted">not required (no desired route)</span>{{end}}</dd>
+      <dt>TLS certificate</dt><dd>{{range .Certificates}}<div>{{.Name}}: {{.Outcome}} {{spaced .Reason}}</div>{{else}}<span class="muted">not required (no desired certificate)</span>{{end}}</dd>
+    </dl>
+  </div>
+</section>
+
+<section class="card" id="connect" style="--acts: {{if .Writable}}{{if $c.Address}}2{{else}}1{{end}}{{else}}0{{end}}; --pitch: 11.5rem">
+  <div class="card-head">
+    <h2>Connect</h2>
+    <p class="muted">How other apps reach it, and what it reaches, in {{.Instance.Env}}. Calls and subscriptions are granted here, not in the app's repository{{if $c.Egress}}; the hosts outside the cluster it is granted are v2's, and this page shows them without offering to change them{{end}}.</p>
+    
+    {{if and .Writable $c.Address}}<details class="act" name="app-form" style="--slot: 1; --wide: 11rem">
+      <summary class="button">{{template "icon" "plus"}} Allow callers</summary>
+      <form class="wizard" method="post" action="/apps/{{.Instance.App}}/{{.Instance.Env}}/allow">
+        <fieldset>
+          {{template "textField" (fieldOf "allow_add" "App or team" "" (printPlaceholder "team:" .Team) (allowHint .Instance.Env .Instance.App .Team) "add")}}
+        </fieldset>
+        {{template "submit" (submitOf .Github "Open allow PR" "It changes this instance only; granting access waits for you to merge it on GitHub." false)}}
+      </form>
+    </details>{{end}}
+    
+    {{if .Writable}}<details class="act" name="app-form" style="--slot: 0; --wide: 11rem">
+      <summary class="button">{{template "icon" "plus"}} Connect to an app</summary>
+      <form class="wizard" method="post" action="/apps/{{.Instance.App}}/{{.Instance.Env}}/connect">
+        <div class="rows">
+          {{template "connectionChoices" (choicesOf .Connectable nil nil .Instance.Env .Instance.App)}}
+        </div>
+        {{template "submit" (submitOf .Github "Open connection PR" "It changes this instance only; you review and merge it on GitHub, and a call connects once the app called allows it." false)}}
+      </form>
+    </details>{{end}}
+  </div>
+  <div class="card-body">
+    <dl class="plain">
+      <dt>In the cluster</dt>
+      <dd>{{if $c.Address}}<code>{{$c.Address}}</code> <span class="muted">for apps it allows that call it</span>{{else}}<span class="muted">none: a worker cannot be called</span>{{end}}</dd>
+      {{if $c.Offers}}<dt>Describes itself</dt><dd>Its API and events are read from <a href="https://github.com/{{.Owner}}/{{.Instance.App}}/tree/{{$c.Offers}}">its repository at <code>{{$c.Offers}}</code></a>, the commit of the image it runs. <span class="muted">To publish a new event, add it to <code>asyncapi.yaml</code> there and push.</span></dd>{{end}}
+      {{if and $c.Address .V2}}<dt>Allowed callers</dt>
+      <dd>{{range .Allows}}<span class="pill">{{.}}</span>
+        <form class="inline" method="post" action="/apps/{{$.Instance.App}}/{{$.Instance.Env}}/allow" data-confirm="Open a pull request so that {{.}} may no longer call {{$.Instance.App}}/{{$.Instance.Env}}? You review and merge it on GitHub." data-confirm-label="Open removal PR">
+          <input type="hidden" name="remove" value="{{.}}"><button {{if or (not $.Github) (not $.Writable)}}disabled{{end}} title="Open a pull request removing this grant">Remove</button></form>
+        {{else}}<span class="muted">nobody: no app may call it yet (Allow callers)</span>{{end}}</dd>{{end}}
+      {{if $c.API}}<dt>API description</dt><dd>{{if hasPrefix $c.API "https://"}}<a href="{{$c.API}}">{{$c.API}}</a>{{else}}<code>{{$c.API}}</code>{{end}}</dd>{{end}}
+    </dl>
+    
+    {{if $c.Rows}}{{template "connectionTable" (connectionTableOf $c .Instance.App .Instance.Env true .Github)}}
+    {{else}}<p class="muted">No connections observed live or read from Git.</p>{{end}}
+    {{if $c.Address}}
+    <details class="disclose help" id="how-to-call">
+      <summary>{{template "icon" "info"}} <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{.Instance.App}}</span></summary>
+      <p class="muted">A call needs both sides: your app calls {{.Instance.App}}, and {{.Instance.App}} allows your app or its team (<strong>Allow callers</strong> above). Use your app page's <strong>Connect to an app</strong>, or:</p>
+      <pre><code>swhurl-v2 edit --records v2-records --app {{.Instance.App}} --env {{.Instance.Env}} --set allows=&lt;whole list&gt; \
+  --profile v2/testdata/profile.json --out . --calls v2-records/calls.json --egress platform/egress/allocation.json
+swhurl-v2 edit --records v2-records --app &lt;your app&gt; --env {{.Instance.Env}} --set calls=&lt;whole list&gt; \
+  --profile v2/testdata/profile.json --out . --calls v2-records/calls.json --egress platform/egress/allocation.json
+swhurl-v2 render --records v2-records --profile v2/testdata/profile.json --out . --revision &lt;commit&gt;</code></pre>
+      <p class="muted">Then, in your code (the stack templates' helper):</p>
+      <pre><code>service("{{.Instance.App}}").fetch("/")        // TypeScript
+platform.call("{{.Instance.App}}", "/")        // Kotlin</code></pre>
+    </details>
+    {{end}}
+    {{if $c.Publishes}}
+    <details class="disclose help" id="how-to-subscribe">
+      <summary>{{template "icon" "info"}} <strong>Subscribe to its events</strong> <span class="muted">— what another app adds to receive them</span></summary>
+      <p class="muted">Receiving events is granted on the platform, from your app page's <strong>Connect to an app</strong>, or:</p>
+      <pre><code>swhurl-v2 edit --records v2-records --app &lt;your app&gt; --env {{.Instance.Env}} --set subscriptions=&lt;whole list&gt; \
+  --profile v2/testdata/profile.json --out . --calls v2-records/calls.json --egress platform/egress/allocation.json
+swhurl-v2 render --records v2-records --profile v2/testdata/profile.json --out . --revision &lt;commit&gt;</code></pre>
+      <p class="muted">Then, in your code:</p>
+      <pre><code>subscribe("{{.Instance.App}}.{{index $c.Publishes 0}}", async (event) => { ... })        // TypeScript
+events.subscribe("{{.Instance.App}}.{{index $c.Publishes 0}}") { event -> ... }            // Kotlin</code></pre>
+    </details>
+    {{end}}
+  </div>
+</section>
+
+{{/* Feature flags the running image declares (offers/flags.json), each with its override in NATS. */}}
+<section class="card" id="flags" style="--acts: 0">
+  <div class="card-head">
+    <h2>Feature flags</h2>
+    <p class="muted">An override changes a flag in {{.Instance.Env}} at once, without a new image or a restart.</p>
+  </div>
+  <div class="card-body">
+    {{if .Flags.Problem}}<p class="warn" role="status">{{.Flags.Problem}}</p>{{end}}
+    {{if .Flags.Rows}}
+    <table class="compact flags">
+      <tr><th>Flag</th><th>Type</th><th>Declared</th><th>Override</th><th>Now</th><th><span class="sr-only">Change</span></th></tr>
+      {{range .Flags.Rows}}
+      {{$f := .}}
+      <tr class="{{if eq .Name $.FlagChanged}}changed{{end}}{{if .Undeclared}} undeclared{{end}}">
+        <td><code>{{.Name}}</code>{{if .Description}}<br><span class="muted">{{.Description}}</span>{{end}}</td>
+        {{if .Undeclared}}
+        <td colspan="2"><span class="pill attention" title="The image {{$.Instance.Env}} runs does not declare this flag, so the app ignores the override">not declared</span></td>
+        {{else}}
+        <td><span class="pill">{{.Type}}</span>{{if or .Min .Max}} <span class="muted">{{.Min}}…{{.Max}}</span>{{end}}</td>
+        <td><code>{{.Declared}}</code></td>
+        {{end}}
+        <td>{{if .Overridden}}<span class="pill attention" title="Set from the console; clear it to return to the declared value">{{if .OverrideText}}{{.OverrideText}}{{else}}not JSON{{end}}</span>
+          {{- if .AgeKnown}}<br><span class="{{if .Stale}}warn{{else}}muted{{end}}"{{if .Stale}} title="Older than 14 days: make it the declared value in swhurl.yaml, or remove the flag, then clear it"{{end}}>set {{.AgeWord}}</span>{{end}}
+          {{- else}}<span class="muted">none</span>{{end}}</td>
+        <td>{{if .Undeclared}}<span class="muted">unused</span>{{else}}<code>{{.Effective}}</code>{{end}}</td>
+        <td class="actions">
+          {{if not .Undeclared}}
+          <form method="post" action="/apps/{{$.Instance.App}}/{{$.Instance.Env}}/flags/{{.Name}}" class="inline">
+            <input type="hidden" name="action" value="set">
+            <label class="sr-only" for="flag-{{.Name}}">New value of {{.Name}}</label>
+            {{if eq .Type "boolean"}}
+            <select id="flag-{{.Name}}" name="value">{{range $v := bools}}<option{{if eq $f.Effective $v}} selected{{end}}>{{$v}}</option>{{end}}</select>
+            {{else if .Enum}}
+            <select id="flag-{{.Name}}" name="value">{{range $v := .Enum}}<option{{if eq $v $f.EffectiveRaw}} selected{{end}}>{{$v}}</option>{{end}}</select>
+            {{else if or (eq .Type "integer") (eq .Type "number")}}
+            <input id="flag-{{.Name}}" name="value" type="number" required value="{{.EffectiveRaw}}" step="{{if eq .Type "integer"}}1{{else}}any{{end}}"{{if .Min}} min="{{.Min}}"{{end}}{{if .Max}} max="{{.Max}}"{{end}}>
+            {{else}}
+            <input id="flag-{{.Name}}" name="value" type="text" value="{{.EffectiveRaw}}">
+            {{end}}
+            <button type="submit"{{if not $.FlagsWritable}} disabled{{end}}>Set</button>
+          </form>
+          {{end}}
+          {{if .Overridden}}
+          <form method="post" action="/apps/{{$.Instance.App}}/{{$.Instance.Env}}/flags/{{.Name}}" class="inline">
+            <input type="hidden" name="action" value="clear">
+            <button type="submit" class="quiet"{{if not $.FlagsWritable}} disabled{{end}} title="{{if .Undeclared}}Remove the override{{else}}Back to the declared value{{end}}">Clear</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </table>
+    <p class="muted">Changes are written to the audit log. An override stays until it is cleared, also across restarts and new images: one older than 14 days is marked, as is one for a flag the image no longer declares. Remove a settled flag from the app's code and <code>swhurl.yaml</code>.</p>
+    {{else}}
+    <p class="muted">The image {{.Instance.Env}} runs declares no feature flags. Declare them in the app's <code>swhurl.yaml</code> (<a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#feature-flags">how</a>).</p>
+    {{end}}
+  </div>
+</section>
+
+<section class="card" id="operate" style="--acts: {{if .Writable}}2{{else}}0{{end}}; --pitch: 9.5rem">
+  <div class="card-head">
+    <h2>Operate</h2>
+    <p class="muted">What runs, whether it matches Git, and how to change it.</p>
+    {{if .Writable}}<details class="act" name="app-form" style="--slot: 0; --wide: 9rem">
+      <summary class="button">{{template "icon" "edit"}} Scale</summary>
+      <form class="wizard" method="post" action="/apps/{{.Instance.App}}/{{.Instance.Env}}/scale">
+        <fieldset>
+          <div class="pair">{{range .Scale}}{{template "textField" (fieldOf .Field .Label "" .Placeholder "" .Field)}}{{end}}</div>
+          <span class="muted hint">Desired replicas and memory (MiB). Empty fields keep their current value, shown in grey.
+            </span>
+        </fieldset>
+        {{template "submit" (submitOf .Github "Open scale PR" "You review and merge it on GitHub." false)}}
+      </form>
+    </details>{{end}}
+    {{if .Writable}}<details class="act" name="app-form" style="--slot: 1; --wide: 9rem">
+      <summary class="button">{{template "icon" "edit"}} Change team</summary>
+      <form class="wizard" method="post" action="/apps/{{.Instance.App}}/{{.Instance.Env}}/team">
+        <fieldset>
+          <div class="choices">
+            {{range .Teams}}
+            <label class="choice"><input type="radio" name="team" value="{{.Name}}" required {{if eq .Name $.Team}}checked disabled{{end}}>
+              <span><strong>{{.Name}}</strong>{{if eq .Name $.Team}} <span class="muted">(now)</span>{{end}}{{if .Description}}<br><span class="muted">{{.Description}}</span>{{end}}</span></label>
+            {{else}}<span class="warn">{{if .TeamsError}}{{.TeamsError}}{{else}}No team is registered.{{end}} <a href="/teams">Teams</a></span>
+            {{end}}
+          </div>
+          <span class="muted hint">The team is the app's: the change moves staging and production together. It says who owns the app and whose notification channel hears about it; it grants nobody access, but a <code>team:</code> grant on another app follows it.</span>
+        </fieldset>
+        {{template "submit" (submitOf .Github "Open team PR" "You review and merge it on GitHub." (not .Teams))}}
+      </form>
+    </details>{{end}}
+  </div>
+  <div class="card-body">
+    <dl class="plain">
+      <dt>Image</dt>
+      <dd><div class="mono">Git wants {{short .DesiredImage}}</div><div class="mono">Running digests: {{if not .DigestsKnown}}unknown ({{.Row.Report.Live.Running.Status}}){{else}}{{if .RunningDigests}}{{short .RunningDigests}}{{else}}none{{end}}{{end}}</div></dd>
+      <dt>Replicas</dt><dd>{{replicas .Row.Report.Live.Workload.ReadyReplicas}}/{{.Row.Report.Target.Replicas}} ready ({{.Row.Report.Live.Workload.Status}})</dd>
+      <dt>Git revision</dt><dd><span class="mono">{{short .Row.Report.Currentness.AppliedRevision}}</span> applied · expected <span class="mono">{{short .Row.Report.Target.Revision}}</span><div>{{.Row.Report.Currentness.State}}: {{spaced .Row.Report.Currentness.Reason}}</div></dd>
+      <dt>Flux unit</dt><dd><a href="/units/{{.Instance.Unit}}">{{.Instance.Unit}}</a>: {{.Row.Report.Live.Unit.Status}}{{range .Row.Report.Live.Unit.Conditions}}<div>{{.Type}}: {{.Status}} {{.Reason}}</div>{{end}}</dd>
+      <dt>Helm release</dt><dd>{{.Row.Report.Live.Release.Status}}{{range .Row.Report.Live.Release.Conditions}}<div>{{.Type}}: {{.Status}} {{.Reason}}</div>{{end}}</dd>
+      <dt>Findings</dt><dd>{{range .Row.Report.Findings}}<div>{{.Field}}: {{.Outcome}} {{spaced .Reason}}</div>{{end}}</dd>
+      <dt>Database (desired)</dt><dd>{{if .Database}}{{.Database}}{{else}}none{{end}}</dd>
+      <dt>Namespace</dt><dd class="mono">{{.Instance.Namespace}}</dd>
+      <dt>Observe</dt>
+      <dd><a {{href .LogsURL}}>Logs and traces {{template "icon" "external"}}</a>{{if .DashboardURL}} <span class="muted">·</span> <a {{href .DashboardURL}} title="The App: {{.Instance.App}} dashboard in HyperDX: staging and production as separate lines">Dashboard {{template "icon" "external"}}</a>{{end}} <span class="muted">·</span> <a {{href .RepositoryURL}}>Repository {{template "icon" "external"}}</a></dd>
+    </dl>
+    <details class="section" id="environment">
+      <summary><strong>Environment (desired)</strong> <span class="muted">— rendered variables committed at {{short .Row.Report.Target.Revision}}, not observed container values</span></summary>
+      <dl class="plain">
+        <dt>From the platform (desired)</dt><dd>{{if not .VariablesKnown}}<span class="warn">unknown: no committed HelmRelease</span>{{else}}{{range .Variables}}<div><code>{{.Name}}</code> <span class="muted mono">{{.Value}}</span></div>{{else}}<span class="muted">none</span>{{end}}{{end}}</dd>
+        <dt>Your secrets</dt><dd><span class="muted">none: v2 does not model secrets; secret values and files are unsupported.</span></dd>
+      </dl>
+    </details>
+  </div>
+  <div class="card-body">
+    {{$job := .RunningJob}}
+    <div class="action-row">
+      {{if $job}}<span>{{template "running" (runningOf $job .RefreshURL)}}</span>
+      {{else if .UnitSuspended}}<form method="post" action="/units/{{.Instance.Unit}}/resume" hx-post="/units/{{.Instance.Unit}}/resume" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Resume</button></form>
+      <span class="muted">Apply Git changes to this instance again, starting with a reconcile.</span>
+      {{else}}<form method="post" action="/units/{{.Instance.Unit}}/reconcile" hx-post="/units/{{.Instance.Unit}}/reconcile" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Reconcile</button></form>
+      <span class="muted">Fetch Git and apply this instance now instead of at the next check. Safe: it applies what Git already says.</span>{{end}}
+    </div>
+    {{if eq .Instance.Env "staging"}}
+    <div class="action-row">
+      {{if and .Summary (eq .Summary.Compare "same")}}<span class="pill ok">In sync</span><span class="muted">Production runs this image: there is nothing to promote.</span>
+      {{else if not .Writable}}<span class="muted">Promotion is v2's: <code>swhurl-v2 promote {{.Instance.App}}</code>, in your own terminal.</span>
+      {{else}}<span class="go"><a href="/apps/{{.Instance.App}}/staging/promotion">Review promotion</a></span>
+      <span class="muted">{{if .PromotionProblem}}{{.PromotionProblem}}{{else}}See exactly what would go to production, then promote it. Nothing changes until you confirm there.{{end}}</span>{{end}}
+    </div>
+    {{else if .Summary}}{{if not (.Summary.Has "staging")}}<p class="muted">Promotion requires a staging instance.</p>{{end}}{{end}}
+  </div>
+</section>
+
+<h2 id="jobs" class="part">Changes to {{.Instance.App}}/{{.Instance.Env}}</h2>
+{{if .Changes}}{{template "changes_list" .Changes}}
+{{else}}<p class="muted">None since the console started.</p>{{end}}
+
+<section class="card danger" style="--acts: 0; margin-top: var(--gap-6)">
+  <div class="card-head">
+    <h2>Uninstall</h2>
+    {{if .Writable}}<p class="muted">Opens a pull request that removes {{.Instance.App}}/{{.Instance.Env}}. Once merged, Flux deletes it; a retained volume and its namespace are kept.</p>{{else}}<p class="muted">Removing it is v2's: <code>swhurl-v2 remove {{.Instance.App}}/{{.Instance.Env}}</code>, in your own terminal. A retained volume and its namespace are kept.</p>{{end}}
+  </div>
+  <div class="card-body">
+    <form method="post" action="/apps/{{.Instance.App}}/{{.Instance.Env}}/remove" data-confirm="Open a pull request removing {{.Instance.App}}/{{.Instance.Env}}? Once merged, Flux uninstalls it; a retained volume and its namespace are kept." data-confirm-label="Open uninstall PR"><button class="danger" {{if or (not .Github) (not .Writable)}}disabled{{end}}>{{template "icon" "pr"}} Open uninstall PR</button></form>
+  </div>
+</section>
+{{end}}

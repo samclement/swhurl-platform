@@ -2,6 +2,37 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The app page, pending, promotion and New app are the console's (9 November 2026)
+
+- **Scope:** `swhurl-v2 console`'s `/apps/{app}/{env}` (an instance's page and the page that waits while it is not
+  deployed), `/apps/{app}/staging/promotion` and `/new`, §23 step 1's last pages. `pages/app.go` computes the app
+  page (tabs, state, team, desired image, database, hosts, exposure, problems, routes, certificates, connections,
+  promotion problem, running job, logs and dashboard links, scale fields, the committed environment, feature flags),
+  the two pending states, the promotion review and the New app form; `orchestration/console_app.go` reads the stack
+  catalogue from `v2/contract/stacks.json`, the committed HelmRelease's environment in document order, the
+  configuration the Scale form starts from, the team registry and the Feature flags card in the template's own words.
+  The Feature flags card reads NATS through the console's own seed, opened once and retried at most once a minute;
+  with no seed it states the same problem the flags command states. Nothing is written: the new routes are reads
+  only, and `/new/repo` (the POST) answers 405 until step 2.
+- **What was verified:** `go test ./...` in `v2/`: seven pages compared byte for byte with the Python console's render
+  of one fixture (`v2/cmd/swhurl-v2/testdata/app.html`, `app-prod.html`, `pending-removing.html`,
+  `pending-absent.html`, `pending-new.html`, `promotion.html`, `new-repo.html`, all from
+  `tests/render_console_goldens.py` and the same `app-fixture.json` of records, rows, one job and one pull request).
+  The fixture has two apps in both environments, a call, a subscription and a publication, an allowed caller, a web
+  route, an egress grant, a SQLite database, a team registry with channels, a promotion whose images differ, a
+  removed instance, one whose records Flux has not applied, and a new app with a job and an open pull request.
+  `make check-v2` (with `archtest/api.txt` updated for the four `orchestration` readers and the `pages` helpers the
+  two pages use), `make check` and `make check-docs`.
+- **What is not:** the live side-by-side of these pages (the next gate), the POSTs behind their forms, the job's
+  event stream, and the operator's signed-in pass. The golden fixture gives the app page no flag override, so its
+  Feature flags table is covered only in its no-key state; flag rows are covered by the flags tests.
+- **Deliberate differences from the Python console:** the New app form reads the team registry and each team's
+  channels from the pinned tree (the registry's own channel), where Python reads two files from GitHub's `main`;
+  in production the tree is that commit, and the render derives the routes from the registry. Go's `html/template`
+  drops JavaScript comments inside `<script>`, so the New app script's two explanatory comments became template
+  comments on both sides, and a `prose` helper escapes a contract's own text without writing `+` as `&#43;`, so
+  "Vite+" still reads as it did.
+
 ## Activity and a job's page are the console's (9 November 2026)
 
 - **Scope:** `swhurl-v2 console`'s `/activity`, `/jobs/{id}` and `/jobs/{id}/events`, §23 step 1. `pages` holds the

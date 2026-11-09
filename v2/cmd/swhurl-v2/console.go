@@ -25,6 +25,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/git"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	"github.com/samclement/swhurl-platform/v2/adapters/nats"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -73,7 +74,8 @@ func (c cli) console(r request) int {
 	data, _ := reader.(kube.Data)
 	server, err := newConsoleServer(consoleConfig{Reader: reader, Collector: collector, Data: data, Dev: r.dev,
 		Git: c.git, Repository: os.Getenv("CONSOLE_REPO"), Token: realToken(os.Getenv(consoleToken)),
-		AppRepos: realToken(os.Getenv(appReposToken)) != ""})
+		AppRepos: realToken(os.Getenv(appReposToken)) != "", NatsSeed: os.Getenv("NATS_SEED"),
+		NatsURL: os.Getenv("NATS_URL")})
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -96,6 +98,8 @@ type consoleConfig struct {
 	Repository string
 	Token      string
 	AppRepos   bool // whether a token that creates app repositories is configured (a new app can be finished)
+	NatsSeed   string
+	NatsURL    string
 	Now        func() time.Time
 }
 
@@ -120,6 +124,14 @@ type consoleServer struct {
 	stackMu sync.Mutex
 	stacks  map[string]stackEntry
 
+	// Feature flag overrides are read from NATS, as the flags command reads them: one store, opened on first use.
+	natsSeed     string
+	natsURL      string
+	natsOpen     func(context.Context, string, string, string) (nats.KV, error)
+	flagsMu      sync.Mutex
+	flagsStore   nats.KV
+	flagsTriedAt time.Time
+
 	factsMu sync.Mutex
 	merged  map[int]pages.Pull // merged pull requests, by number
 	reached map[int]string     // when this server first saw a job's change at its end, by job
@@ -131,6 +143,7 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	}
 	server := &consoleServer{reader: config.Reader, collector: config.Collector, data: config.Data, now: config.Now,
 		appConsole: github.NewConsole(nil), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
+		natsSeed: config.NatsSeed, natsURL: config.NatsURL,
 		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{}}
 	if server.repository == "" {
 		server.repository = consoleRepo
@@ -248,6 +261,10 @@ func consoleTemplates() (map[string]*template.Template, error) {
 		"stateOf": stateOf, "runningOf": runningOf, "follow": follow, "hasPrefix": strings.HasPrefix,
 		"join": strings.Join, "fieldOf": fieldOf, "submitOf": submitOf, "addressOf": addressOf,
 		"channelSubmit": channelSubmit, "teamEnvOf": teamEnvOf,
+		"replicas": replicas, "spaced": spaced, "routeReason": routeReason, "exposuresOf": exposuresOf,
+		"printPlaceholder": printPlaceholder, "allowHint": allowHint, "choicesOf": choicesOf,
+		"newAppChoices": newAppChoices, "connectionTableOf": connectionTableOf, "bools": bools,
+		"jsString": jsString, "stackLabel": pages.StackLabelOf, "prose": prose,
 		// href is one attribute holding a link's address, escaped once: in an attribute html/template would escape "+"
 		// as well, which a query string uses for a space and a browser reads as one, and a query string has "&".
 		"href": func(address string) template.HTMLAttr {
@@ -275,7 +292,7 @@ func consoleTemplates() (map[string]*template.Template, error) {
 		}
 		set := template.New("console").Funcs(funcs)
 		for _, part := range []string{"console/templates/base.html", "console/templates/_status.html",
-			"console/templates/_form.html", name} {
+			"console/templates/_form.html", "console/templates/_connections.html", name} {
 			body, err := consoleFiles.ReadFile(part)
 			if err != nil {
 				return nil, err
@@ -303,6 +320,9 @@ func (s *consoleServer) serve(out io.Writer, address string) int {
 	mux.HandleFunc("/units/", s.unit)
 	mux.HandleFunc("/teams", s.teams)
 	mux.HandleFunc("/activity", s.activity)
+	mux.HandleFunc("/new", s.newApp)
+	mux.HandleFunc("/apps/{app}/{env}", s.app)
+	mux.HandleFunc("/apps/{app}/staging/promotion", s.promotion)
 	mux.HandleFunc("/jobs/{id}", s.job)
 	mux.HandleFunc("/jobs/{id}/events", s.jobEvents)
 	// The addresses the console moved: the old page names still lead to the page that replaced them.

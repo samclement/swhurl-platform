@@ -30,11 +30,12 @@ const (
 	consoleEgress  = "platform/egress/allocation.json"
 	consoleRecords = "v2-records"
 	consoleApps    = "v2-apps/instances"
+	consoleStacks  = "v2/contract/stacks.json"
 )
 
 // selected is whether a page may read one repository path.
 func selected(file string) bool {
-	if file == consoleProfile || file == consoleCalls || file == consoleEgress {
+	if file == consoleProfile || file == consoleCalls || file == consoleEgress || file == consoleStacks {
 		return true
 	}
 	if strings.HasPrefix(file, consoleRecords+"/") {

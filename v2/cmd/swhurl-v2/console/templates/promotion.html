@@ -1,0 +1,25 @@
+{{define "title"}}Promote {{.App}}{{end}}
+{{define "main"}}
+<p class="crumbs"><a href="/apps">Deployments</a> › <a href="/apps/{{.App}}/staging">{{.App}}/staging</a> › Promotion</p>
+<h1>Promote to production</h1>
+{{if .PRs}}
+<p class="lead">A promotion pull request is already open. Its reviewed image stays pinned when staging advances. Close it on GitHub before creating a replacement.</p>
+<ul class="items">{{range .PRs}}<li><a href="{{.URL}}">#{{.Number}} {{.Title}}</a> <a href="{{.ChecksURL}}">{{template "checks" .Checks}}</a>
+<div class="muted">Merge plan: {{template "merging" .Merging}}</div></li>{{end}}</ul>
+{{else if eq .Review.Outcome "same"}}<p class="lead">Same image in both. No promotion is needed.</p>
+{{else}}
+<p class="lead">Update {{.Review.App}}/prod with the staging image you reviewed.</p>
+<dl class="promotion-review">
+<dt>Reviewed image</dt><dd class="mono">{{short .Review.Image}}</dd>
+<dt>Current production</dt><dd class="mono">{{short .Review.Previous}}</dd>
+<dt>The pull request</dt><dd>Carries production's v2 records and what <code>swhurl-v2 render</code> derives from them. This page does not pre-render that diff.</dd>
+</dl>
+<form class="wizard promotion-form" method="post" action="/apps/{{.Review.App}}/staging/promote">
+<input type="hidden" name="image" value="{{.Review.Image}}">
+<p class="muted">You merge it on GitHub: no console pull request merges itself. It already carries what <code>swhurl-v2 render</code> derives, so Flux applies it when it is merged.</p>
+{{if .Review.Problem}}<p class="warn" role="alert">{{.Review.Problem}}</p>{{end}}
+<button class="primary"{{if .Review.Problem}} disabled{{end}}>Promote to production</button>
+</form>
+{{end}}
+<p><a href="/apps/{{.App}}/staging">Back to staging</a></p>
+{{end}}

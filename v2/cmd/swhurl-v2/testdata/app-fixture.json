@@ -1,0 +1,787 @@
+{
+ "files": {
+  "v2-apps/instances/demo-orders/prod/helmrelease.json": "{\"metadata\": {\"namespace\": \"demo-orders-prod\", \"name\": \"demo-orders\", \"annotations\": {}}, \"spec\": {\"values\": {\"controllers\": {\"main\": {\"containers\": {\"main\": {\"image\": {\"repository\": \"ghcr.io/samclement/demo-orders\", \"tag\": \"3.0\"}, \"env\": {\"SWHURL_IMAGE\": \"ghcr.io/samclement/demo-orders\", \"SWHURL_TEAM\": \"demo\", \"SWHURL_ALLOWED_CALLERS\": \"\", \"SWHURL_EVENTS_PUBLISH\": \"paid\"}}}}}, \"service\": {\"main\": {\"ports\": {\"http\": {\"port\": 8080}}}}, \"ingress\": {\"main\": {\"hosts\": [{\"host\": \"demo-orders.homelab.swhurl.com\"}]}}}}, \"status\": {\"conditions\": [{\"type\": \"Ready\", \"status\": \"True\", \"message\": \"ok\"}]}}",
+  "v2-apps/instances/demo-orders/staging/helmrelease.json": "{\"metadata\": {\"namespace\": \"demo-orders-staging\", \"name\": \"demo-orders\", \"annotations\": {}}, \"spec\": {\"values\": {\"controllers\": {\"main\": {\"containers\": {\"main\": {\"image\": {\"repository\": \"ghcr.io/samclement/demo-orders\", \"tag\": \"3.0\"}, \"env\": {\"SWHURL_IMAGE\": \"ghcr.io/samclement/demo-orders\", \"SWHURL_TEAM\": \"demo\", \"SWHURL_ALLOWED_CALLERS\": \"\", \"SWHURL_EVENTS_PUBLISH\": \"paid\"}}}}}, \"service\": {\"main\": {\"ports\": {\"http\": {\"port\": 8080}}}}, \"ingress\": {\"main\": {\"hosts\": [{\"host\": \"staging-demo-orders.homelab.swhurl.com\"}]}}}}, \"status\": {\"conditions\": [{\"type\": \"Ready\", \"status\": \"True\", \"message\": \"ok\"}]}}",
+  "v2-apps/instances/demo-shop/prod/helmrelease.json": "{\"metadata\": {\"namespace\": \"demo-shop-prod\", \"name\": \"demo-shop\", \"annotations\": {\"platform.swhurl.com/egress\": \"api.stripe.com\"}}, \"spec\": {\"values\": {\"controllers\": {\"main\": {\"containers\": {\"main\": {\"image\": {\"repository\": \"ghcr.io/samclement/demo-shop\", \"tag\": \"1.0\"}, \"env\": {\"SWHURL_IMAGE\": \"ghcr.io/samclement/demo-shop\", \"SWHURL_TEAM\": \"demo\", \"SWHURL_ALLOWED_CALLERS\": \"demo-orders\", \"SWHURL_EVENTS_PUBLISH\": \"item-added\", \"SWHURL_EVENTS_SUBSCRIBE\": \"demo-orders.paid\", \"SWHURL_SERVICE_DEMO_ORDERS_URL\": \"http://demo-orders.demo-orders-prod.svc.cluster.local:8080\", \"DATABASE_PATH\": \"/data/app.db\", \"HTTPS_PROXY\": \"http://egress.platform.svc.cluster.local:7001\"}}}}}, \"service\": {\"main\": {\"ports\": {\"http\": {\"port\": 8080}}}}, \"ingress\": {\"main\": {\"hosts\": [{\"host\": \"demo-shop.homelab.swhurl.com\"}]}}}}, \"status\": {\"conditions\": [{\"type\": \"Ready\", \"status\": \"True\", \"message\": \"ok\"}]}}",
+  "v2-apps/instances/demo-shop/staging/helmrelease.json": "{\"metadata\": {\"namespace\": \"demo-shop-staging\", \"name\": \"demo-shop\", \"annotations\": {\"platform.swhurl.com/egress\": \"api.stripe.com\"}}, \"spec\": {\"values\": {\"controllers\": {\"main\": {\"containers\": {\"main\": {\"image\": {\"repository\": \"ghcr.io/samclement/demo-shop\", \"tag\": \"2.0\"}, \"env\": {\"SWHURL_IMAGE\": \"ghcr.io/samclement/demo-shop\", \"SWHURL_TEAM\": \"demo\", \"SWHURL_ALLOWED_CALLERS\": \"demo-orders\", \"SWHURL_EVENTS_PUBLISH\": \"item-added\", \"SWHURL_EVENTS_SUBSCRIBE\": \"demo-orders.paid\", \"SWHURL_SERVICE_DEMO_ORDERS_URL\": \"http://demo-orders.demo-orders-staging.svc.cluster.local:8080\", \"DATABASE_PATH\": \"/data/app.db\", \"HTTPS_PROXY\": \"http://egress.platform.svc.cluster.local:7001\"}}}}}, \"service\": {\"main\": {\"ports\": {\"http\": {\"port\": 8080}}}}, \"ingress\": {\"main\": {\"hosts\": [{\"host\": \"staging-demo-shop.homelab.swhurl.com\"}]}}}}, \"status\": {\"conditions\": [{\"type\": \"Ready\", \"status\": \"True\", \"message\": \"ok\"}]}}",
+  "v2-records/demo-orders/app.json": "{\"application\": \"demo-orders\", \"team\": \"demo\"}",
+  "v2-records/demo-orders/prod/instance.json": "{\"configuration\": {\"replicas\": 1, \"memoryMiB\": 128}, \"grants\": {\"exposure\": \"private\"}}",
+  "v2-records/demo-orders/prod/release.json": "{\"runtime\": {\"kind\": \"web\"}, \"artifact\": {\"image\": \"docker.io/x/web\", \"digest\": \"sha256:1111111111111111111111111111111111111111111111111111111111111111\"}}",
+  "v2-records/demo-orders/staging/instance.json": "{\"configuration\": {\"replicas\": 1, \"memoryMiB\": 128}, \"grants\": {\"exposure\": \"private\"}}",
+  "v2-records/demo-orders/staging/release.json": "{\"runtime\": {\"kind\": \"web\"}, \"artifact\": {\"image\": \"docker.io/x/web\", \"digest\": \"sha256:1111111111111111111111111111111111111111111111111111111111111111\"}}",
+  "v2-records/demo-shop/app.json": "{\"application\": \"demo-shop\", \"team\": \"demo\"}",
+  "v2-records/demo-shop/prod/instance.json": "{\"configuration\": {\"replicas\": 1, \"memoryMiB\": 128}, \"grants\": {\"exposure\": \"private\"}}",
+  "v2-records/demo-shop/prod/release.json": "{\"runtime\": {\"kind\": \"web\"}, \"artifact\": {\"image\": \"docker.io/x/web\", \"digest\": \"sha256:1111111111111111111111111111111111111111111111111111111111111111\"}}",
+  "v2-records/demo-shop/staging/instance.json": "{\"configuration\": {\"replicas\": 1, \"memoryMiB\": 128}, \"grants\": {\"exposure\": \"private\"}}",
+  "v2-records/demo-shop/staging/release.json": "{\"runtime\": {\"kind\": \"web\"}, \"artifact\": {\"image\": \"docker.io/x/web\", \"digest\": \"sha256:1111111111111111111111111111111111111111111111111111111111111111\"}}",
+  "v2-records/teams.json": "{\"schemaVersion\": 1, \"teams\": {\"demo\": {\"description\": \"Apps that show how to use the platform\", \"channel\": {\"name\": \"platform\", \"transport\": \"ntfy\"}}, \"payments\": {\"description\": \"Orders and payments\", \"channel\": {\"name\": \"payments\", \"transport\": \"ntfy\"}}}}",
+  "v2/testdata/profile.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"home-k3s\",\n  \"chart\": {\n    \"name\": \"app-template\",\n    \"version\": \"5.2.1\",\n    \"repository\": \"bjw-s\",\n    \"repositoryNamespace\": \"flux-system\"\n  },\n  \"delivery\": {\n    \"source\": \"swhurl-platform\",\n    \"outputRoot\": \"v2-apps\",\n    \"unitsRoot\": \"clusters/home\",\n    \"dependsOn\": [\"infra-base\"]\n  },\n  \"workload\": {\n    \"cpuRequestMilli\": 10,\n    \"startupSeconds\": 120,\n    \"startupPeriodSeconds\": 5\n  },\n  \"quota\": {\n    \"pods\": 14,\n    \"requestsCpuMilli\": 2000,\n    \"requestsMemoryMiB\": 2048,\n    \"limitsMemoryMiB\": 4096\n  },\n  \"telemetry\": {\"endpoint\": \"http://$(HOST_IP):4318\", \"protocol\": \"http/protobuf\", \"nodeCIDR\": \"192.168.1.200/32\"},\n  \"notify\": {\"address\": \"http://notify.notify.svc.cluster.local:8080\"},\n  \"routing\": {\n    \"baseDomain\": \"homelab.swhurl.com\",\n    \"class\": \"traefik\",\n    \"middleware\": \"ingress-oauth-auth-shared@kubernetescrd\",\n    \"issuer\": \"letsencrypt-prod\",\n    \"ingressNamespace\": \"kube-system\",\n    \"ingressLabels\": {\"app.kubernetes.io/name\": \"traefik\"}\n  },\n  \"storage\": {\"class\": \"local-path-retain\"},\n  \"egress\": {\"address\": \"egress.egress.svc.cluster.local\", \"namespace\": \"egress\",\n             \"labels\": {\"app.kubernetes.io/name\": \"egress\"}},\n  \"dns\": {\"namespace\": \"kube-system\", \"labels\": {\"k8s-app\": \"kube-dns\"}},\n  \"nats\": {\"url\": \"nats://nats.messaging.svc.cluster.local:4222\", \"namespace\": \"messaging\", \"port\": 4222,\n           \"labels\": {\"app.kubernetes.io/name\": \"nats\"},\n           \"decryptionSecret\": \"sops-age\",\n           \"controllerKey\": \"UCEW5BT5FDDXPO475VJV6NYYS2GJ66C67KQJY6UAXIAFQOAJRHQTWMAP\",\n           \"consoleKey\": \"UAGJUVYLYUYPDTZV7E5ODWOWL3YPXIMMRXXE7MAX4HV3HTWKBYGHZPGD\"},\n  \"network\": {\"podCIDR\": \"10.42.0.0/16\"},\n  \"reloader\": {\"namespaces\": [\"ingress\", \"logging\", \"console\"]},\n  \"sops\": {\"recipient\": \"age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h\"},\n  \"backup\": {\n    \"image\": \"ghcr.io/samclement/swhurl-backup\",\n    \"digest\": \"sha256:b730422b4789b6377ca1b39705cedef61d0c64a0a8161ccb64652dbc7b1db74a\",\n    \"s3Uri\": \"s3://swhurl-platform-backups-110927251694/app-sqlite/\",\n    \"region\": \"eu-west-2\",\n    \"writerNamespace\": \"flux-system\",\n    \"writerName\": \"backup-writer\",\n    \"suspended\": false\n  },\n  \"auth\": {\n    \"issuer\": \"https://kubernetes.default.svc.cluster.local\",\n    \"keys\": \"{\\\"keys\\\":[{\\\"alg\\\":\\\"RS256\\\",\\\"e\\\":\\\"AQAB\\\",\\\"kid\\\":\\\"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ\\\",\\\"kty\\\":\\\"RSA\\\",\\\"n\\\":\\\"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q\\\",\\\"use\\\":\\\"sig\\\"}]}\"\n  }\n}\n"
+ },
+ "instances": [
+  {
+   "application": "demo-orders",
+   "environment": "staging",
+   "inventory": {
+    "address": "http://demo-orders.demo-orders-staging.svc.cluster.local:8080",
+    "allows": [],
+    "api": "",
+    "artifact": {
+     "digest": "sha256:a416ea84421fa7e1351582da48235bac88380a337ec5cb5a9239dc7d57908b4b",
+     "image": "ghcr.io/samclement/demo-orders"
+    },
+    "callers": [
+     "demo-shop"
+    ],
+    "calls": [],
+    "connections": [
+     {
+      "app": "demo-shop",
+      "outcome": "connected",
+      "role": "called-by"
+     }
+    ],
+    "database": {
+     "kind": "",
+     "path": ""
+    },
+    "egress": {
+     "grants": [],
+     "port": 0
+    },
+    "exposure": "private",
+    "hosts": [
+     "staging-demo-orders.homelab.swhurl.com"
+    ],
+    "kind": "web",
+    "offers": "",
+    "port": 8080,
+    "publishes": [
+     "paid"
+    ],
+    "subscriptions": [],
+    "team": "demo"
+   },
+   "report": {
+    "assessed": [],
+    "backup": {
+     "archive": {
+      "state": "not_assessed"
+     },
+     "state": "not_required"
+    },
+    "certificates": [],
+    "currentness": {
+     "appliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "reason": "revision_matches",
+     "state": "applied"
+    },
+    "findings": [],
+    "kind": "v2-observation",
+    "live": {
+     "release": {
+      "conditions": [],
+      "status": "present",
+      "suspended": false
+     },
+     "running": {
+      "digests": [
+       "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "status": "present"
+     },
+     "unit": {
+      "conditions": [],
+      "status": "present",
+      "suspended": false
+     },
+     "workload": {
+      "readyReplicas": 1,
+      "status": "present"
+     }
+    },
+    "notCovered": [],
+    "observedAt": "2026-11-03T12:00:00Z",
+    "problems": [],
+    "promotion": {
+     "ready": true,
+     "reason": "ready"
+    },
+    "routes": [
+     {
+      "hosts": [
+       "staging-demo-orders.homelab.swhurl.com"
+      ],
+      "name": "demo-orders",
+      "outcome": "present"
+     }
+    ],
+    "source": "console",
+    "state": {
+     "name": "healthy",
+     "reason": "Applied"
+    },
+    "target": {
+     "container": "main",
+     "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "namespace": "demo-orders-staging",
+     "pods": {
+      "apiVersion": "v1",
+      "kind": "Pod"
+     },
+     "release": {
+      "apiVersion": "v1",
+      "kind": "HelmRelease"
+     },
+     "replicas": 1,
+     "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "selector": "app.kubernetes.io/instance=demo-orders",
+     "unit": {
+      "apiVersion": "v1",
+      "kind": "Kustomization"
+     },
+     "workload": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment"
+     }
+    },
+    "unassessed": [],
+    "verdict": "running",
+    "version": 5
+   }
+  },
+  {
+   "application": "demo-orders",
+   "environment": "prod",
+   "inventory": {
+    "address": "http://demo-orders.demo-orders-prod.svc.cluster.local:8080",
+    "allows": [],
+    "api": "",
+    "artifact": {
+     "digest": "sha256:a416ea84421fa7e1351582da48235bac88380a337ec5cb5a9239dc7d57908b4b",
+     "image": "ghcr.io/samclement/demo-orders"
+    },
+    "callers": [
+     "demo-shop"
+    ],
+    "calls": [],
+    "connections": [
+     {
+      "app": "demo-shop",
+      "outcome": "connected",
+      "role": "called-by"
+     }
+    ],
+    "database": {
+     "kind": "",
+     "path": ""
+    },
+    "egress": {
+     "grants": [],
+     "port": 0
+    },
+    "exposure": "private",
+    "hosts": [
+     "demo-orders.homelab.swhurl.com"
+    ],
+    "kind": "web",
+    "offers": "",
+    "port": 8080,
+    "publishes": [
+     "paid"
+    ],
+    "subscriptions": [],
+    "team": "demo"
+   },
+   "report": {
+    "assessed": [],
+    "backup": {
+     "archive": {
+      "state": "not_assessed"
+     },
+     "state": "not_required"
+    },
+    "certificates": [],
+    "currentness": {
+     "appliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "reason": "revision_matches",
+     "state": "applied"
+    },
+    "findings": [],
+    "kind": "v2-observation",
+    "live": {
+     "release": {
+      "conditions": [],
+      "status": "present",
+      "suspended": false
+     },
+     "running": {
+      "digests": [
+       "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "status": "present"
+     },
+     "unit": {
+      "conditions": [],
+      "status": "present",
+      "suspended": false
+     },
+     "workload": {
+      "readyReplicas": 1,
+      "status": "present"
+     }
+    },
+    "notCovered": [],
+    "observedAt": "2026-11-03T12:00:00Z",
+    "problems": [],
+    "promotion": {
+     "ready": true,
+     "reason": "ready"
+    },
+    "routes": [
+     {
+      "hosts": [
+       "demo-orders.homelab.swhurl.com"
+      ],
+      "name": "demo-orders",
+      "outcome": "present"
+     }
+    ],
+    "source": "console",
+    "state": {
+     "name": "healthy",
+     "reason": "Applied"
+    },
+    "target": {
+     "container": "main",
+     "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "namespace": "demo-orders-prod",
+     "pods": {
+      "apiVersion": "v1",
+      "kind": "Pod"
+     },
+     "release": {
+      "apiVersion": "v1",
+      "kind": "HelmRelease"
+     },
+     "replicas": 1,
+     "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "selector": "app.kubernetes.io/instance=demo-orders",
+     "unit": {
+      "apiVersion": "v1",
+      "kind": "Kustomization"
+     },
+     "workload": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment"
+     }
+    },
+    "unassessed": [],
+    "verdict": "running",
+    "version": 5
+   }
+  },
+  {
+   "application": "demo-shop",
+   "environment": "staging",
+   "inventory": {
+    "address": "http://demo-shop.demo-shop-staging.svc.cluster.local:8080",
+    "allows": [
+     "demo-orders"
+    ],
+    "api": "",
+    "artifact": {
+     "digest": "sha256:d84bdb34d4eeef4034d77e5403f850e35bc4a51b1143e3a83510e1aaad839748",
+     "image": "ghcr.io/samclement/demo-shop"
+    },
+    "callers": [],
+    "calls": [
+     "demo-orders"
+    ],
+    "connections": [
+     {
+      "app": "demo-orders",
+      "role": "calls"
+     }
+    ],
+    "database": {
+     "kind": "sqlite",
+     "path": "/data/app.db"
+    },
+    "egress": {
+     "grants": [
+      "api.stripe.com"
+     ],
+     "port": 7001
+    },
+    "exposure": "private",
+    "hosts": [
+     "staging-demo-shop.homelab.swhurl.com"
+    ],
+    "kind": "web",
+    "offers": "",
+    "port": 8080,
+    "publishes": [
+     "item-added"
+    ],
+    "subscriptions": [
+     "demo-orders.paid"
+    ],
+    "team": "demo"
+   },
+   "report": {
+    "assessed": [],
+    "backup": {
+     "archive": {
+      "state": "not_assessed"
+     },
+     "state": "not_required"
+    },
+    "certificates": [],
+    "currentness": {
+     "appliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "reason": "revision_matches",
+     "state": "applied"
+    },
+    "findings": [],
+    "kind": "v2-observation",
+    "live": {
+     "release": {
+      "conditions": [],
+      "status": "present",
+      "suspended": false
+     },
+     "running": {
+      "digests": [
+       "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "status": "present"
+     },
+     "unit": {
+      "conditions": [],
+      "status": "present",
+      "suspended": false
+     },
+     "workload": {
+      "readyReplicas": 1,
+      "status": "present"
+     }
+    },
+    "notCovered": [],
+    "observedAt": "2026-11-03T12:00:00Z",
+    "problems": [],
+    "promotion": {
+     "ready": true,
+     "reason": "ready"
+    },
+    "routes": [
+     {
+      "hosts": [
+       "staging-demo-shop.homelab.swhurl.com"
+      ],
+      "name": "demo-shop",
+      "outcome": "present"
+     }
+    ],
+    "source": "console",
+    "state": {
+     "name": "healthy",
+     "reason": "Applied"
+    },
+    "target": {
+     "container": "main",
+     "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "namespace": "demo-shop-staging",
+     "pods": {
+      "apiVersion": "v1",
+      "kind": "Pod"
+     },
+     "release": {
+      "apiVersion": "v1",
+      "kind": "HelmRelease"
+     },
+     "replicas": 1,
+     "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "selector": "app.kubernetes.io/instance=demo-shop",
+     "unit": {
+      "apiVersion": "v1",
+      "kind": "Kustomization"
+     },
+     "workload": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment"
+     }
+    },
+    "unassessed": [],
+    "verdict": "running",
+    "version": 5
+   }
+  },
+  {
+   "application": "demo-shop",
+   "environment": "prod",
+   "inventory": {
+    "address": "http://demo-shop.demo-shop-prod.svc.cluster.local:8080",
+    "allows": [
+     "demo-orders"
+    ],
+    "api": "",
+    "artifact": {
+     "digest": "sha256:d0ff5974b6aa52cf562bea5921840c032a860a91a3512f7fe8f768f6bbe005f6",
+     "image": "ghcr.io/samclement/demo-shop"
+    },
+    "callers": [],
+    "calls": [
+     "demo-orders"
+    ],
+    "connections": [
+     {
+      "app": "demo-orders",
+      "role": "calls"
+     }
+    ],
+    "database": {
+     "kind": "sqlite",
+     "path": "/data/app.db"
+    },
+    "egress": {
+     "grants": [
+      "api.stripe.com"
+     ],
+     "port": 7001
+    },
+    "exposure": "private",
+    "hosts": [
+     "demo-shop.homelab.swhurl.com"
+    ],
+    "kind": "web",
+    "offers": "",
+    "port": 8080,
+    "publishes": [
+     "item-added"
+    ],
+    "subscriptions": [
+     "demo-orders.paid"
+    ],
+    "team": "demo"
+   },
+   "report": {
+    "assessed": [],
+    "backup": {
+     "archive": {
+      "state": "not_assessed"
+     },
+     "state": "not_required"
+    },
+    "certificates": [],
+    "currentness": {
+     "appliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "reason": "revision_matches",
+     "state": "applied"
+    },
+    "findings": [],
+    "kind": "v2-observation",
+    "live": {
+     "release": {
+      "conditions": [],
+      "status": "present",
+      "suspended": false
+     },
+     "running": {
+      "digests": [
+       "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "status": "present"
+     },
+     "unit": {
+      "conditions": [],
+      "status": "present",
+      "suspended": false
+     },
+     "workload": {
+      "readyReplicas": 1,
+      "status": "present"
+     }
+    },
+    "notCovered": [],
+    "observedAt": "2026-11-03T12:00:00Z",
+    "problems": [],
+    "promotion": {
+     "ready": true,
+     "reason": "ready"
+    },
+    "routes": [
+     {
+      "hosts": [
+       "demo-shop.homelab.swhurl.com"
+      ],
+      "name": "demo-shop",
+      "outcome": "present"
+     }
+    ],
+    "source": "console",
+    "state": {
+     "name": "healthy",
+     "reason": "Applied"
+    },
+    "target": {
+     "container": "main",
+     "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "namespace": "demo-shop-prod",
+     "pods": {
+      "apiVersion": "v1",
+      "kind": "Pod"
+     },
+     "release": {
+      "apiVersion": "v1",
+      "kind": "HelmRelease"
+     },
+     "replicas": 1,
+     "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "selector": "app.kubernetes.io/instance=demo-shop",
+     "unit": {
+      "apiVersion": "v1",
+      "kind": "Kustomization"
+     },
+     "workload": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment"
+     }
+    },
+    "unassessed": [],
+    "verdict": "running",
+    "version": 5
+   }
+  },
+  {
+   "application": "demo-waiting",
+   "environment": "prod",
+   "inventory": {
+    "address": "http://demo-waiting.demo-waiting-prod.svc.cluster.local:8080",
+    "allows": [],
+    "api": "",
+    "artifact": {
+     "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "image": "docker.io/x/web"
+    },
+    "callers": [],
+    "calls": [],
+    "connections": [],
+    "database": {
+     "kind": "",
+     "path": ""
+    },
+    "egress": {
+     "grants": [],
+     "port": 0
+    },
+    "exposure": "private",
+    "hosts": [],
+    "kind": "web",
+    "offers": "",
+    "port": 8080,
+    "publishes": [],
+    "subscriptions": [],
+    "team": "demo"
+   },
+   "report": {
+    "assessed": [],
+    "backup": {
+     "archive": {
+      "state": "not_assessed"
+     },
+     "state": "not_required"
+    },
+    "certificates": [],
+    "currentness": {
+     "appliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "reason": "revision_matches",
+     "state": "applied"
+    },
+    "findings": [],
+    "kind": "v2-observation",
+    "live": {
+     "release": {
+      "conditions": [],
+      "status": "present",
+      "suspended": false
+     },
+     "running": {
+      "digests": [
+       "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "status": "present"
+     },
+     "unit": {
+      "conditions": [],
+      "status": "absent",
+      "suspended": false
+     },
+     "workload": {
+      "readyReplicas": 1,
+      "status": "present"
+     }
+    },
+    "notCovered": [],
+    "observedAt": "2026-11-03T12:00:00Z",
+    "problems": [],
+    "promotion": {
+     "ready": true,
+     "reason": "ready"
+    },
+    "routes": [],
+    "source": "console",
+    "state": {
+     "name": "healthy",
+     "reason": ""
+    },
+    "target": {
+     "container": "main",
+     "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "namespace": "demo-waiting-prod",
+     "pods": {
+      "apiVersion": "v1",
+      "kind": "Pod"
+     },
+     "release": {
+      "apiVersion": "v1",
+      "kind": "HelmRelease"
+     },
+     "replicas": 1,
+     "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "selector": "app.kubernetes.io/instance=demo-waiting",
+     "unit": {
+      "apiVersion": "v1",
+      "kind": "Kustomization"
+     },
+     "workload": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment"
+     }
+    },
+    "unassessed": [],
+    "verdict": "running",
+    "version": 5
+   }
+  }
+ ],
+ "jobs": [
+  {
+   "action": "reconcile",
+   "finished": "",
+   "id": 9,
+   "identity": "sam@swhurl.com",
+   "lines": [
+    "Reconciling",
+    "revision 1234567890abcdef1234567890abcdef12345678 <applied>"
+   ],
+   "link": "",
+   "resume": null,
+   "started": "2026-11-09T09:42:00+00:00",
+   "state": "running",
+   "unit": "infra-base"
+  },
+  {
+   "action": "scale",
+   "finished": "2026-11-09T09:31:00+00:00",
+   "id": 8,
+   "identity": "sam@swhurl.com",
+   "lines": [
+    "Opened"
+   ],
+   "link": "https://github.com/samclement/swhurl-platform/pull/42",
+   "resume": null,
+   "started": "2026-11-09T09:30:00+00:00",
+   "state": "succeeded",
+   "unit": "web/staging"
+  },
+  {
+   "action": "promote",
+   "finished": "2026-11-09T08:02:00+00:00",
+   "id": 7,
+   "identity": "sam@swhurl.com",
+   "lines": [
+    "Downloading",
+    "Opened"
+   ],
+   "link": "https://github.com/samclement/swhurl-platform/pull/41",
+   "resume": null,
+   "started": "2026-11-09T08:00:00+00:00",
+   "state": "succeeded",
+   "unit": "web/prod"
+  },
+  {
+   "action": "remove",
+   "finished": "2026-11-09T07:00:00+00:00",
+   "id": 6,
+   "identity": "sam@swhurl.com",
+   "lines": [
+    "[ERROR] <b>refused</b>"
+   ],
+   "link": "",
+   "resume": null,
+   "started": "2026-11-09T07:00:00+00:00",
+   "state": "failed",
+   "unit": "my-api/staging"
+  },
+  {
+   "action": "new app and repository",
+   "finished": "2026-11-09T06:10:00+00:00",
+   "id": 5,
+   "identity": "sam@swhurl.com",
+   "lines": [
+    "created repository"
+   ],
+   "link": "",
+   "resume": {
+    "kind": "new-app"
+   },
+   "started": "2026-11-09T06:00:00+00:00",
+   "state": "interrupted",
+   "unit": "shop/staging"
+  },
+  {
+   "action": "team add",
+   "finished": "2026-11-07T12:01:00+00:00",
+   "id": 4,
+   "identity": "sam@swhurl.com",
+   "lines": [],
+   "link": "https://github.com/samclement/swhurl-platform/pull/40",
+   "resume": null,
+   "started": "2026-11-07T12:00:00+00:00",
+   "state": "succeeded",
+   "unit": "team:payments"
+  },
+  {
+   "action": "resume",
+   "finished": "2026-11-09T05:02:00+00:00",
+   "id": 3,
+   "identity": "sam@swhurl.com",
+   "lines": [
+    "\u2714 applied revision main@sha1:abc1234"
+   ],
+   "link": "",
+   "resume": null,
+   "started": "2026-11-09T05:00:00+00:00",
+   "state": "succeeded",
+   "unit": "infra-base"
+  }
+ ],
+ "now": "2026-11-09T09:43:00Z",
+ "pulls": [
+  {
+   "body": "",
+   "branch": "console/new-shop-staging-abc1234",
+   "number": 44,
+   "opened": "2026-11-09",
+   "title": "[console] new app: shop",
+   "url": "https://github.com/samclement/swhurl-platform/pull/44"
+  }
+ ],
+ "removing": [
+  {
+   "application": "demo-gone",
+   "environment": "staging",
+   "reason": "unit"
+  }
+ ]
+}

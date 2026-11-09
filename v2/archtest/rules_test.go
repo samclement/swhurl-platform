@@ -74,6 +74,7 @@ var Layers = map[string]int{
 	"kernel":                             0,
 	"notify":                             0,
 	"observe":                            0,
+	"pages":                              0,
 	"policy":                             0,
 	"producer":                           0,
 	"workstreams":                        0,
@@ -121,7 +122,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"incident", "calls", "checkrepo", "dashboards", "events", "heartbeat", "kernel", "notify", "observe", "policy", "producer", "workstreams"}
+var Pure = []string{"incident", "calls", "checkrepo", "dashboards", "events", "heartbeat", "kernel", "notify", "observe", "pages", "policy", "producer", "workstreams"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
@@ -129,11 +130,11 @@ var Pure = []string{"incident", "calls", "checkrepo", "dashboards", "events", "h
 // (its own key generation, which draws randomness, is never called), and `encoding/base32` and
 // `encoding/binary` state the nkeys text form. `crypto/subtle` compares the notify webhook's secret with the one the
 // caller read, in constant time. `time` is here for the timestamps a caller supplies — parsing,
-// formatting and comparing them — not for the clock, which pureBannedCalls still refuses. Adding one is a
-// reviewed change to this list.
+// formatting and comparing them — not for the clock, which pureBannedCalls still refuses. `net/url` builds and
+// escapes the links a page shows: no I/O, clock or environment. Adding one is a reviewed change to this list.
 var PureImports = []string{
 	"bytes", "crypto/ed25519", "crypto/sha256", "crypto/subtle", "encoding/base32", "encoding/base64", "encoding/binary", "encoding/hex",
-	"encoding/json", "errors", "fmt", "maps", "math", "math/big", "regexp", "slices", "sort", "strconv", "strings", "time",
+	"encoding/json", "errors", "fmt", "maps", "math", "math/big", "net/url", "regexp", "slices", "sort", "strconv", "strings", "time",
 	"unicode", "unicode/utf8",
 }
 

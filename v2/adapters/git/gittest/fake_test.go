@@ -17,6 +17,17 @@ func TestContract(t *testing.T) {
 	})
 }
 
+// The fake's snapshots answer only the configured commit.
+func TestSnapshotContract(t *testing.T) {
+	gittest.SnapshotContract(t, func(t *testing.T) (git.Snapshots, string) {
+		root := t.TempDir()
+		f := gittest.New(root, gittest.Snapshot())
+		f.Revision = "0123456789abcdef0123456789abcdef01234567"
+		f.Tree = gittest.Tree("page\n")
+		return f, root
+	})
+}
+
 // The fake records which root it was asked for, so a use case's test can assert what was read, and it can fail on
 // purpose.
 func TestFakeRecordsTheReadAndCanFail(t *testing.T) {

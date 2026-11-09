@@ -1,0 +1,19 @@
+{{/* Shared pieces of the console's forms (Teams, New app, and the app page's pull requests), so they look and read
+     the same. */}}
+
+{{/* One text field: label above, input, optional hint below. */}}
+{{define "textField"}}
+<div class="field">
+  <label for="{{.ID}}">{{.Label}}</label>
+  <input id="{{.ID}}" name="{{.Name}}" value="{{.Value}}" placeholder="{{.Placeholder}}">
+  {{if .Hint}}<span class="muted hint">{{.Hint}}</span>{{end}}
+</div>
+{{end}}
+
+{{/* The submit row: primary button and a note on what happens next. */}}
+{{define "submit"}}
+<div class="submit">
+  <button class="primary" {{if or (not .Github) .Disabled}}disabled{{end}}>{{template "icon" "pr"}} {{.Label}}</button>
+  <span class="muted">{{.Note}}</span>
+</div>
+{{end}}

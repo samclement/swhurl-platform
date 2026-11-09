@@ -74,6 +74,7 @@ const usage = `usage:
   swhurl-v2 clickstack-dashboards (--cluster | --records DIR) [--dry-run] (--kubeconfig KUBECONFIG.json | --in-cluster)
   swhurl-v2 clickstack-bootstrap [--dry-run] --kubeconfig KUBECONFIG.json
   swhurl-v2 flags --records DIR --app APPLICATION --env ENVIRONMENT [--set FLAG=TEXT | --clear FLAG] [--json]
+  swhurl-v2 console [--port PORT] (--kubeconfig KUBECONFIG.json | --in-cluster) [--dev]
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
 platform's tag policy, and writes the record pair and the compiled files under --out. With --records it reads
@@ -426,6 +427,7 @@ var commands = map[string]func(cli, request) int{
 	"clickstack-dashboards":   cli.clickstackDashboards,
 	"clickstack-bootstrap":    cli.clickstackBootstrap,
 	"flags":                   cli.flags,
+	"console":                 cli.console,
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -447,10 +449,10 @@ type request struct {
 	team, image, exposure                              string
 	action, description, rename, transport             string
 	listen, appDir, catalogue, rendered                string
-	statePath                                          string
+	statePath, port                                    string
 	stateFlag, maxAgeFlag                              *once
 	rotate, check, json, inCluster, all, dryRun        bool
-	cluster                                            bool
+	cluster, dev                                       bool
 	confirm, ageKey, cleared                           string
 	urlTTL                                             time.Duration
 	urlTTLSet                                          bool
@@ -541,6 +543,14 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		flags.Var(&once{value: &r.root}, "root", "the top of the checkout to check (default: the working directory)")
 		flags.Var(&once{value: &r.rendered}, "rendered", "an active render path whose rendered manifests are on stdin")
 		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-check-repo document instead of the text")
+		return
+	}
+	if command == "console" {
+		r.port = "8080"
+		flags.Var(&once{value: &r.port}, "port", "the port to serve on (default 8080)")
+		flags.Var(&onceBool{value: &r.dev}, "dev", "serve a fixed identity on loopback only, reading this checkout")
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
 		return
 	}
 	if command == "notify-serve" {
@@ -820,6 +830,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"clickstack-dashboards":   (*request).dashboardsNamed,
 	"clickstack-bootstrap":    func(r *request) []string { return []string{r.kubeconfig} },
 	"flags":                   (*request).flagsNamed,
+	"console":                 (*request).consoleNamed,
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one
@@ -843,6 +854,15 @@ func (r *request) checkRepoNamed() []string {
 		return []string{""}
 	}
 	return []string{r.root}
+}
+
+// consoleNamed is the console's port and exactly one credential, a kubeconfig or the pod's own ServiceAccount
+// (neither or both is a usage error).
+func (r *request) consoleNamed() []string {
+	if (r.kubeconfig != "") == r.inCluster {
+		return []string{""}
+	}
+	return []string{r.port}
 }
 
 // flagsNamed is one instance's records, and one write at most: a set and a clear together are a usage error.

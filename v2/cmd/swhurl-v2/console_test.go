@@ -1,0 +1,348 @@
+package main
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/samclement/swhurl-platform/v2/pages"
+)
+
+// The embedded assets hash the same bytes in the same order as the Python console, so a browser's cached URL is the
+// same asset whichever server it came from.
+func TestAssetHash(t *testing.T) {
+	server, err := newConsoleServer(consoleConfig{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.assets != "92d0885d31c0" {
+		t.Fatalf("assets = %s", server.assets)
+	}
+}
+
+// Overview renders the same bytes as the Python console. testdata/overview.html is that console's answer to the
+// fixture in tests/test_console.py (a runner with five units, two app instances and a failing check), rendered by
+// tests/render_console_goldens.py; the data below is what that fixture holds.
+func TestOverviewIsByteIdentical(t *testing.T) {
+	server, err := newConsoleServer(consoleConfig{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := overviewData{
+		shell: shell{Title: "Overview", Path: "/", Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: "/",
+			Assets: "92d0885d31c0", AutoRefresh: true, HasGithub: false},
+		Checks: pages.ChecksOf([]pages.Check{{Section: "Flux Kustomizations", Entries: []pages.Entry{
+			{Level: "ok", Message: "homelab-a"}, {Level: "ok", Message: "homelab-b"}, {Level: "ok", Message: "homelab-c"}}},
+			{Section: "Applications", Entries: []pages.Entry{{Level: "ok", Message: "web/staging"}, {Level: "ok", Message: "my-api/staging"}}},
+			{Section: "Secrets", Entries: []pages.Entry{{Level: "ok", Message: "age key"}, {Level: "ok", Message: "github token"}}}}),
+		AppCount: 2,
+		Units:    []pages.Unit{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"}},
+		Problems: []pages.Problem{
+			{Level: "failing", Text: "my-api/staging is not Ready: <script>x</script>", Link: "/apps/my-api/staging"},
+			{Level: "suspended", Text: "my-api/staging is suspended: Git changes are not applied to it until it is resumed", Link: "/apps/my-api/staging"}},
+		PRsError: "No GitHub token is configured, so open pull requests are not listed.",
+	}
+	var rendered bytes.Buffer
+	set := server.templates["overview.html"]
+	if err := set.ExecuteTemplate(&rendered, "base", data); err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/overview.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered.String() != string(want) {
+		os.WriteFile("/tmp/overview-go.html", rendered.Bytes(), 0o644)
+		t.Fatalf("the page differs from the Python console's; wrote /tmp/overview-go.html")
+	}
+}
+
+// unitJSON is one Flux Kustomization as kubectl's JSON lists it, with the fields the units list shows.
+func unitJSON(t *testing.T, name string, depends []string, ready, message string, suspend bool) []byte {
+	t.Helper()
+	deps := make([]map[string]string, 0, len(depends))
+	for _, dependency := range depends {
+		deps = append(deps, map[string]string{"name": dependency})
+	}
+	spec := map[string]any{"dependsOn": deps}
+	if suspend {
+		spec["suspend"] = true
+	}
+	document := map[string]any{
+		"metadata": map[string]any{"name": name},
+		"spec":     spec,
+		"status": map[string]any{"lastAppliedRevision": "main@sha1:abc1234def",
+			"conditions": []map[string]string{{"type": "Ready", "status": ready, "message": message}}},
+	}
+	body, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+// The platform page renders the same bytes as the Python console's for the same units and checks: the fixture is
+// tests/test_console.py's UNITS and fakecluster.HEALTHY_CHECKS, with the golden rendered by
+// tests/render_console_goldens.py.
+func TestPlatformIsByteIdentical(t *testing.T) {
+	server, err := newConsoleServer(consoleConfig{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	units := [][]byte{
+		unitJSON(t, "cluster-sources", nil, "True", "Applied", false),
+		unitJSON(t, "infra-base", nil, "True", "Applied", false),
+		unitJSON(t, "platform-oauth2-proxy", []string{"infra-base"}, "True", "Applied", false),
+		unitJSON(t, "app-web-prod", []string{"infra-base", "platform-oauth2-proxy"}, "True", "Applied", false),
+		unitJSON(t, "app-my-api-staging", []string{"infra-base"}, "False", "<script>x</script>", true),
+	}
+	listed, err := pages.Units(units)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checks := pages.ChecksOf([]pages.Check{
+		{Section: "Flux Kustomizations", Entries: []pages.Entry{{Level: "ok", Message: "homelab-a"}, {Level: "ok", Message: "homelab-b"}}},
+		{Section: "Ingress", Entries: []pages.Entry{{Level: "ok", Message: "Traefik redirects HTTP to HTTPS"}}},
+		{Section: "Alerts", Entries: []pages.Entry{{Level: "ok", Message: "alert failures sends to ntfy-platform"}}},
+		{Section: "Notify service", Entries: []pages.Entry{{Level: "ok", Message: "the notify service is running b63d2aff9dfd4cf9df0307e382038dcbd15e29ed, as the console"}}},
+		{Section: "App dashboards and alerts", Entries: []pages.Entry{{Level: "ok", Message: "dashboard and alert sync succeeded in the last 5 minutes"}}},
+		{Section: "Notifications", Entries: []pages.Entry{{Level: "ok", Message: "notification checker succeeded in the last 5 minutes"}}},
+	})
+	revision := pages.CommonRevision(listed)
+	data := platformData{
+		shell:  shell{Title: "Platform", Path: "/platform", Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: "/platform", Assets: "92d0885d31c0", AutoRefresh: true},
+		Checks: checks, Units: listed, Problems: pages.Problems(checks, listed), Updating: pages.Updating(listed),
+		Groups: pages.CheckGroups(checks), Revision: revision,
+	}
+	for _, unit := range listed {
+		if !unit.Healthy() {
+			data.Unhealthy = append(data.Unhealthy, unit)
+		}
+		if unit.Revision != revision {
+			data.Elsewhere = append(data.Elsewhere, unit)
+		}
+	}
+	for _, layer := range append(pages.Layers, struct{ Prefix, Title, Text string }{Title: pages.OtherLayer}) {
+		view := layerView{Title: layer.Title, Text: layer.Text}
+		for _, unit := range listed {
+			if unit.Layer() == layer.Title {
+				view.Members = append(view.Members, unitRowView{UnitRow: pages.UnitRowOf(unit, revision), RefreshURL: "/platform",
+					Refused: pages.RefusedUnits[unit.Name]})
+			}
+		}
+		if len(view.Members) > 0 {
+			data.Layers = append(data.Layers, view)
+		}
+	}
+	var rendered bytes.Buffer
+	if err := server.templates["platform.html"].ExecuteTemplate(&rendered, "base", data); err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/platform.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered.String() != string(want) {
+		os.WriteFile("/tmp/platform-go.html", rendered.Bytes(), 0o644)
+		t.Fatalf("the page differs from the Python console's; wrote /tmp/platform-go.html")
+	}
+}
+
+// A request without oauth2-proxy's identity is refused before any page reads; /healthz needs nothing, and a path
+// with a trailing slash goes to its canonical form.
+func TestConsoleIdentity(t *testing.T) {
+	server, err := newConsoleServer(consoleConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reached, wantIdentity := false, ""
+	handler := server.identityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		if got := identityOf(r); got != wantIdentity {
+			t.Errorf("identity = %q, want %q", got, wantIdentity)
+		}
+	}))
+	for name, want := range map[string]int{"/": http.StatusUnauthorized, "/apps": http.StatusUnauthorized} {
+		request := httptest.NewRequest(http.MethodGet, name, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != want || reached {
+			t.Errorf("%s without identity: %d, reached=%v", name, response.Code, reached)
+		}
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if response.Code != http.StatusOK {
+		t.Errorf("/healthz: %d", response.Code)
+	}
+	reached = false
+	request := httptest.NewRequest(http.MethodGet, "/apps/", nil)
+	request.Header.Set(identityHeader, "sam@swhurl.com")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusPermanentRedirect || response.Header().Get("Location") != "/apps" || reached {
+		t.Errorf("trailing slash: %d %q", response.Code, response.Header().Get("Location"))
+	}
+	request = httptest.NewRequest(http.MethodGet, "/", nil)
+	request.Header.Set(identityHeader, "sam@swhurl.com")
+	wantIdentity = "sam@swhurl.com"
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+	if !reached {
+		t.Error("a signed-in request did not reach its page")
+	}
+}
+
+// appsRows is the fixture's two apps: web/prod healthy, my-api/staging suspended and failing. test_console.py's
+// declared() gives both the release's image and, for prod, its digest; my-api's release is absent, so its database
+// path is unknown.
+func appsRows(t *testing.T) []pages.AppRow {
+	t.Helper()
+	digest := sha256.Sum256([]byte("1.0"))
+	inventory := func(image, digest string) *pages.Inventory {
+		return &pages.Inventory{Team: "demo", Kind: "worker", Exposure: "private",
+			Artifact: pages.Artifact{Image: image, Digest: digest}}
+	}
+	teams := map[string]string{"web": "demo", "my-api": "demo"}
+	return []pages.AppRow{
+		{Instance: pages.Instance{App: "web", Env: "prod"}, State: pages.State{Key: "healthy", Detail: "Applied"},
+			Inventory: inventory("docker.io/x/web", "sha256:"+hex.EncodeToString(digest[:])), Teams: teams,
+			Report: &pages.Report{Live: pages.Live{Release: pages.Evidence{Status: "present"}}}},
+		{Instance: pages.Instance{App: "my-api", Env: "staging"},
+			State:     pages.State{Key: "suspended", Detail: "<script>x</script>"},
+			Suspended: true, Inventory: inventory("docker.io/x/web", ""), Teams: teams,
+			Report: &pages.Report{Live: pages.Live{Release: pages.Evidence{Status: "absent"}}}},
+	}
+}
+
+// The Deployments list and its map render the same bytes as the Python console's, for the fixture's apps.
+func TestAppsIsByteIdentical(t *testing.T) {
+	server, err := newConsoleServer(consoleConfig{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := appsRows(t)
+	site := pages.Site{Domain: "homelab.swhurl.com", Owner: "samclement"}
+	for _, one := range []struct{ golden, template, view, refresh string }{
+		{"apps.html", "apps.html", "list", "/apps"},
+		{"apps-map.html", "apps.html", "map", "/apps?view=map"},
+	} {
+		data := appsData{shell: shell{Title: "Deployments", Path: "/apps", Identity: "sam@swhurl.com", ReadAt: "09:43",
+			RefreshURL: one.refresh, Assets: "92d0885d31c0", AutoRefresh: true},
+			AppsPage: pages.AppsPageOf(pages.AppsInput{Rows: rows, View: one.view, Env: "staging", RefreshURL: one.refresh,
+				Stacks: map[string]string{"web": "typescript", "my-api": "typescript"}, Site: site})}
+		var rendered bytes.Buffer
+		if err := server.templates[one.template].ExecuteTemplate(&rendered, "base", data); err != nil {
+			t.Fatal(err)
+		}
+		want, err := os.ReadFile("testdata/" + one.golden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rendered.String() != string(want) {
+			written := "/tmp/" + strings.TrimSuffix(one.golden, ".html") + "-go.html"
+			os.WriteFile(written, rendered.Bytes(), 0o644)
+			t.Fatalf("%s differs from the Python console's; wrote %s", one.golden, written)
+		}
+	}
+}
+
+// The Egress page renders the same bytes as the Python console's: neither fixture instance is granted a host, so it
+// shows the two sections and the "none" of each column.
+func TestEgressIsByteIdentical(t *testing.T) {
+	server, err := newConsoleServer(consoleConfig{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := egressData{shell: shell{Title: "Egress", Path: "/egress", Identity: "sam@swhurl.com", ReadAt: "09:43",
+		RefreshURL: "/egress", Assets: "92d0885d31c0"},
+		EgressPage: pages.EgressPageOf(appsRows(t), pages.Site{Domain: "homelab.swhurl.com", Owner: "samclement"})}
+	var rendered bytes.Buffer
+	if err := server.templates["egress.html"].ExecuteTemplate(&rendered, "base", data); err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/egress.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered.String() != string(want) {
+		os.WriteFile("/tmp/egress-go.html", rendered.Bytes(), 0o644)
+		t.Fatal("the page differs from the Python console's; wrote /tmp/egress-go.html")
+	}
+}
+
+// The unit page renders the same bytes as the Python console's: infra-base, Ready, with nothing depending on it and
+// nothing waiting for it.
+func TestUnitIsByteIdentical(t *testing.T) {
+	server, err := newConsoleServer(consoleConfig{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := pages.Units([][]byte{
+		unitJSON(t, "cluster-sources", nil, "True", "Applied", false),
+		unitJSON(t, "infra-base", nil, "True", "Applied", false),
+		unitJSON(t, "platform-oauth2-proxy", []string{"infra-base"}, "True", "Applied", false),
+		unitJSON(t, "app-web-prod", []string{"infra-base", "platform-oauth2-proxy"}, "True", "Applied", false),
+		unitJSON(t, "app-my-api-staging", []string{"infra-base"}, "False", "<script>x</script>", true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unit pages.Unit
+	for _, one := range listed {
+		if one.Name == "infra-base" {
+			unit = one
+		}
+	}
+	data := unitData{shell: shell{Title: unit.Name, Path: "/units/" + unit.Name, Identity: "sam@swhurl.com",
+		ReadAt: "09:43", RefreshURL: "/units/" + unit.Name, Assets: "92d0885d31c0"},
+		Unit: unit, Refused: pages.RefusedUnits[unit.Name], Detail: unit.Ready.Detail, App: unitApp(unit.Name)}
+	if data.Detail == "" {
+		data.Detail = "applied " + unit.Revision
+	}
+	var rendered bytes.Buffer
+	if err := server.templates["unit.html"].ExecuteTemplate(&rendered, "base", data); err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/unit.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered.String() != string(want) {
+		os.WriteFile("/tmp/unit-go.html", rendered.Bytes(), 0o644)
+		t.Fatal("the page differs from the Python console's; wrote /tmp/unit-go.html")
+	}
+}
+
+// The Teams page renders the same bytes as the Python console's. The fixture has no GitHub token, so the registry
+// cannot be read: the page then treats the teams the apps name as registered, and says so.
+func TestTeamsIsByteIdentical(t *testing.T) {
+	server, err := newConsoleServer(consoleConfig{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := pages.Site{Domain: "homelab.swhurl.com", Owner: "samclement"}
+	data := teamsData{shell: shell{Title: "Teams", Path: "/teams", Identity: "sam@swhurl.com", ReadAt: "09:43",
+		RefreshURL: "/teams", Assets: "92d0885d31c0"},
+		TeamsPage: pages.TeamsPageOf(nil, false, appsRows(t), site,
+			map[string]string{"web": "typescript", "my-api": "typescript"}, map[string]string{})}
+	data.RegistryError = "No GitHub token is configured, so the team registry on main cannot be read."
+	data.Github = false
+	var rendered bytes.Buffer
+	if err := server.templates["teams.html"].ExecuteTemplate(&rendered, "base", data); err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/teams.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered.String() != string(want) {
+		os.WriteFile("/tmp/teams-go.html", rendered.Bytes(), 0o644)
+		t.Fatal("the page differs from the Python console's; wrote /tmp/teams-go.html")
+	}
+}

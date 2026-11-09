@@ -2,6 +2,28 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console server serves its pages (9 November 2026)
+
+- **Scope:** `swhurl-v2 console`, §23 step 1: the command, the embedded templates and assets, the
+  oauth2 identity rule, `/healthz`, `--dev`, the pinned GitHub tarball filtered to the records a page may show, and
+  seven pages: Overview, Platform, Deployments (the list and its map), Egress, a Flux unit, and Teams. Offline only:
+  nothing written, nothing deployed, the Python console still serves the live console.
+- **What was verified:** `go test ./...` in `v2/` with byte comparisons of the seven pages against the Python console's
+  own render of the same fixture (`v2/cmd/swhurl-v2/testdata/*.html`, rendered from `tests/test_console.py`'s fixture by
+  `tests/render_console_goldens.py`, whose fixed clock makes a golden reproducible), the embedded static hash equal to
+  the Python console's (`92d0885d31c0`), the identity middleware's 401 and trailing-slash 308, and `make check-v2` with
+  `pages` declared a layer-0 pure package.
+- **Live side-by-side, Overview and Platform:** the Python console (`swhurl console --dev`, reading the host kubeconfig
+  with `swhurl-v2` on its PATH) and the Go server served the same cluster at the same moment; `/` and `/platform` were
+  byte identical once the read time was normalised (4,104 and 73,062 bytes).
+- **What the pages read:** Deployments decodes the pinned tree's records once, asks the cluster once, and reads each
+  app's `swhurl.yaml` and each named app's dashboard id only for the apps the list shows (kept for an hour, a failure
+  for five minutes); Egress, a unit's page and Teams read the same rows; Teams reads the registry from the pinned tree
+  rather than `main`, and shows the apps of a team it cannot find instead of failing.
+- **What was not:** the catalogue (its offers documents are not read in Go yet), Activity and a job's page (the change
+  path), the app page, New app, and the promotion and pending pages; nothing is deployed and no job or pull request is
+  opened.
+
 ## The change report reads v2 as Git carries it (8 November 2026)
 
 - **Scope:** the v2 guardrails' report, `make v2-report`, which tells a reviewer or an agent what a change does to

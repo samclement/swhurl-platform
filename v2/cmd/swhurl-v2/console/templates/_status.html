@@ -1,0 +1,7 @@
+{{define "mark"}}<span class="mark {{.}}" aria-hidden="true"></span>{{end}}
+{{define "state"}}<span class="status {{.State.Key}}">{{template "mark" .State.Key}}<span class="state {{.State.Key}}{{if .Quiet}}{{if eq .State.Key "healthy"}} sr-only{{end}}{{end}}">{{.State.Label}}</span></span>{{if and .Detail .State.Detail}} <span class="muted">— {{short .State.Detail}}</span>{{end}}{{end}}
+{{define "about"}}<details class="about" id="about"><summary>{{template "icon" "info"}} About this page</summary><p class="lead">{{.}}</p></details>{{end}}
+{{define "running"}}<a class="started" href="/jobs/{{.Job.ID}}" {{follow .RefreshURL}}>{{template "mark" "updating"}} {{.Job.Action}} · job #{{.Job.ID}}</a>{{end}}
+{{define "job"}}{{template "mark" (jobMark .State)}}{{end}}
+{{define "check"}}{{template "mark" (checkMark .)}}{{end}}
+{{define "items"}}<ul class="items">{{range .}}<li>{{template "mark" .Level}} {{if .Link}}<a href="{{.Link}}">{{short .Text}}</a>{{else}}{{short .Text}}{{end}}</li>{{end}}</ul>{{end}}

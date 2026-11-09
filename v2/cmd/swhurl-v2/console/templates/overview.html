@@ -1,0 +1,37 @@
+{{define "title"}}Overview{{end}}
+{{define "main"}}
+<h1>Overview</h1>
+<details class="about" id="about"><summary>{{template "icon" "info"}} About this page</summary><p class="lead">Start here: whether anything needs you, what is waiting for your review, and what happened recently.</p></details>
+<p class="verdict">{{if .Problems}}{{template "mark" "failing"}} <strong>{{len .Problems}} {{if eq (len .Problems) 1}}thing needs{{else}}things need{{end}} attention</strong>
+{{else if .Updating}}{{template "mark" "updating"}} <strong>Updating</strong> <span class="muted">— {{len .Updating}} unit{{if ne (len .Updating) 1}}s{{end}} applying a change; normal for a few seconds after a push</span>
+{{else}}{{template "mark" "healthy"}} <strong>Everything is healthy</strong>{{end}}</p>
+<p class="muted">{{.AppCount}} app instances · {{len .Units}} Flux units · {{.Checks.Count}} health checks, read at {{.ReadAt}}.
+More checks need your terminal: <code>make verify-platform</code>.</p>
+
+{{if .Problems}}<h2>Needs attention</h2>{{template "items" .Problems}}{{end}}
+{{if .Updating}}<h2>Updating now</h2>{{template "items" .Updating}}{{end}}
+
+{{if .Running}}
+<h2>Running now</h2>
+<ul class="items">
+  {{range .Running}}<li>{{template "job" .}} <a href="/jobs/{{.ID}}">{{.Action}} {{.TargetLabel}}</a> <span class="muted">by {{.Identity}}, started {{.StartedClock}} UTC</span></li>{{end}}
+</ul>
+{{end}}
+
+<h2>Pull requests waiting for you</h2>
+{{if .PRs}}
+<ul class="items">
+  {{range .PRs}}<li><a href="{{.URL}}">#{{.Number}} {{.Title}}</a> <span class="muted">opened {{.Opened}}</span></li>{{end}}
+</ul>
+{{else if .PRsError}}<p class="muted">{{.PRsError}}</p>
+{{else}}<p class="muted">None. Changes you make here open a pull request; it waits here until you merge or close it.</p>{{end}}
+
+<h2>Recent activity</h2>
+{{if .Recent}}
+<ul class="items">
+  {{range .Recent}}<li>{{template "job" .}} <a href="/jobs/{{.ID}}">{{.Action}} {{.TargetLabel}}</a>
+    <span class="muted">{{.State}} {{.FinishedClock}} UTC{{if .Link}} · <a href="{{.Link}}">pull request</a>{{end}}</span></li>{{end}}
+</ul>
+<p><a href="/activity">All activity</a></p>
+{{else}}<p class="muted">Nothing since the console started. Reconciles, suspends and pull requests you start appear here.</p>{{end}}
+{{end}}

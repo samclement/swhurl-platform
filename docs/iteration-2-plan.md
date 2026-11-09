@@ -2154,7 +2154,9 @@ each has its own gate. They land in this order because the first three change no
 2. **The publish path and the Flux actions** (kube write, GitHub write). Landed as `swhurl-v2 change --kind …`,
    called through `console/v2.py` exactly as `edit` and `promote` are today, so the deployed console opens real pull
    requests through Go while Python still serves the pages; `proposal.py`, `repos.py`'s publication and
-   `changes.py`'s GitHub parts are deleted. Both commands of steps 2 and 3 read their tokens from the environment,
+   `changes.py`'s GitHub parts are deleted. Two landings: the publish path first ([§24](#24-the-publish-path-in-go-step-2a-proposed-9-november-2026)),
+   its gate a real pull request; then `swhurl-v2 flux` with the job lifecycle below, so publication is proven live
+   before jobs touch it. Both commands of steps 2 and 3 read their tokens from the environment,
    as `flags` reads `NATS_SEED`, and print their lines with the pull request URL last, so the console streams and
    records what it streams today.
 3. **New app** — `swhurl-v2 app-repo` and `adapters/copier`, again called through `console/v2.py`, so
@@ -2179,3 +2181,122 @@ checks each step names.
 **Not in this slice.** Any redesign: the markup, the map's layout, the Activity page's history and the catalogue's
 presentation stay as they are. Also unchanged: what a promotion means, the rule that a person merges every pull
 request, the tokens and their scopes, `platform/console`'s manifests and RBAC, and the deferred features list.
+
+## 24. The publish path in Go: step 2a (proposed 9 November 2026)
+
+**Decision.** `swhurl-v2 change` makes a console change and opens its pull request: §23's seven steps in one process,
+with the kinds and their owned paths moved out of `changes.ACTIONS`. The deployed console keeps its pages, its forms and
+its jobs; it stops downloading `main`, snapshotting, uploading and publishing — `console/proposal.py` becomes the runner
+that streams the command's lines and records the URL it prints last. This is the first step of the console port that
+writes anything, so it lands alone and is proven live before the job lifecycle touches it (§23 step 2b).
+
+**Semantics: one table of kinds.** A kind states the environments its branch may name, the instance it changes when that
+is not the branch's (a promotion changes production), the input paths its pull request may carry, and its title. The
+kind names keep their `v2-` prefix: a branch name is permanent, and Activity reads the branches the console opened before
+this slice as well as after. The values are the console form's, passed as v2's own words wherever v2 already decides
+them — a value `edit` can carry is passed as one:
+
+| Kind | Target | Values | What v2 runs |
+| --- | --- | --- | --- |
+| `v2-scale` | app, env | `--set replicas=3`, `--set memoryMiB=256` | `edit`, `render` |
+| `v2-expose` | app, env | `--set exposure=private` | `edit`, `render` |
+| `v2-team` | app, env (branch only) | `--set team=payments` | `edit` naming no environment, `render` |
+| `v2-remove` | app, env | — | `remove`, `render` |
+| `v2-promote` | app, env `staging` | — | `promote --expect <the pinned staging record's revision>`, `render` |
+| `v2-connect` | app, env | `--call b`, `--subscribe b.orders` | `edit` with the record's lists plus the choice, `render` |
+| `v2-disconnect` | app, env | `--drop-call b`, `--drop-subscription b.orders` | `edit` with them less the choice, `render` |
+| `v2-allow` | app, env | `--allow b`, `--disallow team:payments` | `edit` with `allows` so merged, `render` |
+| `team-add`, `team-edit`, `team-remove` | team | `--description`, `--rename` | `team` |
+| `team-channel-set`, `team-channel-remove` | team | `--transport`, the address on standard input | `team` |
+
+A kind that **merges a list** states the choice and v2 merges it, because the base it merges into is the pinned record
+(the three connection kinds and `v2-allow`); every other kind's value is already one word v2 accepts. A merge that
+changes nothing is a refusal in v2's words, as `edit` refuses one today. An addition is what the form ticked and the
+record does not state, a removal what it left out and the record does state, so a list the record holds but the cluster
+does not (a change merged and not yet applied) survives the next one; and only the lists a change actually alters are
+written, because `edit` refuses a setting that sets what is already there.
+
+**The command.**
+
+    swhurl-v2 change --kind KIND (--app APPLICATION --env ENVIRONMENT | --team TEAM) --requested-by IDENTITY \
+        [--repository OWNER/REPO] [--revision COMMIT] [--dry-run]
+
+It reads `CONSOLE_TOKEN` and, unless `--repository` names one, `CONSOLE_REPO` from the environment as `flags` reads
+`NATS_SEED`; neither ever appears in an argument. The platform's own layout is not a flag: the records are
+`v2-records`, the profile is `v2/testdata/profile.json` and the change's output is the extracted tree, stated once
+beside the kind that writes them. Exit is 0 when the pull request is open, and 2 with v2's refusal on standard error:
+2 is what every other v2 command answers a refusal with, and the console reads the exit status only for "it refused". A
+kind and its flags are one table (`changeShapes`): a change that states a flag its kind does not take, or omits one it
+needs, is refused in the change's own words before a byte is downloaded, rather than reaching a command that would
+answer with its whole usage text.
+
+**Contract: the pinned tree.** The command resolves the base branch once (`--revision` skips that read), downloads the
+tarball at that SHA and extracts it into a scratch directory it creates and removes on exit. Extraction preserves
+modes, because a mode lost makes every script look changed, so a contract test takes a tree holding an executable
+through the whole path. Nothing outside that directory changes except GitHub: `git`, the operator's checkout and the
+console's own files are never touched. `--dry-run` resolves, extracts, applies and prints the branch and the owned
+paths, and opens nothing.
+
+**Contract: the GitHub write port** (`adapters/github`). Its read side is the existing `Console` port's `Revision` and
+`Tarball`; the write side adds five calls, each taking the repository and the token explicitly and retaining neither:
+`Blob` (one file's bytes as base64), `Tree` (a base tree and the changed entries; an entry with no SHA deletes its
+path), `Commit` (message, tree, one parent, the console's author), `Branch` (creates `refs/heads/<branch>`, and refuses
+any branch that is not `console/<kind>-<name>[-<env>]-<commit>`: the console writes no other ref) and `Pull` (title,
+head, base, body, returning its URL). Step 3 adds `Repository` and `Hook` to the same port; this slice names neither. A
+token is never in a URL, never formatted into a refusal, and never follows a redirect: the tarball's redirect to
+codeload is read without it. A refusal names the operation and GitHub's own message, so the console shows what GitHub
+said.
+
+**Contract: what the console says.** The command prints the lines the console records today, as it goes:
+`Downloading <repo> main (<sha7>)`, one `A`/`M`/`D <path>` per carried file, `Merge plan: you merge it on GitHub[; it …]`,
+`Committed <sha7> [console] <title>`, `Creating branch <branch>`, and `Opened <url>` last, so the console keeps its
+record and takes the job's link from the last line; under `--dry-run` it prints today's
+`Dry run: would commit N file(s) to <branch>; no PR opened` instead of the last three. A failed apply makes no GitHub
+write. The pull request's title, body, author (`swhurl console <console@users.noreply.github.com>`),
+`Requested-by: <identity>` trailer and `**Merge plan:** it ….` line are today's character for character — including that
+the body's command line shows `--revision @base` rather than the commit it resolved to, because that is the command a
+person can type.
+
+**Boundaries.** `kernel` holds the kind table and the set of platform files a change may carry, because they state what a
+change is, beside `edit`, `remove`, `creation` and `promotion`; the names come from the folders `kernel` already
+renders into (`usersFolder`, `reloaderFolder`, `authFolder` and the egress allocation), not from a second list. `pages`
+builds Activity's branch patterns from the same table instead of its own copy. `orchestration` holds the use case
+(resolve, extract, apply by calling the existing use cases, filter, publish) and prints nothing;
+`adapters/github` holds the six calls; `cmd/swhurl-v2` holds the flags. The console keeps its forms, its job and its
+`/jobs` pages — what it loses is `snapshot`, `download`, `publish`, `run_tool`, `open_action`'s seven steps and
+`changes.py`'s command builders.
+
+**Deliberate changes.**
+
+1. **The merge base is the pinned record, not the cluster.** The console reads the live instance to render the form and
+   to refuse "that changes nothing" with a 400; v2 merges into the record at the commit it applies to. Today a merged
+   but unreconciled change lets a second connection change silently drop the first, because the console builds the whole
+   list from what the cluster shows. The console's pre-checks stay until the server leaves (step 4) — they decide 400
+   against a job, not what is written.
+2. `keeps` is dropped: no kind uses anything but `AMD`, and an unused field in a table is a rule nobody applies.
+3. The dead `python` tool of `changes.Command` goes with it: every kind runs v2's binary, so the console executes no code
+   from the tree it downloads.
+4. The kind table moves from Python to `pages` (which the command and the pages both already depend on, and which the
+architecture check keeps at layer 0 beside `kernel`); `changes.py`'s `branchActions` becomes a reading of it, not a
+second copy.
+5. **A connection change writes only the lists it alters.** Today the console writes both lists from the form, so a
+change that alters one of them is refused with `already_set` by the edit of the other — connecting an event without
+changing the calls has never worked. The delta above is what makes the omission possible.
+
+**Not in this slice.** The Flux actions and their polling (step 2b), the job lifecycle and its records (2b), `app-repo`
+and repository creation (step 3, which the write port's `Repository` and `Hook` are named for but does not use yet), the
+cutover (step 4), and any change to what a promotion means, to the rule that a person merges every pull request, or to
+the tokens and their scopes.
+
+**Verification.** `kernel` table tests for every kind's environments, target, owned paths (its own records, its
+instances, a rendered platform file, another app's files, `apps/`) and branch round trip, including the branch names the
+console already opened; `orchestration` tests with a fake GitHub for the seven steps, the mode-preserving snapshot, a
+deletion entry, `--dry-run` opening nothing, a refused apply making no write, and the body, merge plan and commit
+message, and a scale end to end against a tarball of one instance's records and the real disk; `adapters/github`'s
+contract suite against a scripted server for blob → tree → commit → branch → pull, a
+refusal, a foreign branch refused, and a token that does not follow the redirect to codeload; the console's Python
+publication cases become relay cases and `tests/test_console.py` keeps asserting what the job shows and links to;
+`make check-v2` with `Layers` and `api.txt` updated in the same change (no new subprocess), `make check`, `make test`,
+`make check-repo`, `make check-docs`. Live: a scale on a throwaway app from the deployed console, its pull request's
+body, author and merge plan compared field by field with one the console opened before this slice, and a promotion
+refused while its own change is unapplied ([current state](current-state.md)).

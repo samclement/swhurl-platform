@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/observe"
@@ -61,11 +62,8 @@ func instanceFile(parts []string) bool {
 // may carry GitHub's leading folder (the tarball) or none (a local checkout's `git archive`). A path that would leave
 // the tree is refused, and a link is never followed: only regular files are read.
 func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error) {
-	var reader io.Reader = bytes.NewReader(content)
-	if gzipped, err := gzip.NewReader(bytes.NewReader(content)); err == nil {
-		defer gzipped.Close()
-		reader = gzipped
-	}
+	reader, closeArchive := archiveReader(content)
+	defer closeArchive()
 	archive := tar.NewReader(reader)
 	found := map[string][]byte{}
 	for {
@@ -108,6 +106,56 @@ func readEntry(archive *tar.Reader, entry *tar.Header, prefixed bool) (string, [
 
 // maxArchiveFile bounds one file the console keeps: every document it reads is far smaller.
 const maxArchiveFile = 1 << 20
+
+// archiveReader reads a repository archive as tar, gzipped or not: GitHub serves a tarball, a checkout's `git archive`
+// need not be compressed.
+func archiveReader(content []byte) (io.Reader, func()) {
+	gzipped, err := gzip.NewReader(bytes.NewReader(content))
+	if err != nil {
+		return bytes.NewReader(content), func() {}
+	}
+	return gzipped, func() { gzipped.Close() }
+}
+
+// maxTreeFile bounds one file of a whole tree a change is applied to. It is larger than a page's bound because the
+// tree holds the repository's documents too, and the whole archive is already bounded by the caller's download.
+const maxTreeFile = 8 << 20
+
+// ReadTree reads a whole repository archive: every regular file, with the mode the archive states. The archive may
+// carry GitHub's leading folder (the tarball) or none (a checkout's `git archive`). A path that would leave the tree is
+// refused and a link is never followed, as the console's filtered read is.
+func ReadTree(content []byte, prefixed bool) ([]files.TreeFile, error) {
+	reader, closeArchive := archiveReader(content)
+	defer closeArchive()
+	archive := tar.NewReader(reader)
+	found := []files.TreeFile{}
+	for {
+		entry, err := archive.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("cannot read repository archive: %w", err)
+		}
+		if leaving(entry.Name) {
+			return nil, fmt.Errorf("cannot read repository archive: %s leaves the repository", entry.Name)
+		}
+		file, ok := archivePath(entry.Name, prefixed)
+		if !ok || entry.Typeflag != tar.TypeReg {
+			continue
+		}
+		body, err := io.ReadAll(io.LimitReader(archive, maxTreeFile+1))
+		if err != nil {
+			return nil, fmt.Errorf("cannot read repository archive: %w", err)
+		}
+		if len(body) > maxTreeFile {
+			return nil, fmt.Errorf("cannot read repository archive: %s is too large", file)
+		}
+		found = append(found, files.TreeFile{Path: file, Executable: entry.Mode&0o111 != 0, Body: body})
+	}
+	slices.SortFunc(found, func(a, b files.TreeFile) int { return strings.Compare(a.Path, b.Path) })
+	return found, nil
+}
 
 // leaving reports whether an entry's name would escape the repository, which no archive GitHub serves may contain.
 func leaving(name string) bool {

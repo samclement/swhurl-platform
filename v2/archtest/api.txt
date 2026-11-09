@@ -208,7 +208,8 @@ adapters/kube/kubetest: func (*Fake) Patch(_ context.Context, ref observe.Ref, _
 adapters/kube/kubetest: func (*Fake) Read(_ context.Context, ref observe.Ref) (observe.Read, error)
 adapters/kube/kubetest: func (*Fake) Review(_ context.Context, token, audience string) (kube.TokenReview, error)
 adapters/kube/kubetest: func (*Fake) Secrets(_ context.Context, namespace string, selector kube.Selector) ([]kube.Secret, error)
-adapters/kube/kubetest: func (*Fake) SetConfigMapKey(_ context.Context, namespace, name, key, value, fieldManager string) error
+adapters/kube/kubetest: func (*Fake) SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error
+adapters/kube/kubetest: func (*Fake) SetConfigMapKeys(_ context.Context, namespace, name string, keys map[string]*string, fieldManager string) error
 adapters/kube/kubetest: func (*Fake) SigningKeys(context.Context) (kube.SigningKeys, error)
 adapters/kube/kubetest: func CheckerCollectionContract(t *testing.T, open func(*testing.T) (kube.Collector, kube.Data))
 adapters/kube/kubetest: func CollectionContract(t *testing.T, open func(*testing.T, []byte, string) kube.Reader)
@@ -246,6 +247,7 @@ adapters/kube: func (*API) Read(ctx context.Context, ref observe.Ref) (observe.R
 adapters/kube: func (*API) Review(ctx context.Context, token, audience string) (TokenReview, error)
 adapters/kube: func (*API) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error)
 adapters/kube: func (*API) SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error
+adapters/kube: func (*API) SetConfigMapKeys(ctx context.Context, namespace, name string, data map[string]*string, fieldManager string) error
 adapters/kube: func (*API) SigningKeys(ctx context.Context) (SigningKeys, error)
 adapters/kube: func (*Error) Error() string
 adapters/kube: func (Connection) Data() (Data, error)
@@ -267,7 +269,7 @@ adapters/kube: type Collector interface {CollectAllNamespaces(ctx context.Contex
 adapters/kube: type ConfigMap struct {Name string Labels map[string]string Data map[string]string}
 adapters/kube: type Connection struct {Endpoint string Credentials Credentials Token string Context string}
 adapters/kube: type Credentials struct {CA []byte Certificate []byte Key []byte}
-adapters/kube: type Data interface {GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error) GetSecret(ctx context.Context, namespace, name string) (*Secret, error) ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error) // SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every // other key as it is. SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error}
+adapters/kube: type Data interface {GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error) GetSecret(ctx context.Context, namespace, name string) (*Secret, error) ConfigMaps(ctx context.Context, namespace string, selector Selector) ([]ConfigMap, error) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error) // SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every // other key as it is. SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error // SetConfigMapKeys sets and deletes several keys of one ConfigMap in one merge patch: a nil value deletes that // key, so two writers changing different keys cannot drop each other's. SetConfigMapKeys(ctx context.Context, namespace, name string, data map[string]*string, fieldManager string) error}
 adapters/kube: type Error struct {Code, Subject, Reason string}
 adapters/kube: type ExecRequest struct {Namespace, Pod, Container string Command []string Stdin []byte}
 adapters/kube: type ExecResult struct {Stdout []byte ExitCode int}
@@ -1076,6 +1078,9 @@ orchestration: const AppUnknown = "unknown"
 orchestration: const BootstrapInfo BootstrapLevel = "info"
 orchestration: const BootstrapOK BootstrapLevel = "ok"
 orchestration: const BootstrapWarn BootstrapLevel = "warn"
+orchestration: const FluxReconcile FluxAction = "reconcile"
+orchestration: const FluxResume FluxAction = "resume"
+orchestration: const FluxSuspend FluxAction = "suspend"
 orchestration: const JobComplete = "complete"
 orchestration: const JobFailed = "failed"
 orchestration: const JobRunning = "running"
@@ -1089,6 +1094,11 @@ orchestration: const StepFailed = "failed"
 orchestration: const StepNotRead = "not_read"
 orchestration: func (*ConsoleBundle) Revision(ctx context.Context) (string, error)
 orchestration: func (*ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][]byte, error)
+orchestration: func (*Jobs) Drain(timeout time.Duration) bool
+orchestration: func (*Jobs) Get(ctx context.Context, id int) (pages.Job, bool)
+orchestration: func (*Jobs) Reach(ctx context.Context, id int)
+orchestration: func (*Jobs) Recent(ctx context.Context) []pages.Job
+orchestration: func (*Jobs) Start(ctx context.Context, action, target, identity string, resume map[string]any, work JobWork) (pages.Job, error)
 orchestration: func (*Notifier) AcceptAlert(ctx context.Context, connect NotifyConnect, body []byte, now time.Time) (Accepted, error)
 orchestration: func (*Notifier) AcceptMessage(ctx context.Context, connect NotifyConnect, authorization string, body []byte, now time.Time, randomKey string) (Accepted, error)
 orchestration: func (*Notifier) Deliver(ctx context.Context, connect NotifyConnect, now time.Time) ([]Delivered, error)
@@ -1130,8 +1140,10 @@ orchestration: func Edit(editable Editable, destination string, writer files.Wri
 orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
 orchestration: func FlagDeclaration(document []byte) ([]producer.Flag, string)
 orchestration: func Flags(ctx context.Context, store nats.KV, environment, application string, flags []producer.Flag, declarationProblem string, now time.Time) FlagCard
+orchestration: func Flux(ctx context.Context, inputs FluxInputs) error
 orchestration: func ImageDeclaration(reader appsource.Reader, root string) (string, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
+orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
 orchestration: func NewNotifier(publisher ntfy.Publisher) *Notifier
 orchestration: func NotificationsHeartbeat(ctx context.Context, ports HeartbeatPorts, options HeartbeatOptions) ([]HeartbeatOutcome, error)
 orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformReport, error)
@@ -1181,11 +1193,17 @@ orchestration: type Edition struct {Application, Environment, Change string Befo
 orchestration: type FlagCard struct {Rows []FlagRow Problem string}
 orchestration: type FlagOverride struct {Value any Readable bool StoredAt time.Time}
 orchestration: type FlagRow struct {Name string Flag producer.Flag Undeclared bool Overridden bool Override FlagOverride AgeDays int Stale bool Effective any}
+orchestration: type FluxAction string
+orchestration: type FluxInputs struct {Action FluxAction Unit string Cluster Cluster Now func() time.Time Sleep func(time.Duration) Progress func(string)}
 orchestration: type HeartbeatOptions struct {Now float64 Jobs []heartbeat.Job StatePath string DryRun bool}
 orchestration: type HeartbeatOutcome struct {Job heartbeat.Job Decision heartbeat.Decision Notice heartbeat.Notice Due, Sent bool Err error}
 orchestration: type HeartbeatPorts struct {Cluster kube.Reader Data kube.Data Platform ntfy.Publisher State hoststate.Store}
 orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 orchestration: type InstanceInputs struct {Inputs InstancePath string}
+orchestration: type JobStore interface {// Load is every record the store holds, as written; anything malformed is not a job. Load(ctx context.Context) ([]string, error) // Save writes each record, and deletes the records whose value is nil, in one change: two pods writing at once // cannot drop each other's keys. Save(ctx context.Context, records map[int]*string) error // Alive is whether the pod that ran a job still exists. An unreadable answer counts as alive. Alive(ctx context.Context, owner string) (bool, error)}
+orchestration: type JobWork func(ctx context.Context, line func(string)) (link string, err error)
+orchestration: type Jobs struct {}
+orchestration: type JobsInputs struct {Store JobStore Owner string Now func() time.Time Sleep func(time.Duration) Redact func(string) string Audit func(string)}
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
 orchestration: type Notifier struct {}

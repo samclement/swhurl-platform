@@ -23,6 +23,9 @@ type Data interface {
 	// SetConfigMapKey sets one key of a ConfigMap with a JSON merge patch under the field manager, leaving every
 	// other key as it is.
 	SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error
+	// SetConfigMapKeys sets and deletes several keys of one ConfigMap in one merge patch: a nil value deletes that
+	// key, so two writers changing different keys cannot drop each other's.
+	SetConfigMapKeys(ctx context.Context, namespace, name string, data map[string]*string, fieldManager string) error
 }
 
 // Selector picks the objects a list reads: one object by Name (a field selector on metadata.name), or those whose
@@ -97,13 +100,25 @@ func decodedSecret(item dataItem, subject string) (Secret, error) {
 
 // SetConfigMapKey patches one key of one ConfigMap.
 func (a *API) SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error {
-	if !namePattern.MatchString(namespace) || !namePattern.MatchString(name) || !keyPattern.MatchString(key) {
+	return a.SetConfigMapKeys(ctx, namespace, name, map[string]*string{key: &value}, fieldManager)
+}
+
+// SetConfigMapKeys patches several keys of one ConfigMap in one change. A nil value is a JSON null, which a merge
+// patch reads as "delete this key": that is how a writer forgets a record without rewriting the others.
+func (a *API) SetConfigMapKeys(ctx context.Context, namespace, name string, data map[string]*string,
+	fieldManager string) error {
+	if !namePattern.MatchString(namespace) || !namePattern.MatchString(name) {
 		return &Error{RefusedRequest, "configmap", "invalid_name"}
 	}
 	if fieldManager == "" || len(fieldManager) > 128 {
 		return &Error{RefusedRequest, "configmap", "field_manager_required"}
 	}
-	patch, err := json.Marshal(map[string]map[string]string{"data": {key: value}})
+	for key := range data {
+		if !keyPattern.MatchString(key) {
+			return &Error{RefusedRequest, "configmap", "invalid_name"}
+		}
+	}
+	patch, err := json.Marshal(map[string]map[string]*string{"data": data})
 	if err != nil {
 		return &Error{RefusedRequest, "configmap", "unencodable"}
 	}

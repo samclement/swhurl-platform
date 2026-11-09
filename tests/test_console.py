@@ -17,7 +17,7 @@ from starlette.testclient import TestClient
 from swhurl import kube
 from swhurl.apps import state
 from swhurl.apps.instance import Instance
-from swhurl.console import actions, cluster, context, health, server, stages
+from swhurl.console import actions, cluster, context, health, server, stages, v2
 from swhurl.console import github as gh
 from swhurl.console.routes import activity
 from swhurl.run import FakeRunner, Result, is_read
@@ -901,43 +901,24 @@ class PlatformTests(unittest.TestCase):
 ORIGIN = {**WHO, 'Origin': 'http://testserver'}
 
 
-class FluxAPI:
-    """Answers the console's kubectl patches, annotations and gets like Flux's controllers.
+class UnitAction:
+    """Stands in for one ``swhurl-v2 unit`` run: the lines it prints, or v2's refusal."""
 
-    An annotated object reports the request handled after ``polls`` more gets,
-    with its Ready condition set to ``ready``."""
+    def __init__(self, lines=(), refuse=None):
+        self.lines, self.refuse, self.calls = list(lines), refuse, []
 
-    def __init__(self, runner, ready='True', message='', polls=0, suspended=False):
-        self.ready, self.message, self.polls, self.suspended = ready, message, polls, suspended
-        self.tokens, self.gets = {}, {}
-        runner.on('kubectl', '-n', 'flux-system', 'annotate', handler=self.annotate)
-        runner.on('kubectl', '-n', 'flux-system', 'patch', handler=lambda args, _: Result(args, 0, 'patched\n'))
-        runner.on('kubectl', '-n', 'flux-system', 'get', handler=self.get)
-
-    def annotate(self, args, _input):
-        self.tokens[args[5]] = args[6].split('=', 1)[1]
-        return Result(args, 0)
-
-    def get(self, args, _input):
-        target = args[4]
-        if target.startswith(actions.KUSTOMIZATION) and target not in self.tokens:
-            return Result(args, 0, json.dumps({'spec': {'suspend': self.suspended, 'sourceRef': {
-                'kind': 'GitRepository', 'name': 'swhurl-platform'}}}))
-        self.gets[target] = self.gets.get(target, 0) + 1
-        handled = self.gets[target] > self.polls
-        status = {'observedGeneration': 3, 'lastAppliedRevision': REV, 'artifact': {'revision': REV},
-                  'conditions': [{'type': 'Ready', 'status': self.ready if handled else 'Unknown', 'message': self.message}]}
-        if handled:
-            status['lastHandledReconcileAt'] = self.tokens[target]
-        return Result(args, 0, json.dumps({'metadata': {'generation': 3}, 'status': status}))
+    def __call__(self, action, unit):
+        self.calls.append((action, unit))
+        if self.refuse:
+            raise actions.ActionError(self.refuse)
+        yield from self.lines
 
 
-def operate(runner, **flux):
-    """A client whose jobs run inline against a FluxAPI, with audit lines and sleeps collected."""
+def operate(runner, **unit):
+    """A client whose jobs run inline and stream a faked unit action, with audit lines and sleeps collected."""
     audit, sleeps = [], []
-    api = FluxAPI(runner, **flux)
-    jobs = actions.Jobs(runner, audit=audit.append, inline=True, sleep=sleeps.append)
-    jobs.api, jobs.sleeps = api, sleeps
+    jobs = actions.Jobs(runner, audit=audit.append, inline=True, sleep=sleeps.append, flux=UnitAction(**unit))
+    jobs.sleeps = sleeps
     return client(runner, jobs=jobs), jobs, audit
 
 
@@ -946,18 +927,17 @@ def mutations(runner):
 
 
 class ActionTests(unittest.TestCase):
-    def test_reconcile_requests_source_then_unit_records_output_and_audits(self):
+    def test_a_unit_action_is_one_v2_run_and_the_job_keeps_its_lines(self):
         runner = fake()
-        c, jobs, audit = operate(runner)
+        c, jobs, audit = operate(runner, lines=['► annotating GitRepository swhurl-platform in flux-system namespace',
+                                                '✔ applied revision main@sha1:1edf370'])
         response = c.post('/units/app-web-prod/reconcile', headers=ORIGIN, follow_redirects=False)
         self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
-        source, unit = 'gitrepositories.source.toolkit.fluxcd.io/swhurl-platform', f'{actions.KUSTOMIZATION}/app-web-prod'
-        self.assertEqual([m[:3] for m in mutations(runner)], [('annotate', '--overwrite', source),
-                                                             ('annotate', '--overwrite', unit)])
-        self.assertTrue(mutations(runner)[0][3].startswith('reconcile.fluxcd.io/requestedAt='))
+        self.assertEqual(jobs.flux.calls, [('reconcile', 'app-web-prod')],
+                         'the console runs one command for the form action, never kubectl')
         self.assertEqual(jobs.get(1).state, 'succeeded', jobs.get(1).lines)
-        self.assertEqual(jobs.get(1).lines[-1], f'✔ applied revision {REV}')
-        self.assertIn(f'✔ fetched revision {REV}', jobs.get(1).lines)
+        self.assertEqual(jobs.get(1).lines, ['► annotating GitRepository swhurl-platform in flux-system namespace',
+                                             '✔ applied revision main@sha1:1edf370'])
         self.assertEqual(audit, ['[AUDIT] sam@swhurl.com reconcile app-web-prod: started (job 1)',
                                  '[AUDIT] sam@swhurl.com reconcile app-web-prod: succeeded (job 1)'])
         page = c.get('/jobs/1', headers=WHO).text
@@ -965,43 +945,20 @@ class ActionTests(unittest.TestCase):
         self.assertNotIn('http-equiv="refresh"', page)
         self.assertIn('Reconcile <a href="/apps/web/prod">web/prod</a>', c.get('/activity', headers=WHO).text,
                       'an app instance is <app>/<env> on every page, not its unit name')
-        self.assertFalse([call for call in runner.calls if call[0] == 'flux'])
+        self.assertEqual(mutations(runner), [], 'no cluster write is the console’s')
+        self.assertEqual([call for call in runner.calls if call[0] == 'flux'], [])
 
-    def test_suspend_patches_only_and_resume_patches_then_waits(self):
-        runner = fake()
-        c, jobs, _ = operate(runner, polls=2)
-        c.post('/units/infra-base/suspend', headers=ORIGIN)
-        self.assertEqual(mutations(runner), [('patch', f'{actions.KUSTOMIZATION}/infra-base', '--type=merge',
-                                              '--patch', '{"spec": {"suspend": true}}')])
-        self.assertEqual((jobs.get(1).state, jobs.sleeps), ('succeeded', []))
-        self.assertEqual(jobs.get(1).lines[0], '► suspending Kustomization infra-base')
-        c.post('/units/infra-base/resume', headers=ORIGIN)
-        self.assertEqual(mutations(runner)[1][-1], '{"spec": {"suspend": false}}')
-        self.assertEqual(mutations(runner)[2][:3], ('annotate', '--overwrite', f'{actions.KUSTOMIZATION}/infra-base'))
-        self.assertEqual(jobs.get(2).state, 'succeeded', jobs.get(2).lines)
-        self.assertEqual(jobs.get(2).lines[0], '► resuming Kustomization infra-base')
-        self.assertEqual(jobs.sleeps, [actions.POLL, actions.POLL], 'polled until the request was handled')
-
-    def test_failure_is_shown_and_audited_as_error(self):
-        c, jobs, audit = operate(fake(), ready='False', message='health check failed after 5m')
+    def test_a_refusal_is_v2s_words_and_fails_the_job(self):
+        c, jobs, audit = operate(fake(), refuse='Kustomization infra-base reconciliation failed: health check failed after 5m')
         c.post('/units/infra-base/resume', headers=ORIGIN)
         self.assertEqual(jobs.get(1).state, 'failed')
         self.assertEqual(jobs.get(1).lines[-1],
                          '[ERROR] Kustomization infra-base reconciliation failed: health check failed after 5m')
         self.assertTrue(audit[-1].startswith('[ERROR] sam@swhurl.com resume infra-base: failed'))
 
-    def test_timeout_fails_the_job(self):
-        runner = fake()
-        FluxAPI(runner, polls=10**6)
-        ticks = iter(range(0, 10**4, 60))
-        jobs = actions.Jobs(runner, audit=lambda _: None, inline=True, sleep=lambda _: None, clock=lambda: next(ticks))
-        jobs.start('resume', 'infra-base', 'sam@swhurl.com')
-        self.assertEqual(jobs.get(1).state, 'failed')
-        self.assertIn('timed out after 10m waiting for Kustomization infra-base', jobs.get(1).lines[-1])
-
     def test_a_button_in_a_list_gets_its_answer_in_place_instead_of_the_job_page(self):
         runner = fake()
-        c, jobs, _ = operate(runner)
+        c, jobs, _ = operate(runner, lines=['✔ Kustomization infra-base suspended'])
         started = c.post('/units/infra-base/reconcile', follow_redirects=False,
                          headers={**ORIGIN, 'HX-Request': 'true', 'HX-Current-URL': 'http://testserver/platform'})
         self.assertEqual(started.status_code, 200)
@@ -1012,14 +969,8 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(refused.status_code, 200, 'htmx swaps only a 2xx answer, so the refusal is one')
         self.assertIn('<span class="bad" role="alert">cluster-stack is applied by make flux-bootstrap', refused.text)
         self.assertEqual(c.post('/units/infra-base/reconcile', headers=ORIGIN, follow_redirects=False).status_code, 303)
-
-    def test_reconciling_a_suspended_unit_is_refused(self):
-        runner = fake()
-        c, jobs, _ = operate(runner, suspended=True)
-        c.post('/units/app-my-api-staging/reconcile', headers=ORIGIN)
-        self.assertEqual(jobs.get(1).state, 'failed')
-        self.assertIn('is suspended; resume it instead', jobs.get(1).lines[-1])
-        self.assertEqual(mutations(runner), [])
+        self.assertEqual(jobs.flux.calls, [('reconcile', 'infra-base'), ('reconcile', 'infra-base')],
+                         'the refused root unit never reached v2')
 
     def test_refused_unknown_or_busy_actions_run_nothing(self):
         runner = fake()
@@ -1034,17 +985,19 @@ class ActionTests(unittest.TestCase):
         busy = actions.Job(99, 'reconcile', 'infra-base', 'x', jobs.now())
         jobs._jobs[99] = busy
         self.assertIn('already running', c.post('/units/infra-base/suspend', headers=ORIGIN).text)
+        self.assertEqual(jobs.flux.calls, [])
         self.assertEqual(mutations(runner), [])
         self.assertEqual(audit, [])
 
     def test_posts_must_come_from_a_console_page(self):
         runner = fake()
-        c, _, _ = operate(runner)
+        c, jobs, _ = operate(runner)
         for headers in (WHO, {**WHO, 'Origin': 'https://evil.example'}, {**WHO, 'Origin': 'null'}):
             with self.subTest(origin=headers.get('Origin')):
                 self.assertEqual(c.post('/units/infra-base/reconcile', headers=headers).status_code, 403)
         self.assertEqual(c.post('/units/infra-base/reconcile', headers={'Origin': 'http://testserver'}).status_code, 401)
         self.assertEqual(runner.calls, [])
+        self.assertEqual(jobs.flux.calls, [])
 
     def test_running_job_page_uses_eventsource_and_noscript_refresh(self):
         c, jobs, _ = operate(fake())
@@ -1167,15 +1120,17 @@ class ActionTests(unittest.TestCase):
         self.assertIn('<details class="stage-log" id="output" open>', page)
         self.assertIn('hx-trigger="every 30s"', page, 'completed progress is also read fresh')
 
-    def test_dry_run_plans_the_patches_and_does_not_wait(self):
+    def test_dry_run_plans_the_one_command_and_does_not_run_it(self):
         runner = fake()
         runner.dry_run = True
-        c, jobs, _ = operate(runner)
+        jobs = actions.Jobs(runner, inline=True, flux=lambda action, unit: v2.unit(runner, action, unit, in_cluster=True))
+        c = client(runner, jobs=jobs)
         c.post('/units/infra-base/suspend', headers=ORIGIN)
         c.post('/units/infra-base/resume', headers=ORIGIN)
-        self.assertEqual([p[3] for p in runner.planned], ['patch', 'patch', 'annotate'])
+        self.assertEqual([argv[1:4] for argv in runner.planned],
+                         [('unit', '--action', 'suspend'), ('unit', '--action', 'resume')])
         self.assertEqual(mutations(runner), [])
-        self.assertEqual((jobs.get(2).state, jobs.sleeps), ('succeeded', []))
+        self.assertEqual([jobs.get(1).state, jobs.get(2).state], ['succeeded', 'succeeded'])
 
 if __name__ == '__main__':
     unittest.main()

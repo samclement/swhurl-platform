@@ -8,6 +8,8 @@ instance's records.
 from __future__ import annotations
 
 import os
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 from swhurl.console.actions import ActionError
@@ -43,6 +45,15 @@ def available(runner: Runner) -> bool:
     except CommandError:
         return False
     return True
+
+
+def unit(runner: Runner, action: str, unit: str, *, in_cluster: bool) -> Iterator[str]:
+    """One unit action, run in this pod: v2 patches the API server and prints the job's lines as it goes. The
+    credential is this pod's ServiceAccount, or under ``--dev`` the host's kubeconfig in a folder of the job's own."""
+    with tempfile.TemporaryDirectory(prefix='console-unit-') as root:
+        argv = [BINARY, 'unit', '--action', action, '--unit', unit,
+                *credential(runner, Path(root), in_cluster=in_cluster)]
+        yield from runner.stream(argv, mutating=True)
 
 
 def run(runner: Runner, clone, argv: list[str]) -> Result:

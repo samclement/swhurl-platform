@@ -221,20 +221,7 @@ func podAlive(ctx context.Context, reader kube.Reader, owner string) bool {
 
 // decodeJob is one stored record as a job; anything malformed is not a job.
 func decodeJob(raw string) (pages.Job, bool) {
-	var record struct {
-		ID       int            `json:"id"`
-		Action   string         `json:"action"`
-		Unit     string         `json:"unit"`
-		Identity string         `json:"identity"`
-		Started  string         `json:"started"`
-		Finished *string        `json:"finished"`
-		State    string         `json:"state"`
-		Link     string         `json:"link"`
-		Owner    string         `json:"owner"`
-		Resume   map[string]any `json:"resume"`
-		Reached  string         `json:"reached"`
-		Lines    []string       `json:"lines"`
-	}
+	var record jobRecordDocument
 	if err := json.Unmarshal([]byte(raw), &record); err != nil {
 		return pages.Job{}, false
 	}

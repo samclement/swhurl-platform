@@ -254,6 +254,29 @@ func TestDataRequestsAreStated(t *testing.T) {
 	}
 }
 
+// Several keys are one merge patch: a value sets its key and a nil deletes one, so a writer forgets a record without
+// rewriting the keys another pod owns. A key that is not a name is refused before any request.
+func TestSeveralConfigMapKeysAreOnePatch(t *testing.T) {
+	server := newDataServer(t)
+	api := server.api()
+	value := "kept"
+	if err := api.SetConfigMapKeys(context.Background(), "notify", "notify-outbox", map[string]*string{
+		"job-2": &value, "job-1": nil}, "console-jobs"); err != nil {
+		t.Fatal(err)
+	}
+	if len(server.requests) != 1 || server.requests[0].Method != http.MethodPatch {
+		t.Fatalf("requests %d", len(server.requests))
+	}
+	if server.bodies[0] != `{"data":{"job-1":null,"job-2":"kept"}}` {
+		t.Fatalf("patch %s", server.bodies[0])
+	}
+	refused := api.SetConfigMapKeys(context.Background(), "notify", "notify-outbox", map[string]*string{"bad key": &value}, "console-jobs")
+	var failure *kube.Error
+	if !errors.As(refused, &failure) || failure.Reason != "invalid_name" || len(server.requests) != 1 {
+		t.Fatalf("an invalid key: %v after %d requests", refused, len(server.requests))
+	}
+}
+
 // A list that is not this namespace's complete list, or a Secret whose data is not base64, is a failed read rather
 // than fewer objects; so is a status the server refuses with. No error repeats what the server answered.
 func TestDataFailuresAreReads(t *testing.T) {

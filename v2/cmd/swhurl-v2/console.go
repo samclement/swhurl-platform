@@ -135,6 +135,11 @@ type consoleServer struct {
 	factsMu sync.Mutex
 	merged  map[int]pages.Pull // merged pull requests, by number
 	reached map[int]string     // when this server first saw a job's change at its end, by job
+
+	// live is the registry of the jobs this server runs; nil is a server that runs none, and then no job has a
+	// stream here (a page still reads every record the console keeps).
+	live   liveJobs
+	events consoleEvents
 }
 
 func newConsoleServer(config consoleConfig) (*consoleServer, error) {
@@ -144,7 +149,8 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	server := &consoleServer{reader: config.Reader, collector: config.Collector, data: config.Data, now: config.Now,
 		appConsole: github.NewConsole(nil), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
 		natsSeed: config.NatsSeed, natsURL: config.NatsURL,
-		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{}}
+		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{},
+		events: consoleEvents{poll: 250 * time.Millisecond, keepAlive: 15 * time.Second}}
 	if server.repository == "" {
 		server.repository = consoleRepo
 	}

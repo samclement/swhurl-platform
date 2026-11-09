@@ -48,6 +48,7 @@ from swhurl.console import (
     repos,
     stages,
     status,
+    v2,
 )
 from swhurl.console import github as gh
 from swhurl.console.context import Context, follow, logs_url, short_hashes
@@ -160,7 +161,10 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                github: gh.GitHub | None = None, app_repos: repos.AppReposToken | None = None,
                repo_opener: repo.Opener | None = None, documents: catalogue.Reader | None = None) -> Starlette:
     """``github`` and ``app_repos`` default to the tokens in the environment (none: the new-app form says so)."""
-    jobs = jobs or actions.Jobs(runner, store=job_store(runner, dev_identity))
+    # Live reads use the pod's ServiceAccount, except under --dev, which reads with the host's kubeconfig.
+    in_cluster = not bool(dev_identity) and bool(os.environ.get('KUBERNETES_SERVICE_HOST'))
+    jobs = jobs or actions.Jobs(runner, store=job_store(runner, dev_identity),
+                                flux=lambda action, unit: v2.unit(runner, action, unit, in_cluster=in_cluster))
     github = github or gh.github_from_env(runner)
     app_repos = app_repos or repos.token_from_env(runner)
     # From here every handler reads through this: within one page (``reading`` and the app page) a
@@ -214,9 +218,6 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                         return await call_next(request)
                 finally:
                     request_files.reset(token)
-
-    # Live reads use the pod's ServiceAccount, except under --dev, which reads with the host's kubeconfig.
-    in_cluster = not bool(dev_identity) and bool(os.environ.get('KUBERNETES_SERVICE_HOST'))
 
     def app_rows() -> list[cluster.AppRow]:
         files = request_files.get()

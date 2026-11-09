@@ -79,6 +79,7 @@ const usage = `usage:
   swhurl-v2 clickstack-bootstrap [--dry-run] --kubeconfig KUBECONFIG.json
   swhurl-v2 flags --records DIR --app APPLICATION --env ENVIRONMENT [--set FLAG=TEXT | --clear FLAG] [--json]
   swhurl-v2 console [--port PORT] (--kubeconfig KUBECONFIG.json | --in-cluster) [--dev]
+  swhurl-v2 unit --action reconcile|suspend|resume --unit NAME (--kubeconfig KUBECONFIG.json | --in-cluster)
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
 platform's tag policy, and writes the record pair and the compiled files under --out. With --records it reads
@@ -447,6 +448,7 @@ func commands() map[string]func(cli, request) int {
 		"flags":                   cli.flags,
 		"console":                 cli.console,
 		"change":                  cli.change,
+		"unit":                    cli.unit,
 	}
 }
 
@@ -461,6 +463,7 @@ type request struct {
 	from                                               string
 	archive                                            bool
 	app, callFile                                      string
+	unit                                               string
 	env, maxAge                                        string
 	previous, egressFile, allocation                   string
 	records, changes, repoRoot, reviewedDigest         string
@@ -571,6 +574,13 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		r.port = "8080"
 		flags.Var(&once{value: &r.port}, "port", "the port to serve on (default 8080)")
 		flags.Var(&onceBool{value: &r.dev}, "dev", "serve a fixed identity on loopback only, reading this checkout")
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
+		return
+	}
+	if command == "unit" {
+		flags.Var(&once{value: &r.action}, "action", "reconcile, suspend or resume")
+		flags.Var(&once{value: &r.unit}, "unit", "the Flux unit, in the flux-system namespace")
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
 		return
@@ -856,6 +866,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"flags":                   (*request).flagsNamed,
 	"console":                 (*request).consoleNamed,
 	"change":                  (*request).changeNamed,
+	"unit":                    (*request).unitNamed,
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one
@@ -879,6 +890,14 @@ func (r *request) checkRepoNamed() []string {
 		return []string{""}
 	}
 	return []string{r.root}
+}
+
+// unitNamed is one action on one unit, and exactly one credential: a kubeconfig or the pod's own ServiceAccount.
+func (r *request) unitNamed() []string {
+	if (r.kubeconfig != "") == r.inCluster || r.action == "" || r.unit == "" {
+		return []string{""}
+	}
+	return []string{r.unit}
 }
 
 // consoleNamed is the console's port and exactly one credential, a kubeconfig or the pod's own ServiceAccount
@@ -1045,6 +1064,9 @@ type cli struct {
 	// a test supplies fakes so an opened pull request needs no network.
 	consoleSource github.Console
 	publisher     github.Publisher
+	// unitClusterOf is the cluster a unit action changes; nil is the API server the credential names, and a test
+	// supplies a scripted cluster so an action needs no network.
+	unitClusterOf func() (orchestration.Cluster, error)
 	// platform publishes to the platform topic; nil is ntfy over HTTPS. A test supplies a fake.
 	platform ntfy.Publisher
 	// getenv reads the environment the flags card signs in with; nil is os.Getenv, and a test supplies its own.

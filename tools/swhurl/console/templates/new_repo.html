@@ -122,10 +122,10 @@
   </section>
 </form>
 
+{# The script is optional: it shows only the stacks the chosen type is built with, starts "Who can reach it" at
+   the type's default until it is changed by hand, swaps it for a note on a worker, and keeps "What happens" in step
+   with the name. Without it every field shows and the server applies the same rules. #}
 <script>
-// Optional: shows only the stacks the chosen type is built with, starts "Who can reach it" at the type's
-// default until it is changed by hand, swaps it for a note on a worker, and keeps "What happens" in step
-// with the name. Without it every field shows and the server applies the same rules.
 (() => {
   const form = document.querySelector('form.wizard');
   let exposureTouched = {{ 'true' if form.exposure else 'false' }};
@@ -141,7 +141,7 @@
         if (first) first.checked = true;
       }
     });
-    const worker = chosen.dataset.kind !== 'web';  // a worker or a job: no web address
+    const worker = chosen.dataset.kind !== 'web';
     document.getElementById('reach').hidden = worker;
     document.getElementById('worker-note').hidden = !worker;
     if (!exposureTouched) {

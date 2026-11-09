@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>demo-shop/staging · swhurl</title>
+
+<link rel="preload" href="/static/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/console.css?v=92d0885d31c0">
+<script src="/static/htmx.min.js?v=92d0885d31c0" defer></script>
+<script src="/static/console.js?v=92d0885d31c0" defer></script>
+</head>
+<body>
+
+<svg class="sprite" width="0" height="0" aria-hidden="true">
+  <symbol id="i-pr" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+</svg>
+<header class="site">
+  <a class="brand" href="/">swhurl console</a>
+  <nav aria-label="Main">
+    <a href="/" class="">Overview</a>
+    <a href="/apps" class="here">Deployments</a>
+    <a href="/catalogue" class="">Catalogue</a>
+    <a href="/teams" class="">Teams</a>
+    <a href="/platform" class="">Platform</a>
+    <a href="/activity" class="">Activity</a>
+  </nav>
+  <span class="who">sam@swhurl.com</span>
+  <a class="button" href="/new"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> New app</a>
+</header>
+<main>
+
+
+<p class="page-meta">Read at 09:43 <a class="button quiet" href="/apps/demo-shop/staging" title="Read the cluster again"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh</a></p>
+
+
+
+<p class="crumbs"><a href="/apps">Deployments</a> › demo-shop</p>
+<h1>demo-shop <span class="pill" title="The stack in demo-shop's swhurl.yaml">TypeScript</span></h1>
+<nav class="tabs" aria-label="Environment">
+<a href="/apps/demo-shop/staging" class="here" aria-current="page">staging</a><a href="/apps/demo-shop/prod">prod</a>
+</nav>
+
+
+<section class="card" aria-label="Summary">
+  <div class="card-body facts">
+    <div><span>State</span><span class="verdict"><span class="status healthy"><span class="mark healthy" aria-hidden="true"></span><span class="state healthy">Healthy</span></span></span></div>
+    <div><span>Team</span><a href="/apps?team=demo" title="The apps of team demo">demo</a></div>
+    <div><span>Image (desired)</span><code title="ghcr.io/samclement/demo-shop@sha256:d84bdb34d4eeef4034d77e5403f850e35bc4a51b1143e3a83510e1aaad839748">ghcr.io/samclement/demo-shop@sha256:<span class="hash" title="d84bdb34d4eeef4034d77e5403f850e35bc4a51b1143e3a83510e1aaad839748">d84bdb34d4ee…</span></code></div>
+    <div><span>Replicas</span><span>1/1 ready</span></div>
+    <div><span>Database (desired)</span><span>sqlite</span></div>
+    <div><span>Promotion</span><span class="pill attention" title="Staging and production run different images, and staging is not known to be the newer">Images differ</span>
+      </div>
+  </div>
+  <div class="card-body"><p class="reason muted">Applied</p></div>
+  
+</section>
+
+<nav class="anchors" aria-label="On this page"><a href="#use">Use</a><a href="#connect">Connect</a><a href="#operate">Operate</a><a href="#jobs">Jobs</a></nav>
+
+
+<section class="card" id="use" style="--acts: 2; --pitch: 9.5rem">
+  <div class="card-head">
+    <h2>Use</h2>
+    <p class="muted">Its web address, and who can reach it: granted here, not in the app's repository.</p>
+    <a class="button primary act" style="--slot: 0; --wide: 9rem" href="https://staging-demo-shop.homelab.swhurl.com">Open <svg class="icon" aria-hidden="true"><use href="#i-external"/></svg></a>
+    <details class="act" name="app-form" style="--slot: 1; --wide: 9rem">
+      <summary class="button"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> Change access</summary>
+      <form class="wizard" method="post" action="/apps/demo-shop/staging/expose">
+        <fieldset>
+          
+
+<label class="choice"><input type="radio" name="exposure" value="authenticated-web" >
+  <span><strong>Signed in</strong><br><span class="muted">A web address under homelab.swhurl.com, behind Google sign-in: only the accounts on the sign-in list.</span></span></label>
+
+<label class="choice"><input type="radio" name="exposure" value="private" checked>
+  <span><strong>Private</strong> <span class="muted">(now)</span><br><span class="muted">No web address: only the apps granted a call to it can reach it. For APIs, workers and jobs.</span></span></label>
+
+
+          <p class="muted hint">v2 derives the address from the app name and the exposure; it does not model a host.</p>
+        </fieldset>
+        
+<div class="submit">
+  <button class="primary" ><svg class="icon" aria-hidden="true"><use href="#i-pr"/></svg> Open access PR</button>
+  <span class="muted">Private removes the web address. You review and merge it on GitHub.</span>
+</div>
+
+      </form>
+    </details>
+  </div>
+  <div class="card-body">
+    <dl class="plain">
+      <dt>Web address</dt><dd><div><a href="https://staging-demo-shop.homelab.swhurl.com">https://staging-demo-shop.homelab.swhurl.com <svg class="icon" aria-hidden="true"><use href="#i-external"/></svg></a></div></dd>
+      <dt>Who can reach it (desired)</dt><dd class="">Private (no route)</dd>
+      <dt>Route evidence</dt><dd><div>demo-shop: present </div></dd>
+      <dt>TLS certificate</dt><dd><span class="muted">not required (no desired certificate)</span></dd>
+    </dl>
+  </div>
+</section>
+
+<section class="card" id="connect" style="--acts: 2; --pitch: 11.5rem">
+  <div class="card-head">
+    <h2>Connect</h2>
+    <p class="muted">How other apps reach it, and what it reaches, in staging. Calls and subscriptions are granted here, not in the app's repository; the hosts outside the cluster it is granted are v2's, and this page shows them without offering to change them.</p>
+    
+    <details class="act" name="app-form" style="--slot: 1; --wide: 11rem">
+      <summary class="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Allow callers</summary>
+      <form class="wizard" method="post" action="/apps/demo-shop/staging/allow">
+        <fieldset>
+          
+<div class="field">
+  <label for="allow_add">App or team</label>
+  <input id="allow_add" name="add" value="" placeholder="team:demo">
+  <span class="muted hint">An app name, or team:&lt;team&gt; for every app of that team (its own team too: nothing is implicit); several comma-separated. Allowed in staging only. An app that calls demo-shop is connected once it is allowed.</span>
+</div>
+
+        </fieldset>
+        
+<div class="submit">
+  <button class="primary" ><svg class="icon" aria-hidden="true"><use href="#i-pr"/></svg> Open allow PR</button>
+  <span class="muted">It changes this instance only; granting access waits for you to merge it on GitHub.</span>
+</div>
+
+      </form>
+    </details>
+    
+    <details class="act" name="app-form" style="--slot: 0; --wide: 11rem">
+      <summary class="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Connect to an app</summary>
+      <form class="wizard" method="post" action="/apps/demo-shop/staging/connect">
+        <div class="rows">
+          
+
+<div class="field">
+  <span class="label">Apps it calls</span>
+  <div class="choices small">
+    <span class="muted">No other web app in staging is left to call.</span>
+  </div>
+  <span class="muted hint">demo-shop gets each one's address and a short-lived token only that app accepts; each one starts admitting it. Any other app is blocked. Web apps in staging are offered; the <a href="/catalogue?env=staging">catalogue</a> shows each one's routes and each event's payload.</span>
+</div>
+<div class="field">
+  <span class="label">Events it receives</span>
+  <div class="choices small">
+    <span class="muted">No other app in staging publishes an event it does not already receive.</span>
+  </div>
+  <span class="muted hint">demo-shop may read exactly these, from the oldest event still kept (seven days).</span>
+</div>
+
+        </div>
+        
+<div class="submit">
+  <button class="primary" ><svg class="icon" aria-hidden="true"><use href="#i-pr"/></svg> Open connection PR</button>
+  <span class="muted">It changes this instance only; you review and merge it on GitHub, and a call connects once the app called allows it.</span>
+</div>
+
+      </form>
+    </details>
+  </div>
+  <div class="card-body">
+    <dl class="plain">
+      <dt>In the cluster</dt>
+      <dd><code>http://demo-shop.demo-shop-staging.svc.cluster.local:8080</code> <span class="muted">for apps it allows that call it</span></dd>
+      
+      <dt>Allowed callers</dt>
+      <dd><span class="pill">demo-orders</span>
+        <form class="inline" method="post" action="/apps/demo-shop/staging/allow" data-confirm="Open a pull request so that demo-orders may no longer call demo-shop/staging? You review and merge it on GitHub." data-confirm-label="Open removal PR">
+          <input type="hidden" name="remove" value="demo-orders"><button  title="Open a pull request removing this grant">Remove</button></form>
+        </dd>
+      
+    </dl>
+    
+    
+<table class="compact connections">
+  <tr><th>Direction</th><th>Kind</th><th>App</th><th>What</th><th>Team</th><th></th></tr>
+  
+  <tr>
+    <td><span title="demo-shop declared it">→ outgoing</span></td>
+    <td><span class="pill">call</span></td>
+    <td><a href="/apps/demo-orders/staging">demo-orders</a></td>
+    <td>its API</td>
+    <td><a href="/apps?team=demo">demo</a></td>
+    <td class="act">
+      <form class="inline" method="post" action="/apps/demo-shop/staging/disconnect" data-confirm="Open a pull request so that demo-shop/staging no longer calls demo-orders? It also changes demo-orders. You review and merge it on GitHub." data-confirm-label="Open removal PR">
+        <input type="hidden" name="role" value="calls"><input type="hidden" name="app" value="demo-orders"><input type="hidden" name="event" value="">
+        <button  title="Open a pull request removing this connection">Remove</button></form></td>
+  </tr>
+  
+</table>
+
+    
+    
+    <details class="disclose help" id="how-to-call">
+      <summary><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg> <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach demo-shop</span></summary>
+      <p class="muted">A call needs both sides: your app calls demo-shop, and demo-shop allows your app or its team (<strong>Allow callers</strong> above). Use your app page's <strong>Connect to an app</strong>, or:</p>
+      <pre><code>swhurl-v2 edit --records v2-records --app demo-shop --env staging --set allows=&lt;whole list&gt; \
+  --profile v2/testdata/profile.json --out . --calls v2-records/calls.json --egress platform/egress/allocation.json
+swhurl-v2 edit --records v2-records --app &lt;your app&gt; --env staging --set calls=&lt;whole list&gt; \
+  --profile v2/testdata/profile.json --out . --calls v2-records/calls.json --egress platform/egress/allocation.json
+swhurl-v2 render --records v2-records --profile v2/testdata/profile.json --out . --revision &lt;commit&gt;</code></pre>
+      <p class="muted">Then, in your code (the stack templates' helper):</p>
+      <pre><code>service("demo-shop").fetch("/")        // TypeScript
+platform.call("demo-shop", "/")        // Kotlin</code></pre>
+    </details>
+    
+    
+    <details class="disclose help" id="how-to-subscribe">
+      <summary><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg> <strong>Subscribe to its events</strong> <span class="muted">— what another app adds to receive them</span></summary>
+      <p class="muted">Receiving events is granted on the platform, from your app page's <strong>Connect to an app</strong>, or:</p>
+      <pre><code>swhurl-v2 edit --records v2-records --app &lt;your app&gt; --env staging --set subscriptions=&lt;whole list&gt; \
+  --profile v2/testdata/profile.json --out . --calls v2-records/calls.json --egress platform/egress/allocation.json
+swhurl-v2 render --records v2-records --profile v2/testdata/profile.json --out . --revision &lt;commit&gt;</code></pre>
+      <p class="muted">Then, in your code:</p>
+      <pre><code>subscribe("demo-shop.item-added", async (event) => { ... })        // TypeScript
+events.subscribe("demo-shop.item-added") { event -> ... }            // Kotlin</code></pre>
+    </details>
+    
+  </div>
+</section>
+
+
+<section class="card" id="flags" style="--acts: 0">
+  <div class="card-head">
+    <h2>Feature flags</h2>
+    <p class="muted">An override changes a flag in staging at once, without a new image or a restart.</p>
+  </div>
+  <div class="card-body">
+    <p class="warn" role="status">This console has no NATS key (console-nats Secret), so overrides cannot be read or set.</p>
+    
+    <p class="muted">The image staging runs declares no feature flags. Declare them in the app's <code>swhurl.yaml</code> (<a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#feature-flags">how</a>).</p>
+    
+  </div>
+</section>
+
+<section class="card" id="operate" style="--acts: 2; --pitch: 9.5rem">
+  <div class="card-head">
+    <h2>Operate</h2>
+    <p class="muted">What runs, whether it matches Git, and how to change it.</p>
+    <details class="act" name="app-form" style="--slot: 0; --wide: 9rem">
+      <summary class="button"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> Scale</summary>
+      <form class="wizard" method="post" action="/apps/demo-shop/staging/scale">
+        <fieldset>
+          <div class="pair">
+<div class="field">
+  <label for="replicas">Replicas</label>
+  <input id="replicas" name="replicas" value="" placeholder="1">
+  
+</div>
+
+<div class="field">
+  <label for="memory">Memory (MiB)</label>
+  <input id="memory" name="memory" value="" placeholder="128">
+  
+</div>
+</div>
+          <span class="muted hint">Desired replicas and memory (MiB). Empty fields keep their current value, shown in grey.
+            </span>
+        </fieldset>
+        
+<div class="submit">
+  <button class="primary" ><svg class="icon" aria-hidden="true"><use href="#i-pr"/></svg> Open scale PR</button>
+  <span class="muted">You review and merge it on GitHub.</span>
+</div>
+
+      </form>
+    </details>
+    <details class="act" name="app-form" style="--slot: 1; --wide: 9rem">
+      <summary class="button"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> Change team</summary>
+      <form class="wizard" method="post" action="/apps/demo-shop/staging/team">
+        <fieldset>
+          <div class="choices">
+            
+            <label class="choice"><input type="radio" name="team" value="demo" required checked disabled>
+              <span><strong>demo</strong> <span class="muted">(now)</span><br><span class="muted">Apps that show how to use the platform</span></span></label>
+            
+            <label class="choice"><input type="radio" name="team" value="payments" required >
+              <span><strong>payments</strong><br><span class="muted">Orders and payments</span></span></label>
+            
+          </div>
+          <span class="muted hint">The team is the app's: the change moves staging and production together. It says who owns the app and whose notification channel hears about it; it grants nobody access, but a <code>team:</code> grant on another app follows it.</span>
+        </fieldset>
+        
+<div class="submit">
+  <button class="primary" ><svg class="icon" aria-hidden="true"><use href="#i-pr"/></svg> Open team PR</button>
+  <span class="muted">You review and merge it on GitHub.</span>
+</div>
+
+      </form>
+    </details>
+  </div>
+  <div class="card-body">
+    <dl class="plain">
+      <dt>Image</dt>
+      <dd><div class="mono">Git wants ghcr.io/samclement/demo-shop@sha256:<span class="hash" title="d84bdb34d4eeef4034d77e5403f850e35bc4a51b1143e3a83510e1aaad839748">d84bdb34d4ee…</span></div><div class="mono">Running digests: sha256:<span class="hash" title="1111111111111111111111111111111111111111111111111111111111111111">111111111111…</span></div></dd>
+      <dt>Replicas</dt><dd>1/1 ready (present)</dd>
+      <dt>Git revision</dt><dd><span class="mono">main@sha1:<span class="hash" title="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">aaaaaaaaaaaa…</span></span> applied · expected <span class="mono"><span class="hash" title="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">aaaaaaaaaaaa…</span></span><div>applied: revision matches</div></dd>
+      <dt>Flux unit</dt><dd><a href="/units/app-demo-shop-staging">app-demo-shop-staging</a>: present</dd>
+      <dt>Helm release</dt><dd>present</dd>
+      <dt>Findings</dt><dd></dd>
+      <dt>Database (desired)</dt><dd>sqlite</dd>
+      <dt>Namespace</dt><dd class="mono">demo-shop-staging</dd>
+      <dt>Observe</dt>
+      <dd><a href="https://clickstack.homelab.swhurl.com/search?where=ServiceName%3A%22demo-shop%22&amp;whereLanguage=lucene">Logs and traces <svg class="icon" aria-hidden="true"><use href="#i-external"/></svg></a> <span class="muted">·</span> <a href="https://github.com/samclement/demo-shop">Repository <svg class="icon" aria-hidden="true"><use href="#i-external"/></svg></a></dd>
+    </dl>
+    <details class="section" id="environment">
+      <summary><strong>Environment (desired)</strong> <span class="muted">— rendered variables committed at <span class="hash" title="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">aaaaaaaaaaaa…</span>, not observed container values</span></summary>
+      <dl class="plain">
+        <dt>From the platform (desired)</dt><dd><div><code>SWHURL_IMAGE</code> <span class="muted mono">ghcr.io/samclement/demo-shop</span></div><div><code>SWHURL_TEAM</code> <span class="muted mono">demo</span></div><div><code>SWHURL_ALLOWED_CALLERS</code> <span class="muted mono">demo-orders</span></div><div><code>SWHURL_EVENTS_PUBLISH</code> <span class="muted mono">item-added</span></div><div><code>SWHURL_EVENTS_SUBSCRIBE</code> <span class="muted mono">demo-orders.paid</span></div><div><code>SWHURL_SERVICE_DEMO_ORDERS_URL</code> <span class="muted mono">http://demo-orders.demo-orders-staging.svc.cluster.local:8080</span></div><div><code>DATABASE_PATH</code> <span class="muted mono">/data/app.db</span></div><div><code>HTTPS_PROXY</code> <span class="muted mono">http://egress.platform.svc.cluster.local:7001</span></div></dd>
+        <dt>Your secrets</dt><dd><span class="muted">none: v2 does not model secrets; secret values and files are unsupported.</span></dd>
+      </dl>
+    </details>
+  </div>
+  <div class="card-body">
+    
+    <div class="action-row">
+      <form method="post" action="/units/app-demo-shop-staging/reconcile" hx-post="/units/app-demo-shop-staging/reconcile" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Reconcile</button></form>
+      <span class="muted">Fetch Git and apply this instance now instead of at the next check. Safe: it applies what Git already says.</span>
+    </div>
+    
+    <div class="action-row">
+      <span class="go"><a href="/apps/demo-shop/staging/promotion">Review promotion</a></span>
+      <span class="muted">See exactly what would go to production, then promote it. Nothing changes until you confirm there.</span>
+    </div>
+    
+  </div>
+</section>
+
+<h2 id="jobs" class="part">Changes to demo-shop/staging</h2>
+<p class="muted">None since the console started.</p>
+
+<section class="card danger" style="--acts: 0; margin-top: var(--gap-6)">
+  <div class="card-head">
+    <h2>Uninstall</h2>
+    <p class="muted">Opens a pull request that removes demo-shop/staging. Once merged, Flux deletes it; a retained volume and its namespace are kept.</p>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/apps/demo-shop/staging/remove" data-confirm="Open a pull request removing demo-shop/staging? Once merged, Flux uninstalls it; a retained volume and its namespace are kept." data-confirm-label="Open uninstall PR"><button class="danger" ><svg class="icon" aria-hidden="true"><use href="#i-pr"/></svg> Open uninstall PR</button></form>
+  </div>
+</section>
+
+</main>
+<dialog id="confirm"><p></p><div class="toolbar"><button type="button" value="no">Cancel</button><button type="button" class="danger" value="yes">Continue</button></div></dialog>
+</body>
+</html>

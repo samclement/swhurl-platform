@@ -1,0 +1,48 @@
+{{/* A connection is one row wherever it is shown (the app page, the Apps list), and one choice wherever it is
+   made (New app, the app page's Connect). */}}
+
+{{/* An instance's connections: what it declared first, then what other apps declared about it. With Remove, each row
+     this app declared gets a button that opens the pull request removing it. */}}
+{{define "connectionTable"}}
+<table class="compact connections">
+  <tr><th>Direction</th><th>Kind</th><th>App</th><th>What</th><th>Team</th>{{if .Remove}}<th></th>{{end}}</tr>
+  {{range .Rows}}
+  <tr>
+    <td>{{if eq .Direction "out"}}<span title="{{$.App}} declared it">→ outgoing</span>{{else}}<span class="muted" title="{{.App}} declared it">← incoming</span>{{end}}</td>
+    <td><span class="pill">{{.Kind}}</span></td>
+    <td>{{if .App}}<a href="/apps/{{.App}}/{{$.Env}}">{{.App}}</a>{{else if eq .Role "reaches"}}<span class="muted">through the egress proxy</span>{{else}}<span class="muted">any subscriber</span>{{end}}</td>
+    <td>{{.What}}{{if .Event}} <code>{{.Event}}</code>{{end}}</td>
+    <td>{{if .Team}}<a href="/apps?team={{.Team}}">{{.Team}}</a>{{else if .App}}<span class="muted">unknown</span>{{end}}</td>
+    {{if $.Remove}}<td class="act">{{if and (eq .Direction "out") (ne .Role "publishes")}}
+      <form class="inline" method="post" action="/apps/{{$.App}}/{{$.Env}}/disconnect" data-confirm="Open a pull request so that {{$.App}}/{{$.Env}} no longer {{.Verb}} {{.Name}}?{{if .App}} It also changes {{.App}}.{{end}} You review and merge it on GitHub." data-confirm-label="Open removal PR">
+        <input type="hidden" name="role" value="{{.Role}}"><input type="hidden" name="app" value="{{.App}}"><input type="hidden" name="event" value="{{.Event}}">
+        <button {{if not $.Github}}disabled{{end}} title="Open a pull request removing this connection">Remove</button></form>{{end}}</td>{{end}}
+  </tr>
+  {{end}}
+</table>
+{{end}}
+
+{{/* What an app can connect to: one checkbox per web app it could call and per event it could receive. */}}
+{{define "connectionChoices"}}
+{{if .Problem}}<p class="warn">The apps in {{.Env}} could not be read ({{.Problem}}), so none are offered.</p>{{end}}
+<div class="field">
+  <span class="label">Apps it calls</span>
+  <div class="choices small">
+    {{range .Apps}}
+    <label class="choice"><input type="checkbox" name="calls" value="{{.App}}" {{if index $.ChosenCalls .App}}checked{{end}}>
+      <span><strong>{{.App}}</strong> <span class="muted">team {{if .Team}}{{.Team}}{{else}}unknown{{end}}{{if .Says}} · {{.Says}}{{end}}</span></span></label>
+    {{else}}{{if eq .Who "The new app"}}<span class="muted">No web app is in {{.Env}} yet.</span>{{else}}<span class="muted">No other web app in {{.Env}} is left to call.</span>{{end}}{{end}}
+  </div>
+  <span class="muted hint">{{.Who}} gets each one's address and a short-lived token only that app accepts; each one starts admitting it. Any other app is blocked. Web apps in {{.Env}} are offered; the <a href="/catalogue?env={{.Env}}">catalogue</a> shows each one's routes and each event's payload.</span>
+</div>
+<div class="field">
+  <span class="label">Events it receives</span>
+  <div class="choices small">
+    {{range .Events}}
+    <label class="choice"><input type="checkbox" name="subscribe" value="{{.Name}}" {{if index $.ChosenEvents .Name}}checked{{end}}>
+      <span><code>{{.Name}}</code> <span class="muted">from {{.App}}, team {{if .Team}}{{.Team}}{{else}}unknown{{end}}{{if .Says}} · {{.Says}}{{end}}</span></span></label>
+    {{else}}{{if eq .Who "The new app"}}<span class="muted">No app in {{.Env}} publishes an event yet.</span>{{else}}<span class="muted">No other app in {{.Env}} publishes an event it does not already receive.</span>{{end}}{{end}}
+  </div>
+  <span class="muted hint">{{.Who}} may read exactly these, from the oldest event still kept (seven days).</span>
+</div>
+{{end}}

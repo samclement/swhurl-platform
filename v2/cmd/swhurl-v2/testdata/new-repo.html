@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New app · swhurl</title>
+
+<link rel="preload" href="/static/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/console.css?v=92d0885d31c0">
+<script src="/static/htmx.min.js?v=92d0885d31c0" defer></script>
+<script src="/static/console.js?v=92d0885d31c0" defer></script>
+</head>
+<body>
+
+<svg class="sprite" width="0" height="0" aria-hidden="true">
+  <symbol id="i-pr" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+</svg>
+<header class="site">
+  <a class="brand" href="/">swhurl console</a>
+  <nav aria-label="Main">
+    <a href="/" class="">Overview</a>
+    <a href="/apps" class="here">Deployments</a>
+    <a href="/catalogue" class="">Catalogue</a>
+    <a href="/teams" class="">Teams</a>
+    <a href="/platform" class="">Platform</a>
+    <a href="/activity" class="">Activity</a>
+  </nav>
+  <span class="who">sam@swhurl.com</span>
+  <a class="button" href="/new"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> New app</a>
+</header>
+<main>
+
+
+<p class="page-meta">Read at 09:43 <a class="button quiet" href="/new" title="Read the cluster again"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh</a></p>
+
+<p class="crumbs"><a href="/apps">Deployments</a> › New app</p>
+<h1>New app</h1>
+<details class="about" id="about"><summary><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg> About this page</summary><p class="lead">The console creates the repository <code>samclement/&lt;name&gt;</code> from the stack's template, waits for its first image, then opens a pull request that adds it to staging. Nothing changes on the cluster until you merge that PR; after that, every push to the repository's <code>main</code> deploys to staging. <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#start-a-new-app">How it works</a></p></details>
+
+
+
+
+
+<form class="wizard cards" method="post" action="/new/repo">
+  
+  <section class="card">
+    <div class="card-head">
+      <h2><span class="step">1</span> What you are building</h2>
+      <p class="muted">The type sets everything the template includes, and who can reach the app at first. Each can change later.</p>
+    </div>
+    <div class="card-body rows">
+      <div class="field">
+        <span class="label">Type</span>
+        <div class="choices">
+          
+          <label class="choice"><input type="radio" name="type" value="web-app" data-exposure="authenticated-web" data-kind="web" checked>
+            <span><strong>Web app</strong><br><span class="muted">A site people use in a browser: a Vite+ page at / and its own API under /api. Its data belongs in an API it calls; its own SQLite keeps what only it uses.</span><br>
+              <span class="pill">TypeScript</span> 
+              <span class="pill ok">Browser frontend</span> <span class="pill ok">SQLite</span> <span class="pill ok">API description</span> <span class="pill ok">Events</span> <span class="pill ok">Feature flags</span> </span></label>
+          
+          <label class="choice"><input type="radio" name="type" value="api" data-exposure="private" data-kind="web" >
+            <span><strong>API</strong><br><span class="muted">Data and operations other apps call; private: browsers reach it through a web app.</span><br>
+              <span class="pill">TypeScript</span> <span class="pill">Kotlin</span> 
+              <span class="pill ok">SQLite</span> <span class="pill ok">API description</span> <span class="pill ok">Events</span> <span class="pill ok">Feature flags</span> </span></label>
+          
+          <label class="choice"><input type="radio" name="type" value="worker" data-exposure="private" data-kind="worker" >
+            <span><strong>Worker</strong><br><span class="muted">Reacts to events, or works in a steady loop; no web address.</span><br>
+              <span class="pill">TypeScript</span> <span class="pill">Kotlin</span> 
+              <span class="pill ok">Events</span> <span class="pill ok">Feature flags</span> </span></label>
+          
+        </div>
+        <span class="muted hint">What each includes: <strong>Browser frontend</strong> a page built with Vite+ that the app serves at /, calling its own /api; <strong>SQLite</strong> a database file the platform keeps on a volume and backs up nightly; <strong>API description</strong> an OpenAPI document of its routes, so other apps can find and call it; <strong>Events</strong> an AsyncAPI document of the events it publishes, with an example event; <strong>Feature flags</strong> an example feature flag, set per environment from the console.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2><span class="step">2</span> The app</h2>
+      <p class="muted">Its name, the stack it is built from and the team that owns it.</p>
+    </div>
+    <div class="card-body rows">
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" name="name" required pattern="[a-z]([a-z0-9-]{0,38}[a-z0-9])?" title="Lowercase letters, digits and hyphens; starts with a letter; at most 40 characters" value="" placeholder="weather-api">
+        <span class="muted hint">The repository <code>samclement/&lt;name&gt;</code> (it must not exist yet), the image and the namespace <code>&lt;name&gt;-staging</code>.</span>
+      </div>
+      <div class="field">
+        <span class="label">Stack</span>
+        <div class="choices">
+          
+          <label class="choice" data-types="web-app api worker"><input type="radio" name="stack" value="typescript" checked>
+            <span><strong>TypeScript</strong><br><span class="muted">Node 24 and TypeScript: starts in a second, about 60 MB of memory.</span></span></label>
+          
+          <label class="choice" data-types="api worker"><input type="radio" name="stack" value="kotlin" >
+            <span><strong>Kotlin</strong><br><span class="muted">Kotlin on Micronaut, Java 25 (a trimmed runtime, about 150 MB image): about 10 s to start, about 200 MB of memory.</span></span></label>
+          
+        </div>
+        <span class="muted hint">Templates: <a href="https://github.com/samclement/swhurl-app-template-typescript">samclement/swhurl-app-template-typescript</a>, <a href="https://github.com/samclement/swhurl-app-template-kotlin">samclement/swhurl-app-template-kotlin</a>.</span>
+      </div>
+      
+<div class="field">
+  <label for="description">Description</label>
+  <input id="description" name="description" value="" placeholder="What the app does">
+  <span class="muted hint">Optional. One line, for the repository, its README and its API description.</span>
+</div>
+
+      <div class="field">
+        <span class="label">Owning team</span>
+        <div class="choices">
+          
+          <label class="choice"><input type="radio" name="team" value="demo" required >
+            <span><strong>demo</strong> <span class="pill ok" title="The app's deployment and health messages also go to this team's channel">notification channel</span><br><span class="muted">Apps that show how to use the platform</span></span></label>
+          
+          <label class="choice"><input type="radio" name="team" value="payments" required >
+            <span><strong>payments</strong> <span class="pill ok" title="The app's deployment and health messages also go to this team's channel">notification channel</span><br><span class="muted">Orders and payments</span></span></label>
+          
+        </div>
+        <span class="muted hint">Choose one: there is no default. A label saying who owns the app: it groups and filters the Deployments list and map, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. Add a team or give one a notification channel on the <a href="/teams">Teams</a> page; an app's team changes later with the app page's <strong>Change team</strong>.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="reach">
+    <div class="card-head">
+      <h2><span class="step">3</span> Who can reach it</h2>
+      <p class="muted">Its web address in staging, and who may open it. An API is private: browsers reach it through a web app that calls it.</p>
+    </div>
+    <div class="card-body rows">
+      <div class="field">
+        <span class="label">Access</span>
+        <div class="choices">
+
+<label class="choice"><input type="radio" name="exposure" value="authenticated-web" checked>
+  <span><strong>Signed in</strong><br><span class="muted">A web address under homelab.swhurl.com, behind Google sign-in: only the accounts on the sign-in list.</span></span></label>
+
+<label class="choice"><input type="radio" name="exposure" value="private" >
+  <span><strong>Private</strong><br><span class="muted">No web address: only the apps granted a call to it can reach it. For APIs, workers and jobs.</span></span></label>
+
+</div>
+      </div>
+          </div>
+  </section>
+  <section class="card" id="worker-note" hidden>
+    <div class="card-head">
+      <h2><span class="step">3</span> Who can reach it</h2>
+      <p class="muted">A worker has no web address: it is private, and no other app can connect to it.</p>
+    </div>
+  </section>
+
+  <section class="card" id="connections" style="--acts: 1; --pitch: 9.5rem">
+    <div class="card-head">
+      <h2><span class="step">4</span> Connects to <span class="pill">optional</span></h2>
+      <p class="muted">The apps it calls and the events it receives. Change these later on the app's page. To publish events, edit the app's <code>asyncapi.yaml</code>.</p>
+      <details class="act" style="--slot: 0; --wide: 9rem" >
+        <summary class="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Connections</summary>
+        <div class="rows">
+          
+
+<div class="field">
+  <span class="label">Apps it calls</span>
+  <div class="choices small">
+    
+    <label class="choice"><input type="checkbox" name="calls" value="demo-orders" >
+      <span><strong>demo-orders</strong> <span class="muted">team demo</span></span></label>
+    
+    <label class="choice"><input type="checkbox" name="calls" value="demo-shop" >
+      <span><strong>demo-shop</strong> <span class="muted">team demo</span></span></label>
+    
+  </div>
+  <span class="muted hint">The new app gets each one's address and a short-lived token only that app accepts; each one starts admitting it. Any other app is blocked. Web apps in staging are offered; the <a href="/catalogue?env=staging">catalogue</a> shows each one's routes and each event's payload.</span>
+</div>
+<div class="field">
+  <span class="label">Events it receives</span>
+  <div class="choices small">
+    
+    <label class="choice"><input type="checkbox" name="subscribe" value="demo-orders.paid" >
+      <span><code>demo-orders.paid</code> <span class="muted">from demo-orders, team demo</span></span></label>
+    
+    <label class="choice"><input type="checkbox" name="subscribe" value="demo-shop.item-added" >
+      <span><code>demo-shop.item-added</code> <span class="muted">from demo-shop, team demo</span></span></label>
+    
+  </div>
+  <span class="muted hint">The new app may read exactly these, from the oldest event still kept (seven days).</span>
+</div>
+
+          <p class="muted">Choosing a call or a subscription also changes the other app, so the pull request waits for your review instead of merging itself.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="card" aria-live="polite">
+    <div class="card-head">
+      <h2>What happens</h2>
+      <p class="muted">About three minutes, shown step by step on the job page. Production comes later, with <strong>Promote to prod</strong>.</p>
+    </div>
+    <ol class="card-body steps">
+      <li><span>Repository</span>Creates the public repository <code id="s-repo">samclement/&lt;name&gt;</code> from the stack's template.</li>
+      <li><span>First build</span>Checks the app and publishes <code id="s-image">ghcr.io/samclement/&lt;name&gt;</code>.</li>
+      <li><span>Pull request</span>Adds <code id="s-instance">&lt;name&gt;/staging</code> here, set up from what the image itself declares and what you chose under <strong>Connects to</strong>: the apps it calls start admitting it, and it gets a key for its events. It waits for your review.</li>
+      <li><span>After you merge</span>Every push to the app's <code>main</code> deploys to staging.</li>
+    </ol>
+    <div class="card-body">
+      
+<div class="submit">
+  <button class="primary" ><svg class="icon" aria-hidden="true"><use href="#i-pr"/></svg> Create repository and open pull request</button>
+  <span class="muted">Creates a real public repository; nothing changes on the cluster until you merge the pull request.</span>
+</div>
+
+    </div>
+  </section>
+</form>
+
+
+<script>
+(() => {
+  const form = document.querySelector('form.wizard');
+  let exposureTouched = false;
+  form.querySelectorAll('input[name="exposure"]').forEach((input) => input.addEventListener('change', () => { exposureTouched = true; }));
+  const showType = () => {
+    const chosen = form.querySelector('input[name="type"]:checked');
+    if (!chosen) return;
+    form.querySelectorAll('label[data-types]').forEach((label) => {
+      const fits = label.dataset.types.split(' ').includes(chosen.value);
+      label.hidden = !fits;
+      if (!fits && label.querySelector('input').checked) {
+        const first = form.querySelector(`label[data-types~="${chosen.value}"] input`);
+        if (first) first.checked = true;
+      }
+    });
+    const worker = chosen.dataset.kind !== 'web';
+    document.getElementById('reach').hidden = worker;
+    document.getElementById('worker-note').hidden = !worker;
+    if (!exposureTouched) {
+      const fallback = form.querySelector(`input[name="exposure"][value="${chosen.dataset.exposure}"]`);
+      if (fallback) fallback.checked = true;
+    }
+  };
+  form.querySelectorAll('input[name="type"]').forEach((input) => input.addEventListener('change', showType));
+  showType();
+  const name = document.getElementById('name');
+  const owner = "samclement";
+  const update = () => {
+    const value = name.value.trim() || '<name>';
+    document.getElementById('s-repo').textContent = `${owner}/${value}`;
+    document.getElementById('s-image').textContent = `ghcr.io/${owner}/${value}`;
+    document.getElementById('s-instance').textContent = `${value}/staging`;
+  };
+  name.addEventListener('input', update);
+  update();
+})();
+</script>
+
+</main>
+<dialog id="confirm"><p></p><div class="toolbar"><button type="button" value="no">Cancel</button><button type="button" class="danger" value="yes">Continue</button></div></dialog>
+</body>
+</html>

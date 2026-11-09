@@ -1,0 +1,26 @@
+{{define "title"}}{{.Label}}{{end}}
+{{define "head"}}<meta http-equiv="refresh" content="10">{{end}}
+{{define "main"}}
+<p class="crumbs"><a href="/apps">Deployments</a> › {{.App}}</p>
+<h1>{{.Label}}</h1>
+{{if .Removing}}
+<p class="verdict">{{template "mark" "updating"}} <strong>Removing</strong></p>
+<p class="lead">Removed from Git; removing live resources until cleanup finishes. This page refreshes every 10 seconds.</p>
+{{else}}
+<p class="verdict">{{template "mark" "updating"}} <strong>{{if .InGit}}Deployment pending{{else}}Not created yet{{end}}</strong> <span class="muted">— {{if .InGit}}waiting for Flux to apply Git{{else}}waiting for its pull request{{end}}</span></p>
+<p class="lead">The app appears once its pull request is merged and Flux applies it. Eligible PRs merge automatically after checks; setup and held PRs need review. If it is already in Git, check its Flux unit for deployment progress. It refreshes every 10 seconds.</p>
+{{end}}
+{{if .PRs}}
+<h2>Pull request</h2>
+<ul class="items">
+  {{range .PRs}}<li><a href="{{.URL}}">#{{.Number}} {{.Title}}</a> <span class="muted">{{template "merging" .Merging}}</span> <a href="{{.ChecksURL}}">{{template "checks" .Checks}}</a> <span class="muted">opened {{.Opened}}</span></li>{{end}}
+</ul>
+{{else if .PRsError}}<p class="muted">{{.PRsError}}</p>{{end}}
+{{if .Jobs}}
+<h2>Jobs</h2>
+<ul class="items">
+  {{range .Jobs}}<li>{{template "mark" (jobMark .State)}} <a href="/jobs/{{.ID}}">#{{.ID}} {{.Action}}</a> <span class="muted">{{.State}}{{if eq .State "failed"}}: its output says why{{else if eq .State "interrupted"}}: the console restarted; its page offers to finish it{{end}}</span>{{if .Link}} · <a href="{{.Link}}">pull request</a>{{end}}</li>{{end}}
+</ul>
+{{end}}
+<p><a href="/activity">All activity</a></p>
+{{end}}

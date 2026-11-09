@@ -17,3 +17,11 @@
   <span class="muted">{{.Note}}</span>
 </div>
 {{end}}
+
+{{/* Who can reach an app: the described choices, one checked, the marked one noted as "(now)" or "(default)". */}}
+{{define "exposureChoices"}}
+{{range .Choices}}
+<label class="choice"><input type="radio" name="exposure" value="{{.Value}}" {{if eq .Value $.Marked}}checked{{end}}>
+  <span><strong>{{.Title}}</strong>{{if eq .Value $.Marked}}{{if $.Mark}} <span class="muted">({{$.Mark}})</span>{{end}}{{end}}<br><span class="muted">{{.Text}}</span></span></label>
+{{end}}
+{{end}}

@@ -112,6 +112,30 @@ func (r ConnectionRow) Direction() string {
 	return "out"
 }
 
+// Name is the connection as a form names it: the app's event when it has both, else whichever it has.
+func (r ConnectionRow) Name() string {
+	if r.App != "" && r.Event != "" {
+		return r.App + "." + r.Event
+	}
+	if r.App != "" {
+		return r.App
+	}
+	return r.Event
+}
+
+// Verb is what removing the connection would stop, in the words its confirmation uses.
+func (r ConnectionRow) Verb() string {
+	switch r.Role {
+	case "calls":
+		return "calls"
+	case "subscribes":
+		return "receives"
+	case "reaches":
+		return "reaches"
+	}
+	return "publishes"
+}
+
 // What is what happens over the connection, in words, with a waiting or refused reason.
 func (r ConnectionRow) What() string {
 	what := map[string]string{"calls": "its API", "called-by": "calls this app", "publishes": "publishes",
@@ -303,6 +327,17 @@ func (r AppRow) Image() string {
 		return ""
 	}
 	return r.Inventory.Artifact.Image
+}
+
+// ImageReference is its image at the digest its records state, or the image alone when no digest is known.
+func (r AppRow) ImageReference() string {
+	if r.Inventory == nil {
+		return ""
+	}
+	if r.Inventory.Artifact.Digest == "" {
+		return r.Inventory.Artifact.Image
+	}
+	return r.Inventory.Artifact.Image + "@" + r.Inventory.Artifact.Digest
 }
 
 // Digest is the digest that identifies its image.

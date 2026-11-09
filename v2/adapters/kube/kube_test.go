@@ -719,6 +719,8 @@ func TestRefOfStatesTheVersion(t *testing.T) {
 		{"image.toolkit.fluxcd.io", "ImagePolicy", "image.toolkit.fluxcd.io/v1"},
 		{"notification.toolkit.fluxcd.io", "Receiver", "notification.toolkit.fluxcd.io/v1"},
 		{"source.toolkit.fluxcd.io", "GitRepository", "source.toolkit.fluxcd.io/v1"},
+		{"source.toolkit.fluxcd.io", "OCIRepository", "source.toolkit.fluxcd.io/v1"},
+		{"source.toolkit.fluxcd.io", "Bucket", "source.toolkit.fluxcd.io/v1"},
 		{"jetstream.nats.io", "Stream", "jetstream.nats.io/v1beta2"},
 		{"jetstream.nats.io", "Consumer", "jetstream.nats.io/v1beta2"},
 	} {

@@ -2155,8 +2155,9 @@ each has its own gate. They land in this order because the first three change no
    called through `console/v2.py` exactly as `edit` and `promote` are today, so the deployed console opens real pull
    requests through Go while Python still serves the pages; `proposal.py`, `repos.py`'s publication and
    `changes.py`'s GitHub parts are deleted. Two landings: the publish path first ([§24](#24-the-publish-path-in-go-step-2a-proposed-9-november-2026)),
-   its gate a real pull request; then `swhurl-v2 flux` with the job lifecycle below, so publication is proven live
-   before jobs touch it. Both commands of steps 2 and 3 read their tokens from the environment,
+   its gate a real pull request; then `swhurl-v2 unit` with the job lifecycle below, so publication is proven live
+   before jobs touch it ([§25](#25-the-flux-unit-actions-in-go-step-2b-proposed-9-november-2026); the command is `unit`,
+   because the guardrail forbids a non-adapter naming the `flux` command). Both commands of steps 2 and 3 read their tokens from the environment,
    as `flags` reads `NATS_SEED`, and print their lines with the pull request URL last, so the console streams and
    records what it streams today.
 3. **New app** — `swhurl-v2 app-repo` and `adapters/copier`, again called through `console/v2.py`, so
@@ -2283,7 +2284,8 @@ second copy.
 change that alters one of them is refused with `already_set` by the edit of the other — connecting an event without
 changing the calls has never worked. The delta above is what makes the omission possible.
 
-**Not in this slice.** The Flux actions and their polling (step 2b), the job lifecycle and its records (2b), `app-repo`
+**Not in this slice.** The Flux actions and their polling (step 2b, [§25](#25-the-flux-unit-actions-in-go-step-2b-proposed-9-november-2026)), the job
+lifecycle's live reader (also 2b, which ports it and leaves it to the cutover), `app-repo`
 and repository creation (step 3, which the write port's `Repository` and `Hook` are named for but does not use yet), the
 cutover (step 4), and any change to what a promotion means, to the rule that a person merges every pull request, or to
 the tokens and their scopes.
@@ -2300,3 +2302,93 @@ publication cases become relay cases and `tests/test_console.py` keeps asserting
 `make check-repo`, `make check-docs`. Live: a scale on a throwaway app from the deployed console, its pull request's
 body, author and merge plan compared field by field with one the console opened before this slice, and a promotion
 refused while its own change is unapplied ([current state](current-state.md)).
+
+## 25. The Flux unit actions in Go: step 2b (proposed 9 November 2026)
+
+**Decision.** `swhurl-v2 unit --action reconcile|suspend|resume --unit NAME` makes one of the console's three cluster
+changes: it reads the Kustomization, refuses the two root units and a reconcile of a suspended one, patches or annotates
+through the kube write port, and waits until Flux reports the request handled. `console/actions.py`'s `Flux` class and its
+`kubectl get/annotate/patch` are deleted and the three POSTs relay the command, as §24 made `proposal.py` relay
+`swhurl-v2 change`. The job lifecycle is ported beside it and **not yet wired**: a Go process runs no job until the
+cutover, so its records, drain, resume and stream arrive with step 4, where they have a live reader (§below).
+
+**Semantics: one action, three changes.** An action names a unit, which is a Kustomization in `flux-system`, and one of:
+
+- **reconcile** reads the unit first, because both refusals are facts of the unit rather than of the request: a
+  suspended unit is refused in the console's words (`<unit> is suspended; resume it instead (resume also reconciles)`)
+  and a unit whose `sourceRef` names no source this action can request in its (`<unit> has an unsupported source kind
+  'None'`); then it requests the source and, once that is handled, the unit, because the unit applies what the source
+  fetched.
+- **suspend** sets `spec.suspend: true` and stops there: Flux stops applying Git, nothing is reconciled, and the job is
+  done when the patch is accepted.
+- **resume** sets `spec.suspend: false` and then requests the unit: a resume that did not reconcile would leave the
+  cluster behind the Git the suspension missed.
+
+A source is the object the unit's `sourceRef` names — `GitRepository`, `OCIRepository` or `Bucket` — in the unit's own
+namespace, which is `flux-system`, unless the reference names one.
+
+**Semantics: what "handled" means.** A request is the `reconcile.fluxcd.io/requestedAt` annotation set to the action's
+own clock in UTC, and it is handled when the object's `status.lastHandledReconcileAt` equals that token **and**
+`status.observedGeneration` equals `metadata.generation`: the second clause is what keeps "handled" from meaning an
+earlier request that happened to leave the same token, or a request made before a spec change Flux has not seen. Handled
+and `Ready=True` is success, reported from the object's own status (`✔ applied revision …` for a unit, `✔ fetched
+revision …` for a source). Handled and `Ready=False` is a failure carrying the controller's message, because that is the
+sentence that says what is wrong. Not handled within 10 minutes fails with `timed out after 10m waiting for …; it may
+still finish (check the unit page)`, polling every 2 seconds, as the console's `TIMEOUT` and `POLL` did. A read that is
+refused, absent or malformed fails the action rather than waiting for a timeout, and a refused action makes no write: the
+root units and a suspended reconcile are refused before the first patch.
+
+**Contract: the command.** `swhurl-v2 unit --action ACTION --unit NAME (--in-cluster | --kubeconfig FILE)`: exactly one
+credential, the action and the unit, or exit 2 with the command's usage. Lines go to standard output as they happen, in
+the console's words, so a job page and its tests read what they read today:
+
+    ► suspending Kustomization gw                ► annotating GitRepository flux-system in flux-system namespace
+    ✔ Kustomization gw suspended                 ◎ waiting for GitRepository reconciliation
+                                                 ✔ fetched revision main@1edf370
+
+A refusal is one line on standard error and exit 2, as every other v2 command answers one. There is no `--dry-run`: the
+console's own runner is never a dry run, so the branch Python had for it was unreachable code.
+
+**Contract: the ports.** The action reads and writes through `kube.Reader` and `kube.Writer` — the ports §25's
+predecessors built — so it starts no process and names no CLI. Reading a unit, a source and a unit's status are
+`Reader.Read` of one object; a patch and an annotation are `Writer.Patch` of a merge patch. The kinds table gains
+`OCIRepository` and `Bucket` (they existed in the console's `SOURCES`), so a unit that applies an OCI artifact or a
+bucket is reconciled as it always was. The job lifecycle's store port gains one write: `Data.SetConfigMapKeys` sets and
+deletes several keys in **one** merge patch, because its record cleanup forgets old jobs while it writes a new one and a
+second pod must not lose both changes; `SetConfigMapKey` is that call with one key.
+
+**The job lifecycle, ported and unwired.** `orchestration.Jobs` is the console's job registry in Go: one running job per
+target, `running`/`succeeded`/`failed`/`interrupted`, a job's lines as its record, the newest 30 kept front-trimmed to
+20 kB, each line redacted and capped at 1,000 characters, every state change one `[AUDIT]` line, a returning pod calling
+another pod's unfinished job interrupted, and a stopping pod draining its jobs. Its record JSON keys are
+`jobstore.py`'s, so a page and a reader cannot disagree about what a record says. It has no caller until the cutover:
+the console's running jobs are still Python's, and nothing in this slice writes a record. `swhurl-v2 console`'s job-event
+route now streams a job this server runs, and answers 404 while no command gives it a registry — which is what it
+answers today.
+
+**Deliberate changes.**
+
+1. **A missing unit says so plainly.** Python asked `kubectl` for the unit and showed its NotFound text (`Error from
+   server (NotFound): kustomizations… not found`); the Go command reads it and refuses with `no Kustomization named
+   '<unit>'`, which is what the console's own unit page calls a missing unit.
+2. **The command is `unit`, not the plan's `flux`.** The guardrail forbids v2 code outside an adapter from naming the
+   `flux` or `kubectl` command, and a command name is the first place it would appear.
+3. **The job lifecycle's Python stays, whole.** `jobs.py`, `jobstore.py` and the console's job pages are untouched: this
+   slice changes what a job runs, not what a job is.
+
+**Not in this slice.** The ConfigMap body of the job store, the server's job pages and its stream's one live registry, and
+the drain a pod's SIGTERM runs — step 4's, once `swhurl-v2 console` runs a job itself. Also unchanged: the console's forms
+and its pre-checks, `app-repo` and New app (step 3), the cutover, and the tokens and RBAC.
+
+**Verification.** `orchestration`'s tests with a fake cluster: reconcile annotates the source before the unit and never
+the reverse, a handled-but-failing request carries the controller's message, a timeout after 10 minutes' worth of polls,
+a suspended reconcile and both root units refused with no write, suspend and resume each patch one field, an unsupported
+source kind and a missing unit refused, and an unknown action refused; `adapters/kube`'s contract test for the one
+multi-key patch (set and null-delete in one request, an invalid key refused before any request) and for the two kinds it
+gained; `cmd`'s test that reconcile over a scripted API server makes exactly the reads and patches in that order and
+prints the lines, that a root unit makes no request, and that a wrong credential or action is exit 2; the console's relay
+cases (the argv with one credential, the lines kept, a refusal as v2's last line, `--dev` naming a kubeconfig and never
+`--in-cluster`); `make check-v2` with `Layers` and `api.txt` updated in the same change, `make check`, `make test`,
+`make check-docs`. Live: suspend, resume and reconcile a throwaway app's unit from the deployed console, the job page's
+lines and the unit page's state compared with the same action run by Python before this slice, then `make
+verify-platform` ([current state](current-state.md)).

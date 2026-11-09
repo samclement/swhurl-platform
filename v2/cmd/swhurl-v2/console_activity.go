@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -134,10 +137,110 @@ func (s *consoleServer) readJob(ctx context.Context, jobs []pages.Job, id int, r
 
 // jobEvents streams a job's output as this server runs it. This server runs no job yet, so every job is another
 // pod's record and has no stream here: its page re-reads itself instead.
+// liveJobs is the registry of the jobs this server runs: the one a job page's stream re-reads.
+type liveJobs interface {
+	Get(ctx context.Context, id int) (pages.Job, bool)
+}
+
+// consoleEvents is how a job's event stream is paced: how often it re-reads the job, and how long it waits before a
+// keep-alive, so a connection a proxy would cut stays open.
+type consoleEvents struct{ poll, keepAlive time.Duration }
+
+// jobEvents follows a running job as its output arrives, and closes with how it ended. Another pod's job is 404: its
+// page re-reads itself, from the pod that answers.
 func (s *consoleServer) jobEvents(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusNotFound)
-	w.Write([]byte("No such job here.\n"))
+	job, found := s.liveJob(r)
+	if !found {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("No such job here.\n"))
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "refused: streaming is unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	s.streamJob(w, r, flusher, job)
+}
+
+// liveJob is the job one stream is for, when this server runs it: a job of our own, not a record read back.
+func (s *consoleServer) liveJob(r *http.Request) (pages.Job, bool) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil || s.live == nil {
+		return pages.Job{}, false
+	}
+	job, found := s.live.Get(r.Context(), id)
+	return job, found && job.Live
+}
+
+// streamJob sends each line the job has not sent yet, a keep-alive while there is nothing to send, and a done event
+// once it has ended. The browser resumes from its Last-Event-ID, or from the page's own after.
+func (s *consoleServer) streamJob(w http.ResponseWriter, r *http.Request, flusher http.Flusher, job pages.Job) {
+	sent := streamFrom(r, len(job.Lines))
+	idle := s.now()
+	ticker := time.NewTicker(s.events.poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+		}
+		current, found := s.live.Get(r.Context(), job.ID)
+		if !found {
+			return
+		}
+		for sent < len(current.Lines) {
+			sent++
+			writeLine(w, sent, current.Lines[sent-1])
+			idle = s.now()
+		}
+		if !current.Running() {
+			writeDone(w, current)
+			flusher.Flush()
+			return
+		}
+		if s.now().Sub(idle) >= s.events.keepAlive {
+			fmt.Fprint(w, ": keep-alive\n\n")
+			idle = s.now()
+		}
+		flusher.Flush()
+	}
+}
+
+// streamFrom is where one stream resumes: the browser's Last-Event-ID, else the page's own after, never more than the
+// job has written.
+func streamFrom(r *http.Request, total int) int {
+	raw := r.Header.Get("Last-Event-ID")
+	if raw == "" {
+		raw = r.URL.Query().Get("after")
+	}
+	sent, err := strconv.Atoi(raw)
+	if err != nil {
+		sent = 0
+	}
+	return min(max(sent, 0), total)
+}
+
+// writeLine is one job line, its commit ids shortened as the page shortens them.
+func writeLine(w io.Writer, id int, text string) {
+	body, _ := json.Marshal(map[string]string{"html": string(shortValue(text))})
+	fmt.Fprintf(w, "id: %d\nevent: line\ndata: %s\n\n", id, body)
+}
+
+// writeDone is how the job ended, and the link it opened if it opened one.
+func writeDone(w io.Writer, job pages.Job) {
+	finished := ""
+	if job.Finished != nil {
+		finished = job.Finished.Format("15:04:05")
+	}
+	body, _ := json.Marshal(map[string]string{"state": job.State, "finished": finished, "link": job.Link})
+	fmt.Fprintf(w, "event: done\ndata: %s\n\n", body)
 }
 
 // resumable is whether a new-app job ended without its pull request, with nothing since taking its place.

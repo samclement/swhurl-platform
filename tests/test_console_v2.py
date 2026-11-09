@@ -15,7 +15,7 @@ from test_console import WHO, client, fake, release, unit
 
 from swhurl.console import actions, changes, proposal, v2
 from swhurl.console import github as gh
-from swhurl.run import FakeRunner, Result
+from swhurl.run import CommandError, FakeRunner, Result
 
 ORIGIN = {**WHO, 'Origin': 'http://testserver'}
 
@@ -447,3 +447,32 @@ class GHTransport:
         if key == 'GET /pulls':
             return httpx.Response(200, json=[])
         return httpx.Response(404, json={'message': 'Not Found'})
+
+
+class UnitActionTests(unittest.TestCase):
+    """A Flux unit action is one ``swhurl-v2 unit`` run in the pod: the console names the credential and keeps the
+    lines, and a refusal is v2's own last line with the command that printed it."""
+
+    def test_a_unit_action_is_one_command_with_one_credential(self):
+        runner = FakeRunner().on('swhurl-v2', 'unit', stdout='► annotating Kustomization gw in flux-system namespace\n'
+                                                            '✔ applied revision main@1edf370\n')
+        lines = list(v2.unit(runner, 'reconcile', 'gw', in_cluster=True))
+        self.assertEqual(runner.calls, [('swhurl-v2', 'unit', '--action', 'reconcile', '--unit', 'gw', '--in-cluster')])
+        self.assertEqual(lines, ['► annotating Kustomization gw in flux-system namespace',
+                                 '✔ applied revision main@1edf370'])
+
+    def test_a_refusal_is_v2s_last_line_and_its_exit(self):
+        runner = FakeRunner().on('swhurl-v2', 'unit', returncode=2,
+                                 stderr='gw is suspended; resume it instead (resume also reconciles)')
+        with self.assertRaises(CommandError) as raised:
+            list(v2.unit(runner, 'reconcile', 'gw', in_cluster=True))
+        self.assertIn('gw is suspended; resume it instead (resume also reconciles)', str(raised.exception))
+        self.assertIn('exited 2', str(raised.exception))
+
+    def test_dev_names_the_hosts_kubeconfig_and_never_in_cluster(self):
+        runner = FakeRunner().on('kubectl', 'config', 'view', stdout='{"kind":"Config"}').on('swhurl-v2', 'unit')
+        list(v2.unit(runner, 'suspend', 'gw', in_cluster=False))
+        argv = runner.calls[1]
+        self.assertEqual(argv[:6], ('swhurl-v2', 'unit', '--action', 'suspend', '--unit', 'gw'))
+        self.assertIn('--kubeconfig', argv)
+        self.assertNotIn('--in-cluster', argv)

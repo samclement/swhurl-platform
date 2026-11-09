@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -202,5 +203,151 @@ func TestResumable(t *testing.T) {
 	}
 	if resumable(jobs[3], jobs) {
 		t.Fatal("only a new app's job is finished")
+	}
+}
+
+// scriptedJobs is a registry of one job: it answers the job until the script says to answer what came after it.
+type scriptedJobs struct {
+	job       pages.Job
+	remaining int
+	then      pages.Job
+}
+
+func (s *scriptedJobs) Get(_ context.Context, id int) (pages.Job, bool) {
+	if id != s.job.ID {
+		return pages.Job{}, false
+	}
+	if s.remaining > 0 {
+		s.remaining--
+		return s.job, true
+	}
+	return s.then, true
+}
+
+// eventsServer is the job-event route over a registry of one job, paced as fast as a test needs.
+func eventsServer(t *testing.T, live liveJobs, keepAlive time.Duration) http.Handler {
+	t.Helper()
+	server, _ := activityServer(t)
+	server.live = live
+	server.events = consoleEvents{poll: time.Millisecond, keepAlive: keepAlive}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jobs/{id}/events", server.jobEvents)
+	return server.identityMiddleware(mux)
+}
+
+// eventsGet is one request to the job-event route as a signed-in browser makes it.
+func eventsGet(handler http.Handler, path string, headers map[string]string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set(identityHeader, "sam@swhurl.com")
+	for name, value := range headers {
+		request.Header.Set(name, value)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	return recorder
+}
+
+// eventData is every data event of one kind in a stream, decoded as the browser decodes it.
+func eventData(t *testing.T, body, event string) []map[string]any {
+	t.Helper()
+	var found []map[string]any
+	for _, block := range strings.Split(body, "\n\n") {
+		if !strings.Contains(block, "event: "+event+"\n") {
+			continue
+		}
+		raw := block[strings.Index(block, "data: ")+len("data: "):]
+		var decoded map[string]any
+		if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+			t.Fatalf("event %q in %q: %v", event, body, err)
+		}
+		found = append(found, decoded)
+	}
+	return found
+}
+
+// A finished job's stream is its lines, their commit ids shortened as the page shortens them, then how it ended.
+func TestJobEventsStreamALiveJobsLines(t *testing.T) {
+	finished := activityNow
+	job := pages.Job{ID: 7, Action: "reconcile", Unit: "gw", Identity: "sam@swhurl.com", Started: activityNow,
+		State: "succeeded", Finished: &finished, Link: "https://github.com/owner/repo/pull/42", Live: true,
+		Lines: []string{"a", "<b>", "applied main@sha1:" + strings.Repeat("1edf3705", 5)}}
+	handler := eventsServer(t, &scriptedJobs{job: job, then: job}, 0)
+	response := eventsGet(handler, "/jobs/7/events", nil)
+	if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/event-stream") ||
+		response.Header().Get("X-Accel-Buffering") != "no" {
+		t.Fatalf("%d %v", response.Code, response.Header())
+	}
+	body := response.Body.String()
+	lines := eventData(t, body, "line")
+	if len(lines) != 3 || lines[0]["html"] != "a" || lines[1]["html"] != "&lt;b&gt;" ||
+		!strings.Contains(lines[2]["html"].(string), `<span class="hash" title="1edf3705`) {
+		t.Fatalf("lines %v", lines)
+	}
+	done := eventData(t, body, "done")
+	if len(done) != 1 || done[0]["state"] != "succeeded" || done[0]["link"] != "https://github.com/owner/repo/pull/42" ||
+		done[0]["finished"] != "09:43:00" {
+		t.Fatalf("done %v", done)
+	}
+}
+
+// A stream resumes from the browser's Last-Event-ID or the page's after, never beyond the job's lines.
+func TestJobEventsResumeFromTheBrowser(t *testing.T) {
+	finished := activityNow
+	job := pages.Job{ID: 7, Action: "reconcile", Unit: "gw", Identity: "x", Started: activityNow, State: "succeeded",
+		Finished: &finished, Live: true, Lines: []string{"first", "second"}}
+	handler := eventsServer(t, &scriptedJobs{job: job, then: job}, 0)
+	for _, c := range []struct {
+		name, path string
+		headers    map[string]string
+		sent       []string
+	}{
+		{"after", "/jobs/7/events?after=1", nil, []string{"second"}},
+		{"last event id", "/jobs/7/events?after=0", map[string]string{"Last-Event-ID": "1"}, []string{"second"}},
+		{"a bad header is the start", "/jobs/7/events?after=1", map[string]string{"Last-Event-ID": "x"}, []string{"first", "second"}},
+		{"a negative after is the start", "/jobs/7/events?after=-5", nil, []string{"first", "second"}},
+		{"beyond the end is the end", "/jobs/7/events?after=99", nil, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			body := eventsGet(handler, c.path, c.headers).Body.String()
+			lines := eventData(t, body, "line")
+			if len(lines) != len(c.sent) {
+				t.Fatalf("%d lines, want %d: %q", len(lines), len(c.sent), body)
+			}
+			for i, want := range c.sent {
+				if lines[i]["html"] != want {
+					t.Fatalf("line %d is %v, want %q", i, lines[i]["html"], want)
+				}
+			}
+			if len(eventData(t, body, "done")) != 1 {
+				t.Fatalf("stream %q never ended", body)
+			}
+		})
+	}
+}
+
+// A running job with nothing new to say is kept alive, and the stream ends when the job does.
+func TestJobEventsKeepARunningJobAlive(t *testing.T) {
+	finished := activityNow
+	running := pages.Job{ID: 7, Action: "reconcile", Unit: "gw", Identity: "x", Started: activityNow, State: "running",
+		Live: true, Lines: []string{"working"}}
+	ended := running
+	ended.State, ended.Finished = "succeeded", &finished
+	handler := eventsServer(t, &scriptedJobs{job: running, remaining: 2, then: ended}, 0)
+	body := eventsGet(handler, "/jobs/7/events", nil).Body.String()
+	if !strings.Contains(body, ": keep-alive") || len(eventData(t, body, "done")) != 1 {
+		t.Fatalf("stream %q", body)
+	}
+	if lines := eventData(t, body, "line"); len(lines) != 1 || lines[0]["html"] != "working" {
+		t.Fatalf("a line was sent twice: %q", body)
+	}
+}
+
+// A record read back is not a job this server runs: its page re-reads itself, so its stream is 404.
+func TestJobEventsAreNotAStoredRecord(t *testing.T) {
+	stored := pages.Job{ID: 9, Action: "reconcile", Unit: "gw", Identity: "x", Started: activityNow,
+		State: "succeeded", Lines: []string{"old"}}
+	response := eventsGet(eventsServer(t, &scriptedJobs{job: stored, then: stored}, 0), "/jobs/9/events", nil)
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), "No such job here.") {
+		t.Fatalf("%d %q", response.Code, response.Body.String())
 	}
 }

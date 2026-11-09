@@ -88,27 +88,57 @@ func (f *Fake) GetSecret(_ context.Context, namespace, name string) (*kube.Secre
 }
 
 // SetConfigMapKey sets the key of a ConfigMap the fake holds; one it does not hold is not found, as a patch of it is.
-func (f *Fake) SetConfigMapKey(_ context.Context, namespace, name, key, value, fieldManager string) error {
+func (f *Fake) SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error {
+	return f.SetConfigMapKeys(ctx, namespace, name, map[string]*string{key: &value}, fieldManager)
+}
+
+// SetConfigMapKeys sets and deletes the keys of a ConfigMap the fake holds, as the adapter's one merge patch does.
+func (f *Fake) SetConfigMapKeys(_ context.Context, namespace, name string, keys map[string]*string, fieldManager string) error {
 	f.Calls = append(f.Calls, "set "+name)
-	if !namePattern.MatchString(namespace) || !namePattern.MatchString(name) || !keyPattern.MatchString(key) {
-		return &kube.Error{Code: kube.RefusedRequest, Subject: "configmap", Reason: "invalid_name"}
-	}
-	if fieldManager == "" || len(fieldManager) > 128 {
-		return &kube.Error{Code: kube.RefusedRequest, Subject: "configmap", Reason: "field_manager_required"}
+	if err := setKeysProblem(namespace, name, keys, fieldManager); err != nil {
+		return err
 	}
 	if err := f.failing("set " + name); err != nil {
 		return err
 	}
-	for i, configMap := range f.ConfigMapData[namespace] {
-		if configMap.Name == name {
-			data := maps.Clone(configMap.Data)
-			if data == nil {
-				data = map[string]string{}
-			}
-			data[key] = value
-			f.ConfigMapData[namespace][i].Data = data
-			return nil
+	return f.setKeys(namespace, name, keys)
+}
+
+// setKeysProblem is what a key set refuses before any request, as the adapter does.
+func setKeysProblem(namespace, name string, keys map[string]*string, fieldManager string) error {
+	if !namePattern.MatchString(namespace) || !namePattern.MatchString(name) {
+		return &kube.Error{Code: kube.RefusedRequest, Subject: "configmap", Reason: "invalid_name"}
+	}
+	for key := range keys {
+		if !keyPattern.MatchString(key) {
+			return &kube.Error{Code: kube.RefusedRequest, Subject: "configmap", Reason: "invalid_name"}
 		}
+	}
+	if fieldManager == "" || len(fieldManager) > 128 {
+		return &kube.Error{Code: kube.RefusedRequest, Subject: "configmap", Reason: "field_manager_required"}
+	}
+	return nil
+}
+
+// setKeys applies one key set to the ConfigMap the fake holds; one it does not hold is not found.
+func (f *Fake) setKeys(namespace, name string, keys map[string]*string) error {
+	for i, configMap := range f.ConfigMapData[namespace] {
+		if configMap.Name != name {
+			continue
+		}
+		data := maps.Clone(configMap.Data)
+		if data == nil {
+			data = map[string]string{}
+		}
+		for key, value := range keys {
+			if value == nil {
+				delete(data, key)
+				continue
+			}
+			data[key] = *value
+		}
+		f.ConfigMapData[namespace][i].Data = data
+		return nil
 	}
 	return &kube.Error{Code: kube.Failed, Subject: "configmap", Reason: observe.ReasonNotFound}
 }

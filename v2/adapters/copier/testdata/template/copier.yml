@@ -2,3 +2,4 @@ app_name:
   type: str
 description:
   type: str
+  default: A swhurl app

@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: §24 step 2a: the console's relay to `swhurl-v2 change`, the Python publication it deletes, and a real pull request from the deployed console
+Gate: §24 step 2b: the Flux actions and the job lifecycle
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -62,7 +62,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Broker identity minting | done | [record](current-state.md#v2-minted-a-broker-identity-for-both-keyless-instances-29-october-2026) |
 | Image automation and deploy | done | [record](current-state.md#the-first-image-delivered-by-v2-30-october-2026) |
 | Create | done | [record](current-state.md#a-new-app-created-from-its-own-image-live-1-november-2026) |
-| The publish path in Go (`swhurl-v2 change`): one kind table, the pinned tree, the owned paths, the five GitHub writes and the pull request's words | partial | [contract](iteration-2-plan.md#24-the-publish-path-in-go-step-2a-proposed-9-november-2026) — the deployed console relays every change to it and its Python publication is deleted; the command's tests cover each kind offline against a tarball of one instance's records and the real disk, and a scale from the deployed console is the live gate |
+| The publish path in Go (`swhurl-v2 change`): one kind table, the pinned tree, the owned paths, the five GitHub writes and the pull request's words | done | [contract](iteration-2-plan.md#24-the-publish-path-in-go-step-2a-proposed-9-november-2026), [record](current-state.md#the-console-relays-every-change-to-swhurl-v2-change-9-november-2026) — the deployed console relays every change to it and its Python publication is deleted; a scale from the deployed console opened a real pull request whose body, author, commit and files match the one the Python console opened |
 | Console writes v2's records | done | [record](current-state.md#the-consoles-new-app-is-v2s-live-1-november-2026) |
 | Interface catalogue: templates and v2's tree | done | [record](current-state.md#the-interface-catalogue-checks-the-templates-and-v2s-tree-2-november-2026) |
 | Egress grants an instance declares (`edit --set egress=`, rendered to the proxy) | done | [record](current-state.md#an-instances-egress-grants-are-its-records-8-november-2026) |

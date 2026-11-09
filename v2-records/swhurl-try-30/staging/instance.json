@@ -4,7 +4,7 @@
   "environment": "staging",
   "release": "rel-sha256:ecf742bd7d8cb638f1a646a992e7fe09d1edceee13e651a98e9a00976dbc6eb6",
   "configuration": {
-    "replicas": 1,
+    "replicas": 2,
     "memoryMiB": 128
   },
   "grants": {

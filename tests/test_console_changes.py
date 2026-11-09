@@ -6,7 +6,6 @@ import json
 import tarfile
 import tempfile
 import unittest
-import urllib.error
 from pathlib import Path
 
 import httpx
@@ -14,9 +13,9 @@ import yaml
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import calling, channels, repo
+from swhurl.apps import calling, channels
 from swhurl.apps.model import write as model_sync
-from swhurl.console import actions, cluster, proposal, server
+from swhurl.console import actions, cluster, proposal, repos, server
 from swhurl.console import github as gh
 from swhurl.run import FakeRunner, Result
 
@@ -188,8 +187,8 @@ CHANGE_OUTPUT = ('Downloading samclement/swhurl-platform main (abc1234)\n'
 
 
 def app_under_test(runner, **kwargs):
-    """The console app, its template questions read from COPIER_YML: no test here reaches GitHub."""
-    kwargs.setdefault('repo_opener', ghcr_opener)
+    """The console app, the declaration a repository would serve given inline: no test here reaches GitHub."""
+    kwargs.setdefault('repo_opener', lambda request: b'version: 1\nkind: worker\nstack: typescript\n')
     return server.create_app(runner, **kwargs)
 
 
@@ -204,7 +203,9 @@ class NewAppRouteTests(unittest.TestCase):
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         self.api = FakeGitHub()
         github = self.api.github if github else None
-        return TestClient(app_under_test(runner, jobs=jobs, github=github)), jobs
+        return TestClient(app_under_test(runner, jobs=jobs, github=github,
+                                         app_repos=repos.AppReposToken('github_pat_app_repos_fixture_0123',
+                                                                       image_webhook_token='fixture-image-webhook-token'))), jobs
 
     def test_the_page_offers_the_form_and_asks_for_no_host(self):
         runner = tree_fake()
@@ -227,6 +228,28 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertIn('Both GitHub tokens must be configured', response.text)
         self.assertIsNone(jobs.get(1))
         self.assertEqual(self.api.requests, [])
+
+    def test_the_form_creates_the_repository_and_opens_staging_with_one_v2_command(self):
+        runner = tree_fake()
+        runner._rules.insert(0, (('swhurl-v2', 'app-repo'), Result((), 0, 'Rendering the typescript template\n'
+                                                                    'Created https://github.com/samclement/weather-api\n'
+                                                                    'Opened https://github.com/x/pull/9\n')))
+        c, jobs = self.client(runner)
+        response = c.post('/new/repo', data=NEW, headers=WHO, follow_redirects=False)
+        self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
+        job = jobs.get(1)
+        self.assertEqual((job.state, job.link, job.lines[-1]), ('succeeded', 'https://github.com/x/pull/9',
+                                                               'Opened https://github.com/x/pull/9'))
+        ran = next(call for call in runner.calls if call[:2] == ('swhurl-v2', 'app-repo'))
+        self.assertEqual(ran[2:], ('--app', 'weather-api', '--type', 'web-app', '--stack', 'typescript',
+                                   '--requested-by', 'sam@swhurl.com', '--repository', 'samclement/swhurl-platform',
+                                   '--owner', 'samclement', '--set', 'team=platform',
+                                   '--set', 'exposure=authenticated-web', '--hook-host',
+                                   'flux-webhook.homelab.swhurl.com'))
+        self.assertEqual(runner.environments, [{'CONSOLE_TOKEN': TOKEN,
+                                                'APP_REPOS_TOKEN': 'github_pat_app_repos_fixture_0123',
+                                                'IMAGE_WEBHOOK_TOKEN': 'fixture-image-webhook-token'}],
+                         'the tokens reach the child\'s environment, never its argv')
 
     def test_cross_site_post_is_refused_before_the_route(self):
         c, _ = self.client(tree_fake())
@@ -257,228 +280,6 @@ def staging_reads(runner):
 
 if __name__ == '__main__':
     unittest.main()
-
-
-APP_COMMIT = '9f8e7d6' + '1' * 33
-DIGEST = 'sha256:' + 'd' * 64
-
-
-class FakeAppGitHub:
-    """GitHub's API as the second token sees it: notes does not exist until created; its first run succeeds."""
-
-    def __init__(self, existing=('hello-ts',), runs=None, webhook='fixture-image-webhook-token', hooks_status=201):
-        self.hooks_status = hooks_status
-        self.requests: list[httpx.Request] = []
-        self.existing = set(existing)
-        self.runs = list(runs if runs is not None else [None, {'status': 'in_progress'}, {'status': 'completed',
-                                                                                        'conclusion': 'success'}])
-        from swhurl.console import repos
-        self.config = repos.AppReposToken('github_pat_app_repos_fixture_0123', image_webhook_token=webhook,
-                                          transport=httpx.MockTransport(self.handle))
-
-    def handle(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(request)
-        path, method = request.url.path, request.method
-        if method == 'GET' and path.count('/') == 3 and path.startswith('/repos/samclement/'):
-            return httpx.Response(200 if path.rsplit('/', 1)[1] in self.existing else 404, json={'message': 'x'})
-        if (method, path) == ('POST', '/user/repos'):
-            self.existing.add(json.loads(request.content)['name'])
-            return httpx.Response(201, json={'html_url': 'https://github.com/samclement/notes'})
-        answers = {('GET', '/repos/samclement/notes/git/ref/heads/main'): {'object': {'sha': 'init000'}},
-                   ('POST', '/repos/samclement/notes/git/blobs'): {'sha': 'blob'},
-                   ('POST', '/repos/samclement/notes/git/trees'): {'sha': 'tree'},
-                   ('POST', '/repos/samclement/notes/git/commits'): {'sha': APP_COMMIT},
-                   ('PATCH', '/repos/samclement/notes/git/refs/heads/main'): {'ref': 'refs/heads/main'}}
-        if (method, path) == ('GET', '/repos/samclement/notes/actions/runs'):
-            run = self.runs.pop(0) if len(self.runs) > 1 else self.runs[0]
-            runs = [] if run is None else [{'name': 'Container', 'run_number': 1, 'html_url': 'https://run/1',
-                                            'conclusion': None, **run}]
-            return httpx.Response(200, json={'workflow_runs': runs})
-        if (method, path) == ('POST', '/repos/samclement/notes/hooks'):
-            return httpx.Response(self.hooks_status, json={'message': 'Resource not accessible by personal access token'})
-        if (method, path) in answers:
-            return httpx.Response(200, json=answers[(method, path)])
-        return httpx.Response(404, json={'message': 'Not Found'})
-
-    def writes(self):
-        return [(r.method, r.url.path) for r in self.requests if r.method != 'GET']
-
-
-COPIER_YML = """_subdirectory: template
-app_name:
-  type: str
-description:
-  type: str
-kind:
-  type: str
-  help: web or worker
-  choices: {web: web, worker: worker}
-  default: web
-database:
-  type: str
-  help: none or sqlite
-  choices: [none, sqlite]
-  default: none
-api:
-  type: str
-  choices: [none, openapi]
-  default: none
-events:
-  type: str
-  choices: [none, asyncapi]
-  default: none
-flags:
-  type: str
-  choices: [none, example]
-  default: none
-frontend:
-  type: str
-  choices: [none, vite]
-  default: none
-"""
-
-
-def ghcr_opener(request, seed=False):
-    """GHCR serving every tag except a seed (0-<sha>), unless ``seed``."""
-    if '/contents/copier.yml?ref=' in request.full_url:
-        return {}, COPIER_YML.encode()
-    if '/manifests/0-' in request.full_url and not seed:
-        raise urllib.error.HTTPError(request.full_url, 404, 'not found', {}, None)
-    if 'token' in request.full_url:
-        return {}, json.dumps({'token': 'anon'}).encode()
-    return {'Docker-Content-Digest': DIGEST}, b''
-
-
-def render_into_dest(args, _input):
-    dest = Path(args[-1])
-    (dest / '.github/workflows').mkdir(parents=True)
-    (dest / 'swhurl.yaml').write_text('version: 1\n')
-    (dest / '.github/workflows/container.yml').write_text('name: Container\n')
-    return Result(args, 0)
-
-
-def repo_runner(runner=None):
-    runner = runner or FakeRunner()
-    return runner.on('copier', handler=render_into_dest).on('uvx', handler=render_into_dest)
-
-
-class AppReposTests(unittest.TestCase):
-    def job(self):
-        return actions.Job(1, 'new app and repository', 'notes/staging', 'sam@swhurl.com', None)
-
-    def test_creates_pushes_waits_and_returns_the_first_image(self):
-        from swhurl.apps import repo
-        from swhurl.console import repos
-        api = FakeAppGitHub()
-        client, job = repos.AppRepos(repo_runner(), api.config), self.job()
-        image = repos.create_app_repo(client.runner, client, job, repo.Request('notes'), sleep=lambda _: None,
-                                      opener=ghcr_opener)
-        self.assertEqual(image, f'ghcr.io/samclement/notes:1-9f8e7d6@{DIGEST}')
-        self.assertEqual(api.writes(), [('POST', '/user/repos')] + [('POST', '/repos/samclement/notes/git/blobs')] * 2
-                         + [('POST', '/repos/samclement/notes/git/trees'), ('POST', '/repos/samclement/notes/git/commits'),
-                            ('PATCH', '/repos/samclement/notes/git/refs/heads/main'),
-                            ('POST', '/repos/samclement/notes/hooks')])
-        hook = json.loads(next(r.content for r in api.requests if r.url.path.endswith('/hooks')))
-        self.assertEqual((hook['events'], hook['config']['secret']), (['package', 'registry_package'],
-                                                                      'fixture-image-webhook-token'))
-        self.assertIn('/hook/', hook['config']['url'])
-        self.assertIn('Added the image webhook: Flux scans as soon as an image is published', job.lines)
-        self.assertNotIn('fixture-image-webhook-token', '\n'.join(job.lines))
-        created = json.loads(api.requests[1].content)
-        self.assertEqual((created['private'], created['auto_init']), (False, True))
-        tree = json.loads(next(r.content for r in api.requests if r.url.path.endswith('/git/trees')))
-        self.assertEqual(sorted(e['path'] for e in tree['tree']), ['.github/workflows/container.yml', 'swhurl.yaml'])
-        self.assertNotIn('base_tree', tree, 'the rendered files replace the initial README')
-        commit = json.loads(next(r.content for r in api.requests if r.url.path.endswith('/git/commits')))
-        self.assertEqual(commit['parents'], ['init000'])
-        self.assertIn('Requested-by: sam@swhurl.com', commit['message'])
-        self.assertIn('A swhurl.yaml', job.lines)
-        self.assertIn('run 1 in_progress', job.lines)
-        self.assertNotIn('github_pat_app_repos_fixture_0123', '\n'.join(job.lines))
-
-    def test_a_seed_published_before_the_build_finishes_is_the_first_image(self):
-        from swhurl.apps import repo
-        from swhurl.console import repos
-        api = FakeAppGitHub(runs=[{'status': 'in_progress'}])
-        client, job = repos.AppRepos(repo_runner(), api.config), self.job()
-        seen = []
-
-        def opener(request):
-            seen.append(request.full_url)
-            return ghcr_opener(request, seed=True)
-        image = repos.create_app_repo(client.runner, client, job, repo.Request('notes'), sleep=lambda _: None,
-                                      opener=opener)
-        self.assertEqual(image, f'ghcr.io/samclement/notes:0-9f8e7d6@{DIGEST}')
-        self.assertIn('https://ghcr.io/v2/samclement/notes/manifests/0-9f8e7d6', seen)
-        self.assertTrue(job.lines[-1].startswith(f'Seeded {image}'), job.lines[-1])
-        self.assertFalse([r for r in api.requests if r.url.path.endswith('/actions/runs')], 'no wait for the build')
-
-    def test_a_missing_or_refused_image_webhook_is_a_warning_not_a_failure(self):
-        from swhurl.apps import repo
-        from swhurl.console import repos
-        for name, api, expected in (('no token', FakeAppGitHub(webhook=''), 'IMAGE_WEBHOOK_TOKEN is not set'),
-                                    ('refused', FakeAppGitHub(hooks_status=403), 'Webhooks: Read and write')):
-            with self.subTest(name=name):
-                client, job = repos.AppRepos(repo_runner(), api.config), self.job()
-                image = repos.create_app_repo(client.runner, client, job, repo.Request('notes'), sleep=lambda _: None,
-                                              opener=ghcr_opener)
-                self.assertTrue(image.startswith('ghcr.io/samclement/notes:1-'))
-                warning = next(line for line in job.lines if line.startswith('Warning: no image webhook'))
-                self.assertIn(expected, warning)
-                self.assertIn('make app-hooks', warning)
-
-    def test_a_permission_refusal_names_the_permission_to_check(self):
-        from swhurl.apps import repo
-        from swhurl.console import repos
-        api = FakeAppGitHub()
-        handle = api.handle
-        api.handle = None
-        def refuse_blobs(request):
-            if request.url.path.endswith('/git/blobs'):
-                return httpx.Response(403, json={'message': 'Resource not accessible by personal access token'})
-            return handle(request)
-        config = repos.AppReposToken(api.config.token, transport=httpx.MockTransport(refuse_blobs))
-        client = repos.AppRepos(repo_runner(), config)
-        with self.assertRaisesRegex(actions.ActionError, 'Contents: Read and write and Workflows: Read and write'):
-            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None)
-
-    def test_writes_only_to_a_repository_it_created(self):
-        from swhurl.console import repos
-        api = FakeAppGitHub()
-        client = repos.AppRepos(FakeRunner(), api.config)
-        with self.assertRaisesRegex(actions.ActionError, 'writes only to a repository it created'):
-            client.push_first_commit('hello-ts', Path('.'), 'x', sleep=lambda _: None)
-        self.assertEqual(api.requests, [])
-        self.assertFalse([name for name in dir(client) if 'delete' in name.lower()], 'no deleting method')
-
-    def test_an_existing_name_or_a_failed_first_run_stops_with_the_reason(self):
-        from swhurl.apps import repo
-        from swhurl.console import repos
-        api = FakeAppGitHub(existing=('notes',))
-        client = repos.AppRepos(repo_runner(), api.config)
-        with self.assertRaisesRegex(
-                actions.ActionError,
-                r'Repository samclement/notes already exists on GitHub\. Setup stopped before creating a new '
-                r'repository\. Choose another name and retry from New app\.'):
-            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None)
-        self.assertEqual(api.writes(), [])
-        self.assertEqual(client.runner.calls, [], 'nothing rendered')
-        api = FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'failure'}])
-        client = repos.AppRepos(repo_runner(), api.config)
-        add = ('run swhurl-v2 create --records v2-records --app notes --team <team> --image <image the run prints> '
-               '--profile v2/testdata/profile.json --out .')
-        with self.assertRaises(actions.ActionError) as failed:
-            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None,
-                                  opener=ghcr_opener)
-        self.assertIn('ended failure: https://run/1', str(failed.exception))
-        self.assertIn(add, str(failed.exception))
-        ticks = iter(range(0, 10_000, 100))
-        client = repos.AppRepos(repo_runner(), FakeAppGitHub(runs=[None]).config)
-        with self.assertRaises(actions.ActionError) as late:
-            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None,
-                                  clock=lambda: next(ticks), opener=ghcr_opener)
-        self.assertIn('no finished Container run after 10 minutes', str(late.exception))
-        self.assertIn(add, str(late.exception))
 
 
 class TeamsPageTests(unittest.TestCase):
@@ -525,7 +326,7 @@ class TeamsPageTests(unittest.TestCase):
             asked.append(request.full_url)
             if 'ghost' in request.full_url:
                 raise OSError('GitHub is away')
-            return {}, b'version: 1\nkind: worker\nstack: kotlin\n'
+            return b'version: 1\nkind: worker\nstack: kotlin\n'
         c = self.client(repo_opener=opener)
         page = c.get('/teams', headers=WHO).text
         self.assertEqual(asked[0], 'https://api.github.com/repos/samclement/billing/contents/swhurl.yaml')
@@ -560,10 +361,10 @@ class TeamsPageTests(unittest.TestCase):
         chosen = proposal.NewApp.from_form(
             {'name': 'weather-api', 'type': 'web-app', 'stack': 'typescript', 'description': 'Weather',
              'team': 'platform', 'exposure': 'authenticated-web', 'calls': 'orders', 'subscribe': 'orders.created'},
-            repo.parse_questions(COPIER_YML), {'platform': 'The platform itself'}, {'orders'}, {'orders.created'})
+            {'platform': 'The platform itself'}, {'orders'}, {'orders.created'})
         self.assertEqual(chosen.flags, ('team=platform', 'exposure=authenticated-web', 'calls=orders',
                                         'subscriptions=orders.created'))
-        self.assertEqual(chosen.request.repo, 'samclement/weather-api')
+        self.assertEqual((chosen.name, chosen.stack, chosen.app_type), ('weather-api', 'typescript', 'web-app'))
 
     def test_each_team_card_says_whether_it_has_a_channel_and_offers_to_set_replace_or_remove_it(self):
         page = self.client().get('/teams', headers=WHO).text

@@ -34,7 +34,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from swhurl import ROOT, kube
-from swhurl.apps import contract, declaration, repo
+from swhurl.apps import contract, declaration
 from swhurl.apps.instance import Instance
 from swhurl.console import (
     actions,
@@ -159,7 +159,7 @@ def job_store(runner: Runner, dev_identity: str | None) -> jobstore.JobStore | N
 
 def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions.Jobs | None = None,
                github: gh.GitHub | None = None, app_repos: repos.AppReposToken | None = None,
-               repo_opener: repo.Opener | None = None, documents: catalogue.Reader | None = None) -> Starlette:
+               repo_opener: declaration.Opener | None = None, documents: catalogue.Reader | None = None) -> Starlette:
     """``github`` and ``app_repos`` default to the tokens in the environment (none: the new-app form says so)."""
     # Live reads use the pod's ServiceAccount, except under --dev, which reads with the host's kubeconfig.
     in_cluster = not bool(dev_identity) and bool(os.environ.get('KUBERNETES_SERVICE_HOST'))
@@ -423,7 +423,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             found = ''
             if reachable:
                 try:
-                    opener = {'opener': lambda request: repo_opener(request)[1]} if repo_opener else {}
+                    opener = {'opener': repo_opener} if repo_opener else {}
                     declared = declaration.read(f'{contract.APP_OWNER}/{app}', **opener)
                     found = declared.stack if declared else ''
                 except declaration.Unreachable:

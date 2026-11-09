@@ -130,10 +130,13 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 CLUSTER, dry_run=READS),
     )),
     ('Apps', (
-        Command('app-repo', "Create the app's GitHub repository from a stack template; wait for its first image", GITHUB,
-                'swhurl.apps.repo:main', takes=(Var('NAME', '<app>'),), dry_run=READS),
+        Command('app-repo', "Create the app's GitHub repository from a stack template, wait for its first image and open "
+                'the pull request that creates it (swhurl-v2 app-repo; needs Go 1.26.0)', GITHUB,
+                takes=(Var('NAME', '<app>'), Var('TYPE', '<type>'), Var('TEAM', '<team>'),
+                       Var('STACK', '<stack>', required=False), Var('DESCRIPTION', '"..."', required=False),
+                       Var('RESUME', 'true', required=False)), dry_run=READS),
         Command('app-hooks', "Create or repoint the image webhook on every auto-deploy app's repository (idempotent)", GITHUB,
-                'swhurl.apps.hooks:main', dry_run=READS),
+                'swhurl.imagehooks:main', dry_run=READS),
         Command('team-add', 'Register a team in v2-records/teams.json (swhurl-v2 team; needs Go 1.26.0)', GIT,
                 takes=(Var('NAME', '<team>'), Var('DESCRIPTION', '"what it owns"', required=False))),
         Command('team-edit', "Change a team's description and/or name; a rename is refused while an app names it", GIT,

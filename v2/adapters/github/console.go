@@ -24,6 +24,9 @@ type Console interface {
 	// AppFile is one file at another repository's default branch: an app's swhurl.yaml, which the console reads
 	// without a token because app repositories are public. found is false when the repository has no such file.
 	AppFile(ctx context.Context, repository, token, path string) ([]byte, bool, error)
+	// PublicFile is one file at one commit of a public repository, read without a token: a stack template's
+	// copier.yml at the revision the contract pins. found is false when the commit has no such file.
+	PublicFile(ctx context.Context, repository, revision, path string) ([]byte, bool, error)
 	// Compare reports whether to contains from and, when it does, the paths changed between them. A comparison
 	// GitHub truncated is contained but has no path list.
 	Compare(ctx context.Context, repository, token, from, to string) (paths []string, contained bool, err error)
@@ -210,6 +213,50 @@ func (a *API) AppFile(ctx context.Context, repository, token, file string) ([]by
 		return nil, false, &Error{"HTTP " + strconv.Itoa(status)}
 	}
 	return body, true, nil
+}
+
+// PublicFile reads one file at a commit of a public repository: a template's copier.yml is the platform's input,
+// and the template is public, so this read carries no credential at all.
+func (a *API) PublicFile(ctx context.Context, repository, revision, file string) ([]byte, bool, error) {
+	if !observe.GitHubRepository(repository) || !commitID(revision) || file == "" || strings.Contains(file, "..") {
+		return nil, false, &Error{"invalid public file reference"}
+	}
+	address := "https://api.github.com/repos/" + repository + "/contents/" + appFilePath(file) + "?ref=" + url.QueryEscape(revision)
+	body, status, err := a.getPublic(ctx, address)
+	if err != nil {
+		return nil, false, err
+	}
+	switch {
+	case status == http.StatusNotFound:
+		return nil, false, nil
+	case status < 200 || status >= 300:
+		return nil, false, &Error{"HTTP " + strconv.Itoa(status)}
+	}
+	return body, true, nil
+}
+
+// getPublic is one anonymous read: the template repositories are public, so no token is sent or needed.
+func (a *API) getPublic(ctx context.Context, address string) ([]byte, int, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+	if err != nil {
+		return nil, 0, &Error{"invalid request"}
+	}
+	request.Header.Set("Accept", "application/vnd.github.raw+json")
+	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	request.Header.Set("User-Agent", "swhurl-console")
+	response, err := a.client.Do(request)
+	if err != nil {
+		return nil, 0, &Error{"request failed"}
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxJSONResponse+1))
+	if err != nil {
+		return nil, response.StatusCode, &Error{"response unreadable"}
+	}
+	if len(body) > maxJSONResponse {
+		return nil, response.StatusCode, &Error{"response too large"}
+	}
+	return body, response.StatusCode, nil
 }
 
 // getAppFile is one file at another repository's default branch, without a token: app repositories are public.

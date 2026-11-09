@@ -2,6 +2,30 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The New app repository is Go's (9 November 2026)
+
+- **Scope:** §23 step 3, uncommitted at the time of writing. `swhurl-v2 app-repo --app NAME --type TYPE [--stack S]
+  --set NAME=VALUE... --requested-by IDENTITY [--repository OWNER/REPO] [--owner OWNER] [--hook-host HOST]
+  [--contract FILE] [--resume] [--dry-run]` reads `v2/contract/stacks.json`, refuses a name that is not a DNS label
+  (or `notify`) and a type or stack the catalogue does not state, reads the stack's `copier.yml` at its pinned revision
+  through the GitHub read port and refuses an answer the template no longer offers, runs one `copier copy --vcs-ref`
+  (the adapter prefers an installed `copier`, else `uvx copier@9.18.2`, under a five-minute deadline and an environment
+  with no token), then creates the public repository with the rendered tree as its first commit, adds the image webhook
+  (a failure there is a warning), waits for the first image through the registry adapter (the template's seed `0-<sha>`
+  first, else the newest run: 10 minutes) and runs the existing `create` publication, so the console's New app, its
+  resume job and `make app-repo` are one command. `apps/repo.py`, its tests and the console's Python repository client
+  are deleted; `apps/hooks.py` moves to `imagehooks.py` unchanged, because `app-hooks` (repointing existing webhooks after
+  a rotation) has no Go replacement yet. `make app-repo` is now a recipe over the command and needs `TEAM` and the four
+  tokens in its environment (`CONSOLE_TOKEN`, `CONSOLE_REPO`, `APP_REPOS_TOKEN`, `IMAGE_WEBHOOK_TOKEN`).
+- **Offline:** `make check-v2` (Go tests for the Copier adapter's questions and refusals, the GitHub write port's
+  contract, the use case's create/resume/dry-run/seed/timeout/webhook paths, the CLI's argv and token environment, and
+  the registry the command reads), `make test` (467 Python tests), `make check`, `make check-docs`. `archtest/api.txt` is
+  regenerated for the intended API (`adapters/copier`, `github.RepositoryWriter`, `orchestration.AppRepo*`), and the
+  `no-subprocess` and `stdlib-only` allowlists name `adapters/copier` with the reason.
+- **Not exercised:** the live creation from the deployed console (a throwaway repository, its image webhook and its
+  staging pull request), a resumed job after a pod restart, a name GitHub already holds, and the webhook permission a
+  token without Webhooks: Read and write gets (a warning in the command, as in Python).
+
 ## The console's Flux actions run `swhurl-v2 unit` (9 November 2026)
 
 - **Scope:** §24 step 2b, on `3d809fd8`. `swhurl-v2 unit --action reconcile|suspend|resume --unit NAME` reads the

@@ -214,7 +214,7 @@ class PageAndPromotionTests(unittest.TestCase):
         self.runner.on('swhurl-v2', '--help', stdout='usage')
         self.jobs = actions.Jobs(self.runner, inline=True)
         self.client = TestClient(server.create_app(self.runner, github=self.remote.github, jobs=self.jobs,
-                                                   repo_opener=lambda _: ({}, b'kind: worker\nstack: typescript\n')))
+                                                   repo_opener=lambda _: b'kind: worker\nstack: typescript\n'))
 
     def observe(self, args, _input):
         self.captured.append(args)

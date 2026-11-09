@@ -4,11 +4,10 @@ import json
 import threading
 import unittest
 
-import httpx
 from starlette.testclient import TestClient
-from test_console_changes import DIGEST, WHO, FakeAppGitHub, FakeGitHub, app_under_test, repo_runner, tree_fake
+from test_console_changes import WHO, FakeGitHub, app_under_test, tree_fake
 
-from swhurl.console import actions, jobstore
+from swhurl.console import actions, jobstore, repos
 from swhurl.run import FakeRunner, Result
 
 NOW = dt.datetime(2026, 10, 12, 19, 10, tzinfo=dt.UTC)
@@ -160,18 +159,23 @@ class JobStoreTests(unittest.TestCase):
 
 
 class ResumeTests(unittest.TestCase):
-    RESUME = {'kind': 'new-app', 'name': 'notes', 'stack': 'typescript', 'description': 'Take notes', 'answers': {'kind': 'web'},
+    RESUME = {'kind': 'new-app', 'name': 'notes', 'stack': 'typescript', 'description': 'Take notes',
+              'answers': {'kind': 'web', 'database': 'sqlite', 'api': 'openapi', 'frontend': 'vite'},
               'extra': ['team=platform', 'exposure=authenticated-web'], 'touches_others': False}
 
     def console(self, state='interrupted', resume=None, existing=('hello-ts', 'notes'), link=''):
         shared = {4: jobstore.record(actions.Job(4, 'new app and repository', 'notes/staging', 'sam@swhurl.com', NOW,
                                                  ['Created https://github.com/samclement/notes'], state, NOW, link, 'pod-a',
                                                  self.RESUME if resume is None else resume), str)}
-        self.runner = repo_runner(tree_fake())
+        self.runner = tree_fake()
+        self.runner._rules.insert(0, (('swhurl-v2', 'app-repo'), Result((), 0,
+                                                                        'samclement/notes exists; its newest commit is init000\n'
+                                                                        'Opened https://github.com/x/pull/7\n')))
         self.jobs = actions.Jobs(self.runner, audit=lambda line: None, inline=True, store=MemoryStore('pod-b', shared, alive={'pod-b'}))
         self.platform_api = FakeGitHub()
-        self.app_api = FakeAppGitHub(existing=existing, runs=[{'status': 'completed', 'conclusion': 'success'}])
-        return TestClient(app_under_test(self.runner, jobs=self.jobs, github=self.platform_api.github, app_repos=self.app_api.config))
+        return TestClient(app_under_test(self.runner, jobs=self.jobs, github=self.platform_api.github,
+                                         app_repos=repos.AppReposToken('github_pat_app_repos_fixture_0123',
+                                                                       image_webhook_token='fixture-image-webhook-token')))
 
     def test_an_interrupted_new_app_is_finished_with_its_choices_and_no_second_repository(self):
         c = self.console()
@@ -186,15 +190,14 @@ class ResumeTests(unittest.TestCase):
         job = self.jobs.get(5)
         self.assertEqual((job.action, job.state, job.link, job.unit), ('finish new app', 'succeeded', 'https://github.com/x/pull/7', 'notes/staging'),
                          '\n'.join(job.lines))
-        change = next(call for call in self.runner.calls if call[0:2] == ('swhurl-v2', 'change'))
-        self.assertEqual(change[2:15], ('--kind', 'new', '--app', 'notes', '--env', 'staging', '--requested-by',
-                                        'sam@swhurl.com', '--repository', 'samclement/swhurl-platform', '--set',
-                                        'team=platform', '--set'))
-        self.assertIn('exposure=authenticated-web', change)
-        self.assertEqual(change[change.index('--image') + 1], f'ghcr.io/samclement/notes:1-init000@{DIGEST}')
-        self.assertTrue(change[change.index('--preface') + 1].startswith(
-            'The console created https://github.com/samclement/notes from '), 'the body says what made the repository')
-        self.assertEqual(self.app_api.writes(), [], 'the repository is only read')
+        made = next(call for call in self.runner.calls if call[0:2] == ('swhurl-v2', 'app-repo'))
+        self.assertEqual(made[2:], ('--app', 'notes', '--type', 'web-app', '--stack', 'typescript', '--requested-by',
+                                    'sam@swhurl.com', '--repository', 'samclement/swhurl-platform',
+                                    '--owner', 'samclement', '--description', 'Take notes', '--set', 'team=platform',
+                                    '--set', 'exposure=authenticated-web', '--hook-host',
+                                    'flux-webhook.homelab.swhurl.com', '--resume'))
+        self.assertFalse([call for call in self.runner.calls if call[0:2] == ('swhurl-v2', 'change')],
+                         'the command opens the pull request itself')
         self.assertFalse(any('copy' in call for call in self.runner.calls), 'nothing is rendered again')
         self.assertEqual(self.platform_api.sent('POST /issues/7/labels'), [], 'a v2 PR is held for a person')
         self.assertNotIn('action="/jobs/4/resume"', c.get('/jobs/4', headers=WHO).text, 'finished since: offered once')
@@ -216,13 +219,12 @@ class ResumeTests(unittest.TestCase):
 
     def test_finishing_says_so_when_the_repository_was_never_created_and_refuses_a_record_it_cannot_use(self):
         c = self.console()
-        real = self.app_api.handle
-        self.app_api.config.transport.handler = lambda request: (
-            httpx.Response(404, json={'message': 'Not Found'}) if request.url.path.endswith('/git/ref/heads/main') else real(request))
+        self.runner._rules[0] = (('swhurl-v2', 'app-repo'), Result((), 1, '',
+                                                                   'refused: samclement/notes does not exist on GitHub\n'))
         c.post('/jobs/4/resume', headers=WHO, follow_redirects=False)
         job = self.jobs.get(5)
         self.assertEqual(job.state, 'failed')
-        self.assertIn('samclement/notes does not exist on GitHub: the earlier job stopped before creating it', '\n'.join(job.lines))
+        self.assertIn('samclement/notes does not exist on GitHub', '\n'.join(job.lines))
         self.assertEqual(self.platform_api.sent('POST /pulls'), [])
         for bad in ({**self.RESUME, 'name': '../x'}, {**self.RESUME, 'stack': 'cobol'}, {**self.RESUME, 'extra': ['rm', '-rf']},
                     {'kind': 'new-app'}):

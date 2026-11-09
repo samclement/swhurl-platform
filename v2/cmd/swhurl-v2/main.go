@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/appsource"
+	"github.com/samclement/swhurl-platform/v2/adapters/copier"
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/git"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
@@ -53,6 +54,9 @@ const usage = `usage:
       [--repository OWNER/REPO] [--revision COMMIT] [--set NAME=VALUE] [--call APP] [--subscribe APP.EVENT] \
       [--drop-call APP] [--drop-subscription APP.EVENT] [--allow NAME] [--disallow NAME] \
       [--description TEXT] [--rename NEW] [--transport ntfy] [--image REPO:TAG] [--preface TEXT] [--dry-run]
+  swhurl-v2 app-repo --app NAME --type TYPE [--stack STACK] [--description TEXT] [--set NAME=VALUE]... \
+      --requested-by IDENTITY [--repository OWNER/REPO] [--owner OWNER] [--hook-host HOST] \
+      [--contract FILE] [--resume] [--dry-run]
   swhurl-v2 image-declaration [--app-dir DIR]
   swhurl-v2 declaration --label FILE --app APPLICATION --team TEAM [--exposure GRANT]
   swhurl-v2 names --catalogue NAMES.json --app-dir DIR
@@ -252,6 +256,14 @@ comes from CONSOLE_TOKEN and the repository from CONSOLE_REPO or --repository, n
 line of progress goes to standard output and the pull request's URL is the last one, so the console records the job's
 log and takes its link from that line. --dry-run applies and reports the change and writes nothing to GitHub.
 
+app-repo creates a new app's public GitHub repository: it reads the stack's copier.yml for the questions its type
+answers, renders the pinned template with one Copier run into a folder of its own, creates the repository with the
+rendered tree as its first commit, adds the image webhook, waits for the first image the repository publishes (the
+template's seed, 0-<commit>, when that appears first) and then opens the ordinary 'new' pull request that creates
+its staging instance. --resume finds the repository an earlier job created instead of creating one. The tokens are
+the environment's: CONSOLE_TOKEN for the pull request, APP_REPOS_TOKEN for the repository, IMAGE_WEBHOOK_TOKEN for
+the webhook (a failure there is a warning), and CONSOLE_REPO or --repository names the platform repository.
+
 declaration decodes the declaration label an image build printed, applies the creation rules an instance of it would
 face, and reports what the image states. It reads no image, no registry and no cluster, and writes nothing: the stack
 templates' check uses it to prove a rendered app declares what the platform can create.
@@ -448,6 +460,7 @@ func commands() map[string]func(cli, request) int {
 		"flags":                   cli.flags,
 		"console":                 cli.console,
 		"change":                  cli.change,
+		"app-repo":                cli.appRepo,
 		"unit":                    cli.unit,
 	}
 }
@@ -470,6 +483,8 @@ type request struct {
 	chart, repositories, cache                         string
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
+	appType, stack, owner, hookHost, contractPath      string
+	resume                                             bool
 	// spec is a change's own flags; no other command reads it.
 	spec                                        *changeSpec
 	action, description, rename, transport      string
@@ -520,6 +535,9 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	flags.SetOutput(io.Discard) // flag errors can echo rejected values
 	r.registerInputs(flags)
 	r.registerExtras(flags, r.command)
+	if r.command == "app-repo" {
+		r.registerAppRepoFlags(flags)
+	}
 	err := flags.Parse(args)
 	flags.Visit(func(f *flag.Flag) {
 		if f.Name == "reviewed-digest" {
@@ -866,6 +884,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"flags":                   (*request).flagsNamed,
 	"console":                 (*request).consoleNamed,
 	"change":                  (*request).changeNamed,
+	"app-repo":                (*request).appRepoNamed,
 	"unit":                    (*request).unitNamed,
 }
 
@@ -1064,6 +1083,12 @@ type cli struct {
 	// a test supplies fakes so an opened pull request needs no network.
 	consoleSource github.Console
 	publisher     github.Publisher
+	// repositoryWriter and renderer are the two effects a new app repository needs; nil is the real GitHub write
+	// port and Copier, and a test supplies fakes so no repository is created.
+	repositoryWriter github.RepositoryWriter
+	renderer         copier.Renderer
+	// sleep is the wait between polls; nil is time.Sleep.
+	sleep func(time.Duration)
 	// unitClusterOf is the cluster a unit action changes; nil is the API server the credential names, and a test
 	// supplies a scripted cluster so an action needs no network.
 	unitClusterOf func() (orchestration.Cluster, error)

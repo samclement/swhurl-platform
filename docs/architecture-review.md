@@ -108,7 +108,7 @@ The true unit of compilation is not always one application folder. It is an appl
 
 These effects are not one transaction. Failure after repository creation cannot honestly be reported as “nothing happened.” The recovery path is meaningful functionality, not incidental bookkeeping.
 
-Evidence: [`repo.py`](../tools/swhurl/apps/repo.py).
+Evidence: [`apprepo.go`](../v2/orchestration/apprepo.go) and [`copier.go`](../v2/adapters/copier/copier.go).
 
 #### Git is not the authority for every kind of state
 

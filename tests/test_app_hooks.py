@@ -6,7 +6,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
-from swhurl.apps import hooks
+from swhurl import imagehooks as hooks
 from swhurl.run import FakeRunner, Result
 
 TOKEN = 'fixture-image-webhook-token'

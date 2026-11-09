@@ -11,7 +11,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help reconcile verify-logs flux-install \
-	app-repo app-hooks \
+	app-hooks \
 	console-image console-dev \
 	platform-certs-staging platform-certs-prod destroy-data \
 	check-otel check-secrets \
@@ -208,6 +208,21 @@ restore-sqlite:
 		--profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json \
 		--revision "$$(git rev-parse HEAD)" --kubeconfig "$$work/kubeconfig.json" \
 		$${FROM:+--from "$$FROM"} $${MAX_AGE:+--max-age "$$MAX_AGE"} "$${perform[@]}"
+
+# A new app's repository (swhurl-v2 app-repo): render the stack's template, create the public repository with its
+# first commit and image webhook, wait for its first image and open the staging pull request. The tokens come from
+# the environment, in the child's environment only: CONSOLE_TOKEN and CONSOLE_REPO for the pull request,
+# APP_REPOS_TOKEN for the repository, IMAGE_WEBHOOK_TOKEN for the webhook (without it, a warning). TEAM is the team
+# that owns the app (a name in v2-records/teams.json), and REQUESTED_BY defaults to your Git identity. Needs Go 1.26.0.
+.PHONY: app-repo
+app-repo:
+	@: "$${NAME:?usage: make app-repo NAME=<app> TYPE=<type> TEAM=<team>}" "$${TYPE:?usage: make app-repo NAME=<app> TYPE=<type> TEAM=<team>}" "$${TEAM:?usage: make app-repo NAME=<app> TYPE=<type> TEAM=<team>}"; \
+	$(V2_BUILD); \
+	identity="$${REQUESTED_BY:-$$(git config user.name) <$$(git config user.email)>}"; \
+	host="flux-webhook.$$(jq -er '.routing.baseDomain | strings | select(length > 0)' v2/testdata/profile.json)"; \
+	"$$work/swhurl-v2" app-repo --app "$$NAME" --type "$$TYPE" --set "team=$$TEAM" --requested-by "$$identity" \
+		--hook-host "$$host" $${STACK:+--stack "$$STACK"} $${DESCRIPTION:+--description "$$DESCRIPTION"} \
+		$${OWNER:+--owner "$$OWNER"} $(if $(filter true,$(RESUME)),--resume) $(if $(filter true,$(DRY_RUN)),--dry-run)
 
 # The team registry, v2-records/teams.json, and the notification files v2 renders from it (swhurl-v2 team). Each
 # recipe edits files only: commit and push them. team-channel reads the address without showing it on a terminal,

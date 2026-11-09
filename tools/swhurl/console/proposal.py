@@ -13,12 +13,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from swhurl.apps import repo
 from swhurl.apps.calling import NOTIFY
-from swhurl.apps.contract import APP_OWNER, APP_TYPES, STACKS, TEAMS_FILE, type_answers
+from swhurl.apps.contract import APP_TYPES, STACKS, TEAMS_FILE, type_answers
 from swhurl.apps.model import records
 from swhurl.console import changes, v2
 from swhurl.console.actions import ActionError, Job
+from swhurl.imagehooks import webhook_host
 
 PLAN = re.compile(r'(?m)^\*\*Merge plan:\*\* it (.+)\.$')
 
@@ -58,14 +58,28 @@ def open_change(runner, github, job: Job, action: str, name: str, env: str, flag
     return opened
 
 
-def open_new_app(runner, github, job: Job, chosen: NewApp, image: str) -> str:
-    """The New app form's pull request: v2 creates the instance from the image the new repository published, then
-    renders what the records derive, and the body says which repository and template the console made."""
-    made, template = chosen.request, STACKS[chosen.stack]
-    flags, input = changes.change_arguments('new', chosen.name, {'image': image, 'flags': chosen.flags})
-    preface = (f'The console created https://github.com/{made.repo} from [{template}](https://github.com/{template}) '
-               'and waited for its first image.\n\n')
-    return open_change(runner, github, job, 'new', chosen.name, 'staging', flags, input, preface=preface)
+def app_repo(runner, github, app_repos, job: Job, chosen: NewApp, *, resume: bool = False) -> str:
+    """Create a new app's repository with v2 and open its staging pull request, or (``resume``) find the
+    repository an earlier job created and open it without writing to the repository again. One command, so the
+    console decides no answer, no image and no webhook: it passes the form's choices as v2's own flags and streams
+    the lines, taking the link from the last one."""
+    argv = [v2.BINARY, 'app-repo', '--app', chosen.name, '--type', chosen.app_type, '--stack', chosen.stack,
+            '--requested-by', job.identity, '--repository', github.repo, '--owner', app_repos.owner]
+    if chosen.description:
+        argv += ['--description', chosen.description]
+    for flag in chosen.flags:
+        argv += ['--set', flag]
+    argv += ['--hook-host', webhook_host()]
+    if resume:
+        argv.append('--resume')
+    env = {v2.TOKEN_ENV: github.token, v2.APP_REPOS_TOKEN_ENV: app_repos.token,
+           v2.IMAGE_WEBHOOK_TOKEN_ENV: app_repos.image_webhook_token}
+    opened = ''
+    for line in runner.stream(argv, env=env, mutating=True):
+        job.lines.append(line)
+        if line.startswith('Opened '):
+            opened = line.removeprefix('Opened ').strip()
+    return opened
 
 
 NEW_APP = 'new-app'  # a job's resume record: the New app form's choices
@@ -80,16 +94,16 @@ class NewApp:
     description: str
     answers: Mapping[str, str]
     flags: tuple[str, ...]
+    app_type: str = ''  # the type the answers are (contract.APP_TYPES); derived for a record that states none
 
     @classmethod
-    def from_form(cls, form: Mapping[str, str], questions: list[repo.Question], teams: Mapping[str, str] | None,
+    def from_form(cls, form: Mapping[str, str], teams: Mapping[str, str] | None,
                   callable_apps: set[str] | None = None, offered_events: set[str] | None = None) -> NewApp:
         """The form's ``type`` sets every template answer (contract.APP_TYPES) and the exposure staging
-        starts with, unless the form chose one; ``questions`` are the stack template's own (its
-        copier.yml), and a type answer the template no longer offers is refused. ``teams`` are the
-        registered ones; the form's team must be among them. A worker gets no exposure or host: its
-        swhurl.yaml makes it private. When the lists the form offered are given, a call or subscription
-        outside them is refused."""
+        starts with, unless the form chose one. ``teams`` are the registered ones; the form's team must be
+        among them. A worker gets no exposure or host: its swhurl.yaml makes it private. When the lists the
+        form offered are given, a call or subscription outside them is refused. The stack template's own
+        questions are not read here: ``swhurl-v2 app-repo`` refuses an answer the template no longer offers."""
         name, stack = form.get('name', '').strip(), form.get('stack', '').strip()
         description = ' '.join(form.get('description', '').split())[:200]
         if not records.NAME_RE.match(name):
@@ -103,10 +117,6 @@ class NewApp:
             answers = type_answers(app_type, stack)
         except ValueError as error:
             raise ActionError(str(error)) from None
-        for question in questions:
-            if question.name in answers and answers[question.name] not in question.choices:
-                raise ActionError(f'the {stack} template no longer offers {question.name}={answers[question.name]} '
-                                  f'(it offers {", ".join(question.choices)}): the {APP_TYPES[app_type].title} type needs updating')
         team = form.get('team', '').strip()
         if not teams:
             raise ActionError(f'no team is registered ({TEAMS_FILE}): add one on the Teams page first; every app belongs to a team')
@@ -126,7 +136,7 @@ class NewApp:
         chosen = changes.Connections.from_form(form)
         if callable_apps is not None and offered_events is not None:
             chosen.check_offered(callable_apps, offered_events)
-        return cls(name, stack, description, answers, (*settings, *chosen.settings()))
+        return cls(name, stack, description, answers, (*settings, *chosen.settings()), app_type)
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> NewApp:
@@ -137,18 +147,28 @@ class NewApp:
         if any(flag.startswith(('publish=', 'host=')) for flag in flags):
             raise ActionError('these choices are no longer supported: the image states what it publishes, and v2 '
                               'derives the address; start a new job')
-        return cls(name, stack, str(record.get('description') or ''),
-                   {str(k): str(v) for k, v in (record.get('answers') or {}).items()}, flags)
+        answers = {str(k): str(v) for k, v in (record.get('answers') or {}).items()}
+        app_type = str(record.get('type') or '') or type_for(stack, answers)
+        return cls(name, stack, str(record.get('description') or ''), answers, flags, app_type)
 
     @property
     def record(self) -> dict[str, Any]:
         return {'kind': NEW_APP, 'name': self.name, 'stack': self.stack, 'description': self.description,
-                'answers': dict(self.answers), 'extra': list(self.flags)}
+                'answers': dict(self.answers), 'extra': list(self.flags), 'type': self.app_type}
 
     @property
     def target(self) -> str:
         return changes.target('new', self.name, 'staging')
 
-    @property
-    def request(self) -> repo.Request:
-        return repo.Request(self.name, self.stack, APP_OWNER, self.description, dict(self.answers))
+
+def type_for(stack: str, answers: Mapping[str, str]) -> str:
+    """The app type whose answers these are, for a job record that states no type of its own; a record whose
+    answers match no type cannot be finished, because the command would render another app."""
+    for key in APP_TYPES:
+        try:
+            if type_answers(key, stack) == dict(answers):
+                return key
+        except ValueError:
+            continue
+    raise ActionError('the record of that job states no app type and its answers match none: create the app again '
+                      'from New app')

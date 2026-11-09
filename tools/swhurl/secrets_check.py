@@ -27,7 +27,7 @@ from urllib.parse import urlsplit, urlunsplit
 import yaml
 
 from swhurl import ROOT, platform, yamlio
-from swhurl.apps import hooks
+from swhurl import imagehooks as hooks
 from swhurl.run import CommandError, Runner
 
 

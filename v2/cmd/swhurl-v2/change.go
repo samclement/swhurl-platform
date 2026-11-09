@@ -47,6 +47,7 @@ type changeSpec struct {
 	calls, subscriptions, dropCalls, dropSubscriptions []string
 	allows, disallows                                  []string
 	description, rename, transport                     string
+	image, preface                                     string
 	requestedBy, repository, revision                  string
 	dryRun                                             bool
 }
@@ -66,6 +67,7 @@ func (s *changeSpec) given() map[string]bool {
 		"drop-call": len(s.dropCalls) > 0, "drop-subscription": len(s.dropSubscriptions) > 0,
 		"allow": len(s.allows) > 0, "disallow": len(s.disallows) > 0,
 		"description": s.description != "", "rename": s.rename != "", "transport": s.transport != "",
+		"image": s.image != "", "preface": s.preface != "",
 	}
 	return stated
 }
@@ -79,6 +81,7 @@ type changeShape struct {
 
 // changeShapes is every kind the console opens, and what each one's flags mean.
 var changeShapes = map[string]changeShape{
+	"new":                 {takes: []string{"set", "image", "preface"}, needs: []string{"set", "image"}},
 	"v2-scale":            {takes: []string{"set"}, needs: []string{"set"}},
 	"v2-expose":           {takes: []string{"set"}, needs: []string{"set"}},
 	"v2-team":             {takes: []string{"set"}, needs: []string{"set"}},
@@ -122,6 +125,8 @@ func (r *request) registerChangeCommand(flags *flag.FlagSet) {
 	flags.Var(&once{value: &spec.description}, "description", "a team's description")
 	flags.Var(&once{value: &spec.rename}, "rename", "a team's new name")
 	flags.Var(&once{value: &spec.transport}, "transport", "a channel's transport (default: ntfy)")
+	flags.Var(&once{value: &spec.image}, "image", "a new app's first image, REPO:<run>-<commit>")
+	flags.Var(&once{value: &spec.preface}, "preface", "what a new app's pull request says before its commands")
 	flags.Var(&once{value: &spec.requestedBy}, "requested-by", "who asked for it, as the commit states them")
 	flags.Var(&once{value: &spec.repository}, "repository", "owner/repository (default: $CONSOLE_REPO)")
 	flags.Var(&once{value: &spec.revision}, "revision", "the commit to build on (default: main's head)")
@@ -270,7 +275,8 @@ func (c cli) changeApplied(change pages.ConsoleChange, spec *changeSpec, dir, re
 	}
 	_, err = orchestration.Publish(context.Background(), orchestration.PublishInputs{
 		Change: change, Name: spec.name(), Env: spec.env, Identity: spec.requestedBy, Revision: revision,
-		Before: before, After: after, Commands: commands, Repository: repository, Token: token, DryRun: spec.dryRun,
+		Before: before, After: after, Commands: commands, Preface: spec.preface, Repository: repository,
+		Token: token, DryRun: spec.dryRun,
 	}, publisher, func(line string) { fmt.Fprintln(c.out, line) })
 	if err != nil {
 		return fail(c.diagnostic, err)

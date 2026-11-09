@@ -49,6 +49,10 @@ const usage = `usage:
       --out DIR [--calls CALLS.json] [--egress EGRESS.json]
   swhurl-v2 create --records DIR --app APPLICATION --team TEAM --image REPO:<run>-<commit> --profile PROFILE.json \
       --out DIR [--exposure GRANT]
+  swhurl-v2 change --kind KIND (--app APPLICATION --env ENVIRONMENT | --team TEAM) --requested-by IDENTITY \
+      [--repository OWNER/REPO] [--revision COMMIT] [--set NAME=VALUE] [--call APP] [--subscribe APP.EVENT] \
+      [--drop-call APP] [--drop-subscription APP.EVENT] [--allow NAME] [--disallow NAME] \
+      [--description TEXT] [--rename NEW] [--transport ntfy] [--image REPO:TAG] [--preface TEXT] [--dry-run]
   swhurl-v2 image-declaration [--app-dir DIR]
   swhurl-v2 declaration --label FILE --app APPLICATION --team TEAM [--exposure GRANT]
   swhurl-v2 names --catalogue NAMES.json --app-dir DIR
@@ -234,6 +238,18 @@ before the record that states its public key. The documents are written into the
 roles' fixed names, byte for byte: no index file names them. It writes records only: the compiled files, the unit and
 the instance's proxy port are the whole tree's, so the next render decides them, and the unit's one line in
 clusters/home/kustomization.yaml is a reviewed edit. It refuses an app that already has records.
+
+change opens the pull request one kind of console change asks for, in the one process: it resolves main, downloads the
+tarball at that commit, applies the kind's commands to a scratch copy of it, keeps only the files the kind derives,
+and writes the blobs, tree, commit, branch and pull request through GitHub's API, the pull request's words being the
+console's character for character. A kind states the environments its branch may name and the files it may carry,
+so a pull request can carry nothing the console did not ask for. A connection, an allow or a new app's settings are
+asked for as additions and removals (--call, --subscribe, --allow, ...) and merged into the record at the commit
+being changed, never stated as a whole list; a new app's new kind states its image with --image, the settings it
+starts with with --set (team and exposure included) and what its pull request says first with --preface. The token
+comes from CONSOLE_TOKEN and the repository from CONSOLE_REPO or --repository, neither ever on the command line; every
+line of progress goes to standard output and the pull request's URL is the last one, so the console records the job's
+log and takes its link from that line. --dry-run applies and reports the change and writes nothing to GitHub.
 
 declaration decodes the declaration label an image build printed, applies the creation rules an instance of it would
 face, and reports what the image states. It reads no image, no registry and no cluster, and writes nothing: the stack

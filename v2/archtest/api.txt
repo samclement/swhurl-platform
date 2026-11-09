@@ -1196,7 +1196,7 @@ orchestration: type PlatformInputs struct {Reader kube.Reader Source string Now 
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
 orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}
 orchestration: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
-orchestration: type PublishInputs struct {Change pages.ConsoleChange Name, Env string Identity string Revision string Before []files.TreeFile After []files.TreeFile Commands []string Repository string Token string DryRun bool}
+orchestration: type PublishInputs struct {Change pages.ConsoleChange Name, Env string Identity string Revision string Before []files.TreeFile After []files.TreeFile Commands []string Preface string Repository string Token string DryRun bool}
 orchestration: type Published struct {Branch string Paths []string Status map[string]string URL string}
 orchestration: type RecordedInstance struct {Application, Environment string Release []byte}
 orchestration: type Refusal struct {Subject, Reason string}

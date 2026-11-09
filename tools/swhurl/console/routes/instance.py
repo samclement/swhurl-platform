@@ -102,35 +102,18 @@ def routes(ctx: Context) -> list[Route]:
         return page(request, 'error.html', status_code=409,
                     error=f'v2 writes {label}, and this console has no swhurl-v2 binary: run `{command}` in your own terminal.')
 
-    def v2_commands(change: str, app: str, env: str, form: dict,
-                    declared: cluster.Declared) -> tuple[changes.Command, ...]:
-        """The v2 commands for one console change, with the whole declaration a v2 edit names."""
+    def v2_arguments(change: str, app: str, form: dict,
+                     declared: cluster.Declared) -> tuple[tuple[str, ...], str | None]:
+        """``swhurl-v2 change``'s flags for one console change, after the console's own checks: what the form
+        asks to add or remove, never the whole list, so a change merged but not yet applied is not undone."""
         action = changes.V2_ACTION[change]
-        if change == 'connect':
-            chosen = changes.Connections.from_form(form)
-            form = {**form, 'calls': ','.join(dict.fromkeys([*declared.calls, *chosen.calls])),
-                    'subscriptions': ','.join(dict.fromkeys([*declared.subscriptions, *chosen.subscribe]))}
-        elif change == 'disconnect':
-            role, other, event = (form.get(key, '').strip() for key in ('role', 'app', 'event'))
-            if role == 'calls' and changes.records.NAME_RE.fullmatch(other):
-                form = {**form, 'calls': ','.join(name for name in declared.calls if name != other)}
-            elif role == 'subscribes' and changes.records.SUBSCRIPTION_RE.fullmatch(f'{other}.{event}'):
-                form = {**form, 'subscriptions': ','.join(
-                    name for name in declared.subscriptions if name != f'{other}.{event}')}
-            elif role == 'publishes':
-                raise actions.ActionError('publications come from the release: v2 does not remove one on the platform')
-            elif role == 'reaches':
-                raise actions.ActionError('an egress grant is set with swhurl-v2 edit --set egress=, so this cannot be removed here')
-            else:
-                raise actions.ActionError('no such connection to remove')
-        elif change == 'allow':
+        if change == 'allow':
             add = changes.v2_names(form.get('add', ''), changes.ALLOW_RE, 'an allowed caller is an app name or team:<team>')
             remove = set(changes.v2_names(form.get('remove', ''), changes.ALLOW_RE,
                                         'an allowed caller is an app name or team:<team>'))
             allows = ','.join(dict.fromkeys([*(name for name in declared.allows if name not in remove), *add]))
             if allows == ','.join(declared.allows):
                 raise actions.ActionError('that changes nothing: name an app or team:<team> to allow or stop allowing')
-            form = {**form, 'allows': allows}
         elif change == 'team':
             teams, problem = registered_teams()
             team = form.get('team', '').strip()
@@ -140,7 +123,7 @@ def routes(ctx: Context) -> list[Route]:
                 raise actions.ActionError(f'choose a registered team: one of {", ".join(teams) or "none"}')
             if team == declared.team:
                 raise actions.ActionError(f'{app} already belongs to {team}: that changes nothing')
-        return changes.ACTIONS[action].commands(app, env, form)
+        return changes.change_arguments(action, app, form)
 
     def flag_card(found: Instance) -> dict:
         """The Feature flags card, as `swhurl-v2 flags` reports it: every row, and why it could not read them all.
@@ -255,7 +238,7 @@ def routes(ctx: Context) -> list[Route]:
                 report = ctx.promotion_status(app, reviewed)
                 if problem := observation.promotion_problem(report):
                     raise actions.ActionError(problem)
-            commands = v2_commands(change, app, env, form, declared)
+            flags, input = v2_arguments(change, app, form, declared)
             if change == 'connect':  # only what the form offered: the environment's web apps and events
                 callable_apps, offered_events, problem = connectable(env, app)
                 if problem:
@@ -266,7 +249,7 @@ def routes(ctx: Context) -> list[Route]:
             return page(request, 'error.html', status_code=400, error=str(error))
         except (CommandError, cluster.ReadError) as error:
             return page(request, 'error.html', status_code=502, error=str(error))
-        return propose(request, action, app, env, commands)
+        return propose(request, action, app, env, flags, input)
 
     async def use_offer(request: Request) -> Response:
         """The catalogue's Use: the app chosen there connects, as its own Connect to an app would."""

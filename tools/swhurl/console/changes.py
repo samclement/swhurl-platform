@@ -1,59 +1,21 @@
-"""The console's change kinds: one table for the pull request the console opens and the branch Activity reads.
+"""The console's change kinds: what its forms may name, and the flags ``swhurl-v2 change`` builds the pull request from.
 
-Every console change is a pull request on a ``console/<kind>-<name>[-<env>]-<sha>`` branch, and a person
-merges every one: the console adds no label and nothing merges a console branch. A kind states the
-environments its branch may name, which input paths its pull request may carry (``owns``), which of their
-changes it keeps, the commands the clone runs to make it, its pull request title and its job's name.
+Every console change is a pull request on a ``console/<kind>-<name>[-<env>]-<sha>`` branch, and a person merges
+every one. What a kind *is* — its branch, its title, and the files its pull request may carry — is v2's
+(``v2/pages/console_change.go``), because the same table decides what Activity reads back. This module keeps what
+the console's own forms and jobs need while Python still serves them: the environments a form may name, the job a
+change runs as, the form's values as v2's flags, and the branch reading Activity uses. The kind names are
+permanent: Activity reads the branches an older console opened too.
 """
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from dataclasses import field as dataclass_field
-from pathlib import Path
 
-from swhurl.apps import channels, events
-from swhurl.apps.contract import TEAMS_FILE
 from swhurl.apps.model import records
 from swhurl.apps.model.records import ALLOW_RE
-from swhurl.console import v2
 from swhurl.console.actions import ActionError
-
-
-def encrypted_reason(action: str, statuses: Mapping[str, str]) -> str:
-    """Why a changed encrypted input needs a person to set its values. A new app's seed is written and
-    encrypted by v2's ``create`` itself, so a creation is exempt; a deletion needs no setup."""
-    if action == 'new':
-        return ''
-    encrypted = [p for p, status in statuses.items() if status != 'D' and p.endswith('.sops.yaml')]
-    if not encrypted:
-        return ''
-    if all(Path(p).name == events.SECRET_FILE for p in encrypted):
-        return "adds or changes the app's generated encrypted events key"
-    return 'needs Secret values to be set on the pull request branch'
-
-
-def team_inputs(path: str) -> bool:
-    """A team or channel change's files: the registry, what v2 renders from it and a channel's encrypted Secret."""
-    return path in (str(TEAMS_FILE), str(channels.ROUTES_FILE)) or Path(path).parent == channels.CHANNELS_DIR
-
-
-@dataclass(frozen=True)
-class Command:
-    """One command of the clone's own tooling. ``input`` is its standard input: the one way a secret
-    reaches it (never an argument, never in a message)."""
-    name: str
-    argv: tuple[str, ...]
-    input: str | None = dataclass_field(default=None, repr=False)
-    tool: str = 'python'  # 'v2' runs swhurl-v2's binary; 'python' runs the clone's own swhurl command
-
-    def as_make(self) -> str:
-        """The change as the operator would type it, never including a credential."""
-        if self.tool == 'v2':
-            return ' '.join((v2.BINARY, *self.argv))
-        flags = f' ARGS="{" ".join(self.argv[2:])}"' if self.argv[2:] else ''
-        return f'make {self.name} APP={self.argv[0]} ENV={self.argv[1]}{flags}'
 
 
 @dataclass(frozen=True)
@@ -83,56 +45,15 @@ class Connections:
         if missing:
             raise ActionError(f'{", ".join(missing)}: not a web app, or an event, that staging has now; reload the form')
 
-
-def new_commands(name: str, _env: str, form: Mapping) -> tuple[Command, ...]:
-    """v2's creation from the image the new repository published, then the grants the form chose, then the
-    whole-tree render. ``create`` writes records only, so the edit and the render are what make the PR carry
-    everything v2 derives from them."""
-    settings = list(form['flags'])
-    team = next((s.partition('=')[2] for s in settings if s.startswith('team=')), '')
-    exposure = next((s.partition('=')[2] for s in settings if s.startswith('exposure=')), '')
-    create = ['create', '--records', v2.RECORDS, '--app', name, '--team', team, '--image', form['image'],
-              '--profile', v2.PROFILE, '--out', v2.OUT, *(['--exposure', exposure] if exposure else [])]
-    commands = [Command('create', tuple(create), tool='v2')]
-    commands += [Command('edit', tuple(v2.edit_argv(name, 'staging', setting)), tool='v2')
-                 for setting in settings if not setting.startswith(('team=', 'exposure='))]
-    commands.append(Command('render', tuple(v2.render_argv()), tool='v2'))
-    return tuple(commands)
-
-
-def team_commands(action: str, name: str, form: Mapping[str, str]) -> tuple[Command, ...]:
-    """v2's team change for the form's action; v2 judges the registry and the description. An edit states the
-    description and then any new name: a team that apps or grants name is not renamed, and v2's refusal says to move
-    them with swhurl-v2 edit. The names are checked here too because the branch is named after the team."""
-    description = ' '.join(form.get('description', '').split())
-    rename = form.get('rename', '').strip()
-    for label, value in (('team name', name), ('new name', rename)):
-        if (value or label == 'team name') and not records.NAME_RE.fullmatch(value):
-            raise ActionError(f'{label}: lowercase letters, digits and hyphens, at most 40 characters')
-    if action == 'remove':
-        return (Command('team', tuple(v2.team_argv(name, 'remove')), tool='v2'),)
-    commands = [Command('team', tuple(v2.team_argv(name, 'add' if action == 'add' else 'describe',
-                                                   f'--description={description}')), tool='v2')]
-    if action == 'edit' and rename and rename != name:
-        commands.append(Command('team', tuple(v2.team_argv(name, 'rename', f'--rename={rename}')), tool='v2'))
-    return tuple(commands)
-
-
-def channel_commands(name: str, form: Mapping[str, str], *, remove: bool = False) -> tuple[Command, ...]:
-    """Give a team its channel, the address on v2's standard input, or remove it; v2 judges the address."""
-    if not records.NAME_RE.fullmatch(name):
-        raise ActionError('team name: lowercase letters, digits and hyphens, at most 40 characters')
-    if remove:
-        return (Command('team', tuple(v2.team_argv(name, 'drop-channel')), tool='v2'),)
-    transport, address = form.get('transport', 'ntfy').strip(), form.get('address', '').strip()
-    return (Command('team', tuple(v2.team_argv(name, 'channel', f'--transport={transport}')), input=address + '\n',
-                    tool='v2'),)
-
-
-def v2_commands(app: str, env: str, settings: tuple[str, ...]) -> tuple[Command, ...]:
-    """One edit per named change, then the whole-tree render that writes what the records derive."""
-    return (*[Command('edit', tuple(v2.edit_argv(app, env, setting)), tool='v2') for setting in settings],
-            Command('render', tuple(v2.render_argv()), tool='v2'))
+    def settings(self) -> tuple[str, ...]:
+        """A new app's connections as v2's settings: its record starts with neither list, so these are the
+        whole of what it calls and receives."""
+        found = []
+        if self.calls:
+            found.append(f'calls={",".join(self.calls)}')
+        if self.subscribe:
+            found.append(f'subscriptions={",".join(self.subscribe)}')
+        return tuple(found)
 
 
 def v2_scale_settings(form: Mapping[str, str]) -> tuple[str, ...]:
@@ -172,26 +93,6 @@ def v2_names(value: str, pattern: re.Pattern, label: str) -> tuple[str, ...]:
     return tuple(names)
 
 
-def v2_connection_settings(form: Mapping[str, str]) -> tuple[str, ...]:
-    """The whole calls and subscriptions lists a connect or disconnect write: v2 states a declaration whole."""
-    calls = v2_names(form.get('calls', ''), records.NAME_RE, 'a call names an app')
-    subscriptions = v2_names(form.get('subscriptions', ''), records.SUBSCRIPTION_RE,
-                             'a subscription names <app>.<event>')
-    settings = []
-    if calls or 'calls' in form:
-        settings.append(f'calls={",".join(calls)}')
-    if subscriptions or 'subscriptions' in form:
-        settings.append(f'subscriptions={",".join(subscriptions)}')
-    if not settings:
-        raise ActionError('choose an app to call or an event to receive')
-    return tuple(settings)
-
-
-def v2_allow_settings(form: Mapping[str, str]) -> tuple[str, ...]:
-    allows = v2_names(form.get('allows', ''), ALLOW_RE, 'an allowed caller is an app name or team:<team>')
-    return (f'allows={",".join(allows)}',)
-
-
 def v2_team_settings(form: Mapping[str, str]) -> tuple[str, ...]:
     team = form.get('team', '').strip()
     if not records.NAME_RE.fullmatch(team):
@@ -199,52 +100,88 @@ def v2_team_settings(form: Mapping[str, str]) -> tuple[str, ...]:
     return (f'team={team}',)
 
 
-def v2_remove_commands(app: str, env: str, _form: Mapping[str, str]) -> tuple[Command, ...]:
-    return (Command('remove', tuple(v2.remove_argv(app, env)), tool='v2'),
-            Command('render', tuple(v2.render_argv()), tool='v2'))
+def _pairs(flag: str, values: tuple[str, ...]) -> tuple[str, ...]:
+    """One flag repeated for each value, in order."""
+    return tuple(part for value in values for part in (flag, value))
 
 
-def v2_promote_commands(app: str, _env: str, form: Mapping[str, str]) -> tuple[Command, ...]:
-    if not form.get('image'):
-        raise ActionError('refresh the staging app page and review the image before promotion')
-    return (Command('promote', tuple(v2.promote_argv(app)), tool='v2'),
-            Command('render', tuple(v2.render_argv()), tool='v2'))
+def _team_name(name: str, rename: str = '') -> None:
+    """A team's name and its new one are DNS labels: the branch and the registry both carry them."""
+    for label, value in (('team name', name), ('new name', rename)):
+        if (value or label == 'team name') and not records.NAME_RE.fullmatch(value):
+            raise ActionError(f'{label}: lowercase letters, digits and hyphens, at most 40 characters')
 
 
-V2_PLATFORM_OUTPUTS = frozenset({
-    'v2-records/calls.json', 'platform/egress/allocation.json', 'platform/egress/configmap.json',
-    'platform/egress/networkpolicy.json', 'platform/nats/users.json', 'platform/reloader/values.json',
-    'clusters/home/kustomization.yaml', 'platform/auth/kustomization.yaml',
-})
+def change_arguments(action: str, name: str, form: Mapping[str, str]) -> tuple[tuple[str, ...], str | None]:
+    """``swhurl-v2 change``'s own flags for one form, and the value it reads from standard input.
 
-
-def v2_owns(app: str, env: str, path: str, *, envs: tuple[str, ...] | None = None) -> bool:
-    """The files a v2 action may carry: its records and what render writes from them, never ``apps/``."""
-    if path in V2_PLATFORM_OUTPUTS or path.startswith('platform/auth/'):
-        return True
-    if path == f'{v2.RECORDS}/{app}/app.json':
-        return True
-    environments = envs if envs is not None else ((env,) if env else ('staging', 'prod'))
-    if any(path.startswith(f'{v2.RECORDS}/{app}/{one}/') for one in environments):
-        return True
-    if any(path.startswith(f'v2-apps/instances/{app}/{one}/') for one in environments):
-        return True
-    return any(path == f'clusters/home/app-{app}-{one}.json' for one in environments)
+    The form's checks are the console's, decided here as a 400 before any job; the values are v2's words, which
+    v2 merges into the record at the commit it changes. A connection, an allow or a team's channel is therefore
+    stated as what to add or remove, never as the whole list."""
+    settings = {
+        'v2-scale': v2_scale_settings,
+        'v2-expose': v2_exposure_settings,
+        'v2-team': v2_team_settings,
+    }
+    if action in settings:
+        return _pairs('--set', settings[action](form)), None
+    if action == 'new':
+        return (*_pairs('--set', tuple(form['flags'])), '--image', form['image']), None
+    if action == 'v2-connect':
+        calls = v2_names(form.get('calls', ''), records.NAME_RE, 'a call names an app')
+        subscriptions = v2_names(form.get('subscribe', ''), records.SUBSCRIPTION_RE,
+                                 'a subscription names <app>.<event>')
+        if not calls and not subscriptions:
+            raise ActionError('choose an app to call or an event to receive')
+        return (*_pairs('--call', calls), *_pairs('--subscribe', subscriptions)), None
+    if action == 'v2-disconnect':
+        role, other, event = (form.get(key, '').strip() for key in ('role', 'app', 'event'))
+        if role == 'calls' and records.NAME_RE.fullmatch(other):
+            return _pairs('--drop-call', (other,)), None
+        if role == 'subscribes' and records.SUBSCRIPTION_RE.fullmatch(f'{other}.{event}'):
+            return _pairs('--drop-subscription', (f'{other}.{event}',)), None
+        if role == 'publishes':
+            raise ActionError('publications come from the release: v2 does not remove one on the platform')
+        if role == 'reaches':
+            raise ActionError('an egress grant is set with swhurl-v2 edit --set egress=, so this cannot be removed here')
+        raise ActionError('no such connection to remove')
+    if action == 'v2-allow':
+        add = v2_names(form.get('add', ''), ALLOW_RE, 'an allowed caller is an app name or team:<team>')
+        remove = v2_names(form.get('remove', ''), ALLOW_RE, 'an allowed caller is an app name or team:<team>')
+        if not add and not remove:
+            raise ActionError('name an app or team:<team> to allow or stop allowing')
+        return (*_pairs('--allow', add), *_pairs('--disallow', remove)), None
+    if action == 'v2-promote':
+        if not form.get('image'):
+            raise ActionError('refresh the staging app page and review the image before promotion')
+        return (), None
+    if action.startswith('team-'):
+        _team_name(name)
+        if action == 'team-remove':
+            return (), None
+        if action == 'team-channel-remove':
+            return (), None
+        if action == 'team-channel-set':
+            return ('--transport', form.get('transport', 'ntfy').strip()), form.get('address', '').strip() + '\n'
+        description = ' '.join(form.get('description', '').split())
+        if action == 'team-add':
+            return ('--description', description), None
+        rename = form.get('rename', '').strip()
+        _team_name(name, rename)
+        if rename and rename != name:
+            return ('--description', description, '--rename', rename), None
+        return ('--description', description), None
+    return (), None  # v2-remove: the branch and the environment are the whole request
 
 
 @dataclass(frozen=True)
 class Action:
-    """One kind of console pull request, shared by the console (which opens it) and Activity (which reads
-    its branch): the environments its branch may name (none for a team's), the input paths it carries,
-    which of their changes it keeps (removal: deletions only), its command builder, and the words for its
-    pull request and job."""
+    """One kind of console pull request, as the console's forms and jobs see it: the environments its branch may
+    name (none for a team's), the job it runs as, and the instance it changes when that is not the branch's
+    (a promotion changes production). What the pull request is belongs to v2's kind table."""
     envs: tuple[str, ...]
-    owns: Callable[[str, str, str], bool]  # (app or team, env, path)
-    commands: Callable[[str, str, Mapping], tuple[Command, ...]]
-    title: str  # formatted with name and env; never includes credentials
     job: str = ''  # when different from the action's name
-    keeps: str = 'AMD'  # the changes (added, modified, deleted) of its paths the PR carries
-    target_env: str = ''  # the instance it changes when that is not the branch's (promotion: prod)
+    target_env: str = ''
 
 
 SHA = '[0-9a-f]{7,40}'
@@ -261,15 +198,6 @@ def parse(branch: str) -> tuple[str, str, str] | None:
     return None
 
 
-def branch(action: str, name: str, env: str, revision: str) -> str:
-    """The branch of ``action`` on ``name`` (and ``env``), made from main at ``revision``; refused unless
-    parse reads it back as the same."""
-    made = f'console/{action}-{name}' + (f'-{env}' if env else '') + f'-{revision}'
-    if parse(made) != (action, name, env):
-        raise ValueError(f'refusing to push {made!r}: the console pushes only its own action branches')
-    return made
-
-
 def target(action: str, name: str, env: str) -> str:
     """What a change is to: ``<app>/<env>`` (promotion: production) or ``team:<name>``."""
     entry = ACTIONS[action]
@@ -277,42 +205,19 @@ def target(action: str, name: str, env: str) -> str:
 
 
 ACTIONS: dict[str, Action] = {
-    'new': Action(('staging',), v2_owns, new_commands, 'v2-records: add {name}/staging',
-                  job='new app and repository'),
-    **{f'team-{action}': Action((), lambda _name, _env, path: team_inputs(path),
-                              lambda name, _env, form, action=action: team_commands(action, name, form),
-                              f'teams: {verb} {{name}}', job=f'team {action}')
-       for action, verb in (('add', 'add'), ('edit', 'change'), ('remove', 'remove'))},
-    **{f'team-channel-{action}': Action((), lambda _name, _env, path: team_inputs(path),
-                                      lambda name, _env, form, action=action: channel_commands(name, form, remove=action == 'remove'),
-                                      f'teams: {action} the notification channel of {{name}}', job=f'channel {action}')
-       for action in ('set', 'remove')},
-    'v2-scale': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
-                       lambda app, env, form: v2_commands(app, env, v2_scale_settings(form)),
-                       'apps: scale {name}/{env}'),
-    'v2-expose': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
-                        lambda app, env, form: v2_commands(app, env, v2_exposure_settings(form)),
-                        'apps: change access to {name}/{env}'),
-    'v2-connect': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
-                         lambda app, env, form: v2_commands(app, env, v2_connection_settings(form)),
-                         'apps: change the connections of {name}/{env}'),
-    'v2-disconnect': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
-                            lambda app, env, form: v2_commands(app, env, v2_connection_settings(form)),
-                            'apps: change the connections of {name}/{env}'),
-    'v2-allow': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
-                       lambda app, env, form: v2_commands(app, env, v2_allow_settings(form)),
-                       'apps: change who may call {name}/{env}'),
+    'new': Action(('staging',), job='new app and repository'),
+    **{f'team-{action}': Action((), job=f'team {action}') for action in ('add', 'edit', 'remove')},
+    **{f'team-channel-{action}': Action((), job=f'channel {action}') for action in ('set', 'remove')},
+    'v2-scale': Action(('staging', 'prod')),
+    'v2-expose': Action(('staging', 'prod')),
+    'v2-connect': Action(('staging', 'prod')),
+    'v2-disconnect': Action(('staging', 'prod')),
+    'v2-allow': Action(('staging', 'prod')),
     # The team is the app's: the edit names no environment and rewrites both, whichever page it was asked from.
-    'v2-team': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path, envs=('staging', 'prod')),
-                      lambda app, _env, form: v2_commands(app, '', v2_team_settings(form)),
-                      'apps: change the team of {name}'),
-    'v2-remove': Action(('staging', 'prod'), lambda app, env, path: v2_owns(app, env, path),
-                        v2_remove_commands, 'apps: remove {name}/{env}'),
-    'v2-promote': Action(('staging',), lambda app, env, path: v2_owns(app, env, path, envs=('staging', 'prod')),
-                         v2_promote_commands, 'apps: promote {name}/staging to {name}/prod',
-                         target_env='prod'),
+    'v2-team': Action(('staging', 'prod')),
+    'v2-remove': Action(('staging', 'prod')),
+    'v2-promote': Action(('staging',), target_env='prod'),
 }
-"""Every console pull request: branch/target, command builder, input ownership and PR wording. A person
-merges every one; the console reads it back by branch with :func:`parse`."""
-V2_KINDS = tuple(name for name in ACTIONS if name.startswith('v2-') and name != 'v2-promote')
-V2_ACTION = {name.removeprefix('v2-'): name for name in (*V2_KINDS, 'v2-promote')}
+"""Every console change the forms can start: its branch's environments, its job and its target. A person merges
+every one; the console reads it back by branch with :func:`parse`."""
+V2_ACTION = {name.removeprefix('v2-'): name for name in ACTIONS if name.startswith('v2-')}

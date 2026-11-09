@@ -1,8 +1,8 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: §23 step 1's live side-by-side, then step 2 (the publish path and Flux actions)
-Uncommitted: `v2/archtest/api.txt`, `v2/cmd/swhurl-v2`, `v2/orchestration`, `v2/pages`, `tests/render_console_goldens.py`, `tools/swhurl/console/templates/new_repo.html`
+Gate: §23 step 2 (the publish path and Flux actions)
+Uncommitted: `v2/orchestration`
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
 kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl`

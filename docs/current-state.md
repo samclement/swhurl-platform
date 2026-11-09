@@ -22,10 +22,20 @@ What has been verified on the live cluster, and when: current facts first, then 
   route, an egress grant, a SQLite database, a team registry with channels, a promotion whose images differ, a
   removed instance, one whose records Flux has not applied, and a new app with a job and an open pull request.
   `make check-v2` (with `archtest/api.txt` updated for the four `orchestration` readers and the `pages` helpers the
-  two pages use), `make check` and `make check-docs`.
-- **What is not:** the live side-by-side of these pages (the next gate), the POSTs behind their forms, the job's
-  event stream, and the operator's signed-in pass. The golden fixture gives the app page no flag override, so its
-  Feature flags table is covered only in its no-key state; flag rows are covered by the flags tests.
+  two pages use), `make check` and `make check-docs`; `orchestration` tests for a HelmRelease's environment in the map
+  and list forms and for the configuration the Scale form reads.
+- **Live side-by-side:** the Go server (`--dev`, the host kubeconfig, the console's GitHub token and NATS seed in its
+  environment, NATS port-forwarded to the host) beside a port-forward of the deployed console. `/apps/demo-shop/staging`,
+  `/apps/demo-shop/prod` and `/apps/demo-orders/staging` differ only in the `--dev` identity line, and
+  `/apps/demo-shop/staging/promotion` is the same; `/apps/demo-shop/staging` shows the live flag override (`shout`,
+  set 21 days ago) and the same disabled Set, because the flags card reads NATS. `/new` waited for the console
+  image to carry the template change below.
+- **Found live and fixed:** a HelmRelease's environment as a map (not the list form) lost a `valueFrom`'s source, so
+  `HOST_IP` read "from a reference" where the Python console says "from the pod (status.hostIP)"; the object form now
+  reads its own `valueFrom`, with a test for both forms.
+- **What is not:** the POSTs behind the pages' forms, the job's event stream, and the operator's signed-in pass. The
+  golden fixture gives the app page no flag override, so its Feature flags table is covered there only in its no-key
+  state; flag rows are covered by the flags tests and this live read.
 - **Deliberate differences from the Python console:** the New app form reads the team registry and each team's
   channels from the pinned tree (the registry's own channel), where Python reads two files from GitHub's `main`;
   in production the tree is that commit, and the render derives the routes from the registry. Go's `html/template`

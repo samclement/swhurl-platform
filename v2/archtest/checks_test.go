@@ -14,7 +14,7 @@ import (
 func fixture(t *testing.T, files map[string]string) *Module {
 	t.Helper()
 	files["go.mod"] = "module example.com/v2\n\ngo 1.26.0\n"
-	m, err := loadModule(writeFiles(t, files))
+	m, err := loadModule(writeFiles(t, files), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

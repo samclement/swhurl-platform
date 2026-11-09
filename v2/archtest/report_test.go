@@ -27,6 +27,7 @@ import (
 var (
 	reportBase      = flag.String("base", "", "change report: the base tree's v2 directory; empty skips the report")
 	reportAfter     = flag.String("after", root, "change report: the changed tree's v2 directory")
+	reportAfterList = flag.String("after-list", "", "change report: the changed tree's paths, NUL-separated, relative to the repository root; empty reads the directory")
 	reportBaseName  = flag.String("base-name", "base", "change report: how the report names the base")
 	reportAfterName = flag.String("after-name", "working tree", "change report: how the report names the changed tree")
 	reportOut       = flag.String("out", "", "change report: the directory for report.json and report.txt")
@@ -39,11 +40,15 @@ func TestChangeReport(t *testing.T) {
 	if *reportOut == "" {
 		t.Fatal("-out is required with -base")
 	}
-	before, err := readTree(*reportBase)
+	before, err := readTree(*reportBase, nil)
 	if err != nil {
 		t.Fatalf("base: %v", err)
 	}
-	after, err := readTree(*reportAfter)
+	afterPaths, err := readPaths(*reportAfterList)
+	if err != nil {
+		t.Fatalf("after paths: %v", err)
+	}
+	after, err := readTree(*reportAfter, afterPaths)
 	if err != nil {
 		t.Fatalf("after: %v", err)
 	}
@@ -101,12 +106,15 @@ type Exceptions struct {
 	Pure, PureImports, Rules []string
 }
 
-// readTree reads a v2 directory. A missing directory, files without go.mod, Go that does not parse
+// readTree reads a v2 directory. paths is nil to read every file the directory holds, or the files
+// (relative, '/' separators) the caller counts instead: the report reads the working tree through
+// Git, so an artifact there is not a change to v2. A listed path that is gone is not an error; that
+// is a file the change removed. A missing directory, files without go.mod, Go that does not parse
 // and rule settings that are not plain literals are errors, never an empty report.
-func readTree(dir string) (Tree, error) {
+func readTree(dir string, paths []string) (Tree, error) {
 	tree := Tree{Files: map[string]string{}, Packages: map[string]PackageFacts{}, Measures: map[string]Size{},
 		Exceptions: Exceptions{Layers: map[string]int{}}}
-	if err := hashFiles(dir, tree.Files); err != nil {
+	if err := hashFiles(dir, tree.Files, paths); err != nil {
 		return tree, err
 	}
 	if _, err := os.Stat(filepath.Join(dir, "go.mod")); errors.Is(err, fs.ErrNotExist) {
@@ -116,7 +124,7 @@ func readTree(dir string) (Tree, error) {
 		return tree, fmt.Errorf("%s has files but no go.mod", dir)
 	}
 	tree.Present = true
-	m, err := loadModule(dir)
+	m, err := loadModule(dir, paths)
 	if err != nil {
 		return tree, err
 	}
@@ -136,20 +144,67 @@ func readTree(dir string) (Tree, error) {
 	return tree, err
 }
 
-func hashFiles(dir string, into map[string]string) error {
+// readPaths reads the path list -after-list names: NUL-separated entries relative to the repository
+// root, of which only those under v2/ are the tree's. An empty list is no restriction at all, and a
+// file that cannot be read is an error rather than a tree nobody described.
+func readPaths(list string) ([]string, error) {
+	if list == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(list)
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{}
+	for _, entry := range strings.Split(string(data), "\x00") {
+		if rel, ok := strings.CutPrefix(entry, "v2/"); ok && rel != "" {
+			paths = append(paths, rel)
+		}
+	}
+	return paths, nil
+}
+
+// hashFiles hashes the files under dir, or exactly paths when that is not nil, into into. A path
+// that is not there is skipped: the tree has one fewer file, which is what a removal is.
+func hashFiles(dir string, into map[string]string, paths []string) error {
+	if paths != nil {
+		for _, rel := range paths {
+			sum, err := hashFile(dir, rel)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			into[rel] = sum
+		}
+		return nil
+	}
 	return filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return err
 		}
-		data, err := os.ReadFile(path)
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			return relErr
+		}
+		sum, err := hashFile(dir, rel)
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(dir, path)
-		sum := sha256.Sum256(data)
-		into[filepath.ToSlash(rel)] = hex.EncodeToString(sum[:])
+		into[filepath.ToSlash(rel)] = sum
 		return nil
 	})
+}
+
+// hashFile is one file's SHA-256.
+func hashFile(dir, rel string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func packageFacts(m *Module, pkg *Package) PackageFacts {

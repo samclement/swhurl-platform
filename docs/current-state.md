@@ -2,6 +2,26 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The change report reads v2 as Git carries it (8 November 2026)
+
+- **Scope:** the v2 guardrails' report, `make v2-report`, which tells a reviewer or an agent what a change does to
+  `v2/`. Offline only: no cluster, no app and no live effect.
+- **The problem:** the report compared two directories file by file with a filesystem walk, so anything under `v2/`
+  that Git ignores counted as a change. An 11 MB binary left by a `go build` on 29 October (`v2/swhurl-v2`, ignored
+  by `.gitignore`) made every report since say `files: 1 added` while `git status` was clean, and a guardrail message
+  read as if a turn had added a file.
+- **What changed:** `report.sh` asks `git ls-files --cached --others --exclude-standard` for the working tree's paths
+  and passes them as `-after-list`; `readTree` hashes exactly those (a listed path that is gone is a removal, not an
+  error) and `loadModule` parses exactly their Go files, so files and packages count the same set: none under
+  `testdata`, a dot directory or an underscore one, in the walk and in a list alike. The revision side is unchanged,
+  `git archive` already carrying only tracked files.
+- **Verification:** four new tests in `report_checks_test.go` (an artefact the paths leave out is not a change while
+  the walk still sees it, a listed path that is gone is removed, a list counts `testdata` files without making them
+  packages, and the list is read from NUL-separated repository paths keeping only `v2/`); `make check-v2` passed
+  (gofmt, vet, every package, archtest budgets, layers, API unchanged, 157 rendered files unchanged). Through
+  `make`: `make v2-report` with an ignored `v2/swhurl-v2` present prints `files: 6 changed` and no added file, and the
+  same tree with a non-ignored stray file still reports it added — Git would carry that one.
+
 ## Feature flags are Go's, and the console's card asks it (8 November 2026)
 
 - **Scope:** [§22](iteration-2-plan.md#22-feature-flags-in-go-the-overrides-adapter-and-the-consoles-card-approved-8-november-2026),

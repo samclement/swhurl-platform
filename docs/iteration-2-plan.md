@@ -2012,3 +2012,170 @@ log. Signed-in browser and promotion of a changed declaration stay unexercised u
 
 **Not in this slice.** A record that owns a flag's *state* (the deferred row stays), retention of overrides,
 flags in a rendered variable, the console's server and its 18 templates, and `apps/nkeys.py`'s removal.
+
+## 23. The console server in Go: the pages, the jobs and the console's last Python (proposed 9 November 2026)
+
+**Decision.** The console stops being Starlette and Python. One command, `swhurl-v2 console`, serves the same 12
+pages, the three redirects, the eight POSTs and the job stream, with the same markup, CSS, JS, URLs, identity rule
+and GitHub tokens; the 18 Jinja templates are rewritten as `html/template` in which no page logic remains. The
+operator decided on 9 November 2026 to keep **New app** in the console: rendering a new app's repository stays
+Copier's, one pinned subprocess, and repository creation joins the GitHub write port — so `apps/repo.py`,
+`apps/hooks.py`, `proposal.py`, `repos.py` and at the end the whole of `console/` leave Python. Four steps, each its
+own gate, and the first adds no external effect.
+
+**What is ported, and what is not decided again.** Every console change already runs v2's own code — `create`,
+`edit`, `remove`, `promote`, `team` and `render` in the pinned tree — and the facts every page shows are already v2
+documents: §21's inventory, §22's flags, `verify`'s checks, the offers and the team registry. This slice ports
+**orchestration and presentation**: the pinned bundle, the publish path, the job lifecycle, the page data and the
+templates. It adds no second model, no second path catalogue and no second judge.
+
+**Measured 9 November 2026, read-only.** 22 routes — 13 GET (12 pages and `/healthz`), 3 redirects (`/jobs`,
+`/services`, `/units`), 8 POST, `/jobs/{id}/events` (server-sent events) and `/static/*`. 18 Jinja templates,
+1,337 lines; `console/` is 26 modules, 3,788 lines, with 3,777 lines of tests pinning it. The console still reaches
+56 modules and 8,364 lines: those 26, and 21 under `apps/` (2,612). The image runs four external binaries:
+`kubectl`, `swhurl-v2`, `copier`/`uvx` and, for local development only, `git`.
+
+**Where it lives.**
+
+- **Layer 0, `pages`**: each page's data — rows, labels, states, reasons, ages, short hashes, URL fields and the
+  sorted slices the templates iterate — computed from `kernel` and `observe` values by functions that print
+  nothing. No field is `template.HTML` or `template.HTMLAttr`: markup, `hx-*` attributes and escaping stay the
+  templates' job, so the data cannot slip the escaper. The two places the Python console injects markup today
+  (`follow()`'s `hx-*` attributes and one JSON attribute) become template helpers beside the templates that use
+  them, covered by the byte-comparison tests.
+- **Layer 1**: `adapters/kube` gains its write port (patch or annotate a Kustomization or GitRepository, merge-patch
+  the job record); `adapters/github` gains the console's reads (a tarball at a commit, a comparison of two commits,
+  open pull requests) and a write port (blobs → tree → commit → ref → pull request; create a repository, its first
+  commit and its image webhook); a new `adapters/copier` runs one pinned `copier copy` and nothing else;
+  `adapters/registry` and `adapters/nats` are reused unchanged.
+- **Layer 2, `orchestration`**: the console's use cases — a pinned bundle, a change and its publication, a job's
+  lifecycle, a page's inputs, `app-repo`.
+- **Layer 3, `cmd/swhurl-v2`**: handlers, the template set and static assets (`//go:embed`), and the flags. `places`
+  keeps its rule — layer 2 is `orchestration`, and a server is the command that presents its use cases — so the
+  port needs no new layer and no exception.
+
+**Contract: the server.**
+
+- `swhurl-v2 console --port 8080 (--in-cluster | --kubeconfig FILE) [--dev]`. Exactly one credential, as `status`
+  states it; `--dev` refuses every address but loopback and fixes the identity to `operator@localhost (dev)`.
+- Every route, method, status code and redirect target is today's. A trailing slash answers 308 to the canonical
+  path — stated rather than inherited from a framework.
+- `/healthz` answers `ok` and is the only route without an identity. Identity is `X-Auth-Request-Email`, verbatim;
+  without it a plain-text 401. Any method but GET or HEAD needs an `Origin` whose host equals the request's `Host`
+  (`:authority` under HTTP/2, never `X-Forwarded-Host`), else 403. No cookies, no roles.
+- Static assets keep their content-hashed URLs and immutable caching; CSS, JS and HTMX are moved, not rewritten.
+- The four self-refreshing pages keep refreshing; a job page left open re-reads its job.
+- Failures keep the Python console's meanings: 502 and the error page for a failed read, 404 for no such app or
+  unit, 400 for a refused form, 409 for a conflict, 401 for no identity — never a fallback to an older `main` and
+  never a fallback to Python.
+
+**Contract: pages, one commit per request.**
+
+- A request resolves `main` once, downloads the tarball at that SHA, filters it to what a page may show and caches
+  the bytes by SHA (60 entries, first in first out); extraction is into a request-owned directory removed on exit.
+  A failed read is never absence and never a newer commit.
+- The filter gains the offers documents and the team registry, so a page cannot mix a declaration from one commit
+  with rows from another — §22 made that true of the flag card alone.
+- A read happens once per distinct input per request, with at most four in flight.
+- Templates hold no page logic: no filter pipeline, no macro reading another value, no lookup that decides a word.
+  Every collection the Jinja filters build (sorted teams, `dictsort`, `selectattr`, `sum(start=[])`, slices,
+  `split()[1]`) is a Go field, and every label, state word, age, refusal and short hash is computed in `pages`.
+- Acceptance is **byte-identical HTML** per page and per state against today's Python render, with any difference
+  named in this contract. The escaping, the attribute quoting and the entity choices are the test's subject.
+
+**Contract: reads are calls.** `status --all`, `verify --scope cluster`, `flags`, the offers documents, the team
+registry, the compiled variables and the pull-request evidence are called as functions in the request's process;
+what they also print stays for their other consumers (`make app-status`, the Deploy workflow, `check-docs`), so
+nothing outside the console changes. This is where the Python console's missing deadlines go: `status` and `verify`
+run as subprocesses with no timeout today, and afterwards every read carries the request's deadline and every job's
+work carries the job's.
+
+**Contract: a change and its publication.** Seven steps, today's, in one process: resolve the pinned commit → apply
+the change by calling the use case on the extracted tree (`create`, `edit`, `remove`, `promote`, `team`, `render`) →
+snapshot path, mode and SHA-256 → keep only the files the kind owns → upload blobs → create tree, commit and the
+`console/<action>-<name>[-<env>]-<sha>` ref → open the pull request with the same body, author and **Merge plan**
+line. The kinds and their owned paths are one table, moved from `changes.ACTIONS` with its targets, environments,
+wording and refusals. Extraction preserves file modes; a mode lost makes every script look changed, so a contract
+test compares the owned set for a tree holding an executable. A channel address still reaches v2 on standard input
+only.
+
+**Contract: jobs.** One running job per target; states `running`, `succeeded`, `failed`, `interrupted`; a job's lines
+are its record. Records stay in the ConfigMap `console/console-jobs`, one key per job, written as the job runs and
+as it ends, keeping the newest 30, each trimmed from the front to 20 kB, with the same merge patch and the same null
+deletes so two pods cannot drop each other's keys; every line redacted and capped at 1,000 characters.
+`/jobs/{id}/events?after=N` keeps its shape: `id` is the line number, a `done` event carries state, finish time and
+link, a keep-alive every 15 seconds, `Last-Event-ID` resumes, and another pod's job is 404. On SIGTERM the server
+takes no new job and waits up to 840 seconds inside the pod's 900; a job cut short is marked interrupted with its
+audit line, and **Finish creating this app** resumes it from the record.
+
+**Contract: Flux actions.** Reconcile, suspend and resume are the kube write port's: fetch, then patch or annotate,
+then poll for up to 600 seconds, refusing the root units (`cluster-sources`, `cluster-stack`) in the same words. A
+browser request gets the `started` fragment; a plain form a 303 to the job.
+
+**Contract: New app (the operator's decision).** `swhurl-v2 app-repo` is one command and one implementation: read
+the stack's `copier.yml` for its questions, refuse a name that exists or answers its type does not accept, run one
+pinned `copier copy --vcs-ref <v2/contract/stacks.json>` in a Go-owned scratch directory under a deadline (its
+template clone is anonymous, so it holds no token and no credential reaches its environment or argv), create the
+public repository with its first commit and image webhook through the GitHub write port, wait for the first image
+through the registry adapter (600 seconds, the seed image preferred), then the ordinary publication for `create`,
+each `edit` and `render`. `make app-repo` becomes bash over it and the console's New app calls the same use case.
+`copier` is the fourth approved subprocess, after SOPS, Helm and Git, so the `no-subprocess` allowlist, its table
+row and `archtest` change with it.
+
+**Contract: secrets.** One redactor covers the two GitHub tokens, the kubeconfig, a channel address and every job
+line; a refusal, an error page and a log line all pass through it. Secrets are bytes in a header, or on a child's
+standard input, never in argv.
+
+**Deliberate changes.**
+
+- Reads are calls, not subprocesses: the console image no longer needs `swhurl-v2`, `kubectl` or `helm`. It keeps a
+  Python runtime, a pinned `copier` and `git`, because Copier is the one foreign renderer a new app needs.
+- The image copies neither `tools/` nor the platform's Python, and the image's content tag and the
+  `verify-platform` console check follow it.
+- Three caches gain bounds (stacks and questions at five minutes, offer documents per commit), where today they
+  grow without eviction.
+- No page data carries trusted HTML; the two places the Python console injects markup are template helpers.
+- `docs/console.md`'s token table says `/new` creates nothing while `new_app.py` creates the repository: the stale
+  sentence is deleted and the section says what is.
+
+**Deletions.** `tools/swhurl/console/` (26 modules, 4,480 lines) and its nine test files (3,777 lines, whose cases
+become Go table tests); `console/templates/` and `console/static/` move into `v2/`; `apps/repo.py`, `apps/hooks.py`
+and the console's last importers of `apps/*`, which is what lets the bounded v1 model shrink again;
+`images/console/Dockerfile`'s tooling, venv and `tools/` layers; the `console` and `console-dev` rows in
+`commands.py` become bash over the new command.
+
+**Delivery, step by step.** Each step is validated (`make check`, `make check-v2`, `make check-docs`, Go tests) and
+each has its own gate. They land in this order because the first three change nothing the operator sees:
+
+1. **The server serves reads** — handlers, `pages`, the 18 templates, static assets, authentication, `/healthz` and
+   `--dev`. No new external effect: it writes nothing. Proof: table tests per page and per state, the byte
+   comparison against the Python render, and a live side-by-side — the Go server on your kubeconfig beside a
+   port-forward of the deployed console, every page compared by hand. Nothing deployed.
+2. **The publish path and the Flux actions** (kube write, GitHub write). Landed as `swhurl-v2 change --kind …`,
+   called through `console/v2.py` exactly as `edit` and `promote` are today, so the deployed console opens real pull
+   requests through Go while Python still serves the pages; `proposal.py`, `repos.py`'s publication and
+   `changes.py`'s GitHub parts are deleted. Both commands of steps 2 and 3 read their tokens from the environment,
+   as `flags` reads `NATS_SEED`, and print their lines with the pull request URL last, so the console streams and
+   records what it streams today.
+3. **New app** — `swhurl-v2 app-repo` and `adapters/copier`, again called through `console/v2.py`, so
+   `apps/repo.py` and `apps/hooks.py` are deleted and a live creation from the deployed console proves Copier, the
+   repository, the first image and the pull request.
+4. **Cutover** — the image's command becomes `swhurl-v2 console`; the remaining `console/` Python and its tests are
+   deleted; `make console-dev` becomes bash; the docs are rewritten. Proof: signed-out and signed-in requests to
+   every page, one throwaway app created from the console, a promotion refused while its own change is unapplied, a
+   job surviving a pod replacement, and the operator's browser pass.
+
+**Verification.** Go table tests for `pages` (every state, team, exposure, connection outcome and an empty record
+tree), for the filter's path set, for the mode-preserving snapshot and for the owned paths of every change kind, and
+for job states including a foreign pod's job and an interrupted one; contract suites for `adapters/github`'s write
+port (a scripted server: blob, tree, commit, ref, pull, a refusal, and a token that must not follow a redirect to
+codeload), for `adapters/kube`'s write port (patch, annotate, merge patch, null delete, a refused root unit) and for
+`adapters/copier` (a local template fixture, no network; the real adapter's suite runs where Copier is installed, as
+the chart tests run where Helm is); `make check-v2` with `Layers`, `api.txt` and the subprocess allowlist updated in
+the same change, saying why; `make check`, `make test`, `make check-docs`; the byte comparison of every page; cold
+and warm page timings against the Python console, reported as numbers rather than a presumed speedup; and the live
+checks each step names.
+
+**Not in this slice.** Any redesign: the markup, the map's layout, the Activity page's history and the catalogue's
+presentation stay as they are. Also unchanged: what a promotion means, the rule that a person merges every pull
+request, the tokens and their scopes, `platform/console`'s manifests and RBAC, and the deferred features list.

@@ -2,7 +2,7 @@
 
 Status: in progress
 Gate: §23 step 1's remaining pages (catalogue and its offers documents, Activity and a job's page, the app page, New app, promotion and pending), then its live side-by-side
-Uncommitted: `v2/adapters/appsource`, `v2/adapters/git`, `v2/adapters/github`, `v2/archtest`, `v2/cmd/swhurl-v2`, `v2/orchestration`, `v2/pages`, `tests/render_console_goldens.py`
+Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
 kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl`

@@ -65,10 +65,13 @@ adapters/files: func (Disk) Prune(dir, folder string, rendered []string) ([]Outc
 adapters/files: func (Disk) Remove(dir, path string) ([]Outcome, error)
 adapters/files: func (Disk) Write(dir string, docs []kernel.File) ([]Outcome, error)
 adapters/files: func New() Writer
+adapters/files: func Snapshot(dir string) ([]TreeFile, error)
 adapters/files: func Target(base, relative string) (string, error)
+adapters/files: func Unpack(dir string, tree []TreeFile) error
 adapters/files: type Disk struct {}
 adapters/files: type Error struct {Code string Path string Reason string}
 adapters/files: type Outcome struct {Path string `json:"path"` State string `json:"state"`}
+adapters/files: type TreeFile struct {Path string Executable bool Body []byte}
 adapters/files: type Writer interface {Write(dir string, files []kernel.File) ([]Outcome, error) Prune(dir, folder string, rendered []string) ([]Outcome, error) Remove(dir, path string) ([]Outcome, error)}
 adapters/git/gittest: func (*Fake) Archive(root, revision string) ([]byte, error)
 adapters/git/gittest: func (*Fake) Head(root string) (string, error)
@@ -104,15 +107,28 @@ adapters/github/githubtest: func (*ConsoleFake) Revision(_ context.Context, repo
 adapters/github/githubtest: func (*ConsoleFake) Tarball(_ context.Context, repository, token, revision string) ([]byte, error)
 adapters/github/githubtest: func (*Fake) Hooks(_ context.Context, repository, token string) ([]observe.Hook, error)
 adapters/github/githubtest: func (*Fake) Token(_ context.Context, repository, token string) (github.Acceptance, error)
+adapters/github/githubtest: func (*PublisherFake) BaseTree(_ context.Context, repository, token, commit string) (string, error)
+adapters/github/githubtest: func (*PublisherFake) Blob(_ context.Context, repository, token string, content []byte) (string, error)
+adapters/github/githubtest: func (*PublisherFake) Branch(_ context.Context, repository, token, name, commit string) error
+adapters/github/githubtest: func (*PublisherFake) Commit(_ context.Context, repository, token string, commit github.NewCommit) (string, error)
+adapters/github/githubtest: func (*PublisherFake) OpenPull(_ context.Context, repository, token string, pull github.NewPull) (github.Pull, error)
+adapters/github/githubtest: func (*PublisherFake) Tree(_ context.Context, repository, token, base string, entries []github.TreeEntry) (string, error)
 adapters/github/githubtest: func ConsoleContract(t *testing.T, open func(*testing.T) (github.Console, ConsoleFixture))
 adapters/github/githubtest: func Contract(t *testing.T, open func(*testing.T) github.Reader)
 adapters/github/githubtest: func New() *Fake
 adapters/github/githubtest: func NewConsole(fixture ConsoleFixture) *ConsoleFake
+adapters/github/githubtest: func NewPublisher(scene PublisherFixture) *PublisherFake
+adapters/github/githubtest: func PublisherContract(t *testing.T, open func(*testing.T) (github.Publisher, PublisherFixture))
+adapters/github/githubtest: func PublisherScenario() PublisherFixture
 adapters/github/githubtest: func Scenario() ConsoleFixture
+adapters/github/githubtest: type BranchWrite struct {Name, Commit string}
 adapters/github/githubtest: type Call struct {Operation, Repository, Token string}
 adapters/github/githubtest: type ConsoleFake struct {Commit string Files map[string]string AppFiles map[string]string Archive []byte Changed []string Contains bool Pulls []github.Pull ByNumber map[int]github.Pull Err error Reads []string}
 adapters/github/githubtest: type ConsoleFixture struct {Revision string File string Body string AppFile string AppBody string Changed []string Pulls []github.Pull Merged github.Pull}
 adapters/github/githubtest: type Fake struct {Repositories map[string][]observe.Hook Tokens map[string]github.Acceptance Denied map[string]bool Fail error Calls []Call}
+adapters/github/githubtest: type PublisherFake struct {Scene PublisherFixture FailAt string Blobs [][]byte Trees []TreeWrite Commits []github.NewCommit Refs []BranchWrite Pulls []github.NewPull}
+adapters/github/githubtest: type PublisherFixture struct {Blob, Tree, Commit string Base string Branch string PullNumber int PullURL string}
+adapters/github/githubtest: type TreeWrite struct {Base string Entries []github.TreeEntry}
 adapters/github: func (*API) AppFile(ctx context.Context, repository, token, file string) ([]byte, bool, error)
 adapters/github: func (*API) Compare(ctx context.Context, repository, token, from, to string) ([]string, bool, error)
 adapters/github: func (*API) Contents(ctx context.Context, repository, token, revision, path string) ([]byte, bool, error)
@@ -125,13 +141,19 @@ adapters/github: func (*API) Token(ctx context.Context, repository, token string
 adapters/github: func (*Error) Error() string
 adapters/github: func New(client *http.Client) Reader
 adapters/github: func NewConsole(client *http.Client) Console
+adapters/github: func NewPublisher(client *http.Client) Publisher
 adapters/github: func SafeProblem(err error) string
 adapters/github: type API struct {}
 adapters/github: type Acceptance struct {Status int Expiry string}
 adapters/github: type Console interface {// Revision is the full commit id of the repository's main branch. Revision(ctx context.Context, repository, token string) (string, error) // Contents is one file at one commit; found is false when the commit has no such file. Contents(ctx context.Context, repository, token, revision, path string) (body []byte, found bool, err error) // Tarball is the repository at one commit, as GitHub serves it: a tar archive inside a leading folder. Tarball(ctx context.Context, repository, token, revision string) ([]byte, error) // AppFile is one file at another repository's default branch: an app's swhurl.yaml, which the console reads // without a token because app repositories are public. found is false when the repository has no such file. AppFile(ctx context.Context, repository, token, path string) ([]byte, bool, error) // Compare reports whether to contains from and, when it does, the paths changed between them. A comparison // GitHub truncated is contained but has no path list. Compare(ctx context.Context, repository, token, from, to string) (paths []string, contained bool, err error) // OpenPulls lists the open console pull requests, newest first, each with how its Validate workflow went. OpenPulls(ctx context.Context, repository, token string) ([]Pull, error) // Pull is one pull request, however it ended. Pull(ctx context.Context, repository, token string, number int) (Pull, error)}
 adapters/github: type Error struct {Reason string}
+adapters/github: type NewCommit struct {Message string Tree string Parent string Author Signature}
+adapters/github: type NewPull struct {Title string Head string Base string Body string}
+adapters/github: type Publisher interface {// Blob stores one file's bytes and returns their identity. Blob(ctx context.Context, repository, token string, content []byte) (string, error) // BaseTree is the tree one commit names: what a new tree is written over. BaseTree(ctx context.Context, repository, token, commit string) (string, error) // Tree writes entries over a base tree and returns the new tree's identity. Tree(ctx context.Context, repository, token, base string, entries []TreeEntry) (string, error) // Commit creates one commit and returns its identity. Commit(ctx context.Context, repository, token string, commit NewCommit) (string, error) // Branch creates one reference, and refuses any name outside console/: nothing else is the console's to write. Branch(ctx context.Context, repository, token, name, commit string) error // OpenPull opens the pull request and returns it as the console shows it. OpenPull(ctx context.Context, repository, token string, pull NewPull) (Pull, error)}
 adapters/github: type Pull struct {Number int Title string URL string Branch string Opened string Body string Head string Checks string ChecksURL string State string MergedAt string ClosedAt string MergeCommit string}
 adapters/github: type Reader interface {Hooks(context.Context, string, string) ([]observe.Hook, error) Token(context.Context, string, string) (Acceptance, error)}
+adapters/github: type Signature struct {Name string Email string}
+adapters/github: type TreeEntry struct {Path string Mode string SHA string}
 adapters/helm/helmtest: func (*Acquisition) Acquire(pin helm.Pin, cache string) (string, error)
 adapters/helm/helmtest: func (*Fake) Render(request helm.Request) ([]json.RawMessage, error)
 adapters/helm/helmtest: func AcquisitionContract(t *testing.T, open func(*testing.T) (helm.Acquirer, string))
@@ -609,6 +631,7 @@ kernel: func ImagePolicyName(application string) string
 kernel: func ImageRepository(image string) string
 kernel: func ImageRepositoryName(application string) string
 kernel: func InstanceFolder(application, environment string, profile PlatformProfile) string
+kernel: func MergeDeclarations(current, adds, drops []string) []string
 kernel: func NamespaceOf(application, environment string) string
 kernel: func NewUserKey(seed [32]byte) UserKey
 kernel: func NewestTag(tags []string) (ImageTag, bool)
@@ -1073,6 +1096,7 @@ orchestration: func (*Refusal) Error() string
 orchestration: func (ConsoleSourceOf) Revision(ctx context.Context) (string, error)
 orchestration: func (ConsoleSourceOf) Tree(ctx context.Context, revision string) (map[string][]byte, error)
 orchestration: func AcquireChart(profile kernel.PlatformProfile, repositories []byte, cache string, acquirer helm.Acquirer) (string, error)
+orchestration: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
 orchestration: func BootstrapClickStack(ctx context.Context, ports BootstrapPorts, options BootstrapOptions) (BootstrapReport, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
 orchestration: func CheckNotifications(ctx context.Context, ports CheckerPorts, options CheckOptions) (CheckReport, error)
@@ -1083,6 +1107,7 @@ orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, a
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
+orchestration: func ConnectionSettings(current kernel.InstanceSpec, calls, subscriptions, dropCalls, dropSubscriptions []string) ([]string, error)
 orchestration: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads ChangeReads, others bool) ([]pages.ChangeRow, string)
 orchestration: func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now func() time.Time) (pages.Checks, error)
 orchestration: func ConsoleDashboards(ctx context.Context, data kube.Data) map[string]string
@@ -1112,6 +1137,8 @@ orchestration: func NotificationsHeartbeat(ctx context.Context, ports HeartbeatP
 orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformReport, error)
 orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.PlatformReport, error)
 orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
+orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
+orchestration: func ReadTree(content []byte, prefixed bool) ([]files.TreeFile, error)
 orchestration: func Records(files map[string][]byte) (ConsoleRecords, error)
 orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
@@ -1169,6 +1196,8 @@ orchestration: type PlatformInputs struct {Reader kube.Reader Source string Now 
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
 orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}
 orchestration: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
+orchestration: type PublishInputs struct {Change pages.ConsoleChange Name, Env string Identity string Revision string Before []files.TreeFile After []files.TreeFile Commands []string Repository string Token string DryRun bool}
+orchestration: type Published struct {Branch string Paths []string Status map[string]string URL string}
 orchestration: type RecordedInstance struct {Application, Environment string Release []byte}
 orchestration: type Refusal struct {Subject, Reason string}
 orchestration: type Registration struct {Path string Document []byte}
@@ -1185,6 +1214,15 @@ orchestration: type Result struct {Compilation kernel.Compilation Written []file
 orchestration: type StatusInputs struct {Inputs Revision string RecordsRoot string SharedPaths []string Changes *observe.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
+pages: const ConsoleAppsRoot = "v2-apps/instances"
+pages: const ConsoleAuthFolder = "platform/auth"
+pages: const ConsoleCallsFile = ConsoleRecordsRoot + "/calls.json"
+pages: const ConsoleChannelsFolder = "platform/notify/channels"
+pages: const ConsoleEgressFile = "platform/egress/allocation.json"
+pages: const ConsoleRecordsRoot = "v2-records"
+pages: const ConsoleRoutesFile = "platform/notify/routes.json"
+pages: const ConsoleTeamsFile = ConsoleRecordsRoot + "/teams.json"
+pages: const ConsoleUnitsRoot = "clusters/home"
 pages: const FinishAppJob = "finish new app"
 pages: const FluxSection = "Flux Kustomizations"
 pages: const NewAppJob = "new app and repository"
@@ -1216,6 +1254,12 @@ pages: func (ConnectionRow) Kind() string
 pages: func (ConnectionRow) Name() string
 pages: func (ConnectionRow) Verb() string
 pages: func (ConnectionRow) What() string
+pages: func (ConsoleChange) Allows(env string) bool
+pages: func (ConsoleChange) Branch(name, env, revision string) (string, error)
+pages: func (ConsoleChange) Heading(name, env string) string
+pages: func (ConsoleChange) Owns(name, env, file string) bool
+pages: func (ConsoleChange) Target(name, env string) string
+pages: func (ConsoleChange) Team() bool
 pages: func (EnvView) ActionLabel() string
 pages: func (Instance) Name() string
 pages: func (Instance) Namespace() string
@@ -1255,6 +1299,9 @@ pages: func Compare(staging, prod *AppRow) string
 pages: func Condensed(entries []Entry) []Entry
 pages: func ConnectableTo(rows []AppRow, offers map[string]Offers, env, app string) Connectable
 pages: func ConnectionsOf(inventory *Inventory, teams map[string]string, env string) Connections
+pages: func ConsoleChangeNamed(kind string) (ConsoleChange, bool)
+pages: func ConsoleChanges() []ConsoleChange
+pages: func ConsoleTeamInput(file string) bool
 pages: func DecodeReport(data []byte) (Report, error)
 pages: func EgressPageOf(rows []AppRow, site Site) EgressPage
 pages: func EnvironmentNamed(name string) string
@@ -1269,8 +1316,10 @@ pages: func Lands(action, target string) bool
 pages: func LayerOf(name string) string
 pages: func MergeMode(body string) string
 pages: func MergePlan(body string) string
+pages: func MergePlanFor(kind string, changed []string) string
 pages: func Named(app, env string) (Instance, bool)
 pages: func NewAppPageOf(input NewAppInput) NewAppPage
+pages: func ParseConsoleBranch(branch string) (change ConsoleChange, name, env string, ok bool)
 pages: func PendingOf(instance Instance, removing, inGit bool, jobs []Job, pulls []PendingPull, prsError string) Pending
 pages: func PendingPullOf(open OpenPull) PendingPull
 pages: func Prepared(job Job) Stage
@@ -1320,6 +1369,7 @@ pages: type ConnectableEvent struct {Name, App, Team, Says string}
 pages: type Connection struct {Role string `json:"role"` App string `json:"app,omitempty"` Event string `json:"event,omitempty"` Host string `json:"host,omitempty"` Outcome string `json:"outcome,omitempty"` Reason string `json:"reason,omitempty"`}
 pages: type ConnectionRow struct {Role, App, Event, Team, Status string}
 pages: type Connections struct {Address, API string Calls, Callers, Publishes, Subscribes, Egress []string Subscribers [][2]string Rows []ConnectionRow Offers string ProxyPort int32}
+pages: type ConsoleChange struct {Name string Title string Envs []string TargetEnv string BothEnvs bool}
 pages: type Currentness struct {State string `json:"state"` Reason string `json:"reason"` AppliedRevision string `json:"appliedRevision"`}
 pages: type Database struct {Kind string `json:"kind"` Path string `json:"path"`}
 pages: type EgressEnvironment struct {Env string Rows []EgressRow}
@@ -1393,6 +1443,7 @@ pages: type Value struct {Kind ValueKind Fields []ValueField Items []Value Text 
 pages: type ValueField struct {Name string Value Value}
 pages: type ValueKind int
 pages: type Workload struct {Status string `json:"status"` ReadyReplicas *int32 `json:"readyReplicas"`}
+pages: var ConsoleSharedFiles = []string{ConsoleCallsFile, ConsoleEgressFile, "platform/egress/configmap.json", "platform/egress/networkpolicy.json", "platform/nats/users.json", "platform/reloader/values.json", ConsoleUnitsRoot + "/kustomization.yaml",}
 pages: var EveryApp = map[string]bool{"events": true, "flags": true}
 pages: var Included = []IncludedAnswer{{Key: "frontend", Label: "Browser frontend", Text: "a page built with Vite+ that the app serves at /, calling its own /api"}, {Key: "database", Label: "SQLite", Text: "a database file the platform keeps on a volume and backs up nightly"}, {Key: "api", Label: "API description", Text: "an OpenAPI document of its routes, so other apps can find and call it"}, {Key: "events", Label: "Events", Text: "an AsyncAPI document of the events it publishes, with an example event"}, {Key: "flags", Label: "Feature flags", Text: "an example feature flag, set per environment from the console"},}
 pages: var Layers = []struct{Prefix, Title, Text string}{{"cluster-", "Cluster", "Flux's own Git source and unit list, applied by make flux-bootstrap"}, {"infra-", "Infrastructure", "Namespaces, certificates and the ingress controller"}, {"platform-", "Platform services", "Sign-in, observability, this console and automation"}, {"app-", "Deployments", "One unit per app instance"},}

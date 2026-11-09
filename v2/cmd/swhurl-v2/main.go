@@ -341,7 +341,7 @@ func runWith(args []string, out, diagnostic io.Writer, c cli) int {
 		return 2
 	}
 	c.out, c.diagnostic = out, diagnostic
-	return commands[r.command](c, r)
+	return commands()[r.command](c, r)
 }
 
 // runWithArchives runs one command with a supplied object-store reader, so a test can answer a listing
@@ -395,39 +395,43 @@ func awsCredentials() (s3.Credentials, bool) {
 	return credentials, credentials.AccessKey != "" && credentials.SecretKey != ""
 }
 
-// commands is every command and the step that runs it, in one table so the dispatcher and the usage check
-// cannot disagree.
-var commands = map[string]func(cli, request) int{
-	"release-id":              func(c cli, r request) int { return c.releaseID(r.release) },
-	"instance-revision":       func(c cli, r request) int { return c.instanceRevision(r.instance) },
-	"select-release":          cli.selectRelease,
-	"deploy":                  cli.deploy,
-	"promote":                 cli.promote,
-	"compile":                 cli.compile,
-	"status":                  cli.status,
-	"render":                  cli.render,
-	"policy":                  cli.policy,
-	"chart":                   cli.acquireChart,
-	"proxy":                   cli.proxy,
-	"mint":                    cli.mint,
-	"create":                  cli.create,
-	"declaration":             cli.declaration,
-	"names":                   cli.names,
-	"image-declaration":       cli.imageDeclaration,
-	"edit":                    cli.edit,
-	"remove":                  cli.remove,
-	"restore":                 cli.restore,
-	"team":                    cli.team,
-	"workstreams":             cli.workstreams,
-	"check-repo":              cli.checkRepo,
-	"verify":                  cli.verify,
-	"notify-serve":            cli.notifyServe,
-	"notifications-check":     cli.notificationsCheck,
-	"notifications-heartbeat": cli.notificationsHeartbeat,
-	"clickstack-dashboards":   cli.clickstackDashboards,
-	"clickstack-bootstrap":    cli.clickstackBootstrap,
-	"flags":                   cli.flags,
-	"console":                 cli.console,
+// commands is every command and the step that runs it, in one table so the dispatcher and the usage check cannot
+// disagree. It is a function rather than a variable because a change runs the commands it names: a table a command's
+// own body refers to would otherwise depend on itself.
+func commands() map[string]func(cli, request) int {
+	return map[string]func(cli, request) int{
+		"release-id":              func(c cli, r request) int { return c.releaseID(r.release) },
+		"instance-revision":       func(c cli, r request) int { return c.instanceRevision(r.instance) },
+		"select-release":          cli.selectRelease,
+		"deploy":                  cli.deploy,
+		"promote":                 cli.promote,
+		"compile":                 cli.compile,
+		"status":                  cli.status,
+		"render":                  cli.render,
+		"policy":                  cli.policy,
+		"chart":                   cli.acquireChart,
+		"proxy":                   cli.proxy,
+		"mint":                    cli.mint,
+		"create":                  cli.create,
+		"declaration":             cli.declaration,
+		"names":                   cli.names,
+		"image-declaration":       cli.imageDeclaration,
+		"edit":                    cli.edit,
+		"remove":                  cli.remove,
+		"restore":                 cli.restore,
+		"team":                    cli.team,
+		"workstreams":             cli.workstreams,
+		"check-repo":              cli.checkRepo,
+		"verify":                  cli.verify,
+		"notify-serve":            cli.notifyServe,
+		"notifications-check":     cli.notificationsCheck,
+		"notifications-heartbeat": cli.notificationsHeartbeat,
+		"clickstack-dashboards":   cli.clickstackDashboards,
+		"clickstack-bootstrap":    cli.clickstackBootstrap,
+		"flags":                   cli.flags,
+		"console":                 cli.console,
+		"change":                  cli.change,
+	}
 }
 
 // request is one parsed command line: the command, the files, revision, credentials and source it
@@ -447,17 +451,19 @@ type request struct {
 	chart, repositories, cache                         string
 	eventsSecret, offers, change, label                string
 	team, image, exposure                              string
-	action, description, rename, transport             string
-	listen, appDir, catalogue, rendered                string
-	statePath, port                                    string
-	stateFlag, maxAgeFlag                              *once
-	rotate, check, json, inCluster, all, dryRun        bool
-	cluster, dev                                       bool
-	confirm, ageKey, cleared                           string
-	urlTTL                                             time.Duration
-	urlTTLSet                                          bool
-	outFlag                                            *once
-	descriptionFlag                                    *once
+	// spec is a change's own flags; no other command reads it.
+	spec                                        *changeSpec
+	action, description, rename, transport      string
+	listen, appDir, catalogue, rendered         string
+	statePath, port                             string
+	stateFlag, maxAgeFlag                       *once
+	rotate, check, json, inCluster, all, dryRun bool
+	cluster, dev                                bool
+	confirm, ageKey, cleared                    string
+	urlTTL                                      time.Duration
+	urlTTLSet                                   bool
+	outFlag                                     *once
+	descriptionFlag                             *once
 }
 
 type outcome int
@@ -475,7 +481,7 @@ func parse(args []string) (request, outcome) {
 	if len(args) == 0 {
 		return request{}, misuse
 	}
-	if _, known := commands[args[0]]; !known {
+	if _, known := commands()[args[0]]; !known {
 		return request{}, misuse
 	}
 	r := request{command: args[0]}
@@ -579,6 +585,8 @@ func (r *request) registerRecordFlags(flags *flag.FlagSet, command string) bool 
 // registerChangeFlags is the flags of the commands that change or compile one instance's records.
 func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
+	case "change":
+		r.registerChangeCommand(flags)
 	case "edit":
 		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
 		flags.Var(&once{value: &r.app}, "app", "application")
@@ -831,6 +839,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"clickstack-bootstrap":    func(r *request) []string { return []string{r.kubeconfig} },
 	"flags":                   (*request).flagsNamed,
 	"console":                 (*request).consoleNamed,
+	"change":                  (*request).changeNamed,
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one
@@ -1016,6 +1025,10 @@ type cli struct {
 	git       git.Reader
 	appSource appsource.Reader
 	github    github.Reader
+	// consoleSource and publisher are the GitHub ports a change reads and writes through; nil is the real API, and
+	// a test supplies fakes so an opened pull request needs no network.
+	consoleSource github.Console
+	publisher     github.Publisher
 	// platform publishes to the platform topic; nil is ntfy over HTTPS. A test supplies a fake.
 	platform ntfy.Publisher
 	// getenv reads the environment the flags card signs in with; nil is os.Getenv, and a test supplies its own.

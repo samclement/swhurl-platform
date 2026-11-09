@@ -139,7 +139,7 @@ func (Disk) Write(dir string, docs []kernel.File) ([]Outcome, error) {
 		if plan.outcome.State == Written {
 			// A filesystem failure part-way is not something preparation can detect, so the outcomes
 			// already completed are returned with it and the caller reports them.
-			if err := writeAtomically(plan.outcome.Path, plan.target, plan.content); err != nil {
+			if err := writeAtomically(plan.outcome.Path, plan.target, plan.content, 0o644); err != nil {
 				return outcomes, err
 			}
 		}
@@ -150,7 +150,7 @@ func (Disk) Write(dir string, docs []kernel.File) ([]Outcome, error) {
 
 // writeAtomically writes to a temporary name beside the target and renames it, so an interrupted run
 // cannot leave a truncated file where a compilation should be.
-func writeAtomically(relative, target string, content []byte) error {
+func writeAtomically(relative, target string, content []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return &Error{IO, relative, "cannot create the directory"}
 	}
@@ -164,7 +164,7 @@ func writeAtomically(relative, target string, content []byte) error {
 		temp.Close()
 		return &Error{IO, relative, "cannot write the file"}
 	}
-	if err := temp.Chmod(0o644); err != nil {
+	if err := temp.Chmod(mode); err != nil {
 		temp.Close()
 		return &Error{IO, relative, "cannot write the file"}
 	}
@@ -346,4 +346,81 @@ func listTree(base, folder, target string) ([]Outcome, error) {
 	}
 	slices.SortFunc(outcomes, func(a, b Outcome) int { return strings.Compare(b.Path, a.Path) })
 	return outcomes, nil
+}
+
+// TreeFile is one file of a working tree: its repository path, whether it is executable, and its bytes. A repository
+// holds exactly two modes, so a tree states the one bit that differs rather than a whole file mode.
+type TreeFile struct {
+	Path       string
+	Executable bool
+	Body       []byte
+}
+
+// Unpack writes a whole tree into dir, each file with its own mode: an extracted checkout must keep the executable
+// bit, or every script in it looks changed. Paths are checked as a compilation's are, and nothing is written until
+// every path is sound, so a refused tree leaves the destination as it was.
+func Unpack(dir string, tree []TreeFile) error {
+	base, err := filepath.Abs(dir)
+	if err != nil {
+		return &Error{IO, "destination", "cannot resolve the destination"}
+	}
+	targets := make([]string, 0, len(tree))
+	for _, file := range tree {
+		target, err := Target(base, file.Path)
+		if err != nil {
+			return err
+		}
+		targets = append(targets, target)
+	}
+	for i, file := range tree {
+		mode := os.FileMode(0o644)
+		if file.Executable {
+			mode = 0o755
+		}
+		if err := writeAtomically(file.Path, targets[i], file.Body, mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Snapshot reads every file under dir as a tree, in path order. A link is refused: a tree holds the regular files a
+// repository holds, and following a link would read something the tree does not name.
+func Snapshot(dir string) ([]TreeFile, error) {
+	base, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, &Error{IO, "destination", "cannot resolve the destination"}
+	}
+	tree := []TreeFile{}
+	err = filepath.WalkDir(base, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return &Error{IO, "destination", "cannot read the tree"}
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(base, path)
+		if err != nil {
+			return &Error{IO, "destination", "cannot read the tree"}
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return &Error{IO, filepath.ToSlash(relative), "cannot read the file"}
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return &Error{IO, filepath.ToSlash(relative), "cannot read the file"}
+		}
+		if !info.Mode().IsRegular() {
+			return &Error{RefusedDestination, filepath.ToSlash(relative), "not_regular_file"}
+		}
+		tree = append(tree, TreeFile{Path: filepath.ToSlash(relative), Executable: info.Mode().Perm()&0o100 != 0,
+			Body: body})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(tree, func(a, b TreeFile) int { return strings.Compare(a.Path, b.Path) })
+	return tree, nil
 }

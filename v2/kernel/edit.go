@@ -42,6 +42,27 @@ func WithCalls(spec InstanceSpec, calls []string) (InstanceSpec, error) {
 	return changedInstance(spec)
 }
 
+// MergeDeclarations is one declaration list after additions and removals: the list's own order is kept, an addition
+// already present is not repeated, and removing something absent is nothing. A console change asks for a delta and
+// never for a whole list, so a change that was merged but is not yet applied is not undone by the next one.
+func MergeDeclarations(current, adds, drops []string) []string {
+	merged := make([]string, 0, len(current)+len(adds))
+	for _, name := range current {
+		if !slices.Contains(drops, name) {
+			merged = append(merged, name)
+		}
+	}
+	for _, name := range adds {
+		if !slices.Contains(merged, name) {
+			merged = append(merged, name)
+		}
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	return merged
+}
+
 // WithAllows replaces the apps and teams whose calls the instance accepts. A team grant names the rule, never a
 // member list, so a caller that joins or leaves the team needs no record rewritten.
 func WithAllows(spec InstanceSpec, allows []string) (InstanceSpec, error) {

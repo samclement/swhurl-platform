@@ -588,54 +588,15 @@ func PullTrack(pull Pull, branch string) Track {
 		Link: pull.URL}}, rest...), Status: status, Outcome: outcome}
 }
 
-// branchAction is one kind of console pull request: the environments its branch may name, and the one it changes
-// when that is not the branch's (a promotion changes production).
-type branchAction struct {
-	Name, TargetEnv string
-	Envs            []string
-}
-
-// branchActions are every console pull request's branch, in the order a branch is matched against them.
-var branchActions = []branchAction{
-	{Name: "new", Envs: []string{"staging"}},
-	{Name: "team-add"}, {Name: "team-edit"}, {Name: "team-remove"},
-	{Name: "team-channel-set"}, {Name: "team-channel-remove"},
-	{Name: "v2-scale", Envs: []string{"staging", "prod"}}, {Name: "v2-expose", Envs: []string{"staging", "prod"}},
-	{Name: "v2-connect", Envs: []string{"staging", "prod"}}, {Name: "v2-disconnect", Envs: []string{"staging", "prod"}},
-	{Name: "v2-allow", Envs: []string{"staging", "prod"}}, {Name: "v2-team", Envs: []string{"staging", "prod"}},
-	{Name: "v2-remove", Envs: []string{"staging", "prod"}},
-	{Name: "v2-promote", Envs: []string{"staging"}, TargetEnv: "prod"},
-}
-
-// branchPatterns are branchActions' branches, console/<action>-<name>[-<env>]-<commit>, in the same order.
-var branchPatterns = func() []*regexp.Regexp {
-	found := make([]*regexp.Regexp, 0, len(branchActions))
-	for _, entry := range branchActions {
-		envs := "()"
-		if len(entry.Envs) > 0 {
-			envs = "-(" + strings.Join(entry.Envs, "|") + ")"
-		}
-		found = append(found, regexp.MustCompile(`^console/`+regexp.QuoteMeta(entry.Name)+`-([a-z][a-z0-9-]*?)`+envs+`-[0-9a-f]{7,40}$`))
-	}
-	return found
-}()
-
-var branchName = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$`)
-
 // BranchTarget is a console pull request's action and what it changes (<app>/<env> or team:<name>), from its
-// branch console/<action>-<name>[-<env>]-<commit>; both empty for any other branch.
+// branch console/<action>-<name>[-<env>]-<commit>; both empty for any other branch. The kinds are the one table in
+// console_change.go, which the command that opens a pull request reads too, so a branch and a change cannot disagree.
 func BranchTarget(branch string) (action, target string) {
-	for i, entry := range branchActions {
-		found := branchPatterns[i].FindStringSubmatch(branch)
-		if found == nil || !branchName.MatchString(found[1]) {
-			continue
-		}
-		if len(entry.Envs) == 0 {
-			return entry.Name, "team:" + found[1]
-		}
-		return entry.Name, found[1] + "/" + or(entry.TargetEnv, found[2])
+	change, name, env, ok := ParseConsoleBranch(branch)
+	if !ok {
+		return "", ""
 	}
-	return "", ""
+	return change.Name, change.Target(name, env)
 }
 
 var mergePlan = regexp.MustCompile(`(?m)^\*\*Merge plan:\*\* it (.+)\.$`)

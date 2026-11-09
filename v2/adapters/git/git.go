@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -73,6 +74,40 @@ type Command struct{ Binary string }
 func New() *Command { return &Command{Binary: "git"} }
 
 var _ Reader = (*Command)(nil)
+
+// Snapshots reads one checkout at its current commit and that commit's complete tree. It is what a local console
+// reads instead of GitHub's tarball: the same filtered bytes, from the checkout the operator is in.
+type Snapshots interface {
+	// Head is the full commit id of the checkout's current commit.
+	Head(root string) (string, error)
+	// Archive is that commit's tree as a tar archive, the shape GitHub's tarball has before its leading folder.
+	Archive(root, revision string) ([]byte, error)
+}
+
+var _ Snapshots = (*Command)(nil)
+
+// commitID is the only revision an archive names: the full id a resolved ref reported, never a ref that another
+// process could move between resolving and reading it.
+var commitID = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+func (c *Command) Head(root string) (string, error) {
+	out, err := c.output(root, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	head := strings.TrimSpace(string(out))
+	if !commitID.MatchString(head) {
+		return "", refuse("unrecognised_head")
+	}
+	return head, nil
+}
+
+func (c *Command) Archive(root, revision string) ([]byte, error) {
+	if !commitID.MatchString(revision) {
+		return nil, refuse("invalid_revision")
+	}
+	return c.output(root, "archive", "--format=tar", revision)
+}
 
 // Read refuses a root that is not the top of a working tree: Git reports index paths from the top and status paths
 // from the top too, but only the top makes both mean the same files the caller names.

@@ -1,0 +1,120 @@
+{{define "title"}}Teams{{end}}
+{{define "main"}}
+<h1>Teams</h1>
+{{template "about" (raw "A team is a name that says who owns an app. It shows on the <a href=\"/apps\">Deployments</a> list and map, filters them, and is on each app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access.")}}
+{{if .Error}}<p class="bad" role="alert">{{.Error}}</p>{{end}}
+{{if .RegistryError}}<p class="warn">{{.RegistryError}} The teams below are the ones apps name now; descriptions and teams without apps are missing, and no app can be called unregistered.</p>{{end}}
+
+{{if .Unregistered}}
+<h2 class="bad">Apps without a registered team</h2>
+<p class="muted">These apps name a team that is not in <code>v2-records/teams.json</code> (or none). <code>make check-v2</code> fails until each is fixed: register the team below, or move the app with its page's <strong>Change team</strong>.</p>
+<table class="compact">
+  <tr><th>Team named</th><th>Apps</th></tr>
+  {{range .Unregistered}}<tr><td>{{if .Team}}{{.Team}}{{else}}none{{end}}</td><td>{{range $i, $app := .Apps}}<a href="/apps/{{$app.App}}/{{index $app.Envs 0}}">{{$app.App}}</a> <span class="muted">({{join $app.Envs ", "}})</span>{{if notLast $i (len $.Apps)}}, {{end}}{{else}}<span class="muted">no apps</span>{{end}}</td></tr>{{end}}
+</table>
+{{end}}
+
+{{/* One card per team: who it is, then its apps as a table. A team's Edit and Delete sit at the top
+   right of its card and open their form inside it (one at a time); only the form's own button,
+   with the pull-request icon, opens a pull request. */}}
+<div class="card bare">
+  <div class="card-head">
+    <p class="tally">{{len .Teams}} team{{if ne (len .Teams) 1}}s{{end}} <span class="muted">· {{.AppCount}} apps</span></p>
+    <details class="act" name="team-form" style="--slot: 0; --wide: 7.5rem">
+      <summary class="button">{{template "icon" "plus"}} New team</summary>
+      <form class="wizard" method="post" action="/teams/add">
+        <fieldset>
+          {{template "textField" (fieldOf "new-name" "Name" "" "billing" "Lowercase letters, digits and hyphens; at most 40 characters." "name")}}
+          {{template "textField" (fieldOf "new-description" "Description" "" "What the team owns" "Optional. One line." "description")}}
+        </fieldset>
+        {{template "submit" (submitOf .Github "Open new team PR" "Changes v2-records/teams.json only. Once merged, the team can be chosen on New app and with Change team on an app page." false)}}
+      </form>
+    </details>
+  </div>
+</div>
+{{/* In alphabetical order, whatever order the registry lists them in. */}}
+{{range .Teams}}
+<section class="card" id="{{.Name}}">
+  <div class="card-head" style="--acts: 3">
+    <h2>{{.Name}}</h2>
+    <p class="{{if not .Description}}muted{{end}}">{{if .Description}}{{.Description}}{{else}}No description yet.{{end}}</p>
+    
+    <p class="notifies">{{if .Channel}}<span class="pill ok" title="Gets a copy of the deployment and health messages of this team's apps">notification channel · {{.Transport}}</span>{{else}}<span class="muted">No notification channel: messages about its apps go to the platform topic only.</span>{{end}}</p>
+    {{if .Job}}<p class="muted">{{template "job" .Job.State}} Last change: <a href="/jobs/{{.Job.ID}}">{{.Job.Action}} {{.Job.State}}</a>{{if .Job.Link}} · <a {{href .Job.Link}}>pull request {{template "icon" "external"}}</a>{{end}}</p>{{end}}
+    <details class="act" name="team-form" style="--slot: 0">
+      <summary class="button">{{template "icon" "edit"}} Edit</summary>
+      <form class="wizard" method="post" action="/teams/edit">
+        <input type="hidden" name="name" value="{{.Name}}">
+        <fieldset>
+          {{template "textField" (fieldOf (print "description-" .Name) "Description" .Description "What the team owns" "One line. Empty removes it." "description")}}
+          {{template "textField" (fieldOf (print "rename-" .Name) "Name" .Name .Name .RenameHint "rename")}}
+        </fieldset>
+        {{template "submit" (submitOf $.Github "Open edit PR" "You review and merge it on GitHub." false)}}
+      </form>
+    </details>
+    {{/* The team's one channel: an address is typed (or generated in the browser) once, sent to the
+       server and never rendered back. */}}
+    <details class="act" name="team-form" style="--slot: 2; --wide: 7rem">
+      <summary class="button">{{template "icon" "edit"}} Channel</summary>
+      <form class="wizard" method="post" action="/team-channel/set" autocomplete="off">
+        <input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="transport" value="ntfy">
+        <fieldset>
+          {{template "addressField" (addressOf (print "address-" .Name) .Channel)}}
+          <span class="muted hint">{{if .Channel}}Use this when the address leaked or was lost: messages go to the new one once the pull request is merged, and the old one stops receiving them.{{else}}The team's one channel: it gets a copy of the deployment and health messages of every app the team owns. You supply the address and subscribe to it; it is stored encrypted and never shown again.{{end}}</span>
+        </fieldset>
+        {{template "submit" (submitOf $.Github (channelSubmit .Channel) "Adds one encrypted file; nothing is decrypted. You review and merge it on GitHub." false)}}
+      </form>
+      {{if .Channel}}
+      <form class="inline" method="post" action="/team-channel/remove" data-confirm="Open a pull request removing the notification channel of {{.Name}}? Messages about its apps then go to the platform topic only." data-confirm-label="Open remove PR">
+        <input type="hidden" name="name" value="{{.Name}}"><button class="danger" {{if not $.Github}}disabled{{end}}>{{template "icon" "trash"}} Remove the channel</button>
+      </form>
+      {{end}}
+    </details>
+    <details class="act" name="team-form" style="--slot: 1">
+      <summary class="button danger">{{template "icon" "trash"}} Delete</summary>
+      <form class="wizard" method="post" action="/teams/remove" data-confirm="Open a pull request deleting team {{.Name}}?" data-confirm-label="Open delete PR">
+        <input type="hidden" name="name" value="{{.Name}}">
+        <fieldset>
+          {{if .Count}}
+          <span class="muted hint">It owns {{.Names}}, so it is not deleted: move each app to another team first with its page's <strong>Change team</strong>, then delete the team.</span>
+          {{else}}<span class="muted hint">It owns no app, so nothing else changes. An open pull request for a new app in this team would fail its checks until it names another.</span>{{end}}
+        </fieldset>
+        {{template "submit" (submitOf $.Github "Open delete PR" "You review and merge it on GitHub." (gt .Count 0))}}
+      </form>
+    </details>
+  </div>
+  {{if .Count}}
+  <div class="scroll">
+  <table class="team-apps">
+    <tr><th>App</th><th>Language</th><th>Staging</th><th>Prod</th><th><span class="sr-only">Links</span></th></tr>
+    {{range .Apps}}
+    <tr>
+      <td><strong>{{.App}}</strong></td>
+      <td>{{if .Stack}}<span class="pill">{{.StackLabel}}</span>{{else}}<span class="muted" title="Not read from {{.App}}'s swhurl.yaml on GitHub">—</span>{{end}}</td>
+      
+      {{template "teamEnvCell" (teamEnvOf .App "staging" .Staging)}}
+      
+      {{template "teamEnvCell" (teamEnvOf .App "prod" .Prod)}}
+      
+      <td class="row-links">{{if .DashboardURL}}<a {{href .DashboardURL}} title="The App: {{.App}} dashboard in HyperDX">Dashboard {{template "icon" "external"}}</a> <span class="muted">·</span> {{end}}<a {{href .LogsURL}} title="Logs and traces of {{.App}} in HyperDX">Logs {{template "icon" "external"}}</a></td>
+    </tr>
+    {{end}}
+  </table>
+  </div>
+  <p class="card-foot"><a href="/apps?team={{.Name}}">{{.Count}} app{{if ne .Count 1}}s{{end}} on the Deployments list</a> · <a href="/apps?view=map&amp;team={{.Name}}">map</a></p>
+  {{else}}<p class="card-foot muted">No apps yet. <a href="/new">New app</a> lets you choose this team.</p>{{end}}
+</section>
+{{end}}
+{{end}}
+
+{{define "teamEnvCell"}}<td>{{with .Row}}{{template "state" (stateOf .State false true)}} <a href="/apps/{{$.App}}/{{$.Env}}" title="{{$.App}}/{{$.Env}}: {{.Image}}" aria-label="{{$.App}}/{{$.Env}}, {{.Image}}"><code>{{.Image}}</code></a>{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
+
+{{define "addressField"}}
+<div class="field" data-address>
+  <label for="{{.ID}}">{{.Label}}</label>
+  <div class="with-button"><input id="{{.ID}}" name="address" placeholder="https://ntfy.sh/your-topic" spellcheck="false" autocomplete="off" required>
+    <button type="button" class="button" data-generate hidden>Generate</button></div>
+  <span class="muted hint">An ntfy topic URL. The topic is the credential: anyone who knows it can read and post, so use a long random one.</span>
+  <p class="generated" data-generated hidden>Subscribe to it now, in the ntfy app or at <a data-subscribe target="_blank" rel="noopener noreferrer"></a>. <strong>It is not shown again after you submit.</strong></p>
+</div>
+{{end}}

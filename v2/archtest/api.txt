@@ -8,6 +8,7 @@ adapters/appsource/appsourcetest: type Fake struct {Root string Source producer.
 adapters/appsource: func (Local) API(root, name string) ([]byte, error)
 adapters/appsource: func (Local) Declaration(root string) (producer.Object, error)
 adapters/appsource: func (Local) Events(root, name string) (producer.Object, []byte, error)
+adapters/appsource: func Parse(data []byte, name string) (producer.Object, error)
 adapters/appsource: type Local struct {}
 adapters/appsource: type Reader interface {Declaration(root string) (producer.Object, error) API(root, name string) ([]byte, error) Events(root, name string) (producer.Object, []byte, error)}
 adapters/clickstack/clickstacktest: const NewTeamKey = "random-team-key"
@@ -68,16 +69,23 @@ adapters/files: type Disk struct {}
 adapters/files: type Error struct {Code string Path string Reason string}
 adapters/files: type Outcome struct {Path string `json:"path"` State string `json:"state"`}
 adapters/files: type Writer interface {Write(dir string, files []kernel.File) ([]Outcome, error) Prune(dir, folder string, rendered []string) ([]Outcome, error) Remove(dir, path string) ([]Outcome, error)}
+adapters/git/gittest: func (*Fake) Archive(root, revision string) ([]byte, error)
+adapters/git/gittest: func (*Fake) Head(root string) (string, error)
 adapters/git/gittest: func (*Fake) Read(root string) (git.Checkout, error)
 adapters/git/gittest: func Contract(t *testing.T, open func(*testing.T) (git.Reader, string))
 adapters/git/gittest: func New(root string, checkout git.Checkout) *Fake
 adapters/git/gittest: func Scenario() git.Checkout
-adapters/git/gittest: type Fake struct {Checkouts map[string]git.Checkout Err error Reads []string}
+adapters/git/gittest: func Snapshot() git.Checkout
+adapters/git/gittest: func SnapshotContract(t *testing.T, open func(*testing.T) (git.Snapshots, string))
+adapters/git/gittest: func Tree(text string) []byte
+adapters/git/gittest: type Fake struct {Checkouts map[string]git.Checkout Err error Reads []string Revision string Tree []byte Heads []string}
 adapters/git: const MaxOutput = 64 << 20
 adapters/git: const NotARepository = "not_a_repository"
 adapters/git: const NotTheTopLevel = "not_the_top_level"
 adapters/git: const ReadTimeout = time.Minute
 adapters/git: const RefusedRead = "refused_read"
+adapters/git: func (*Command) Archive(root, revision string) ([]byte, error)
+adapters/git: func (*Command) Head(root string) (string, error)
 adapters/git: func (*Command) Read(root string) (Checkout, error)
 adapters/git: func (*Error) Error() string
 adapters/git: func New() *Command
@@ -85,20 +93,43 @@ adapters/git: type Checkout struct {Tracked []string Present []string Uncommitte
 adapters/git: type Command struct {Binary string}
 adapters/git: type Error struct {Reason, Detail string}
 adapters/git: type Reader interface {Read(root string) (Checkout, error)}
+adapters/git: type Snapshots interface {// Head is the full commit id of the checkout's current commit. Head(root string) (string, error) // Archive is that commit's tree as a tar archive, the shape GitHub's tarball has before its leading folder. Archive(root, revision string) ([]byte, error)}
+adapters/github/githubtest: func (*ConsoleFake) AppFile(_ context.Context, repository, token, path string) ([]byte, bool, error)
+adapters/github/githubtest: func (*ConsoleFake) Compare(_ context.Context, repository, token, from, to string) ([]string, bool, error)
+adapters/github/githubtest: func (*ConsoleFake) Contents(_ context.Context, repository, token, revision, path string) ([]byte, bool, error)
+adapters/github/githubtest: func (*ConsoleFake) OpenPulls(_ context.Context, repository, token string) ([]github.Pull, error)
+adapters/github/githubtest: func (*ConsoleFake) Pull(_ context.Context, repository, token string, number int) (github.Pull, error)
+adapters/github/githubtest: func (*ConsoleFake) Revision(_ context.Context, repository, token string) (string, error)
+adapters/github/githubtest: func (*ConsoleFake) Tarball(_ context.Context, repository, token, revision string) ([]byte, error)
 adapters/github/githubtest: func (*Fake) Hooks(_ context.Context, repository, token string) ([]observe.Hook, error)
 adapters/github/githubtest: func (*Fake) Token(_ context.Context, repository, token string) (github.Acceptance, error)
+adapters/github/githubtest: func ConsoleContract(t *testing.T, open func(*testing.T) (github.Console, ConsoleFixture))
 adapters/github/githubtest: func Contract(t *testing.T, open func(*testing.T) github.Reader)
 adapters/github/githubtest: func New() *Fake
+adapters/github/githubtest: func NewConsole(fixture ConsoleFixture) *ConsoleFake
+adapters/github/githubtest: func Scenario() ConsoleFixture
 adapters/github/githubtest: type Call struct {Operation, Repository, Token string}
+adapters/github/githubtest: type ConsoleFake struct {Commit string Files map[string]string AppFiles map[string]string Archive []byte Changed []string Contains bool Pulls []github.Pull ByNumber map[int]github.Pull Err error Reads []string}
+adapters/github/githubtest: type ConsoleFixture struct {Revision string File string Body string AppFile string AppBody string Changed []string Pulls []github.Pull Merged github.Pull}
 adapters/github/githubtest: type Fake struct {Repositories map[string][]observe.Hook Tokens map[string]github.Acceptance Denied map[string]bool Fail error Calls []Call}
+adapters/github: func (*API) AppFile(ctx context.Context, repository, token, file string) ([]byte, bool, error)
+adapters/github: func (*API) Compare(ctx context.Context, repository, token, from, to string) ([]string, bool, error)
+adapters/github: func (*API) Contents(ctx context.Context, repository, token, revision, path string) ([]byte, bool, error)
 adapters/github: func (*API) Hooks(ctx context.Context, repository, token string) ([]observe.Hook, error)
+adapters/github: func (*API) OpenPulls(ctx context.Context, repository, token string) ([]Pull, error)
+adapters/github: func (*API) Pull(ctx context.Context, repository, token string, number int) (Pull, error)
+adapters/github: func (*API) Revision(ctx context.Context, repository, token string) (string, error)
+adapters/github: func (*API) Tarball(ctx context.Context, repository, token, revision string) ([]byte, error)
 adapters/github: func (*API) Token(ctx context.Context, repository, token string) (Acceptance, error)
 adapters/github: func (*Error) Error() string
 adapters/github: func New(client *http.Client) Reader
+adapters/github: func NewConsole(client *http.Client) Console
 adapters/github: func SafeProblem(err error) string
 adapters/github: type API struct {}
 adapters/github: type Acceptance struct {Status int Expiry string}
+adapters/github: type Console interface {// Revision is the full commit id of the repository's main branch. Revision(ctx context.Context, repository, token string) (string, error) // Contents is one file at one commit; found is false when the commit has no such file. Contents(ctx context.Context, repository, token, revision, path string) (body []byte, found bool, err error) // Tarball is the repository at one commit, as GitHub serves it: a tar archive inside a leading folder. Tarball(ctx context.Context, repository, token, revision string) ([]byte, error) // AppFile is one file at another repository's default branch: an app's swhurl.yaml, which the console reads // without a token because app repositories are public. found is false when the repository has no such file. AppFile(ctx context.Context, repository, token, path string) ([]byte, bool, error) // Compare reports whether to contains from and, when it does, the paths changed between them. A comparison // GitHub truncated is contained but has no path list. Compare(ctx context.Context, repository, token, from, to string) (paths []string, contained bool, err error) // OpenPulls lists the open console pull requests, newest first, each with how its Validate workflow went. OpenPulls(ctx context.Context, repository, token string) ([]Pull, error) // Pull is one pull request, however it ended. Pull(ctx context.Context, repository, token string, number int) (Pull, error)}
 adapters/github: type Error struct {Reason string}
+adapters/github: type Pull struct {Number int Title string URL string Branch string Opened string Body string Head string Checks string ChecksURL string State string MergedAt string ClosedAt string MergeCommit string}
 adapters/github: type Reader interface {Hooks(context.Context, string, string) ([]observe.Hook, error) Token(context.Context, string, string) (Acceptance, error)}
 adapters/helm/helmtest: func (*Acquisition) Acquire(pin helm.Pin, cache string) (string, error)
 adapters/helm/helmtest: func (*Fake) Render(request helm.Request) ([]json.RawMessage, error)
@@ -1032,10 +1063,14 @@ orchestration: const StaleDays = 14
 orchestration: const StepDone = "done"
 orchestration: const StepFailed = "failed"
 orchestration: const StepNotRead = "not_read"
+orchestration: func (*ConsoleBundle) Revision(ctx context.Context) (string, error)
+orchestration: func (*ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][]byte, error)
 orchestration: func (*Notifier) AcceptAlert(ctx context.Context, connect NotifyConnect, body []byte, now time.Time) (Accepted, error)
 orchestration: func (*Notifier) AcceptMessage(ctx context.Context, connect NotifyConnect, authorization string, body []byte, now time.Time, randomKey string) (Accepted, error)
 orchestration: func (*Notifier) Deliver(ctx context.Context, connect NotifyConnect, now time.Time) ([]Delivered, error)
 orchestration: func (*Refusal) Error() string
+orchestration: func (ConsoleSourceOf) Revision(ctx context.Context) (string, error)
+orchestration: func (ConsoleSourceOf) Tree(ctx context.Context, revision string) (map[string][]byte, error)
 orchestration: func AcquireChart(profile kernel.PlatformProfile, repositories []byte, cache string, acquirer helm.Acquirer) (string, error)
 orchestration: func BootstrapClickStack(ctx context.Context, ports BootstrapPorts, options BootstrapOptions) (BootstrapReport, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
@@ -1047,9 +1082,19 @@ orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, a
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
 orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
 orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
+orchestration: func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now func() time.Time) (pages.Checks, error)
+orchestration: func ConsoleDashboards(ctx context.Context, data kube.Data) map[string]string
+orchestration: func ConsoleJobs(ctx context.Context, data kube.Data, reader kube.Reader, now time.Time) []pages.Job
+orchestration: func ConsoleRows(collection observe.Collection) ([]pages.AppRow, error)
+orchestration: func ConsoleSite(files map[string][]byte, repository string) (pages.Site, error)
+orchestration: func ConsoleStack(ctx context.Context, console github.Console, owner, app string) (stack string, reachable bool)
+orchestration: func ConsoleStatus(ctx context.Context, inputs ConsoleRecords, revision string, reader kube.Reader, units [][]byte, compare func(from, to string) ([]string, bool, error), source string, now func() time.Time) (observe.Collection, error)
+orchestration: func ConsoleTeams(tree map[string][]byte) (map[string]pages.TeamInfo, error)
+orchestration: func ConsoleUnits(ctx context.Context, collector kube.Collector) ([][]byte, error)
 orchestration: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
 orchestration: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 orchestration: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
+orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
 orchestration: func FlagDeclaration(document []byte) ([]producer.Flag, string)
 orchestration: func Flags(ctx context.Context, store nats.KV, environment, application string, flags []producer.Flag, declarationProblem string, now time.Time) FlagCard
 orchestration: func ImageDeclaration(reader appsource.Reader, root string) (string, error)
@@ -1059,6 +1104,7 @@ orchestration: func NotificationsHeartbeat(ctx context.Context, ports HeartbeatP
 orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformReport, error)
 orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.PlatformReport, error)
 orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
+orchestration: func Records(files map[string][]byte) (ConsoleRecords, error)
 orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
@@ -1081,6 +1127,10 @@ orchestration: type CheckerDelivery struct {Entry incident.Entry Err error Retry
 orchestration: type CheckerPorts struct {Cluster kube.Collector Data kube.Data Platform ntfy.Publisher Copies notifysvc.Sender}
 orchestration: type Checkout struct {Profile, Teams, Allocation []byte FluxSettings []byte Apps, Releases map[string][]byte Compiled []observe.CompiledInstance}
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
+orchestration: type ConsoleBundle struct {Source ConsoleSource Max int}
+orchestration: type ConsoleRecords struct {Shared Inputs Instances []Inputs}
+orchestration: type ConsoleSource interface {Revision(ctx context.Context) (string, error) Tree(ctx context.Context, revision string) (map[string][]byte, error)}
+orchestration: type ConsoleSourceOf struct {Console github.Console Repository string Token string}
 orchestration: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}
 orchestration: type Created struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Public string Written []files.Outcome}
 orchestration: type DashboardLine struct {Changed bool Text string}
@@ -1126,6 +1176,120 @@ orchestration: type Result struct {Compilation kernel.Compilation Written []file
 orchestration: type StatusInputs struct {Inputs Revision string RecordsRoot string SharedPaths []string Changes *observe.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
+pages: const FluxSection = "Flux Kustomizations"
+pages: const OtherLayer = "Other"
+pages: const StateFailing = "failing"
+pages: const StateHealthy = "healthy"
+pages: const StateStopped = "stopped"
+pages: const StateSuspended = "suspended"
+pages: const StateUnknown = "unknown"
+pages: const StateUpdating = "updating"
+pages: func (AppRow) Connections() Connections
+pages: func (AppRow) DatabasePath() (path string, known bool)
+pages: func (AppRow) Digest() string
+pages: func (AppRow) Hosts() []string
+pages: func (AppRow) Image() string
+pages: func (AppRow) Team() string
+pages: func (Checks) Count() int
+pages: func (ConnectionRow) Direction() string
+pages: func (ConnectionRow) Kind() string
+pages: func (ConnectionRow) What() string
+pages: func (EnvView) ActionLabel() string
+pages: func (Instance) Name() string
+pages: func (Instance) Namespace() string
+pages: func (Instance) Unit() string
+pages: func (Job) Interrupted(finished time.Time) Job
+pages: func (Job) Running() bool
+pages: func (Site) DashboardURL(id string) string
+pages: func (Site) LogsURL(app string) string
+pages: func (Site) RepositoryURL(app string) string
+pages: func (Site) UngrantedURL(instance Instance) string
+pages: func (State) Label() string
+pages: func (Summary) Team() string
+pages: func (Tally) Busy() int
+pages: func (Unit) Healthy() bool
+pages: func (Unit) Layer() string
+pages: func Ago(value string, now time.Time) string
+pages: func AppMapOf(rows []AppRow, env string) AppMap
+pages: func AppsPageOf(input AppsInput) AppsPage
+pages: func CheckGroups(checks Checks) []Group
+pages: func ChecksOf(checks []Check) Checks
+pages: func CommonRevision(units []Unit) string
+pages: func Compare(staging, prod *AppRow) string
+pages: func Condensed(entries []Entry) []Entry
+pages: func ConnectionsOf(inventory *Inventory, teams map[string]string, env string) Connections
+pages: func DecodeReport(data []byte) (Report, error)
+pages: func EgressPageOf(rows []AppRow, site Site) EgressPage
+pages: func InstanceOf(unit string) (Instance, bool)
+pages: func LayerOf(name string) string
+pages: func Named(app, env string) (Instance, bool)
+pages: func Problems(checks Checks, units []Unit) []Problem
+pages: func RemovedRow(app, env, reason string) (AppRow, bool)
+pages: func StateOf(name, reason string) State
+pages: func Summaries(rows []AppRow) []Summary
+pages: func Target(name string) (label, link string)
+pages: func TeamsPageOf(registry map[string]TeamInfo, registered bool, rows []AppRow, site Site, stacks, dashboards map[string]string) TeamsPage
+pages: func Took(started, finished time.Time) string
+pages: func UnitRowOf(unit Unit, revision string) UnitRow
+pages: func Units(items [][]byte) ([]Unit, error)
+pages: func Updating(units []Unit) []Problem
+pages: type Allocation struct {Port int32 `json:"port"` Grants []string `json:"grants"`}
+pages: type AppMap struct {Nodes []MapNode Edges []MapEdge Width int Height int BoxWidth int BoxHeight int}
+pages: type AppRow struct {Instance Instance State State Suspended bool Inventory *Inventory Report *Report Teams map[string]string Removed string}
+pages: type AppView struct {App, Team, Comparison string Staging, Prod *EnvView Open bool Stack, StackLabel string Href string TeamHref string PromotionHref string LogsURL string RepositoryURL string DashboardURL string}
+pages: type AppsInput struct {Rows []AppRow View string Team string Env string Attention bool RefreshURL string Stacks map[string]string Dashboards map[string]string Running []Job Site Site}
+pages: type AppsPage struct {Apps []AppView Teams []Link AllTeams Link ShowAll Link ShowAttention Link ListView Link MapView Link Envs []Link Tally Tally Attention bool Team, View string Env string StackNames map[string]string Map *AppMap Site Site}
+pages: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"`}
+pages: type Certificate struct {Name string `json:"name"` Outcome string `json:"outcome"` Reason string `json:"reason"`}
+pages: type Check struct {Section string Entries []Entry}
+pages: type Checks struct {Passed bool Sections []Section}
+pages: type Condition struct {Type string `json:"type"` Status string `json:"status"` Reason string `json:"reason"` ObservedGeneration *int32 `json:"observedGeneration"`}
+pages: type Connection struct {Role string `json:"role"` App string `json:"app,omitempty"` Event string `json:"event,omitempty"` Host string `json:"host,omitempty"` Outcome string `json:"outcome,omitempty"` Reason string `json:"reason,omitempty"`}
+pages: type ConnectionRow struct {Role, App, Event, Team, Status string}
+pages: type Connections struct {Address, API string Calls, Callers, Publishes, Subscribes, Egress []string Subscribers [][2]string Rows []ConnectionRow Offers string ProxyPort int32}
+pages: type Currentness struct {State string `json:"state"` Reason string `json:"reason"` AppliedRevision string `json:"appliedRevision"`}
+pages: type Database struct {Kind string `json:"kind"` Path string `json:"path"`}
+pages: type EgressEnvironment struct {Env string Rows []EgressRow}
+pages: type EgressPage struct {Environments []EgressEnvironment Instances int Granted int Hosts int Site Site}
+pages: type EgressRow struct {Name, Href, Team, TeamHref string Port int32 Egress []string Ungranted string}
+pages: type Entry struct {Level string Message string}
+pages: type EnvView struct {App, Env, Label string Row *AppRow Href string Unit, Action string RefreshURL string Suspended bool Database string DatabaseKnown bool Job *Job Address string}
+pages: type Evidence struct {Status string `json:"status"` Reason string `json:"reason"` Suspended *bool `json:"suspended"` Conditions []Condition `json:"conditions"`}
+pages: type Finding struct {Field string `json:"field"` Outcome string `json:"outcome"` Reason string `json:"reason"`}
+pages: type Group struct {Title string Entries []Entry Failing []Entry Index int Mark string}
+pages: type Instance struct {App, Env string}
+pages: type Inventory struct {Team string `json:"team"` Kind string `json:"kind"` Exposure string `json:"exposure"` Port int32 `json:"port"` Hosts []string `json:"hosts"` Address string `json:"address"` API string `json:"api"` Artifact Artifact `json:"artifact"` Database Database `json:"database"` Offers string `json:"offers"` Egress Allocation `json:"egress"` Calls []string `json:"calls"` Allows []string `json:"allows"` Callers []string `json:"callers"` Publishes []string `json:"publishes"` Subscriptions []string `json:"subscriptions"` Connections []Connection `json:"connections"`}
+pages: type Job struct {ID int Action string Unit string Identity string Started time.Time Finished *time.Time State string Link string Owner string Resume map[string]any Reached string Lines []string Live bool}
+pages: type Link struct {Name, Href string Here bool}
+pages: type Live struct {Unit Evidence `json:"unit"` Release Evidence `json:"release"` Workload Workload `json:"workload"` Running Running `json:"running"`}
+pages: type MapEdge struct {Kind, Path, From, To string}
+pages: type MapNode struct {Row *AppRow X, Y int TextX, NameY, SubY int Label string}
+pages: type Problem struct {Level string Text string Link string}
+pages: type ProblemRow struct {Pod, Container, Reason, Message string}
+pages: type Promotion struct {Ready bool `json:"ready"` Reason string `json:"reason"`}
+pages: type Report struct {State ReportState `json:"state"` Verdict string `json:"verdict"` Currentness Currentness `json:"currentness"` Promotion Promotion `json:"promotion"` Live Live `json:"live"` Findings []Finding `json:"findings"` Problems []ProblemRow `json:"problems"` Routes []Route `json:"routes"` Certificates []Certificate `json:"certificates"` Target ReportTarget `json:"target"`}
+pages: type ReportState struct {Name string `json:"name"` Reason string `json:"reason"`}
+pages: type ReportTarget struct {Namespace string `json:"namespace"` Replicas int32 `json:"replicas"` Revision string `json:"revision"`}
+pages: type Route struct {Name string `json:"name"` Outcome string `json:"outcome"` Hosts []string `json:"hosts"` Reason string `json:"reason"`}
+pages: type Running struct {Status string `json:"status"` Digests *[]string `json:"digests"`}
+pages: type Section struct {Title string Entries []Entry}
+pages: type Site struct {Domain, Owner string}
+pages: type State struct {Key, Detail string}
+pages: type Summary struct {App string Envs map[string]*AppRow Order []string Compare string}
+pages: type Tally struct {Healthy, Updating, Apps, Attention int}
+pages: type TeamApp struct {App, Stack, StackLabel string Staging, Prod *AppRow DashboardURL, LogsURL string}
+pages: type TeamInfo struct {Description string Channel string Transport string}
+pages: type TeamJob struct {ID int Action string State string Link string}
+pages: type TeamView struct {Name, Description string Channel string Transport string Count int Names string Apps []TeamApp Job *TeamJob RenameHint string}
+pages: type TeamsPage struct {Teams []TeamView AppCount int Unregistered []Unregistered RegistryError string Error string Github bool}
+pages: type Unit struct {Name string Ready State Condition State Suspended bool DependsOn []string Revision string ReadyStatus, ReadyMessage string Level int Path string Interval string NeededBy []string}
+pages: type UnitRow struct {Unit Unit Open bool AppLabel string AppLink string At bool RevisionText string Waits string Applies string AppliedRevision string Interval string Needed []string}
+pages: type Unregistered struct {Team string Apps []UnregisteredApp}
+pages: type UnregisteredApp struct {App string Envs []string}
+pages: type Workload struct {Status string `json:"status"` ReadyReplicas *int32 `json:"readyReplicas"`}
+pages: var Layers = []struct{Prefix, Title, Text string}{{"cluster-", "Cluster", "Flux's own Git source and unit list, applied by make flux-bootstrap"}, {"infra-", "Infrastructure", "Namespaces, certificates and the ingress controller"}, {"platform-", "Platform services", "Sign-in, observability, this console and automation"}, {"app-", "Deployments", "One unit per app instance"},}
+pages: var RefusedUnits = map[string]string{"cluster-sources": "applied by make flux-bootstrap, not by Flux", "cluster-stack": "applied by make flux-bootstrap, not by Flux",}
+pages: var StackNames = map[string]string{"typescript": "TypeScript", "kotlin": "Kotlin"}
 policy: func Check(source []json.RawMessage, platform Platform, rendered []json.RawMessage) ([]Finding, error)
 policy: type Finding struct {Rule string `json:"rule"` Object string `json:"object"` Detail string `json:"detail"`}
 policy: type Platform struct {Pods, RequestsCPUMilli, RequestsMemoryMiB, LimitsMemoryMiB int64 StorageClass, CookieDomain, Middleware string}

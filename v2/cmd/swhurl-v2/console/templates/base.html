@@ -1,0 +1,54 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{template "title" .}} · swhurl</title>
+{{template "head" .}}
+<link rel="preload" href="/static/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/console.css?v={{.Assets}}">
+<script src="/static/htmx.min.js?v={{.Assets}}" defer></script>
+<script src="/static/console.js?v={{.Assets}}" defer></script>
+</head>
+<body>
+
+{{template "sprite" .}}
+<header class="site">
+  <a class="brand" href="/">swhurl console</a>
+  <nav aria-label="Main">
+    <a href="/" class="{{if eq .Path "/"}}here{{end}}"{{if eq .Path "/"}} aria-current="page"{{end}}>Overview</a>
+    <a href="/apps" class="{{if or (hasPrefix .Path "/apps") (hasPrefix .Path "/new")}}here{{end}}">Deployments</a>
+    <a href="/catalogue" class="{{if hasPrefix .Path "/catalogue"}}here{{end}}">Catalogue</a>
+    <a href="/teams" class="{{if hasPrefix .Path "/teams"}}here{{end}}">Teams</a>
+    <a href="/platform" class="{{if or (hasPrefix .Path "/platform") (hasPrefix .Path "/units") (hasPrefix .Path "/egress")}}here{{end}}">Platform</a>
+    <a href="/activity" class="{{if or (hasPrefix .Path "/activity") (hasPrefix .Path "/jobs")}}here{{end}}">Activity{{if .Running}} <span class="badge" title="Jobs running now">{{len .Running}} running</span>{{end}}</a>
+  </nav>
+  <span class="who">{{.Identity}}</span>
+  <a class="button" href="/new">{{template "icon" "plus"}} New app</a>
+</header>
+<main{{if .AutoRefresh}} hx-get="{{.RefreshURL}}" hx-trigger="every 30s [canRefresh()]" hx-select="main" hx-target="main" hx-swap="outerHTML"{{end}}>
+{{if not .HasGithub}}<p class="banner">{{template "icon" "info"}} <span>No GitHub token is configured, so this console can read but cannot open pull requests: every change form is unavailable.</span></p>{{end}}
+
+<p class="page-meta">Read at {{.ReadAt}}{{if .AutoRefresh}}, and again every 30 seconds{{end}} <a class="button quiet" href="{{.RefreshURL}}" title="Read the cluster again">{{template "icon" "refresh"}} Refresh</a></p>
+{{template "main" .}}
+</main>
+<dialog id="confirm"><p></p><div class="toolbar"><button type="button" value="no">Cancel</button><button type="button" class="danger" value="yes">Continue</button></div></dialog>
+</body>
+</html>{{end}}
+
+{{define "title"}}Console{{end}}
+{{define "head"}}{{end}}
+{{define "main"}}{{end}}
+
+{{define "icon"}}<svg class="icon" aria-hidden="true"><use href="#i-{{.}}"/></svg>{{end}}
+
+{{define "sprite"}}<svg class="sprite" width="0" height="0" aria-hidden="true">
+  <symbol id="i-pr" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+</svg>{{end}}

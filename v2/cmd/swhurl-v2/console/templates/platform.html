@@ -1,0 +1,84 @@
+{{define "title"}}Platform{{end}}
+{{define "main"}}
+<h1>Platform</h1>
+<details class="about" id="about"><summary>{{template "icon" "info"}} About this page</summary><p class="lead">The cluster's building blocks: the Flux units Git applies, in the order they depend on each other, and the health checks this console can run. Open a unit's row for what it applies and what needs it, and to reconcile, suspend or resume it.</p></details>
+
+<p class="verdict">{{if .Problems}}{{template "mark" "failing"}} <strong>{{len .Problems}} {{if eq (len .Problems) 1}}thing needs{{else}}things need{{end}} attention</strong>
+{{else if .Updating}}{{template "mark" "updating"}} <strong>Updating</strong> <span class="muted">— {{len .Updating}} unit{{if ne (len .Updating) 1}}s{{end}} applying a change; normal for a few seconds after a push</span>
+{{else}}{{template "mark" "healthy"}} <strong>Healthy</strong> <span class="muted">— all {{.Checks.Count}} checks pass and all {{len .Units}} units are applied</span>{{end}}</p>
+
+{{if .Problems}}<h2>Needs attention</h2>{{template "items" .Problems}}{{end}}
+{{if .Updating}}<h2>Updating now</h2>{{template "items" .Updating}}{{end}}
+
+<h2>Health checks</h2>
+
+<div class="checks">{{range .Groups}}
+
+
+
+{{if eq (len .Entries) 1}}<p class="check">{{template "check" (index .Entries 0).Level}} <strong>{{.Title}}</strong> <span class="muted">·</span> {{short (index .Entries 0).Message}}</p>{{else}}<details class="section" id="checks-{{.Index}}"{{if .Failing}} open{{end}}>
+  <summary>{{template "check" .Mark}} <strong>{{.Title}}</strong> <span class="muted">·</span> {{if .Failing}}<span class="bad">{{len .Failing}} of {{len .Entries}} not passing</span>{{else}}{{len .Entries}} passing{{end}}</summary>
+  <ul class="items">
+    {{range .Entries}}<li>{{template "check" .Level}} {{short .Message}}</li>{{end}}
+  </ul>
+</details>{{end}}
+{{end}}
+
+</div>
+<p class="muted">Flux unit checks are in the list below. The other checks read Secrets, run commands in pods or need your machine: run <code>make verify-platform</code>.</p>
+
+<p class="muted"><a href="/egress">Egress</a>: every app's port on the egress proxy and the hosts outside the cluster it is granted.</p>
+
+<h2 id="units">Flux units</h2>
+
+<details class="section" id="units-list"{{if .Unhealthy}} open{{end}}>
+  <summary>{{len .Units}} units · {{if .Unhealthy}}<span class="warn">{{len .Unhealthy}} not healthy</span>{{else}}<span class="ok">all healthy</span>{{end}}
+    · {{if .Elsewhere}}{{len .Elsewhere}} not at <code>{{.Revision}}</code>{{else}}all at <code>{{.Revision}}</code>{{end}}</summary>
+  
+  <div class="openlist units">
+    <div class="cols head" aria-hidden="true"><span></span><span>Unit</span><span>State</span><span>Waits for</span></div>
+    {{range .Layers}}
+    <div class="group">{{.Title}} <span class="muted">— {{.Text}}</span></div>
+    {{range .Members}}{{template "unitRow" .}}{{end}}
+    {{end}}
+  </div>
+</details>
+{{end}}
+
+{{define "unitRow"}}
+    <details class="openrow" id="unit-{{.Unit.Name}}"{{if .Open}} open{{end}}>
+      <summary class="cols" title="Show or hide the details and actions of {{.Unit.Name}}">
+        <span class="chev" aria-hidden="true"></span>
+        <span class="cell"><a class="mono" href="/units/{{.Unit.Name}}">{{.Unit.Name}}</a>{{if .AppLink}} <a class="muted" href="{{.AppLink}}">{{.AppLabel}}</a>{{end}}</span>
+        <span class="cell" data-label="State">{{template "state" (stateOf .Unit.Ready false true)}}{{if .At}} <span class="muted">at <code>{{.RevisionText}}</code></span>{{end}}{{if .Job}} {{template "running" (runningOf .Job .RefreshURL)}}{{end}}</span>
+        <span class="cell wrap muted" data-label="Waits for">{{.Waits}}</span>
+      </summary>
+      <div class="panel">
+        {{if .Unit.Ready.Detail}}<p class="reason {{if eq .Unit.Ready.Key "failing"}}bad{{else}}muted{{end}}">{{short .Unit.Ready.Detail}}</p>{{end}}
+        <dl class="plain">
+          <dt>Applies</dt><dd class="mono">{{.Applies}}</dd>
+          <dt>Applied revision</dt><dd class="mono">{{.AppliedRevision}}</dd>
+          <dt>Checks Git</dt><dd>every {{.Interval}}, and at once on a push (webhook)</dd>
+          <dt>Needed by</dt><dd>{{if .Needed}}{{range $i, $d := .Needed}}{{if $i}}, {{end}}<a class="mono" href="#unit-{{$d}}">{{$d}}</a>{{end}}{{else}}<span class="muted">nothing</span>{{end}}</dd>
+        </dl>
+        {{if .Refused}}<p class="muted">No actions here: this unit is {{.Refused}}. Change it with <code>make flux-bootstrap</code>.</p>
+        {{else if .Job}}<p>{{template "running" (runningOf .Job .RefreshURL)}}</p>
+        {{else}}
+        
+        {{if .Unit.Suspended}}<div class="action-row">
+          <form method="post" action="/units/{{.Unit.Name}}/resume" hx-post="/units/{{.Unit.Name}}/resume" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Resume</button></form>
+          <span class="muted">Apply Git changes to this unit again, starting with a reconcile.</span>
+        </div>
+        {{else}}<div class="action-row">
+          <form method="post" action="/units/{{.Unit.Name}}/reconcile" hx-post="/units/{{.Unit.Name}}/reconcile" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Reconcile now</button></form>
+          <span class="muted">Fetch Git and apply this unit now instead of at the next check. Safe: it applies what Git already says.</span>
+        </div>
+        <div class="action-row">
+          <form method="post" action="/units/{{.Unit.Name}}/suspend" hx-post="/units/{{.Unit.Name}}/suspend" hx-target="this" hx-select="unset" hx-swap="outerHTML" data-confirm="Suspend {{.Unit.Name}}? Git changes stop applying to it until you resume it. What is running stays as it is." data-confirm-label="Suspend"><button class="danger">Suspend</button></form>
+          <span class="muted">Stop applying Git changes to this unit until you resume it; what is running stays as it is. Use it while you investigate or try something by hand.</span>
+        </div>
+        {{end}}
+        {{end}}
+      </div>
+    </details>
+    {{end}}

@@ -1,0 +1,96 @@
+{{define "title"}}Deployments{{end}}
+{{define "main"}}
+<h1>Deployments</h1>
+{{template "about" (raw "Every app a team has deployed: what runs in staging and production, who owns it, and how apps reach each other. Open a row for each environment in full; a tag opens that environment's page, to use it, connect to it or operate it.")}}
+<div class="filters" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML">
+  <span class="muted">Team</span>
+  <a href="{{.AllTeams.Href}}" class="{{if .AllTeams.Here}}here{{end}}">all</a>
+  {{range .Teams}}<a href="{{.Href}}" class="{{if .Here}}here{{end}}">{{.Name}}</a>{{end}}
+  {{if eq .View "list"}}<span class="muted">Show</span>
+  <a href="{{.ShowAll.Href}}" class="{{if .ShowAll.Here}}here{{end}}">all</a>
+  <a href="{{.ShowAttention.Href}}" class="{{if .ShowAttention.Here}}here{{end}}">not healthy{{if .Tally.Busy}} ({{.Tally.Busy}}){{end}}</a>{{end}}
+  <span class="gap muted">View</span>
+  <a href="{{.ListView.Href}}" class="{{if .ListView.Here}}here{{end}}">List</a>
+  <a href="{{.MapView.Href}}" class="{{if .MapView.Here}}here{{end}}">Map</a>
+</div>
+{{if eq .View "map"}}
+<div class="filters">
+  <span class="muted">Environment</span>
+  {{range .Envs}}<a href="{{.Href}}" class="{{if .Here}}here{{end}}">{{.Name}}</a>{{end}}
+  <span class="gap legend">A solid line is a call, from caller to callee. A dashed line is an event, from publisher to subscriber.</span>
+</div>
+{{with .Map}}{{if .Nodes}}
+<div class="scroll">
+<svg class="map" role="img" aria-label="Deployments in {{$.Env}} and how they reach each other" width="{{.Width}}" height="{{.Height}}" viewBox="0 0 {{.Width}} {{.Height}}">
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--muted); stroke: none"/></marker></defs>
+  {{range .Edges}}<path class="{{.Kind}}" d="{{.Path}}" marker-end="url(#arrow)"><title>{{.From}} {{if eq .Kind "call"}}calls{{else}}publishes an event to{{end}} {{.To}}</title></path>
+  {{end}}
+  {{range .Nodes}}
+  <a href="/apps/{{.Row.Instance.App}}/{{.Row.Instance.Env}}"><rect x="{{.X}}" y="{{.Y}}" width="{{$.Map.BoxWidth}}" height="{{$.Map.BoxHeight}}" rx="6"/>
+    <text x="{{.TextX}}" y="{{.NameY}}">{{.Row.Instance.App}}</text>
+    <text class="sub" x="{{.TextX}}" y="{{.SubY}}">{{.Label}}</text></a>
+  {{end}}
+</svg>
+</div>
+{{else}}<p class="muted">No app is deployed in {{$.Env}}{{if $.Team}} for team {{$.Team}}{{end}}.</p>{{end}}{{end}}
+{{else if .Apps}}
+<p class="tally">{{if .Tally.Attention}}<span class="status failing">{{template "mark" "failing"}}<span>{{.Tally.Attention}} need{{if eq .Tally.Attention 1}}s{{end}} attention</span></span> · {{end}}{{if .Tally.Updating}}<span class="status updating">{{template "mark" "updating"}}<span>{{.Tally.Updating}} updating</span></span> · {{end}}<span class="status healthy">{{template "mark" "healthy"}}<strong>{{.Tally.Healthy}}</strong>&nbsp;healthy</span> <span class="muted">· environments of {{.Tally.Apps}} app{{if ne .Tally.Apps 1}}s{{end}}{{if .Tally.Busy}}; not healthy first{{end}}</span></p>
+
+<div class="openlist apps">
+  <div class="cols head" aria-hidden="true"><span></span><span>App</span><span>Language</span><span>Team</span><span>Staging</span><span>Prod</span><span>Promotion</span><span></span></div>
+  {{range .Apps}}
+  
+  <details class="openrow" id="app-{{.App}}"{{if .Open}} open{{end}}>
+    <summary class="cols" title="Show or hide the details of {{.App}}">
+      <span class="chev" aria-hidden="true"></span>
+      <strong>{{.App}}</strong>
+      <span class="cell" data-label="Language">{{if .Stack}}<span class="pill">{{.StackLabel}}</span>{{else}}<span class="muted" title="Not read from {{.App}}'s swhurl.yaml on GitHub">—</span>{{end}}</span>
+      <span class="cell" data-label="Team">{{if .Team}}<a class="plain" href="{{.TeamHref}}" title="Show only team {{.Team}}">{{.Team}}</a>{{else}}<span class="warn">unknown</span>{{end}}</span>
+      {{template "envCell" .Staging}}
+      {{template "envCell" .Prod}}
+      <span class="cell" data-label="Promotion">{{if eq .Comparison "differs"}}<span class="pill attention" title="Staging and production run different images">Images differ</span>
+        {{else if eq .Comparison "same"}}<span class="pill ok" title="Staging and production run the same image">In sync</span>
+        {{else if .Staging.Row}}<span class="pill" title="Not in production yet">Staging only</span>
+        {{else}}<span class="muted">—</span>{{end}}</span>
+      <span class="cell act">{{if and .Staging.Row (ne .Comparison "same")}}<a href="{{.PromotionHref}}">Review promotion</a>{{end}}</span>
+    </summary>
+    <div class="panel">
+      {{template "envPanel" .Staging}}
+      {{template "envPanel" .Prod}}
+      <p class="foot"><a {{href .LogsURL}}>Logs and traces {{template "icon" "external"}}</a> <span class="muted">·</span> {{if .DashboardURL}}<a {{href .DashboardURL}} title="The App: {{.App}} dashboard in HyperDX">Dashboard {{template "icon" "external"}}</a> <span class="muted">·</span> {{end}}<a {{href .RepositoryURL}}>Repository {{template "icon" "external"}}</a></p>
+    </div>
+  </details>
+  {{end}}
+</div>
+{{else if .Attention}}
+<p class="muted">{{template "mark" "healthy"}} Every environment{{if .Team}} of team {{.Team}}{{end}} is healthy. <a href="{{.ShowAll.Href}}">Show all</a></p>
+{{else}}
+<p class="muted">No apps yet{{if .Team}} for team {{.Team}}{{end}}. <a href="/new">Add one</a>: the console opens a pull request that deploys it to staging.</p>
+{{end}}
+{{end}}
+
+{{define "envCell"}}
+    <span class="cell" data-label="{{.Label}}">{{with .Row}}{{template "state" (stateOf .State false true)}} <a href="{{$.Href}}" title="{{$.App}}/{{$.Env}}: {{.Image}}" aria-label="{{$.App}}/{{$.Env}}, {{.Image}}"><code>{{.Image}}</code></a>{{if .Hosts}} <a class="open" href="https://{{index .Hosts 0}}" title="Open {{index .Hosts 0}}"><span class="sr-only">Open {{index .Hosts 0}}</span>{{template "icon" "external"}}</a>{{end}}{{else}}<span class="muted">—</span>{{end}}</span>
+{{end}}
+
+{{define "envPanel"}}
+    <section class="env">
+      <h3>{{.Label}}{{with .Row}} {{template "state" (stateOf .State false false)}}{{end}}</h3>
+      {{with .Row}}
+      {{if .State.Detail}}<p class="reason {{if eq .State.Key "failing"}}bad{{else}}muted{{end}}">{{short .State.Detail}}</p>{{end}}
+      <dl class="plain">
+        <dt>Image</dt><dd><code>{{short .Image}}</code></dd>
+        <dt>Web address</dt><dd>{{range .Hosts}}<a href="https://{{.}}">{{.}} {{template "icon" "external"}}</a>{{" "}}{{else}}<span class="muted">none{{if not $.Address}}: a worker{{end}}</span>{{end}}</dd>
+        {{if $.Address}}<dt>In the cluster</dt><dd><code>{{$.Address}}</code></dd>{{end}}
+        <dt>Database</dt><dd>{{if $.Database}}<span class="pill">SQLite</span> <code>{{$.Database}}</code>{{else if not $.DatabaseKnown}}<span class="muted">release unknown</span>{{else}}<span class="muted">none</span>{{end}}</dd>
+      </dl>
+      <div class="toolbar">
+        <a href="{{$.Href}}">Use, connect or operate {{$.App}}/{{$.Env}}</a>
+        {{if $.Job}}{{template "running" (runningOf $.Job $.RefreshURL)}}
+        {{else}}
+        <form class="inline" method="post" action="/units/{{$.Unit}}/{{$.Action}}" hx-post="/units/{{$.Unit}}/{{$.Action}}" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button title="{{if .Suspended}}Apply Git changes to it again, starting with a reconcile{{else}}Fetch Git and apply this instance now. Safe: it applies what Git already says{{end}}">{{$.ActionLabel}}</button></form>{{end}}
+      </div>
+      {{else}}{{if eq $.Env "prod"}}<p class="muted">Not in production. <a href="/apps/{{$.App}}/staging/promotion">Review promotion</a> shows what the first promotion would create.</p>
+      {{else}}<p class="muted">Not deployed to staging.</p>{{end}}{{end}}
+    </section>
+{{end}}

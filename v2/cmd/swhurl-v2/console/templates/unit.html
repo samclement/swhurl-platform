@@ -1,0 +1,43 @@
+{{define "title"}}{{.Unit.Name}}{{end}}
+{{define "main"}}
+<p class="crumbs"><a href="/platform#units">Platform</a> › {{.Unit.Layer}}</p>
+<h1 class="mono">{{.Unit.Name}}</h1>
+<p class="verdict">{{template "mark" .Unit.Ready.Key}} <strong>{{.Unit.Ready.Label}}</strong> <span class="muted">— {{short .Detail}}</span></p>
+
+<dl>
+  <dt>Applies</dt><dd class="mono">{{if .Unit.Path}}{{.Unit.Path}}{{else}}—{{end}}</dd>
+  <dt>Checks Git</dt><dd>every {{if .Unit.Interval}}{{.Unit.Interval}}{{else}}—{{end}}, and at once on a push (webhook)</dd>
+  <dt>Waits for</dt><dd>{{range $i, $d := .Unit.DependsOn}}<a class="mono" href="/units/{{$d}}">{{$d}}</a>{{if notLast $i (len $.Unit.DependsOn)}}, {{end}}{{else}}<span class="muted">nothing</span>{{end}}</dd>
+  <dt>Needed by</dt><dd>{{range $i, $d := .Unit.NeededBy}}<a class="mono" href="/units/{{$d}}">{{$d}}</a>{{if notLast $i (len $.Unit.NeededBy)}}, {{end}}{{else}}<span class="muted">nothing</span>{{end}}</dd>
+  {{with .App}}<dt>App</dt><dd><a href="/apps/{{.App}}/{{.Env}}">{{.App}}/{{.Env}}</a></dd>{{end}}
+  {{if and (eq .Unit.ReadyStatus "True") .Unit.ReadyMessage}}<dt>Last message</dt><dd class="muted">{{short .Unit.ReadyMessage}}</dd>{{end}}
+</dl>
+
+<h2>Actions</h2>
+{{if .Refused}}
+<p class="muted">None here: this unit is {{.Refused}}. Change it with <code>make flux-bootstrap</code>.</p>
+{{else}}
+<div class="action-row">
+  <form method="post" action="/units/{{.Unit.Name}}/reconcile"><button>Reconcile now</button></form>
+  <span class="muted">Fetch Git and apply this unit now instead of at the next check. Safe: it applies what Git already says.</span>
+</div>
+{{if .Unit.Suspended}}
+<div class="action-row">
+  <form method="post" action="/units/{{.Unit.Name}}/resume"><button>Resume</button></form>
+  <span class="muted">Apply Git changes to this unit again, starting with a reconcile.</span>
+</div>
+{{else}}
+<div class="action-row">
+  <form method="post" action="/units/{{.Unit.Name}}/suspend" data-confirm="Suspend {{.Unit.Name}}? Git changes stop applying to it until you resume it. What is running stays as it is." data-confirm-label="Suspend"><button class="danger">Suspend</button></form>
+  <span class="muted">Stop applying Git changes to this unit until you resume it; what is running stays as it is. Use it while you investigate or try something by hand.</span>
+</div>
+{{end}}
+{{end}}
+
+<h2>Jobs on this unit</h2>
+{{if .JobViews}}
+<ul class="items">
+  {{range .JobViews}}<li>{{template "job" .State}} <a href="/jobs/{{.ID}}">{{.Action}}</a> <span class="muted">{{.State}} · by {{.Identity}} · {{.StartedClock}} UTC</span></li>{{end}}
+</ul>
+{{else}}<p class="muted">None since the console started.</p>{{end}}
+{{end}}

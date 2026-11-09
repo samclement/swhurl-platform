@@ -48,6 +48,10 @@ func (Local) Events(root, name string) (producer.Object, []byte, error) {
 	}
 	return o, data, nil
 }
+
+// Parse reads one declaration or events document from bytes a caller fetched, under the same rules as Local.
+func Parse(data []byte, name string) (producer.Object, error) { return decode(data, name) }
+
 func read(root, name string) ([]byte, error) {
 	data, err := os.ReadFile(filepath.Join(root, name))
 	if err != nil {

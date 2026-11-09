@@ -1,0 +1,7 @@
+{{define "title"}}Error{{end}}
+{{define "main"}}
+<h1>Could not show this page</h1>
+<p class="bad">{{.Error}}</p>
+<p class="muted">If you followed a link, the app, unit or job may no longer exist (jobs are kept only until the console restarts). If the cluster could not be read, try <a href="{{.Path}}">refresh</a>; if it persists, run <code>make verify-platform</code> in your terminal.</p>
+<p><a href="/">Back to Overview</a></p>
+{{end}}

@@ -23,6 +23,16 @@ func TestContract(t *testing.T) {
 	gittest.Contract(t, func(t *testing.T) (git.Reader, string) { return git.New(), scenario(t) })
 }
 
+// The snapshot contract: the current commit's full id, and its tree as an archive of that commit only.
+func TestSnapshotContract(t *testing.T) {
+	requireGit(t)
+	gittest.SnapshotContract(t, func(t *testing.T) (git.Snapshots, string) {
+		root := scenario(t)
+		commitAll(t, root, "archived")
+		return git.New(), root
+	})
+}
+
 // Reading changes nothing: the index and every file are what they were, so `git status` refreshed no index even
 // where a file's stat information is stale.
 func TestReadWritesNothing(t *testing.T) {

@@ -13,7 +13,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   configuration the Scale form starts from, the team registry and the Feature flags card in the template's own words.
   The Feature flags card reads NATS through the console's own seed, opened once and retried at most once a minute;
   with no seed it states the same problem the flags command states. Nothing is written: the new routes are reads
-  only, and `/new/repo` (the POST) answers 405 until step 2.
+  only: `/new/repo` is not registered at all (404), and a POST to a page's address answers 405, until step 2.
 - **What was verified:** `go test ./...` in `v2/`: seven pages compared byte for byte with the Python console's render
   of one fixture (`v2/cmd/swhurl-v2/testdata/app.html`, `app-prod.html`, `pending-removing.html`,
   `pending-absent.html`, `pending-new.html`, `promotion.html`, `new-repo.html`, all from

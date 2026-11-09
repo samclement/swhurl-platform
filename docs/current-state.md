@@ -2,6 +2,36 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console's Flux actions run `swhurl-v2 unit` (9 November 2026)
+
+- **Scope:** §24 step 2b, on `3d809fd8`. `swhurl-v2 unit --action reconcile|suspend|resume --unit NAME` reads the
+  Kustomization, refuses `cluster-sources`/`cluster-stack` and a reconcile of a suspended unit before any write,
+  patches `spec.suspend` or annotates `reconcile.fluxcd.io/requestedAt` through the kube write port, and waits (10
+  minutes, polling every 2 s) until `lastHandledReconcileAt` equals its token **and** `observedGeneration` equals
+  `metadata.generation`, then reports the revision or the controller's own failure message. The console's three POSTs
+  relay it through `console/v2.py` as changes already did, so `actions.py`'s `Flux` class and its `kubectl
+  get/annotate/patch`, `TIMEOUT`, `POLL` and `SOURCES` are deleted. `orchestration.Jobs` (the console's job registry,
+  record keys and trim, redaction, drain) is ported with its tests and has no reader until the cutover.
+- **Offline:** `make check`, `make check-v2` (`api.txt` regenerated for the intended API: `Flux*`, `Jobs*`,
+  `JobStore`, `JobsInputs`, `Data.SetConfigMapKeys`; kind table gained `OCIRepository` and `Bucket`), `make test`
+  (480 Python tests), `make check-docs`. Go tests pin the request order (source before unit), a handled-but-failing
+  request, the timeout, both root refusals, suspend/resume, a missing unit, the one multi-key merge patch, and the
+  console relay's argv, credential and last-line refusal.
+- **Live:** Validate built and deployed console `src-1c33a175b6814f62` (deploy `8a97c956`, applied by Flux; the pods
+  and both CronJobs ran on the new image). Through `kubectl port-forward` with `X-Auth-Request-Email` and `Origin` on
+  the throwaway `swhurl-try-30/staging` (`app-swhurl-try-30-staging`): **suspend** (job 45) succeeded in 3 s with
+  `► suspending …` and `✔ Kustomization … suspended`, and the unit carried `spec.suspend: true`; **reconcile** while
+  suspended (job 46) failed in under a second with exactly `… is suspended; resume it instead (resume also
+  reconciles)` as its last line and `exited 2` in its audit line, and made no write; **resume** (job 47) succeeded in
+  5 s with `► resuming …`, `► annotating Kustomization … in flux-system namespace`, `◎ waiting …` and `✔ applied
+  revision main@sha1:8a97c956…`, leaving `spec.suspend: false`, Ready and the same revision; **reconcile** (job 48)
+  succeeded in 4 s, annotating `GitRepository swhurl-platform` first (`✔ fetched revision …`) and then the unit. Each
+  job's page showed its lines and its Prepared/Applied stages as Python's did, and each start and finish wrote one
+  `[AUDIT]` line with the same fields. `make verify-platform` passed.
+- **Not exercised:** the job stream in a browser (Python still serves `/jobs/{id}/events`), the 10-minute timeout, the
+  Go job lifecycle (no reader yet), and everything §24's record left open: New app's POST from the deployed console, a
+  promotion, team and channel changes, connect/allow/remove, and a second change while the first is open.
+
 ## The console relays every change to `swhurl-v2 change` (9 November 2026)
 
 - **Scope:** §24 step 2a's second half, on `70415863`. `console/proposal.py` is a relay now: it names the form's values

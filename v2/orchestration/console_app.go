@@ -116,7 +116,7 @@ func ConsoleDesiredVariables(tree map[string][]byte, app, env string) ([]pages.N
 	}
 	if err == nil && ordered.kind == 'o' {
 		for _, field := range ordered.fields {
-			found = append(found, pages.NamedValue{Name: field.Name, Value: variableText(field.Value, orderedValue{})})
+			found = append(found, pages.NamedValue{Name: field.Name, Value: variableText(field.Value, field.Value)})
 		}
 		return found, true
 	}
@@ -127,6 +127,9 @@ func ConsoleDesiredVariables(tree map[string][]byte, app, env string) ([]pages.N
 func variableText(value, from orderedValue) string {
 	if text := scalarText(value); text != "" || (value.kind == 0 && value.scalar != nil) {
 		return text
+	}
+	if value.kind == 'o' {
+		from = value.member("valueFrom")
 	}
 	if path := scalarText(from.member("fieldRef").member("fieldPath")); path != "" {
 		return "from the pod (" + path + ")"

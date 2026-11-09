@@ -8,7 +8,7 @@ its hourly interval. This creates the webhook where it is missing and repoints i
 was rotated (the Receiver's path is a hash of the token); a correct webhook is left alone. It uses
 your ``gh`` login and reads the token from SOPS; the token goes to ``gh`` on stdin only.
 
-``make app-repo`` and the console's **Start a new app** create the same webhook with the repository.
+``swhurl-v2 app-repo`` and the console's **Start a new app** create the same webhook with the repository.
 """
 from __future__ import annotations
 

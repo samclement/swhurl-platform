@@ -1,17 +1,17 @@
-"""The New app form and its job: create the app's repository, wait for its image, and open the pull request
-that creates the app's first instance with ``swhurl-v2 create`` — v2's records, the compiled files and the
-platform documents the render writes from them. No v1 record is written anywhere in this path."""
+"""The New app form and its job: ``swhurl-v2 app-repo`` renders the stack's template into a repository of its
+own, creates that repository with its first commit and image webhook, waits for the first image and opens the
+pull request that creates the app's first instance with ``swhurl-v2 create``. The console decides no answer,
+image or webhook, and no v1 record is written anywhere in this path."""
 from __future__ import annotations
 
-import time
 from urllib.parse import parse_qs
 
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
-from swhurl.apps import contract, repo
-from swhurl.console import actions, proposal, repos, stages
+from swhurl.apps import contract
+from swhurl.console import actions, proposal, stages
 from swhurl.console.context import STACK_NAMES, Context
 
 INCLUDED = {'frontend': 'Browser frontend', 'database': 'SQLite', 'api': 'API description', 'events': 'Events',
@@ -27,20 +27,9 @@ INCLUDED_TEXT = {'frontend': 'a page built with Vite+ that the app serves at /, 
 
 
 def routes(ctx: Context) -> list[Route]:
-    runner, github, app_repos, repo_opener, jobs, page, connectable, resumable = (
-        ctx.runner, ctx.github, ctx.app_repos, ctx.repo_opener, ctx.jobs, ctx.page, ctx.connectable, ctx.resumable)
+    runner, github, app_repos, jobs, page, connectable, resumable = (
+        ctx.runner, ctx.github, ctx.app_repos, ctx.jobs, ctx.page, ctx.connectable, ctx.resumable)
     platform_teams, platform_channels = ctx.platform_teams, ctx.platform_channels
-
-    questions_cache: dict[str, tuple[float, list[repo.Question]]] = {}
-
-    def stack_questions(stack: str) -> list[repo.Question]:
-        """The stack template's questions (its copier.yml on GitHub), read at most every 5 minutes."""
-        cached = questions_cache.get(stack)
-        if cached is not None and time.monotonic() - cached[0] <= 300:
-            return cached[1]
-        found = repo.template_questions(stack, **({'opener': repo_opener} if repo_opener else {}))
-        questions_cache[stack] = (time.monotonic(), found)
-        return found
 
     def new_repo_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:
         form = form or {}
@@ -67,13 +56,12 @@ def routes(ctx: Context) -> list[Route]:
         if github is None or app_repos is None:
             return new_repo_form(request, 409, 'Both GitHub tokens must be configured (console-github Secret).', form)
         try:
-            questions = stack_questions(form.get('stack', '').strip()) if form.get('stack', '').strip() in contract.STACKS else []
             callable_apps, offered_events, problem = connectable()
             if problem and (form['calls'] or form['subscribe']):
                 raise actions.ActionError(f'cannot check the apps and events chosen: {problem}')
-            chosen = proposal.NewApp.from_form(form, questions, platform_teams()[0], {row.instance.app for row in callable_apps},
+            chosen = proposal.NewApp.from_form(form, platform_teams()[0], {row.instance.app for row in callable_apps},
                                               {name for name, _ in offered_events})
-        except (actions.ActionError, repo.RepoError) as error:
+        except actions.ActionError as error:
             return new_repo_form(request, 400, str(error), form)
         try:
             job = jobs.submit(stages.NEW_APP_JOB, chosen.target, request.state.identity,
@@ -83,17 +71,10 @@ def routes(ctx: Context) -> list[Route]:
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
     def new_app_work(chosen: proposal.NewApp, *, create: bool):
-        """Create the app's repository (or, finishing an earlier job, find the one it created), wait for
-        its image and open the platform pull request that adds its staging instance."""
+        """``swhurl-v2 app-repo`` does the whole creation — render, repository, first image and the staging pull
+        request — or, finishing an earlier job, finds the repository it created and only waits and publishes."""
         def work(job: actions.Job) -> None:
-            client = repos.AppRepos(runner, app_repos)
-            opener = {'opener': repo_opener} if repo_opener else {}
-            try:
-                image = (repos.create_app_repo(runner, client, job, chosen.request, **opener) if create
-                         else repos.finish_app_repo(client, job, chosen.request, **opener))
-            finally:
-                client.close()
-            job.link = proposal.open_new_app(runner, github, job, chosen, image)
+            job.link = proposal.app_repo(runner, github, app_repos, job, chosen, resume=not create)
         return work
 
     def resume_job(request: Request) -> Response:

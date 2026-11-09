@@ -41,6 +41,13 @@ func consoleServer(t *testing.T, fixture githubtest.ConsoleFixture) *httptest.Se
 		}
 		io.WriteString(w, fixture.AppBody)
 	})
+	mux.HandleFunc("/repos/samclement/swhurl-app-template-typescript/contents/copier.yml", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("ref") != fixture.Revision || r.Header.Get("Authorization") != "" {
+			http.NotFound(w, r)
+			return
+		}
+		io.WriteString(w, fixture.TemplateBody)
+	})
 	mux.HandleFunc("/repos/owner/repo/tarball/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://codeload.github.test/owner/repo/tar.gz/"+fixture.Revision, http.StatusFound)
 	})

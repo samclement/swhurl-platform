@@ -72,7 +72,7 @@ def fake(units=UNITS, releases=RELEASES, inventories=None, **extra):
 def client(runner, **kwargs):
     if not kwargs.get('documents') and (not kwargs.get('github') or kwargs['github'].transport is None):
         kwargs['documents'] = getattr(runner, 'status_inputs', {}).get
-    kwargs.setdefault('repo_opener', lambda request: ({}, b'version: 1\nkind: worker\nstack: typescript\n'))  # no test here reaches GitHub
+    kwargs.setdefault('repo_opener', lambda request: b'version: 1\nkind: worker\nstack: typescript\n')  # no test here reaches GitHub
     return TestClient(server.create_app(runner, **kwargs))
 
 

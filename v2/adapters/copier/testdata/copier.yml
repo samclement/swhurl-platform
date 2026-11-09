@@ -1,0 +1,23 @@
+_subdirectory: template
+app_name:
+  type: str
+description:
+  type: str
+kind:
+  type: str
+  help: web or worker
+  choices: {web: web, worker: worker}
+  default: web
+database:
+  type: str
+  help: none or sqlite
+  choices: [none, sqlite]
+  default: none
+api:
+  type: str
+  choices: [none, openapi]
+  default: none
+frontend:
+  type: str
+  choices: [none, vite]
+  default: none

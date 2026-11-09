@@ -13,7 +13,7 @@ import httpx
 from console_observation import inventory, report
 from test_console import WHO, client, fake, release, unit
 
-from swhurl.console import actions, changes, proposal, v2
+from swhurl.console import actions, changes, proposal, repos, v2
 from swhurl.console import github as gh
 from swhurl.run import CommandError, FakeRunner, Result
 
@@ -379,23 +379,52 @@ class RelayTests(unittest.TestCase):
         self.assertNotIn('https://ntfy.sh/x', ' '.join(seen['argv']))
         self.assertEqual(seen['stdin'], 'https://ntfy.sh/x\n')
 
-    def test_a_new_app_quotes_the_repository_and_template_before_its_commands(self):
+    def test_a_new_app_is_one_v2_command_that_creates_the_repository_and_opens_staging(self):
+        opened = self.console_app_repo(lambda argv, stdin: Result(argv, 0, 'Opened https://github.com/x/pull/9\n'))
+        argv = opened['argv']
+        self.assertEqual(argv[:9], ('swhurl-v2', 'app-repo', '--app', 'hello', '--type', 'web-app', '--stack',
+                                    'typescript', '--requested-by'))
+        for pair in (('--set', 'team=demo'), ('--set', 'exposure=private'), ('--set', 'calls=other')):
+            self.assertIn(pair, tuple(zip(argv, argv[1:], strict=False)))
+        self.assertNotIn('--image', argv, 'v2 reads the image the repository published itself')
+        self.assertEqual(argv[-1], '--resume')
+
+    def test_a_new_app_reads_its_tokens_from_the_environment_only(self):
+        opened = self.console_app_repo(lambda argv, stdin: Result(argv, 0, 'Opened https://github.com/x/pull/9\n'),
+                                       resume=False)
+        self.assertNotIn('token', ' '.join(opened['argv']))
+        self.assertEqual(opened['env'], {'CONSOLE_TOKEN': 'console-token', 'APP_REPOS_TOKEN': 'repos-token',
+                                         'IMAGE_WEBHOOK_TOKEN': 'hook-token'})
+
+    def test_the_console_takes_the_new_apps_link_from_the_commands_last_line(self):
+        opened = self.console_app_repo(lambda argv, stdin: Result(argv, 0, 'Created https://github.com/samclement/hello\n'
+                                                                          'Opened https://github.com/x/pull/9\n'))
+        self.assertEqual(opened['link'], 'https://github.com/x/pull/9')
+        self.assertEqual(opened['lines'], ['Created https://github.com/samclement/hello',
+                                           'Opened https://github.com/x/pull/9'])
+
+    def console_app_repo(self, handler, *, resume=True):
+        """One New app job's call to ``swhurl-v2 app-repo``, with the argv, environment and lines it produced."""
         seen = {}
 
-        def handler(argv, stdin):
-            seen['argv'] = argv
-            return Result(argv, 0, 'Opened https://github.com/x/pull/9\n')
-
-        chosen = proposal.NewApp('hello', 'typescript', '', {}, ('team=demo', 'exposure=private'))
-        runner = self.runner('', handler=handler)
-        proposal.open_new_app(runner, gh.GitHub('owner/repo', 'token'), self.job(), chosen, 'ghcr.io/x/hello:1-ab')
-        argv = seen['argv']
-        self.assertIn('--image', argv)
-        self.assertEqual(argv[argv.index('--image') + 1], 'ghcr.io/x/hello:1-ab')
-        preface = argv[argv.index('--preface') + 1]
-        self.assertTrue(preface.startswith('The console created https://github.com/samclement/hello from '))
-        self.assertIn('and waited for its first image.', preface)
-        self.assertEqual(argv[:4], ('swhurl-v2', 'change', '--kind', 'new'))
+        def record(argv, stdin):
+            seen['argv'], seen['stdin'] = argv, stdin
+            return handler(argv, stdin)
+        runner = FakeRunner()
+        runner.add_secret('repos-token')
+        runner.add_secret('hook-token')
+        runner.on('swhurl-v2', 'app-repo', handler=record)
+        job = self.job()
+        with mock.patch.object(runner, 'stream', wraps=runner.stream) as streamed:
+            chosen = proposal.NewApp('hello', 'typescript', '', {}, ('team=demo', 'exposure=private', 'calls=other'),
+                                     'web-app')
+            link = proposal.app_repo(runner, gh.GitHub('owner/repo', 'console-token'),
+                                     repos.AppReposToken('repos-token', image_webhook_token='hook-token'),
+                                     job, chosen, resume=resume)
+        seen['env'] = streamed.call_args.kwargs['env']
+        seen['lines'] = job.lines
+        seen['link'] = link
+        return seen
 
 
 class GHTransport:

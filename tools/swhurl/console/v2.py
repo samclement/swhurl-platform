@@ -22,6 +22,10 @@ CALLS = f'{RECORDS}/calls.json'
 EGRESS = 'platform/egress/allocation.json'
 TOKEN_ENV = 'CONSOLE_TOKEN'
 """Where ``swhurl-v2 change`` reads its credential: the console's own token, in the child's environment only."""
+APP_REPOS_TOKEN_ENV = 'APP_REPOS_TOKEN'
+IMAGE_WEBHOOK_TOKEN_ENV = 'IMAGE_WEBHOOK_TOKEN'
+"""What ``swhurl-v2 app-repo`` reads: the token that creates repositories and the one that signs the webhook. Both
+reach the child's environment only, never its argv."""
 
 
 def credential(runner: Runner, root: Path, *, in_cluster: bool) -> list[str]:

@@ -58,9 +58,9 @@ All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com
 
 ## Start a new app
 
-From nothing to a running staging app in a few minutes (about two for TypeScript; a little longer for Kotlin, whose build also compiles and tests): `make app-repo` creates the app's GitHub repository from a template and waits for its first image; the `swhurl-v2 create` line it prints writes the app's staging records, and `make v2-render` writes the compiled files, the unit and its registration. Every push to the app's `main` then deploys to staging on its own.
+From nothing to a running staging app in a few minutes (about two for TypeScript; a little longer for Kotlin, whose build also compiles and tests): `make app-repo` runs `swhurl-v2 app-repo`, which creates the app's GitHub repository from a template, waits for its first image and opens one pull request carrying the app's staging records and what they render. Merge it and Flux deploys the instance; every push to the app's `main` then deploys to staging on its own.
 
-**In the console:** **New app** runs the same path in one pull request — `create`, an `edit` for each call or subscription chosen under **Connects to**, then `render` — and holds it for your review, so nothing reaches the cluster until you merge it ([console](console.md#new-apps)). A new app has no production path today: v2 promotes into an environment that already exists and does not create one, so a first production waits for that capability ([not yet modelled](v2-status.md#deferred-features)).
+**In the console:** **New app** runs the same command and holds the same pull request for your review — `create`, an `edit` for each call or subscription chosen under **Connects to**, then `render` — so nothing reaches the cluster until you merge it ([console](console.md#new-apps)). A new app has no production path today: v2 promotes into an environment that already exists and does not create one, so a first production waits for that capability ([not yet modelled](v2-status.md#deferred-features)).
 
 ### What happens, and when
 
@@ -79,10 +79,8 @@ sequenceDiagram
 
   Operator->>AppRepo: make app-repo (create public repo from selected stack)
   AppRepo->>Actions: Push event starts first checks build smoke and publish run
-  Actions-->>Operator: make app-repo prints the published image digest
-  Operator->>Platform: swhurl-v2 create writes v2-records/weather-api/staging
-  Operator->>Platform: make v2-render writes v2-apps/, the unit and its registration
-  Operator->>Platform: Commit and push
+  Actions-->>Platform: make app-repo waits for the first image, then opens the staging pull request
+  Operator->>Platform: Merge the pull request (the app's records and what they render)
   Platform->>Flux: GitHub push webhook (otherwise 1-minute source poll)
   Flux->>Cluster: Apply app unit and its manifests
   Cluster->>CM: Ingress appears with issuer annotation and TLS Secret name
@@ -92,9 +90,9 @@ sequenceDiagram
   Dash->>Dash: Create or update the App weather-api dashboard in HyperDX
 ```
 
-The command creates a **public** app repository because the cluster pulls its image without registry credentials. Its first commit starts the app repository's normal push workflow; this is a GitHub Actions push trigger, not a platform webhook. `make app-repo` waits for that workflow to finish and prints the image digest and the `swhurl-v2 create` line to run. If the first build fails it stops with the run's link: the repository stays; fix the app, push, and run the same `create` line with the image that run publishes.
+The command creates a **public** app repository because the cluster pulls its image without registry credentials. Its first commit starts the app repository's normal push workflow; this is a GitHub Actions push trigger, not a platform webhook. `make app-repo` waits for that workflow to publish the first image (the template's seed `0-<sha>` when the answers have one, else the image the run builds), then opens the staging pull request. If the first build fails it stops with the run's link: the repository stays; fix the app, push, and run `make app-repo RESUME=true` to finish from the image the new commit publishes.
 
-`swhurl-v2 create` reads the image's own declaration label — its runtime, whether it uses a database, what it publishes and offers, its memory — and writes `v2-records/<name>/staging/`, the app's records, including an encrypted seed for its events identity. It needs the image published, never the repository. Commit those, run `make v2-render` and commit what it writes — the compiled release, the unit and its registration in `clusters/home/kustomization.yaml` — and push; Flux deploys the instance. From then on the console's app page writes v2's records (every v2 pull request is held for you) and `make v2-deploy` follows the app's images. Production is not created by this flow: v2 promotes into an environment that already exists, and creating one is not modelled yet ([promote to production](#promote-to-production)). An app that declares secret names cannot be created: v2 records no secret names yet and refuses such an image, so leave `--secret-keys` off until it does ([secrets](#secrets)). Platform PR branch pushes are filtered out by the Flux Receiver; the push to `main` is what invokes it. Without a successful webhook delivery, Flux's `GitRepository` still polls `main` every minute.
+`swhurl-v2 create` reads the image's own declaration label — its runtime, whether it uses a database, what it publishes and offers, its memory — and writes `v2-records/<name>/staging/`, the app's records, including an encrypted seed for its events identity. It needs the image published, never the repository. `swhurl-v2 render` writes the compiled release, the unit and its registration in `clusters/home/kustomization.yaml`; the pull request carries both, and Flux deploys the instance once you merge it. From then on the console's app page writes v2's records (every v2 pull request is held for you) and `make v2-deploy` follows the app's images. Production is not created by this flow: v2 promotes into an environment that already exists, and creating one is not modelled yet ([promote to production](#promote-to-production)). An app that declares secret names cannot be created: v2 records no secret names yet and refuses such an image, so leave `--secret-keys` off until it does ([secrets](#secrets)). Platform PR branch pushes are filtered out by the Flux Receiver; the push to `main` is what invokes it. Without a successful webhook delivery, Flux's `GitRepository` still polls `main` every minute.
 
 After the commit, Flux creates the app's dedicated `app-<name>-staging` unit from the newly registered unit file. It waits for `infra-base`, and also `platform-oauth2-proxy` for authenticated web exposure. The unit applies the namespace, HelmRelease and optional encrypted Secret. The chart creates the Deployment and Service for a web app; authenticated or public web exposure also creates an Ingress. Worker apps have no Service or Ingress. SQLite/database answers add a retained PVC and mount; secret answers add the SOPS Secret, and a namespace that reads one is watched by Reloader ([whose list v2 renders](services.md#reloader)). With automatic deploy enabled, the staging unit also creates this app's Flux `ImageRepository` and `ImagePolicy` in `flux-system`, whose report starts the Deploy workflow, so later published images can update the staging image pin in platform Git. These resources are app-scoped; the shared cluster services already exist.
 
@@ -104,20 +102,17 @@ After the commit, Flux creates the app's dedicated `app-<name>-staging` unit fro
 
 Once staging is deployed, later pushes to the app repository's `main` publish images. The app repository's [image webhook](services.md#image-webhook) tells Flux the moment the image is published; Flux picks the new tag and starts the Deploy workflow, which commits the tag, its digest and what the image offers to this platform repository's `main` in one commit; the push webhook then rolls out that image to staging ([deploy a new image](#deploy-a-new-image)). Production is not created by this flow.
 
-**From a terminal**, the same in two steps (the first needs your `gh` login and SSH access to GitHub):
+**From a terminal**, in one command: it reads its tokens from the environment (`CONSOLE_TOKEN` and `CONSOLE_REPO` for the pull request, `APP_REPOS_TOKEN` for the repository, `IMAGE_WEBHOOK_TOKEN` for its webhook; export them from the `console-github` Secret), and `REQUESTED_BY` defaults to your Git identity:
 
 ```bash
-make app-repo NAME=weather-api TYPE=api STACK=kotlin   # DRY_RUN=true shows the plan
-# [OK] Created https://github.com/samclement/weather-api from samclement/swhurl-app-template-kotlin
-# [OK] First image: ghcr.io/samclement/weather-api:1-a1b2c3d@sha256:…
-#  swhurl-v2 create --records v2-records --app weather-api --team <team> --exposure private --image ghcr.io/… --profile v2/testdata/profile.json --out .
-swhurl-v2 create --records v2-records --app weather-api --team payments --exposure private --image ghcr.io/… --profile v2/testdata/profile.json --out .   # the printed line, with the team that owns it
-make v2-render
-git add v2-records v2-apps clusters/home && git commit -m "apps: add weather-api/staging" && git push
-make app-status APP=weather-api ENV=staging    # expect "State      healthy"
+make app-repo NAME=weather-api TYPE=api TEAM=payments STACK=kotlin   # DRY_RUN=true shows the plan
+# Created https://github.com/samclement/weather-api
+# Seeded ghcr.io/samclement/weather-api:0-a1b2c3d@sha256:…
+# Opened https://github.com/samclement/swhurl-platform/pull/N   ← merge it
+make app-status APP=weather-api ENV=staging    # after Flux fetches the merge
 ```
 
-`make app-repo` refuses a name that already exists on GitHub. For a free name, it creates the repository **public** (the cluster pulls images without credentials), adds the [image webhook](services.md#image-webhook), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will, printing the `swhurl-v2 create` line to run. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run the same `create` line with the image that run publishes.
+`make app-repo` refuses a name that already exists on GitHub. For a free name, it creates the repository **public** (the cluster pulls images without credentials), adds the [image webhook](services.md#image-webhook), waits for its first build and opens the pull request that admits the app; `TEAM=` is the team that owns it, a name in `v2-records/teams.json`. If that build fails it stops with the run's link and opens no pull request: the repository stays; fix the app, push, and run `make app-repo ... RESUME=true` to finish from the image that run publishes.
 
 **Only apps made this way are supported.** `make app-repo` only creates `samclement/<name>` from a stack's template, and the image it prints is what that repository's workflow publishes, so the line it prints always names such an app; staging follows its new images. There is no route for an image built elsewhere or a public image such as nginx: the app policy refuses an instance committed by hand under `apps/` that is not such an app ([the app policy](#the-app-policy)), and for a v2 record the repository and image are the review's to refuse, since v2 states them and renders whatever they say. Tests are the one exception: the throwaway live tests (`make live-test-*`) deploy nginx and BusyBox images from fixture manifests into labelled test namespaces and remove them afterwards.
 

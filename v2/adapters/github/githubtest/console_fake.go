@@ -3,6 +3,7 @@ package githubtest
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -15,6 +16,7 @@ type ConsoleFake struct {
 	Commit   string
 	Files    map[string]string
 	AppFiles map[string]string // another repository's file at its default branch, by "owner/repo/path"
+	Public   map[string]string // a public repository's file at a commit, by "owner/repo@commit/path"
 	Archive  []byte
 	// Changed and Contains are the comparison's answer: the paths after the base, and whether head contains it.
 	Changed  []string
@@ -65,6 +67,14 @@ func (f *ConsoleFake) AppFile(_ context.Context, repository, token, path string)
 		return nil, false, err
 	}
 	body, found := f.AppFiles[repository+"/"+path]
+	return []byte(body), found, nil
+}
+
+func (f *ConsoleFake) PublicFile(_ context.Context, repository, revision, path string) ([]byte, bool, error) {
+	if err := f.read("public " + repository + "@" + revision + "/" + path); err != nil {
+		return nil, false, err
+	}
+	body, found := f.Public[repository+"@"+revision+"/"+path]
 	return []byte(body), found, nil
 }
 
@@ -121,14 +131,16 @@ func (f *ConsoleFake) Pull(_ context.Context, repository, token string, number i
 // ConsoleFixture is what a console contract's reader answers, stated once for the real adapter's scripted server
 // and the fake alike.
 type ConsoleFixture struct {
-	Revision string
-	File     string
-	Body     string
-	AppFile  string // another repository and its swhurl.yaml: "owner/app/swhurl.yaml"
-	AppBody  string
-	Changed  []string
-	Pulls    []github.Pull
-	Merged   github.Pull
+	Revision     string
+	File         string
+	Body         string
+	AppFile      string // another repository and its swhurl.yaml: "owner/app/swhurl.yaml"
+	AppBody      string
+	Changed      []string
+	Pulls        []github.Pull
+	Merged       github.Pull
+	Template     string // a public template's file at the pinned commit: "owner/repo/path"
+	TemplateBody string
 }
 
 // Scenario is the console contract's fixed answer.
@@ -144,6 +156,8 @@ func Scenario() ConsoleFixture {
 			Branch: "console/edit-web-0123456789ab", Opened: "2026-11-01", Body: "Merge plan\n\n1. Merge it.",
 			Head: "0123456789abcdef0123456789abcdef01234567", Checks: "passed",
 			ChecksURL: "https://github.com/owner/repo/actions/runs/1", State: "open"}},
+		Template:     "samclement/swhurl-app-template-typescript/copier.yml",
+		TemplateBody: "app_name:\n  type: str\n",
 		Merged: github.Pull{Number: 8, Title: "merged", URL: "https://github.com/owner/repo/pull/8",
 			Branch: "console/promote-web-0123456789ab", Opened: "2026-10-31", State: "merged",
 			MergedAt: "2026-11-01T10:00:00Z", MergeCommit: "fedcba9876543210fedcba9876543210fedcba98"},
@@ -156,9 +170,13 @@ func NewConsole(fixture ConsoleFixture) *ConsoleFake {
 	for _, pull := range append(slices.Clone(fixture.Pulls), fixture.Merged) {
 		byNumber[pull.Number] = pull
 	}
+	public := map[string]string{}
+	if parts := strings.SplitN(fixture.Template, "/", 3); fixture.Template != "" && len(parts) == 3 {
+		public[parts[0]+"/"+parts[1]+"@"+fixture.Revision+"/"+parts[2]] = fixture.TemplateBody
+	}
 	return &ConsoleFake{Commit: fixture.Revision, Files: map[string]string{fixture.File: fixture.Body},
-		AppFiles: map[string]string{fixture.AppFile: fixture.AppBody},
-		Changed:  fixture.Changed, Contains: true, Pulls: fixture.Pulls, ByNumber: byNumber}
+		Public: public, AppFiles: map[string]string{fixture.AppFile: fixture.AppBody},
+		Changed: fixture.Changed, Contains: true, Pulls: fixture.Pulls, ByNumber: byNumber}
 }
 
 // ConsoleContract is the behaviour every github.Console must have: a pinned main commit, one file at it and an
@@ -174,6 +192,7 @@ func ConsoleContract(t *testing.T, open func(*testing.T) (github.Console, Consol
 	}
 	contractContents(t, ctx, console, want)
 	contractAppFile(t, ctx, console, want)
+	contractPublicFile(t, ctx, console, want)
 	contractCompare(t, ctx, console, want, revision)
 	contractPulls(t, ctx, console, want)
 }
@@ -201,6 +220,23 @@ func contractAppFile(t *testing.T, ctx context.Context, console github.Console, 
 	}
 	if _, found, err := console.AppFile(ctx, "samclement/weather-api", "", "swhurl.yamlx"); err != nil || found {
 		t.Fatalf("an absent app file: found %v, %v", found, err)
+	}
+}
+
+// A stack template's copier.yml is read at the revision the contract pins, anonymously.
+func contractPublicFile(t *testing.T, ctx context.Context, console github.Console, want ConsoleFixture) {
+	t.Helper()
+	parts := strings.SplitN(want.Template, "/", 3)
+	if len(parts) != 3 {
+		t.Fatalf("the fixture's template file %q names no repository", want.Template)
+	}
+	repository, path := parts[0]+"/"+parts[1], parts[2]
+	body, known, err := console.PublicFile(ctx, repository, want.Revision, path)
+	if err != nil || !known || string(body) != want.TemplateBody {
+		t.Fatalf("public file = %q, found %v, %v", body, known, err)
+	}
+	if _, known, err := console.PublicFile(ctx, repository, want.Revision, "no-such-file"); err != nil || known {
+		t.Fatalf("an absent public file: found %v, %v", known, err)
 	}
 }
 

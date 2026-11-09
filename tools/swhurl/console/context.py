@@ -14,7 +14,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from swhurl import statestore
-from swhurl.apps import contract, repo
+from swhurl.apps import contract, declaration
 from swhurl.console import actions, catalogue, cluster, repos
 from swhurl.console.github import GitHub, PullRequest
 from swhurl.console.reading import Files
@@ -92,7 +92,7 @@ class Context:
     github: GitHub | None
     jobs: actions.Jobs
     app_repos: repos.AppReposToken | None
-    repo_opener: repo.Opener | None
+    repo_opener: declaration.Opener | None  # reads a repository file GitHub would serve
     described: catalogue.Documents
     document_source: Callable[[str], str | None] | None
     file_source: Callable[[str], str | None] | None

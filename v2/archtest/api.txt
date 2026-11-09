@@ -49,6 +49,23 @@ adapters/clickstack: type Opener interface {Open(ctx context.Context, uri, email
 adapters/clickstack: type Runner func(ctx context.Context, program []byte) ([]byte, error)
 adapters/clickstack: type TeamKey struct {Teams int Matches bool}
 adapters/clickstack: var ErrNoAccessKey = errors.New("the ClickStack admin account has no access key; sign in once, or run make clickstack-bootstrap")
+adapters/copier/copiertest: func (*Fake) Render(_ context.Context, request copier.Request) error
+adapters/copier/copiertest: func Contract(t *testing.T, open func(*testing.T, copier.Request) copier.Renderer, template copier.Request)
+adapters/copier/copiertest: func New() *Fake
+adapters/copier/copiertest: func Scenario() copier.Request
+adapters/copier/copiertest: type Fake struct {Requests []copier.Request Fail error}
+adapters/copier: const MaxOutput = 64 << 10
+adapters/copier: const RefusedRender = "refused_render"
+adapters/copier: const RenderTimeout = 5 * time.Minute
+adapters/copier: func (*Command) Render(ctx context.Context, request Request) error
+adapters/copier: func (*Error) Error() string
+adapters/copier: func New(specifier string) *Command
+adapters/copier: func Questions(document []byte) ([]Question, error)
+adapters/copier: type Command struct {Binary string Uvx string Specifier string Timeout time.Duration}
+adapters/copier: type Error struct {Reason, Detail string}
+adapters/copier: type Question struct {Name string Help string Choices []string Default string}
+adapters/copier: type Renderer interface {Render(ctx context.Context, request Request) error}
+adapters/copier: type Request struct {Template string Revision string Answers map[string]string Dest string}
 adapters/files/filestest: func (*Fake) Prune(dir, folder string, rendered []string) ([]files.Outcome, error)
 adapters/files/filestest: func (*Fake) Remove(dir, path string) ([]files.Outcome, error)
 adapters/files/filestest: func (*Fake) Write(dir string, docs []kernel.File) ([]files.Outcome, error)
@@ -102,6 +119,7 @@ adapters/github/githubtest: func (*ConsoleFake) AppFile(_ context.Context, repos
 adapters/github/githubtest: func (*ConsoleFake) Compare(_ context.Context, repository, token, from, to string) ([]string, bool, error)
 adapters/github/githubtest: func (*ConsoleFake) Contents(_ context.Context, repository, token, revision, path string) ([]byte, bool, error)
 adapters/github/githubtest: func (*ConsoleFake) OpenPulls(_ context.Context, repository, token string) ([]github.Pull, error)
+adapters/github/githubtest: func (*ConsoleFake) PublicFile(_ context.Context, repository, revision, path string) ([]byte, bool, error)
 adapters/github/githubtest: func (*ConsoleFake) Pull(_ context.Context, repository, token string, number int) (github.Pull, error)
 adapters/github/githubtest: func (*ConsoleFake) Revision(_ context.Context, repository, token string) (string, error)
 adapters/github/githubtest: func (*ConsoleFake) Tarball(_ context.Context, repository, token, revision string) ([]byte, error)
@@ -113,27 +131,43 @@ adapters/github/githubtest: func (*PublisherFake) Branch(_ context.Context, repo
 adapters/github/githubtest: func (*PublisherFake) Commit(_ context.Context, repository, token string, commit github.NewCommit) (string, error)
 adapters/github/githubtest: func (*PublisherFake) OpenPull(_ context.Context, repository, token string, pull github.NewPull) (github.Pull, error)
 adapters/github/githubtest: func (*PublisherFake) Tree(_ context.Context, repository, token, base string, entries []github.TreeEntry) (string, error)
+adapters/github/githubtest: func (*RepositoryFake) Create(_ context.Context, token, owner, name, description string) (string, error)
+adapters/github/githubtest: func (*RepositoryFake) CreateHook(_ context.Context, repository, token string, hook github.RepositoryHook) error
+adapters/github/githubtest: func (*RepositoryFake) Exists(_ context.Context, repository, token string) (bool, error)
+adapters/github/githubtest: func (*RepositoryFake) FirstCommit(_ context.Context, repository, token, parent, message string, files []github.NewFile) (string, error)
+adapters/github/githubtest: func (*RepositoryFake) Head(_ context.Context, repository, token string) (string, error)
+adapters/github/githubtest: func (*RepositoryFake) Hooks(_ context.Context, repository, token string) ([]github.Hook, error)
+adapters/github/githubtest: func (*RepositoryFake) UpdateHook(_ context.Context, repository, token string, id int, hook github.RepositoryHook) error
 adapters/github/githubtest: func ConsoleContract(t *testing.T, open func(*testing.T) (github.Console, ConsoleFixture))
 adapters/github/githubtest: func Contract(t *testing.T, open func(*testing.T) github.Reader)
 adapters/github/githubtest: func New() *Fake
 adapters/github/githubtest: func NewConsole(fixture ConsoleFixture) *ConsoleFake
 adapters/github/githubtest: func NewPublisher(scene PublisherFixture) *PublisherFake
+adapters/github/githubtest: func NewRepository(scene RepositoryFixture) *RepositoryFake
 adapters/github/githubtest: func PublisherContract(t *testing.T, open func(*testing.T) (github.Publisher, PublisherFixture))
 adapters/github/githubtest: func PublisherScenario() PublisherFixture
+adapters/github/githubtest: func RepositoryContract(t *testing.T, open func(*testing.T) (github.RepositoryWriter, RepositoryFixture))
+adapters/github/githubtest: func RepositoryScenario() RepositoryFixture
 adapters/github/githubtest: func Scenario() ConsoleFixture
 adapters/github/githubtest: type BranchWrite struct {Name, Commit string}
 adapters/github/githubtest: type Call struct {Operation, Repository, Token string}
-adapters/github/githubtest: type ConsoleFake struct {Commit string Files map[string]string AppFiles map[string]string Archive []byte Changed []string Contains bool Pulls []github.Pull ByNumber map[int]github.Pull Err error Reads []string}
-adapters/github/githubtest: type ConsoleFixture struct {Revision string File string Body string AppFile string AppBody string Changed []string Pulls []github.Pull Merged github.Pull}
+adapters/github/githubtest: type ConsoleFake struct {Commit string Files map[string]string AppFiles map[string]string Public map[string]string Archive []byte Changed []string Contains bool Pulls []github.Pull ByNumber map[int]github.Pull Err error Reads []string}
+adapters/github/githubtest: type ConsoleFixture struct {Revision string File string Body string AppFile string AppBody string Changed []string Pulls []github.Pull Merged github.Pull Template string TemplateBody string}
+adapters/github/githubtest: type CreatedRepository struct {Owner, Name, Description string}
 adapters/github/githubtest: type Fake struct {Repositories map[string][]observe.Hook Tokens map[string]github.Acceptance Denied map[string]bool Fail error Calls []Call}
+adapters/github/githubtest: type FirstWrite struct {Repository, Parent, Message string Files []github.NewFile}
 adapters/github/githubtest: type PublisherFake struct {Scene PublisherFixture FailAt string Blobs [][]byte Trees []TreeWrite Commits []github.NewCommit Refs []BranchWrite Pulls []github.NewPull}
 adapters/github/githubtest: type PublisherFixture struct {Blob, Tree, Commit string Base string Branch string PullNumber int PullURL string}
+adapters/github/githubtest: type RepositoryFake struct {Scene RepositoryFixture Existing []string HeadMissing int FailAt string Created []CreatedRepository Firsts []FirstWrite NewHooks []github.RepositoryHook Updated []UpdatedHook HeadCalls int}
+adapters/github/githubtest: type RepositoryFixture struct {Repository, Missing string CreatedURL, Head, Commit string Blob, Tree string Hooks []github.Hook}
 adapters/github/githubtest: type TreeWrite struct {Base string Entries []github.TreeEntry}
+adapters/github/githubtest: type UpdatedHook struct {ID int Hook github.RepositoryHook}
 adapters/github: func (*API) AppFile(ctx context.Context, repository, token, file string) ([]byte, bool, error)
 adapters/github: func (*API) Compare(ctx context.Context, repository, token, from, to string) ([]string, bool, error)
 adapters/github: func (*API) Contents(ctx context.Context, repository, token, revision, path string) ([]byte, bool, error)
 adapters/github: func (*API) Hooks(ctx context.Context, repository, token string) ([]observe.Hook, error)
 adapters/github: func (*API) OpenPulls(ctx context.Context, repository, token string) ([]Pull, error)
+adapters/github: func (*API) PublicFile(ctx context.Context, repository, revision, file string) ([]byte, bool, error)
 adapters/github: func (*API) Pull(ctx context.Context, repository, token string, number int) (Pull, error)
 adapters/github: func (*API) Revision(ctx context.Context, repository, token string) (string, error)
 adapters/github: func (*API) Tarball(ctx context.Context, repository, token, revision string) ([]byte, error)
@@ -142,18 +176,24 @@ adapters/github: func (*Error) Error() string
 adapters/github: func New(client *http.Client) Reader
 adapters/github: func NewConsole(client *http.Client) Console
 adapters/github: func NewPublisher(client *http.Client) Publisher
+adapters/github: func NewRepositoryWriter(client *http.Client) RepositoryWriter
 adapters/github: func SafeProblem(err error) string
 adapters/github: type API struct {}
 adapters/github: type Acceptance struct {Status int Expiry string}
-adapters/github: type Console interface {// Revision is the full commit id of the repository's main branch. Revision(ctx context.Context, repository, token string) (string, error) // Contents is one file at one commit; found is false when the commit has no such file. Contents(ctx context.Context, repository, token, revision, path string) (body []byte, found bool, err error) // Tarball is the repository at one commit, as GitHub serves it: a tar archive inside a leading folder. Tarball(ctx context.Context, repository, token, revision string) ([]byte, error) // AppFile is one file at another repository's default branch: an app's swhurl.yaml, which the console reads // without a token because app repositories are public. found is false when the repository has no such file. AppFile(ctx context.Context, repository, token, path string) ([]byte, bool, error) // Compare reports whether to contains from and, when it does, the paths changed between them. A comparison // GitHub truncated is contained but has no path list. Compare(ctx context.Context, repository, token, from, to string) (paths []string, contained bool, err error) // OpenPulls lists the open console pull requests, newest first, each with how its Validate workflow went. OpenPulls(ctx context.Context, repository, token string) ([]Pull, error) // Pull is one pull request, however it ended. Pull(ctx context.Context, repository, token string, number int) (Pull, error)}
+adapters/github: type Console interface {// Revision is the full commit id of the repository's main branch. Revision(ctx context.Context, repository, token string) (string, error) // Contents is one file at one commit; found is false when the commit has no such file. Contents(ctx context.Context, repository, token, revision, path string) (body []byte, found bool, err error) // Tarball is the repository at one commit, as GitHub serves it: a tar archive inside a leading folder. Tarball(ctx context.Context, repository, token, revision string) ([]byte, error) // AppFile is one file at another repository's default branch: an app's swhurl.yaml, which the console reads // without a token because app repositories are public. found is false when the repository has no such file. AppFile(ctx context.Context, repository, token, path string) ([]byte, bool, error) // PublicFile is one file at one commit of a public repository, read without a token: a stack template's // copier.yml at the revision the contract pins. found is false when the commit has no such file. PublicFile(ctx context.Context, repository, revision, path string) ([]byte, bool, error) // Compare reports whether to contains from and, when it does, the paths changed between them. A comparison // GitHub truncated is contained but has no path list. Compare(ctx context.Context, repository, token, from, to string) (paths []string, contained bool, err error) // OpenPulls lists the open console pull requests, newest first, each with how its Validate workflow went. OpenPulls(ctx context.Context, repository, token string) ([]Pull, error) // Pull is one pull request, however it ended. Pull(ctx context.Context, repository, token string, number int) (Pull, error)}
 adapters/github: type Error struct {Reason string}
+adapters/github: type Hook struct {ID int Active bool Events []string URL string}
 adapters/github: type NewCommit struct {Message string Tree string Parent string Author Signature}
+adapters/github: type NewFile struct {Path string Executable bool Body []byte}
 adapters/github: type NewPull struct {Title string Head string Base string Body string}
 adapters/github: type Publisher interface {// Blob stores one file's bytes and returns their identity. Blob(ctx context.Context, repository, token string, content []byte) (string, error) // BaseTree is the tree one commit names: what a new tree is written over. BaseTree(ctx context.Context, repository, token, commit string) (string, error) // Tree writes entries over a base tree and returns the new tree's identity. Tree(ctx context.Context, repository, token, base string, entries []TreeEntry) (string, error) // Commit creates one commit and returns its identity. Commit(ctx context.Context, repository, token string, commit NewCommit) (string, error) // Branch creates one reference, and refuses any name outside console/: nothing else is the console's to write. Branch(ctx context.Context, repository, token, name, commit string) error // OpenPull opens the pull request and returns it as the console shows it. OpenPull(ctx context.Context, repository, token string, pull NewPull) (Pull, error)}
 adapters/github: type Pull struct {Number int Title string URL string Branch string Opened string Body string Head string Checks string ChecksURL string State string MergedAt string ClosedAt string MergeCommit string}
 adapters/github: type Reader interface {Hooks(context.Context, string, string) ([]observe.Hook, error) Token(context.Context, string, string) (Acceptance, error)}
+adapters/github: type RepositoryHook struct {URL string Secret string Events []string Active bool}
+adapters/github: type RepositoryWriter interface {// Exists asks whether the repository is there at all. Exists(ctx context.Context, repository, token string) (bool, error) // Create makes the public repository, with one initial commit, and returns its page. Create(ctx context.Context, token, owner, name, description string) (string, error) // Head is the commit main names, so the first commit has a parent. ErrNoMainBranch means GitHub has not // finished creating the repository. Head(ctx context.Context, repository, token string) (string, error) // FirstCommit replaces the initial commit's tree with every file and moves main to the new commit. It is only // for a repository the caller just created. FirstCommit(ctx context.Context, repository, token, parent, message string, files []NewFile) (string, error) // Hooks lists the repository's webhooks. Hooks(ctx context.Context, repository, token string) ([]Hook, error) // CreateHook adds one webhook. CreateHook(ctx context.Context, repository, token string, hook RepositoryHook) error // UpdateHook changes the webhook with this id. UpdateHook(ctx context.Context, repository, token string, id int, hook RepositoryHook) error}
 adapters/github: type Signature struct {Name string Email string}
 adapters/github: type TreeEntry struct {Path string Mode string SHA string}
+adapters/github: var ErrNoMainBranch = errors.New("GitHub: no main branch yet")
 adapters/helm/helmtest: func (*Acquisition) Acquire(pin helm.Pin, cache string) (string, error)
 adapters/helm/helmtest: func (*Fake) Render(request helm.Request) ([]json.RawMessage, error)
 adapters/helm/helmtest: func AcquisitionContract(t *testing.T, open func(*testing.T) (helm.Acquirer, string))
@@ -1105,8 +1145,11 @@ orchestration: func (*Notifier) Deliver(ctx context.Context, connect NotifyConne
 orchestration: func (*Refusal) Error() string
 orchestration: func (ConsoleSourceOf) Revision(ctx context.Context) (string, error)
 orchestration: func (ConsoleSourceOf) Tree(ctx context.Context, revision string) (map[string][]byte, error)
+orchestration: func (StackContract) Stack(name string) (Stack, bool)
+orchestration: func (StackContract) Type(key string) (AppType, bool)
 orchestration: func AcquireChart(profile kernel.PlatformProfile, repositories []byte, cache string, acquirer helm.Acquirer) (string, error)
 orchestration: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
+orchestration: func AppRepo(ctx context.Context, inputs AppRepoInputs) (AppRepository, error)
 orchestration: func BootstrapClickStack(ctx context.Context, ports BootstrapPorts, options BootstrapOptions) (BootstrapReport, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
 orchestration: func CheckNotifications(ctx context.Context, ports CheckerPorts, options CheckOptions) (CheckReport, error)
@@ -1150,6 +1193,7 @@ orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observ
 orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.PlatformReport, error)
 orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
 orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
+orchestration: func ReadStackContract(data []byte) (StackContract, error)
 orchestration: func ReadTree(content []byte, prefixed bool) ([]files.TreeFile, error)
 orchestration: func Records(files map[string][]byte) (ConsoleRecords, error)
 orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
@@ -1163,6 +1207,9 @@ orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, op
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Accepted struct {Request notify.Request Caller string Channels []string Failure error}
+orchestration: type AppRepoInputs struct {Name, Type, Stack, Description string Owner, Identity, PlatformRepository string Settings []string Resume, DryRun bool Contract []byte Work string Token, ReposToken, HookToken, HookHost string Source github.Console Renderer copier.Renderer Repos github.RepositoryWriter Images func(image string) (registry.Reader, error) Now func() time.Time Sleep func(time.Duration) Note func(string)}
+orchestration: type AppRepository struct {Image, Digest, Repository, Commit, URL string Stack, Template string Created bool}
+orchestration: type AppType struct {Key string Stacks []string Answers []Named Exposure string}
 orchestration: type BootstrapLevel string
 orchestration: type BootstrapLine struct {Level BootstrapLevel Text string}
 orchestration: type BootstrapOptions struct {DryRun bool Wait, Interval time.Duration}
@@ -1206,6 +1253,7 @@ orchestration: type Jobs struct {}
 orchestration: type JobsInputs struct {Store JobStore Owner string Now func() time.Time Sleep func(time.Duration) Redact func(string) string Audit func(string)}
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
+orchestration: type Named struct {Name, Value string}
 orchestration: type Notifier struct {}
 orchestration: type NotifyCluster struct {Reviewer kube.Reviewer Data kube.Data Reader kube.Reader}
 orchestration: type NotifyConnect func() (NotifyCluster, error)
@@ -1229,6 +1277,8 @@ orchestration: type RestoreJobOutcome struct {Name string State string Log strin
 orchestration: type RestoreOutcome struct {State string Reason string Steps []RestoreStep Job RestoreJobOutcome App RestoreApp BackupSuspended bool Started time.Time Finished time.Time}
 orchestration: type RestoreStep struct {Name string Outcome string Detail string}
 orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
+orchestration: type Stack struct {Name, Repository, Revision, Description string}
+orchestration: type StackContract struct {Copier string Stacks []Stack Types []AppType}
 orchestration: type StatusInputs struct {Inputs Revision string RecordsRoot string SharedPaths []string Changes *observe.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}

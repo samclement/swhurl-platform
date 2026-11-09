@@ -133,14 +133,13 @@ flowchart LR
 
 ### New apps
 
-### New apps
-
 The form asks what the [type](apps.md#app-types) implies, then name, stack, description and team, then who can reach
-it and what it connects to. It creates `samclement/<name>` from the stack template (public: the cluster pulls its image
-without credentials), waits for its first image, and opens the pull request that creates `v2-records/<name>/staging`:
-`swhurl-v2 create` reads the image's declaration label, one `swhurl-v2 edit` sets each further choice (a connection),
-and `swhurl-v2 render` writes the compiled release, the unit, its registration and the platform documents. Nothing
-touches the cluster until you merge it, and every push to the app's `main` then deploys to staging.
+it and what it connects to. One `swhurl-v2 app-repo` job does the rest: it reads the stack template's questions,
+creates `samclement/<name>` from it (public: the cluster pulls its image without credentials), waits for its first
+image, and opens the pull request that creates `v2-records/<name>/staging` — `swhurl-v2 create` reads the image's
+declaration label, one `swhurl-v2 edit` sets each further choice (a connection), and `swhurl-v2 render` writes the
+compiled release, the unit, its registration and the platform documents. Nothing touches the cluster until you merge
+it, and every push to the app's `main` then deploys to staging.
 
 A first production waits on v2: `create` states staging only, and `swhurl-v2 promote` moves a production whose records
 already exist. A **Finish creating this app** button appears on a job page whose job ended without its pull request

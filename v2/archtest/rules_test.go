@@ -30,8 +30,8 @@ type Rule struct {
 }
 
 var Rules = []Rule{
-	{"stdlib-only", "v2 imports only the Go standard library and its own packages except pinned YAML in adapters/helm, adapters/appsource and adapters/manifests",
-		"remove the import; only adapters/helm, adapters/appsource and adapters/manifests may import go.yaml.in/yaml/v3 v3.0.6",
+	{"stdlib-only", "v2 imports only the Go standard library and its own packages except pinned YAML in adapters/helm, adapters/appsource, adapters/manifests and adapters/copier",
+		"remove the import; only adapters/helm, adapters/appsource, adapters/manifests and adapters/copier may import go.yaml.in/yaml/v3 v3.0.6",
 		"kubernetes-the-api-server-not-kubectl"},
 	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers",
 		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down",
@@ -39,8 +39,8 @@ var Rules = []Rule{
 	{"pure", "pure packages import only allowlisted standard packages, print nothing and keep no mutable package state",
 		"pass the value in as a parameter (time, identifiers, snapshots) or move the effect into an adapter",
 		"the-pure-model"},
-	{"no-subprocess", "v2 code starts processes only in adapters/sops, adapters/helm and adapters/git, and names no kubectl or flux command",
-		"read or change Kubernetes through the API server; only SOPS encryption, explicit Helm pull/local template and read-only git are approved",
+	{"no-subprocess", "v2 code starts processes only in adapters/sops, adapters/helm, adapters/git and adapters/copier, and names no kubectl or flux command",
+		"read or change Kubernetes through the API server; only SOPS encryption, explicit Helm pull/local template, read-only git and one pinned Copier render are approved",
 		"kubernetes-the-api-server-not-kubectl"},
 	{"public-api", "the exported API of every library package matches archtest/api.txt",
 		"if the change is intended, run `go test ./archtest -run TestPublicAPI -update` and say why in the change",
@@ -80,6 +80,8 @@ var Layers = map[string]int{
 	"workstreams":                        0,
 	"adapters/appsource":                 1,
 	"adapters/appsource/appsourcetest":   1,
+	"adapters/copier":                    1,
+	"adapters/copier/copiertest":         1,
 	"adapters/clickstack":                1,
 	"adapters/clickstack/clickstacktest": 1,
 	"adapters/github":                    1,
@@ -146,18 +148,19 @@ var pureBannedCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "time.N
 // Where each layer lives: adapters under adapters/, use cases under orchestration/, commands under cmd/.
 const adapterRoot, orchestrationRoot, commandRoot = "adapters/", "orchestration/", "cmd/"
 
-// yamlImporters are the only directories that may import the pinned YAML module: chart values, app sources and the
-// checkout's Kubernetes manifests. Each was approved with its slice (docs/iteration-2-plan.md#guardrails).
-var yamlImporters = []string{"adapters/helm", "adapters/appsource", "adapters/manifests"}
+// yamlImporters are the only directories that may import the pinned YAML module: chart values, app sources, the
+// checkout's Kubernetes manifests and a stack template's copier.yml. Each was approved with its slice
+// (docs/iteration-2-plan.md#guardrails).
+var yamlImporters = []string{"adapters/helm", "adapters/appsource", "adapters/manifests", "adapters/copier"}
 
 var subprocessImports = []string{"os/exec", "syscall"}
 var subprocessCalls = []string{"os.StartProcess"}
 var commandNames = []string{"kubectl", "flux"}
 
-// subprocessAllowed is restricted to the three approved adapter directories, never their fakes or subpackages.
-// SOPS encrypts; Helm explicitly acquires a pinned chart or renders a local chart; Git reads one checkout.
-// No exception permits subprocess cluster access or arbitrary commands.
-var subprocessAllowed = []string{"adapters/sops", "adapters/helm", "adapters/git"}
+// subprocessAllowed is restricted to the four approved adapter directories, never their fakes or subpackages.
+// SOPS encrypts; Helm explicitly acquires a pinned chart or renders a local chart; Git reads one checkout; Copier
+// renders one pinned stack template. No exception permits subprocess cluster access or arbitrary commands.
+var subprocessAllowed = []string{"adapters/sops", "adapters/helm", "adapters/git", "adapters/copier"}
 
 // ---- Loading ----
 

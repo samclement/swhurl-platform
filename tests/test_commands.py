@@ -208,7 +208,7 @@ class MakeTests(unittest.TestCase):
         with redirect_stdout(out), redirect_stderr(err):
             self.assertEqual(__main__.main(['--help']), 0)
             self.assertEqual(__main__.main(['flux-reconcile']), 2, 'a recipe in the Makefile is not a swhurl command')
-        self.assertIn('  app-repo', out.getvalue())
+        self.assertNotIn('  app-repo ', out.getvalue(), 'a recipe in the Makefile, like flux-reconcile')
         self.assertNotIn('  flux-reconcile ', out.getvalue())
         self.assertIn('unknown command: flux-reconcile', err.getvalue())
 

@@ -2,7 +2,7 @@
 
 Status: in progress
 Gate: §23 step 2 (the publish path and Flux actions)
-Uncommitted: `v2/orchestration`
+Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
 kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl`

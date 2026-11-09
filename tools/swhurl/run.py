@@ -175,19 +175,21 @@ class Runner:
             return 0
         return self._attach(argv)
 
-    def stream(self, args: Sequence[str | Path], *, mutating: bool = False) -> Iterator[str]:
+    def stream(self, args: Sequence[str | Path], *, mutating: bool = False,
+               env: Mapping[str, str] | None = None, input: str | None = None) -> Iterator[str]:
         """Yield the command's stdout and stderr line by line, redacted, as it is printed.
 
         For commands whose progress a caller shows live, such as ``flux
         reconcile`` in the console. Closing the iterator early stops the
         command. A non-zero exit raises :class:`CommandError` after the last
         line. Under ``DRY_RUN`` a ``mutating`` command is planned, not run.
+        ``input`` is one way in for a value that must not be an argument.
         """
         argv = tuple(str(a) for a in args)
         if mutating and self.dry_run:
             self._plan(argv)
             return
-        for line in self._stream(argv):
+        for line in self._stream(argv, env={**self.env, **(env or {})}, input=input):
             yield self.redact(line)
 
     def pipe(self, producer: Sequence[str | Path], consumer: Sequence[str | Path], *,
@@ -253,14 +255,20 @@ class Runner:
         return (Result(left, producer.returncode, '', decode(errors[0] if errors else b'')),
                 Result(right, consumer.returncode, decode(out), decode(err)))
 
-    def _stream(self, argv: tuple[str, ...]) -> Iterator[str]:
+    def _stream(self, argv: tuple[str, ...], *, env: Mapping[str, str],
+                input: str | None = None) -> Iterator[str]:
         try:
             # One pipe for both streams keeps their order (flux prints its progress on stderr).
-            process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            process = subprocess.Popen(argv, stdin=subprocess.PIPE if input is not None else None,
+                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                        errors='replace', cwd=self.cwd,
-                                       env={**os.environ, **self.env} if self.env else None)
+                                       env={**os.environ, **env} if env else None)
         except FileNotFoundError:
             raise CommandError(argv, f'missing required command: {argv[0]}') from None
+        if input is not None:
+            with contextlib.suppress(BrokenPipeError):
+                process.stdin.write(input)
+            process.stdin.close()
         last = ''
         finished = False
         try:
@@ -382,6 +390,7 @@ class FakeRunner(Runner):
         self.echoed: list[str] = []
         super().__init__(dry_run=dry_run, echo=self.echoed.append)
         self.calls: list[tuple[str, ...]] = []
+        self.environments: list[Mapping[str, str]] = []  # what each streamed command was given, in order
         self.started: list[CompletedCommand] = []
         self.planned: list[tuple[str, ...]] = []
         self._rules: list[tuple[tuple[str, ...], Response]] = []
@@ -405,11 +414,16 @@ class FakeRunner(Runner):
     def _attach(self, argv: tuple[str, ...]) -> int:
         return self._execute(argv, input=None, env={}, cwd=None).returncode
 
-    def _stream(self, argv: tuple[str, ...]) -> Iterator[str]:
-        result = self._execute(argv, input=None, env={}, cwd=None)
-        yield from result.stdout.splitlines()
+    def _stream(self, argv: tuple[str, ...], *, env: Mapping[str, str],
+                input: str | None = None) -> Iterator[str]:
+        self.environments.append(env)
+        result = self._execute(argv, input=input, env=env, cwd=None)
+        lines = [*result.stdout.splitlines(), *result.stderr.splitlines()]  # as the real runner's one pipe
+        yield from lines
         if result.returncode:
-            raise CommandError(argv, f'{self.describe(argv)} exited {result.returncode}', result.returncode)
+            last = lines[-1].strip() if lines else ''
+            raise CommandError(argv, f'{self.describe(argv)} exited {result.returncode}'
+                               + (f': {last}' if last else ''), result.returncode)
 
     def _pipe(self, left: tuple[str, ...], right: tuple[str, ...], *,
               env: Mapping[str, str], input: str | None = None) -> tuple[Result, Result]:

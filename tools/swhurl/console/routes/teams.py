@@ -55,10 +55,10 @@ def routes(ctx: Context) -> list[Route]:
             key, name = f'team-{action}', form.get('name', '').strip()
             if key not in changes.ACTIONS or action not in ('add', 'edit', 'remove'):
                 raise actions.ActionError('no such team change')
-            commands = changes.ACTIONS[key].commands(name, '', form)
+            flags, input = changes.change_arguments(key, name, form)
         except actions.ActionError as error:
             return teams_page(request, 400, str(error))
-        return propose(request, key, name, '', commands, then=(teams_cache, channels_cache))  # the next page reads the registry again
+        return propose(request, key, name, '', flags, input, then=(teams_cache, channels_cache))  # the next page reads the registry again
 
     async def change_channel(request: Request) -> Response:
         """Give a team its notification channel (or a new address for it), or remove it: a PR made by
@@ -73,10 +73,10 @@ def routes(ctx: Context) -> list[Route]:
             key, name = f'team-channel-{action}', form.get('name', '').strip()
             if key not in changes.ACTIONS:
                 raise actions.ActionError('no such channel change')
-            commands = changes.ACTIONS[key].commands(name, '', form)
+            flags, input = changes.change_arguments(key, name, form)
         except actions.ActionError as error:
             return teams_page(request, 400, str(error))
-        return propose(request, key, name, '', commands, then=(channels_cache,))
+        return propose(request, key, name, '', flags, input, then=(channels_cache,))
 
     return [Route('/teams', teams_page), Route('/teams/{action}', change_team, methods=['POST']),
             Route('/team-channel/{action}', change_channel, methods=['POST'])]

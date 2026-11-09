@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
@@ -42,6 +43,8 @@ type changeStep struct {
 // changeSteps is what a kind's change runs, in order.
 func (c cli) changeSteps(change pages.ConsoleChange, s *changeSpec, tree changeTree, revision string) ([]changeStep, error) {
 	switch change.Name {
+	case "new":
+		return newSteps(tree, s, revision)
 	case "v2-scale", "v2-expose", "v2-team":
 		return settingSteps(tree, s, revision)
 	case "v2-connect", "v2-disconnect":
@@ -58,6 +61,41 @@ func (c cli) changeSteps(change pages.ConsoleChange, s *changeSpec, tree changeT
 		return channelSteps(tree, s), nil
 	}
 	return nil, fmt.Errorf("invalid: kind: %q has no commands yet", change.Name)
+}
+
+// newSteps is a new app: create states the records from the image its repository published, the edits state the
+// choices an image cannot make, and the render writes everything v2 derives from them. A create writes records only,
+// so the render that allocates the proxy port has to be part of the same change.
+func newSteps(tree changeTree, s *changeSpec, revision string) ([]changeStep, error) {
+	team, exposure, rest := "", "", make([]string, 0, len(s.settings))
+	for _, setting := range s.settings {
+		switch {
+		case strings.HasPrefix(setting, "team="):
+			team = strings.TrimPrefix(setting, "team=")
+		case strings.HasPrefix(setting, "exposure="):
+			exposure = strings.TrimPrefix(setting, "exposure=")
+		default:
+			rest = append(rest, setting)
+		}
+	}
+	if team == "" {
+		return nil, &orchestration.Refusal{Subject: "change", Reason: "nothing_requested: a new app needs --set team=<team>"}
+	}
+	steps := append([]changeStep{createStep(tree, s.name(), team, s.image, exposure)},
+		edits(tree, s.name(), "staging", rest)...)
+	return append(steps, renderStep(tree, revision)), nil
+}
+
+// createStep states a new app's staging records from the image its repository published.
+func createStep(tree changeTree, app, team, image, exposure string) changeStep {
+	r := request{records: tree.records, app: app, team: team, image: image, exposure: exposure, profile: tree.profile,
+		out: tree.dir}
+	display := "swhurl-v2 create --records " + pages.ConsoleRecordsRoot + " --app " + app + " --team " + team +
+		" --image " + image + " --profile v2/testdata/profile.json --out ."
+	if exposure != "" {
+		display += " --exposure " + exposure
+	}
+	return changeStep{command: "create", request: r, display: display}
 }
 
 // settingSteps is a change v2's edit states whole: one edit per setting, then the render that writes what the records

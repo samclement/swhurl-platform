@@ -6,9 +6,7 @@ what the binary refused verbatim, and holds every v2 pull request for a person (
 import io
 import json
 import tarfile
-import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 import httpx
@@ -193,99 +191,115 @@ class WriteRefusalTests(unittest.TestCase):
         self.assertIn('ghcr.io/x/hello@sha256:1', response.text)
 
 
-# --- The console writes v2: the adapter, the action table and one prepared pull request -----------------
+# --- The console writes v2: the kinds' flags, the routes and the relay ---------------------------------
 
 def v2_client(runner, github):
     return client(runner, documents=records(), github=github,
                   jobs=actions.Jobs(runner, audit=lambda line: None, inline=True))
 
 
-class CommandTests(unittest.TestCase):
-    def test_edit_is_one_argv_and_names_every_input_the_binary_needs(self):
-        self.assertEqual(v2.edit_argv('hello', 'staging', 'replicas=2'), [
-            'edit', '--records', 'v2-records', '--app', 'hello', '--env=staging', '--set', 'replicas=2',
-            '--profile', 'v2/testdata/profile.json', '--out', '.', '--calls', 'v2-records/calls.json',
-            '--egress', 'platform/egress/allocation.json'])
-        self.assertEqual(v2.remove_argv('hello', 'staging'), [
-            'remove', '--records', 'v2-records', '--app', 'hello', '--env=staging',
-            '--profile', 'v2/testdata/profile.json', '--calls', 'v2-records/calls.json', '--out', '.'])
-        self.assertEqual(v2.promote_argv('hello'), [
-            'promote', '--records', 'v2-records', '--app', 'hello', '--env=prod',
-            '--profile', 'v2/testdata/profile.json', '--out', '.', '--calls', 'v2-records/calls.json',
-            '--egress', 'platform/egress/allocation.json'])
+class ChangeArgumentsTests(unittest.TestCase):
+    """A form's values as v2's flags: v2 owns the branch, the title and the files its pull request carries; the
+    console owns the words its form offers and the checks that refuse a change before a job."""
 
-    def test_a_change_is_the_edit_then_the_render_that_writes_what_it_derives(self):
-        commands = changes.ACTIONS['v2-scale'].commands('hello', 'staging', {'replicas': '2'})
-        self.assertEqual([command.tool for command in commands], ['v2', 'v2'])
-        self.assertEqual([command.name for command in commands], ['edit', 'render'])
-        self.assertEqual(commands[0].argv[:8], ('edit', '--records', 'v2-records', '--app', 'hello',
-                                                '--env=staging', '--set', 'replicas=2'))
-        self.assertEqual(commands[1].argv, ('render', '--records', 'v2-records', '--profile',
-                                            'v2/testdata/profile.json', '--out', '.', '--revision', v2.BASE))
-        self.assertEqual(v2.resolve(commands[1].argv, revision=HEAD)[-1], HEAD,
-                         'the render records the commit the pull request is built on')
+    def test_a_change_states_what_to_add_or_remove_never_a_whole_list(self):
+        cases = {
+            'v2-scale': ({'replicas': '2', 'memory': '256Mi'}, ('--set', 'replicas=2', '--set', 'memoryMiB=256')),
+            'v2-expose': ({'exposure': 'private'}, ('--set', 'exposure=private')),
+            'v2-team': ({'team': 'payments'}, ('--set', 'team=payments')),
+            'v2-connect': ({'calls': 'other,billing', 'subscribe': 'other.created'},
+                           ('--call', 'other', '--call', 'billing', '--subscribe', 'other.created')),
+            'v2-disconnect': ({'role': 'calls', 'app': 'other'}, ('--drop-call', 'other')),
+            'v2-allow': ({'add': 'someone-else', 'remove': 'team:demo'},
+                         ('--allow', 'someone-else', '--disallow', 'team:demo')),
+            'v2-remove': ({}, ()),
+            'v2-promote': ({'image': 'ghcr.io/x/hello@sha256:1'}, ()),
+        }
+        for action, (form, flags) in cases.items():
+            with self.subTest(action=action):
+                self.assertEqual(changes.change_arguments(action, 'hello', form), (flags, None))
 
-    def test_a_whole_list_is_written_once_and_the_team_names_no_environment(self):
-        self.assertEqual(changes.v2_connection_settings({'calls': 'other, billing', 'subscriptions': ''}),
-                         ('calls=other,billing', 'subscriptions='))
-        self.assertEqual(changes.v2_connection_settings({'calls': '', 'subscriptions': 'other.created'}),
-                         ('calls=', 'subscriptions=other.created'))
-        self.assertIn('--set', changes.v2_commands('hello', '', ('team=payments',))[0].argv)
-        self.assertEqual(changes.v2_commands('hello', '', ('team=payments',))[0].argv[5], '--set')
-        self.assertNotIn('--env=', changes.v2_commands('hello', '', ('team=payments',))[0].argv)
+    def test_a_new_app_states_its_image_and_settings_and_a_channel_address_is_standard_input(self):
+        self.assertEqual(
+            changes.change_arguments('new', 'hello', {'image': 'ghcr.io/x/hello:1-ab',
+                                                      'flags': ('team=demo', 'exposure=private')}),
+            (('--set', 'team=demo', '--set', 'exposure=private', '--image', 'ghcr.io/x/hello:1-ab'), None))
+        self.assertEqual(
+            changes.change_arguments('team-channel-set', 'payments',
+                                     {'transport': 'ntfy', 'address': 'https://ntfy.sh/x'}),
+            (('--transport', 'ntfy'), 'https://ntfy.sh/x\n'))
+        self.assertEqual(changes.change_arguments('team-edit', 'payments',
+                                                  {'description': 'Orders', 'rename': 'orders'}),
+                         (('--description', 'Orders', '--rename', 'orders'), None))
+        self.assertEqual(changes.change_arguments('team-remove', 'payments', {}), ((), None))
+
+    def test_the_forms_checks_are_the_consoles(self):
+        for action, form, message in (
+                ('v2-scale', {'memory': 'lots'}, 'not a whole number of MiB'),
+                ('v2-connect', {}, 'choose an app to call'),
+                ('v2-disconnect', {'role': 'publishes'}, 'publications come from the release'),
+                ('v2-promote', {}, 'refresh the staging app page'),
+                ('team-add', {'description': 'x'}, 'lowercase letters')):
+            with self.subTest(action=action):
+                with self.assertRaisesRegex(actions.ActionError, message):
+                    changes.change_arguments(action, 'Not A Team' if action == 'team-add' else 'hello', form)
+
+    def test_a_branch_is_read_back_as_its_kind_and_its_target(self):
+        self.assertEqual(changes.parse(f'console/v2-scale-hello-staging-{HEAD[:7]}'), ('v2-scale', 'hello', 'staging'))
+        self.assertEqual(changes.parse(f'console/team-add-payments-{HEAD[:7]}'), ('team-add', 'payments', ''))
+        self.assertEqual(changes.target('v2-promote', 'hello', 'staging'), 'hello/prod')
+        self.assertEqual(changes.target('team-add', 'payments', ''), 'team:payments')
+        self.assertIsNone(changes.parse('console/nothing-hello-staging-abc1234'))
 
 
 class RouteTests(unittest.TestCase):
     def post(self, path, data=None):
         captured = []
 
-        def open_action(runner, github, job, action, name, env, commands, **kwargs):
-            captured.append((action, commands, kwargs))
+        def open_change(runner, github, job, action, name, env, flags, input=None, **kwargs):
+            captured.append((action, flags, input, kwargs))
             return 'https://github.com/x/pull/7'
 
-        with mock.patch.object(proposal, 'open_action', side_effect=open_action):
+        with mock.patch.object(proposal, 'open_change', side_effect=open_change):
             response = v2_client(running(), GHTransport().github).post(
                 path, data=data or {}, headers=ORIGIN, follow_redirects=False)
         return response, captured
 
-    def test_each_v2_change_routes_to_a_held_edit_and_render_or_remove(self):
+    def test_each_v2_change_routes_to_its_kind_and_its_flags(self):
         cases = {
-            '/apps/hello/staging/scale': ({'replicas': '2'}, 'v2-scale', ['edit', 'render']),
-            '/apps/hello/staging/expose': ({'exposure': 'private'}, 'v2-expose', ['edit', 'render']),
-            '/apps/hello/staging/disconnect': ({'role': 'calls', 'app': 'other'}, 'v2-disconnect', ['edit', 'render']),
-            '/apps/hello/staging/allow': ({'add': 'someone-else'}, 'v2-allow', ['edit', 'render']),
-            '/apps/hello/staging/team': ({'team': 'payments'}, 'v2-team', ['edit', 'render']),
-            '/apps/hello/staging/remove': ({}, 'v2-remove', ['remove', 'render']),
-            '/apps/hello/staging/promote': ({'image': 'ghcr.io/x/hello@sha256:1'}, 'v2-promote', ['promote', 'render']),
+            '/apps/hello/staging/scale': ({'replicas': '2'}, 'v2-scale', ('--set', 'replicas=2')),
+            '/apps/hello/staging/expose': ({'exposure': 'private'}, 'v2-expose', ('--set', 'exposure=private')),
+            '/apps/hello/staging/disconnect': ({'role': 'calls', 'app': 'other'}, 'v2-disconnect',
+                                               ('--drop-call', 'other')),
+            '/apps/hello/staging/allow': ({'add': 'someone-else'}, 'v2-allow', ('--allow', 'someone-else')),
+            '/apps/hello/staging/team': ({'team': 'payments'}, 'v2-team', ('--set', 'team=payments')),
+            '/apps/hello/staging/remove': ({}, 'v2-remove', ()),
+            '/apps/hello/staging/promote': ({'image': 'ghcr.io/x/hello@sha256:1'}, 'v2-promote', ()),
         }
-        for path, (data, action, names) in cases.items():
+        for path, (data, action, flags) in cases.items():
             with self.subTest(path=path):
                 response, captured = self.post(path, data)
                 self.assertEqual(response.status_code, 303, response.text)
-                found_action, commands, kwargs = captured[0]
-                self.assertEqual(found_action, action)
-                self.assertEqual([command.name for command in commands], names)
-                self.assertTrue(all(command.tool == 'v2' for command in commands))
+                found_action, found_flags, found_input, _ = captured[0]
+                self.assertEqual((found_action, found_flags, found_input), (action, flags, None))
                 self.assertEqual(response.headers['location'], '/jobs/1')
 
     def test_scale_writes_memory_in_v2s_unit_and_refuses_v1_only_fields(self):
         response, captured = self.post('/apps/hello/staging/scale', {'memory': '256Mi'})
         self.assertEqual(response.status_code, 303)
-        self.assertIn('--set', captured[0][1][0].argv)
-        self.assertIn('memoryMiB=256', captured[0][1][0].argv)
-        for form, message in (({'cpu': '100m'}, 'v2 does not model CPU'), ({'memory_limit': '256Mi'}, 'v2 does not model CPU')):
+        self.assertEqual(captured[0][1], ('--set', 'memoryMiB=256'))
+        for form, message in (({'cpu': '100m'}, 'v2 does not model CPU'),
+                              ({'memory_limit': '256Mi'}, 'v2 does not model CPU')):
             with self.subTest(form=form):
                 response, captured = self.post('/apps/hello/staging/scale', form)
                 self.assertEqual(response.status_code, 400)
                 self.assertIn(message, response.text)
                 self.assertEqual(captured, [])
 
-    def test_a_team_change_names_no_environment_and_only_a_registered_new_team(self):
+    def test_a_team_change_names_only_a_registered_new_team(self):
         response, captured = self.post('/apps/hello/prod/team', {'team': 'payments'})
         self.assertEqual(response.status_code, 303, response.text)
-        argv = captured[0][1][0].argv
-        self.assertIn('team=payments', argv)
-        self.assertFalse([arg for arg in argv if arg.startswith('--env')], "the team is the app's, not one environment's")
+        self.assertEqual(captured[0][1], ('--set', 'team=payments'))
         for form, message in (({'team': 'nobody'}, 'choose a registered team: one of demo, payments'),
                               ({'team': 'demo'}, 'hello already belongs to demo'),
                               ({}, 'choose a registered team')):
@@ -295,15 +309,9 @@ class RouteTests(unittest.TestCase):
                 self.assertIn(message, response.text)
                 self.assertEqual(captured, [])
 
-    def test_a_team_change_may_carry_both_environments_and_a_scale_only_its_own(self):
-        prod = 'v2-apps/instances/hello/prod/helmrelease.json'
-        self.assertTrue(changes.ACTIONS['v2-team'].owns('hello', 'staging', prod))
-        self.assertTrue(changes.ACTIONS['v2-team'].owns('hello', 'staging', 'v2-records/hello/app.json'))
-        self.assertFalse(changes.ACTIONS['v2-team'].owns('hello', 'staging', 'v2-records/other/app.json'))
-        self.assertFalse(changes.ACTIONS['v2-scale'].owns('hello', 'staging', prod))
-
     def test_expose_refuses_a_host_and_an_unknown_v2_fact(self):
-        response, captured = self.post('/apps/hello/staging/expose', {'exposure': 'public', 'host': 'hello.example.com'})
+        response, captured = self.post('/apps/hello/staging/expose',
+                                       {'exposure': 'public', 'host': 'hello.example.com'})
         self.assertEqual(response.status_code, 400)
         self.assertIn('v2 derives the address', response.text)
         self.assertEqual(captured, [])
@@ -315,67 +323,79 @@ class RouteTests(unittest.TestCase):
         self.assertIn('v2 does not model a schedule', response.text)
 
 
-class PullRequestTests(unittest.TestCase):
-    """One prepared v2 pull request: its diff is v2's records and what render derives, never a v1 record."""
+class RelayTests(unittest.TestCase):
+    """The console's publication is one ``swhurl-v2 change`` run: the job gets its lines and its link is the last
+    one. Nothing is downloaded, snapshotted or published here any more."""
 
-    def prepare(self, fail=False):
-        work = Path(tempfile.mkdtemp())
-        for path, text in RECORDS.items():
-            (work / path).parent.mkdir(parents=True, exist_ok=True)
-            (work / path).write_text(text)
-        runner = FakeRunner()
+    def runner(self, output, returncode=0, handler=None):
+        fake = FakeRunner().on('swhurl-v2', 'change', stdout=output, returncode=returncode, handler=handler)
+        fake.add_secret('token')
+        return fake
 
-        def run_v2(argv, _input):
-            tree = runner.tree
-            if fail:
-                return Result(argv, 2, '', 'invalid: replicas: expected_a_non_negative_integer\n')
-            command = argv[1]
-            if command == 'edit':
-                path = tree / 'v2-records/hello/staging/instance.json'
-                doc = json.loads(path.read_text())
-                for value in argv:
-                    name, _, number = value.partition('=')
-                    if name == 'replicas':
-                        doc['configuration']['replicas'] = int(number)
-                path.write_text(json.dumps(doc))
-            elif command == 'render':
-                (tree / 'v2-records/calls.json').write_text('{"version": 1}\n')
-                (tree / 'v2-apps/instances/hello/staging/helmrelease.json').parent.mkdir(parents=True, exist_ok=True)
-                (tree / 'v2-apps/instances/hello/staging/helmrelease.json').write_text('{"kind": "HelmRelease"}\n')
-            return Result(argv, 0, f'{command}: written\n')
+    def job(self):
+        return actions.Job(1, 'v2-scale', 'hello/staging', 'sam@swhurl.com', None)
 
-        runner.on(v2.BINARY, handler=run_v2)
-        return runner, work
-
-    def open(self, runner, api, action='v2-scale', form=None):
-        commands = changes.ACTIONS[action].commands('hello', 'staging', form or {'replicas': '2'})
-        job = actions.Job(1, action, changes.target(action, 'hello', 'staging'), 'sam@swhurl.com', None)
-        with mock.patch.object(proposal, 'download', side_effect=lambda _api, _revision, _workdir: runner.tree):
-            return proposal.open_action(runner, api.github, job, action, 'hello', 'staging', commands), job
-
-    def test_a_change_is_held_and_carries_only_v2_records_and_rendered_files(self):
-        runner, work = self.prepare()
-        runner.tree = work
-        api = GHTransport()
-        url, job = self.open(runner, api)
+    def test_the_change_streams_into_the_job_and_its_link_is_the_last_line(self):
+        lines = ['Downloading owner/repo main (aaaaaaa)', 'M v2-records/hello/staging/instance.json',
+                 'Merge plan: you merge it on GitHub', 'Committed ddddddd [console] apps: scale hello/staging',
+                 'Creating branch console/v2-scale-hello-staging-aaaaaaa', 'Opened https://github.com/x/pull/7']
+        runner = self.runner('\n'.join(lines) + '\n')
+        job = self.job()
+        url = proposal.open_change(runner, gh.GitHub('owner/repo', 'token'), job, 'v2-scale', 'hello', 'staging',
+                                   ('--set', 'replicas=2'))
         self.assertEqual(url, 'https://github.com/x/pull/7')
-        paths = [entry['path'] for entry in api.trees[0]['tree']]
-        self.assertEqual(paths, ['v2-apps/instances/hello/staging/helmrelease.json', 'v2-records/calls.json',
-                                 'v2-records/hello/staging/instance.json'])
-        self.assertFalse([path for path in paths if path.startswith('apps/')], 'a v2 pull request carries no v1 record')
-        self.assertEqual(api.labels, [], 'the console labels no pull request: a person merges every one')
-        self.assertTrue(any('Merge plan: you merge it on GitHub' in line for line in job.lines), job.lines)
-        self.assertIn('swhurl-v2', api.commits[0]['message'])
+        self.assertEqual(job.lines, lines)
+        argv = runner.calls[0]
+        self.assertEqual(argv[:8], ('swhurl-v2', 'change', '--kind', 'v2-scale', '--app', 'hello', '--env', 'staging'))
+        self.assertEqual(argv[8:], ('--requested-by', 'sam@swhurl.com', '--repository', 'owner/repo',
+                                    '--set', 'replicas=2'))
+        self.assertEqual(runner.environments[0][v2.TOKEN_ENV], 'token')
 
-    def test_v2s_refusal_is_the_job_s_refusal_and_nothing_is_published(self):
-        runner, work = self.prepare(fail=True)
-        runner.tree = work
-        api = GHTransport()
-        with self.assertRaises(actions.ActionError) as caught:
-            self.open(runner, api)
-        self.assertEqual(str(caught.exception), 'invalid: replicas: expected_a_non_negative_integer')
-        self.assertEqual(api.trees, [])
-        self.assertEqual(api.pulls, [])
+    def test_v2s_refusal_is_the_jobs_last_line_and_opens_nothing(self):
+        runner = self.runner('Downloading owner/repo main (aaaaaaa)\n'
+                             'invalid: replicas: expected_a_non_negative_integer\n', returncode=2)
+        job = self.job()
+        with self.assertRaises(Exception) as caught:
+            proposal.open_change(runner, gh.GitHub('owner/repo', 'token'), job, 'v2-scale', 'hello', 'staging',
+                                 ('--set', 'replicas=-1'))
+        self.assertIn('invalid: replicas: expected_a_non_negative_integer', str(caught.exception))
+        self.assertEqual(job.lines[-1], 'invalid: replicas: expected_a_non_negative_integer')
+        self.assertEqual(job.link, '')
+
+    def test_a_channel_address_goes_to_standard_input_and_a_team_change_names_no_environment(self):
+        seen = {}
+
+        def handler(argv, stdin):
+            seen['argv'], seen['stdin'] = argv, stdin
+            return Result(argv, 0, 'Opened https://github.com/x/pull/8\n')
+
+        runner = self.runner('', handler=handler)
+        proposal.open_change(runner, gh.GitHub('owner/repo', 'token'), actions.Job(2, 'channel set', 'team:payments',
+                                                                                   'sam@swhurl.com', None),
+                             'team-channel-set', 'payments', '', ('--transport', 'ntfy'),
+                             'https://ntfy.sh/x\n')
+        self.assertEqual(seen['argv'][:6], ('swhurl-v2', 'change', '--kind', 'team-channel-set', '--team',
+                                            'payments'))
+        self.assertNotIn('https://ntfy.sh/x', ' '.join(seen['argv']))
+        self.assertEqual(seen['stdin'], 'https://ntfy.sh/x\n')
+
+    def test_a_new_app_quotes_the_repository_and_template_before_its_commands(self):
+        seen = {}
+
+        def handler(argv, stdin):
+            seen['argv'] = argv
+            return Result(argv, 0, 'Opened https://github.com/x/pull/9\n')
+
+        chosen = proposal.NewApp('hello', 'typescript', '', {}, ('team=demo', 'exposure=private'))
+        runner = self.runner('', handler=handler)
+        proposal.open_new_app(runner, gh.GitHub('owner/repo', 'token'), self.job(), chosen, 'ghcr.io/x/hello:1-ab')
+        argv = seen['argv']
+        self.assertIn('--image', argv)
+        self.assertEqual(argv[argv.index('--image') + 1], 'ghcr.io/x/hello:1-ab')
+        preface = argv[argv.index('--preface') + 1]
+        self.assertTrue(preface.startswith('The console created https://github.com/samclement/hello from '))
+        self.assertIn('and waited for its first image.', preface)
+        self.assertEqual(argv[:4], ('swhurl-v2', 'change', '--kind', 'new'))
 
 
 class GHTransport:

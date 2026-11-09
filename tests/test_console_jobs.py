@@ -186,12 +186,14 @@ class ResumeTests(unittest.TestCase):
         job = self.jobs.get(5)
         self.assertEqual((job.action, job.state, job.link, job.unit), ('finish new app', 'succeeded', 'https://github.com/x/pull/7', 'notes/staging'),
                          '\n'.join(job.lines))
-        create = next(call for call in self.runner.calls if call[0:2] == ('swhurl-v2', 'create'))
-        self.assertEqual(create[2:], ('--records', 'v2-records', '--app', 'notes', '--team', 'platform',
-                                      '--image', f'ghcr.io/samclement/notes:1-init000@{DIGEST}',
-                                      '--profile', 'v2/testdata/profile.json', '--out', '.',
-                                      '--exposure', 'authenticated-web'))
-        self.assertTrue(any(call[0:2] == ('swhurl-v2', 'render') for call in self.runner.calls), 'the PR carries what render writes')
+        change = next(call for call in self.runner.calls if call[0:2] == ('swhurl-v2', 'change'))
+        self.assertEqual(change[2:15], ('--kind', 'new', '--app', 'notes', '--env', 'staging', '--requested-by',
+                                        'sam@swhurl.com', '--repository', 'samclement/swhurl-platform', '--set',
+                                        'team=platform', '--set'))
+        self.assertIn('exposure=authenticated-web', change)
+        self.assertEqual(change[change.index('--image') + 1], f'ghcr.io/samclement/notes:1-init000@{DIGEST}')
+        self.assertTrue(change[change.index('--preface') + 1].startswith(
+            'The console created https://github.com/samclement/notes from '), 'the body says what made the repository')
         self.assertEqual(self.app_api.writes(), [], 'the repository is only read')
         self.assertFalse(any('copy' in call for call in self.runner.calls), 'nothing is rendered again')
         self.assertEqual(self.platform_api.sent('POST /issues/7/labels'), [], 'a v2 PR is held for a person')

@@ -1,25 +1,16 @@
-"""Changes through GitHub: download ``main``, run its own tooling, commit to a ``console/*`` branch, open a PR.
+"""A console change: run ``swhurl-v2 change`` in this pod, which opens the pull request, and keep its log.
 
-``main``'s tarball is unpacked into a work tree, the tree's own tooling (not this image's) makes and checks
-the change, so it follows the rules CI will apply even when the console is older than ``main``, and the files
-it added, changed or deleted become one commit (blobs, a tree, a commit and a ref) on a new ``console/*``
-branch, then a PR, all through ``github.GitHubAPI``. The console never writes any ref but a new
-``console/*`` branch.
+The command downloads ``main`` at one commit, unpacks it into a scratch folder, applies the change there with v2's
+own use cases, keeps only the files the kind owns, and writes the commit, branch and pull request through GitHub's
+API. The console no longer downloads, snapshots or publishes anything: it names the form's choices as v2's flags,
+streams the command's lines into the job, and takes the link from the last one (``Opened <url>``). A refusal is
+v2's own words, and a change with nothing to carry makes no GitHub write.
 """
 from __future__ import annotations
 
-import base64
-import hashlib
-import io
-import os
 import re
-import shutil
-import sys
-import tarfile
-import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from swhurl.apps import repo
@@ -28,11 +19,7 @@ from swhurl.apps.contract import APP_OWNER, APP_TYPES, STACKS, TEAMS_FILE, type_
 from swhurl.apps.model import records
 from swhurl.console import changes, v2
 from swhurl.console.actions import ActionError, Job
-from swhurl.console.changes import ACTIONS
-from swhurl.console.github import BASE, GitHub, GitHubAPI
-from swhurl.run import Runner
 
-AUTHOR = ('swhurl console', 'console@users.noreply.github.com')
 PLAN = re.compile(r'(?m)^\*\*Merge plan:\*\* it (.+)\.$')
 
 
@@ -54,120 +41,31 @@ EXPOSURE_LABELS = {
 """The form's plain-language names for each exposure: (title, description)."""
 
 
-def snapshot(root: Path) -> dict[str, tuple[str, str]]:
-    """``{path: (mode, sha256)}`` for every file under ``root``."""
-    files = {}
-    for path in sorted(root.rglob('*')):
-        if path.is_file():
-            mode = '100755' if os.access(path, os.X_OK) else '100644'
-            files[path.relative_to(root).as_posix()] = (mode, hashlib.sha256(path.read_bytes()).hexdigest())
-    return files
+def open_change(runner, github, job: Job, action: str, name: str, env: str, flags: tuple[str, ...],
+                input: str | None = None, *, preface: str = '') -> str:
+    """Run v2's change in this pod: it opens the pull request and prints its URL last. The console keeps the job's
+    log and its link, never the change itself. ``input`` is a channel address's one way in."""
+    argv = [v2.BINARY, 'change', '--kind', action]
+    argv += ['--app', name, '--env', env] if changes.ACTIONS[action].envs else ['--team', name]
+    argv += ['--requested-by', job.identity, '--repository', github.repo, *flags]
+    if preface:
+        argv += ['--preface', preface]
+    opened = ''
+    for line in runner.stream(argv, env={v2.TOKEN_ENV: github.token}, input=input):
+        job.lines.append(line)
+        if line.startswith('Opened '):
+            opened = line.removeprefix('Opened ').strip()
+    return opened
 
 
-def download(api: GitHubAPI, revision: str, workdir: Path) -> Path:
-    """Unpack the repository at ``revision`` into ``workdir/repo``."""
-    with tarfile.open(fileobj=io.BytesIO(api.call('GET', f'/tarball/{revision}').content), mode='r:gz') as tar:
-        tar.extractall(workdir / 'src', filter='data')
-    (top,) = (workdir / 'src').iterdir()  # GitHub wraps the tree in <owner>-<repo>-<sha>/
-    return top.rename(workdir / 'repo')
-
-
-
-
-def publish(api: GitHubAPI, job: Job, tree: Path, before: dict, after: dict, changed: list[str],
-            head: str, branch: str, title: str, body: str, plan: str) -> str:
-    """Publish a prepared proposal as one commit on its branch and the pull request that asks for it."""
-    entries = []
-    for path in changed:
-        if path not in after:
-            entries.append({'path': path, 'mode': before[path][0], 'type': 'blob', 'sha': None})
-            continue
-        content = base64.b64encode((tree / path).read_bytes()).decode()
-        blob = api.json('POST', '/git/blobs', {'content': content, 'encoding': 'base64'})['sha']
-        entries.append({'path': path, 'mode': after[path][0], 'type': 'blob', 'sha': blob})
-    base_tree = api.json('GET', f'/git/commits/{head}')['tree']['sha']
-    new_tree = api.json('POST', '/git/trees', {'base_tree': base_tree, 'tree': entries})['sha']
-    message = f'[console] {title}\n\n{body}\n\nRequested-by: {job.identity}\n'
-    commit = api.json('POST', '/git/commits', {'message': message, 'tree': new_tree, 'parents': [head],
-                                               'author': {'name': AUTHOR[0], 'email': AUTHOR[1]}})['sha']
-    job.lines.append(f'Committed {commit[:7]} [console] {title}')
-    job.lines.append(f'Creating branch {branch}')
-    api.call('POST', '/git/refs', {'ref': f'refs/heads/{branch}', 'sha': commit})
-    note = f'\n\n**Merge plan:** it {plan}.' if plan else ''
-    pr = api.json('POST', '/pulls', {'title': f'[console] {title}', 'head': branch, 'base': BASE,
-                                     'body': f'{body}{note}\n\nRequested-by: {job.identity}'})
-    url = pr['html_url']
-    job.lines.append(f'Opened {url}')
-    return url
-
-
-def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str], input: str | None = None,
-             tool: str = 'python') -> None:
-    """The clone's own tooling (``team-add``, ...) or v2's binary. ``input`` is a secret's
-    one way in (never an argument, never in the job's lines). A python tool leaves no bytecode: every file it
-    writes in the clone becomes part of the commit. A v2 refusal is shown in v2's own words."""
-    if tool == 'v2':
-        result = runner.run([v2.BINARY, *argv], cwd=clone, check=False, input=input)
-        job.lines += (result.stdout + result.stderr).splitlines()
-        if result.returncode:
-            raise ActionError(v2.refusal(result))
-        return
-    result = runner.run([sys.executable, '-m', 'swhurl', command, *argv], cwd=clone, check=False, input=input,
-                        env={'PYTHONPATH': str(clone / 'tools'), 'PYTHONDONTWRITEBYTECODE': '1'})
-    job.lines += (result.stdout + result.stderr).splitlines()
-    if result.returncode:
-        raise ActionError(f'{command} refused this change (see above); nothing was written to GitHub')
-
-def open_action(runner: Runner, github: GitHub, job: Job, action: str, name: str, env: str,
-                commands: tuple[changes.Command, ...], *, preface: str = '') -> str:
-    """Prepare, then publish only owned inputs. Failed preparation or reads make no GitHub writes;
-    promotion readiness is checked once, last, before the first write."""
-    api = GitHubAPI(runner, github)
-    workdir = Path(tempfile.mkdtemp(prefix='console-'))
-    try:
-        head = api.json('GET', f'/git/ref/heads/{BASE}')['object']['sha']
-        try:
-            branch = changes.branch(action, name, env, head[:7])
-        except ValueError as error:
-            raise ActionError(str(error)) from None
-        entry = ACTIONS[action]
-        job.lines.append(f'Downloading {github.repo} {BASE} ({head[:7]})')
-        tree = download(api, head, workdir)
-        before = snapshot(tree)
-        for command in commands:
-            argv = list(command.argv)
-            if command.tool == 'v2':  # the commit and the reviewed revision come from the tree just downloaded
-                expect = (v2.instance_revision(runner, tree, name, entry.target_env or env)
-                          if command.name == 'promote' else '')
-                argv = v2.resolve(argv, revision=head, expect=expect)
-            run_tool(runner, job, tree, command.name, argv, input=command.input, tool=command.tool)
-        after = snapshot(tree)
-        statuses = {p: 'D' if p not in after else 'A' if p not in before else 'M'
-                    for p in after.keys() | before.keys() if after.get(p) != before.get(p)}
-        changed = sorted(p for p, status in statuses.items() if status in entry.keeps and entry.owns(name, env, p))
-        if not changed:
-            raise ActionError('the change left no files changed; nothing to propose')
-        plan = changes.encrypted_reason(action, {p: statuses[p] for p in changed})
-        for path in changed:
-            job.lines.append(f'{statuses[path]} {path}')
-        job.lines.append('Merge plan: you merge it on GitHub' + (f'; it {plan}' if plan else ''))
-        body = preface + 'Generated by the console with:\n\n    ' + ' && '.join(c.as_make() for c in commands)
-        if runner.dry_run:
-            job.lines.append(f'Dry run: would commit {len(changed)} file(s) to {branch}; no PR opened')
-            return ''
-        return publish(api, job, tree, before, after, changed, head, branch,
-                       entry.title.format(name=name, env=env), body, plan)
-    finally:
-        api.client.close()
-        shutil.rmtree(workdir, ignore_errors=True)
-
-
-def open_new_app(runner: Runner, github: GitHub, job: Job, chosen: NewApp, image: str) -> str:
+def open_new_app(runner, github, job: Job, chosen: NewApp, image: str) -> str:
+    """The New app form's pull request: v2 creates the instance from the image the new repository published, then
+    renders what the records derive, and the body says which repository and template the console made."""
     made, template = chosen.request, STACKS[chosen.stack]
-    commands = ACTIONS['new'].commands(chosen.name, 'staging', {'repo': made.repo, 'image': image, 'flags': chosen.flags})
-    return open_action(runner, github, job, 'new', chosen.name, 'staging', commands,
-                       preface=(f'The console created https://github.com/{made.repo} from [{template}](https://github.com/{template}) '
-                                'and waited for its first image.\n\n'))
+    flags, input = changes.change_arguments('new', chosen.name, {'image': image, 'flags': chosen.flags})
+    preface = (f'The console created https://github.com/{made.repo} from [{template}](https://github.com/{template}) '
+               'and waited for its first image.\n\n')
+    return open_change(runner, github, job, 'new', chosen.name, 'staging', flags, input, preface=preface)
 
 
 NEW_APP = 'new-app'  # a job's resume record: the New app form's choices
@@ -228,7 +126,7 @@ class NewApp:
         chosen = changes.Connections.from_form(form)
         if callable_apps is not None and offered_events is not None:
             chosen.check_offered(callable_apps, offered_events)
-        return cls(name, stack, description, answers, (*settings, *chosen.new_app_flags()))
+        return cls(name, stack, description, answers, (*settings, *chosen.settings()))
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> NewApp:

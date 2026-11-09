@@ -3,8 +3,6 @@ FakeRunner for the tree's tooling and a fake GitHub API."""
 import base64
 import io
 import json
-import shutil
-import sys
 import tarfile
 import tempfile
 import unittest
@@ -16,9 +14,9 @@ import yaml
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import calling, channels
+from swhurl.apps import calling, channels, repo
 from swhurl.apps.model import write as model_sync
-from swhurl.console import actions, cluster, server, v2
+from swhurl.console import actions, cluster, proposal, server
 from swhurl.console import github as gh
 from swhurl.run import FakeRunner, Result
 
@@ -59,7 +57,6 @@ with tempfile.TemporaryDirectory() as tmp:  # rendered from its records, as main
         (root / rel).write_bytes(data)
     model_sync.sync(root)
     MAIN = {path.relative_to(root).as_posix(): path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
-PROMOTION = {'image': IMAGE}  # what the review page submits
 
 
 
@@ -153,95 +150,6 @@ def v2_render(tree: Path, app: str) -> None:
         path.write_text('{}\n')
 
 
-class TreeRunner(FakeRunner):
-    """A FakeRunner whose tooling commands edit the downloaded tree they run in, as the console's PR commands do."""
-
-    def __init__(self, edit=None, **kwargs):
-        super().__init__(**kwargs)
-        self.edit = edit  # None: app-promote writes production's records, anything else a new file
-
-    def _execute(self, argv, *, input, env, cwd):
-        if cwd is not None and argv[:1] == ('swhurl-v2',):
-            tree, command = Path(cwd), argv[1]
-            app = argv[argv.index('--app') + 1] if '--app' in argv else ''
-            if command == 'create':
-                v2_create(tree, app)
-            elif command == 'render':
-                for found in sorted((tree / 'v2-records').glob('*/app.json')):
-                    v2_render(tree, found.parent.name)
-            elif command == 'team':  # the registry changes; what it renders is v2's own test
-                path = tree / 'v2-records/teams.json'
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text((path.read_text() if path.is_file() else '') + f'{argv[2:]}\n')
-            elif command == 'edit':
-                path = tree / 'v2-records' / app / 'staging/instance.json'
-                doc = yaml.safe_load(path.read_text())
-                setting = argv[argv.index('--set') + 1]
-                doc[setting.partition('=')[0]] = setting.partition('=')[2]
-                path.write_text(yaml.safe_dump(doc))
-            return super()._execute(argv, input=input, env=env, cwd=cwd)
-        if cwd is not None and argv[:3] == (sys.executable, '-m', 'swhurl'):
-            if self.edit is not None:
-                self.edit(Path(cwd))
-            elif argv[3:4] == ('app-promote',):
-                promoted(Path(cwd))
-            elif argv[3] in SETTINGS_COMMANDS:
-                settings_edit(Path(cwd), argv[3:])
-            elif argv[3:4] == ('app-remove',):
-                shutil.rmtree(Path(cwd) / 'apps' / argv[4] / argv[5])
-            else:
-                (Path(cwd) / 'apps/x').mkdir(parents=True, exist_ok=True)
-                (Path(cwd) / 'apps/x/helmrelease.yaml').write_text('new\n')
-        return super()._execute(argv, input=input, env=env, cwd=cwd)
-
-
-SETTINGS_COMMANDS = {'app-scale': '', 'app-schedule': '', 'app-expose': '', 'app-calls': 'calls',
-                     'app-events': 'subscriptions', 'app-egress': 'egress', 'app-allows': 'allows'}
-"""The instance commands whose console PR carries only the instance's Settings, and the list each edits."""
-
-
-def settings_edit(tree: Path, argv: tuple[str, ...]) -> None:
-    """What an instance command writes that its PR carries: the instance's instance.yaml, changed by its flags."""
-    command, app, env, *flags = argv
-    path = tree / 'apps' / app / env / 'instance.yaml'
-    doc = yaml.safe_load(path.read_text())
-    for flag in flags:
-        name, _, value = flag.removeprefix('--').partition('=')
-        items = [item for item in value.split(',') if item]
-        if name == 'replicas':
-            doc['replicas'] = int(value)
-        elif name in ('cpu', 'memory', 'memory-limit'):
-            doc.setdefault('capacity', {})['memoryLimit' if name == 'memory-limit' else name] = value
-        elif name in ('exposure', 'host', 'schedule'):
-            doc[name] = value
-        elif name.startswith('add'):
-            doc[SETTINGS_COMMANDS[command]] = [*doc.get(SETTINGS_COMMANDS[command], []), *items]
-        elif name.startswith('remove'):
-            doc[SETTINGS_COMMANDS[command]] = [item for item in doc.get(SETTINGS_COMMANDS[command], []) if item not in items]
-    path.write_text(yaml.safe_dump(doc, sort_keys=False))
-
-
-def connected_main() -> dict[str, bytes]:
-    """MAIN with hello/staging already calling orders and receiving orders.created: something to disconnect."""
-    rel = 'apps/hello/staging/instance.yaml'
-    doc = {**yaml.safe_load(MAIN[rel]), 'calls': ['orders'], 'subscriptions': ['orders.created']}
-    return {rel: yaml.safe_dump(doc, sort_keys=False).encode()}
-
-
-def promoted(tree: Path) -> None:
-    """What app-promote writes that a promotion PR carries: production's Release with staging's image
-    (and, for a first promotion, production's Settings)."""
-    staging = yaml.safe_load((tree / 'apps/hello/staging/release.yaml').read_text())
-    target = tree / 'apps/hello/prod/release.yaml'
-    doc = yaml.safe_load(target.read_text()) if target.is_file() else dict(staging)
-    doc['image'] = staging['image']
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(yaml.safe_dump(doc, sort_keys=False))
-    settings = tree / 'apps/hello/prod/instance.yaml'
-    if not settings.is_file():
-        settings.write_text('version: 1\nexposure: authenticated-web\n')
-
-
 def staging_app(name, variables=None, port=8080):
     """A unit and release as the cluster lists them, for the apps the New app form offers."""
     values = {'controllers': {'main': {'containers': {'main': {'env': variables or {}}}}}}
@@ -252,9 +160,9 @@ def staging_app(name, variables=None, port=8080):
             {'metadata': {'namespace': f'{name}-staging', 'name': name}, 'spec': {'values': values}})
 
 
-def tree_fake(edit=None, staging=()):
+def tree_fake(staging=()):
     """``staging``: the staging_app()s that run (none by default)."""
-    runner = TreeRunner(edit)
+    runner = FakeRunner()
     # Nonstatus inventory lists; Teams receives its instance decisions from Go report fixtures;
     # any other kubectl call is still unexpected.
     for prefix, found in ((cluster.UNITS[:5], [unit for unit, _ in staging]),
@@ -265,8 +173,18 @@ def tree_fake(edit=None, staging=()):
     install(runner, [unit for unit, _ in staging], [release for _, release in staging])
     for report in runner.status_reports.values():
         report['target']['revision'] = HEAD
-    runner.on('swhurl-v2', stdout='{}').on(sys.executable, '-m', 'swhurl', handler=lambda args, _: Result(args, 0, '[OK] edited\n'))
+    runner.on('swhurl-v2', 'change', stdout=CHANGE_OUTPUT)
+    runner.on('swhurl-v2', stdout='{}')
     return runner
+
+
+CHANGE_OUTPUT = ('Downloading samclement/swhurl-platform main (abc1234)\n'
+                 'M v2-records/payments/staging/instance.json\n'
+                 'Merge plan: you merge it on GitHub\n'
+                 'Committed def5678 [console] teams: add billing\n'
+                 'Creating branch console/team-add-billing-abc1234\n'
+                 'Opened https://github.com/x/pull/7\n')
+"""What ``swhurl-v2 change`` prints: the console takes the job's lines and its link from the last one."""
 
 
 def app_under_test(runner, **kwargs):
@@ -616,30 +534,36 @@ class TeamsPageTests(unittest.TestCase):
         c.get('/teams', headers=WHO)
         self.assertEqual(len(asked), 2, 'kept: an app does not change language')
 
-    def test_changes_run_v2s_team_command_and_wait_for_review(self):
+    def test_each_team_change_is_one_v2_change_that_waits_for_review(self):
         cases = (
             ('add', {'name': 'billing', 'description': ' Invoices  and\nrefunds '},
-             [v2.team_argv('billing', 'add', '--description=Invoices and refunds')], '[console] teams: add billing'),
+             ('--description', 'Invoices and refunds')),
             ('edit', {'name': 'payments', 'description': 'Orders', 'rename': 'orders'},
-             [v2.team_argv('payments', 'describe', '--description=Orders'),
-              v2.team_argv('payments', 'rename', '--rename=orders')], '[console] teams: change payments'),
-            ('edit', {'name': 'payments', 'description': '', 'rename': ''},
-             [v2.team_argv('payments', 'describe', '--description=')], '[console] teams: change payments'),
-            ('remove', {'name': 'payments'},
-             [v2.team_argv('payments', 'remove')], '[console] teams: remove payments'),
+             ('--description', 'Orders', '--rename', 'orders')),
+            ('edit', {'name': 'payments', 'description': '', 'rename': ''}, ('--description', '')),
+            ('remove', {'name': 'payments'}, ()),
         )
-        for action, form, commands, title in cases:
+        for action, form, flags in cases:
             with self.subTest(action=action, form=form):
                 c = self.client()
                 response = c.post(f'/teams/{action}', data=form, headers=WHO, follow_redirects=False)
                 self.assertEqual(response.status_code, 303, response.text)
-                ran = [list(call[1:]) for call in self.runner.calls if call[:2] == ('swhurl-v2', 'team')]
-                self.assertEqual(ran, commands)
+                ran = [call for call in self.runner.calls if call[:2] == ('swhurl-v2', 'change')]
+                self.assertEqual(ran, [('swhurl-v2', 'change', '--kind', f'team-{action}', '--team', form['name'],
+                                        '--requested-by', 'sam@swhurl.com',
+                                        '--repository', 'samclement/swhurl-platform', *flags)])
                 job = self.jobs.get(1)
                 self.assertEqual((job.state, job.link), ('succeeded', 'https://github.com/x/pull/7'))
-                self.assertEqual(self.api.sent('POST /pulls')[0]['title'], title)
-                self.assertEqual(self.api.sent('POST /issues/7/labels'), [], 'a team change waits for review')
                 self.assertEqual(cluster.target(job.unit), (f"team {form['name']}", f"/teams#{form['name']}"))
+
+    def test_the_new_app_form_states_its_connections_as_v2_settings(self):
+        chosen = proposal.NewApp.from_form(
+            {'name': 'weather-api', 'type': 'web-app', 'stack': 'typescript', 'description': 'Weather',
+             'team': 'platform', 'exposure': 'authenticated-web', 'calls': 'orders', 'subscribe': 'orders.created'},
+            repo.parse_questions(COPIER_YML), {'platform': 'The platform itself'}, {'orders'}, {'orders.created'})
+        self.assertEqual(chosen.flags, ('team=platform', 'exposure=authenticated-web', 'calls=orders',
+                                        'subscriptions=orders.created'))
+        self.assertEqual(chosen.request.repo, 'samclement/weather-api')
 
     def test_each_team_card_says_whether_it_has_a_channel_and_offers_to_set_replace_or_remove_it(self):
         page = self.client().get('/teams', headers=WHO).text
@@ -654,36 +578,33 @@ class TeamsPageTests(unittest.TestCase):
         self.assertNotIn('payments-phone', page, 'a channel has no name to manage: it is the team\'s')
         self.assertNotIn('name="notify"', page)
         self.assertNotIn('ntfy.sh/', page.replace('https://ntfy.sh/your-topic', ''), 'no address is ever on the page')
-        unreadable = FakeGitHub(fail={'GET /contents/platform/notify/routes.json': (404, 'Not Found')})
-        page = TestClient(app_under_test(self.runner, jobs=self.jobs, github=unreadable.github)).get('/teams', headers=WHO).text
-        self.assertEqual(page.count('No notification channel'), 2, 'unreadable routes: no channel is claimed')
 
     def test_a_channels_address_reaches_only_the_commands_standard_input(self):
         address = 'https://ntfy.sh/swhurl-0123456789abcdef01234567'
         c = self.client()
         received = []
-        self.runner._rules.insert(0, (('swhurl-v2', 'team'), lambda args, text: (
-            received.append(text), Result(args, 0, '{"kind": "v2-team"}\n'))[1]))
+        self.runner._rules.insert(0, (('swhurl-v2', 'change'), lambda args, text: (
+            received.append(text), Result(args, 0, 'Opened https://github.com/x/pull/7\n'))[1]))
         response = c.post('/team-channel/set', data={'name': 'payments', 'transport': 'ntfy', 'address': f' {address} '},
                           headers=WHO, follow_redirects=False)
         self.assertEqual(response.status_code, 303, response.text)
         self.assertEqual(received, [address + '\n'])
-        tool = next(call for call in self.runner.calls if call[:2] == ('swhurl-v2', 'team'))
-        self.assertEqual(list(tool[1:]), v2.team_argv('payments', 'channel', '--transport=ntfy'))
+        tool = next(call for call in self.runner.calls if call[:2] == ('swhurl-v2', 'change'))
+        self.assertEqual(tool[2:], ('--kind', 'team-channel-set', '--team', 'payments', '--requested-by',
+                                    'sam@swhurl.com', '--repository', 'samclement/swhurl-platform',
+                                    '--transport', 'ntfy'))
         job = self.jobs.get(1)
         self.assertEqual((job.state, cluster.target(job.unit)), ('succeeded', ('team payments', '/teams#payments')))
-        self.assertEqual(self.api.sent('POST /pulls')[0]['title'], '[console] teams: set the notification channel of payments')
-        self.assertEqual(self.api.sent('POST /issues/7/labels'), [], 'a channel change waits for review')
         everywhere = '\n'.join([*job.lines, *(' '.join(call) for call in self.runner.calls), *self.runner.echoed,
-                                json.dumps(self.api.sent('POST /pulls')), json.dumps(self.api.sent('POST /git/commits')),
                                 c.get('/jobs/1', headers=WHO).text, c.get('/teams', headers=WHO).text])
         self.assertNotIn('0123456789abcdef', everywhere)
         self.assertIn('<redacted>', self.runner.redact(f'posting to {address}'))
         c = self.client()
-        self.assertEqual(c.post('/team-channel/remove', data={'name': 'payments'}, headers=WHO, follow_redirects=False).status_code, 303)
-        tool = next(call for call in self.runner.calls if call[:2] == ('swhurl-v2', 'team'))
-        self.assertEqual(list(tool[1:]), v2.team_argv('payments', 'drop-channel'))
-        self.assertEqual(self.api.sent('POST /pulls')[0]['title'], '[console] teams: remove the notification channel of payments')
+        self.assertEqual(c.post('/team-channel/remove', data={'name': 'payments'}, headers=WHO,
+                                follow_redirects=False).status_code, 303)
+        tool = next(call for call in self.runner.calls if call[:2] == ('swhurl-v2', 'change'))
+        self.assertEqual(tool[2:], ('--kind', 'team-channel-remove', '--team', 'payments', '--requested-by',
+                                    'sam@swhurl.com', '--repository', 'samclement/swhurl-platform'))
 
     def test_a_malformed_channel_opens_nothing_and_never_echoes_the_address(self):
         c = self.client()
@@ -695,7 +616,7 @@ class TeamsPageTests(unittest.TestCase):
                 response = c.post(f'/team-channel/{action}', data=form, headers=WHO)
                 self.assertEqual(response.status_code, 400)
                 self.assertNotIn('private-topic', response.text)
-        self.assertFalse(any(call[:1] == ('swhurl-v2',) and 'team' in call for call in self.runner.calls))
+        self.assertFalse(any(call[:2] == ('swhurl-v2', 'change') for call in self.runner.calls))
         without_token = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), audit=lambda line: None, inline=True)))
         self.assertEqual(without_token.post('/team-channel/set', data={'name': 'x', 'address': 'https://ntfy.sh/t'}, headers=WHO).status_code, 409)
 
@@ -705,15 +626,15 @@ class TeamsPageTests(unittest.TestCase):
                              ('remove', {'name': ''}), ('explode', {'name': 'a'})):
             with self.subTest(action=action, form=form):
                 self.assertEqual(c.post(f'/teams/{action}', data=form, headers=WHO).status_code, 400)
-        self.assertFalse(any(call[:2] == ('swhurl-v2', 'team') for call in self.runner.calls))
+        self.assertFalse(any(call[:2] == ('swhurl-v2', 'change') for call in self.runner.calls))
         message = 'team_in_use: team: an app record names the team: move it first with edit --set team='
         c = self.client()
-        self.runner._rules.insert(0, (('swhurl-v2', 'team'), Result((), 2, '', message + '\n')))
+        self.runner._rules.insert(0, (('swhurl-v2', 'change'), Result((), 2, '', message + '\n')))
         c.post('/teams/remove', data={'name': 'payments'}, headers=WHO)
         job = self.jobs.get(1)
         self.assertEqual(job.state, 'failed')
         self.assertIn(message, job.lines)
-        self.assertEqual(self.api.sent('POST /pulls'), [])
+        self.assertEqual(job.link, '')
         without_token = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), audit=lambda line: None, inline=True)))
         self.assertEqual(without_token.post('/teams/add', data={'name': 'billing'}, headers=WHO).status_code, 409)
         self.assertIn('cannot open pull requests', without_token.get('/teams', headers=WHO).text)

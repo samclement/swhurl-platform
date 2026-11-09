@@ -132,6 +132,11 @@ class StreamTests(unittest.TestCase):
         self.assertIn(f'bad {REDACTED}', str(caught.exception))
         self.assertNotIn(SECRET, str(caught.exception))
 
+    def test_a_streamed_command_gets_its_environment_and_its_standard_input(self):
+        lines = list(Runner().stream(['sh', '-c', 'cat; printf "%s\\n" "$GREETING"'],
+                                     env={'GREETING': 'hello'}, input='an address\n'))
+        self.assertEqual(lines, ['an address', 'hello'])
+
     def test_dry_run_plans_a_mutating_stream(self):
         fake = FakeRunner(dry_run=True)
         self.assertEqual(list(fake.stream(['flux', 'suspend', 'kustomization', 'x'], mutating=True)), [])
@@ -147,6 +152,12 @@ class StreamTests(unittest.TestCase):
     def test_missing_command(self):
         with self.assertRaisesRegex(CommandError, 'missing required command'):
             list(Runner().stream(['swhurl-no-such-command']))
+
+    def test_fake_stream_records_the_environment_and_answers_input(self):
+        fake = FakeRunner().on('swhurl-v2', handler=lambda args, stdin: Result(args, 0, f'got {stdin}'))
+        self.assertEqual(list(fake.stream(['swhurl-v2', 'change'], env={'CONSOLE_TOKEN': 't'}, input='x\n')),
+                         ['got x'])
+        self.assertEqual(fake.environments, [{'CONSOLE_TOKEN': 't'}])
 
     def test_fake_stream_answers_from_rules(self):
         fake = FakeRunner().on('kubectl', 'logs', stdout='a\nb\n').on('flux', returncode=1)

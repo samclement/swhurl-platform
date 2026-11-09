@@ -455,11 +455,11 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         later = any(j.unit == found.unit and j.id > found.id and j.state in ('running', 'succeeded') for j in jobs.recent())
         return None if later else told
 
-    def propose(request: Request, action: str, name: str, env: str, commands: tuple[changes.Command, ...], *,
-                then: tuple = ()) -> Response:
-        """Run the action as a job that opens its pull request, then clear the ``then`` caches it made stale."""
+    def propose(request: Request, action: str, name: str, env: str, flags: tuple[str, ...],
+                input: str | None = None, *, then: tuple = ()) -> Response:
+        """Run the change as a job that opens its pull request, then clear the ``then`` caches it made stale."""
         def work(job: actions.Job) -> None:
-            job.link = proposal.open_action(runner, github, job, action, name, env, commands)
+            job.link = proposal.open_change(runner, github, job, action, name, env, flags, input)
             for cache in then:
                 cache.clear()
         try:

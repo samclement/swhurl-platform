@@ -14,7 +14,6 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -326,8 +325,8 @@ func TestExecUpgradeRefusalsAndCancellation(t *testing.T) {
 			}
 		})
 	}
-	var wg sync.WaitGroup
-	executor := wsServer(t, func(c net.Conn, _ *http.Request) { wg.Add(1); defer wg.Done(); io.Copy(io.Discard, c) })
+	served := make(chan struct{})
+	executor := wsServer(t, func(c net.Conn, _ *http.Request) { defer close(served); io.Copy(io.Discard, c) })
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	start := time.Now()
@@ -335,7 +334,7 @@ func TestExecUpgradeRefusalsAndCancellation(t *testing.T) {
 	if err == nil || time.Since(start) > time.Second {
 		t.Fatal("cancellation did not unblock upgraded connection")
 	}
-	wg.Wait()
+	<-served
 }
 
 func TestExecRejectsMalformedTerminalStatus(t *testing.T) {

@@ -135,8 +135,6 @@ func (s *consoleServer) readJob(ctx context.Context, jobs []pages.Job, id int, r
 		CanResume: resumable(job, jobs) && s.hasGitHub && s.appRepos}, true
 }
 
-// jobEvents streams a job's output as this server runs it. This server runs no job yet, so every job is another
-// pod's record and has no stream here: its page re-reads itself instead.
 // liveJobs is the registry of the jobs this server runs: the one a job page's stream re-reads.
 type liveJobs interface {
 	Get(ctx context.Context, id int) (pages.Job, bool)

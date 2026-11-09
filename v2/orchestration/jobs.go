@@ -119,9 +119,9 @@ func (j *Jobs) alive(ctx context.Context, owner string) bool {
 }
 
 // refresh reads again the jobs another pod is still running, no more often than jobForeignTTL: their output grows
-// there, not here.
+// there, not here. Only a record this registry already remembers is read again, and none is while none of them runs.
 func (j *Jobs) refresh(ctx context.Context) {
-	if j.inputs.Now().Sub(j.read) < jobForeignTTL {
+	if !j.foreignRunning() || j.inputs.Now().Sub(j.read) < jobForeignTTL {
 		return
 	}
 	j.read = j.inputs.Now()
@@ -131,7 +131,7 @@ func (j *Jobs) refresh(ctx context.Context) {
 	}
 	for _, raw := range records {
 		job, ok := decodeJob(raw)
-		if !ok || job.ID >= j.ids || j.live[job.ID] != nil {
+		if _, remembered := j.before[job.ID]; !ok || !remembered || j.live[job.ID] != nil {
 			continue
 		}
 		j.before[job.ID] = job
@@ -139,8 +139,19 @@ func (j *Jobs) refresh(ctx context.Context) {
 	j.settle(ctx)
 }
 
+// foreignRunning is whether a remembered record is of a job still running: the only output that can have grown.
+func (j *Jobs) foreignRunning() bool {
+	for _, job := range j.before {
+		if job.Running() {
+			return true
+		}
+	}
+	return false
+}
+
 // Start runs one job in the background and returns it as it started. A target that already has a running job is
-// refused, as is every job while the pod is draining.
+// refused, as is every job while the pod is draining. The job keeps ctx's values but not its cancellation: a job
+// outlives the request that started it, and only the work's own bounds end it.
 func (j *Jobs) Start(ctx context.Context, action, target, identity string, resume map[string]any,
 	work JobWork) (pages.Job, error) {
 	j.mu.Lock()
@@ -160,10 +171,10 @@ func (j *Jobs) Start(ctx context.Context, action, target, identity string, resum
 	j.forgetMemory()
 	forget := j.forgetStore()
 	started := *job
-	j.save(ctx, started, forget)
 	j.mu.Unlock()
+	j.save(ctx, started, forget)
 	j.audit(fmt.Sprintf("[AUDIT] %s %s %s: started (job %d)", identity, action, target, started.ID))
-	go j.run(ctx, job, work)
+	go j.run(context.WithoutCancel(ctx), job, work)
 	return started, nil
 }
 

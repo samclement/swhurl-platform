@@ -20,6 +20,7 @@ type jobRecords struct {
 	records map[int]string
 	alive   map[string]bool
 	saves   []map[int]*string
+	loads   int
 	loadErr error
 	saveErr error
 }
@@ -31,6 +32,7 @@ func newJobRecords() *jobRecords {
 func (s *jobRecords) Load(context.Context) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.loads++
 	if s.loadErr != nil {
 		return nil, s.loadErr
 	}
@@ -319,6 +321,61 @@ func TestJobsReadAnotherPodsRecords(t *testing.T) {
 	jobs.Reach(context.Background(), mine.ID)
 	if twice := await(t, jobs, mine.ID, "succeeded").Reached; twice != reached {
 		t.Fatalf("reached twice: %q then %q", reached, twice)
+	}
+}
+
+// A job outlives the request that started it: cancelling the caller's context does not cancel the work.
+func TestAJobOutlivesTheRequestThatStartedIt(t *testing.T) {
+	inputs, _ := jobInputs(newJobRecords())
+	jobs := NewJobs(context.Background(), inputs)
+	request, cancel := context.WithCancel(context.Background())
+	release := make(chan struct{})
+	started, err := jobs.Start(request, "reconcile", "gw", "sam@swhurl.com", nil,
+		func(ctx context.Context, _ func(string)) (string, error) {
+			<-release
+			return "", ctx.Err()
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	close(release)
+	if ended := await(t, jobs, started.ID, "succeeded"); ended.State != "succeeded" {
+		t.Fatalf("job %+v", ended)
+	}
+}
+
+// Another pod's records are read again only while one this registry remembers is running, and a record it never
+// loaded is not adopted: its id may be this pod's next.
+func TestJobsReadAgainOnlyARunningRecordTheyRemember(t *testing.T) {
+	store := newJobRecords()
+	store.records[7] = *recordOf(pages.Job{ID: 7, Action: "reconcile", Unit: "gw", Identity: "x",
+		Started: time.Now(), State: "succeeded", Owner: "other-pod"}, nil)
+	inputs, _ := jobInputs(store)
+	jobs := NewJobs(context.Background(), inputs)
+	store.mu.Lock()
+	store.records[8] = *recordOf(pages.Job{ID: 8, Action: "reconcile", Unit: "gw2", Identity: "x",
+		Started: time.Now(), State: "running", Owner: "other-pod"}, nil)
+	store.mu.Unlock()
+	if _, known := jobs.Get(context.Background(), 8); known {
+		t.Fatal("a record this registry never loaded was adopted")
+	}
+	if store.loads != 1 {
+		t.Fatalf("the store was read %d times with no remembered job running", store.loads)
+	}
+
+	store = newJobRecords()
+	store.alive["other-pod"] = true
+	store.records[7] = *recordOf(pages.Job{ID: 7, Action: "reconcile", Unit: "gw", Identity: "x",
+		Started: time.Now(), State: "running", Owner: "other-pod"}, nil)
+	inputs, _ = jobInputs(store)
+	jobs = NewJobs(context.Background(), inputs)
+	store.mu.Lock()
+	store.records[7] = *recordOf(pages.Job{ID: 7, Action: "reconcile", Unit: "gw", Identity: "x",
+		Started: time.Now(), State: "running", Owner: "other-pod", Lines: []string{"grew"}}, nil)
+	store.mu.Unlock()
+	if grown, _ := jobs.Get(context.Background(), 7); len(grown.Lines) != 1 {
+		t.Fatalf("a remembered running record was not read again: %+v", grown)
 	}
 }
 

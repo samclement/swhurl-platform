@@ -2,6 +2,33 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The catalogue is the console's, documents and all (9 November 2026)
+
+- **Scope:** `swhurl-v2 console`'s `/catalogue`, §23 step 1: every API and event of one environment, filtered by
+  environment, kind and team, one card per app with what it uses, and one row per offer with its documented routes or
+  its payload's fields and example, who uses it and who could. Each app's own OpenAPI and AsyncAPI documents are read
+  from the pinned tree's offers folder by `adapters/appsource.Describe`; `producer.EmittedEvents` is now the one walk of
+  an AsyncAPI document's send operations, of which `Publications` is the names, and `pages` words and prints what the
+  documents say. Nothing is written and nothing is deployed.
+- **What was verified:** `go test ./...` in `v2/` with byte comparisons of the page's three states against the Python
+  console's own render (`v2/cmd/swhurl-v2/testdata/catalogue*.html`, rendered by `tests/render_console_goldens.py`): the
+  fixture with nothing described, the fixture that keeps both documents beside `orders/staging`, and a filter that
+  leaves nothing; `pages` table tests for the payload rows (`caller.type`, `lines[].item`, an optional parent's fields
+  not required), the schema printed as `json.dumps(indent=2)` prints it, and the group order a kind filter leaves;
+  `adapters/appsource`'s `Describe` for both documents and for what it refuses; `producer.EmittedEvents` for a
+  channel's description, payload schema and first example. `make check-v2` with `api.txt` updated for the new exports,
+  `make check-docs` and `make check`.
+- **Live side-by-side, `/catalogue`:** the Go server (`swhurl-v2 console --dev`, reading the host kubeconfig) and a
+  port-forward of the deployed console served the same cluster at the same moment; the page reports 3 APIs, 4 events
+  and 6 described by their app in both. After normalising the read time, the two differ only where `--dev` differs by
+  design — the identity `operator@localhost (dev)`, the no-token banner, and the change forms it disables — 37,025
+  bytes against 36,683, with no other line different.
+- **One deliberate difference:** a filter link is written as the Python console's Jinja macro wrote it, so the `&`
+  between parameters stays and a value's markup is escaped; a team name that itself contains `&` would render
+  differently. Nothing else is.
+- **What was not:** the page's POST (`/catalogue/{env}/use`, which opens a connection pull request, §23 step 2), the
+  rest of step 1's pages, and the operator's signed-in pass through the console.
+
 ## The console server serves its pages (9 November 2026)
 
 - **Scope:** `swhurl-v2 console`, §23 step 1: the command, the embedded templates and assets, the

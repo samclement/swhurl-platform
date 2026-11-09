@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -344,5 +345,96 @@ func TestTeamsIsByteIdentical(t *testing.T) {
 	if rendered.String() != string(want) {
 		os.WriteFile("/tmp/teams-go.html", rendered.Bytes(), 0o644)
 		t.Fatal("the page differs from the Python console's; wrote /tmp/teams-go.html")
+	}
+}
+
+// The catalogue's documents, as test_console.py's ConnectionsTests states them: orders documents its API's one route
+// and the payload of the event it publishes.
+const (
+	catalogueOpenAPI  = `{"openapi": "3.1.0", "info": {"title": "orders", "description": "Create and read orders"}, "paths": {"/orders/{id}": {"get": {"summary": "Read one order"}}}}`
+	catalogueAsyncAPI = `asyncapi: 3.0.0
+info: {title: orders, version: 0.1.0}
+channels:
+  created:
+    address: created
+    description: An order was <b>accepted</b>
+    messages:
+      created:
+        payload: {type: object, required: [id], properties: {id: {type: string}}}
+        examples: [{payload: {id: o-1}}]
+operations:
+  sendCreated: {action: send, channel: {$ref: '#/channels/created'}}
+`
+)
+
+// catalogueRows is the fixture's four instances: orders in both environments, reports that calls it, and a worker
+// that receives its event.
+func catalogueRows() []pages.AppRow {
+	teams := map[string]string{"orders": "payments", "reports": "<b>insights", "job": "payments"}
+	return []pages.AppRow{
+		{Instance: pages.Instance{App: "orders", Env: "staging"}, Teams: teams, Inventory: &pages.Inventory{
+			Team: "payments", Kind: "web", Port: 9000, Hosts: []string{"staging-orders.homelab.swhurl.com"},
+			Address: "http://orders.orders-staging.svc.cluster.local:9000",
+			API:     "https://staging-orders.homelab.swhurl.com/openapi.json", Offers: "abc1234",
+			Callers: []string{"reports"}, Publishes: []string{"created", "paid"},
+			Connections: []pages.Connection{{Role: "publishes", Event: "created"}, {Role: "publishes", Event: "paid"},
+				{Role: "reaches", Host: "api.stripe.com:443"},
+				{Role: "called-by", App: "reports", Outcome: "connected"},
+				{Role: "subscriber", App: "job", Event: "created", Outcome: "connected"}}}},
+		{Instance: pages.Instance{App: "orders", Env: "prod"}, Teams: teams, Inventory: &pages.Inventory{
+			Team: "payments", Kind: "web", Port: 9000,
+			Address:     "http://orders.orders-prod.svc.cluster.local:9000",
+			API:         "http://orders.orders-prod.svc.cluster.local:9000/openapi.json",
+			Publishes:   []string{"created", "paid"},
+			Connections: []pages.Connection{{Role: "publishes", Event: "created"}, {Role: "publishes", Event: "paid"}}}},
+		{Instance: pages.Instance{App: "reports", Env: "staging"}, Teams: teams, Inventory: &pages.Inventory{
+			Team: "<b>insights", Kind: "web", Port: 8080,
+			Address: "http://reports.reports-staging.svc.cluster.local:8080", Calls: []string{"orders"},
+			Connections: []pages.Connection{{Role: "calls", App: "orders", Outcome: "connected"}}}},
+		{Instance: pages.Instance{App: "job", Env: "staging"}, Teams: teams, Inventory: &pages.Inventory{
+			Team: "payments", Kind: "worker", Subscriptions: []string{"orders.created"},
+			Connections: []pages.Connection{{Role: "subscribes", App: "orders", Event: "created", Outcome: "connected"}}}},
+	}
+}
+
+// The Catalogue page renders the same bytes as the Python console's in each of its states: nothing described, the
+// fixture's own documents read, and a filter that leaves nothing. testdata/catalogue*.html are the Python console's
+// answers, rendered by tests/render_console_goldens.py.
+func TestCatalogueIsByteIdentical(t *testing.T) {
+	server, err := newConsoleServer(consoleConfig{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := pages.Site{Domain: "homelab.swhurl.com", Owner: "samclement"}
+	tree := map[string][]byte{
+		"v2-apps/instances/orders/staging/offers/openapi.json":  []byte(catalogueOpenAPI),
+		"v2-apps/instances/orders/staging/offers/asyncapi.yaml": []byte(catalogueAsyncAPI),
+	}
+	rows := catalogueRows()
+	for _, one := range []struct {
+		golden, refresh string
+		input           pages.CatalogueInput
+	}{
+		{"catalogue.html", "/catalogue", pages.CatalogueInput{Rows: appsRows(t), Site: site}},
+		{"catalogue-described.html", "/catalogue", pages.CatalogueInput{Rows: rows, Site: site,
+			Offers: orchestration.ConsoleOffers(tree, rows, "staging")}},
+		{"catalogue-empty.html", "/catalogue?env=prod&kind=event&team=nobody", pages.CatalogueInput{Rows: rows,
+			Env: "prod", Kind: "event", Team: "nobody", Site: site, Offers: orchestration.ConsoleOffers(tree, rows, "prod")}},
+	} {
+		data := catalogueData{shell: shell{Title: "Catalogue", Path: "/catalogue", Identity: "sam@swhurl.com", ReadAt: "09:43",
+			RefreshURL: one.refresh, Assets: "92d0885d31c0"}, CataloguePage: pages.CataloguePageOf(one.input)}
+		var rendered bytes.Buffer
+		if err := server.templates["catalogue.html"].ExecuteTemplate(&rendered, "base", data); err != nil {
+			t.Fatal(err)
+		}
+		want, err := os.ReadFile("testdata/" + one.golden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rendered.String() != string(want) {
+			written := "/tmp/" + strings.TrimSuffix(one.golden, ".html") + "-go.html"
+			os.WriteFile(written, rendered.Bytes(), 0o644)
+			t.Fatalf("%s differs from the Python console's; wrote %s", one.golden, written)
+		}
 	}
 }

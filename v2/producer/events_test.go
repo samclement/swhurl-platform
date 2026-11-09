@@ -56,3 +56,34 @@ func TestPythonBooleanEventAddressText(t *testing.T) {
 		t.Fatal(pubs, err)
 	}
 }
+
+// What a document says about an event is what a catalogue shows: its description, its payload schema and its first
+// example, read from the same walk that decides what it publishes.
+func TestEmittedDescriptions(t *testing.T) {
+	doc := Object{{"asyncapi", "3.0.0"},
+		{"channels", Object{{"created", Object{{"address", "created"}, {"description", "An order was accepted"},
+			{"messages", Object{{"created", Object{{"summary", "ignored"},
+				{"payload", Object{{"$ref", "#/components/schemas/order"}}},
+				{"examples", []any{Object{{"payload", Object{{"id", "o-1"}}}}}}}}}}}}}},
+		{"components", Object{{"schemas", Object{{"order", Object{{"type", "object"}}}}}}},
+		{"operations", Object{{"send", send("#/channels/created")}}}}
+	emitted, err := EmittedEvents(doc, "events.yaml")
+	if err != nil || len(emitted) != 1 {
+		t.Fatal(emitted, err)
+	}
+	found := emitted[0]
+	if found.Name != "created" || found.Description != "An order was accepted" {
+		t.Fatalf("%#v", found)
+	}
+	if payload, ok := found.Payload.(Object); !ok || payload.Get("type") != "object" {
+		t.Fatalf("payload = %#v", found.Payload)
+	}
+	if example, ok := found.Example.(Object); !ok || example.Get("id") != "o-1" {
+		t.Fatalf("example = %#v", found.Example)
+	}
+	// A message's summary describes an event whose channel says nothing; without either, the description is empty.
+	doc[1] = Field{"channels", Object{{"created", Object{{"messages", Object{{"created", Object{{"summary", "Orders"}}}}}}}}}
+	if emitted, err = EmittedEvents(doc, "events.yaml"); err != nil || emitted[0].Description != "Orders" {
+		t.Fatal(emitted, err)
+	}
+}

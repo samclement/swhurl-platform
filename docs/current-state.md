@@ -4,7 +4,7 @@ What has been verified on the live cluster, and when: current facts first, then 
 
 ## The New app repository is Go's (9 November 2026)
 
-- **Scope:** §23 step 3, uncommitted at the time of writing. `swhurl-v2 app-repo --app NAME --type TYPE [--stack S]
+- **Scope:** §23 step 3, on `58b09ca0`. `swhurl-v2 app-repo --app NAME --type TYPE [--stack S]
   --set NAME=VALUE... --requested-by IDENTITY [--repository OWNER/REPO] [--owner OWNER] [--hook-host HOST]
   [--contract FILE] [--resume] [--dry-run]` reads `v2/contract/stacks.json`, refuses a name that is not a DNS label
   (or `notify`) and a type or stack the catalogue does not state, reads the stack's `copier.yml` at its pinned revision
@@ -19,7 +19,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   tokens in its environment (`CONSOLE_TOKEN`, `CONSOLE_REPO`, `APP_REPOS_TOKEN`, `IMAGE_WEBHOOK_TOKEN`).
 - **Offline:** `make check-v2` (Go tests for the Copier adapter's questions and refusals, the GitHub write port's
   contract, the use case's create/resume/dry-run/seed/timeout/webhook paths, the CLI's argv and token environment, and
-  the registry the command reads), `make test` (467 Python tests), `make check`, `make check-docs`. `archtest/api.txt` is
+  the registry the command reads), `make test` (469 Python tests), `make check`, `make check-docs`. `archtest/api.txt` is
   regenerated for the intended API (`adapters/copier`, `github.RepositoryWriter`, `orchestration.AppRepo*`), and the
   `no-subprocess` and `stdlib-only` allowlists name `adapters/copier` with the reason.
 - **Not exercised:** the live creation from the deployed console (a throwaway repository, its image webhook and its

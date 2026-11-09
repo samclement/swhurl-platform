@@ -64,6 +64,21 @@ func (s *jobRecords) Alive(_ context.Context, owner string) (bool, error) {
 	return s.alive[owner], nil
 }
 
+// saved is every save the store received, oldest first.
+func (s *jobRecords) saved() []map[int]*string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.saves)
+}
+
+// holds is whether the store still holds one job's record.
+func (s *jobRecords) holds(id int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, known := s.records[id]
+	return known
+}
+
 // kept is the record the store holds for one job, decoded.
 func (s *jobRecords) kept(t *testing.T, id int) pages.Job {
 	t.Helper()
@@ -80,12 +95,32 @@ func (s *jobRecords) kept(t *testing.T, id int) pages.Job {
 	return job
 }
 
+// auditLog is the registry's audit lines, read while a job may still be writing them.
+type auditLog struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+// add keeps one line.
+func (a *auditLog) add(line string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.lines = append(a.lines, line)
+}
+
+// all is the lines so far.
+func (a *auditLog) all() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.lines)
+}
+
 // jobInputs is a registry with a fixed clock, a real pause and its audit lines collected.
-func jobInputs(store *jobRecords) (JobsInputs, *[]string) {
-	audit := &[]string{}
+func jobInputs(store *jobRecords) (JobsInputs, *auditLog) {
+	audit := &auditLog{}
 	now := time.Date(2026, time.November, 9, 12, 0, 0, 0, time.UTC)
 	return JobsInputs{Store: store, Owner: "console-pod", Now: func() time.Time { return now },
-		Sleep: time.Sleep, Audit: func(line string) { *audit = append(*audit, line) }}, audit
+		Sleep: time.Sleep, Audit: audit.add}, audit
 }
 
 // await is one job at the state a test waits for.
@@ -130,8 +165,9 @@ func TestJobsRunOneJobPerTargetAndRecordItsLines(t *testing.T) {
 	if kept := store.kept(t, 1); kept.State != "succeeded" || len(kept.Lines) != 2 || kept.Owner != "console-pod" {
 		t.Fatalf("record %+v", kept)
 	}
-	if len(*audit) != 2 || !strings.HasSuffix((*audit)[1], "succeeded (job 1) https://github.com/owner/repo/pull/42") {
-		t.Fatalf("audit %q", *audit)
+	lines := audit.all()
+	if len(lines) != 2 || !strings.HasSuffix(lines[1], "succeeded (job 1) https://github.com/owner/repo/pull/42") {
+		t.Fatalf("audit %q", lines)
 	}
 }
 
@@ -151,12 +187,14 @@ func TestAJobsErrorIsItsLastLine(t *testing.T) {
 	if failed.Lines[len(failed.Lines)-1] != "[ERROR] Kustomization gw reconciliation failed: health check failed" {
 		t.Fatalf("lines %q", failed.Lines)
 	}
-	if !strings.HasPrefix((*audit)[len(*audit)-1], "[ERROR]") {
-		t.Fatalf("audit %q", *audit)
+	lines := audit.all()
+	if !strings.HasPrefix(lines[len(lines)-1], "[ERROR]") {
+		t.Fatalf("audit %q", lines)
 	}
 }
 
-// A record keeps the newest jobKept jobs and deletes the ones beyond it.
+// A record keeps the newest jobKept jobs and deletes the ones beyond it: the oldest leaves the store when the new
+// job's own record is written, in the same change.
 func TestJobsKeepTheNewestRecordsOnly(t *testing.T) {
 	store := newJobRecords()
 	for id := 1; id <= jobKept; id++ {
@@ -165,13 +203,22 @@ func TestJobsKeepTheNewestRecordsOnly(t *testing.T) {
 	}
 	inputs, _ := jobInputs(store)
 	jobs := NewJobs(context.Background(), inputs)
-	if _, err := jobs.Start(context.Background(), "reconcile", "gw", "sam@swhurl.com", nil,
-		func(context.Context, func(string)) (string, error) { return "", nil }); err != nil {
+	started, err := jobs.Start(context.Background(), "reconcile", "gw", "sam@swhurl.com", nil,
+		func(context.Context, func(string)) (string, error) { return "", nil })
+	if err != nil {
 		t.Fatal(err)
 	}
-	last := store.saves[len(store.saves)-1]
-	if raw, deleting := last[1]; !deleting || raw != nil {
-		t.Fatalf("the oldest record was not deleted: %v", last)
+	await(t, jobs, started.ID, "succeeded")
+	saves := store.saved()
+	deleted := slices.ContainsFunc(saves, func(save map[int]*string) bool {
+		raw, deleting := save[1]
+		return deleting && raw == nil
+	})
+	if !deleted || store.holds(1) {
+		t.Fatalf("the oldest record was not deleted: %v", saves)
+	}
+	if !store.holds(started.ID) || !store.holds(jobKept) {
+		t.Fatalf("the newest records were not kept: %v", saves)
 	}
 }
 
@@ -233,8 +280,9 @@ func TestJobsSettleAJobWhosePodIsGone(t *testing.T) {
 	if running, _ := jobs.Get(context.Background(), 2); running.State != "running" {
 		t.Fatalf("a job whose pod is alive is %s", running.State)
 	}
-	if len(*audit) != 1 || !strings.Contains((*audit)[0], "interrupted (job 1)") {
-		t.Fatalf("audit %q", *audit)
+	lines := audit.all()
+	if len(lines) != 1 || !strings.Contains(lines[0], "interrupted (job 1)") {
+		t.Fatalf("audit %q", lines)
 	}
 }
 

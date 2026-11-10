@@ -80,6 +80,18 @@ func TestConsoleFormChange(t *testing.T) {
 		{name: "a promotion needs the image reviewed", kind: "promote", fields: form(map[string]string{}),
 			problem: "refresh the staging app page and review the image before promotion"},
 		{name: "a promotion", kind: "promote", fields: form(map[string]string{"image": "ghcr.io/x/y:1-abcdefg@sha256:abc"})},
+		{name: "a new team", kind: "team-add", fields: form(map[string]string{"description": "  The   shop  team "}),
+			want: pages.ConsoleFormFlags{Description: "The shop team"}},
+		{name: "a renamed team", kind: "team-edit", fields: form(map[string]string{"rename": "store"}),
+			want: pages.ConsoleFormFlags{Rename: "store"}},
+		{name: "the same name is no rename", kind: "team-edit", fields: form(map[string]string{"rename": "demo"}),
+			want: pages.ConsoleFormFlags{}},
+		{name: "a new name that is not one", kind: "team-edit", fields: form(map[string]string{"rename": "St ore"}),
+			problem: "new name: lowercase letters, digits and hyphens, at most 40 characters"},
+		{name: "a channel", kind: "team-channel-set", fields: form(map[string]string{"transport": "", "address": " https://ntfy.sh/x "}),
+			want: pages.ConsoleFormFlags{Transport: "ntfy", Address: "https://ntfy.sh/x"}},
+		{name: "a channel removed", kind: "team-channel-remove", fields: form(map[string]string{})},
+		{name: "a team removed", kind: "team-remove", fields: form(map[string]string{})},
 	}
 	for _, one := range cases {
 		t.Run(one.name, func(t *testing.T) {

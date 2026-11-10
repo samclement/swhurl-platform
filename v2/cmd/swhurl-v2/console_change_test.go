@@ -27,6 +27,10 @@ func TestAppFormsAnswerTheirRefusals(t *testing.T) {
 		{name: "noSuchInstance", path: "/apps/demo/nope/flags/f", status: http.StatusNotFound, want: "No such app instance."},
 		{name: "the catalogue needs an app", path: "/catalogue/staging/use", status: http.StatusBadRequest,
 			want: "Choose the app that will use it."},
+		{name: "a team needs its token", path: "/teams/add", status: http.StatusConflict,
+			want: "No GitHub token is configured"},
+		{name: "so does a channel", path: "/team-channel/set", status: http.StatusConflict,
+			want: "No GitHub token is configured"},
 	}
 	for _, one := range cases {
 		t.Run(one.name, func(t *testing.T) {

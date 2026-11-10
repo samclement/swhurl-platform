@@ -387,6 +387,8 @@ func (s *consoleServer) routes() *http.ServeMux {
 	mux.HandleFunc("GET /units/{unit}", s.unit)
 	mux.HandleFunc("POST /units/{unit}/{action}", s.startUnit)
 	mux.HandleFunc("GET /teams", s.teams)
+	mux.HandleFunc("POST /teams/{action}", s.changeTeam)
+	mux.HandleFunc("POST /team-channel/{action}", s.changeChannel)
 	mux.HandleFunc("GET /activity", s.activity)
 	mux.HandleFunc("GET /new", s.newApp)
 	mux.HandleFunc("GET /apps/{app}/{env}", s.app)

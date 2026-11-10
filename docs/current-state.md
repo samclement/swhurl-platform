@@ -2,6 +2,20 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## A team and its channel are forms the Go console answers (9 November 2026)
+
+- **Scope:** §23 step 4's fourth landing: `POST /teams/{action}` (add, edit, remove) and
+  `POST /team-channel/{action}` (set, remove). `pages.ConsoleTeamChange` reads the form: the team's name and its new
+  name are DNS labels (the registry and the branch carry them), a description collapses its whitespace, an unchanged
+  name is no rename, and the channel's transport defaults to `ntfy`. A refusal is the Teams page again with the
+  sentence on it, because that is where the button was. A channel's address is never an argument: it reaches
+  `swhurl-v2 team` on the command's standard input and the job's redactor at the same moment, so it cannot appear in a
+  process listing, a page or a log line — the job's lines are the command's own.
+- **Offline:** `make check-v2` passed with eight more table cases in `pages` (a cleaned description, a rename, a name
+  that is its own, an invalid new name, a channel with and without a transport, a removal) and two handler cases (a
+  team and a channel without a token answer 409). `make check`'s repo, apps, otel, lint, codegraph, docs and Python
+  suite passed.
+
 ## An app's forms are the Go console's (9 November 2026)
 
 - **Scope:** §23 step 4's third landing: three more of the eight forms. `POST /apps/{app}/{env}/{change}` serves scale,

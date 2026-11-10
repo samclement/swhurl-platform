@@ -40,7 +40,7 @@
     <p class="{{if not .Description}}muted{{end}}">{{if .Description}}{{.Description}}{{else}}No description yet.{{end}}</p>
     
     <p class="notifies">{{if .Channel}}<span class="pill ok" title="Gets a copy of the deployment and health messages of this team's apps">notification channel · {{.Transport}}</span>{{else}}<span class="muted">No notification channel: messages about its apps go to the platform topic only.</span>{{end}}</p>
-    {{if .Job}}<p class="muted">{{template "job" .Job.State}} Last change: <a href="/jobs/{{.Job.ID}}">{{.Job.Action}} {{.Job.State}}</a>{{if .Job.Link}} · <a {{href .Job.Link}}>pull request {{template "icon" "external"}}</a>{{end}}</p>{{end}}
+    {{if .Job}}<p class="muted">{{template "job" .Job}} Last change: <a href="/jobs/{{.Job.ID}}">{{.Job.Action}} {{.Job.State}}</a>{{if .Job.Link}} · <a {{href .Job.Link}}>pull request {{template "icon" "external"}}</a>{{end}}</p>{{end}}
     <details class="act" name="team-form" style="--slot: 0">
       <summary class="button">{{template "icon" "edit"}} Edit</summary>
       <form class="wizard" method="post" action="/teams/edit">

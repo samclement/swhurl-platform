@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -114,13 +116,18 @@ func (s *consoleServer) newAppWork(chosen pages.NewAppChoices, finishing bool, i
 	return func(ctx context.Context, line func(string)) (string, error) {
 		opened := ""
 		var refusal strings.Builder
+		contract, err := read.contractFile()
+		if err != nil {
+			return "", err
+		}
+		defer os.Remove(contract)
 		c := s.command(&refusal, func(text string) {
 			if url, isPull := strings.CutPrefix(text, "Opened "); isPull {
 				opened = strings.TrimSpace(url)
 			}
 			line(text)
-		}, read.tree)
-		one := request{command: "app-repo", contractPath: "v2/contract/stacks.json", appType: chosen.Type,
+		})
+		one := request{command: "app-repo", contractPath: contract, appType: chosen.Type,
 			stack: chosen.Stack, resume: finishing, hookHost: read.hookHost,
 			spec: &changeSpec{app: chosen.Name, description: chosen.Description, settings: chosen.Flags,
 				requestedBy: identity, repository: s.repository}}
@@ -140,6 +147,24 @@ type newAppRead struct {
 	connectable pages.Connectable
 	teamsError  string
 	hookHost    string
+}
+
+// contractFile writes the pinned commit's stack catalogue to a file of its own: the command that renders a template
+// reads the catalogue the pages show, not the one the image happens to carry, and reads its other files from disk.
+func (read newAppRead) contractFile() (string, error) {
+	data, known := read.tree["v2/contract/stacks.json"]
+	if !known {
+		return "", errors.New("v2/contract/stacks.json: not in the pinned commit")
+	}
+	file, err := os.CreateTemp("", "stacks-*.json")
+	if err != nil {
+		return "", fmt.Errorf("io: working folder: cannot create one")
+	}
+	defer file.Close()
+	if _, err := file.Write(data); err != nil {
+		return "", fmt.Errorf("io: working folder: cannot write the catalogue")
+	}
+	return file.Name(), nil
 }
 
 // newAppRead reads the pinned commit once for one form.

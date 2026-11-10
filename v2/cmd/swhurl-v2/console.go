@@ -233,8 +233,14 @@ func (s *consoleServer) startJobs(config consoleConfig) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// A console started from a checkout keeps its jobs in a record of its own: the pod's record is the one Activity
+	// shows to the operator, and a developer's run must not write over, or take an id from, the pod's.
+	record := kube.JobRecords{Data: config.Data, Pods: config.Reader}
+	if config.Dev {
+		record.Name = "console-jobs-dev"
+	}
 	s.jobs = orchestration.NewJobs(ctx, orchestration.JobsInputs{
-		Store: kube.JobRecords{Data: config.Data, Pods: config.Reader}, Owner: config.Owner, Now: config.Now,
+		Store: record, Owner: config.Owner, Now: config.Now,
 		Sleep: time.Sleep, Redact: s.redact.Redact, Audit: audit})
 	s.live = s.jobs
 }

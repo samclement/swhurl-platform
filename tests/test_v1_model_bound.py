@@ -1,6 +1,6 @@
 """The v1 records model (tools/swhurl/apps/model) only shrinks.
 
-It reads no v2 record and leaves with the console port (docs/v2-status.md#remaining-python), so until then
+It reads no v2 record and leaves with its remaining importers (docs/v2-status.md#remaining-python), so until then
 nothing new may import it and it may not grow. Both pins are exact: a change that drops an importer or a
 line lowers the pin in the same commit, so the room cannot be used again.
 """
@@ -14,7 +14,6 @@ LINES = 1541
 IMPORTERS = {
     'tests/full_settings.py',
     'tests/test_app_relations.py',
-    'tests/test_console_changes.py',
     'tests/test_interface.py',
     'tools/swhurl/apps/connections.py',
     'tools/swhurl/apps/declaration.py',
@@ -22,9 +21,7 @@ IMPORTERS = {
     'tools/swhurl/apps/offers.py',
     'tools/swhurl/apps/promotion.py',
     'tools/swhurl/apps/release.py',
-    'tools/swhurl/console/changes.py',
     'tools/swhurl/imagehooks.py',
-    'tools/swhurl/console/proposal.py',
     'tools/swhurl/livetests/team_scenario.py',
 }
 

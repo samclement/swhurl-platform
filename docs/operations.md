@@ -218,13 +218,13 @@ Removal leaves the incident file and log in place. To test delivery without touc
 
 ## Connectivity probe
 
-The host timer records whether the path to the internet works, once a minute, as one NDJSON line per run in `/var/log/swhurl-platform/connectivity-probe.log` (collected by ClickStack, `service.name` = `connectivity-probe`). The line is prefixed `[OK]` or `[BAD]` for the severity parser and carries one timing per layer, so the layer that broke is named by the data instead of guessed after the fact: `gw_icmp` (WiFi link and router), `resolver_dns` plus `resolver_rcode` (the host's own resolver, which every service uses), `wan_dns` plus `wan_dns_rcode` (DNS over TLS to 1.1.1.1:853, past the router), `wan_icmp` and `tcp443` (the WAN without DNS). A layer that does not answer inside its timeout is `null`.
+The host timer records whether the path to the internet works, once a minute, as one NDJSON line per run in `/var/log/swhurl-platform/connectivity-probe.log` (collected by ClickStack, `service.name` = `connectivity-probe`). The line is prefixed `[INFO]` or `[ERROR]` for the severity parser — the same texts the other host timers use, so `SeverityText='error'` covers the probe — and carries one timing per layer, so the layer that broke is named by the data instead of guessed after the fact: `gw_icmp` (WiFi link and router), `resolver_dns` plus `resolver_rcode` (the host's own resolver, which every service uses), `wan_dns` plus `wan_dns_rcode` (DNS over TLS to 1.1.1.1:853, past the router), `wan_icmp` and `tcp443` (the WAN without DNS). A layer that does not answer inside its timeout is `null`, and `ok` in the body repeats the prefix as a flag.
 
 `ok` is true when `resolver_dns` and `tcp443` answered: those are the two things this host's workloads depend on. The ICMP probes and `wan_dns` only localise a failure, because a firewall may drop ICMP or DNS-over-TLS legitimately; one of them going null on its own is worth reading but is not an outage.
 
 The router answers **every** UDP/53 query whatever its destination address (measured 10 November 2026: a query sent to TEST-NET `192.0.2.1` is answered), so a plain query to `1.1.1.1` tests the router and not the WAN. That is why `wan_dns` uses DNS over TLS, which also verifies the peer is really Cloudflare rather than a local proxy. Both DNS probes ask for a random label in `swhurl.com`, so an answer cannot come from a cache and `rcode` 3 (NXDOMAIN) proves the authority was reached.
 
-The probe exits 0 even when layers fail; `[BAD]` is the signal, and a failed unit would add systemd noise to the incident it is recording. Install or remove it in your own terminal:
+The probe exits 0 even when layers fail; `[ERROR]` is the signal, and a failed unit would add systemd noise to the incident it is recording. Install or remove it in your own terminal:
 
 ```bash
 make host-probe

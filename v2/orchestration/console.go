@@ -184,6 +184,9 @@ func archivePath(name string, prefixed bool) (string, bool) {
 type ConsoleSource interface {
 	Revision(ctx context.Context) (string, error)
 	Tree(ctx context.Context, revision string) (map[string][]byte, error)
+	// Files is the regular files among paths at one commit, without the rest of its tree. A path is missing from the
+	// answer only when the commit's whole tree was known not to hold it; anything less is an error.
+	Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)
 }
 
 // ConsoleBundle serves one source's trees, keeping at most 60 commits' bytes in the order they were read.
@@ -204,10 +207,16 @@ func (b *ConsoleBundle) Revision(ctx context.Context) (string, error) {
 
 // Cached is whether one commit's tree is already in hand: a page's bounded reads are spent on the ones it must fetch.
 func (b *ConsoleBundle) Cached(revision string) bool {
+	_, found := b.held(revision)
+	return found
+}
+
+// held is one commit's tree when it is in hand, without reading it.
+func (b *ConsoleBundle) held(revision string) (map[string][]byte, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	_, found := b.trees[revision]
-	return found
+	found, ok := b.trees[revision]
+	return found, ok
 }
 
 // Tree is one commit's selected files, from the cache or read once. A failed read is never kept.
@@ -389,7 +398,8 @@ func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now f
 	return pages.ChecksOf(checks), nil
 }
 
-// ConsoleSourceOf is the adapter-backed console source: GitHub's tarball at main's commit.
+// ConsoleSourceOf is the adapter-backed console source: GitHub's tarball at main's commit, and one commit's files
+// by blob.
 type ConsoleSourceOf struct {
 	Console    github.Console
 	Repository string
@@ -412,4 +422,9 @@ func (s ConsoleSourceOf) Tree(ctx context.Context, revision string) (map[string]
 		return nil, err
 	}
 	return files, nil
+}
+
+// Files reads the paths at one commit from its complete tree listing, and nothing else: no tarball, no other commit.
+func (s ConsoleSourceOf) Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error) {
+	return s.Console.CommitFiles(ctx, s.Repository, s.Token, revision, paths)
 }

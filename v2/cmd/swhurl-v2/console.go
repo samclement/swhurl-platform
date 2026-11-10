@@ -127,6 +127,7 @@ type consoleConfig struct {
 // consoleServer is one running console: the pinned tree, the cluster reader and the templates.
 type consoleServer struct {
 	bundle     *orchestration.ConsoleBundle
+	evidence   *orchestration.ConsoleEvidence // merge commits' renders for Activity, read through bundle's source
 	reader     kube.Reader
 	writer     kube.Writer
 	collector  kube.Collector
@@ -199,11 +200,10 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 		if snapshots == nil {
 			snapshots = git.New()
 		}
-		server.bundle = &orchestration.ConsoleBundle{Source: localConsole{snapshots: snapshots, root: "."}}
+		server.pin(localConsole{snapshots: snapshots, root: "."})
 		server.identity = devIdentity
 	} else {
-		server.bundle = &orchestration.ConsoleBundle{Source: orchestration.ConsoleSourceOf{
-			Console: server.github, Repository: config.Repository, Token: config.Token}}
+		server.pin(orchestration.ConsoleSourceOf{Console: server.github, Repository: config.Repository, Token: config.Token})
 	}
 	static, err := fs.Sub(consoleFiles, "console/static")
 	if err != nil {
@@ -218,6 +218,13 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	}
 	server.startJobs(config)
 	return server, nil
+}
+
+// pin is the source every tree this server reads comes from: main's whole trees in bundle, and beside them the
+// merge commits' evidence Activity follows a change by, read through the same source.
+func (s *consoleServer) pin(source orchestration.ConsoleSource) {
+	s.bundle = &orchestration.ConsoleBundle{Source: source}
+	s.evidence = &orchestration.ConsoleEvidence{Bundle: s.bundle}
 }
 
 // startJobs gives the server the registry of jobs it runs: the record its pod keeps and this process's own, so a job
@@ -261,6 +268,21 @@ func (l localConsole) Tree(_ context.Context, revision string) (map[string][]byt
 		return nil, err
 	}
 	return orchestration.FilterTarball(archive, false)
+}
+
+// Files is the paths at one commit of the checkout, from the same archive Tree reads: nothing reaches GitHub.
+func (l localConsole) Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error) {
+	tree, err := l.Tree(ctx, revision)
+	if err != nil {
+		return nil, err
+	}
+	found := map[string][]byte{}
+	for _, file := range paths {
+		if body, held := tree[file]; held {
+			found[file] = body
+		}
+	}
+	return found, nil
 }
 
 // assetHash names the static files, so a new console image is never served with an old stylesheet from a cache.

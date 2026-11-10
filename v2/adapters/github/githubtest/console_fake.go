@@ -2,6 +2,7 @@ package githubtest
 
 import (
 	"context"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -15,8 +16,9 @@ import (
 type ConsoleFake struct {
 	Commit   string
 	Files    map[string]string
-	AppFiles map[string]string // another repository's file at its default branch, by "owner/repo/path"
-	Public   map[string]string // a public repository's file at a commit, by "owner/repo@commit/path"
+	History  map[string]map[string]string // files at commits other than Commit, by commit and then path
+	AppFiles map[string]string            // another repository's file at its default branch, by "owner/repo/path"
+	Public   map[string]string            // a public repository's file at a commit, by "owner/repo@commit/path"
 	Archive  []byte
 	// Changed and Contains are the comparison's answer: the paths after the base, and whether head contains it.
 	Changed  []string
@@ -89,6 +91,34 @@ func (f *ConsoleFake) Tarball(_ context.Context, repository, token, revision str
 		return nil, &github.Error{Reason: "invalid tarball reference"}
 	}
 	return slices.Clone(f.Archive), nil
+}
+
+// CommitFiles answers the requested paths that Files (at Commit) or History (at an older commit) holds. A commit it
+// knows neither way is GitHub's 404, an error: absence is only ever a path missing from a commit it has.
+func (f *ConsoleFake) CommitFiles(_ context.Context, repository, token, revision string, paths []string) (map[string][]byte, error) {
+	if err := validate(repository, token); err != nil {
+		return nil, err
+	}
+	if !filesReference(revision, paths) {
+		return nil, &github.Error{Reason: "invalid files reference"}
+	}
+	if err := f.read("files " + revision); err != nil {
+		return nil, err
+	}
+	files, known := f.History[revision]
+	if revision == f.Commit {
+		files, known = f.Files, true
+	}
+	if !known {
+		return nil, &github.Error{Reason: "HTTP 404"}
+	}
+	found := map[string][]byte{}
+	for _, file := range paths {
+		if body, held := files[file]; held {
+			found[file] = []byte(body)
+		}
+	}
+	return found, nil
 }
 
 func (f *ConsoleFake) Compare(_ context.Context, repository, token, from, to string) ([]string, bool, error) {
@@ -209,6 +239,23 @@ func contractContents(t *testing.T, ctx context.Context, console github.Console,
 	if tarball, err := console.Tarball(ctx, "owner/repo", "token", want.Revision); err != nil || len(tarball) == 0 {
 		t.Fatalf("tarball: %d bytes, %v", len(tarball), err)
 	}
+	contractCommitFiles(t, ctx, console, want)
+}
+
+// A commit's files are the requested paths it holds; one it lacks is absent. A commit GitHub does not have, a
+// moving name or a path that leaves the tree is an error, never absence.
+func contractCommitFiles(t *testing.T, ctx context.Context, console github.Console, want ConsoleFixture) {
+	t.Helper()
+	files, err := console.CommitFiles(ctx, "owner/repo", "token", want.Revision, []string{want.File, "no/such/file"})
+	if err != nil || len(files) != 1 || string(files[want.File]) != want.Body {
+		t.Fatalf("commit files = %q, %v", files, err)
+	}
+	for name, read := range map[string][2]string{"unknown commit": {strings.Repeat("e", 40), want.File},
+		"moving name": {"main", want.File}, "leaving path": {want.Revision, "../" + want.File}} {
+		if files, err := console.CommitFiles(ctx, "owner/repo", "token", read[0], []string{read[1]}); err == nil || files != nil {
+			t.Fatalf("%s: %q, %v", name, files, err)
+		}
+	}
 }
 
 // An app's declaration is read anonymously, at its repository's default branch, and an absent one is not a failure.
@@ -258,6 +305,18 @@ func contractPulls(t *testing.T, ctx context.Context, console github.Console, wa
 	if err != nil || merged.State != "merged" {
 		t.Fatalf("a merged pull request: %#v, %v", merged, err)
 	}
+}
+
+// filesReference is a targeted read the real adapter makes: an immutable commit and paths inside the tree.
+func filesReference(revision string, paths []string) bool {
+	return commitID(revision) && len(paths) > 0 && !slices.ContainsFunc(paths, func(p string) bool {
+		return p == "" || p[0] == '/' || path.Clean(p) != p || strings.HasPrefix(p, "..")
+	})
+}
+
+// commitID is the only revision a targeted read names, as the real adapter checks it.
+func commitID(revision string) bool {
+	return len(revision) == 40 && strings.Trim(revision, "0123456789abcdef") == ""
 }
 
 func validate(repository, token string) error {

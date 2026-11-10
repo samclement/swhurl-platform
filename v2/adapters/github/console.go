@@ -21,6 +21,11 @@ type Console interface {
 	Contents(ctx context.Context, repository, token, revision, path string) (body []byte, found bool, err error)
 	// Tarball is the repository at one commit, as GitHub serves it: a tar archive inside a leading folder.
 	Tarball(ctx context.Context, repository, token, revision string) ([]byte, error)
+	// CommitFiles is the regular files among paths at one commit, read from the commit's complete tree listing and then
+	// each blob once, at most four at a time. A path the complete tree does not hold as a regular file (none, a link
+	// or a submodule) is absent from the answer; a truncated or malformed listing and any failed read is an error,
+	// never absence, and no file is answered then.
+	CommitFiles(ctx context.Context, repository, token, revision string, paths []string) (map[string][]byte, error)
 	// AppFile is one file at another repository's default branch: an app's swhurl.yaml, which the console reads
 	// without a token because app repositories are public. found is false when the repository has no such file.
 	AppFile(ctx context.Context, repository, token, path string) ([]byte, bool, error)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/orchestration"
@@ -93,16 +94,37 @@ type source struct {
 	trees    map[string]map[string][]byte
 	reads    []string
 	err      error
+	mu       sync.Mutex
 }
 
 func (s *source) Revision(context.Context) (string, error) { return s.revision, nil }
 
 func (s *source) Tree(_ context.Context, revision string) (map[string][]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.reads = append(s.reads, revision)
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.trees[revision], nil
+}
+
+// Files answers the paths a known commit's tree holds, and records each read as "files <commit>: <paths>".
+func (s *source) Files(_ context.Context, revision string, paths []string) (map[string][]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reads = append(s.reads, "files "+revision+": "+strings.Join(paths, " "))
+	tree, known := s.trees[revision]
+	if s.err != nil || !known {
+		return nil, errors.Join(s.err, errors.New("no such commit"))
+	}
+	found := map[string][]byte{}
+	for _, file := range paths {
+		if body, held := tree[file]; held {
+			found[file] = body
+		}
+	}
+	return found, nil
 }
 
 // A commit's tree is read once and kept; the oldest goes when the bound is reached, and a failed read is not kept.

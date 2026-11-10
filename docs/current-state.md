@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## A unit action is a POST the Go console answers (9 November 2026)
+
+- **Scope:** §23 step 4, second landing: the first of the eight forms, and the request guards every form needs. Every
+  route is now a method-scoped pattern (`GET /platform`, `POST /units/{unit}/{action}`), so a read cannot be posted to
+  and a form cannot be fetched; a non-GET or non-HEAD request must carry an `Origin` whose host is the request's own
+  (`:authority` under HTTP/2, never `X-Forwarded-Host`), else a 403 in the Python console's words. A unit action is a
+  job: `orchestration.Flux` over the console's one credential, with the browser's answer the console always gave — the
+  `started` fragment where an htmx button was, which re-reads that page in ten seconds, or a 303 to the job's page
+  from a plain form — and a root unit's refusal as the job's last line. `consoleConfig` gained the write port, so the
+  console's own `kube.API` serves the read and the patch. Found and fixed on the way: the unit page was registered at
+  the prefix `/units/`, so it answered 404 for every unit; it is `GET /units/{unit}` now.
+- **Offline:** `make check-v2` passed with the handler tests — a plain form's 303, a button's fragment byte for byte,
+  a root unit's failure line, three refused `Origin`s and an allowed GET, the unit route's own pattern, and a console
+  with no record refusing a form with its reason. `make check`'s repo, apps, otel, lint, codegraph, docs and Python
+  suite passed.
+- **Not exercised live:** the deployed console is still Python and its own `actions.py` still serves these posts; a
+  signed-in click through the Go server is step 4's live proof.
+
 ## The console keeps its own jobs (9 November 2026)
 
 - **Scope:** §23 step 4, first landing: the job lifecycle's store and the drain, before any console form is wired to

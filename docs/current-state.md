@@ -22,9 +22,19 @@ What has been verified on the live cluster, and when: current facts first, then 
   and that no Dockerfile instruction installs `kubectl`; and `test_manifest_policy` names the `console` namespace
   directly instead of importing it from the deleted job store. `v2/cmd/swhurl-v2`'s job fixtures read
   `console-jobs-dev`, which is the record a checkout's console keeps.
-- **Live:** the Validate run built the image and then failed the tooling job on those three tests, so **Deploy the
-  console** was skipped and the pod still runs the Python image: the cutover is in Git and not yet on the cluster. Its
-  browser pass, and the job surviving a pod replacement, are the next gate.
+- **Live:** Validate passed on `e88e8ed2` and its Deploy job pinned `src-f8357ffbe51b71f1` in
+  `platform/console/helmrelease.yaml` (bot commit `60410859`, which pins the same tag for `platform/notify`), and the
+  pod flipped to it: `console-6d587f4695-llvjc` started 20:20Z, Ready, on
+  `ghcr.io/samclement/swhurl-console:src-f8357ffbe51b71f1`, logging `serving the console on http://0.0.0.0:8080
+  (reads as serviceaccount in console)`. Both CronJobs ran to completion on the new image 20:30Z
+  (`console-dashboards-29905710`, `console-notifications-29905710`), so the stale-`CronJob` caveat did not bite;
+  `make flux-reconcile` found every unit at its revision and `make verify-platform` passed.
+  `http://console.homelab.swhurl.com` answers 301 to https and a signed-out https request 302 to Google's consent with
+  the oauth callback, so the sign-in path reaches the proxy intact.
+- **Not exercised:** the signed-in browser pass over the pages, and a job surviving a pod replacement of this Go pod
+  (which wants a real job from the operator's account) — the two gates the cutover leaves. The forms pass below
+  exercised the same handlers from this tree beside the Python console, so what is untested is the deployed pod's own
+  paths, not the handlers.
 
 ## The Go console's forms, exercised live (10 November 2026)
 

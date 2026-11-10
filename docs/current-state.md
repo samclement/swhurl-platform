@@ -2,6 +2,30 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The New app form is the Go console's, with its resume (9 November 2026)
+
+- **Scope:** §23 step 4's fifth and last landing of wiring: `POST /new/repo` and `POST /jobs/{id}/resume`. The form's
+  choices are `pages.NewAppChoose` — a pure decision over the fields and the pinned commit's stack catalogue: the name
+  is a DNS label and is not `notify`, the type must be built with the chosen stack, the team must be registered, v2
+  derives the address so a host is refused, public exposure is not modelled, a worker has no exposure at all, and the
+  connections become `calls=`/`subscriptions=` — and the job's record is the same `new-app` document the Python console
+  kept, so a job cut short before the cutover can still be finished after it (`pages.NewAppFromRecord`, which refuses
+  a record whose choices v2 no longer supports rather than finishing it with them). `POST /jobs/{id}/resume` shares
+  the console's one `resumable` rule with the Activity page's button. `pages.NewAppPage` gained the two ticked lists a
+  refused form shows again.
+- **One command, run in the console's process:** `swhurl-v2 app-repo` renders the pinned template with Copier, creates
+  the public repository with its first commit and webhook, waits for the first image and opens the staging pull
+  request (`--resume` finds the repository instead). Its input file is read from the pinned commit rather than the
+  image's disk, its four tokens come from the console's own fields, and its `Opened` line is the job's link.
+- **Offline:** `make check-v2` passed with 13 table cases for the form (a web app, a chosen exposure, a worker with
+  none, connections, a cleaned description, and eight refusals) each round-tripped through the record, 7 for the
+  record (unusable name, stack and flags, a publication, and a type derived from the answers only when they are
+  exactly one type's) and 4 for the resume guard (a resumable job without tokens answers 409; a running, a failed
+  non-new-app, an unknown and a malformed id answer 404). `make check`'s repo, apps, otel, lint, codegraph, docs and
+  Python suite passed.
+- **Not exercised:** a real repository creation and its pull request, which is a live action, and the refusal page
+  that needs the pinned commit and the cluster. The deployed console is still the Python image.
+
 ## A team and its channel are forms the Go console answers (9 November 2026)
 
 - **Scope:** §23 step 4's fourth landing: `POST /teams/{action}` (add, edit, remove) and

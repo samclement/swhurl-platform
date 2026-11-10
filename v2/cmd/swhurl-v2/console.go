@@ -82,7 +82,8 @@ func (c cli) console(r request) int {
 	server, err := newConsoleServer(consoleConfig{Reader: reader, Collector: collector, Data: data, Writer: writer,
 		Dev: r.dev,
 		Git: c.git, Repository: os.Getenv("CONSOLE_REPO"), Token: realToken(os.Getenv(consoleToken)),
-		AppRepos: realToken(os.Getenv(appReposToken)) != "", NatsSeed: os.Getenv("NATS_SEED"),
+		AppRepos: realToken(os.Getenv(appReposToken)) != "", ReposToken: realToken(os.Getenv(appReposToken)),
+		HookToken: realToken(os.Getenv(appWebhookTokenEnv)), NatsSeed: os.Getenv("NATS_SEED"),
 		NatsURL: os.Getenv("NATS_URL"), Owner: owner, Log: c.out,
 		Secrets: []string{realToken(os.Getenv(consoleToken)), realToken(os.Getenv(appReposToken)),
 			realToken(os.Getenv(appWebhookTokenEnv))}})
@@ -118,6 +119,9 @@ type consoleConfig struct {
 	Owner   string
 	Log     io.Writer
 	Secrets []string
+	// ReposToken creates an app's repository and HookToken signs its image webhook: the two a new app needs, and only
+	// its job reads them.
+	ReposToken, HookToken string
 }
 
 // consoleServer is one running console: the pinned tree, the cluster reader and the templates.
@@ -132,6 +136,8 @@ type consoleServer struct {
 	repository string
 	token      string
 	appRepos   bool
+	reposToken string
+	hookToken  string
 	templates  map[string]*template.Template
 	static     fs.FS
 	assets     string
@@ -173,6 +179,7 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	server := &consoleServer{reader: config.Reader, writer: config.Writer, collector: config.Collector,
 		data: config.Data, now: config.Now,
 		appConsole: github.NewConsole(nil), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
+		reposToken: config.ReposToken, hookToken: config.HookToken,
 		natsSeed: config.NatsSeed, natsURL: config.NatsURL, redact: &jobRedactor{}, log: config.Log,
 		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{},
 		events: consoleEvents{poll: 250 * time.Millisecond, keepAlive: 15 * time.Second}}
@@ -395,6 +402,8 @@ func (s *consoleServer) routes() *http.ServeMux {
 	mux.HandleFunc("POST /apps/{app}/{env}/{change}", s.changeApp)
 	mux.HandleFunc("POST /apps/{app}/{env}/flags/{flag}", s.changeFlag)
 	mux.HandleFunc("POST /catalogue/{env}/use", s.useOffer)
+	mux.HandleFunc("POST /new/repo", s.newRepo)
+	mux.HandleFunc("POST /jobs/{id}/resume", s.resumeJob)
 	mux.HandleFunc("GET /apps/{app}/staging/promotion", s.promotion)
 	mux.HandleFunc("GET /jobs/{id}", s.job)
 	mux.HandleFunc("GET /jobs/{id}/events", s.jobEvents)

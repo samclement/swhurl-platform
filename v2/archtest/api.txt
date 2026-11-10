@@ -1298,6 +1298,7 @@ pages: const ConsoleUnitsRoot = "clusters/home"
 pages: const FinishAppJob = "finish new app"
 pages: const FluxSection = "Flux Kustomizations"
 pages: const NewAppJob = "new app and repository"
+pages: const NewAppRecordKind = "new-app"
 pages: const OtherLayer = "Other"
 pages: const StateFailing = "failing"
 pages: const StateHealthy = "healthy"
@@ -1305,6 +1306,7 @@ pages: const StateStopped = "stopped"
 pages: const StateSuspended = "suspended"
 pages: const StateUnknown = "unknown"
 pages: const StateUpdating = "updating"
+pages: const TeamsRecord = "v2-records/teams.json"
 pages: const ValueAbsent ValueKind = iota
 pages: const ValueArray
 pages: const ValueBool
@@ -1346,6 +1348,10 @@ pages: func (Site) DashboardURL(id string) string
 pages: func (Site) LogsURL(app string) string
 pages: func (Site) RepositoryURL(app string) string
 pages: func (Site) UngrantedURL(instance Instance) string
+pages: func (StackCatalogue) Keys() []string
+pages: func (StackCatalogue) Names() []string
+pages: func (StackCatalogue) Type(key string) (AppType, bool)
+pages: func (StackCatalogue) TypeOf(stack string, answers []NamedValue) (string, error)
 pages: func (StackInfo) Named() string
 pages: func (Stage) Mark() string
 pages: func (Stage) Words() string
@@ -1392,6 +1398,8 @@ pages: func MergeMode(body string) string
 pages: func MergePlan(body string) string
 pages: func MergePlanFor(kind string, changed []string) string
 pages: func Named(app, env string) (Instance, bool)
+pages: func NewAppChoose(fields map[string][]string, catalogue StackCatalogue, teams map[string]TeamInfo, callable, offered map[string]bool) (NewAppChoices, error)
+pages: func NewAppFromRecord(record map[string]any, catalogue StackCatalogue) (NewAppChoices, error)
 pages: func NewAppPageOf(input NewAppInput) NewAppPage
 pages: func ParseConsoleBranch(branch string) (change ConsoleChange, name, env string, ok bool)
 pages: func PendingOf(instance Instance, removing, inGit bool, jobs []Job, pulls []PendingPull, prsError string) Pending
@@ -1416,6 +1424,7 @@ pages: func Took(started, finished time.Time) string
 pages: func TrackOf(job Job, pull *Pull, landed *Progress) Track
 pages: func UnitRowOf(unit Unit, revision string) UnitRow
 pages: func Units(items [][]byte) ([]Unit, error)
+pages: func Unoffered(calls, subscriptions []string, callable, offered map[string]bool) string
 pages: func Updating(units []Unit) []Problem
 pages: type Allocation struct {Port int32 `json:"port"` Grants []string `json:"grants"`}
 pages: type AppInput struct {Instance Instance Rows []AppRow Site Site Stacks map[string]string Dashboards map[string]string Jobs []Job Flags FlagView FlagChanged string FlagsWritable bool Teams map[string]TeamInfo TeamsError string Settings map[string]string Variables []NamedValue VariablesKnown bool Connectable Connectable Github bool}
@@ -1466,9 +1475,10 @@ pages: type Live struct {Unit Evidence `json:"unit"` Release Evidence `json:"rel
 pages: type MapEdge struct {Kind, Path, From, To string}
 pages: type MapNode struct {Row *AppRow X, Y int TextX, NameY, SubY int Label string}
 pages: type NamedValue struct {Name, Value string}
+pages: type NewAppChoices struct {Name, Stack, Description, Type string Answers []NamedValue Flags []string Record map[string]any}
 pages: type NewAppForm struct {Name, Type, Stack, Description, Team, Exposure string}
 pages: type NewAppInput struct {Catalogue StackCatalogue Site Site Teams map[string]TeamInfo TeamsError string Connectable Connectable Form NewAppForm Error string Github bool AppRepos bool}
-pages: type NewAppPage struct {Types []AppType ChosenType string StackTypes map[string]string Stacks []StackInfo Owner string Domain string Teams []TeamChoice TeamsError string CallableApps []ConnectableApp OfferedEvents []ConnectableEvent ConnectionsError string Exposures []Choice ChosenExposure string ChosenStack string IncludedAll []IncludedAnswer Form NewAppForm Error string Github bool AppRepos bool}
+pages: type NewAppPage struct {Types []AppType ChosenType string StackTypes map[string]string Stacks []StackInfo Owner string Domain string Teams []TeamChoice TeamsError string CallableApps []ConnectableApp OfferedEvents []ConnectableEvent ConnectionsError string Exposures []Choice ChosenExposure string ChosenStack string IncludedAll []IncludedAnswer Form NewAppForm Error string Github bool AppRepos bool ChosenCalls, ChosenEvents []string}
 pages: type Observed struct {Read bool Row *AppRow}
 pages: type Offer struct {Kind, Name, App string KindLabel string Event string Team, TeamLabel string Description string Described bool UsedBy []OfferUser UsedByTitle string FirstTwo string More int Address, Link string LinkExternal bool Operations []Operation RoutesLabel string SamplePath string Fields []PayloadField Schema, Example string Commit, CommitURL, Problem string CouldUse []OfferUser HiddenName string FormID, Confirm, Hint string}
 pages: type OfferUser struct {Name, Team string}

@@ -2,6 +2,26 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console keeps its own jobs (9 November 2026)
+
+- **Scope:** §23 step 4, first landing: the job lifecycle's store and the drain, before any console form is wired to
+  it. `adapters/kube.JobRecords` is the store — the `console/console-jobs` ConfigMap read as the records it holds and
+  written as one merge patch of `job-<id>` keys with nil deleting, plus the pod read that says whether the job's pod
+  still exists — and `swhurl-v2 console` builds `orchestration.NewJobs` over it, with the pod's own name as owner,
+  `time.Sleep`, and a `jobRedactor` over the three tokens it reads from its environment (`GITHUB_TOKEN`,
+  `APP_REPOS_TOKEN`, `IMAGE_WEBHOOK_TOKEN`). Pages read that registry, so a record is shown, a job whose pod is gone
+  is settled to `interrupted`, and the stream reads the same registry. SIGTERM now closes the deal: the server stops
+  taking jobs and waits up to 840 seconds inside the pod's 900, printing when one outlasts the wait. The guardrail
+  gained the one exception that needs, `syscall` in `cmd/swhurl-v2` only, with its rule statement, the plan's table
+  row and the rule's own fixture updated; `restore.go`'s comment says why a restore still ignores SIGTERM.
+- **Offline:** `make check-v2` passed, including the new `JobRecords` tests (key order, an absent ConfigMap is no
+  records, one patch that writes and deletes, present/absent/unreadable pod reads) and the console tests showing a
+  server over a record settles a running job whose pod is gone and keeps its resume record, while a server with no
+  record runs and shows none. `api.txt` gained `kube.JobRecords`' four entries; the archtest fixture now shows
+  `syscall` accepted in the command and refused in `orchestration`; the render check found no difference.
+- **Not exercised live:** the deployed console is still Python, so this store has not yet written a record from a real
+  job, and the drain has not met a real SIGTERM. Both are step 4's live proof, after the eight POSTs are wired.
+
 ## The New app path takes the app's own image (9 November 2026)
 
 - **Scope:** §23 step 3's live proof, from the deployed console `src-f60c3e074bea8316` (on `ba015917`; fixed by

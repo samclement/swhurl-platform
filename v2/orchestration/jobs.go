@@ -81,6 +81,9 @@ func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs {
 
 // load reads the store's records into the registry's remembered jobs, keeping the next id above every one of them.
 func (j *Jobs) load(ctx context.Context) {
+	if j.inputs.Store == nil {
+		return
+	}
 	records, err := j.inputs.Store.Load(ctx)
 	if err != nil {
 		return
@@ -111,7 +114,7 @@ func (j *Jobs) settle(ctx context.Context) {
 // alive is whether a job's pod still exists; an unreadable answer counts as alive, so a job is called interrupted
 // only when its pod is known to be gone. No owner at all is no pod.
 func (j *Jobs) alive(ctx context.Context, owner string) bool {
-	if owner == "" {
+	if owner == "" || j.inputs.Store == nil {
 		return false
 	}
 	alive, err := j.inputs.Store.Alive(ctx, owner)
@@ -364,6 +367,9 @@ func (j *Jobs) anyRunning() bool {
 // save writes one job's record and deletes the ones the store no longer keeps. A failure is not the job's failure:
 // the record is for the operator reading the page afterwards, never the effect the job performs.
 func (j *Jobs) save(ctx context.Context, job pages.Job, forget []int) {
+	if j.inputs.Store == nil {
+		return
+	}
 	records := map[int]*string{job.ID: recordOf(job, j.inputs.Redact)}
 	for _, id := range forget {
 		records[id] = nil

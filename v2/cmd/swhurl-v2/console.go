@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/git"
@@ -41,6 +42,9 @@ const (
 	consoleRepo    = "samclement/swhurl-platform"
 	consoleToken   = "GITHUB_TOKEN"
 	appReposToken  = "APP_REPOS_TOKEN" // creates app repositories: only whether it is set is read here
+	// jobDrainLimit is how long a stopping pod waits for the jobs it runs: inside the pod's 900 seconds, and past the
+	// ten minutes a job waits for an app's first build, so a job that has done its work opens its pull request.
+	jobDrainLimit = 840 * time.Second
 )
 
 // realToken is a token from the environment, or empty when it is unset or still the placeholder a Secret starts as.
@@ -72,10 +76,13 @@ func (c cli) console(r request) int {
 		return fail(c.diagnostic, errors.New("invalid: kube: collector_unavailable"))
 	}
 	data, _ := reader.(kube.Data)
+	owner, _ := os.Hostname()
 	server, err := newConsoleServer(consoleConfig{Reader: reader, Collector: collector, Data: data, Dev: r.dev,
 		Git: c.git, Repository: os.Getenv("CONSOLE_REPO"), Token: realToken(os.Getenv(consoleToken)),
 		AppRepos: realToken(os.Getenv(appReposToken)) != "", NatsSeed: os.Getenv("NATS_SEED"),
-		NatsURL: os.Getenv("NATS_URL")})
+		NatsURL: os.Getenv("NATS_URL"), Owner: owner, Log: c.out,
+		Secrets: []string{realToken(os.Getenv(consoleToken)), realToken(os.Getenv(appReposToken)),
+			realToken(os.Getenv(appWebhookTokenEnv))}})
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -101,6 +108,12 @@ type consoleConfig struct {
 	NatsSeed   string
 	NatsURL    string
 	Now        func() time.Time
+	// Owner is the pod this process is: the owner a job's record names, so a pod that replaces it knows which jobs
+	// were cut short. Log receives one audit line for each job's start and end, as a pod's log should. Secrets are
+	// kept out of every job line and record; the console's tokens are the ones it starts with.
+	Owner   string
+	Log     io.Writer
+	Secrets []string
 }
 
 // consoleServer is one running console: the pinned tree, the cluster reader and the templates.
@@ -140,6 +153,10 @@ type consoleServer struct {
 	// stream here (a page still reads every record the console keeps).
 	live   liveJobs
 	events consoleEvents
+	// jobs is the same registry as live, for the use cases that start and settle jobs; a server without one keeps no
+	// record and runs nothing.
+	jobs   *orchestration.Jobs
+	redact *jobRedactor
 }
 
 func newConsoleServer(config consoleConfig) (*consoleServer, error) {
@@ -148,9 +165,12 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	}
 	server := &consoleServer{reader: config.Reader, collector: config.Collector, data: config.Data, now: config.Now,
 		appConsole: github.NewConsole(nil), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
-		natsSeed: config.NatsSeed, natsURL: config.NatsURL,
+		natsSeed: config.NatsSeed, natsURL: config.NatsURL, redact: &jobRedactor{},
 		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{},
 		events: consoleEvents{poll: 250 * time.Millisecond, keepAlive: 15 * time.Second}}
+	for _, secret := range config.Secrets {
+		server.redact.Add(secret)
+	}
 	if server.repository == "" {
 		server.repository = consoleRepo
 	}
@@ -181,7 +201,27 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	if server.templates, err = consoleTemplates(); err != nil {
 		return nil, err
 	}
+	server.startJobs(config)
 	return server, nil
+}
+
+// startJobs gives the server the registry of jobs it runs: the record its pod keeps and this process's own, so a job
+// started here is shown, streamed, and — when this pod is replaced mid-job — called interrupted by the next one. A
+// server with no cluster record (--dev without a kubeconfig, or a test) runs none.
+func (s *consoleServer) startJobs(config consoleConfig) {
+	if config.Data == nil {
+		return
+	}
+	audit := func(string) {}
+	if config.Log != nil {
+		audit = func(line string) { fmt.Fprintln(config.Log, line) }
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s.jobs = orchestration.NewJobs(ctx, orchestration.JobsInputs{
+		Store: kube.JobRecords{Data: config.Data, Pods: config.Reader}, Owner: config.Owner, Now: config.Now,
+		Sleep: time.Sleep, Redact: s.redact.Redact, Audit: audit})
+	s.live = s.jobs
 }
 
 // localConsole reads the checkout the operator started the console in: the same filtered bytes GitHub serves.
@@ -339,9 +379,10 @@ func (s *consoleServer) serve(out io.Writer, address string) int {
 	server := &http.Server{Addr: address, Handler: s.identityMiddleware(mux), ReadHeaderTimeout: 10 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()
-	// A SIGTERM stops the process as the pod's grace period expects; the job drain, which must catch it, comes with
-	// the jobs this server does not yet run. The module names no process signals (restore.go states the rule).
-	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	// A SIGTERM is the pod being replaced: the console stops taking jobs and waits for the ones it runs inside the
+	// pod's grace period (terminationGracePeriodSeconds: 900), so a pull request it asked for is not cut in half. A
+	// job that outlasts the wait is left running, and the pod that replaces this one calls it interrupted.
+	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	select {
 	case err := <-done:
@@ -354,6 +395,9 @@ func (s *consoleServer) serve(out io.Writer, address string) int {
 		shutdown, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		_ = server.Shutdown(shutdown)
+		if s.jobs != nil && !s.jobs.Drain(jobDrainLimit) {
+			fmt.Fprintln(out, "console: stopped with a job still running; the next pod calls it interrupted")
+		}
 		return 0
 	}
 }

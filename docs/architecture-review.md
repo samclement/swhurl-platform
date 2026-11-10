@@ -68,7 +68,7 @@ Implementation anchors:
 - [`write.py`](../tools/swhurl/apps/model/write.py): preparation (`prepare`).
 - [`render.py`](../tools/swhurl/apps/model/render.py): instance compilation.
 - [`relations.py`](../tools/swhurl/apps/model/relations.py): relationship resolution (`evaluate`).
-- `merge.py` (since renamed `tools/swhurl/console/changes.py`): console action contracts (`Action`).
+- `merge.py` (since renamed `changes.py` and deleted with the console port): console action contracts (`Action`).
 
 These should not be discarded simply because some surrounding modules are large.
 
@@ -94,7 +94,7 @@ Activity joins console jobs, GitHub PR state, the PR's merged tree, current `mai
 
 That is a substantial feature, not just a status label. Documented first-load archive downloads demonstrate part of its cost. Historical expected hashes also depend on the running console's renderer, introducing a version-skew limitation.
 
-Evidence: [`github.py`](../tools/swhurl/console/github.py), [`stages.py`](../tools/swhurl/console/stages.py) and [stages of a change](console.md#stages-of-a-change).
+Evidence: `github.py`, `stages.py` and [stages of a change](console.md#stages-of-a-change).
 
 #### Some apparently local changes have global effects
 
@@ -129,7 +129,7 @@ The console supports powerful operations, but operator, developer and DevOps eng
 
 That is a coherent small trusted-operator model. It is not a multi-team self-service security model.
 
-Evidence: `RequireIdentity` in [`server.py`](../tools/swhurl/console/server.py) and [teams and isolation](apps.md#teams-and-isolation).
+Evidence: `RequireIdentity` in `server.py` and [teams and isolation](apps.md#teams-and-isolation).
 
 ## 2. Artefact A — Component and ownership map
 
@@ -439,7 +439,7 @@ project(intent, observations) -> InstanceView
 | Observe | Identified subject/target | Evidence with provenance and time | Unavailable is not absent |
 | Project | Intent plus available observations | Explanation, not another source of truth | Missing optional evidence degrades a section, not invents success |
 
-The request-owned Git reader is an existing example of pinned snapshot semantics: [`reading.py`](../tools/swhurl/console/reading.py).
+The request-owned Git reader is an existing example of pinned snapshot semantics: `reading.py`.
 
 ### Composition of changes
 
@@ -630,7 +630,7 @@ These facts are different:
 
 The current gate's historical `staged()` test compares complete Release snapshots selected on `main`'s first-parent history. The console's pre-publication readiness check adds live evidence at another point in time. Name these facts explicitly rather than calling all three “staged.”
 
-Evidence: [`promotion.py`](../tools/swhurl/apps/promotion.py) and [`proposal.py`](../tools/swhurl/console/proposal.py).
+Evidence: [`promotion.py`](../tools/swhurl/apps/promotion.py) and `proposal.py`.
 
 ### Proposed flow
 
@@ -733,7 +733,7 @@ Do not replace all status models with one enum. Different questions require diff
 
 The distinction between `state.verdict`, `stages.progress` and time-based notification evaluation is substantively justified, even where names and duplicated observations could improve.
 
-Evidence: [`state.py`](../tools/swhurl/apps/state.py), [`stages.py`](../tools/swhurl/console/stages.py) and [the reviewed Python notification evaluator](https://github.com/samclement/swhurl-platform/blob/25dbe522a87eeec16791b383c8c34a7a6ca6930a/tools/swhurl/notifications/evaluate.py).
+Evidence: [`state.py`](../tools/swhurl/apps/state.py), `stages.py` and [the reviewed Python notification evaluator](https://github.com/samclement/swhurl-platform/blob/25dbe522a87eeec16791b383c8c34a7a6ca6930a/tools/swhurl/notifications/evaluate.py).
 
 ### Evidence primitive
 

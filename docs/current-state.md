@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console is v2's (10 November 2026)
+
+- **Scope:** §23 step 4's cutover. `images/console/Dockerfile`'s command is `swhurl-v2 console --in-cluster --port
+  8080`, so the pod runs the Go server; the image no longer installs `kubectl` (the server reaches the API server
+  itself) and keeps Python only for Copier, which renders a new app's repository. `tools/swhurl/console/` is deleted —
+  26 modules — with its eight test files, `console_observation.py`, `render_console_goldens.py` and the internal
+  `console` command: 3,966 lines. `make console-dev` is a Makefile recipe that builds and runs the Go console, and
+  `console-dev`'s `commands.py` entry keeps its variable and loses its `run=` function; no command is wrapped in `uv`
+  any more, which `test_commands` now states.
+- **One record, two consoles:** a console started from a checkout now keeps its jobs in `console/console-jobs-dev`
+  rather than the pod's `console/console-jobs`, so a developer's run neither writes over what Activity shows the
+  operator nor takes an id from it. That was the one hazard a dev-port console shared with the deployed one.
+- **Docs:** `docs/console.md`'s pull-request, token, repository-token, state and progress sections name the Go files
+  that decide them; `docs/commands.md` and `docs/contributing.md` describe the recipe, and the `kubectl`-in-a-pod
+  paragraph is gone with the reader that needed it.
+- **Offline:** `tests.test_commands`, `tests.test_v1_model_bound` (its importer pin shrank by three) and `make check`
+  passed before the push; the image, its deploy and the operator's browser pass are the next gate.
+
 ## The Go console's forms, exercised live (10 November 2026)
 
 - **How:** the deployed console was scaled to zero for the pass, so one Go console was the only writer of the

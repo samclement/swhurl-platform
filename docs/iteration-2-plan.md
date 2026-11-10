@@ -55,7 +55,7 @@ What one binary means in practice:
 
 ### Future UI: Go plus HTMX
 
-The console already uses HTMX: [base template](../tools/swhurl/console/templates/base.html) and page templates contain HTMX navigation, form and refresh attributes. Go + HTMX would continue the server-rendered approach, not replace a client-side SPA.
+The console already uses HTMX: [base template](../v2/cmd/swhurl-v2/console/templates/base.html) and page templates contain HTMX navigation, form and refresh attributes. Go + HTMX would continue the server-rendered approach, not replace a client-side SPA.
 
 The useful performance direction is:
 
@@ -543,7 +543,7 @@ v1 is evidence to evaluate, not the specification of v2 or an expected-output ge
 
 - [`tests/fixtures/instance`](../tests/fixtures/instance): a frozen staging/production example with records and rendered resources.
 - [`tests/fakecluster.py`](../tests/fakecluster.py): the report `swhurl-v2 verify`'s cluster scope gives a healthy platform, as the console's tests read it.
-- [`tests/test_console_stages.py`](../tests/test_console_stages.py): earlier targets, current intent and live observations combined.
+- `tests/test_console_stages.py` (deleted with the console port): earlier targets, current intent and live observations combined; `v2/pages/changes.go` and its tests carry the intent now.
 - [`v2/kernel/edit_test.go`](../v2/kernel/edit_test.go): deterministic rendering and relationship rules in the v2 model.
 
 Copy scenarios and data, not the `FakeRunner` command matching: v2 tests name operations, not command strings. Some v1 fixtures read the current checkout or clock; freeze those values when exporting.
@@ -915,7 +915,7 @@ step after the [ownership milestone](current-state.md#the-ownership-milestone-ev
   `backupset`, `dashboards`, the notification checker's modules and the v1 model (`merge.py`, `proposal.py`,
   `records.py`). What it does not reach is 28 modules, 5,869 lines: `apps/policy`, `apps/teams`, the docs,
   secrets and template checks, `backup_job`, `sqlite_restore`, the notify service, `commands` and the live tests.
-- The console already writes only through the binary: [`console/v2.py`](../tools/swhurl/console/v2.py) runs
+- The console already wrote only through the binary: `console/v2.py` (deleted with the port) ran
   `swhurl-v2 edit`, `remove`, `promote` and `render`, and the image carries `swhurl-v2`. Its reads are 16
   `kubectl` calls, and its pull requests and merge gate are 10 `gh` and 8 `git` calls.
 - v2 has no Git or GitHub adapter. [`adapters/kube`](../v2/adapters/kube/kube.go) already accepts a bearer token,

@@ -163,8 +163,6 @@ class MakeTests(unittest.TestCase):
         code, out, err, executed = run_make('console-image', {'DRY_RUN': 'true'})
         self.assertEqual((code, out, executed), (2, '', []))
         self.assertIn('make console-image has no dry run', err)
-        code, _, _, executed = run_make('console-dev', {'DRY_RUN': 'false'})  # under uv, so the fake executes it
-        self.assertEqual(len(executed), 1, 'DRY_RUN=false runs it')
 
     def test_a_variable_the_command_reads_itself_is_left_to_it(self):
         self.assertEqual(TARGETS['restore-sqlite'].missing({'APP': 'notes', 'ENV': 'staging'}), [])
@@ -175,13 +173,16 @@ class MakeTests(unittest.TestCase):
         for target, env, expected in (
                 ('verify-logs', {}, ['--minutes', '15']),
                 ('verify-logs', {'MINUTES': '60'}, ['--minutes', '60']),
-                ('console-dev', {'PORT': '9000'}, ['--dev', '--port', '9000'])):
+                ('console-dev', {'PORT': '9000'}, ['--port', '9000'])):
             with self.subTest(target=target, env=env):
                 self.assertEqual(TARGETS[target].arguments(env), expected)
 
-    def test_a_command_that_needs_the_locked_dependencies_runs_under_uv(self):
-        code, _, _, executed = run_make('console-dev', {})
-        self.assertEqual(executed, [('uv', ['uv', 'run', '--frozen', 'python', '-m', 'swhurl', 'console-dev', '--dev', '--port', '8080'])])
+    def test_the_console_is_v2s_and_the_makefile_runs_it(self):
+        """The console is Go: its target is a recipe that builds and runs swhurl-v2, and no Python function serves it."""
+        self.assertFalse(TARGETS['console-dev'].run, 'make console-dev is a recipe, not a Python function')
+        recipe = re.search(r'^console-dev:\n((?:\t.*\n)+)', (ROOT / 'Makefile').read_text(), re.M)
+        self.assertIsNotNone(recipe, 'the Makefile states console-dev')
+        self.assertIn('swhurl-v2" console --dev', recipe.group(1))
 
     def test_a_shared_function_gets_its_prefix_from_make_and_from_the_command_line(self):
         seen = []

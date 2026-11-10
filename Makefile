@@ -12,7 +12,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help reconcile verify-logs flux-install \
 	app-hooks \
-	console-image console-dev \
+	console-image \
 	platform-certs-staging platform-certs-prod destroy-data \
 	check-otel check-secrets \
 	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb \
@@ -21,6 +21,11 @@ COMMANDS := help reconcile verify-logs flux-install \
 .PHONY: $(COMMANDS)
 $(COMMANDS):
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) make $@
+
+# The console is v2's: a Go server, built here, with no Python in its path.
+.PHONY: console-dev
+console-dev:
+	@DRY_RUN=; $(V2_BUILD); "$$work/swhurl-v2" console --dev --port "$${PORT:-8080}"
 
 # One or two kubectl or flux calls (host/ops.sh), which read their variables from the environment.
 .PHONY: app-logs app-reconcile suspend resume

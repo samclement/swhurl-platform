@@ -1,8 +1,0 @@
-{% extends "base.html" %}
-{% block title %}Error{% endblock %}
-{% block main %}
-<h1>Could not show this page</h1>
-<p class="bad">{{ error }}</p>
-<p class="muted">If you followed a link, the app, unit or job may no longer exist (jobs are kept only until the console restarts). If the cluster could not be read, try <a href="{{ path }}">refresh</a>; if it persists, run <code>make verify-platform</code> in your terminal.</p>
-<p><a href="/">Back to Overview</a></p>
-{% endblock %}

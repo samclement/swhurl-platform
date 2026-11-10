@@ -59,10 +59,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   `unit.html` and `teams.html` handed the `job` partial a state string where it reads a field of a job. The
   byte-identical fixtures have no jobs, so no such row had ever rendered. Both call sites now pass the job
   (`{{template "job" .}}`, `{{template "job" .Job}}`), and `TestJobRowsRender` renders a unit's `interrupted` and
-  `running` rows and a team's last change. The pod still runs the image before the fix.
-- **Not exercised:** the signed-in pass over the pages themselves — the operator's — and the job rows on the
-  deployed image, which need the next build. The forms pass below exercised the same handlers from a console built
-  from this tree; the deployed pod's own path has run the two changes recorded here.
+  `running` rows and a team's last change. Its own image rolled out as `src-e6cea2936294e725` (`console-7c68b65cdf-vl64b`,
+  bot commit `8024f6bf`) and the pages that failed now render: `GET /units/platform-reloader` and `GET /jobs/61` answer
+  200 (read through the pod's port with the proxy's `X-Auth-Request-Email` header, as the forms pass did) with jobs 61
+  to 64 listed, `Job #61 interrupted` and its sentence, and no template error in the pod's log. Jobs 62, 63 and 64 are
+  the operator's own reconciles on the replacement pod, all `succeeded`.
+- **Not exercised:** the signed-in page-by-page pass — the operator's. The forms pass below exercised the same
+  handlers from a console built from this tree; the deployed pod's own path has run the changes recorded here.
 
 ## The Go console's forms, exercised live (10 November 2026)
 

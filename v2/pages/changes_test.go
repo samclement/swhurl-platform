@@ -110,6 +110,29 @@ func TestANewerReleaseWithTheSameSettingsCarriesTheChange(t *testing.T) {
 	}
 }
 
+// A read that fails after a change was seen at its end does not undo that: it stays where it ends, and the sentence
+// says a later read could not check it again. A change never seen there is still unknown.
+func TestAFailedReadKeepsAChangeThatWasSeenAtItsEnd(t *testing.T) {
+	mine := render("records-1", "settings-1", "sha256:a")
+	reached := stagesNow.Format(time.RFC3339)
+	cases := map[string]struct {
+		merged, main *Render
+		live         Observed
+	}{
+		"the merge commit's tree": {nil, mine, healthy},
+		"main's tree":             {mine, nil, healthy},
+		"the cluster":             {mine, mine, Observed{}},
+	}
+	for name, c := range cases {
+		if got := ProgressOf("v2-scale", c.merged, c.main, c.live, reached); got.State != "unchecked" || got.Detail != reached {
+			t.Errorf("%s: progress = %+v", name, got)
+		}
+		if got := ProgressOf("v2-scale", c.merged, c.main, c.live, ""); got.State != "unread" {
+			t.Errorf("%s, never seen: progress = %+v", name, got)
+		}
+	}
+}
+
 func TestAMissingOrStaleHelmReleaseIsNotApplied(t *testing.T) {
 	for _, main := range []*Render{{Records: "records-1", Settings: "settings-1", Digest: "sha256:a"},
 		{Records: "records-1", Settings: "settings-1", Digest: "sha256:a", Release: true, Runs: "sha256:old"}} {
@@ -208,7 +231,7 @@ func TestMergedChangesShowAppliedAndRunningApart(t *testing.T) {
 		{"live", "done", "Live in prod"}, {"zero", "done", "Live in prod"}, {"applying", "running", "In progress"},
 		{"creating", "running", "In progress"}, {"removing", "running", "In progress"}, {"failing", "blocked", "Failed"},
 		{"held", "waiting", "Waiting for you"}, {"unread", "unknown", "Unknown"}, {"historical", "done", "Merged (historical)"},
-		{"superseded", "done", "Superseded"}, {"replaced", "done", "Live in prod"},
+		{"superseded", "done", "Superseded"}, {"replaced", "done", "Live in prod"}, {"unchecked", "done", "Live in prod"},
 	}
 	for _, c := range cases {
 		got := pullTrack(&Progress{State: c.state}, "promote", "web/prod", Pull{State: "merged"})
@@ -229,6 +252,17 @@ func TestMergedChangesShowAppliedAndRunningApart(t *testing.T) {
 	}
 	if got := pullTrack(&Progress{State: "live", Newer: "sha256:b"}, "promote", "web/prod", Pull{State: "merged"}); !strings.Contains(got.Outcome, "runs it, with a newer image") {
 		t.Fatalf("newer = %q", got.Outcome)
+	}
+	unchecked := pullTrack(&Progress{State: "unchecked", Detail: stagesNow.Format(time.RFC3339)}, "promote", "web/prod", Pull{State: "merged"})
+	if !unchecked.Settled() || unchecked.Outcome != "Live in prod from 18 Oct 12:00 UTC; a later read could not check it again." {
+		t.Fatalf("unchecked = %q", unchecked.Outcome)
+	}
+	if last := unchecked.Stages[len(unchecked.Stages)-1]; last.State != "reached" || last.Note != "not re-read" {
+		t.Fatalf("unchecked ends = %+v", last)
+	}
+	if got := pullTrack(&Progress{State: "unchecked", Detail: stagesNow.Format(time.RFC3339), Newer: "sha256:b"},
+		"promote", "web/prod", Pull{State: "merged"}); got.Outcome != "Live in prod from 18 Oct 12:00 UTC, with a newer image; a later read could not check it again." {
+		t.Fatalf("unchecked with a newer image = %q", got.Outcome)
 	}
 	applied := pullTrack(&Progress{State: "failing", Detail: "crash", Applied: true}, "promote", "web/prod", Pull{State: "merged"})
 	if got := [4]string{applied.Stages[3].Key, applied.Stages[3].State, applied.Stages[4].Key, applied.Stages[4].State}; got != [4]string{"rollout", "done", "running", "failed"} {

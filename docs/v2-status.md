@@ -99,13 +99,14 @@ what Python each slice deletes, not feature parity: v2 changes eight things afte
 `memoryMiB`, `exposure`, `calls`, `allows`, `subscriptions`, `egress`, `team`), and the deferred list is capability,
 not migration.
 
-**A. The record.** One claim left to settle, and it changes no code.
+**A. The record.** One open item, and it changes no behaviour.
 
-1. **Renovate, recorded rather than changed** (anytime; nothing depends on it). Verified 2 November 2026: no
-   app-chart PR ever existed (PR #47's base had no `apps/` HelmRelease), and the app chart version is the
-   profile's, which Renovate cannot see in `v2-apps/*.json`. Take #47 as the platform's three HelmReleases,
-   keep apps on 5.2.1, and drop `apps/` from `managerFilePatterns` only if a later bump shows it reads
-   something there.
+1. **Renovate's app-template bumps take a hand step.** The app chart version is the profile's, which
+   Renovate cannot see, so its PR changes only the platform's three HelmReleases and fails `make check-v2`.
+   PR #47 (5.2.1 → 5.3.0) was redone by hand for every release and instance, with rendered output unchanged
+   but for the chart label ([record](current-state.md#app-template-530-for-the-platform-and-every-instance-10-november-2026));
+   the steps are in [chart updates](operations.md#chart-updates). Open: the v2 tests that repeat the version
+   could read it from the profile.
 
 **B. Then the rest of the road.**
 

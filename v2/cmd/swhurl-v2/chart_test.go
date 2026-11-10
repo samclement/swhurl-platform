@@ -463,15 +463,18 @@ func TestClaimConvention(t *testing.T) {
 	release := yamlDocuments(t, "../../testdata/v1-demo-orders-prod-helmrelease.yaml")[0]
 	metadata := release["metadata"].(map[string]any)
 	spec := release["spec"].(map[string]any)
-	chartSpec := spec["chart"].(map[string]any)["spec"].(map[string]any)
 	values, err := json.Marshal(spec["values"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The frozen document keeps the chart version it ran on; the convention must hold in the profile's.
+	profile, err := kernel.DecodeProfile(fixture(t, "profile.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	name, namespace := metadata["name"].(string), metadata["namespace"].(string)
 	cache, _ := os.UserCacheDir()
-	chart := filepath.Join(cache, "swhurl-platform", "charts",
-		chartSpec["chart"].(string)+"-"+chartSpec["version"].(string))
+	chart := filepath.Join(cache, "swhurl-platform", "charts", profile.Chart.Name+"-"+profile.Chart.Version)
 	if _, err := os.Stat(filepath.Join(chart, "Chart.yaml")); err != nil {
 		need(t, "the pinned chart in "+chart+" (make check-apps fetches it)")
 	}

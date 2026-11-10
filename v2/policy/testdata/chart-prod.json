@@ -38,7 +38,7 @@
               "name": "bjw-s",
               "namespace": "flux-system"
             },
-            "version": "5.2.1"
+            "version": "5.3.0"
           }
         },
         "install": {
@@ -836,7 +836,7 @@
           "app.kubernetes.io/instance": "demo-orders",
           "app.kubernetes.io/managed-by": "Helm",
           "app.kubernetes.io/name": "demo-orders",
-          "helm.sh/chart": "app-template-5.2.1"
+          "helm.sh/chart": "app-template-5.3.0"
         },
         "name": "demo-orders",
         "namespace": "demo-orders-prod"
@@ -853,7 +853,7 @@
           "app.kubernetes.io/instance": "demo-orders",
           "app.kubernetes.io/managed-by": "Helm",
           "app.kubernetes.io/name": "demo-orders",
-          "helm.sh/chart": "app-template-5.2.1"
+          "helm.sh/chart": "app-template-5.3.0"
         },
         "name": "demo-orders",
         "namespace": "demo-orders-prod"
@@ -879,7 +879,7 @@
           "app.kubernetes.io/managed-by": "Helm",
           "app.kubernetes.io/name": "demo-orders",
           "app.kubernetes.io/service": "demo-orders",
-          "helm.sh/chart": "app-template-5.2.1"
+          "helm.sh/chart": "app-template-5.3.0"
         },
         "name": "demo-orders",
         "namespace": "demo-orders-prod"
@@ -913,7 +913,7 @@
           "app.kubernetes.io/instance": "demo-orders",
           "app.kubernetes.io/managed-by": "Helm",
           "app.kubernetes.io/name": "demo-orders",
-          "helm.sh/chart": "app-template-5.2.1"
+          "helm.sh/chart": "app-template-5.3.0"
         },
         "name": "demo-orders",
         "namespace": "demo-orders-prod"

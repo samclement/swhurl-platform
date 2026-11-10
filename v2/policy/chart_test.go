@@ -29,7 +29,7 @@ func TestFullFeatureFixtureMatchesRealPinnedChart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chart := filepath.Join(cache, "swhurl-platform/charts/app-template-5.2.1")
+	chart := filepath.Join(cache, "swhurl-platform/charts/app-template-5.3.0")
 	_, binary := exec.LookPath("helm")
 	_, metadata := os.Stat(filepath.Join(chart, "Chart.yaml"))
 	if binary != nil || metadata != nil {

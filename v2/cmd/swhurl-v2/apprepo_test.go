@@ -18,8 +18,8 @@ import (
 
 const appHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-// appRepoTag is the seed a repository's first run copies: the tag names the commit the create's revision label does.
-var appRepoTag = "0-" + createCommit[:7]
+// appRepoTag is the app's own first image: run 1, whose tag names the commit the create's revision label does.
+var appRepoTag = "1-" + createCommit[:7]
 
 // appRepoSources is a new app's command with every effect a fake: the platform repository a change downloads, the
 // console's publisher, the repository write port, Copier, and the registry its first image is read from.
@@ -108,7 +108,7 @@ func TestAppRepoCLIOpensTheStagingPullRequest(t *testing.T) {
 	if lines[len(lines)-1] != "Opened "+githubtest.PublisherScenario().PullURL {
 		t.Errorf("the command ended %q, want the pull request's URL", lines[len(lines)-1])
 	}
-	for _, wanted := range []string{"Created https://github.com/samclement/notes", "Added the image webhook", "Seeded "} {
+	for _, wanted := range []string{"Created https://github.com/samclement/notes", "Added the image webhook", "Published "} {
 		if !strings.Contains(stdout, wanted) {
 			t.Errorf("no line %q in:\n%s", wanted, stdout)
 		}

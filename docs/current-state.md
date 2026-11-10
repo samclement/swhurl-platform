@@ -2,6 +2,28 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The New app path takes the app's own image (9 November 2026)
+
+- **Scope:** §23 step 3's live proof, from the deployed console `src-f60c3e074bea8316` (on `ba015917`). Job 49
+  created `samclement/swhurl-try-34` and its image webhook, and the template's seed `0-2c7e03a` was published 14
+  seconds after run 1 started. `swhurl-v2 create` refused it: `invalid: source.revision: the tag's suffix does not
+  abbreviate the revision`. The seed is a copy of the template's smoke-tested image, so its
+  `org.opencontainers.image.revision` states the template's pinned commit `c28c7a0d…` while the tag names the app's
+  commit `2c7e03a`; its declaration also carries the template's generic description and `smoke-app` AsyncAPI.
+  `swhurl-v2 app-repo` now ignores run 0 and waits for the app's own `1-<sha>` image (published 70 seconds later
+  here), so the release, its description and its offered documents are the app's own; the seed stays published but
+  no release is created from it. The Go tests gained the seed-only timeout and the own-image choice; `api.txt` and
+  `Layers` are unchanged.
+- **Offline:** `make check-v2` passed, including the orchestration test that publishes both tags and takes
+  `1-<sha>`, the test that only a seed times out after ten minutes without a `Published` line, the resume test on
+  `1-aaaaaaa`, and the CLI test whose create line names `1-<commit>`; `api.txt` and `Layers` are unchanged.
+  `make check`'s repo, apps, otel, lint, codegraph and docs checks passed; its Python suite failed only in
+  `test_commands`, on another session's in-flight connectivity-probe Makefile target and `docs/commands.md` row,
+  which this change does not touch.
+- **Live:** (the fixed console and the resumed creation are recorded here once run)
+- **Not exercised:** the live creation after this fix, a resumed job from the deployed console, a name GitHub
+  already holds, and the webhook permission a token without Webhooks: Read and write gets.
+
 ## The New app repository is Go's (9 November 2026)
 
 - **Scope:** §23 step 3, on `58b09ca0`. `swhurl-v2 app-repo --app NAME --type TYPE [--stack S]

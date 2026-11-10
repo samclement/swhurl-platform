@@ -2116,9 +2116,11 @@ browser request gets the `started` fragment; a plain form a 303 to the job.
 the stack's `copier.yml` for its questions, refuse a name that exists or answers its type does not accept, run one
 pinned `copier copy --vcs-ref <v2/contract/stacks.json>` in a Go-owned scratch directory under a deadline (its
 template clone is anonymous, so it holds no token and no credential reaches its environment or argv), create the
-public repository with its first commit and image webhook through the GitHub write port, wait for the first image
-through the registry adapter (600 seconds, the seed image preferred), then the ordinary publication for `create`,
-each `edit` and `render`. `make app-repo` becomes bash over it and the console's New app calls the same use case.
+public repository with its first commit and image webhook through the GitHub write port, wait for the app's own first
+image through the registry adapter (600 seconds; run 1 or later, because the template's `0-<sha>` seed is a copied
+build whose label states the template's commit, so it is not a release v2 creates from), then the ordinary publication
+for `create`, each `edit` and `render`. `make app-repo` becomes bash over it and the console's New app calls the same
+use case.
 `copier` is the fourth approved subprocess, after SOPS, Helm and Git, so the `no-subprocess` allowlist, its table
 row and `archtest` change with it.
 

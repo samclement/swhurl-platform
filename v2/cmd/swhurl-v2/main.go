@@ -258,11 +258,12 @@ log and takes its link from that line. --dry-run applies and reports the change 
 
 app-repo creates a new app's public GitHub repository: it reads the stack's copier.yml for the questions its type
 answers, renders the pinned template with one Copier run into a folder of its own, creates the repository with the
-rendered tree as its first commit, adds the image webhook, waits for the first image the repository publishes (the
-template's seed, 0-<commit>, when that appears first) and then opens the ordinary 'new' pull request that creates
-its staging instance. --resume finds the repository an earlier job created instead of creating one. The tokens are
-the environment's: CONSOLE_TOKEN for the pull request, APP_REPOS_TOKEN for the repository, IMAGE_WEBHOOK_TOKEN for
-the webhook (a failure there is a warning), and CONSOLE_REPO or --repository names the platform repository.
+rendered tree as its first commit, adds the image webhook, waits for the app's own first image (run 1 or later; the
+template's seed, 0-<commit>, is a copied build, so it is not a release v2 creates from) and then opens the ordinary
+'new' pull request that creates its staging instance. --resume finds the repository an earlier job created instead of
+creating one. The tokens are the environment's: CONSOLE_TOKEN for the pull request, APP_REPOS_TOKEN for the
+repository, IMAGE_WEBHOOK_TOKEN for the webhook (a failure there is a warning), and CONSOLE_REPO or --repository names
+the platform repository.
 
 declaration decodes the declaration label an image build printed, applies the creation rules an instance of it would
 face, and reports what the image states. It reads no image, no registry and no cluster, and writes nothing: the stack

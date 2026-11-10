@@ -70,7 +70,7 @@ func newAppFixture(t *testing.T) *appFixture {
 		repos: githubtest.NewRepository(githubtest.RepositoryFixture{Repository: "samclement/notes",
 			Missing: "samclement/taken", CreatedURL: "https://github.com/samclement/notes",
 			Head: appHead, Commit: appCommit}),
-		images: registrytest.New(publishedScenario("0-"+appShort, appDigest))}
+		images: registrytest.New(publishedScenario("1-"+appShort, appDigest))}
 	f.repos.Existing = nil
 	f.source = githubtest.NewConsole(githubtest.Scenario())
 	f.source.Commit = appRevision
@@ -114,10 +114,10 @@ func (f *appFixture) refused(t *testing.T, contains string) {
 	}
 }
 
-func TestAppRepoRendersCreatesPushesAndWaitsForTheSeedImage(t *testing.T) {
+func TestAppRepoRendersCreatesPushesAndWaitsForTheAppsOwnImage(t *testing.T) {
 	f := newAppFixture(t)
 	found := f.run(t)
-	if found.Image != "ghcr.io/samclement/notes:0-"+appShort || found.Digest != appDigest {
+	if found.Image != "ghcr.io/samclement/notes:1-"+appShort || found.Digest != appDigest {
 		t.Fatalf("image = %q", found.Image)
 	}
 	if len(f.repos.Created) != 1 || f.repos.Created[0].Name != "notes" ||
@@ -138,7 +138,7 @@ func TestAppRepoRendersCreatesPushesAndWaitsForTheSeedImage(t *testing.T) {
 		strings.Join(hook.Events, ",") != "package,registry_package" {
 		t.Fatalf("hook = %#v", hook)
 	}
-	for _, wanted := range []string{"Created https://github.com/samclement/notes", "Added the image webhook", "Seeded "} {
+	for _, wanted := range []string{"Created https://github.com/samclement/notes", "Added the image webhook", "Published "} {
 		if !containsLine(f.notes, wanted) {
 			t.Errorf("no line %q in %q", wanted, f.notes)
 		}
@@ -154,12 +154,26 @@ func containsLine(lines []string, wanted string) bool {
 	return false
 }
 
-func TestAppRepoPrefersTheRunOverNothingButTheSeedOverTheRun(t *testing.T) {
+func TestAppRepoUsesTheAppsOwnImageNotTheTemplateSeed(t *testing.T) {
 	f := newAppFixture(t)
-	f.images = registrytest.New(publishedScenario("1-"+appShort, appDigest))
+	f.images = registrytest.New(registrytest.Scenario{Tags: []string{"0-" + appShort, "1-" + appShort},
+		Images: map[string]registry.Image{
+			"0-" + appShort: {Digest: appDigest, MediaType: "application/vnd.oci.image.manifest.v1+json"},
+			"1-" + appShort: {Digest: appDigest, MediaType: "application/vnd.oci.image.manifest.v1+json"},
+		}})
 	f.inputs.Images = func(string) (registry.Reader, error) { return f.images, nil }
 	if found := f.run(t); found.Image != "ghcr.io/samclement/notes:1-"+appShort || found.Digest != appDigest {
 		t.Fatalf("image = %q", found.Image)
+	}
+}
+
+func TestAppRepoRefusesWhenOnlyTheTemplateSeedIsPublished(t *testing.T) {
+	f := newAppFixture(t)
+	f.images = registrytest.New(publishedScenario("0-"+appShort, appDigest))
+	f.inputs.Images = func(string) (registry.Reader, error) { return f.images, nil }
+	f.refused(t, "no image after 10 minutes")
+	if containsLine(f.notes, "Published ") {
+		t.Fatalf("the seed was published as the app's image: %q", f.notes)
 	}
 }
 
@@ -175,7 +189,7 @@ func TestAppRepoRefusesATakenNameBeforeAnythingIsRendered(t *testing.T) {
 func TestAppRepoResumeFindsTheRepositoryAndWritesNothingToIt(t *testing.T) {
 	f := newAppFixture(t)
 	f.repos.Existing = []string{"samclement/notes"}
-	f.images = registrytest.New(publishedScenario("0-aaaaaaa", appDigest))
+	f.images = registrytest.New(publishedScenario("1-aaaaaaa", appDigest))
 	f.inputs.Images = func(string) (registry.Reader, error) { return f.images, nil }
 	f.inputs.Resume = true
 	if found := f.run(t); found.Image == "" {

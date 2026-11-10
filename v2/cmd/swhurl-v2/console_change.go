@@ -234,28 +234,50 @@ func (s *consoleServer) changeWork(spec *changeSpec) orchestration.JobWork {
 func (s *consoleServer) openChangeInput(spec *changeSpec, input string, line func(string)) (string, error) {
 	opened := ""
 	var refusal strings.Builder
-	c := cli{out: lineWriter{line: func(text string) {
+	c := s.command(&refusal, func(text string) {
 		if url, isPull := strings.CutPrefix(text, "Opened "); isPull {
 			opened = strings.TrimSpace(url)
 		}
 		line(text)
-	}}, diagnostic: &refusal, consoleSource: s.github, getenv: s.changeEnvironment(),
-		stdin: strings.NewReader(input)}
+	}, nil)
+	c.stdin = strings.NewReader(input)
 	if status := c.change(request{command: "change", spec: spec}); status != 0 {
 		return "", errors.New(strings.TrimSpace(refusal.String()))
 	}
 	return opened, nil
 }
 
-// changeEnvironment is what a change reads from its environment: the console's own token and repository, which its pod
-// holds, and nothing else changed.
-func (s *consoleServer) changeEnvironment() func(string) string {
+// command is one of v2's commands run in the console's own process: its lines are the job's, its refusal is the
+// text the job ends with, and its input files are read from the pinned commit rather than from disk, so it renders what
+// the pages show rather than what the image happens to carry.
+func (s *consoleServer) command(diagnostic io.Writer, line func(string), tree map[string][]byte) cli {
+	c := cli{out: lineWriter{line: line}, diagnostic: diagnostic, consoleSource: s.github,
+		getenv: s.commandEnvironment(), stdin: strings.NewReader("")}
+	if tree != nil {
+		c.readFile = func(path string) ([]byte, error) {
+			data, known := tree[path]
+			if !known {
+				return nil, errors.New(path + ": not in the pinned commit")
+			}
+			return data, nil
+		}
+	}
+	return c
+}
+
+// commandEnvironment is what a command reads from its environment: the console's own tokens and repository, which its
+// pod holds, and nothing else changed.
+func (s *consoleServer) commandEnvironment() func(string) string {
 	return func(name string) string {
 		switch name {
 		case consoleTokenEnv:
 			return s.token
 		case consoleRepositoryEnv:
 			return s.repository
+		case appReposTokenEnv:
+			return s.reposToken
+		case appWebhookTokenEnv:
+			return s.hookToken
 		}
 		return os.Getenv(name)
 	}

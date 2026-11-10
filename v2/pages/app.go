@@ -543,6 +543,8 @@ type NewAppPage struct {
 	Error            string
 	Github           bool
 	AppRepos         bool
+	// ChosenCalls and ChosenEvents are the boxes a refused form left ticked.
+	ChosenCalls, ChosenEvents []string
 }
 
 // NewAppInput is what the form reads: the catalogue at the pinned commit, the teams and what staging offers.

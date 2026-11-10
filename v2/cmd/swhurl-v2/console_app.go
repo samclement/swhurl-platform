@@ -269,12 +269,10 @@ func (s *consoleServer) newApp(w http.ResponseWriter, r *http.Request) {
 	if registryErr != nil {
 		registry, teamsError = map[string]pages.TeamInfo{}, registryErr.Error()
 	}
-	page := pages.NewAppPageOf(pages.NewAppInput{Catalogue: catalogue, Site: site, Teams: registry,
-		TeamsError: teamsError, Connectable: pages.ConnectableTo(rows,
-			orchestration.ConsoleOffers(tree, rows, "staging"), "staging", ""),
-		Github: s.hasGitHub, AppRepos: s.appRepos})
-	data := newAppData{shell: s.page(r, false), NewAppPage: page}
-	s.render(w, http.StatusOK, "new_repo.html", data)
+	read := newAppRead{tree: tree, catalogue: catalogue, teams: registry, teamsError: teamsError,
+		connectable: pages.ConnectableTo(rows, orchestration.ConsoleOffers(tree, rows, "staging"), "staging", ""),
+		hookHost:    "flux-webhook." + site.Domain}
+	s.renderNewApp(w, r, read, pages.NewAppForm{}, nil, nil, "", http.StatusOK)
 }
 
 // replicas is a report's ready replica count, "unknown" when the cluster did not state one.
@@ -323,8 +321,9 @@ func choicesOf(connectable pages.Connectable, calls, events []string, env, who s
 
 // newAppChoices is what the New app form offers to connect to in staging.
 func newAppChoices(page pages.NewAppPage) connectionChoicesView {
-	return connectionChoicesView{Apps: page.CallableApps, Events: page.OfferedEvents, ChosenCalls: map[string]bool{},
-		ChosenEvents: map[string]bool{}, Env: "staging", Who: "The new app"}
+	return connectionChoicesView{Apps: page.CallableApps, Events: page.OfferedEvents,
+		ChosenCalls: chosen(page.ChosenCalls), ChosenEvents: chosen(page.ChosenEvents), Env: "staging",
+		Who: "The new app", Problem: page.ConnectionsError}
 }
 
 // chosen is a list of names as the set a checkbox reads.

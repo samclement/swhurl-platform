@@ -110,7 +110,7 @@ func TestActivityReadsOneHistoricalTreePerPage(t *testing.T) {
 		Pull: func(_ context.Context, number int) (pages.Pull, error) {
 			return pages.Pull{State: "merged", When: "2026-11-09T09:00:00Z", Commit: "c" + strconv.Itoa(number)}, nil
 		},
-		Renders: func(_ context.Context, commit string) (map[string]pages.Render, error) {
+		Renders: func(_ context.Context, commit string, _ []string) (map[string]pages.Render, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			if !inTree[commit] { // the bundle answers one it holds without reading it again
@@ -120,7 +120,7 @@ func TestActivityReadsOneHistoricalTreePerPage(t *testing.T) {
 			return render, nil
 		},
 		Main:   func(context.Context) (map[string]pages.Render, error) { return render, nil },
-		Cached: func(commit string) bool { mu.Lock(); defer mu.Unlock(); return inTree[commit] },
+		Cached: func(commit string, _ []string) bool { mu.Lock(); defer mu.Unlock(); return inTree[commit] },
 		Rows:   func(context.Context) (map[string]*pages.AppRow, error) { return healthy, nil },
 		Now:    changesNow,
 	}
@@ -165,7 +165,7 @@ func TestConsoleChangesFollowAMergeToTheCluster(t *testing.T) {
 			Pull: func(context.Context, int) (pages.Pull, error) {
 				return pages.Pull{State: "merged", When: "2026-11-09T09:00:00Z", Commit: "c"}, nil
 			},
-			Renders: func(context.Context, string) (map[string]pages.Render, error) { return render, treeErr },
+			Renders: func(context.Context, string, []string) (map[string]pages.Render, error) { return render, treeErr },
 			Main:    func(context.Context) (map[string]pages.Render, error) { return render, nil },
 			Rows:    func(context.Context) (map[string]*pages.AppRow, error) { return healthy, rowsErr },
 			Reach:   func(job pages.Job) { reached = append(reached, job.ID) },
@@ -191,5 +191,166 @@ func TestConsoleChangesFollowAMergeToTheCluster(t *testing.T) {
 	}
 	if len(reached) != 1 {
 		t.Fatalf("only what was seen is recorded: %v", reached)
+	}
+}
+
+// treeSource is a console source of fixed trees that records each targeted read, and fails while err is set.
+type treeSource struct {
+	mu    sync.Mutex
+	trees map[string]map[string][]byte
+	reads []string
+	err   error
+}
+
+func (s *treeSource) Revision(context.Context) (string, error) {
+	return "", errors.New("not read here")
+}
+
+func (s *treeSource) Tree(context.Context, string) (map[string][]byte, error) {
+	return nil, errors.New("a page's merge commits are never read whole")
+}
+
+func (s *treeSource) Files(_ context.Context, revision string, paths []string) (map[string][]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reads = append(s.reads, revision+": "+strings.Join(paths, " "))
+	if s.err != nil {
+		return nil, s.err
+	}
+	found := map[string][]byte{}
+	for _, file := range paths {
+		if body, held := s.trees[revision][file]; held {
+			found[file] = body
+		}
+	}
+	return found, nil
+}
+
+func (s *treeSource) taken() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.reads)
+}
+
+// unitTree is one commit with web/prod and web/staging both applied.
+func unitTree() map[string][]byte {
+	return map[string][]byte{
+		"v2-records/web/app.json":                        []byte(`{"kind":"app"}`),
+		"v2-records/web/prod/instance.json":              []byte(`{"replicas":1}`),
+		"v2-records/web/prod/release.json":               []byte(`{"artifact":{"digest":"sha256:a"}}`),
+		"v2-apps/instances/web/prod/helmrelease.json":    helmRelease("sha256:a"),
+		"v2-records/web/staging/instance.json":           []byte(`{"replicas":2}`),
+		"v2-records/web/staging/release.json":            []byte(`{"artifact":{"digest":"sha256:a"}}`),
+		"v2-apps/instances/web/staging/helmrelease.json": helmRelease("sha256:a"),
+	}
+}
+
+// evidencePage is the reads one Activity page takes through a real evidence cache: each job's pull request merged at
+// the commit merges names by job, main the same tree, and both instances healthy on the cluster.
+func evidencePage(source *treeSource, merges map[int]string) ChangeReads {
+	evidence := &ConsoleEvidence{Bundle: &ConsoleBundle{Source: source}}
+	main, _ := ConsoleRenders(unitTree())
+	healthy := map[string]*pages.AppRow{}
+	for _, unit := range []string{"web/prod", "web/staging"} {
+		healthy[unit] = &pages.AppRow{State: pages.State{Key: pages.StateHealthy}, Report: &pages.Report{}}
+	}
+	return ChangeReads{
+		OpenPulls: func(context.Context) ([]pages.OpenPull, string) { return nil, "" },
+		Pull: func(_ context.Context, number int) (pages.Pull, error) {
+			return pages.Pull{State: "merged", When: "2026-11-09T09:00:00Z", Commit: merges[number]}, nil
+		},
+		Renders: evidence.Renders, Cached: evidence.Cached,
+		Main: func(context.Context) (map[string]pages.Render, error) { return main, nil },
+		Rows: func(context.Context) (map[string]*pages.AppRow, error) { return healthy, nil },
+		Now:  changesNow,
+	}
+}
+
+func landingJob(id int, unit string) pages.Job {
+	job := mergedJob()
+	job.ID, job.Unit, job.Link = id, unit, "https://github.com/o/r/pull/"+strconv.Itoa(id)
+	return job
+}
+
+func states(found map[int]*pages.Progress) map[int]string {
+	named := map[int]string{}
+	for id, progress := range found {
+		named[id] = progress.State
+	}
+	return named
+}
+
+// Units sharing a merge commit are one read on one page, and both changes are followed from it.
+func TestActivityReadsAMergeCommitsUnitsTogether(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	source := &treeSource{trees: map[string]map[string][]byte{commit: unitTree()}}
+	jobs := []pages.Job{landingJob(2, "web/staging"), landingJob(1, "web/prod")}
+	reads := evidencePage(source, map[int]string{1: commit, 2: commit})
+	pulls := map[int]pages.Pull{1: {State: "merged", Commit: commit}, 2: {State: "merged", Commit: commit}}
+	found := landings(context.Background(), jobs, pulls, reads)
+	if got := states(found); got[1] != "live" || got[2] != "live" {
+		t.Fatalf("progress %v", got)
+	}
+	want := commit + ": v2-records/web/app.json v2-records/web/staging/instance.json v2-records/web/staging/release.json " +
+		"v2-apps/instances/web/staging/helmrelease.json v2-records/web/prod/instance.json v2-records/web/prod/release.json " +
+		"v2-apps/instances/web/prod/helmrelease.json"
+	if got := source.taken(); !slices.Equal(got, []string{want}) {
+		t.Fatalf("reads %q", got)
+	}
+}
+
+// A commit in hand for one unit is not in hand for another: the new unit spends the page's one read, and the older
+// commit waits for the next page, which reads it without reading the first again.
+func TestActivityCountsANewUnitAtACommitInHand(t *testing.T) {
+	newer, older := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	source := &treeSource{trees: map[string]map[string][]byte{newer: unitTree(), older: unitTree()}}
+	merges := map[int]string{1: newer, 2: older, 3: newer}
+	reads := evidencePage(source, merges)
+	pulls := map[int]pages.Pull{}
+	for number, commit := range merges {
+		pulls[number] = pages.Pull{State: "merged", Commit: commit}
+	}
+	landings(context.Background(), []pages.Job{landingJob(1, "web/prod")}, pulls, reads)
+	jobs := []pages.Job{landingJob(3, "web/staging"), landingJob(2, "web/prod"), landingJob(1, "web/prod")}
+	if got := states(landings(context.Background(), jobs, pulls, reads)); got[3] != "live" || got[1] != "live" || got[2] != "unread" {
+		t.Fatalf("second page: %v", got)
+	}
+	if got := states(landings(context.Background(), jobs, pulls, reads)); got[1] != "live" || got[2] != "live" || got[3] != "live" {
+		t.Fatalf("third page: %v", got)
+	}
+	taken := source.taken()
+	if len(taken) != 3 || !strings.HasPrefix(taken[0], newer+": v2-records/web/app.json v2-records/web/prod/") ||
+		taken[1] != newer+": v2-records/web/app.json v2-records/web/staging/instance.json v2-records/web/staging/release.json v2-apps/instances/web/staging/helmrelease.json" ||
+		!strings.HasPrefix(taken[2], older+": ") {
+		t.Fatalf("reads %q", taken)
+	}
+}
+
+// A read that fails leaves a change already seen at its end where it was, says nothing new, and keeps nothing: the
+// next page reads again.
+func TestAFailedEvidenceReadKeepsAReachedChange(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	source := &treeSource{trees: map[string]map[string][]byte{commit: unitTree()}, err: errors.New("GitHub is away")}
+	reads := evidencePage(source, map[int]string{1: commit, 2: commit})
+	var recorded []int
+	reads.Reach = func(job pages.Job) { recorded = append(recorded, job.ID) }
+	seen, unseen := landingJob(1, "web/prod"), landingJob(2, "web/staging")
+	seen.Reached = "2026-11-09T09:10:00Z"
+	pulls := map[int]pages.Pull{1: {State: "merged", Commit: commit}, 2: {State: "merged", Commit: commit}}
+	jobs := []pages.Job{unseen, seen}
+	if got := states(landings(context.Background(), jobs, pulls, reads)); got[1] != "unchecked" || got[2] != "unread" {
+		t.Fatalf("while GitHub is away: %v", got)
+	}
+	if len(recorded) != 0 || reads.Cached(commit, []string{"web/prod"}) {
+		t.Fatalf("a failed read recorded %v or was kept", recorded)
+	}
+	source.mu.Lock()
+	source.err = nil
+	source.mu.Unlock()
+	if got := states(landings(context.Background(), jobs, pulls, reads)); got[1] != "live" || got[2] != "live" {
+		t.Fatalf("once GitHub answers: %v", got)
+	}
+	if !slices.Equal(recorded, []int{2}) || len(source.taken()) != 2 {
+		t.Fatalf("recorded %v, reads %q", recorded, source.taken())
 	}
 }

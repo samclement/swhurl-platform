@@ -85,7 +85,7 @@ func activityServer(t *testing.T) (*consoleServer, orchestration.ChangeReads) {
 	reads := server.changeReads()
 	render := map[string]pages.Render{"web/prod": {Records: "records-1", Settings: "settings-1", Digest: "sha256:x",
 		Release: true, Runs: "sha256:x"}}
-	reads.Renders = func(_ context.Context, commit string) (map[string]pages.Render, error) {
+	reads.Renders = func(_ context.Context, commit string, _ []string) (map[string]pages.Render, error) {
 		if commit != mergedCommit {
 			t.Errorf("read the tree at %s", commit)
 		}

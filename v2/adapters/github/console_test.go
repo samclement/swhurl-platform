@@ -48,6 +48,22 @@ func consoleServer(t *testing.T, fixture githubtest.ConsoleFixture) *httptest.Se
 		}
 		io.WriteString(w, fixture.TemplateBody)
 	})
+	mux.HandleFunc("/repos/owner/repo/git/trees/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimPrefix(r.URL.Path, "/repos/owner/repo/git/trees/") != fixture.Revision || r.URL.RawQuery != "recursive=1" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprintf(w, `{"sha":%q,"truncated":false,"tree":[{"path":"v2-records","mode":"040000","type":"tree","sha":%q},`+
+			`{"path":%q,"mode":"100644","type":"blob","sha":%q,"size":%d}]}`,
+			strings.Repeat("a", 40), strings.Repeat("b", 40), fixture.File, gitBlob(fixture.Body), len(fixture.Body))
+	})
+	mux.HandleFunc("/repos/owner/repo/git/blobs/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimPrefix(r.URL.Path, "/repos/owner/repo/git/blobs/") != gitBlob(fixture.Body) {
+			http.NotFound(w, r)
+			return
+		}
+		io.WriteString(w, fixture.Body)
+	})
 	mux.HandleFunc("/repos/owner/repo/tarball/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://codeload.github.test/owner/repo/tar.gz/"+fixture.Revision, http.StatusFound)
 	})

@@ -103,12 +103,13 @@ type ChangeReads struct {
 	OpenPulls func(context.Context) ([]pages.OpenPull, string)
 	// Pull is one pull request no longer open: merged or closed, when, and the commit that merged it.
 	Pull func(context.Context, int) (pages.Pull, error)
-	// Renders is one commit's instances (ConsoleRenders); Main is main's.
-	Renders func(context.Context, string) (map[string]pages.Render, error)
+	// Renders is the named units' instances at one merge commit (ConsoleEvidence), the zero Render for one the
+	// commit has none of; Main is every instance on main (ConsoleRenders).
+	Renders func(ctx context.Context, commit string, units []string) (map[string]pages.Render, error)
 	Main    func(context.Context) (map[string]pages.Render, error)
-	// Cached is whether one commit's tree is already in hand, so a page's bounded reads are not spent on it (nil:
-	// nothing is known to be in hand).
-	Cached func(string) bool
+	// Cached is whether every named unit's render at one commit is already in hand, so a page's bounded reads are
+	// not spent on it (nil: nothing is known to be in hand).
+	Cached func(commit string, units []string) bool
 	// Rows is every instance on the cluster, by <app>/<env>.
 	Rows func(context.Context) (map[string]*pages.AppRow, error)
 	// Reach records that a job's change was seen at its end, the first time it is; nil records nothing.
@@ -266,30 +267,26 @@ func landingJobs(jobs []pages.Job, pulls map[int]pages.Pull) []pages.Job {
 	return landing
 }
 
-// historicalTreesPerPage bounds the archives one page fetches: a page decides the change whose merged tree it read
-// and leaves the rest unread for a later read, rather than downloading every historical archive at once. One is
-// deliberate: the link here carries about 600 kB/s, so two archives of the 8 MB this repository once held take 28
-// seconds between them and neither could ever finish inside the page's budget; one archive per page always can, and
-// the next read takes the next change. A tree already in hand costs no fetch.
+// historicalTreesPerPage bounds the merge commits one page reads: a page decides the change whose merge commit it
+// read and leaves the rest unread for a later read, rather than reading every historical commit at once. A read is
+// a commit's tree listing and the few files its changes' units take, under a second where an archive took 14; one
+// per page is kept from the archive's time, when two could not finish inside the page's budget. A commit whose
+// units are all in hand costs no read; one in hand for another unit does.
 const historicalTreesPerPage = 1
 
-// mergeTrees is the renders of each commit that merged one of the changes, once per commit and at once; a commit
-// that could not be read is missing, as is one GitHub gave no commit for, and one this page left for the next.
+// mergeTrees is the renders of each commit that merged one of the changes, once per commit with all of its changes'
+// units and at once; a commit that could not be read is missing, as is one GitHub gave no commit for, and one this
+// page left for the next.
 func mergeTrees(ctx context.Context, landing []pages.Job, pulls map[int]pages.Pull, reads ChangeReads) map[string]map[string]pages.Render {
-	var commits []string
-	for _, job := range landing {
-		if commit := pulls[job.ID].Commit; commit != "" && !slices.Contains(commits, commit) {
-			commits = append(commits, commit)
-		}
-	}
+	commits, units := mergeUnits(landing, pulls)
 	trees := map[string]map[string]pages.Render{}
 	if reads.Renders == nil {
 		return trees
 	}
-	fetch := toFetch(commits, reads.Cached)
+	fetch := toFetch(commits, func(commit string) bool { return reads.Cached != nil && reads.Cached(commit, units[commit]) })
 	read := make([]map[string]pages.Render, len(fetch))
 	together(len(fetch), func(i int) {
-		read[i] = readRenders(func() (map[string]pages.Render, error) { return reads.Renders(ctx, fetch[i]) })
+		read[i] = readRenders(func() (map[string]pages.Render, error) { return reads.Renders(ctx, fetch[i], units[fetch[i]]) })
 	})
 	for i, commit := range fetch {
 		trees[commit] = read[i]
@@ -297,8 +294,27 @@ func mergeTrees(ctx context.Context, landing []pages.Job, pulls map[int]pages.Pu
 	return trees
 }
 
+// mergeUnits is each merge commit, newest change first, and the units its changes end on.
+func mergeUnits(landing []pages.Job, pulls map[int]pages.Pull) ([]string, map[string][]string) {
+	var commits []string
+	units := map[string][]string{}
+	for _, job := range landing {
+		commit := pulls[job.ID].Commit
+		if commit == "" {
+			continue
+		}
+		if _, seen := units[commit]; !seen {
+			commits = append(commits, commit)
+		}
+		if !slices.Contains(units[commit], job.Unit) {
+			units[commit] = append(units[commit], job.Unit)
+		}
+	}
+	return commits, units
+}
+
 // toFetch is the commits one page reads: those already in hand (they cost no fetch), and otherwise the newest
-// historicalTreesPerPage, so one slow archive cannot hold the page open. The next read takes the rest.
+// historicalTreesPerPage, so one slow read cannot hold the page open. The next read takes the rest.
 func toFetch(commits []string, cached func(string) bool) []string {
 	inHand := func(commit string) bool { return cached != nil && cached(commit) }
 	budget := historicalTreesPerPage
@@ -315,7 +331,7 @@ func toFetch(commits []string, cached func(string) bool) []string {
 	return fetch
 }
 
-// readRenders is a tree's renders, nil when they could not be read: never kept, so the next page reads again.
+// readRenders is a read's renders, nil when they could not be read: never kept, so the next page reads again.
 func readRenders(read func() (map[string]pages.Render, error)) map[string]pages.Render {
 	found, err := read()
 	if err != nil || found == nil {

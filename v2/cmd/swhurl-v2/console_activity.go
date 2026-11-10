@@ -296,11 +296,11 @@ func capitalize(text string) string {
 	return strings.ToUpper(string(runes[0])) + string(runes[1:])
 }
 
-// changeReads are the reads a change's row takes through this server: GitHub with its token, the pinned bundle and
-// the cluster. Without a token there are no pull request reads, so a merged change's progress is not known.
+// changeReads are the reads a change's row takes through this server: GitHub with its token, the pinned bundle for
+// main, the merge commits' evidence and the cluster. Without a token there are no pull request reads, so a merged change's progress is not known.
 func (s *consoleServer) changeReads() orchestration.ChangeReads {
-	reads := orchestration.ChangeReads{OpenPulls: s.consolePulls, Renders: s.renders, Main: s.mainRenders,
-		Cached: s.bundle.Cached, Rows: s.rowsByInstance, Reach: s.reach, Now: s.now()}
+	reads := orchestration.ChangeReads{OpenPulls: s.consolePulls, Renders: s.evidence.Renders, Main: s.mainRenders,
+		Cached: s.evidence.Cached, Rows: s.rowsByInstance, Reach: s.reach, Now: s.now()}
 	if s.github != nil {
 		reads.Pull = s.pull
 	}
@@ -370,22 +370,17 @@ func keep[V any](facts map[int]V, key int, value V) {
 	facts[key] = value
 }
 
-// renders is one commit's instances, from the bundle that pins this server's reads.
-func (s *consoleServer) renders(ctx context.Context, commit string) (map[string]pages.Render, error) {
-	tree, err := s.bundle.Tree(ctx, commit)
-	if err != nil {
-		return nil, err
-	}
-	return orchestration.ConsoleRenders(tree)
-}
-
-// mainRenders is main's instances, at the commit every other read on the page is pinned to.
+// mainRenders is main's instances, from the whole tree at the commit every other read on the page is pinned to.
 func (s *consoleServer) mainRenders(ctx context.Context) (map[string]pages.Render, error) {
 	revision, err := s.bundle.Revision(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return s.renders(ctx, revision)
+	tree, err := s.bundle.Tree(ctx, revision)
+	if err != nil {
+		return nil, err
+	}
+	return orchestration.ConsoleRenders(tree)
 }
 
 // rowsByInstance is every instance on the cluster, by <app>/<env>.

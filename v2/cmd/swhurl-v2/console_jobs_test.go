@@ -10,11 +10,12 @@ import (
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
-// jobsFake is a cluster whose console namespace holds the job record ConfigMap and no pods: every job it holds was
-// run by a pod that is gone, so the server that starts afterwards settles it.
+// jobsFake is a cluster whose console namespace holds the record a console started from a checkout keeps — not the
+// pod's `console-jobs` — and no pods: every job it holds was run by a pod that is gone, so the server that starts
+// afterwards settles it.
 func jobsFake(records map[string]string) *kubetest.Fake {
 	return &kubetest.Fake{
-		ConfigMapData: map[string][]kube.ConfigMap{"console": {{Name: "console-jobs", Data: records}}},
+		ConfigMapData: map[string][]kube.ConfigMap{"console": {{Name: "console-jobs-dev", Data: records}}},
 		Objects:       map[observe.Ref][]byte{},
 	}
 }

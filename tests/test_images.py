@@ -23,14 +23,16 @@ def arg(name: str) -> str:
 
 
 class ConsoleImageTests(unittest.TestCase):
-    def test_kubectl_and_helm_match_ci(self):
+    def test_helm_matches_ci(self):
+        """The console reaches the API server itself, so the image carries no kubectl: only helm's pin is CI's."""
         steps = yaml.safe_load((ROOT / '.github/workflows/validate.yml').read_text())['jobs']['validate']['steps']
         ci = {s['uses'].split('@')[0]: s['with'].get('version') for s in steps if 'with' in s and 'uses' in s}
-        self.assertEqual(arg('KUBECTL_VERSION'), ci['azure/setup-kubectl'])
         self.assertEqual(arg('HELM_VERSION'), ci['azure/setup-helm'])
+        instructions = [line for line in DOCKERFILE.splitlines() if not line.lstrip().startswith('#')]
+        self.assertFalse([line for line in instructions if 'kubectl' in line], 'no instruction installs kubectl')
 
     def test_every_download_and_base_image_is_pinned(self):
-        for tool in ('KUBECTL', 'HELM', 'SOPS'):
+        for tool in ('HELM', 'SOPS'):
             self.assertRegex(arg(f'{tool}_SHA256'), r'^[0-9a-f]{64}$', tool)
         for line in re.findall(r'^FROM (\S+)', DOCKERFILE, re.M):
             self.assertRegex(line, r'@sha256:[0-9a-f]{64}$', line)

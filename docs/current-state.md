@@ -17,8 +17,14 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Docs:** `docs/console.md`'s pull-request, token, repository-token, state and progress sections name the Go files
   that decide them; `docs/commands.md` and `docs/contributing.md` describe the recipe, and the `kubectl`-in-a-pod
   paragraph is gone with the reader that needed it.
-- **Offline:** `tests.test_commands`, `tests.test_v1_model_bound` (its importer pin shrank by three) and `make check`
-  passed before the push; the image, its deploy and the operator's browser pass are the next gate.
+- **Offline:** `make check` passed, after three tests that named the deleted console were corrected: `test_commands`
+  states that no command runs under `uv` any more and that `console-dev` is a recipe; `test_images` checks helm's pin
+  and that no Dockerfile instruction installs `kubectl`; and `test_manifest_policy` names the `console` namespace
+  directly instead of importing it from the deleted job store. `v2/cmd/swhurl-v2`'s job fixtures read
+  `console-jobs-dev`, which is the record a checkout's console keeps.
+- **Live:** the Validate run built the image and then failed the tooling job on those three tests, so **Deploy the
+  console** was skipped and the pod still runs the Python image: the cutover is in Git and not yet on the cluster. Its
+  browser pass, and the job surviving a pod replacement, are the next gate.
 
 ## The Go console's forms, exercised live (10 November 2026)
 

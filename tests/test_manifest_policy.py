@@ -69,15 +69,14 @@ class ManifestPolicyTests(unittest.TestCase):
     def test_names_the_tooling_types_exist_in_git(self):
         """A unit or namespace named in the tooling is one Git defines: a rename fails here, not on the cluster."""
         from swhurl.apps import channels, events
-        from swhurl.console import jobstore
         named = set()
         for path in (ROOT / 'tools/swhurl').rglob('*.py'):
             named |= set(re.findall(r"'((?:cluster|infra|platform)-[a-z0-9-]+)'", path.read_text()))
         other = {'platform-settings', 'platform-system', 'platform-certs', 'platform-signing-keys',
                  'platform-certs-staging', 'platform-certs-prod'}  # not units
         self.assertLessEqual(named - other, {unit.name for unit in platform.units()})
-        self.assertLessEqual({events.NAMESPACE, channels.NAMESPACE, jobstore.NAMESPACE,
-                              'platform-system'}, platform.namespaces())
+        self.assertLessEqual({events.NAMESPACE, channels.NAMESPACE, 'console', 'platform-system'},
+                             platform.namespaces())
 
     def test_platform_hosts_come_from_base_domain(self):
         """Platform manifests name the domain only through ${BASE_DOMAIN}; units using a setting substitute it."""

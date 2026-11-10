@@ -26,10 +26,14 @@ random name.
 host's resolver and WAN TCP. The ICMP probes and `wan_dns` localise a failure but do
 not define it, because a firewall may drop ICMP or DNS-over-TLS legitimately.
 
-Output is one NDJSON line per run, prefixed [OK] or [BAD] for the severity parser in
-platform/otel/helmrelease-daemonset.yaml. A layer that does not answer inside its
-timeout is null, never 0. The process exits 0 even when layers fail: [BAD] is the
-signal, and a failed unit would only add systemd noise to the incident it records.
+Output is one NDJSON line per run, prefixed [INFO] or [ERROR] for the severity parser in
+platform/otel/helmrelease-daemonset.yaml: those are the texts the other host timers use,
+so a filter or alert rule written for them covers the probe too (the parser would also
+accept [OK]/[BAD], but it records those as the severity text "OK"/"BAD", which a
+SeverityText='error' query would miss). `ok` in the body is the machine-readable flag.
+A layer that does not answer inside its timeout is null, never 0. The process exits 0
+even when layers fail: [ERROR] is the signal, and a failed unit would only add systemd
+noise to the incident it records.
 """
 
 import json
@@ -183,7 +187,7 @@ def main():
         probe["resolver_dns"], probe["resolver_rcode"] = dns_probe(resolver)
     probe["wan_dns"], probe["wan_dns_rcode"] = dot_probe()
     probe["ok"] = probe["resolver_dns"] is not None and probe["tcp443"] is not None
-    level = "OK" if probe["ok"] else "BAD"
+    level = "INFO" if probe["ok"] else "ERROR"
     print(f"[{level}] {json.dumps(probe, separators=(',', ':'))}", flush=True)
     return 0
 

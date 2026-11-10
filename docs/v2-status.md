@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: a job surviving a pod replacement of the deployed Go console (`swhurl-v2 console` is the image's command; `console/` is deleted), then the operator's page-by-page pass
+Gate: the operator's page-by-page pass over the deployed Go console, on the image that carries the job-row fix
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —

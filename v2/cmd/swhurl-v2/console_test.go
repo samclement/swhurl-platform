@@ -438,3 +438,45 @@ func TestCatalogueIsByteIdentical(t *testing.T) {
 		}
 	}
 }
+
+// A job row on a unit page and on a team's card renders: the mark its state maps to, the job's link and its words.
+// The byte-identical fixtures have no jobs, so only this catches a call site handing the "job" template the state
+// string where it reads a field from a job — which failed on the deployed console the first time a unit had one.
+func TestJobRowsRender(t *testing.T) {
+	server, err := newConsoleServer(consoleConfig{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := pages.Units([][]byte{unitJSON(t, "infra-base", nil, "True", "Applied", false)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit := listed[0]
+	unitPage := unitData{shell: shell{Title: unit.Name, Path: "/units/" + unit.Name, Identity: "sam@swhurl.com",
+		ReadAt: "09:43", RefreshURL: "/units/" + unit.Name, Assets: "92d0885d31c0"},
+		Unit: unit, Refused: pages.RefusedUnits[unit.Name], Detail: unit.Ready.Detail, App: unitApp(unit.Name)}
+	unitPage.JobViews = []jobView{
+		{ID: 61, Action: "reconcile", Identity: "sam@swhurl.com", State: "interrupted", StartedClock: "21:29"},
+		{ID: 62, Action: "reconcile", Identity: "sam@swhurl.com", State: "running", StartedClock: "21:31"},
+	}
+	var rendered bytes.Buffer
+	if err := server.templates["unit.html"].ExecuteTemplate(&rendered, "base", unitPage); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered.String(), `<span class="mark failing" aria-hidden="true"></span> <a href="/jobs/61">reconcile</a>`) ||
+		!strings.Contains(rendered.String(), `<span class="mark updating" aria-hidden="true"></span> <a href="/jobs/62">reconcile</a>`) {
+		t.Fatal("a unit's job rows do not carry their state's mark and their job's link")
+	}
+
+	teams := teamsData{shell: shell{Title: "Teams", Path: "/teams", Identity: "sam@swhurl.com", ReadAt: "09:43",
+		RefreshURL: "/teams", Assets: "92d0885d31c0"},
+		TeamsPage: pages.TeamsPage{Teams: []pages.TeamView{{Name: "web",
+			Job: &pages.TeamJob{ID: 63, Action: "team edit", State: "succeeded"}}}}}
+	rendered.Reset()
+	if err := server.templates["teams.html"].ExecuteTemplate(&rendered, "base", teams); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered.String(), `<span class="mark healthy" aria-hidden="true"></span> Last change: <a href="/jobs/63">team edit succeeded</a>`) {
+		t.Fatal("a team's last change does not carry its state's mark and its job's link")
+	}
+}

@@ -37,7 +37,7 @@
 <h2>Jobs on this unit</h2>
 {{if .JobViews}}
 <ul class="items">
-  {{range .JobViews}}<li>{{template "job" .State}} <a href="/jobs/{{.ID}}">{{.Action}}</a> <span class="muted">{{.State}} · by {{.Identity}} · {{.StartedClock}} UTC</span></li>{{end}}
+  {{range .JobViews}}<li>{{template "job" .}} <a href="/jobs/{{.ID}}">{{.Action}}</a> <span class="muted">{{.State}} · by {{.Identity}} · {{.StartedClock}} UTC</span></li>{{end}}
 </ul>
 {{else}}<p class="muted">None since the console started.</p>{{end}}
 {{end}}

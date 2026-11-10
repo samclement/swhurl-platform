@@ -45,10 +45,24 @@ What has been verified on the live cluster, and when: current facts first, then 
   developer's console), succeeded in four seconds having annotated and waited on the `GitRepository` and then the
   `Kustomization`, whose `lastHandledReconcileAt` is 20:37:15Z and whose applied revision is `da08a8b2`. So the
   deployed server's own credential and its Flux wait work end to end.
-- **Not exercised:** the signed-in pass over the pages themselves, and a job surviving a pod replacement of this Go pod
-  (which wants a job running when the pod is force-deleted) — the gate the cutover leaves. The forms pass below
-  exercised the same handlers from this tree beside the Python console; the deployed pod's own path has run one
-  change, the reconcile recorded here.
+- **A job outlives the pod it ran on:** job 61 (`reconcile platform-reloader`, identity `sam@swhurl.com`) started on
+  `console-6879c679f5-flzqn` and that pod was force-deleted mid-job (`--grace-period=0 --force`, 21:29:04Z — a crash,
+  not the drain a normal delete gets). The replacement `console-6879c679f5-vs627`, same deployment, image
+  `src-a974c607`, settled the record `interrupted` at 21:29:07Z keeping the three lines the dead pod had written
+  (`annotating GitRepository`, `waiting for GitRepository reconciliation`, `fetched revision
+  main@sha1:8d5e467b`) and adding `[ERROR] interrupted: the console restarted before this job finished. What it had
+  done by then is above; nothing later happened`; its log holds `sam@swhurl.com reconcile platform-reloader:
+  interrupted (job 61)`. Flux was never at risk: `platform-reloader` applied `8d5e467b` with
+  `lastHandledReconcileAt` 21:29:04Z, so the annotation the job did land before it died took effect.
+- **A bug the gate found, fixed here:** the first unit page rendered after that job died failed its template —
+  `template: console:5:43: executing "job" at <.State>: can't evaluate field State in type string` — because
+  `unit.html` and `teams.html` handed the `job` partial a state string where it reads a field of a job. The
+  byte-identical fixtures have no jobs, so no such row had ever rendered. Both call sites now pass the job
+  (`{{template "job" .}}`, `{{template "job" .Job}}`), and `TestJobRowsRender` renders a unit's `interrupted` and
+  `running` rows and a team's last change. The pod still runs the image before the fix.
+- **Not exercised:** the signed-in pass over the pages themselves — the operator's — and the job rows on the
+  deployed image, which need the next build. The forms pass below exercised the same handlers from a console built
+  from this tree; the deployed pod's own path has run the two changes recorded here.
 
 ## The Go console's forms, exercised live (10 November 2026)
 

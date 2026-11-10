@@ -39,8 +39,8 @@ var Rules = []Rule{
 	{"pure", "pure packages import only allowlisted standard packages, print nothing and keep no mutable package state",
 		"pass the value in as a parameter (time, identifiers, snapshots) or move the effect into an adapter",
 		"the-pure-model"},
-	{"no-subprocess", "v2 code starts processes only in adapters/sops, adapters/helm, adapters/git and adapters/copier, and names no kubectl or flux command",
-		"read or change Kubernetes through the API server; only SOPS encryption, explicit Helm pull/local template, read-only git and one pinned Copier render are approved",
+	{"no-subprocess", "v2 code starts processes only in adapters/sops, adapters/helm, adapters/git and adapters/copier, names no kubectl or flux command, and names a process signal (syscall) only in cmd/swhurl-v2",
+		"read or change Kubernetes through the API server; only SOPS encryption, explicit Helm pull/local template, read-only git and one pinned Copier render are approved; SIGTERM is the console's job drain, not a process",
 		"kubernetes-the-api-server-not-kubectl"},
 	{"public-api", "the exported API of every library package matches archtest/api.txt",
 		"if the change is intended, run `go test ./archtest -run TestPublicAPI -update` and say why in the change",
@@ -153,9 +153,14 @@ const adapterRoot, orchestrationRoot, commandRoot = "adapters/", "orchestration/
 // (docs/iteration-2-plan.md#guardrails).
 var yamlImporters = []string{"adapters/helm", "adapters/appsource", "adapters/manifests", "adapters/copier"}
 
-var subprocessImports = []string{"os/exec", "syscall"}
+var subprocessImports = []string{"os/exec"}
 var subprocessCalls = []string{"os.StartProcess"}
 var commandNames = []string{"kubectl", "flux"}
+
+// signalImports is syscall, which starts nothing: it names SIGTERM, the signal a pod's replacement sends. Only the
+// console's own command imports it, and only to drain the jobs it runs before the pod's grace period ends.
+var signalImports = []string{"syscall"}
+var signalAllowed = []string{"cmd/swhurl-v2"}
 
 // subprocessAllowed is restricted to the four approved adapter directories, never their fakes or subpackages.
 // SOPS encrypts; Helm explicitly acquires a pinned chart or renders a local chart; Git reads one checkout; Copier
@@ -564,8 +569,13 @@ func checkNoSubprocess(m *Module) []Violation {
 	for _, dir := range m.Dirs() {
 		for _, file := range m.Packages[dir].Source() {
 			allowed := slices.Contains(subprocessAllowed, dir)
+			signals := slices.Contains(signalAllowed, dir)
 			for _, spec := range file.AST.Imports {
-				if path := importPath(spec); !allowed && slices.Contains(subprocessImports, path) {
+				path := importPath(spec)
+				if !allowed && slices.Contains(subprocessImports, path) {
+					found = append(found, Violation{"no-subprocess", m.at(file, spec.Pos()), "imports " + path})
+				}
+				if !allowed && !signals && slices.Contains(signalImports, path) {
 					found = append(found, Violation{"no-subprocess", m.at(file, spec.Pos()), "imports " + path})
 				}
 			}

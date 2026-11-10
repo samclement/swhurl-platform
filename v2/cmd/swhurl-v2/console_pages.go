@@ -345,8 +345,12 @@ func (s *consoleServer) readRows(ctx context.Context) (map[string][]byte, []page
 	return tree, rows, nil
 }
 
-// jobsOf is the console's jobs, newest first: none when its own records cannot be read.
+// jobsOf is the console's jobs, newest first: none when its own records cannot be read. The registry this server runs
+// holds the records it keeps and the jobs it is running; a server with no registry reads the records alone.
 func (s *consoleServer) jobsOf(ctx context.Context) []pages.Job {
+	if s.jobs != nil {
+		return s.withReached(s.jobs.Recent(ctx))
+	}
 	if s.data == nil {
 		return nil
 	}

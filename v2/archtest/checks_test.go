@@ -132,6 +132,9 @@ func TestCheckNoSubprocess(t *testing.T) {
 		"adapters/git/git.go":   "package git\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"git\", \"status\")\n",
 		// An allowed adapter's fake is not the adapter: it starts nothing.
 		"adapters/git/gittest/fake.go": "package gittest\n\nimport \"os/exec\"\n\nvar c = exec.Command(\"git\")\n",
+		// The command may name SIGTERM, which starts nothing; nothing else may import syscall.
+		"cmd/swhurl-v2/main.go": "package main\n\nimport \"syscall\"\n\nvar s = syscall.SIGTERM\n",
+		"orchestration/jobs.go": "package orchestration\n\nimport \"syscall\"\n\nvar s = syscall.SIGTERM\n",
 	})
 	expect(t, checkNoSubprocess(m),
 		"no-subprocess adapters/git/gittest/fake.go:3: imports os/exec",
@@ -140,7 +143,8 @@ func TestCheckNoSubprocess(t *testing.T) {
 		"no-subprocess kernel/a.go:3: imports os/exec",
 		"no-subprocess kernel/a.go:5: names the kubectl command",
 		"no-subprocess kernel/b.go:5: calls os.StartProcess",
-		"no-subprocess kernel/b.go:5: names the flux command")
+		"no-subprocess kernel/b.go:5: names the flux command",
+		"no-subprocess orchestration/jobs.go:3: imports syscall")
 }
 
 func TestCheckPlaces(t *testing.T) {

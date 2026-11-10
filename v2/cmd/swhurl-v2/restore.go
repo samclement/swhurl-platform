@@ -112,8 +112,8 @@ func (c cli) performRestore(r request, target observe.Target, spec kernel.Instan
 		return status
 	}
 	// An interrupt stops the restore the same way a failure does: the use case unwinds on a context of its own,
-	// so the app is put back rather than left stopped. A SIGTERM is left alone — the v2 module names no process
-	// signal beyond the console's own Ctrl-C — and leaves the state any crash would.
+	// so the app is put back rather than left stopped. A SIGTERM is deliberately not caught here — the console catches
+	// one to drain its jobs, and a restore must leave the state any crash would.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, restoreTimeout)

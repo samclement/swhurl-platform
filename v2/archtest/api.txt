@@ -296,6 +296,9 @@ adapters/kube: func (Connection) Issuer() (Issuer, error)
 adapters/kube: func (Connection) Reader() (Reader, error)
 adapters/kube: func (Connection) Reviewer() (Reviewer, error)
 adapters/kube: func (Connection) Writer() (Writer, error)
+adapters/kube: func (JobRecords) Alive(ctx context.Context, owner string) (bool, error)
+adapters/kube: func (JobRecords) Load(ctx context.Context) ([]string, error)
+adapters/kube: func (JobRecords) Save(ctx context.Context, records map[int]*string) error
 adapters/kube: func Client(credentials Credentials) (*http.Client, error)
 adapters/kube: func Connect(data []byte) (Connection, error)
 adapters/kube: func DecodeCollection(ref observe.Ref, selector string, body []byte) observe.List
@@ -315,6 +318,7 @@ adapters/kube: type ExecRequest struct {Namespace, Pod, Container string Command
 adapters/kube: type ExecResult struct {Stdout []byte ExitCode int}
 adapters/kube: type Executor interface {Exec(context.Context, ExecRequest) (ExecResult, error)}
 adapters/kube: type Issuer interface {SigningKeys(ctx context.Context) (SigningKeys, error)}
+adapters/kube: type JobRecords struct {Data Data Pods Reader Namespace string Name string FieldManager string}
 adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error)}
 adapters/kube: type Reviewer interface {Review(ctx context.Context, token, audience string) (TokenReview, error)}
 adapters/kube: type Secret struct {Name string Labels map[string]string Data map[string][]byte}

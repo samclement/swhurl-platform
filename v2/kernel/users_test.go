@@ -73,6 +73,8 @@ func TestUserPermissions(t *testing.T) {
 		"$JS.API.INFO",
 		"$JS.API.STREAM.INFO.KV_flags-staging",
 		"$JS.API.CONSUMER.CREATE.KV_flags-staging.*.$KV.flags-staging.staging.demo-notifier.>",
+		// nats.js re-creates its ordered consumer without a name after a reconnect, filter in the request body.
+		"$JS.API.CONSUMER.CREATE.KV_flags-staging",
 		"$JS.API.CONSUMER.DELETE.KV_flags-staging.*",
 		"$JS.API.CONSUMER.INFO.KV_flags-staging.*",
 		"$JS.API.CONSUMER.INFO.staging-demo-orders.demo-notifier_created",
@@ -84,8 +86,15 @@ func TestUserPermissions(t *testing.T) {
 			t.Errorf("the publisher permissions lack %q: %v", want, publish)
 		}
 	}
-	if len(publish) != 9 {
+	if len(publish) != 10 {
 		t.Errorf("a subscriber's publish list: %v", publish)
+	}
+	// The nameless create is the only grant in the bucket that does not name a filter, so it is granted for the
+	// instance's own environment's stream and no other.
+	for _, other := range publish {
+		if strings.HasSuffix(other, "KV_flags-prod") || strings.Contains(other, "KV_flags-prod.") {
+			t.Errorf("a staging instance may not touch the prod flags stream: %q", other)
+		}
 	}
 	if !reflect.DeepEqual(subscribe, []string{"_INBOX.staging.demo-notifier.>"}) {
 		t.Errorf("a subscriber reads replies under its own inbox only: %v", subscribe)
@@ -98,7 +107,7 @@ func TestUserPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	publish, _ = allowOf(t, publisher, 2)
-	if publish[len(publish)-1] != "staging.demo-orders.>" || len(publish) != 6 {
+	if publish[len(publish)-1] != "staging.demo-orders.>" || len(publish) != 7 {
 		t.Fatalf("a publisher's publish list: %v", publish)
 	}
 	// Two subscriptions to one stream read its description once.

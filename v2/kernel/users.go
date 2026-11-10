@@ -137,10 +137,16 @@ func appUser(user NATSUser) manifest {
 
 // flagAllow is what an app needs to watch its own flag overrides, and nothing else in the bucket: an ordered
 // consumer whose filter is in the request subject, so the server refuses a watch of any other key.
+//
+// The one exception is the request without a consumer name or filter: after its connection drops, nats.js
+// re-creates its ordered consumer that way and carries the filter in the request body, so the server cannot
+// hold it to this instance's prefix. The app could then read another instance's overrides in its own
+// environment (flag values, not secrets). Without it the watch never comes back after a server restart.
 func flagAllow(environment, application string) []string {
 	bucket := FlagsStream(environment)
 	return []string{"$JS.API.INFO", "$JS.API.STREAM.INFO." + bucket,
 		"$JS.API.CONSUMER.CREATE." + bucket + ".*." + FlagsPrefix(environment, application) + ">",
+		"$JS.API.CONSUMER.CREATE." + bucket,
 		"$JS.API.CONSUMER.DELETE." + bucket + ".*", "$JS.API.CONSUMER.INFO." + bucket + ".*"}
 }
 

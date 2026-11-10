@@ -35,9 +35,14 @@ What has been verified on the live cluster, and when: current facts first, then 
   302 to Google. The console's **Open uninstall PR** opened [#109](https://github.com/samclement/swhurl-platform/pull/109),
   whose files include that registration line and the auth, egress, NATS and Reloader registrations; merged as
   `f15b5437` and reconciled, the unit, Kustomization, HelmRelease and JetStream stream were gone, and the namespace
-  `swhurl-try-34-staging` with its 1Gi retained volume and TLS Secret remains, as the removal says. The repository and
+  `swhurl-try-34-staging` with its 1Gi retained volume and TLS Secret remained, as the removal says. The repository and
   its GHCR package were deleted with the tokens in `secrets/`: both deletions answered deleted, the repository and
-  package reads 404, and GHCR's anonymous tag list 401.
+  package reads 404, and GHCR's anonymous tag list 401. On the operator's word its data went next: a dry run of
+  `make destroy-data TARGET=pvc/swhurl-try-34-staging/swhurl-try-34` passed every guard, the confirmed run deleted the
+  claim and PV `pvc-2a603398…` (the reclaim policy went to Delete, and the provisioner logged the host directory
+  deleted at 13:46:54 UTC), and `kubectl delete ns swhurl-try-34-staging` removed the namespace, which then held only
+  its TLS Secret. No backup of it existed: the S3 backup bucket holds no `try-34` object. `make verify-platform`
+  passed afterwards.
 - **Not exercised:** a name GitHub already holds, the webhook permission a token without Webhooks: Read and write
   gets, a promotion of an app created this way, and a job surviving a pod replacement.
 

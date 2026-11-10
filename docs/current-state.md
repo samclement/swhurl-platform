@@ -2,13 +2,17 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## NATS chart 2.15.2, and flag watches that do not survive a NATS restart (10 November 2026)
+
+- **Deployed and live:** #60 merged as `18d20573`; `make flux-reconcile` applied it, `messaging/nats` runs `nats:2.15.2-alpine` (restarted 23:42:24 UTC) and is Ready, `make verify-platform` passed and `make app-status` passed for all ten instances. The apps' NATS errors stopped within a minute.
+- **Found:** after the restart, the TypeScript apps' feature-flag watches did not come back. `nats.js` re-creates its ordered consumer on `$JS.API.CONSUMER.CREATE.KV_flags-<env>`, the subject without a consumer name or filter, which their NATS users do not hold (they have `…CREATE.KV_flags-<env>.*.$KV.flags-…`), so the server logs a **Publish Violation** and the app logs `unable to recreate ordered consumer KV_flags-<env>` (seen in `demo-shop` staging and prod and `swhurl-try-10` staging). The apps keep serving, but flag changes no longer reach them until their pods restart. It is not specific to 2.15.2: any NATS restart triggers it. Not fixed.
+
 ## app-template 5.3.0 for the platform and every instance (10 November 2026)
 
-- **Not merged yet:** validated offline on PR #47's branch; nothing reconciled.
+- **Deployed and live:** #47 merged as `a2f7b2b9`; `make flux-reconcile` applied it and all 13 app-template releases (console, egress, notify and the ten instances) report 5.3.0 applied and Ready. **No pod was replaced**: every `app.kubernetes.io/controller=main` pod kept its start time across the reconcile, as the render predicted. `make verify-platform` passed (the five staging-image warnings predate it) and `make app-status` passed for all ten instances. Because the change touched `v2/`, Validate deployed console `src-ca5a187729c47afc` (`0c5e20d1`); after a reconcile the pod runs it and both console CronJobs completed on it.
 - **Scope:** app-template 5.2.1 → 5.3.0 in the console's, egress proxy's and notify's HelmReleases and in the profile (`v2/testdata/profile.json`), so `make v2-render` moved all ten `v2-apps/instances/*/helmrelease.json` to it. The v2 tests and fixtures that name the version moved with it: the compiled goldens (regenerated with `-update`), the profile identity (the new id is the SHA-256 of the new canonical bytes, checked apart from the test), and the real-chart fixture `policy/testdata/chart-prod.json`; `TestClaimConvention` now renders its frozen v1 document with the profile's chart, as its comment says, instead of the document's own 5.2.1, which only a local cache still held (CI run `42924140687` failed on it). Renovate's own PR changed only the three platform files and failed `TestProxyManifests`, because `make check-apps` caches only the profile's chart version ([chart updates](operations.md#chart-updates)).
 - **What the chart changes:** the full-feature fixture re-rendered with 5.3.0 differs from 5.2.1 only in the `helm.sh/chart` label on each object's metadata, not in a pod template; `helm template` of the console, notify and the egress proxy with both versions differs only in the order of one label. So no pod should restart; that is read from the render, not yet seen on the cluster.
 - **Offline:** `make check-v2` and `make check` passed with `REQUIRE_HELM=1` and the 5.2.1 chart removed from the local cache, as on CI.
-- **Not exercised:** the upgrade on the cluster.
 
 ## Activity reads a merge commit's four files, not its archive (10 November 2026)
 

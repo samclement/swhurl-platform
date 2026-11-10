@@ -300,7 +300,7 @@ func capitalize(text string) string {
 // the cluster. Without a token there are no pull request reads, so a merged change's progress is not known.
 func (s *consoleServer) changeReads() orchestration.ChangeReads {
 	reads := orchestration.ChangeReads{OpenPulls: s.consolePulls, Renders: s.renders, Main: s.mainRenders,
-		Rows: s.rowsByInstance, Reach: s.reach, Now: s.now()}
+		Cached: s.bundle.Cached, Rows: s.rowsByInstance, Reach: s.reach, Now: s.now()}
 	if s.github != nil {
 		reads.Pull = s.pull
 	}

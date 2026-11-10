@@ -202,6 +202,14 @@ func (b *ConsoleBundle) Revision(ctx context.Context) (string, error) {
 	return b.Source.Revision(ctx)
 }
 
+// Cached is whether one commit's tree is already in hand: a page's bounded reads are spent on the ones it must fetch.
+func (b *ConsoleBundle) Cached(revision string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, found := b.trees[revision]
+	return found
+}
+
 // Tree is one commit's selected files, from the cache or read once. A failed read is never kept.
 func (b *ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][]byte, error) {
 	b.mu.Lock()

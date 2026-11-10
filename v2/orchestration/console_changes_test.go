@@ -3,7 +3,10 @@ package orchestration
 import (
 	"context"
 	"errors"
+	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -76,6 +79,77 @@ func TestConsoleChangesWithoutAToken(t *testing.T) {
 	rows, problem := ConsoleChanges(context.Background(), []pages.Job{mergedJob()}, reads, true)
 	if !strings.HasPrefix(problem, "No GitHub token") || len(rows) != 1 || rows[0].Track.Status != "unknown" {
 		t.Fatalf("rows = %+v, problem = %q", rows, problem)
+	}
+}
+
+// Activity reads the historical trees it needs one at a time: a tree already in hand costs nothing, the newest
+// change that is not is the one it fetches, and the rest are left unread for a later read rather than every archive
+// at once.
+func TestActivityReadsOneHistoricalTreePerPage(t *testing.T) {
+	if got := toFetch([]string{"a", "b", "c"}, nil); !slices.Equal(got, []string{"a"}) {
+		t.Fatalf("the newest, one per page: %v", got)
+	}
+	inHand := func(commit string) bool { return commit == "a" || commit == "c" }
+	if got := toFetch([]string{"a", "b", "c", "d"}, inHand); !slices.Equal(got, []string{"a", "b", "c"}) {
+		t.Fatalf("a tree in hand costs no fetch: %v", got)
+	}
+
+	render := map[string]pages.Render{"web/prod": {Records: "r", Settings: "s", Digest: "sha256:a", Release: true, Runs: "sha256:a"}}
+	healthy := map[string]*pages.AppRow{"web/prod": {State: pages.State{Key: pages.StateHealthy}, Report: &pages.Report{}}}
+	jobs := make([]pages.Job, 0, historicalTreesPerPage+2)
+	for i := range historicalTreesPerPage + 2 {
+		job := mergedJob()
+		job.ID, job.Link = i+1, "https://github.com/o/r/pull/"+strconv.Itoa(100+i)
+		jobs = append(jobs, job)
+	}
+	var mu sync.Mutex
+	inTree := map[string]bool{}
+	var fetched []string
+	reads := ChangeReads{
+		OpenPulls: func(context.Context) ([]pages.OpenPull, string) { return nil, "" },
+		Pull: func(_ context.Context, number int) (pages.Pull, error) {
+			return pages.Pull{State: "merged", When: "2026-11-09T09:00:00Z", Commit: "c" + strconv.Itoa(number)}, nil
+		},
+		Renders: func(_ context.Context, commit string) (map[string]pages.Render, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if !inTree[commit] { // the bundle answers one it holds without reading it again
+				fetched = append(fetched, commit)
+				inTree[commit] = true
+			}
+			return render, nil
+		},
+		Main:   func(context.Context) (map[string]pages.Render, error) { return render, nil },
+		Cached: func(commit string) bool { mu.Lock(); defer mu.Unlock(); return inTree[commit] },
+		Rows:   func(context.Context) (map[string]*pages.AppRow, error) { return healthy, nil },
+		Now:    changesNow,
+	}
+	moved := func(rows []pages.ChangeRow) []pages.ChangeRow {
+		var found []pages.ChangeRow
+		for _, row := range rows {
+			if !row.Track.Settled() {
+				found = append(found, row)
+			}
+		}
+		return found
+	}
+	rows, _ := ConsoleChanges(context.Background(), jobs, reads, false)
+	slices.Sort(fetched)
+	if len(fetched) != historicalTreesPerPage || !slices.Equal(fetched, []string{"c100"}) {
+		t.Fatalf("one page fetches the newest %d: %v", historicalTreesPerPage, fetched)
+	}
+	if left := moved(rows); len(left) != 2 {
+		t.Fatalf("the trees it did not reach are unknown, not assumed: %v", left)
+	}
+	for page, want := range map[int][]string{2: {"c100", "c101"}, 3: {"c100", "c101", "c102"}} {
+		rows, _ = ConsoleChanges(context.Background(), jobs, reads, false)
+		slices.Sort(fetched)
+		if !slices.Equal(fetched, want) {
+			t.Fatalf("page %d fetches the next one and refetches nothing in hand: %v", page, fetched)
+		}
+		if left := moved(rows); len(left) != 3-page {
+			t.Fatalf("page %d leaves %d unread: %v", page, 3-page, left)
+		}
 	}
 }
 

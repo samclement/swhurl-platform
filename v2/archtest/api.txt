@@ -1136,6 +1136,7 @@ orchestration: const StaleDays = 14
 orchestration: const StepDone = "done"
 orchestration: const StepFailed = "failed"
 orchestration: const StepNotRead = "not_read"
+orchestration: func (*ConsoleBundle) Cached(revision string) bool
 orchestration: func (*ConsoleBundle) Revision(ctx context.Context) (string, error)
 orchestration: func (*ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][]byte, error)
 orchestration: func (*Jobs) Drain(timeout time.Duration) bool
@@ -1219,7 +1220,7 @@ orchestration: type BootstrapLine struct {Level BootstrapLevel Text string}
 orchestration: type BootstrapOptions struct {DryRun bool Wait, Interval time.Duration}
 orchestration: type BootstrapPorts struct {Data kube.Data Installer clickstack.Installer}
 orchestration: type BootstrapReport struct {Lines []BootstrapLine}
-orchestration: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(context.Context, string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
+orchestration: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(context.Context, string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Cached func(string) bool Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
 orchestration: type CheckOptions struct {Now float64 Base, PlatformAddress, NotifyAddress, Token string DryRun bool}
 orchestration: type CheckReport struct {State *incident.State Offered []CheckerDelivery}
 orchestration: type CheckerDelivery struct {Entry incident.Entry Err error Retry bool}

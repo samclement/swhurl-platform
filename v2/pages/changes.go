@@ -126,15 +126,16 @@ func (t Render) Pending() bool {
 
 // Progress is how far a merged change to an instance has got: the facts after its merge, never saved.
 type Progress struct {
-	State   string // live, zero, removed; replaced, superseded, historical; creating, applying, removing; failing, held, unread
-	Detail  string // for replaced: when it was first seen at its end
+	State   string // live, zero, removed; replaced, unchecked, superseded, historical; creating, applying, removing; failing, held, unread
+	Detail  string // for replaced and unchecked: when it was first seen at its end
 	Applied bool   // Flux applied its render: the instance is Ready at its generation with the target image
 	Newer   string // carried by main's newer release: its image digest, or "-" when only the render differs
 }
 
-// Reached is whether the progress is where a change ends; Job.Reached records the first time it was seen there.
+// Reached is whether the progress is where a change ends; Job.Reached records the first time it was seen there. A
+// change seen there and not read again since is still there.
 func (p Progress) Reached() bool {
-	return p.State == "live" || p.State == "zero" || p.State == "removed"
+	return p.State == "live" || p.State == "zero" || p.State == "removed" || p.State == "unchecked"
 }
 
 // actionKind is a console branch's action in the stage vocabulary: v2's scale is still a scale.
@@ -159,17 +160,20 @@ func (o Observed) absent() bool { return o.Read && o.Row == nil }
 func ProgressOf(action string, merged, main *Render, live Observed, reached string) Progress {
 	switch {
 	case merged == nil:
-		return Progress{State: "unread", Detail: "the target or current render could not be read"}
+		return unchecked(reached, Progress{State: "unread", Detail: "the target or current render could not be read"})
 	case merged.Records == "" && action != "remove":
 		return Progress{State: "historical", Detail: "its merge commit has no records for this instance"}
 	case main == nil:
-		return Progress{State: "unread", Detail: "the target or current render could not be read"}
+		return unchecked(reached, Progress{State: "unread", Detail: "the target or current render could not be read"})
 	}
 	target, newer, replaced := carried(action, *merged, *main)
 	if replaced {
 		return ranOr(reached, Progress{State: "superseded"})
 	}
 	found := Landing(action, live, target)
+	if found.State == "unread" {
+		found = unchecked(reached, found)
+	}
 	if newer == "" {
 		return found
 	}
@@ -199,6 +203,15 @@ func carried(action string, merged, main Render) (target Render, newer string, r
 func ranOr(reached string, otherwise Progress) Progress {
 	if reached != "" {
 		return Progress{State: "replaced", Detail: reached}
+	}
+	return otherwise
+}
+
+// unchecked is a change's progress when the read that would decide it failed: one already seen at its end stays
+// there, and its sentence says it could not be checked again. A failed read never undoes what an earlier one found.
+func unchecked(reached string, otherwise Progress) Progress {
+	if reached != "" {
+		return Progress{State: "unchecked", Detail: reached}
 	}
 	return otherwise
 }
@@ -252,15 +265,16 @@ var mergedWords = map[string]struct {
 	Status, Said string
 	There        *string
 }{
-	"live":     {"done", "{target} runs it{newer}.", ptr("")},
-	"zero":     {"done", "{target} is applied and scaled to zero.", ptr("scaled to zero")},
-	"removed":  {"done", "{target} is removed.", ptr("")},
-	"replaced": {"done", "{end} from {seen}; a newer configuration has since replaced it.", ptr("then replaced")},
-	"removing": {"running", "Merged; Flux is removing {target}.", nil},
-	"creating": {"running", "Merged; waiting for Flux to create {target}.", nil},
-	"applying": {"running", "Merged; Flux is applying it to {target}.", nil},
-	"failing":  {"blocked", "Merged, but {target} is failing: open its page.", nil},
-	"held":     {"waiting", "Merged, but {target} is suspended: open its page.", nil},
+	"live":      {"done", "{target} runs it{newer}.", ptr("")},
+	"zero":      {"done", "{target} is applied and scaled to zero.", ptr("scaled to zero")},
+	"removed":   {"done", "{target} is removed.", ptr("")},
+	"replaced":  {"done", "{end} from {seen}; a newer configuration has since replaced it.", ptr("then replaced")},
+	"unchecked": {"done", "{end} from {seen}{newer}; a later read could not check it again.", ptr("not re-read")},
+	"removing":  {"running", "Merged; Flux is removing {target}.", nil},
+	"creating":  {"running", "Merged; waiting for Flux to create {target}.", nil},
+	"applying":  {"running", "Merged; Flux is applying it to {target}.", nil},
+	"failing":   {"blocked", "Merged, but {target} is failing: open its page.", nil},
+	"held":      {"waiting", "Merged, but {target} is suspended: open its page.", nil},
 }
 
 func ptr(text string) *string { return &text }
@@ -491,7 +505,7 @@ func (p pullPath) landedOutcome(said string, found Progress) string {
 // landedStages are Applied, Running (unless it removes) and the end, as far as the merged change got: applied and
 // running are separate facts.
 func (p pullPath) landedStages(status string, there *string, found Progress) []Stage {
-	ended := found.Reached() || found.State == "replaced"
+	ended := found.Reached()
 	got := found.Applied || ended // Flux applied it, whatever has happened since
 	state, note := stageOf[status], found.Detail
 	if ended {

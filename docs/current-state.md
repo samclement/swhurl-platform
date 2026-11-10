@@ -31,10 +31,15 @@ What has been verified on the live cluster, and when: current facts first, then 
   `make flux-reconcile` found every unit at its revision and `make verify-platform` passed.
   `http://console.homelab.swhurl.com` answers 301 to https and a signed-out https request 302 to Google's consent with
   the oauth callback, so the sign-in path reaches the proxy intact.
-- **Not exercised:** the signed-in browser pass over the pages, and a job surviving a pod replacement of this Go pod
-  (which wants a real job from the operator's account) — the two gates the cutover leaves. The forms pass below
-  exercised the same handlers from this tree beside the Python console, so what is untested is the deployed pod's own
-  paths, not the handlers.
+- **The deployed pod's first signed-in change:** job 60 in `console/console-jobs` — `reconcile` of
+  `app-demo-notifier-staging`, identity `sam@swhurl.com`, owner `console-6d587f4695-llvjc` (the Go pod, not a
+  developer's console), succeeded in four seconds having annotated and waited on the `GitRepository` and then the
+  `Kustomization`, whose `lastHandledReconcileAt` is 20:37:15Z and whose applied revision is `da08a8b2`. So the
+  deployed server's own credential and its Flux wait work end to end.
+- **Not exercised:** the signed-in pass over the pages themselves, and a job surviving a pod replacement of this Go pod
+  (which wants a job running when the pod is force-deleted) — the gate the cutover leaves. The forms pass below
+  exercised the same handlers from this tree beside the Python console; the deployed pod's own path has run one
+  change, the reconcile recorded here.
 
 ## The Go console's forms, exercised live (10 November 2026)
 

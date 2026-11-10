@@ -1,7 +1,7 @@
 {
   "kind": "v2-egress",
   "version": 1,
-  "revision": "e55d12d0a5174625c095923a120167086d33a13a",
+  "revision": "6d9262070d97f85293beb070e037cb12f328edff",
   "instances": [
     {
       "application": "demo-orders",
@@ -115,6 +115,14 @@
       "application": "swhurl-try-33",
       "environment": "staging",
       "port": 30106,
+      "grants": [
+        "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
+      ]
+    },
+    {
+      "application": "swhurl-try-34",
+      "environment": "staging",
+      "port": 30118,
       "grants": [
         "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
       ]

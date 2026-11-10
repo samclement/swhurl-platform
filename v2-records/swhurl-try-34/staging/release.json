@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "application": "swhurl-try-34",
+  "source": {
+    "repository": "samclement/swhurl-try-34",
+    "commit": "2c7e03a230576d0cecd856c72fc4e6d80c2c15c8"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/swhurl-try-34",
+    "digest": "sha256:5fbf78a7f69aa7ebb0c075a0662965186cd1b8b3821b22da808a939be38801ea",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "web",
+    "port": 8080,
+    "healthPath": "/healthz",
+    "uid": 65532
+  },
+  "database": "sqlite",
+  "telemetry": true,
+  "publishes": [
+    "visited"
+  ],
+  "description": "A throwaway app created from the deployed console to prove the New app path.",
+  "documents": [
+    "events",
+    "flags"
+  ],
+  "releaseId": "rel-sha256:7ad09dac068eef3ecec48cbb57fe6b6a9621842e85c97223a4e74417a205af97"
+}

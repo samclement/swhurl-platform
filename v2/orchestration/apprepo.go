@@ -409,8 +409,9 @@ func appImage(owner, name string) string {
 	return appImageHost + "/" + strings.ToLower(owner) + "/" + name
 }
 
-// waitForImage waits for the first image the repository publishes, preferring the template's seed (`0-<commit>`)
-// over the run's own build, and names the tag and digest it found.
+// waitForImage waits for the app's own first image the repository publishes and names the tag and digest it found.
+// The template's seed (`0-<commit>`) is a copied build whose label states the template's commit, not this app's,
+// so it is no release the platform can create from.
 func waitForImage(ctx context.Context, inputs AppRepoInputs, image, commit string) (string, string, error) {
 	reader, err := inputs.Images(image)
 	if err != nil {
@@ -420,12 +421,7 @@ func waitForImage(ctx context.Context, inputs AppRepoInputs, image, commit strin
 	for {
 		if tag, found := imageTag(ctx, reader, short); found {
 			if described, err := reader.Describe(ctx, tag); err == nil && described.Digest != "" {
-				if strings.HasPrefix(tag, "0-") {
-					inputs.Note("Seeded " + image + ":" + tag + "@" + described.Digest +
-						": the template's tested image for these answers; staging deploys the image this run builds as soon as it is published")
-				} else {
-					inputs.Note("Published " + image + ":" + tag + "@" + described.Digest)
-				}
+				inputs.Note("Published " + image + ":" + tag + "@" + described.Digest)
 				return tag, described.Digest, nil
 			}
 		}
@@ -438,7 +434,8 @@ func waitForImage(ctx context.Context, inputs AppRepoInputs, image, commit strin
 	}
 }
 
-// imageTag is the tag the repository publishes for this commit: the seed if it is there, else the highest run's.
+// imageTag is the tag the repository publishes for this commit: the highest run's. Run 0 is the template's seed,
+// a copied image, so no release states it.
 func imageTag(ctx context.Context, reader registry.Reader, commit string) (string, bool) {
 	tags, err := reader.Tags(ctx)
 	if err != nil {
@@ -449,9 +446,6 @@ func imageTag(ctx context.Context, reader registry.Reader, commit string) (strin
 		run, sha, ok := strings.Cut(tag, "-")
 		if !ok || sha != commit {
 			continue
-		}
-		if run == "0" {
-			return tag, true
 		}
 		number, err := strconv.ParseInt(run, 10, 64)
 		if err != nil || number < 1 {

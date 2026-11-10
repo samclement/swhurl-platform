@@ -1374,6 +1374,7 @@ pages: func ConnectionsOf(inventory *Inventory, teams map[string]string, env str
 pages: func ConsoleChangeNamed(kind string) (ConsoleChange, bool)
 pages: func ConsoleChanges() []ConsoleChange
 pages: func ConsoleFormChange(kind, name string, fields map[string][]string, declared *Inventory, teams map[string]TeamInfo) (ConsoleFormFlags, error)
+pages: func ConsoleTeamChange(kind, name string, fields map[string][]string) (ConsoleFormFlags, error)
 pages: func ConsoleTeamInput(file string) bool
 pages: func DecodeReport(data []byte) (Report, error)
 pages: func EgressPageOf(rows []AppRow, site Site) EgressPage
@@ -1443,7 +1444,7 @@ pages: type Connection struct {Role string `json:"role"` App string `json:"app,o
 pages: type ConnectionRow struct {Role, App, Event, Team, Status string}
 pages: type Connections struct {Address, API string Calls, Callers, Publishes, Subscribes, Egress []string Subscribers [][2]string Rows []ConnectionRow Offers string ProxyPort int32}
 pages: type ConsoleChange struct {Name string Title string Envs []string TargetEnv string BothEnvs bool}
-pages: type ConsoleFormFlags struct {Settings []string Calls, Subscriptions []string DropCalls, DropSubscriptions []string Allows, Disallows []string Image string}
+pages: type ConsoleFormFlags struct {Settings []string Calls, Subscriptions []string DropCalls, DropSubscriptions []string Allows, Disallows []string Image string Description, Rename string Transport, Address string}
 pages: type Currentness struct {State string `json:"state"` Reason string `json:"reason"` AppliedRevision string `json:"appliedRevision"`}
 pages: type Database struct {Kind string `json:"kind"` Path string `json:"path"`}
 pages: type EgressEnvironment struct {Env string Rows []EgressRow}

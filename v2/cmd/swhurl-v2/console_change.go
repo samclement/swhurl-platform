@@ -225,13 +225,13 @@ func splitNames(values []string) []string {
 // pull request is the link the job keeps.
 func (s *consoleServer) changeWork(spec *changeSpec) orchestration.JobWork {
 	return func(ctx context.Context, line func(string)) (string, error) {
-		return s.openChange(spec, line)
+		return s.openChangeInput(spec, "", line)
 	}
 }
 
 // openChange runs one change: it downloads the pinned commit, applies the change in a working copy of its own, publishes
 // what its kind owns and opens the pull request. A refusal is the whole of what the command wrote, in v2's words.
-func (s *consoleServer) openChange(spec *changeSpec, line func(string)) (string, error) {
+func (s *consoleServer) openChangeInput(spec *changeSpec, input string, line func(string)) (string, error) {
 	opened := ""
 	var refusal strings.Builder
 	c := cli{out: lineWriter{line: func(text string) {
@@ -239,7 +239,8 @@ func (s *consoleServer) openChange(spec *changeSpec, line func(string)) (string,
 			opened = strings.TrimSpace(url)
 		}
 		line(text)
-	}}, diagnostic: &refusal, consoleSource: s.github, getenv: s.changeEnvironment()}
+	}}, diagnostic: &refusal, consoleSource: s.github, getenv: s.changeEnvironment(),
+		stdin: strings.NewReader(input)}
 	if status := c.change(request{command: "change", spec: spec}); status != 0 {
 		return "", errors.New(strings.TrimSpace(refusal.String()))
 	}
@@ -362,4 +363,105 @@ func (s *consoleServer) audit(format string, args ...any) {
 		return
 	}
 	fmt.Fprintf(s.log, "[AUDIT] "+format+"\n", args...)
+}
+
+// teamJobActions are the job names a team's changes run as, as the console has always named them: the Activity page
+// reads them back.
+var teamJobActions = map[string]string{
+	"team-add": "team add", "team-edit": "team edit", "team-remove": "team remove",
+	"team-channel-set": "channel set", "team-channel-remove": "channel remove",
+}
+
+// changeTeam adds, edits or removes a team: a pull request v2's own team command opens, refused before it starts when
+// the name, the description or the new name would make one nothing could apply.
+func (s *consoleServer) changeTeam(w http.ResponseWriter, r *http.Request) {
+	action, kind := r.PathValue("action"), "team-"+r.PathValue("action")
+	if !oneOf(action, []string{"add", "edit", "remove"}) {
+		s.teamsRefusal(w, r, "no such team change")
+		return
+	}
+	s.proposeTeam(w, r, kind)
+}
+
+// changeChannel gives a team its notification channel, or removes it. The address reaches v2 on its standard input and
+// the job's redactor from the same moment, so it is never in an argument, a page or a log line.
+func (s *consoleServer) changeChannel(w http.ResponseWriter, r *http.Request) {
+	action, kind := r.PathValue("action"), "team-channel-"+r.PathValue("action")
+	if !oneOf(action, []string{"set", "remove"}) {
+		s.teamsRefusal(w, r, "no such channel change")
+		return
+	}
+	s.proposeTeam(w, r, kind)
+}
+
+// proposeTeam starts one team change as a job, or says why the form was refused: the Teams page again, with the
+// sentence, as the console always answered a team form.
+func (s *consoleServer) proposeTeam(w http.ResponseWriter, r *http.Request, kind string) {
+	one, known := pages.ConsoleChangeNamed(kind)
+	fields, err := formFields(r)
+	if !known {
+		s.teamsRefusal(w, r, "no such team change")
+		return
+	}
+	if err != nil {
+		s.teamsRefusal(w, r, "The form could not be read: "+err.Error())
+		return
+	}
+	if !s.hasGitHub {
+		s.failure(w, r, http.StatusConflict, "No GitHub token is configured (console-github Secret).")
+		return
+	}
+	if s.jobs == nil {
+		s.failure(w, r, http.StatusConflict, noJobsProblem)
+		return
+	}
+	name := strings.TrimSpace(first(fields, "name"))
+	flags, err := pages.ConsoleTeamChange(kind, name, fields)
+	if err != nil {
+		s.teamsRefusal(w, r, err.Error())
+		return
+	}
+	if flags.Address != "" {
+		s.redact.Add(flags.Address)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), writeTimeout)
+	defer cancel()
+	spec := &changeSpec{kind: kind, team: name, description: flags.Description, rename: flags.Rename,
+		transport: flags.Transport, requestedBy: identityOf(r), repository: s.repository}
+	job, err := s.jobs.Start(ctx, teamJobActions[kind], one.Target(name, ""), identityOf(r), nil,
+		s.teamWork(spec, flags.Address))
+	if err != nil {
+		if inPlace(r) {
+			s.refusalAnswer(w, r, err.Error())
+			return
+		}
+		s.failure(w, r, http.StatusConflict, err.Error())
+		return
+	}
+	s.started(w, r, job)
+}
+
+// teamWork is one team change as a job's work, with the channel's address on the command's standard input.
+func (s *consoleServer) teamWork(spec *changeSpec, address string) orchestration.JobWork {
+	return func(ctx context.Context, line func(string)) (string, error) {
+		input := ""
+		if address != "" {
+			input = address + "\n"
+		}
+		return s.openChangeInput(spec, input, line)
+	}
+}
+
+// teamsRefusal answers a refused team form as the Teams page with its sentence, which is where its button was.
+func (s *consoleServer) teamsRefusal(w http.ResponseWriter, r *http.Request, problem string) {
+	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
+	defer cancel()
+	data, err := s.readTeams(ctx)
+	if err != nil {
+		s.failure(w, r, http.StatusBadGateway, err.Error())
+		return
+	}
+	data.Error = problem
+	data.shell = s.page(r, false)
+	s.render(w, http.StatusBadRequest, "teams.html", data)
 }

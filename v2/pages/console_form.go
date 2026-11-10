@@ -22,6 +22,8 @@ type ConsoleFormFlags struct {
 	DropCalls, DropSubscriptions []string
 	Allows, Disallows            []string
 	Image                        string
+	Description, Rename          string
+	Transport, Address           string // a channel's transport and the address the command reads on its standard input
 }
 
 // consoleSubscription is an event a subscription names: <app>.<event>, both DNS labels.
@@ -38,6 +40,15 @@ var consoleExposures = []string{"private", "authenticated-web", "public"}
 // "disconnect", "allow", "team", "remove" or "promote". declared is the instance's own inventory from the records
 // (nil when it has none), and teams the registered teams; both are only read by the form that names them.
 func ConsoleFormChange(kind, name string, fields map[string][]string, declared *Inventory,
+	teams map[string]TeamInfo) (ConsoleFormFlags, error) {
+	if strings.HasPrefix(kind, "team-") {
+		return ConsoleTeamChange(kind, name, fields)
+	}
+	return appChange(kind, name, fields, declared, teams)
+}
+
+// appChange reads one app instance's own form.
+func appChange(kind, name string, fields map[string][]string, declared *Inventory,
 	teams map[string]TeamInfo) (ConsoleFormFlags, error) {
 	switch kind {
 	case "scale":
@@ -189,6 +200,38 @@ func teamSettings(name string, fields map[string][]string, declared *Inventory, 
 		return nil, fmt.Errorf("%s already belongs to %s: that changes nothing", name, team)
 	}
 	return []string{"team=" + team}, nil
+}
+
+// teamChange reads one team form: the name a change is to, and what it changes. A team's name and its new name are
+// DNS labels, because the branch and the registry both carry them; a channel's address is the command's to read on its
+// standard input, so it is never an argument, a page's text or a log line.
+func ConsoleTeamChange(kind, name string, fields map[string][]string) (ConsoleFormFlags, error) {
+	if !consoleName.MatchString(name) {
+		return ConsoleFormFlags{}, fmt.Errorf("team name: lowercase letters, digits and hyphens, at most 40 characters")
+	}
+	switch kind {
+	case "team-channel-set":
+		transport := strings.TrimSpace(field(fields, "transport"))
+		if transport == "" {
+			transport = "ntfy"
+		}
+		return ConsoleFormFlags{Transport: transport, Address: strings.TrimSpace(field(fields, "address"))}, nil
+	case "team-channel-remove", "team-remove":
+		return ConsoleFormFlags{}, nil
+	}
+	found := ConsoleFormFlags{Description: strings.Join(strings.Fields(field(fields, "description")), " ")}
+	if kind == "team-add" {
+		return found, nil
+	}
+	rename := strings.TrimSpace(field(fields, "rename"))
+	if rename == "" || rename == name {
+		return found, nil
+	}
+	if !consoleName.MatchString(rename) {
+		return ConsoleFormFlags{}, fmt.Errorf("new name: lowercase letters, digits and hyphens, at most 40 characters")
+	}
+	found.Rename = rename
+	return found, nil
 }
 
 // field is one form field's first value.

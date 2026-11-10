@@ -141,10 +141,10 @@ func TestActivityReadsOneHistoricalTreePerPage(t *testing.T) {
 	if left := moved(rows); len(left) != 2 {
 		t.Fatalf("the trees it did not reach are unknown, not assumed: %v", left)
 	}
-	for page, want := range map[int][]string{2: {"c100", "c101"}, 3: {"c100", "c101", "c102"}} {
+	for page := 2; page <= 3; page++ {
 		rows, _ = ConsoleChanges(context.Background(), jobs, reads, false)
 		slices.Sort(fetched)
-		if !slices.Equal(fetched, want) {
+		if want := []string{"c100", "c101", "c102"}[:page]; !slices.Equal(fetched, want) {
 			t.Fatalf("page %d fetches the next one and refetches nothing in hand: %v", page, fetched)
 		}
 		if left := moved(rows); len(left) != 3-page {

@@ -97,6 +97,7 @@ One machine runs k3s. cert-manager gets certificates from Let's Encrypt, the pac
 
 | I want to… | Read |
 | --- | --- |
+| See the platform's goal, its user journeys and the APIs and primitives behind them, on one page | [Goal, journeys and primitives](docs/journeys.md) |
 | Look up a `make` target | [Commands](docs/commands.md) |
 | Check health, rotate a Secret, restore a backup or troubleshoot | [Operations](docs/operations.md) |
 | Review a Renovate chart update | [Chart updates](docs/operations.md#chart-updates) |

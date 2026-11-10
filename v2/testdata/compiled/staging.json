@@ -1,12 +1,12 @@
 {
   "kind": "v2-compilation",
   "version": 1,
-  "id": "comp-sha256:844153ca9d64d3203ae862c39495ccc99fec0b9ba4c57757ebfe4f05b9d118f0",
+  "id": "comp-sha256:482f81ef7e1a202d06e2dc7d2f0f0736e962d728f52e8473ff1576577fc25c7a",
   "inputs": {
     "app": "app-sha256:50aa37430360ade5a48ce7d5c968b521b57e91bf8a1c4501fb14fc10d2672e0f",
     "release": "rel-sha256:760d0a77db10fe257ba80d01bc5e4d351e4c1d590eafad31569ad7aeebc28ce5",
     "instance": "inst-sha256:951524961ff4ec58b7a0305d335078ac3d1c6e4fbdf6951b0e7139601737037b",
-    "profile": "prof-sha256:20ea752df2122d3938202e9ab7569daad7690786e145f19f4e2714f3cdf18356",
+    "profile": "prof-sha256:1af944746cfb23a53864e5606023d115f74312df1989ce12777492bf2dbda993",
     "calls": ""
   },
   "files": [
@@ -50,7 +50,7 @@
                 "name": "bjw-s",
                 "namespace": "flux-system"
               },
-              "version": "5.2.1"
+              "version": "5.3.0"
             }
           },
           "install": {

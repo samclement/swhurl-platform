@@ -42,7 +42,7 @@ func TestPolicyVisitsEveryInstanceEvenAfterARenderFailure(t *testing.T) {
 	}
 	namespaces := []string{}
 	for _, call := range renderer.Calls {
-		if call.Chart != "explicit-local-chart" || call.ChartName != "app-template" || call.ChartVersion != "5.2.1" {
+		if call.Chart != "explicit-local-chart" || call.ChartName != "app-template" || call.ChartVersion != "5.3.0" {
 			t.Fatal("chart identity not supplied from the profile")
 		}
 		namespaces = append(namespaces, call.Namespace)
@@ -126,7 +126,7 @@ func realPolicyChart(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chart := filepath.Join(cache, "swhurl-platform/charts/app-template-5.2.1")
+	chart := filepath.Join(cache, "swhurl-platform/charts/app-template-5.3.0")
 	_, binary := exec.LookPath("helm")
 	_, metadata := os.Stat(filepath.Join(chart, "Chart.yaml"))
 	if binary != nil || metadata != nil {

@@ -1,1 +1,0 @@
-{"apiVersion":"image.toolkit.fluxcd.io/v1","kind":"ImageRepository","metadata":{"labels":{"platform.swhurl.com/app":"swhurl-try-34","platform.swhurl.com/managed":"true"},"name":"swhurl-try-34","namespace":"flux-system"},"spec":{"image":"ghcr.io/samclement/swhurl-try-34","interval":"1h"}}

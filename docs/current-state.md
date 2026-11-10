@@ -4,7 +4,8 @@ What has been verified on the live cluster, and when: current facts first, then 
 
 ## The New app path takes the app's own image (9 November 2026)
 
-- **Scope:** §23 step 3's live proof, from the deployed console `src-f60c3e074bea8316` (on `ba015917`). Job 49
+- **Scope:** §23 step 3's live proof, from the deployed console `src-f60c3e074bea8316` (on `ba015917`; fixed by
+  `4e8b1fbc`). Job 49
   created `samclement/swhurl-try-34` and its image webhook, and the template's seed `0-2c7e03a` was published 14
   seconds after run 1 started. `swhurl-v2 create` refused it: `invalid: source.revision: the tag's suffix does not
   abbreviate the revision`. The seed is a copy of the template's smoke-tested image, so its
@@ -20,9 +21,25 @@ What has been verified on the live cluster, and when: current facts first, then 
   `make check`'s repo, apps, otel, lint, codegraph and docs checks passed; its Python suite failed only in
   `test_commands`, on another session's in-flight connectivity-probe Makefile target and `docs/commands.md` row,
   which this change does not touch.
-- **Live:** (the fixed console and the resumed creation are recorded here once run)
-- **Not exercised:** the live creation after this fix, a resumed job from the deployed console, a name GitHub
-  already holds, and the webhook permission a token without Webhooks: Read and write gets.
+- **Live:** the deploy bot pinned console `src-41ee4d8b055706bc` (`6d926207`), Flux rolled it, and
+  `make verify-platform` passed (79 OK; only the pre-existing staging-image warnings). **Finish creating this app**
+  resumed job 49 as job 50 (08:24:55): it found the repository and its newest commit `2c7e03a`, printed
+  `Published ghcr.io/samclement/swhurl-try-34:1-2c7e03a@sha256:5fbf78a7…`, wrote the six record files, rendered 24
+  files and opened [#108](https://github.com/samclement/swhurl-platform/pull/108) in 27 seconds. The PR's release
+  states source `2c7e03a`, image `1-2c7e03a`, digest `5fbf78a7…`, this app's description, and its own AsyncAPI
+  (title `swhurl-try-34`) and flags; the webhook was active for `package,registry_package` with a 200 delivery.
+  Merged as `0f75e709`; the PR carried the records, the unit file and the platform documents but **not** the unit's
+  registration in `clusters/home/kustomization.yaml`, so the reviewed edit was made in `6276a608` and the unit then
+  reconciled. `make app-status` reported **healthy**, applied `6276a608`, the running digest `5fbf78a7…`, route
+  `https://staging-swhurl-try-34.homelab.swhurl.com` with its certificate ready, and the signed-out route answered
+  302 to Google. The console's **Open uninstall PR** opened [#109](https://github.com/samclement/swhurl-platform/pull/109),
+  whose files include that registration line and the auth, egress, NATS and Reloader registrations; merged as
+  `f15b5437` and reconciled, the unit, Kustomization, HelmRelease and JetStream stream were gone, and the namespace
+  `swhurl-try-34-staging` with its 1Gi retained volume and TLS Secret remains, as the removal says. The repository and
+  its GHCR package were deleted with the tokens in `secrets/`: both deletions answered deleted, the repository and
+  package reads 404, and GHCR's anonymous tag list 401.
+- **Not exercised:** a name GitHub already holds, the webhook permission a token without Webhooks: Read and write
+  gets, a promotion of an app created this way, and a job surviving a pod replacement.
 
 ## The New app repository is Go's (9 November 2026)
 

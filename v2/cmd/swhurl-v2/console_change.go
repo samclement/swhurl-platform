@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -239,7 +241,7 @@ func (s *consoleServer) openChangeInput(spec *changeSpec, input string, line fun
 			opened = strings.TrimSpace(url)
 		}
 		line(text)
-	}, nil)
+	})
 	c.stdin = strings.NewReader(input)
 	if status := c.change(request{command: "change", spec: spec}); status != 0 {
 		return "", errors.New(strings.TrimSpace(refusal.String()))
@@ -247,22 +249,16 @@ func (s *consoleServer) openChangeInput(spec *changeSpec, input string, line fun
 	return opened, nil
 }
 
-// command is one of v2's commands run in the console's own process: its lines are the job's, its refusal is the
-// text the job ends with, and its input files are read from the pinned commit rather than from disk, so it renders what
-// the pages show rather than what the image happens to carry.
-func (s *consoleServer) command(diagnostic io.Writer, line func(string), tree map[string][]byte) cli {
-	c := cli{out: lineWriter{line: line}, diagnostic: diagnostic, consoleSource: s.github,
-		getenv: s.commandEnvironment(), stdin: strings.NewReader("")}
-	if tree != nil {
-		c.readFile = func(path string) ([]byte, error) {
-			data, known := tree[path]
-			if !known {
-				return nil, errors.New(path + ": not in the pinned commit")
-			}
-			return data, nil
-		}
-	}
-	return c
+// command is one of v2's commands run in the console's own process: its lines are the job's, its refusal is the text
+// the job ends with. Its files are read from disk like every command's, because a change's steps run on a working copy
+// the command itself downloads and stages; a command that must read the pinned commit is given a file of it instead.
+func (s *consoleServer) command(diagnostic io.Writer, line func(string)) cli {
+	// The effects are the CLI's own, because these are the CLI's commands: the console supplies the identity and the
+	// tokens, and nothing else a command would find in a terminal.
+	return cli{out: lineWriter{line: line}, diagnostic: diagnostic, readFile: readInput, writer: files.New(),
+		archives: archiveReader, registries: registryReader, seed: randomSeed, encrypter: sops.New(),
+		inCluster: podServiceAccount(), stdin: strings.NewReader(""), consoleSource: s.github,
+		getenv: s.commandEnvironment()}
 }
 
 // commandEnvironment is what a command reads from its environment: the console's own tokens and repository, which its

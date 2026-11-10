@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The Go console's forms, exercised live (10 November 2026)
+
+- **How:** the deployed console was scaled to zero for the pass, so one Go console was the only writer of the
+  `console-jobs` record (`kubectl -n console scale deploy console --replicas=0`, the console built from this tree run
+  with `--kubeconfig` as JSON, then the deployment restored — it runs the Python image `src-454e453` again). Signed in
+  through the `X-Auth-Request-Email` header the proxy sets, with `Origin` matching the host.
+- **What held:** every page answered 200 (`/jobs` 301 to `/activity`); no identity answered 401; a POST with no
+  `Origin` answered 403 and the same POST with one 303; `POST /units/platform-console/reconcile` started a job that
+  succeeded with Flux's own lines and the applied revision; `POST /apps/swhurl-try-30/staging/scale` opened
+  [pull request 110](https://github.com/samclement/swhurl-platform/pull/110) from a job that succeeded, and the job's
+  link was the `Opened` line (the pull request and its branch were closed and deleted afterwards — it was an exercise);
+  the egress and schedule refusals, reachable only where the pinned commit and the cluster are, answered with their
+  sentences; `POST /new/repo` with an invalid name answered the New app page with the name sentence and created
+  nothing. A job a Go process left running was settled `interrupted` by the Python console that came back, keeping its
+  lines — the record's shape is shared both ways.
+- **Two bugs found, both fixed here:** a change's command had no file reader and no file writer, so `edit` panicked
+  inside a job goroutine and took the process with it (two runs died that way; `command` now gives a command the CLI's
+  own effects, `readInput`, `files.New()`, the real archive, registry, seed, encrypter and in-cluster reader, and the
+  new-app job hands `app-repo` the pinned commit's catalogue as a file); and the Egress page's row counted
+  `$.Egress` — the page's — instead of its own hosts, which no fixture had reached because every fixture's table was
+  rendered empty. `TestEgressPageRendersAGrantedHost` renders a row with two grants.
+- **Not yet exercised:** the New app form creating a real repository (its refusal page was exercised; the creation is
+  the same `app-repo` command the Python console has been running all along), a flag override write, a team change, and
+  a job surviving a pod replacement of the *Go* console, which needs the image.
+
 ## The New app form is the Go console's, with its resume (9 November 2026)
 
 - **Scope:** §23 step 4's fifth and last landing of wiring: `POST /new/repo` and `POST /jobs/{id}/resume`. The form's

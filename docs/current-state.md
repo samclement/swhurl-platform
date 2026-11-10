@@ -2,6 +2,29 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## An app's forms are the Go console's (9 November 2026)
+
+- **Scope:** §23 step 4's third landing: three more of the eight forms. `POST /apps/{app}/{env}/{change}` serves scale,
+  access, connections, access lists, team, promotion and removal; `POST /apps/{app}/{env}/flags/{flag}` sets or clears
+  one override in NATS with its one audit line and returns to the card; and `POST /catalogue/{env}/use` is the same
+  connection form with the chosen app in the path. The form's flags are `pages.ConsoleFormChange` — a pure decision
+  that reads the fields as v2's own flags and refuses in the console's words what would change nothing (an empty
+  scale, an unregistered or unchanged team, a caller that is already allowed, a publication removed as if it were a
+  connection) — and the handler adds the checks that need the pinned commit: the environment the kind names, the two
+  things no form offers (an egress grant, a schedule), production's records for a first promotion, the staging
+  report's promotion verdict, and the connection lists the page itself offered. What is left is `swhurl-v2 change` run
+  in the process (`cli.change` with the console's token and repository), whose lines are the job's and whose `Opened`
+  line is the job's link. `api.txt` gained `pages.ConsoleFormChange` and `ConsoleFormFlags`.
+- **Offline:** `make check-v2` passed with the table test of every app form's flags and refusals (25 cases: both scale
+  values, an unmodelled CPU, a bad exposure, a host, connections and their labels, three disconnect roles, allow and
+  disallow including "changes nothing", a registered and an unregistered team, an unchanged team, removal and
+  promotion) and the handler test of what each form answers when it cannot start: 404 for no such change, 409 for no
+  token or no job registry, 405 for a page that cannot be posted to, 404 for an unknown instance's flag, 400 for a
+  catalogue Use without an app. `make check`'s repo, apps, otel, lint, codegraph, docs and Python suite passed.
+- **Not exercised offline:** the guard that names the instance's records (`appRow`) and the egress and schedule
+  refusals behind it read the pinned commit and the cluster, so their sentences are reached only live; a real app
+  change from the Go server is step 4's live proof.
+
 ## A unit action is a POST the Go console answers (9 November 2026)
 
 - **Scope:** §23 step 4, second landing: the first of the eight forms, and the request guards every form needs. Every

@@ -162,6 +162,8 @@ type consoleServer struct {
 	// record and runs nothing.
 	jobs   *orchestration.Jobs
 	redact *jobRedactor
+	// log receives the console's audit lines: a flag change, and each job's start and end.
+	log io.Writer
 }
 
 func newConsoleServer(config consoleConfig) (*consoleServer, error) {
@@ -171,7 +173,7 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	server := &consoleServer{reader: config.Reader, writer: config.Writer, collector: config.Collector,
 		data: config.Data, now: config.Now,
 		appConsole: github.NewConsole(nil), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
-		natsSeed: config.NatsSeed, natsURL: config.NatsURL, redact: &jobRedactor{},
+		natsSeed: config.NatsSeed, natsURL: config.NatsURL, redact: &jobRedactor{}, log: config.Log,
 		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{},
 		events: consoleEvents{poll: 250 * time.Millisecond, keepAlive: 15 * time.Second}}
 	for _, secret := range config.Secrets {
@@ -388,6 +390,9 @@ func (s *consoleServer) routes() *http.ServeMux {
 	mux.HandleFunc("GET /activity", s.activity)
 	mux.HandleFunc("GET /new", s.newApp)
 	mux.HandleFunc("GET /apps/{app}/{env}", s.app)
+	mux.HandleFunc("POST /apps/{app}/{env}/{change}", s.changeApp)
+	mux.HandleFunc("POST /apps/{app}/{env}/flags/{flag}", s.changeFlag)
+	mux.HandleFunc("POST /catalogue/{env}/use", s.useOffer)
 	mux.HandleFunc("GET /apps/{app}/staging/promotion", s.promotion)
 	mux.HandleFunc("GET /jobs/{id}", s.job)
 	mux.HandleFunc("GET /jobs/{id}/events", s.jobEvents)

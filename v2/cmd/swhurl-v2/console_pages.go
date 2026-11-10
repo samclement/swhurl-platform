@@ -316,6 +316,15 @@ func (s *consoleServer) jobsOn(ctx context.Context, name string) []jobView {
 	return views
 }
 
+// pinnedTree is the selected files of the commit this request reads: one resolution, one download, cached by SHA.
+func (s *consoleServer) pinnedTree(ctx context.Context) (map[string][]byte, error) {
+	revision, err := s.bundle.Revision(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("Go status unavailable: %w", err)
+	}
+	return s.bundle.Tree(ctx, revision)
+}
+
 // readRows is the cluster and the pinned tree one page shows: resolved once, read once.
 func (s *consoleServer) readRows(ctx context.Context) (map[string][]byte, []pages.AppRow, error) {
 	revision, err := s.bundle.Revision(ctx)

@@ -36,6 +36,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 | Topic | Canonical page |
 | --- | --- |
 | Everyday loop and task index | `README.md` |
+| Goal, user journeys and the APIs and primitives behind them (a map that links to the pages below) | `docs/journeys.md` |
 | Bare host to running platform | `docs/bootstrap.md` |
 | Health, Secrets, certificate mode, lifecycle, chart updates, backups, troubleshooting | `docs/operations.md` |
 | Every `make` target | `docs/commands.md` |

@@ -213,6 +213,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         _timer('host-dns-delete', 'Remove the dynamic DNS timer'),
         _timer('host-heartbeat', 'Install or update the five-minute notification heartbeat timer (needs sudo)'),
         _timer('host-heartbeat-delete', 'Remove the notification heartbeat timer'),
+        _timer('host-probe', 'Install or update the every-minute connectivity probe timer (needs sudo)'),
+        _timer('host-probe-delete', 'Remove the connectivity probe timer'),
     )),
 )
 

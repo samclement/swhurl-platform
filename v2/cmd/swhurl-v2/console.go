@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -76,8 +77,10 @@ func (c cli) console(r request) int {
 		return fail(c.diagnostic, errors.New("invalid: kube: collector_unavailable"))
 	}
 	data, _ := reader.(kube.Data)
+	writer, _ := reader.(kube.Writer)
 	owner, _ := os.Hostname()
-	server, err := newConsoleServer(consoleConfig{Reader: reader, Collector: collector, Data: data, Dev: r.dev,
+	server, err := newConsoleServer(consoleConfig{Reader: reader, Collector: collector, Data: data, Writer: writer,
+		Dev: r.dev,
 		Git: c.git, Repository: os.Getenv("CONSOLE_REPO"), Token: realToken(os.Getenv(consoleToken)),
 		AppRepos: realToken(os.Getenv(appReposToken)) != "", NatsSeed: os.Getenv("NATS_SEED"),
 		NatsURL: os.Getenv("NATS_URL"), Owner: owner, Log: c.out,
@@ -98,7 +101,8 @@ func (c cli) console(r request) int {
 type consoleConfig struct {
 	Reader     kube.Reader
 	Collector  kube.Collector
-	Data       kube.Data // the console's own records (jobs, dashboards); nil reads none
+	Data       kube.Data   // the console's own records (jobs, dashboards); nil reads none
+	Writer     kube.Writer // the API server's write port: a unit action's patch; nil runs none
 	Dev        bool
 	Git        git.Reader
 	Snapshots  git.Snapshots
@@ -120,6 +124,7 @@ type consoleConfig struct {
 type consoleServer struct {
 	bundle     *orchestration.ConsoleBundle
 	reader     kube.Reader
+	writer     kube.Writer
 	collector  kube.Collector
 	data       kube.Data
 	github     github.Console
@@ -163,7 +168,8 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
-	server := &consoleServer{reader: config.Reader, collector: config.Collector, data: config.Data, now: config.Now,
+	server := &consoleServer{reader: config.Reader, writer: config.Writer, collector: config.Collector,
+		data: config.Data, now: config.Now,
 		appConsole: github.NewConsole(nil), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
 		natsSeed: config.NatsSeed, natsURL: config.NatsURL, redact: &jobRedactor{},
 		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{},
@@ -354,36 +360,50 @@ func consoleTemplates() (map[string]*template.Template, error) {
 
 // serve runs the server until it is stopped, with the reads bounded and the HTTP timeouts set.
 func (s *consoleServer) serve(out io.Writer, address string) int {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, "ok\n")
-	})
-	mux.Handle("/static/", http.StripPrefix("/static/", staticHandler(s.static)))
-	mux.HandleFunc("/platform", s.platform)
-	mux.HandleFunc("/apps", s.apps)
-	mux.HandleFunc("/catalogue", s.catalogue)
-	mux.HandleFunc("/egress", s.egress)
-	mux.HandleFunc("/units/", s.unit)
-	mux.HandleFunc("/teams", s.teams)
-	mux.HandleFunc("/activity", s.activity)
-	mux.HandleFunc("/new", s.newApp)
-	mux.HandleFunc("/apps/{app}/{env}", s.app)
-	mux.HandleFunc("/apps/{app}/staging/promotion", s.promotion)
-	mux.HandleFunc("/jobs/{id}", s.job)
-	mux.HandleFunc("/jobs/{id}/events", s.jobEvents)
-	// The addresses the console moved: the old page names still lead to the page that replaced them.
-	mux.HandleFunc("/services", redirect("/apps?view=map"))
-	mux.HandleFunc("/units", redirect("/platform#units"))
-	mux.HandleFunc("/jobs", redirect("/activity"))
-	mux.HandleFunc("/", s.overview)
+	mux := s.routes()
 	server := &http.Server{Addr: address, Handler: s.identityMiddleware(mux), ReadHeaderTimeout: 10 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()
-	// A SIGTERM is the pod being replaced: the console stops taking jobs and waits for the ones it runs inside the
-	// pod's grace period (terminationGracePeriodSeconds: 900), so a pull request it asked for is not cut in half. A
-	// job that outlasts the wait is left running, and the pod that replaces this one calls it interrupted.
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	return s.run(out, server, done, stop.Done())
+}
+
+// routes is every address the console answers, as one handler; serve wraps it with the sign-in and the origin rule.
+func (s *consoleServer) routes() *http.ServeMux {
+	// Every page is a GET and every form a POST, as the Python console's routes were: a form answers in the job it
+	// starts — the fragment where its button was, or the job's page — and nothing else changes anything.
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, "ok\n")
+	})
+	mux.Handle("GET /static/", http.StripPrefix("/static/", staticHandler(s.static)))
+	mux.HandleFunc("GET /platform", s.platform)
+	mux.HandleFunc("GET /apps", s.apps)
+	mux.HandleFunc("GET /catalogue", s.catalogue)
+	mux.HandleFunc("GET /egress", s.egress)
+	mux.HandleFunc("GET /units/{unit}", s.unit)
+	mux.HandleFunc("POST /units/{unit}/{action}", s.startUnit)
+	mux.HandleFunc("GET /teams", s.teams)
+	mux.HandleFunc("GET /activity", s.activity)
+	mux.HandleFunc("GET /new", s.newApp)
+	mux.HandleFunc("GET /apps/{app}/{env}", s.app)
+	mux.HandleFunc("GET /apps/{app}/staging/promotion", s.promotion)
+	mux.HandleFunc("GET /jobs/{id}", s.job)
+	mux.HandleFunc("GET /jobs/{id}/events", s.jobEvents)
+	// The addresses the console moved: the old page names still lead to the page that replaced them.
+	mux.HandleFunc("GET /services", redirect("/apps?view=map"))
+	mux.HandleFunc("GET /units", redirect("/platform#units"))
+	mux.HandleFunc("GET /jobs", redirect("/activity"))
+	mux.HandleFunc("GET /", s.overview)
+	return mux
+}
+
+// run serves until it is stopped. A SIGTERM is the pod being replaced: the console stops taking jobs and waits for the
+// ones it runs inside the pod's grace period (terminationGracePeriodSeconds: 900), so a pull request it asked for is
+// not cut in half. A job that outlasts the wait is left running, and the pod that replaces this one calls it
+// interrupted.
+func (s *consoleServer) run(out io.Writer, server *http.Server, done <-chan error, stop <-chan struct{}) int {
 	select {
 	case err := <-done:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -391,7 +411,7 @@ func (s *consoleServer) serve(out io.Writer, address string) int {
 			return 1
 		}
 		return 0
-	case <-stop.Done():
+	case <-stop:
 		shutdown, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		_ = server.Shutdown(shutdown)
@@ -423,8 +443,25 @@ func (s *consoleServer) identityMiddleware(next http.Handler) http.Handler {
 			io.WriteString(w, "sign-in required: no identity from oauth2-proxy\n")
 			return
 		}
+		// A change must come from a console page: another site's page cannot post one. :authority is the host under
+		// HTTP/2, which is what the browser sends as Origin's, and X-Forwarded-Host is never trusted.
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && originHost(r) != r.Host {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusForbidden)
+			io.WriteString(w, "refused: the request did not come from a console page\n")
+			return
+		}
 		next.ServeHTTP(w, withIdentity(r, identity))
 	})
+}
+
+// originHost is the host a request says it came from: its Origin header's, or "" when it has none to compare.
+func originHost(r *http.Request) string {
+	origin, err := url.Parse(r.Header.Get("Origin"))
+	if err != nil {
+		return ""
+	}
+	return origin.Host
 }
 
 // redirect is one of the console's moved addresses.

@@ -9,8 +9,8 @@ no `gc` ran in an existing repository.
 The first rehearsal's artefacts are in `/home/sam/history-rehearsals/20261110T214207Z/` (`$D` in §§1–10): `scripts/`,
 `logs/`, `backup/`, `rewrite/`, `check/`, `scratch/`. The refreshed rehearsal, its backup limits and independent review
 are in [§11](#11-refreshed-rehearsal-after-the-pr-merges-11-november-2026). **On 11 November the operator decided to
-go ahead with the rewrite.** The cutover runbook in [§12](#12-cutover-runbook-11-november-2026) is drafted and its
-offline steps are rehearsed. It has not been run, and each live step still needs confirming when it runs. The Activity reader was subsequently deployed
+go ahead with the rewrite.** The cutover ran the same day through the runbook in [§12](#12-cutover-runbook-11-november-2026)
+([live evidence](current-state.md#history-rewritten-without-the-committed-v2swhurl-v2-binary-11-november-2026)). The Activity reader was subsequently deployed
 ([live evidence](current-state.md#activity-reads-a-merge-commits-four-files-not-its-archive-10-november-2026)); the
 rollout gates recorded in §§9–10 describe those earlier stages, not a remaining deployment task.
 
@@ -587,5 +587,17 @@ its content hash is already published, and Render has nothing to render.
   The first sandbox run stopped before moving anything because `rsync` is not installed; the copy now uses
   `tar`. Remote `main` was unchanged throughout.
 
-**Not rehearsed:** the confirmed push, `40-verify` against a pushed history, `10`/`60` (GitHub settings), and the
-rollback push.
+**Run (11 November, 13:44–13:57 UTC):** the outcome is in
+[current-state](current-state.md#history-rewritten-without-the-committed-v2swhurl-v2-binary-11-november-2026).
+The preflight reported two Renovate PRs (#111, #112) opened since the rehearsal. They were rewritten with the other
+branches rather than treated as a blocker. Three script faults showed up and were fixed in `$X` during the run:
+
+- `40-verify` called `make app-status` without `APP`/`ENV`. All ten instances were then checked one by one.
+- `50-migrate` ended silently on a worktree whose directory is gone. It stopped before moving anything; the fixed
+  loop skips such worktrees.
+- `50-migrate` did not carry over `.git/info/exclude`. It now does.
+
+Until the migration, `app-status` reported every instance "updating". It reads the records at the checkout's own
+`HEAD`, which was still the old history.
+
+The rollback push was not exercised.

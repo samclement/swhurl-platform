@@ -2,6 +2,37 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## History rewritten without the committed `v2/swhurl-v2` binary (11 November 2026)
+
+- **Cut over at 13:49 UTC:** the runbook in [the task record](git-history-rewrite-rehearsal.md#12-cutover-runbook-11-november-2026)
+  force-pushed all 32 branches in one atomic, leased push. `main` went from `ae5df1da` to
+  `d00a61adb97b5dd51a432612822d0ccb7e0a047f` with an identical tree. **Every commit id changed** and 76 signatures
+  were removed. Deploy v2 was disabled from 13:44 to 13:57 as the freeze.
+- **Gate at the frozen tip:**
+  - 2,552 commits, 0 dropped, 0 unexplained differences;
+  - all 10 binary blobs absent;
+  - the 32 gate mutation tests passed;
+  - `make check-docs` passed on the rewritten `main`.
+
+  The backup bundle of the frozen remote (sha256 `eecf5c2a…`) is in `/home/sam/history-cutover/run/backup/`, outside
+  Git. Keep it: `90-rollback.sh` reads it.
+- **After the push:**
+  - GitHub serves exactly the plan.
+  - A fresh clone holds no old root commit and no removed blob, and passes `fsck --strict`.
+  - All 31 Flux units applied `d00a61ad` and are Ready, and all 22 HelmReleases are Ready. Nothing in the cluster
+    changed.
+  - `make verify-platform` reported 0 failures. `make app-status` reports all ten instances healthy at `d00a61ad`.
+  - The push's Validate and Render runs passed, and neither made a commit.
+  - Renovate PRs #111 and #112 moved to their rewritten heads with the same diff and stay mergeable.
+- **Checkout:** the operator's checkout is now a fresh clone at the same path, with its ignored files and local
+  excludes carried over. The old one is kept whole as `swhurl-platform.pre-rewrite-20261111`, with its 22 worktrees
+  repaired and its push URL disabled.
+- **Not yet seen:** whether Renovate keeps updating #111/#112 itself or asks for a rebase. GitHub's 17 retained
+  `refs/pull/*` and old merge commits still reach the binary on GitHub; no Support request was made.
+- **Unrelated, found during the window:** Deploy v2 has failed since at least 03:38 UTC. Its Go tests run Python
+  without PyYAML (`ModuleNotFoundError: No module named 'yaml'`), so the staging image lag `verify-platform` warns
+  about is not being deployed.
+
 ## NATS chart 2.15.2, and flag watches that survive a restart (10 November 2026)
 
 - **Deployed and live:** #60 merged as `18d20573`; `make flux-reconcile` applied it, `messaging/nats` runs `nats:2.15.2-alpine` (restarted 23:42:24 UTC) and is Ready, `make verify-platform` passed and `make app-status` passed for all ten instances. The apps' NATS errors stopped within a minute.

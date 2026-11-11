@@ -1,7 +1,7 @@
 {
   "kind": "v2-calls",
   "version": 1,
-  "revision": "8fb42fc99fbeba95f32b6b920c47791eb886151b",
+  "revision": "cb5fd55fa5785bc01c7732709a8cc52123c8f32c",
   "pairs": [
     {
       "caller": "demo-shop",
@@ -32,6 +32,16 @@
       "environment": "staging",
       "stream": "staging-demo-orders",
       "consumer": "demo-notifier_created",
+      "subject": "staging.demo-orders.created",
+      "object": "demo-orders-created"
+    },
+    {
+      "subscriber": "test-01",
+      "publisher": "demo-orders",
+      "event": "created",
+      "environment": "staging",
+      "stream": "staging-demo-orders",
+      "consumer": "test-01_created",
       "subject": "staging.demo-orders.created",
       "object": "demo-orders-created"
     }

@@ -17,10 +17,16 @@ What has been verified on the live cluster, and when: current facts first, then 
   (`demo-notifier`, `demo-orders`, `demo-shop`, `demo-shopper`, `swhurl-try-10`, `swhurl-try-30`, `test-01`) reported
   `is in place`. Neither pass planned or performed a webhook write. `make verify-platform` exited 0: the
   `app-images` Receiver is Ready and each repository's latest delivery returned 200. Its separate Image Automation
-  group warned that `demo-orders/staging`'s newest registry image differs from this checkout's release record;
-  no deployment was attempted here.
+  group initially warned that `demo-orders/staging`'s newest registry image differed from this checkout's release
+  record; pulling its deployment bot commit brought the checkout current, and post-push verification has no warning.
+- **Landed and verified:** `01bc9d73` passed [Validate](https://github.com/samclement/swhurl-platform/actions/runs/43093259523),
+  including the full template matrix; Deploy pinned console and notify image `src-281c75ccd9eb6900` in `0c1d0f29`.
+  `make flux-reconcile` brought every unit to that commit; `make verify-platform` passed without warnings, and
+  `make app-status` reported all 11 instances healthy, current at `0c1d0f29`. The console pod
+  `console-55b8b6d745-nk2wz` runs the new image, and scheduled jobs `console-dashboards-29907129` and
+  `console-notifications-29907129` both completed on it at 20:09Z: the CronJobs kept scheduling through the rollout.
 - **Not exercised live:** creating a missing hook or updating a stale one; those paths have offline tests.
-  No token was rotated, no hook changed and no Flux reconciliation requested.
+  No token was rotated and no hook changed.
 
 ## A new worker from the Go console, test-01 (11 November 2026)
 

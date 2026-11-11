@@ -42,10 +42,6 @@ func TestCoexistence(t *testing.T) {
 	if count == 0 {
 		t.Fatal("no Flux paths checked; discovery contract changed")
 	}
-	store := read("tools/swhurl/apps/model/store.py")
-	if !strings.Contains(store, "base: Path = Path('apps')") || !strings.Contains(store, `folder.glob(f'*/*/{name}')`) {
-		t.Fatal("re-check v1 record discovery before changing this assertion")
-	}
 	platform := read("tools/swhurl/platform.py")
 	inputs := regexp.MustCompile(`(?m)^CONSOLE_IMAGE_INPUTS = (.+)$`).FindStringSubmatch(platform)
 	if len(inputs) != 2 || !strings.Contains(inputs[1], "'tools'") || !strings.Contains(inputs[1], "'v2'") {

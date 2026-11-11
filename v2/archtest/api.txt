@@ -701,10 +701,12 @@ kernel: func Sign(seed [32]byte, message []byte) []byte
 kernel: func SplitImage(reference string) (string, ImageTag, error)
 kernel: func SubscribersOf(data []byte, application, environment string) ([]string, error)
 kernel: func UnitPath(application, environment string, profile PlatformProfile) string
+kernel: func UnitRegistrationPath(profile PlatformProfile) string
 kernel: func WithAllows(spec InstanceSpec, allows []string) (InstanceSpec, error)
 kernel: func WithBrokerKey(spec InstanceSpec, pair UserKey, rotate bool) (InstanceSpec, error)
 kernel: func WithCalls(spec InstanceSpec, calls []string) (InstanceSpec, error)
 kernel: func WithEgress(spec InstanceSpec, grants []string) (InstanceSpec, error)
+kernel: func WithEntries(document []byte, entries []string) ([]byte, error)
 kernel: func WithExposure(spec InstanceSpec, release ReleaseBundle, exposure string) (InstanceSpec, error)
 kernel: func WithMemory(spec InstanceSpec, memoryMiB int32) (InstanceSpec, error)
 kernel: func WithReplicas(spec InstanceSpec, replicas int32) (InstanceSpec, error)

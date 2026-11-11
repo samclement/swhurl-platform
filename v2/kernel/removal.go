@@ -94,3 +94,47 @@ func WithoutEntry(document []byte, entry string) ([]byte, bool, error) {
 	}
 	return []byte(strings.Join(kept, "")), true, nil
 }
+
+// UnitRegistrationPath is the kustomization that lists every unit under the profile's unit root: Flux applies a unit
+// only once a line there names it.
+func UnitRegistrationPath(profile PlatformProfile) string {
+	return profile.Delivery.UnitsRoot + "/kustomization.yaml"
+}
+
+// WithEntries is a kustomization that lists each entry: one already listed is left where it is, and a missing one is
+// added as a line after the last listed entry, with its indentation, in the order given. It is WithoutEntry's
+// opposite, with the same contract for every other byte, and refuses a document that lists an entry twice.
+func WithEntries(document []byte, entries []string) ([]byte, error) {
+	lines := strings.SplitAfter(string(document), "\n")
+	counts, last, indent := map[string]int{}, -1, "  "
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "- ") {
+			continue
+		}
+		counts[strings.TrimPrefix(trimmed, "- ")]++
+		last, indent = i, line[:len(line)-len(strings.TrimLeft(line, " "))]
+	}
+	added := []string{}
+	for _, entry := range entries {
+		switch counts[entry] {
+		case 0:
+			added = append(added, indent+"- "+entry+"\n")
+			counts[entry] = 1
+		case 1:
+		default:
+			return nil, refuse(Invalid, "registration", "the entry is listed twice")
+		}
+	}
+	if len(added) == 0 {
+		return document, nil
+	}
+	if last < 0 {
+		return nil, refuse(Invalid, "registration", "the document lists no entry to add after")
+	}
+	if !strings.HasSuffix(lines[last], "\n") {
+		lines[last] += "\n"
+	}
+	edited := append(append(append([]string{}, lines[:last+1]...), added...), lines[last+1:]...)
+	return []byte(strings.Join(edited, "")), nil
+}

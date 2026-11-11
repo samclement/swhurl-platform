@@ -251,6 +251,38 @@ func TestRenderCheckNamesTheFileARecordChangeMoves(t *testing.T) {
 	}
 }
 
+// A unit with no line in the unit root's kustomization is never applied, so render registers each instance's unit
+// after the entries already there, and a check names the list when one is missing.
+func TestRenderRegistersEveryUnit(t *testing.T) {
+	out, records := renderTree(t)
+	registration := filepath.Join(out, "clusters", "home", "kustomization.yaml")
+	listed := "resources:\n  - infra.yaml\n  - app-demo-orders-staging.json\n"
+	if err := os.MkdirAll(filepath.Dir(registration), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(registration, []byte(listed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, document, diagnostic := renderRun(t, filestest.New(), renderArgs(out, records, "--check")...)
+	if status != 1 || !slices.Contains(document.Differences, "clusters/home/kustomization.yaml") {
+		t.Fatalf("check exited %d with differences %v: %s", status, document.Differences, diagnostic)
+	}
+	if status, _, diagnostic := renderRun(t, files.New(), renderArgs(out, records, "--revision", renderRevision)...); status != 0 {
+		t.Fatalf("render exited %d: %s", status, diagnostic)
+	}
+	data, err := os.ReadFile(registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := listed + "  - app-demo-orders-prod.json\n  - app-demo-shop-staging.json\n"
+	if string(data) != want {
+		t.Errorf("registration:\n%s\nwant:\n%s", data, want)
+	}
+	if status, _, diagnostic := renderRun(t, filestest.New(), renderArgs(out, records, "--check")...); status != 0 {
+		t.Errorf("a registered tree fails the check: %s", diagnostic)
+	}
+}
+
 // A check needs no revision: the two documents that record one are compared without it.
 func TestRenderCheckIgnoresTheRecordedRevision(t *testing.T) {
 	out, records := renderedTree(t)

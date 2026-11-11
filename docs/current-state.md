@@ -9,6 +9,11 @@ What has been verified on the live cluster, and when: current facts first, then 
   `platform-reloader` on `namespaces "test-01-staging" not found`: the PR carried the unit file but not its line in
   `clusters/home/kustomization.yaml`, the reviewed edit (as for `swhurl-try-34`). Registered in `02c46b28`; both units
   went Ready after a reconcile (`reloader` with `--reset` after its rollback).
+- **Render now writes the registration:** `swhurl-v2 render` adds each instance's unit line to
+  `clusters/home/kustomization.yaml` after the entries there, keeping every other byte, and `render --check` (so
+  `make check-v2` and CI) names the file when a line is missing. Checked on this tree: with test-01's line deleted the
+  check found `1 differ: clusters/home/kustomization.yaml`, and `make v2-render` put back the identical file. A New app
+  pull request now carries the line; not yet exercised by one.
 - **Then its stream was refused:** `insufficient storage resources available (10047)`. Each stream reserves its 64 MiB
   cap, and 1,009 of JetStream's 1,024 MiB were reserved, 448 MiB by seven streams of removed throwaways that
   `preventDelete: true` had kept (`prod-swhurl-try-12`, `staging-swhurl-try-{12,13,31,32,33,34}`). With the operator's

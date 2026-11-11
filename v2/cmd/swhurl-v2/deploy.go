@@ -14,7 +14,7 @@ import (
 
 // deployNote is what the document says about itself: the image's own declaration reached v2's records and
 // compiled files, and nothing else changed.
-const deployNote = "the image's own declaration; v2's records and files only, and the unit's registration stays a reviewed edit"
+const deployNote = "the image's own declaration; v2's records and files only"
 
 // deploy brings one staging instance to the newest image its repository publishes, by the platform's own tag
 // policy, and writes the record pair and the compiled files under --out.

@@ -57,9 +57,6 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     **What is not on that list matters as much.** None of it becomes a Go port: the v1-only features are operator convenience (status, logs, reconcile, suspend, dashboards, host backups), so bash replaces them, and the deferred rows are capability, not migration. The one deferred row worth arguing on merit was **egress grants**, which was the only gap that blocked an ordinary request: [delivered 8 November 2026](iteration-2-plan.md#19-egress-grants-an-instance-declares-approved-8-november-2026), an instance's record now declares the hosts it may reach and `swhurl-v2 edit --set egress=` writes them. The relative order, and what each slice deletes, is item 3 onwards in [v2 status](v2-status.md#remaining-work).
 
 26. **Found creating `test-01` (11 November 2026), not started** ([evidence](current-state.md#a-new-worker-from-the-go-console-test-01-11-november-2026)):
-    - **New app's pull request omits the unit's registration.** The line in `clusters/home/kustomization.yaml` is left to a
-      hand edit while merging, and has been forgotten twice; merging without it fails `platform-auth` and
-      `platform-reloader`. The render or the `new-app` change kind should write it.
     - **Removed apps keep their JetStream streams** (`preventDelete: true`), each reserving 64 MiB of the 1 GiB store, so
       about eight removals fill it and the next new stream is refused. Removal should delete the stream, or the limit
       account for it.

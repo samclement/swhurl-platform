@@ -53,6 +53,35 @@ func TestWithoutEntry(t *testing.T) {
 	}
 }
 
+// Registering is the opposite edit: a missing entry is a line after the last one, a listed one stays where it is, and
+// nothing else moves.
+func TestWithEntries(t *testing.T) {
+	document := []byte("apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n" +
+		"  - infra.yaml\n  - app-demo-orders-staging.json\n# a comment v2 did not write\n")
+	edited, err := kernel.WithEntries(document, []string{"app-demo-orders-staging.json", "app-test-01-staging.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n" +
+		"  - infra.yaml\n  - app-demo-orders-staging.json\n  - app-test-01-staging.json\n# a comment v2 did not write\n"
+	if string(edited) != want {
+		t.Errorf("registered:\n%s\nwant:\n%s", edited, want)
+	}
+	if again, err := kernel.WithEntries(edited, []string{"app-test-01-staging.json"}); err != nil || string(again) != want {
+		t.Errorf("a second registration changed the document: %v\n%s", err, again)
+	}
+	if removed, _, err := kernel.WithoutEntry(edited, "app-test-01-staging.json"); err != nil || string(removed) != string(document) {
+		t.Errorf("removing the added entry did not give the document back: %v\n%s", err, removed)
+	}
+	twice := append(append([]byte{}, document...), "  - infra.yaml\n"...)
+	if _, err := kernel.WithEntries(twice, []string{"infra.yaml"}); err == nil {
+		t.Error("a doubled registration was accepted")
+	}
+	if _, err := kernel.WithEntries([]byte("resources: []\n"), []string{"a.json"}); err == nil {
+		t.Error("a document with no list was edited")
+	}
+}
+
 // A rendered kustomization is JSON: dropping a resource is dropping it from the list, and every other byte of meaning is
 // kept — the answer is what the renderer would write for the folder without it.
 func TestWithoutResource(t *testing.T) {

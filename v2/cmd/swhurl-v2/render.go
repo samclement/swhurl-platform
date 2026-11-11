@@ -121,25 +121,59 @@ func (c cli) renderTree(r request, revision string) (rendering, int) {
 	if err != nil {
 		return rendering{}, fail(c.diagnostic, err)
 	}
-	calls, err := encodeResolution(rendered.resolution)
-	if err != nil {
+	if err := rendered.compileInstances(profileData, folders); err != nil {
 		return rendering{}, fail(c.diagnostic, err)
 	}
-	egress, err := kernel.EncodeEgressDocument(rendered.allocation)
+	registration, status := c.unitRegistration(r.out, profile, folders)
+	if status != 0 {
+		return rendering{}, status
+	}
+	rendered.platform = append(rendered.platform, registration...)
+	return rendered, 0
+}
+
+// compileInstances compiles every instance folder against the rendering's resolution and allocation.
+func (r *rendering) compileInstances(profile []byte, folders []recordsEdit) error {
+	calls, err := encodeResolution(r.resolution)
 	if err != nil {
-		return rendering{}, fail(c.diagnostic, err)
+		return err
+	}
+	egress, err := kernel.EncodeEgressDocument(r.allocation)
+	if err != nil {
+		return err
 	}
 	for _, one := range folders {
-		inputs := orchestration.Inputs{Instance: one.instance, Release: one.release, App: one.app, Profile: profileData,
+		inputs := orchestration.Inputs{Instance: one.instance, Release: one.release, App: one.app, Profile: profile,
 			Calls: calls, Egress: egress, EventsSecret: one.secret, Offers: one.offers}
 		written, err := instanceRender(inputs)
 		if err != nil {
-			return rendering{}, fail(c.diagnostic, fmt.Errorf("%s/%s: %w", one.application, one.environment, err))
+			return fmt.Errorf("%s/%s: %w", one.application, one.environment, err)
 		}
-		rendered.instances = append(rendered.instances, inputs)
-		rendered.compiled = append(rendered.compiled, written...)
+		r.instances = append(r.instances, inputs)
+		r.compiled = append(r.compiled, written...)
 	}
-	return rendered, 0
+	return nil
+}
+
+// unitRegistration is the unit root's kustomization listing every instance's unit, each one the records hold added
+// after the entries already there; none when the tree under --out has no such file. Without its line a merged unit is
+// never applied, and its namespace never made, so render writes it rather than leave it to a hand edit.
+func (c cli) unitRegistration(out string, profile kernel.PlatformProfile, folders []recordsEdit) ([]kernel.File, int) {
+	path := kernel.UnitRegistrationPath(profile)
+	document, status := c.readPresent(filepath.Join(out, filepath.FromSlash(path)), "unit registration")
+	if status != 0 || document == nil {
+		return nil, status
+	}
+	entries := make([]string, 0, len(folders))
+	for _, one := range folders {
+		entries = append(entries, filepath.Base(kernel.UnitPath(one.application, one.environment, profile)))
+	}
+	slices.Sort(entries)
+	registered, err := kernel.WithEntries(document, entries)
+	if err != nil {
+		return nil, fail(c.diagnostic, fmt.Errorf("%s: %w", path, err))
+	}
+	return []kernel.File{{Path: path, Document: registered}}, 0
 }
 
 // renderFolders is every instance folder under the records tree, app by app and environment by environment, each

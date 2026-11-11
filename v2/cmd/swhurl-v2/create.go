@@ -18,8 +18,8 @@ import (
 
 // createNote is what the document says the operator still has to do. A create that wrote the compiled files would
 // compile against an allocation the instance is not in yet, which is why the render that allocates comes after it.
-const createNote = "the records only: the next make v2-render writes the compiled files, the unit and the instance's " +
-	"proxy port, and the unit's one line in clusters/home/kustomization.yaml is a reviewed edit"
+const createNote = "the records only: the next make v2-render writes the compiled files, the unit, its line in " +
+	"clusters/home/kustomization.yaml and the instance's proxy port"
 
 // createDocument is the report: the records' identities, where the image came from, and every file written.
 type createDocument struct {

@@ -215,7 +215,8 @@ that folder until the file and the record agree. sops must be on PATH and no pri
 
 render renders every file v2 derives from its records in one run: the resolution at DIR/calls.json, every instance's
 compiled files and unit, the egress allocation (keeping the ports --previous gives, else the ones the allocation under
---out holds) with the proxy's configuration and policy, the auth folder, NATS's user list and Reloader's watch list.
+--out holds) with the proxy's configuration and policy, the auth folder, NATS's user list, Reloader's watch list, and
+each unit's line in clusters/home/kustomization.yaml (added after the entries there; the rest of that file is kept).
 Every DIR/<app>/<env> folder holding an instance record is read, production as well as staging, with its seed copied as
 bytes and its offers folder. Everything is decided before anything is written, so a record the compiler or a decoder
 refuses writes nothing. A write needs --revision, the commit the records are read at, which the resolution and the
@@ -241,8 +242,8 @@ keeps a database, the exposure --exposure names (private by default: that grant 
 says about itself and the documents it offers, and a freshly minted broker identity whose encrypted seed is written
 before the record that states its public key. The documents are written into the instance's offers folder under their
 roles' fixed names, byte for byte: no index file names them. It writes records only: the compiled files, the unit and
-the instance's proxy port are the whole tree's, so the next render decides them, and the unit's one line in
-clusters/home/kustomization.yaml is a reviewed edit. It refuses an app that already has records.
+the instance's proxy port and the unit's line in clusters/home/kustomization.yaml are the whole tree's, so the next
+render decides them. It refuses an app that already has records.
 
 change opens the pull request one kind of console change asks for, in the one process: it resolves main, downloads the
 tarball at that commit, applies the kind's commands to a scratch copy of it, keeps only the files the kind derives,

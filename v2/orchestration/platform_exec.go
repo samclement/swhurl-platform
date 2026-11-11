@@ -10,6 +10,9 @@ import (
 )
 
 const clickstackNamespace = "observability"
+
+// The NATS server's pod, whose local monitoring port answers how much of JetStream's file store is reserved.
+const natsNamespace, natsPod = "messaging", "nats-0"
 const mongoURISecret = "clickstack-mongodb-hyperdx-hyperdx"
 const mongoTeamKeys = `print("RESULT " + JSON.stringify({keys: db.teams.distinct("apiKey").filter(k => typeof k === "string" && k.length > 0)}));`
 const installationScript = `const r = await fetch("http://127.0.0.1:8000/installation", {"method": "GET", "headers": {"content-type": "application/json"}, "redirect": "manual"});

@@ -32,7 +32,8 @@ func compiledHello() CompiledInstance {
 		"resourcequota.json": []byte(`{"kind":"ResourceQuota","metadata":{"name":"hello","namespace":"hello-staging"},"spec":{"hard":{"pods":"10"}}}`),
 		"networkpolicy.json": []byte(`{"kind":"NetworkPolicy","metadata":{"name":"hello","namespace":"hello-staging"},` +
 			`"spec":{"podSelector":{"matchLabels":{"app":"hello"}}}}`),
-		"stream.json":            []byte(`{"kind":"Stream","metadata":{"name":"staging-hello","namespace":"hello-staging"}}`),
+		"stream.json": []byte(`{"kind":"Stream","metadata":{"name":"staging-hello","namespace":"hello-staging"},` +
+			`"spec":{"name":"staging-hello","maxBytes":67108864}}`),
 		"consumer-world-ev.json": []byte(`{"kind":"Consumer","metadata":{"name":"world-ev","namespace":"hello-staging"}}`),
 	}}
 }
@@ -70,6 +71,7 @@ func healthyScope() ScopeEvidence {
 			Controller: presentRead(PlatformNATSController, `{"status":{"readyReplicas":1}}`),
 			Streams:    map[string]List{"hello-staging": collectionOf(PlatformStreams, `{"metadata":{"name":"staging-hello"},`+readyStatus+`}`)},
 			Consumers:  map[string]List{"hello-staging": collectionOf(PlatformConsumers, `{"metadata":{"name":"world-ev"},`+readyStatus+`}`)},
+			Storage:    JetStreamStorage{Output: jetStream(1024, 65, "staging-hello", "KV_flags-staging")},
 		},
 		Egress: EgressEvidence{Proxy: presentRead(PlatformEgress, `{"spec":{"replicas":2},"status":{"readyReplicas":2}}`),
 			Ports: []InstancePort{{"hello", "staging", 30100}}},
@@ -252,7 +254,29 @@ func TestEvents(t *testing.T) {
 			CheckBad, "cannot read NATS, its controller, or the streams and consumers (make reconcile UNIT=platform-nats)"},
 		{"a failed read fails", func(s *ScopeEvidence) { s.Events.Controller = Read{Status: Unavailable} },
 			CheckBad, "cannot read NATS, its controller"},
+		{"room for another stream", unchanged, CheckOK, "JetStream has 959 of 1024 MiB unreserved"},
+		{"no room for another stream warns", func(s *ScopeEvidence) {
+			s.Events.Storage = JetStreamStorage{Output: jetStream(1024, 1000, "staging-hello")}
+		}, CheckWarn, "JetStream has 24 MiB unreserved, less than a stream's 64 MiB: the next instance that publishes events " +
+			"is refused its stream (docs/operations.md#leftover-event-streams)"},
+		{"a stream no instance declares warns", func(s *ScopeEvidence) {
+			s.Events.Storage = JetStreamStorage{Output: jetStream(1024, 129, "staging-hello", "staging-gone", "KV_flags-staging")}
+		}, CheckWarn, "1 stream(s) in NATS that no instance declares reserve 64 MiB: staging-gone (0 messages) " +
+			"(docs/operations.md#leftover-event-streams)"},
+		{"an unreadable store warns", func(s *ScopeEvidence) { s.Events.Storage = JetStreamStorage{Failed: true} },
+			CheckWarn, "cannot read JetStream's storage from nats-0, so whether a new stream fits is unchecked"},
 	})
+}
+
+// jetStream is NATS's /jsz answer for a store of maxMiB with reservedMiB reserved, holding the streams named, each
+// empty with a 64 MiB cap.
+func jetStream(maxMiB, reservedMiB int, streams ...string) []byte {
+	details := []string{}
+	for _, name := range streams {
+		details = append(details, fmt.Sprintf(`{"name":%q,"config":{"max_bytes":67108864},"state":{"messages":0}}`, name))
+	}
+	return []byte(fmt.Sprintf(`{"config":{"max_storage":%d},"reserved_storage":%d,"account_details":[{"stream_detail":[%s]}]}`,
+		maxMiB<<20, reservedMiB<<20, strings.Join(details, ",")))
 }
 
 func TestEgress(t *testing.T) {

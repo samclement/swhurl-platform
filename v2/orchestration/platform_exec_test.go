@@ -133,7 +133,7 @@ func TestPodCheckFailuresNeverSerializeCredentialMaterial(t *testing.T) {
 					}
 				}
 			}
-			if strings.HasPrefix(test.name, "independent") && len(executor.Requests) != 5 {
+			if strings.HasPrefix(test.name, "independent") && len(executor.Requests) != 6 {
 				t.Fatal("one query failure stopped later reads")
 			}
 		})

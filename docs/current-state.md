@@ -28,6 +28,14 @@ What has been verified on the live cluster, and when: current facts first, then 
   state was in screen-reader text only. The console now shows the state under any stage not done or reached (*waiting
   for you*, *not reached*); the page fixtures and asset hash (`93e3b193821e`) changed with it. Seen in a headless
   browser over the fixture, not yet on the deployed console.
+- **The leftover streams are now a warning:** with `preventDelete` kept (the operator's choice), `make verify-platform`'s
+  `events` group reads JetStream's store from `nats-0`'s monitoring port and warns when less than one stream's cap is
+  unreserved, naming every stream no instance declares; live it reads `JetStream has 446 of 1024 MiB unreserved` and
+  finds none. Cleanup is [an operator step](operations.md#leftover-event-streams), with live ownership checked before
+  explicit deletion confirmation. Offline tests cover the exact capacity boundary, missing or invalid reservation
+  evidence, sorted leftovers and message counts, platform key-value exclusions, and the read-only exec request;
+  `make check` and `make check-v2` pass. The first full v2 run timed out in the unchanged exec-cancellation test;
+  that test passed three repeats and the full rerun passed. No stream was deleted by this change.
 - **Not exercised:** the console job reaching "Live in staging" was not watched after the fixes.
 
 ## Platform telemetry baseline (11 November 2026)

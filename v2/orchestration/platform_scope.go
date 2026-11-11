@@ -65,7 +65,7 @@ func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.Platfor
 	scope := observe.ScopeEvidence{Compiled: inputs.Checkout.Compiled, Credentials: inputs.Objects != nil,
 		MaxAge: inputs.MaxAge, Heartbeat: inputs.Heartbeat}
 	for _, step := range []scopeStep{readImages, readIsolation, readSigning, readEvents, readEgress, readChannels,
-		readMongoBackups, readDatabases, readConsole, readGitHub, readPodChecks, readFluxControllers} {
+		readMongoBackups, readDatabases, readConsole, readGitHub, readPodChecks, readFluxControllers, readJetStream} {
 		if err := step(ctx, inputs, &scope); err != nil {
 			return observe.PlatformReport{}, err
 		}
@@ -222,6 +222,15 @@ func readEvents(ctx context.Context, inputs PlatformAllInputs, scope *observe.Sc
 		}
 	}
 	scope.Events = events
+	return nil
+}
+
+// readJetStream asks the NATS server's local monitoring port how much of JetStream's file store is reserved, and by
+// which streams. It runs after the other pod reads, so their order is unchanged.
+func readJetStream(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+	output, failed := podOutput(ctx, inputs.Executor, kube.ExecRequest{Namespace: natsNamespace, Pod: natsPod, Container: "nats",
+		Command: []string{"wget", "-qO-", "http://127.0.0.1:8222/jsz?accounts=true&streams=true&config=true"}})
+	scope.Events.Storage = observe.JetStreamStorage{Output: output, Failed: failed}
 	return nil
 }
 

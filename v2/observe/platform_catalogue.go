@@ -41,7 +41,7 @@ var PlatformCatalogue = []PlatformCatalogueEntry{
 		"The signing keys and token issuer apps were given are the cluster's",
 		"Cluster (read), this checkout, `swhurl-v2 verify`"},
 	{"events", "Events",
-		"NATS and its controller run, and every stream and consumer v2 rendered is Ready",
+		"NATS and its controller run, every stream and consumer v2 rendered is Ready, and JetStream has room for one more stream (warns otherwise, and names streams no instance declares)",
 		"Cluster (read), this checkout, `swhurl-v2 verify`"},
 	{"egress", "Egress proxy",
 		"The egress proxy runs both replicas, and each instance that reaches it does so on a port of its own from the allocation",

@@ -349,17 +349,20 @@ func TestVerifyPlatformReportsAllPodGroupsWhenInputsAreUnavailable(t *testing.T)
 			}
 		}
 	}
-	executed := 0
+	clickhouse, nats := 0, 0
 	for _, path := range *paths {
-		if strings.Contains(path, "/exec") {
-			executed++
-			if !strings.Contains(path, "/pods/clickstack-clickhouse-clickhouse-0-0-0/exec?") {
-				t.Fatal("no Mongo URI or ready app pod, so no such exec may be guessed")
-			}
+		switch {
+		case !strings.Contains(path, "/exec"):
+		case strings.Contains(path, "/pods/clickstack-clickhouse-clickhouse-0-0-0/exec?"):
+			clickhouse++
+		case strings.Contains(path, "/namespaces/messaging/pods/nats-0/exec?"):
+			nats++
+		default:
+			t.Fatal("no Mongo URI or ready app pod, so no such exec may be guessed")
 		}
 	}
-	if executed != 3 {
-		t.Fatalf("expected three independent ClickHouse queries, got %d", executed)
+	if clickhouse != 3 || nats != 1 {
+		t.Fatalf("expected three independent ClickHouse queries and one JetStream read, got %d and %d", clickhouse, nats)
 	}
 }
 

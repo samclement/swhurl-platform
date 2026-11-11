@@ -299,6 +299,8 @@ func platformSigning(e SigningEvidence) []PlatformEntry {
 type EventEvidence struct {
 	Server, Controller Read
 	Streams, Consumers map[string]List
+	// Storage is JetStream's file store as NATS reports it.
+	Storage JetStreamStorage
 }
 
 const eventsLost = "no events are published or delivered (make reconcile UNIT=platform-nats)"
@@ -320,7 +322,7 @@ func platformEvents(e EventEvidence, compiled []CompiledInstance) []PlatformEntr
 	if wanted > 0 && found {
 		entries = append(entries, ok(fmt.Sprintf("%d declared stream(s) and consumer(s) exist in NATS", wanted)))
 	}
-	return entries
+	return append(entries, jetStreamEntries(e.Storage, compiled)...)
 }
 
 // eventsRead is whether NATS, its controller and every namespace's streams and consumers were read: an absent

@@ -44,7 +44,7 @@ console's, reads neither and refuses both flags.
 | `image-automation` | Every app's ImagePolicy is Ready and staging runs the image its record states (warns otherwise) | Cluster (read), this checkout, registry (read), `swhurl-v2 verify` |
 | `isolation` | Every instance v2 compiled has its namespace, a registered team, the platform quota and a NetworkPolicy | Cluster (read), this checkout, `swhurl-v2 verify` |
 | `signing-keys` | The signing keys and token issuer apps were given are the cluster's | Cluster (read), this checkout, `swhurl-v2 verify` |
-| `events` | NATS and its controller run, and every stream and consumer v2 rendered is Ready | Cluster (read), this checkout, `swhurl-v2 verify` |
+| `events` | NATS and its controller run, every stream and consumer v2 rendered is Ready, and JetStream has room for one more stream (warns otherwise, and names streams no instance declares) | Cluster (read), this checkout, `swhurl-v2 verify` |
 | `egress` | The egress proxy runs both replicas, and each instance that reaches it does so on a port of its own from the allocation | Cluster (read), this checkout, `swhurl-v2 verify` |
 | `channels` | The team routes are Git's and every channel has its Secret (a team without a channel warns) | Cluster (read), this checkout, Secrets (read), `swhurl-v2 verify` |
 | `backups` | The newest MongoDB backup in S3, archive and metadata, is younger than `BACKUP_MAX_AGE_HOURS` (26) | Cluster (read), S3 (list), `swhurl-v2 verify` |
@@ -177,6 +177,41 @@ Deploy, update and uninstall through Git. Removing an app instance's unit from `
 `destroy-data` refuses while a pod mounts the claim or a Helm release or Flux unit still manages it, because they would recreate it. `DRY_RUN=true` runs only the checks.
 
 Deleting a shared Flux unit by mistake is safe: shared units use `deletionPolicy: Orphan`, so their resources keep running unmanaged. Re-create a deleted root unit with `make flux-bootstrap`. There is no whole-platform reset.
+
+### Leftover event streams
+
+Removing an app leaves its JetStream stream in NATS ([why](services.md#nats)). Each app stream reserves its whole 64 MiB cap of the 1 GiB store, even when empty. Enough retained streams leave the next new publisher's stream refused (`insufficient storage resources available`). `make verify-platform`'s `events` group warns when less than one app stream's cap is unreserved, and lists broker streams no instance in this checkout declares, with their message counts. Platform key-value buckets are excluded. Missing or invalid storage evidence warns rather than claiming capacity is available.
+
+A listed stream is only a cleanup candidate: the checkout may be ahead of the cluster. **Deleting a stream destroys its retained events and requires explicit operator confirmation.** Check that no live Stream object's `spec.name` manages that broker stream, inspect its messages, and confirm the exact name before deleting it.
+
+Run in your own terminal (inspection only). The temporary pod mounts the controller's key without printing it:
+
+```bash
+export KUBECONFIG=$HOME/.kube/config
+kubectl get streams.jetstream.nats.io -A -o custom-columns='NAMESPACE:.metadata.namespace,OBJECT:.metadata.name,STREAM:.spec.name'
+kubectl -n messaging run stream-cleanup --restart=Never --image=docker.io/natsio/nats-box:0.17.0 \
+  --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"stream-cleanup","image":"docker.io/natsio/nats-box:0.17.0","command":["sleep","600"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"k","mountPath":"/k","readOnly":true}]}],"volumes":[{"name":"k","secret":{"secretName":"nats-controller-nkey"}}]}}'
+kubectl -n messaging wait --for=condition=Ready pod/stream-cleanup --timeout=120s
+nats() {
+  kubectl -n messaging exec -it stream-cleanup -- sh -c \
+    'cd /tmp && HOME=/tmp exec nats -s nats://nats:4222 --nkey /k/seed "$@"' -- "$@"
+}
+STREAM=replace-with-the-candidate-name
+nats stream info "$STREAM"
+```
+
+Only after the checks and confirmation above, run in the same terminal. The CLI asks you to confirm deletion (do not use `-f`):
+
+```bash
+nats stream rm "$STREAM"
+```
+
+Remove the inspection pod whether or not you deleted a stream, then recheck capacity. Run in the same terminal:
+
+```bash
+kubectl -n messaging delete pod stream-cleanup
+make verify-platform
+```
 
 ## Chart updates
 

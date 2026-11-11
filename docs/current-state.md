@@ -12,7 +12,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   cluster changes: `backup-mongodb` still archives nightly, and `swhurl-v2 verify` still checks its freshness.
 - **Checked offline:** `make check` passes: 245 Python tests (262 before) and 98 others, and the docs link check
   after two historical links to `backupset.py` became plain text.
-- **Not exercised:** nothing live; no manifest changed.
+- **Verified live:** Validate passed on `5e170323` and deployed console `src-f9fcfd551712cd2b` (`cc080f14`), which
+  the console pods run; `make flux-reconcile` brought every unit Ready, and `make verify-platform` passed with no
+  warnings, its newest MongoDB backup 19.2 h old and every app SQLite backup under 20 h. No manifest changed.
 
 ## The unreachable Python leaves, and the console is signed off (12 November 2026)
 

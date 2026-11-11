@@ -107,7 +107,7 @@ not migration.
    Open: the v2 tests that repeat the version could read it from the profile.
 2. **A flag watch survives a NATS restart** (done 10 November 2026): an app's user also holds the nameless
    consumer create on its own environment's flags stream, which `nats.js` uses to re-create its ordered
-   consumer, so it may read another instance's overrides there ([record](current-state.md#nats-chart-2152-and-flag-watches-that-do-not-survive-a-nats-restart-10-november-2026)).
+   consumer, so it may read another instance's overrides there ([record](current-state.md#nats-chart-2152-and-flag-watches-that-survive-a-restart-10-november-2026)).
 
 **B. Then the rest of the road.**
 

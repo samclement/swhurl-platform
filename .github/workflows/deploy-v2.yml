@@ -44,6 +44,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # make check-v2's chart and manifest tests read YAML through Python (PyYAML)
+      - name: Install validation dependencies
+        run: python3 -m pip install --group check
 
       - name: Setup Go
         uses: actions/setup-go@v7

@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## A new worker from the Go console, test-01 (11 November 2026)
+
+- **What happened:** the console's New app (job #67) opened #113 for `test-01/staging`, a TypeScript worker on team
+  `payments` subscribed to `demo-orders.created`. Merging it (`a03b2ca8`) failed `platform-auth` and
+  `platform-reloader` on `namespaces "test-01-staging" not found`: the PR carried the unit file but not its line in
+  `clusters/home/kustomization.yaml`, the reviewed edit (as for `swhurl-try-34`). Registered in `02c46b28`; both units
+  went Ready after a reconcile (`reloader` with `--reset` after its rollback).
+- **Then its stream was refused:** `insufficient storage resources available (10047)`. Each stream reserves its 64 MiB
+  cap, and 1,009 of JetStream's 1,024 MiB were reserved, 448 MiB by seven streams of removed throwaways that
+  `preventDelete: true` had kept (`prod-swhurl-try-12`, `staging-swhurl-try-{12,13,31,32,33,34}`). With the operator's
+  approval they were deleted from a one-off `nats-box` pod using the controller's nkey, each only after checking it had no
+  Stream object and 0 messages. Reserved fell to 514 MiB; `staging-test-01` went Ready, `app-test-01-staging` Ready, and
+  the pod processes events with no `503` since.
+- **`make verify-platform` reports one false failure:** `test-01/staging has no port on the egress proxy`. The renderer
+  gives a port only to an instance with a grant or a database (`kernel.NeedsEgress`, since 26 October), and the Go port of
+  the check (6 November) expects one for every instance; test-01 is the first instance created with neither. Open.
+- **Not exercised:** the console job reaching "Live in staging" was not watched after the fixes.
+
 ## Platform telemetry baseline (11 November 2026)
 
 - **Measured** with `host/telemetry-inventory.sh 24` (read-only ClickHouse queries in its pod), before any change, for the [platform telemetry](platform-telemetry-status.md) workstream. Rows per hour: metrics ≈586,000, logs ≈12,600, traces ≈4,700.

@@ -36,6 +36,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   evidence, sorted leftovers and message counts, platform key-value exclusions, and the read-only exec request;
   `make check` and `make check-v2` pass. The first full v2 run timed out in the unchanged exec-cancellation test;
   that test passed three repeats and the full rerun passed. No stream was deleted by this change.
+  After `bd119499` was pushed, `make flux-reconcile` completed and `make app-status APP=test-01 ENV=staging` reported
+  healthy at that revision. `make verify-platform` passed with the same 446 MiB unreserved and no leftovers;
+  its only warning was the old console image while Validate built its replacement.
 - **Not exercised:** the console job reaching "Live in staging" was not watched after the fixes.
 
 ## Platform telemetry baseline (11 November 2026)

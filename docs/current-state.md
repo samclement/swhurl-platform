@@ -25,6 +25,16 @@ What has been verified on the live cluster, and when: current facts first, then 
   apart from those imports.
 - **The console:** the operator's verdict on the deployed Go console is that it is good, so its capability row is
   `done`; the next gate is the first live Python command to leave, `recovery` with `backupset`.
+- **Landed:** `eeb03fde` failed Validate on one check the deletion made false rather than on the deletion itself:
+  `v2/coexistence_test.go` read `tools/swhurl/apps/model/store.py` to prove v1 record discovery was unchanged.
+  `562f13d0` drops that assertion — there is no v1 discovery left to guard, and the rest of the test (Flux never
+  consuming `v2/`, the console's content-hash inputs, its image build context) still holds — and Validate passed.
+  Deploy pinned console `src-a594d106f3bfcc1a` in `6f78c45d`.
+- **Verified live:** `make flux-reconcile` brought every unit to `6f78c45d`; `make verify-platform` passed with no
+  warnings, and `swhurl-v2 status --all` reports all 11 instances healthy and `applied/revision_matches` at that
+  commit. The console pod `console-b7dcc65c5-6vbhj` runs the new image, and the minute checkers ran on it:
+  `console-dashboards-29907244` and `console-notifications-29907244` both completed, the dashboards pass reporting
+  seven apps up to date.
 
 ## One Renovate PR bumps app-template everywhere (11 November 2026)
 

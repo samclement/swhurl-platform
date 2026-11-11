@@ -8,8 +8,9 @@ no `gc` ran in an existing repository.
 
 The first rehearsal's artefacts are in `/home/sam/history-rehearsals/20261110T214207Z/` (`$D` in §§1–10): `scripts/`,
 `logs/`, `backup/`, `rewrite/`, `check/`, `scratch/`. The refreshed rehearsal, its backup limits and independent review
-are in [§11](#11-refreshed-rehearsal-after-the-pr-merges-11-november-2026). **Only offline preparation and rehearsal
-were approved; history cutover remains unapproved.** The Activity reader was subsequently deployed
+are in [§11](#11-refreshed-rehearsal-after-the-pr-merges-11-november-2026). **On 11 November the operator decided to
+go ahead with the rewrite.** The cutover runbook in [§12](#12-cutover-runbook-11-november-2026) is drafted and its
+offline steps are rehearsed. It has not been run, and each live step still needs confirming when it runs. The Activity reader was subsequently deployed
 ([live evidence](current-state.md#activity-reads-a-merge-commits-four-files-not-its-archive-10-november-2026)); the
 rollout gates recorded in §§9–10 describe those earlier stages, not a remaining deployment task.
 
@@ -511,6 +512,80 @@ Some supporting inventories ran outside step wrappers. No outside-D cache writes
 to this run; concurrent processes were active. The report records these limits rather than claiming perfect
 isolation or tamper-evident logs.
 
-**Next gate:** review and approve a cutover design addressing §8. Nothing was pushed or changed live. This turn did
-not change v2's capabilities, its status page or workstream registry; it establishes refreshed offline evidence for
-repository maintenance only.
+**Next gate:** the cutover runbook (§12). Nothing was pushed or changed live. This work did not change v2's
+capabilities, its status page or its workstream registry; it is repository maintenance only.
+
+## 12. Cutover runbook (11 November 2026)
+
+**Decided:** go ahead with the rewrite, accepting new SHAs for every commit and the loss of the 72 signatures (§8.3).
+The operator holds a backup clone of their own.
+**Defaults the runbook takes; each is the operator's to change:**
+
+- Old commit ids in the tree stay as historical evidence (§8.4). That includes the two generated `revision`
+  labels (`platform/egress/allocation.json`, `v2-records/calls.json`). No check compares those labels, and the next
+  render replaces them.
+- Every branch is rewritten and none is deleted. Deleting stale branches can follow separately; the backup keeps
+  them.
+- No GitHub Support request is made, so the 17 retained `refs/pull/*` keep the binary on GitHub (§8.2).
+
+**Where:** `/home/sam/history-cutover/` (`$X`), outside Git.
+
+- `gate/` holds copies of the five gate scripts, byte-identical to the versions tested in §11 (`gate/SHA256SUMS`;
+  every script refuses to run if they change).
+- `lib.sh` holds the shared settings.
+- One `run/` directory holds the cutover's backup, rewrite, push plan and logs. Keep it until long after the
+  cutover: rollback reads it.
+
+| Script | Does | Changes | Confirm |
+| --- | --- | --- | --- |
+| `00-preflight.sh` | blockers: open PRs, protection or rulesets on `main`, workflow runs in flight, checkout dirty or behind; lists worktrees, stashes and the ignored files to carry over (names only) | nothing | — |
+| `10-freeze.sh` | disables Deploy v2 (the only scheduled writer, :47 hourly) and waits for runs to finish | a GitHub workflow setting | `CONFIRM=freeze` |
+| `20-refresh.sh` | mirror of the frozen remote → bundle, restored and compared, `fsck`; the pinned rewrite of a fresh clone; the gate (verify, absence, unrewritten ids, `fsck --strict`, identical `main` tree, the 32 mutation tests); `make check-docs` on rewritten `main` (the only history-dependent check); the push plan, `push-plan.tsv` (ref, old, new) for every branch | `$X/run` only | — |
+| `30-push.sh` | one `--atomic` force-push of every planned branch, each `--force-with-lease` on the id the refresh saw; refused whole if any branch moved; a dry run without confirmation | GitHub branches | `CONFIRM=push-<new main, 8 hex>` |
+| `40-verify.sh` | GitHub serves exactly the plan and no extra branch; a fresh clone has no old root and no removed blob, and passes `fsck`; Flux's source is the new `main`; `make verify-platform` and `make app-status`; the push's Validate and Render runs succeed and `main` does not move | a Flux reconcile request | — |
+| `50-migrate-checkout.sh` | a fresh clone at the checkout's path (the host units run scripts from it), carrying ignored files over by name (`age.agekey`, `secrets/`, `profiles/`, caches); the old checkout kept whole as `<path>.pre-rewrite-<date>` with its worktrees repaired and its push URL disabled | the operator's checkout | `CONFIRM=migrate` |
+| `60-unfreeze.sh` | re-enables Deploy v2 and dispatches one run | a GitHub workflow setting | `CONFIRM=unfreeze` |
+| `90-rollback.sh` | one atomic push of every branch back to its old id from the restored backup, leased on the new ids so a later commit is never overwritten; then a reconcile; a dry run without confirmation | GitHub branches | `CONFIRM=rollback` |
+
+**Order:** 00 → park sessions → 10 → 20 → 30 (dry run, then confirmed) → 40 → 50 → 60 → record evidence.
+Rollback can run from 40 onwards.
+
+Before 10, the operator finishes or parks every session working in this repository, in the seven worktrees under
+`~/.herdr/worktrees/` and the `/tmp` checkouts. The operator also agrees not to use the console's write actions
+during the window. Run 10 just after Deploy v2's :47 run. After 60, record dated evidence in
+`current-state.md` from the new checkout, with the new `main` id and the gate's counts.
+
+**What changes live:** GitHub's branches and the Deploy v2 setting. Flux fetches the new `main`, whose tree is
+identical, so nothing in the cluster changes: the units' applied revision names a new id. Nothing under
+`flux-system` changes. The push starts Validate and Render as any push does: the console image is skipped because
+its content hash is already published, and Render has nothing to render.
+
+**Hazards after the cutover:**
+
+- A clone of the old history must never be pulled, merged or rebased onto the new `main`. It would replay
+  the commits that added the binary. Move work over with `git format-patch` from the archive and `git am` in the new
+  checkout. The archive's push URL is disabled.
+- Other clones and the `/tmp` checkouts, including the two with local-only commits (§11), are not changed. Treat
+  them the same way.
+- `40-verify` detects a branch created during the window. Nothing detects later pushes of old history. A
+  Validate job that fails when an old root commit is reachable from `main` would; it is an optional follow-up, not
+  in this runbook.
+
+**Rehearsed offline (11 November, `$X/rehearsal-20261111T113922Z/`, current tip `1bcb7313`):**
+
+- `00-preflight` rc 0: no blockers, 30 branches.
+- `20-refresh` rc 0: 2,547 commits, the same 10 blobs, 0 unexplained differences, 32/32 gate tests, a 30-ref plan
+  (`main` → `797d6080`).
+- `30-push` dry run: 30 forced updates, all leases accepted, nothing sent.
+- `90-rollback` dry run: every ref up to date (GitHub still holds the old ids).
+- `50-migrate` in a sandbox (a local copy of the rewrite as the remote; an old checkout with a worktree, a stash
+  and ignored key files) rc 0:
+  - the new checkout is clean at the rewritten `main`, has its ignored files and holds no old root;
+  - the archive keeps the stash and the repaired worktree;
+  - a push from the archive fails.
+
+  The first sandbox run stopped before moving anything because `rsync` is not installed; the copy now uses
+  `tar`. Remote `main` was unchanged throughout.
+
+**Not rehearsed:** the confirmed push, `40-verify` against a pushed history, `10`/`60` (GitHub settings), and the
+rollback push.

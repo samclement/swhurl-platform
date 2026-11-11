@@ -198,7 +198,6 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         _live_test('lifecycle', 'livetests.lifecycle:main', 'Prove suspend, uninstall, destroy-data and Orphan on a throwaway app'),
         _live_test('reloader', 'livetests.reloader:main', 'Prove Reloader restarts only opted-in workloads in watched namespaces'),
         _live_test('app-template', 'livetests.app_template:main', 'Deploy the generated app fixtures through Flux, check, remove'),
-        _live_test('restore-mongodb', 'recovery:restore_test_mongodb', 'Restore the latest MongoDB backup into a throwaway namespace and check it'),
         _live_test('call-identity', 'livetests.call_identity:main',
                    "Prove a callee with no API token can verify a caller's audience-bound token (SKIP_ROTATION=true)"),
         _live_test('network-policy', 'livetests.network_policy:main',

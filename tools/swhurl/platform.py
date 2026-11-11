@@ -6,12 +6,9 @@ the inventory rather than retyping a unit's name, file or inputs.
 """
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-
-import yaml
 
 from swhurl import ROOT, yamlio
 
@@ -23,14 +20,8 @@ SETTINGS = SOURCES / 'configmap-platform-settings.yaml'
 HELM_REPOSITORIES = SOURCES / 'helmrepositories.yaml'
 GIT_REPOSITORIES = SOURCES / 'gitrepositories.yaml'
 ISSUERS = Path('infra/issuers')
-INGESTION_SECRET = Path('platform/otel/secret.sops.yaml')
-# The backup-mongodb CronJob: its BACKUP_S3_URI is where the MongoDB backups are (backup_s3_uri).
-BACKUP_JOB = Path('platform/backup/mongodb.yaml')
-# v2's platform profile: its backup.s3Uri is where app SQLite backups are (sqlite_s3_uri).
+# v2's platform profile.
 PROFILE = Path('v2/testdata/profile.json')
-# The collectors' copy of the ClickStack team ingestion key (namespace logging).
-INGESTION_SECRET_NAME = 'clickstack-ingestion-key'
-INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'
 AGE_KEY = Path('age.agekey')
 # The repository the console clones and opens PRs against.
 GITHUB_REPO = 'samclement/swhurl-platform'
@@ -52,33 +43,6 @@ def github_repository(root: Path = ROOT) -> str:
     """``owner/name`` of the GitHub repository Flux applies (the swhurl-platform GitRepository)."""
     url = yamlio.load((root / GIT_REPOSITORIES).read_text())['spec']['url']
     return url.removeprefix('https://github.com/').removesuffix('.git')
-
-
-def backup_s3_uri(root: Path = ROOT) -> str:
-    """Where the MongoDB backups are (versioned, 90-day lifecycle; docs/operations.md): the ``BACKUP_S3_URI``
-    the backup-mongodb CronJob itself runs with. ValueError names the file when it states none."""
-    try:
-        pod = yamlio.load((root / BACKUP_JOB).read_text())['spec']['jobTemplate']['spec']['template']['spec']
-        env = {item['name']: item.get('value') for item in pod['containers'][0]['env']}
-    except (OSError, yaml.YAMLError, TypeError, KeyError, IndexError) as error:
-        raise ValueError(f'{BACKUP_JOB}: cannot read the job\'s BACKUP_S3_URI ({type(error).__name__})') from None
-    return _located(BACKUP_JOB, env.get('BACKUP_S3_URI'))
-
-
-def sqlite_s3_uri(root: Path = ROOT) -> str:
-    """Where app SQLite backups are, one prefix per namespace below it: the profile's ``backup.s3Uri``, from
-    which v2 renders each instance's backup CronJob. ValueError names the file when it states none."""
-    try:
-        value = json.loads((root / PROFILE).read_text())['backup']['s3Uri']
-    except (OSError, ValueError, TypeError, KeyError) as error:
-        raise ValueError(f'{PROFILE}: cannot read backup.s3Uri ({type(error).__name__})') from None
-    return _located(PROFILE, value)
-
-
-def _located(path: Path, value: object) -> str:
-    if not isinstance(value, str) or not value.startswith('s3://') or not value.endswith('/'):
-        raise ValueError(f'{path}: the backup location must be s3://<bucket>/<prefix>/')
-    return value
 
 
 def flux_unit_documents(root: Path = ROOT) -> Iterator[tuple[Path, dict]]:

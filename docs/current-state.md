@@ -2,6 +2,18 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The MongoDB restore test is deleted (12 November 2026)
+
+- **What changed:** the operator decided MongoDB's restore test is not worth porting: ClickStack's MongoDB holds
+  telemetry metadata that `make clickstack-bootstrap` and the dashboard reconciler rebuild, and no app uses MongoDB.
+  `make live-test-restore-mongodb` is gone with `recovery.py`, `backupset.py`, their two test files, the mongosh
+  helpers in `clickstack.py` only it used, and `platform.py`'s MongoDB backup location, ingestion-key names and the
+  already unread `sqlite_s3_uri`. The backup jobs were already Go (`swhurl-backup`), so nothing that runs in the
+  cluster changes: `backup-mongodb` still archives nightly, and `swhurl-v2 verify` still checks its freshness.
+- **Checked offline:** `make check` passes: 245 Python tests (262 before) and 98 others, and the docs link check
+  after two historical links to `backupset.py` became plain text.
+- **Not exercised:** nothing live; no manifest changed.
+
 ## The unreachable Python leaves, and the console is signed off (12 November 2026)
 
 - **What changed:** with the console Go, the v1 records model had no importer left outside the tooling's own
@@ -4620,7 +4632,7 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 
 ## One backup set for MongoDB and SQLite (12 October 2026)
 
-`c3502f0` puts what a backup set is in one module ([`backupset.py`](../tools/swhurl/backupset.py)): the stamp, the archive and metadata file names, which archive is newest, its age, retention, the checksum and the S3 upload. `recovery.py`, `sqlite_backup.py` and `sqlite_restore.py` only fill and read archives, `retention.py` is gone and `make verify-platform` judges both kinds with one rule. A refactor: nothing on the cluster changed. Console image `src-cd65157ef8b9ecde` (deployed as `1639ccf`); Validate passed, and after `make flux-reconcile`, `make verify-platform` passed with no warning and `make app-status APP=demo-orders ENV=staging` says Healthy.
+`c3502f0` puts what a backup set is in one module (`backupset.py`, since deleted): the stamp, the archive and metadata file names, which archive is newest, its age, retention, the checksum and the S3 upload. `recovery.py`, `sqlite_backup.py` and `sqlite_restore.py` only fill and read archives, `retention.py` is gone and `make verify-platform` judges both kinds with one rule. A refactor: nothing on the cluster changed. Console image `src-cd65157ef8b9ecde` (deployed as `1639ccf`); Validate passed, and after `make flux-reconcile`, `make verify-platform` passed with no warning and `make app-status APP=demo-orders ENV=staging` says Healthy.
 
 - **Real backups, without pruning** (`PRUNE=false`): `make backup-mongodb` wrote `clickstack-mongodb-20261012T215420Z` and uploaded its two files (18 already in the bucket); `make backup-sqlite` wrote `sqlite-20261012T215424Z` for the four app databases (`demo-orders` and `swhurl-try-10`, staging and prod) and uploaded two files each. The metadata files hold the same keys in the same order as that morning's.
 - **Restores:** `make live-test-restore-mongodb` restored that archive into `recovery-test` (collection counts and the team ingestion key matched) and `make live-test-restore-sqlite` passed (one, two restored; the replaced two, three kept beside it; HelmRelease resumed and Ready); both deleted their namespaces. `make restore-sqlite APP=demo-orders ENV=staging DRY_RUN=true` chose `sqlite-20261012T215424Z.db.age` with its checksum checked.

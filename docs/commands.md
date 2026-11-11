@@ -93,7 +93,6 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 | `live-test-lifecycle` † | Prove lifecycle commands on a throwaway app | Cluster (throwaway) |
 | `live-test-reloader` † | Prove Reloader's opt-in and namespace scope | Cluster (throwaway) |
 | `live-test-app-template` † | Deploy the generated fixtures through Flux, check, remove | Cluster (throwaway) |
-| `live-test-restore-mongodb` † | Restore the newest backup in S3 (or `BACKUP_FILE`) into a throwaway namespace and check it (`AGE_KEY_FILE`, `KEEP=true`; needs S3 read access) | Cluster (throwaway) |
 | `live-test-call-identity` † | Prove a callee with no API token verifies a caller's short-lived, audience-bound service-account token against the cluster's public keys handed to it as a ConfigMap, and that the Kubernetes API refuses that token. Waits about 8 minutes for the kubelet to replace the token (`SKIP_ROTATION=true` skips that) | Cluster (throwaway) |
 | `live-test-team-scenario CALLER= CALLEE= SUBSCRIBER= [ENV=staging]` † | Send one request through three deployed, linked apps (CALLER calls CALLEE, which publishes an event SUBSCRIBER receives) and check in ClickStack that one trace holds all three, with the caller named and each app's team. The apps need the stack templates' example routes | Cluster (one request; creates nothing) |
 | `live-test-network-policy` † | Prove a NetworkPolicy selecting an app's pods blocks another namespace while Traefik, probes and an unselected pod on 8089 keep working | Cluster (throwaway) |

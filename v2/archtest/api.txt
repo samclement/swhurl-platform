@@ -1361,6 +1361,7 @@ pages: func (StackCatalogue) Type(key string) (AppType, bool)
 pages: func (StackCatalogue) TypeOf(stack string, answers []NamedValue) (string, error)
 pages: func (StackInfo) Named() string
 pages: func (Stage) Mark() string
+pages: func (Stage) Settled() bool
 pages: func (Stage) Words() string
 pages: func (State) Label() string
 pages: func (Summary) Has(env string) bool

@@ -1,20 +1,23 @@
-"""An app in one environment (GLOSSARY.md): its names, where it is kept in Git, and how to recognise one.
+"""An app in one environment (GLOSSARY.md): its names, its unit, and how to recognise one.
 
 Everything else follows from the pair: ``demo-orders`` in ``staging`` is the namespace
-``demo-orders-staging``, the Flux unit ``app-demo-orders-staging`` (``clusters/home/<unit>.yaml``)
-and the folder ``apps/demo-orders/staging``. This module is the one place that says so, in both
-directions. Standard library only, so every part of the tooling can import it.
+``demo-orders-staging`` and the Flux unit ``app-demo-orders-staging``
+(``clusters/home/<unit>.yaml``, which v2 writes and renders from ``v2-records/``). This module is the
+one place that says so, in both directions. The folder readers below describe the v1 tree, which only the
+live tests still point at. Standard library only, so every part of the tooling can import it.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl.apps.model import records
-
 ENVIRONMENTS = ('staging', 'prod')
+NAME_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
+"""A DNS label, which is what an app's name is: the same grammar v2 refuses a record with."""
 INSTANCE_ROOTS = (Path('apps'), Path('tests/fixtures/apps/apps'))
-"""Where instances are kept, from the repository root: the platform's own first, then the generated fixtures."""
+"""Where v1 instances were kept, from the repository root: the platform's own tree, then the frozen
+fixtures `live-test-app-template` deploys. Only the path readers below use it."""
 UNITS = Path('clusters/home')
 
 
@@ -26,7 +29,7 @@ class Instance:
     env: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.app, str) or not records.NAME_RE.match(self.app) or self.env not in ENVIRONMENTS:
+        if not isinstance(self.app, str) or not NAME_RE.match(self.app) or self.env not in ENVIRONMENTS:
             raise ValueError(f'no instance {self.app}/{self.env}: APP must be a DNS label and ENV one of {", ".join(ENVIRONMENTS)}')
 
     def __str__(self) -> str:

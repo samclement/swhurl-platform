@@ -19,8 +19,7 @@ import secrets
 
 from swhurl import clickstack, interface
 from swhurl.apps import calling, events, helmrelease
-from swhurl.apps.instance import Instance
-from swhurl.apps.model import records
+from swhurl.apps.instance import NAME_RE, Instance
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 
@@ -33,7 +32,7 @@ def release(t: LiveTest, app: str, env: str) -> dict:
 
 def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> None:
     for name in (caller, callee, subscriber):
-        if not records.NAME_RE.match(name or ''):
+        if not NAME_RE.match(name or ''):
             raise Preflight('give CALLER, CALLEE and SUBSCRIBER (app names) and optionally ENV')
     releases = {app: release(t, app, env) for app in (caller, callee, subscriber)}
     if callee not in calling.declared_calls(helmrelease.variables(releases[caller])):

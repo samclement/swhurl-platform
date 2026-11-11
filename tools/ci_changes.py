@@ -23,7 +23,6 @@ def classify(paths: list[str]) -> tuple[bool, bool]:
     if not paths or any(not (APP_INSTANCE.fullmatch(path) or APP_UNIT.fullmatch(path) or path == REGISTRY)
                         for path in paths):
         return False, True
-    # The tooling tests' sample instance is tests/fixtures/instance, which is not an app path.
     return True, False
 
 

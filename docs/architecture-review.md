@@ -64,10 +64,10 @@ The artefacts are organised as:
 
 Implementation anchors:
 
-- [`records.py`](../tools/swhurl/apps/model/records.py): domain records.
-- [`write.py`](../tools/swhurl/apps/model/write.py): preparation (`prepare`).
-- [`render.py`](../tools/swhurl/apps/model/render.py): instance compilation.
-- [`relations.py`](../tools/swhurl/apps/model/relations.py): relationship resolution (`evaluate`).
+- `records.py`: domain records.
+- `write.py`: preparation (`prepare`).
+- `render.py`: instance compilation.
+- `relations.py`: relationship resolution (`evaluate`).
 - `merge.py` (since renamed `changes.py` and deleted with the console port): console action contracts (`Action`).
 
 These should not be discarded simply because some surrounding modules are large.
@@ -80,7 +80,7 @@ Today, `Release` is a snapshot selected by an environment. Image identity, sourc
 
 Release intake derives the source repository and commit from the image reference/tag, then fetches the declaration and offer documents at that commit. This works within the platform's conventions, but the relationship is partly encoded in naming conventions and orchestration rather than in one explicit release descriptor.
 
-Evidence: [`release.py`](../tools/swhurl/apps/release.py), particularly release intake and `change_release`.
+Evidence: `release.py`, particularly release intake and `change_release`.
 
 #### There are two representations of desired state in Git
 
@@ -630,7 +630,7 @@ These facts are different:
 
 The current gate's historical `staged()` test compares complete Release snapshots selected on `main`'s first-parent history. The console's pre-publication readiness check adds live evidence at another point in time. Name these facts explicitly rather than calling all three “staged.”
 
-Evidence: [`promotion.py`](../tools/swhurl/apps/promotion.py) and `proposal.py`.
+Evidence: `promotion.py` and `proposal.py`.
 
 ### Proposed flow
 
@@ -733,7 +733,7 @@ Do not replace all status models with one enum. Different questions require diff
 
 The distinction between `state.verdict`, `stages.progress` and time-based notification evaluation is substantively justified, even where names and duplicated observations could improve.
 
-Evidence: [`state.py`](../tools/swhurl/apps/state.py), `stages.py` and [the reviewed Python notification evaluator](https://github.com/samclement/swhurl-platform/blob/25dbe522a87eeec16791b383c8c34a7a6ca6930a/tools/swhurl/notifications/evaluate.py).
+Evidence: `state.py`, `stages.py` and [the reviewed Python notification evaluator](https://github.com/samclement/swhurl-platform/blob/25dbe522a87eeec16791b383c8c34a7a6ca6930a/tools/swhurl/notifications/evaluate.py).
 
 ### Evidence primitive
 
@@ -819,7 +819,7 @@ Keep distinct graphs for ownership, reconciliation prerequisites, runtime depend
 
 ### Calls and subscriptions need not have identical consent
 
-Today, calls require caller intent plus callee consent. Subscriptions to published events do not have an equivalent publisher-consent branch. This difference is implemented by [`relations.py`](../tools/swhurl/apps/model/relations.py) and consumed by event rendering.
+Today, calls require caller intent plus callee consent. Subscriptions to published events do not have an equivalent publisher-consent branch. This difference is implemented by `relations.py` and consumed by event rendering.
 
 Make it an explicit policy choice, not a hidden inconsistency behind a generic relation abstraction suggesting identical rules.
 

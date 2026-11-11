@@ -1,6 +1,12 @@
-"""App instances: shared v1 contracts, validation and day-to-day operations.
+"""What the three live tests that read a deployed release need, and nothing else.
 
-    contract     rules shared with the retained v1 generator and model oracle
-    validation   make check-apps: acquire the pinned chart and invoke Go's whole-tree checks
-    ops          an instance's live status, as the console and the promotion gate read it
+The v1 generator, its records model and the checks that used them are gone: v2's records and its compiled
+tree are the only model, and `swhurl-v2` the only writer. These four modules are read by
+`livetests.team_scenario` (and `app_template` and `network_policy`, for the instance and cookie names) and
+leave with the live tests they serve.
+
+    instance    an app in one environment: its names, folder and unit (GLOSSARY.md)
+    calling     what a caller declares, read from a live release's variables
+    events      what a release publishes and a subscriber asks for
+    helmrelease accessors for a live HelmRelease and its rendered variables
 """

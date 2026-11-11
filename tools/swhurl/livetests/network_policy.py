@@ -11,17 +11,14 @@ and removes them.
 """
 from __future__ import annotations
 
-from swhurl import interface
-from swhurl.apps.contract import (
-    COOKIE_DOMAIN,
-)
+from swhurl import interface, platform
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 APP_NS = 'network-policy-test-app'
 CLIENT_NS = 'network-policy-test-client'
 LABEL = interface.label('network-policy-test')
 IMAGE = 'node:24-bookworm-slim'
-HOST = f'network-policy-test.{COOKIE_DOMAIN}'
+HOST = f'network-policy-test.{platform.base_domain()}'
 SERVER = "require('http').createServer((q, s) => s.end('ok')).listen(Number(process.env.PORT), '0.0.0.0')"
 FETCH = ("fetch(process.argv[1], {signal: AbortSignal.timeout(4000)}).then((r) => r.text())"
          ".then((t) => console.log(t), () => console.log('blocked'))")

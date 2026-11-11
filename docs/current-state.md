@@ -2,6 +2,30 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The unreachable Python leaves, and the console is signed off (12 November 2026)
+
+- **What changed:** with the console Go, the v1 records model had no importer left outside the tooling's own
+  tests, and neither did the rest of what the console port orphaned. `tools/swhurl/apps/` loses the model
+  (`apps/model/`, 1,541 lines), `contract.py`, `declaration.py`, `offers.py`, `promotion.py`, `release.py`,
+  `ops.py`, `state.py`, `egress.py`, `channels.py`, `nkeys.py`, `connections.py`, `defaults.py`, `errors.py` and
+  `yaml_file.py`; `statestore.py` and `platform_checks.py` go with them. Six test files and the helper they shared
+  (`full_settings.py`), the frozen sample instance `tests/fixtures/instance/` and the fixture generator
+  `tests/fixtures/apps.sh` are deleted; 62 files and 4,725 lines, 4,288 of them Python. `apps/` keeps 349 lines in
+  five files — `instance.py`, `calling.py`, `events.py` and `helmrelease.py` — and its own docstring now says so, as
+  they are what `live-test-team-scenario` reads from a deployed release, and `app-template` and `network-policy` read
+  only `platform.base_domain()` and a local name grammar in their place. `tests/test_manifest_policy.py` keeps its
+  live subject (units, namespaces, hosts, sign-in, console policy) with the two namespace names it used to import.
+- **Checked offline:** `make test` 262 tests pass in 9.6 s (Python in `tools/` and `tests/` is 8,497 lines, down from
+  12,785), and every live module imports: `swhurl.livetests.app_template` renders `smoke-web.homelab.swhurl.com` and
+  `network_policy` renders `network-policy-test.homelab.swhurl.com` from the platform settings, as `contract.py`'s
+  constant did. The fixture root is still what `live-test-app-template` deploys and what
+  `tests/test_v2_policy_gate.py` passes to `v2/check-apps.sh`.
+- **Not exercised:** the three live tests that use the kept modules (`live-test-team-scenario`,
+  `live-test-app-template`, `live-test-network-policy`) need a cluster and were not run this turn; they are unchanged
+  apart from those imports.
+- **The console:** the operator's verdict on the deployed Go console is that it is good, so its capability row is
+  `done`; the next gate is the first live Python command to leave, `recovery` with `backupset`.
+
 ## One Renovate PR bumps app-template everywhere (11 November 2026)
 
 - **What changed:** `renovate.json` adds a regex manager for `chart.version` in `v2/testdata/profile.json` (helm
@@ -1704,7 +1728,7 @@ and verification. Policy remains a read-only Git check, not live admission enfor
 ## The v1 model is bounded (3 November 2026)
 
 - **What changed:** the operator chose to bound the v1 Python model (`tools/swhurl/apps/model`) rather than port its
-  importers now. [`tests/test_v1_model_bound.py`](../tests/test_v1_model_bound.py) pins the 22 files that import it
+  importers now. `tests/test_v1_model_bound.py` pinned the 22 files that imported it,
   (17 modules under `tools/` and 5 test files, found by parsing their imports, relative ones included) and its 1,547
   lines, both exactly: a new importer or line fails, and one removed must lower the pin in the same commit. The
   status page had said three console modules import it; most of `apps/` does, so it leaves as they are ported, not
@@ -4532,7 +4556,7 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 
 ## One state for an instance, and the review's stale statements (12 October 2026)
 
-`fd71e50` corrects the stale statements an architecture review of the tooling found (comments, READMEs, two docs, one test's coverage, two live tests' namespace creation). `d4c1a1a` gives an instance's live state one definition, [`state.py`](../tools/swhurl/apps/state.py): the console's Apps/Services list and Teams page, the app page, `make app-status` and the promotion gate ask it ([states](console.md#use-it)). Console image `src-949a1ab27fc86047` (deployed as `ff87492`); `make verify-platform` passed. The review's remaining candidates are [open work 15](plan.md#open-work).
+`fd71e50` corrects the stale statements an architecture review of the tooling found (comments, READMEs, two docs, one test's coverage, two live tests' namespace creation). `d4c1a1a` gives an instance's live state one definition, `state.py`: the console's Apps/Services list and Teams page, the app page, `make app-status` and the promotion gate ask it ([states](console.md#use-it)). Console image `src-949a1ab27fc86047` (deployed as `ff87492`); `make verify-platform` passed. The review's remaining candidates are [open work 15](plan.md#open-work).
 
 - **List and page agree:** read from a terminal, the list's verdict and the page's verdict were the same for all 12 instances (all Healthy). The list with its three new reads (the Git source, pods, workloads) took 0.91 s against 0.38 s without them.
 - **Commands:** `make app-status APP=demo-orders ENV=staging` prints `State      Healthy` under the instance's name.
@@ -4634,7 +4658,7 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 
 ## swhurl.yaml: fields read once or read again (13 October 2026)
 
-`46c99d4`: [`declaration.py`](../tools/swhurl/apps/declaration.py) owns an app's `swhurl.yaml` ([plan](plan.md) section 0, item 15, candidate 10; [apps](apps.md#swhurlyaml)). Console image `src-efc2400fd2e3fb5c` (`a5eeb58`).
+`46c99d4`: `declaration.py` owns an app's `swhurl.yaml` ([plan](plan.md) section 0, item 15, candidate 10; [apps](apps.md#swhurlyaml)). Console image `src-efc2400fd2e3fb5c` (`a5eeb58`).
 
 - **Every live app's file passes the one validation:** all 12 instances' files were read from GitHub through the new reader at their image's commit and at the default branch: 24 reads, none refused.
 - **Same result as before:** `make app-offers ARGS="--all staging"` read 9 staging instances and reported each unchanged; the working tree stayed clean.

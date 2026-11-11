@@ -12,8 +12,8 @@ class CIChangeClassificationTests(unittest.TestCase):
             'clusters/home/app-weather-staging.yaml',
         ]), (True, False))
 
-    def test_sample_instance_changes_keep_tooling_tests(self):
-        self.assertEqual(classify(['tests/fixtures/instance/apps/hello/staging/helmrelease.yaml']), (False, True))
+    def test_a_fixture_path_keeps_tooling_tests(self):
+        self.assertEqual(classify(['tests/fixtures/apps/apps/smoke-web/staging/helmrelease.yaml']), (False, True))
         self.assertEqual(classify(['apps/hello/staging/helmrelease.yaml']), (True, False))
 
     def test_mixed_and_unclassifiable_changes_run_everything(self):
@@ -52,7 +52,7 @@ class CIChangeClassificationTests(unittest.TestCase):
         for paths in ([], ['apps/weather/prod/release.yaml', 'apps/weather/prod/helmrelease.yaml'],
                       ['apps/weather/prod/release.yaml', 'clusters/home/kustomization.yaml'],
                       ['apps/weather/qa/release.yaml'], ['tests/fixtures/apps/apps/x/staging/release.yaml'],
-                      ['apps/weather/prod/release.yaml', 'tools/swhurl/apps/model/render.py']):
+                      ['apps/weather/prod/release.yaml', 'tools/swhurl/apps/instance.py']):
             with self.subTest(paths=paths):
                 self.assertFalse(records_only(paths))
 

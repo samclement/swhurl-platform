@@ -13,13 +13,12 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
-from swhurl import ROOT, interface, yamlio
-from swhurl.apps.contract import COOKIE_DOMAIN
+from swhurl import ROOT, interface, platform, yamlio
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 FIXTURES = Path('tests/fixtures/apps')
 INSTANCES = ('smoke-worker-staging', 'smoke-web-staging', 'smoke-data-prod')
-HOST = f'smoke-web.{COOKIE_DOMAIN}'
+HOST = f'smoke-web.{platform.base_domain()}'
 
 
 def fixture_unit(instance: str) -> dict:

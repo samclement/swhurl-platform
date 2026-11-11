@@ -332,7 +332,7 @@ A pure function's output depends only on its arguments: no network, filesystem, 
 | Process transitions | Given this operation and this result, what happens next? |
 | Notification decisions | Given observations, previous incident state and an explicit time, send a notice? |
 
-Generating Kubernetes resources is pure; applying them is not. Deciding which credentials are needed is pure; generating and encrypting them is not. v1's [`allocate`](../tools/swhurl/apps/model/write.py) mixes allocation decisions, filesystem checks, key generation and encryption in one step; in v2 split it into (1) a pure calculation of the allocations and material required, (2) adapters that return keys and encrypted material, (3) a pure validation of what came back and compilation of the completed plan. Preparation failures are then testable without generating credentials or writing files. This is a v2 design rule, not a v1 change.
+Generating Kubernetes resources is pure; applying them is not. Deciding which credentials are needed is pure; generating and encrypting them is not. v1's `allocate` mixes allocation decisions, filesystem checks, key generation and encryption in one step; in v2 split it into (1) a pure calculation of the allocations and material required, (2) adapters that return keys and encrypted material, (3) a pure validation of what came back and compilation of the completed plan. Preparation failures are then testable without generating credentials or writing files. This is a v2 design rule, not a v1 change.
 
 ### Adapters
 
@@ -541,7 +541,7 @@ Recorded responses suit reads. Changes need small **behavioural fakes** that imp
 
 v1 is evidence to evaluate, not the specification of v2 or an expected-output generator. Under the [design principles](#design-principles), classify relevant behaviour as **preserve**, **deliberately change**, **remove** or **not yet modelled**, using the [architecture review](architecture-review.md) and [model review](model-review.html). This is not a requirement to model every v1 feature now. Starting points:
 
-- [`tests/fixtures/instance`](../tests/fixtures/instance): a frozen staging/production example with records and rendered resources.
+- `tests/fixtures/instance`: a frozen staging/production example with records and rendered resources (deleted with the v1 writer).
 - [`tests/fakecluster.py`](../tests/fakecluster.py): the report `swhurl-v2 verify`'s cluster scope gives a healthy platform, as the console's tests read it.
 - `tests/test_console_stages.py` (deleted with the console port): earlier targets, current intent and live observations combined; `v2/pages/changes.go` and its tests carry the intent now.
 - [`v2/kernel/edit_test.go`](../v2/kernel/edit_test.go): deterministic rendering and relationship rules in the v2 model.
@@ -1884,7 +1884,7 @@ list compares staging with production by digest — v2's release identity — be
 `kubectl` lists, the row assembly); the app page's own `instance.json`/`release.json` reads; the console tests
 that pinned the old derivation, whose cases become Go table tests. `apps/calling|egress|events|helmrelease|ops|
 connections` and `interface` stay while the bounded v1 oracle and the live tests import them; the console importers
-leave with this change and [`test_v1_model_bound`](../tests/test_v1_model_bound.py) shrinks by them.
+leave with this change and `test_v1_model_bound` shrank by them.
 
 **Verification.** Go table tests for every field and every row (connected, each waiting and refused reason,
 declaration-only rows, private and worker instances, a team grant, a subscription waiting on its publisher, a

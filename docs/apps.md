@@ -246,7 +246,7 @@ This is the canonical list of platform-provided environment names, managed app m
 
 ## swhurl.yaml
 
-What the app is, what its image needs and what it offers other apps, kept in the app's own repository (the templates write it from your feature answers). The name, environment, image and host belong to each instance and are never in the file. [`declaration.py`](../tools/swhurl/apps/declaration.py) is its one reader: unknown fields and other versions are refused wherever the file is read.
+What the app is, what its image needs and what it offers other apps, kept in the app's own repository (the templates write it from your feature answers). The name, environment, image and host belong to each instance and are never in the file. Its image states it as one label (`swhurl-v2 image-declaration` writes it) and [`swhurl-v2 declaration`](../v2/cmd/swhurl-v2/declaration.go) is its reader: unknown fields and other versions are refused wherever it is read.
 
 Each field is one of four kinds ([glossary](../GLOSSARY.md)), and the templates write them in this order under a comment for each:
 
@@ -962,7 +962,7 @@ The compiler and the resolver validate a change as they render it: a record they
 
 The [notification expectations](services.md#notification-expectations) define deployment, rollback, uninstall and prolonged-health messages for each app/environment; the [current filters](services.md#current-notification-behavior) describe what is live today. When a pod fails, `make app-status` and the app page list Go's container reason and message. The console does not guess a fix: use the logs (`make app-logs APP= ENV= PREVIOUS=true` for the previous crashed container), check the image pin and package visibility, and compare the app's readiness path, port and memory with its declared needs.
 
-An instance fails fast: if its pods are not Ready within 3 minutes of a change (`FAIL_AFTER` in [`contract.py`](../tools/swhurl/apps/contract.py): the unit's `timeout` and the HelmRelease's `timeout`), its unit turns red and `make flux-reconcile` reports it; Helm then retries once and stops. `make app-status` lists failing containers. After fixing the cause, push, or run `make app-reconcile`. An app that genuinely needs longer to start (a large image, a slow first migration) can raise both timeouts in its own files.
+An instance fails fast: if its pods are not Ready within 3 minutes of a change (`failAfter` in [`v2/kernel/render.go`](../v2/kernel/render.go): the unit's `timeout` and the HelmRelease's `timeout`), its unit turns red and `make flux-reconcile` reports it; Helm then retries once and stops. `make app-status` lists failing containers. After fixing the cause, push, or run `make app-reconcile`. An app that genuinely needs longer to start (a large image, a slow first migration) can raise both timeouts in its own files.
 
 
 ### Dashboards
@@ -1036,9 +1036,9 @@ state the boundary, including retirement of the legacy-only quota reserve. Helm 
 Helm's own values/template processing can round before that boundary.
 
 **Go owns all app-policy decisions.** The legacy Python fixture checker and explicit-path API are
-retired, not translated into another Go mode. The fixtures remain for the v1 model oracle (including
-[`test_interface.py`](../tests/test_interface.py) and [`test_app_relations.py`](../tests/test_app_relations.py));
-Go's [policy mutation tests](../v2/policy/policy_test.go) own the supported v2 rules. Legacy-only quota
+retired, not translated into another Go mode. The frozen `tests/fixtures/apps/` root stays only as the data
+`live-test-app-template` deploys; the v1 model oracle that read it is deleted. Go's
+[policy mutation tests](../v2/policy/policy_test.go) own the supported v2 rules. Legacy-only quota
 reserve, `public`/host-override routes, reviewed exceptions, alert settings, alternate storage classes and
 `platform-image` provenance/exemptions are not preserved as policy contracts. Unsupported v2 records
 remain refused; no rule filtering or compatibility bridge is added. A v2 release's repository and image

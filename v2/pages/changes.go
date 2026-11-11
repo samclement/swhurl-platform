@@ -49,8 +49,12 @@ type Stage struct {
 // Mark is the stage's mark.
 func (s Stage) Mark() string { return stageMarks[s.State][0] }
 
-// Words is the stage's state for a screen reader.
+// Words is the stage's state in words.
 func (s Stage) Words() string { return stageMarks[s.State][1] }
+
+// Settled is whether the stage happened: its name, which says what it ends in ("Merged"), is then true, and its words
+// are for a screen reader only. A stage that has not happened shows them, so its name never reads as done.
+func (s Stage) Settled() bool { return s.State == "done" || s.State == "reached" }
 
 // Track is a change's whole path as the console shows it.
 type Track struct {

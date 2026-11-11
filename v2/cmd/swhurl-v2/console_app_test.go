@@ -151,7 +151,7 @@ func (f appFixture) moment(t *testing.T) time.Time {
 // fixtureShell is the page around these pages: the console repo, the reader's identity and the fixed clock.
 func fixtureShell(path, title string) shell {
 	return shell{Title: title, Path: path, Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: path,
-		Assets: "92d0885d31c0", HasGithub: true}
+		Assets: "93e3b193821e", HasGithub: true}
 }
 
 // shellWithJobs is the page with the header's running count, which reads every recent job, not only its own.

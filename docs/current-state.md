@@ -19,6 +19,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   gives one only to an instance with a grant or a database (`kernel.NeedsEgress`, since 26 October); test-01 is the first
   instance created with neither. The check now reads the port from the instance's compiled NetworkPolicy and requires
   that one, alone, in the allocation; `make verify-platform` passes with `6 instance(s) use the proxy, each on a port of its own`.
+- **A stage that has not happened says so on screen:** the operator read job #67's **Merged** stage as done, because its
+  state was in screen-reader text only. The console now shows the state under any stage not done or reached (*waiting
+  for you*, *not reached*); the page fixtures and asset hash (`93e3b193821e`) changed with it. Seen in a headless
+  browser over the fixture, not yet on the deployed console.
 - **Not exercised:** the console job reaching "Live in staging" was not watched after the fixes.
 
 ## Platform telemetry baseline (11 November 2026)

@@ -9,7 +9,7 @@
 {{define "merging"}}<span class="merging">{{.}}</span>{{end}}
 {{define "track"}}
 <ol class="track" aria-label="Stages">
-  {{range .Stages}}<li class="stage {{.State}}"><span class="node">{{template "mark" .Mark}}<span class="what"><span class="name">{{if .Link}}<a href="{{.Link}}">{{.Label}}</a>{{else}}{{.Label}}{{end}}<span class="sr-only"> ({{.Words}})</span></span>{{if .Note}}<span class="note">{{short .Note}}</span>{{end}}</span></span></li>
+  {{range .Stages}}<li class="stage {{.State}}"><span class="node">{{template "mark" .Mark}}<span class="what"><span class="name">{{if .Link}}<a href="{{.Link}}">{{.Label}}</a>{{else}}{{.Label}}{{end}}{{if .Settled}}<span class="sr-only"> ({{.Words}})</span>{{end}}</span>{{if not .Settled}}<span class="words">{{.Words}}</span>{{end}}{{if .Note}}<span class="note">{{short .Note}}</span>{{end}}</span></span></li>
   {{end}}
 </ol>
 <p class="outcome">{{short .Outcome}}</p>

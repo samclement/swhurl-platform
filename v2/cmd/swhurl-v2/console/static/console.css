@@ -283,8 +283,9 @@ ol.track { list-style: none; display: flex; flex-wrap: wrap; gap: var(--gap-2) 0
 .stage .what { display: flex; flex-direction: column; max-width: 15rem; }
 .stage .name { font-weight: 600; white-space: nowrap; } .stage .name a { color: inherit; }
 .stage .note { color: var(--muted); overflow-wrap: anywhere; }
-.stage.todo .name, .stage.planned .name { color: var(--muted); font-weight: 400; }
-.stage.waiting .name { color: var(--attention); } .stage.failed .name { color: var(--critical); } .stage.reached .name { color: var(--ok); }
+.stage .words { font-size: var(--size-detail); font-weight: 600; }
+.stage.todo .name, .stage.planned .name, .stage.todo .words, .stage.planned .words { color: var(--muted); font-weight: 400; }
+.stage.waiting .name, .stage.waiting .words { color: var(--attention); } .stage.failed .name, .stage.failed .words { color: var(--critical); } .stage.reached .name { color: var(--ok); }
 .stage .node { display: flex; align-items: flex-start; gap: var(--gap-1); border: 1px solid transparent; border-radius: 10px; padding: 0 var(--gap-2) 0 2px; }
 .stage.planned .node { border: 1px dashed var(--line); }
 .stage.reached .node { border-color: color-mix(in oklch, var(--ok) 45%, var(--line)); background: color-mix(in oklch, var(--ok) 8%, var(--panel)); }

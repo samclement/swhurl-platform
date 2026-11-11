@@ -15,14 +15,14 @@ import (
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
-// The embedded assets hash the same bytes in the same order as the Python console, so a browser's cached URL is the
-// same asset whichever server it came from.
+// The embedded assets' hash is in every page's asset URLs, so a changed stylesheet or script is a new URL and no
+// browser keeps the old one; this pins it, so a change to the assets is seen here.
 func TestAssetHash(t *testing.T) {
 	server, err := newConsoleServer(consoleConfig{Dev: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if server.assets != "92d0885d31c0" {
+	if server.assets != "93e3b193821e" {
 		t.Fatalf("assets = %s", server.assets)
 	}
 }
@@ -37,7 +37,7 @@ func TestOverviewIsByteIdentical(t *testing.T) {
 	}
 	data := overviewData{
 		shell: shell{Title: "Overview", Path: "/", Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: "/",
-			Assets: "92d0885d31c0", AutoRefresh: true, HasGithub: false},
+			Assets: "93e3b193821e", AutoRefresh: true, HasGithub: false},
 		Checks: pages.ChecksOf([]pages.Check{{Section: "Flux Kustomizations", Entries: []pages.Entry{
 			{Level: "ok", Message: "homelab-a"}, {Level: "ok", Message: "homelab-b"}, {Level: "ok", Message: "homelab-c"}}},
 			{Section: "Applications", Entries: []pages.Entry{{Level: "ok", Message: "web/staging"}, {Level: "ok", Message: "my-api/staging"}}},
@@ -117,7 +117,7 @@ func TestPlatformIsByteIdentical(t *testing.T) {
 	})
 	revision := pages.CommonRevision(listed)
 	data := platformData{
-		shell:  shell{Title: "Platform", Path: "/platform", Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: "/platform", Assets: "92d0885d31c0", AutoRefresh: true},
+		shell:  shell{Title: "Platform", Path: "/platform", Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: "/platform", Assets: "93e3b193821e", AutoRefresh: true},
 		Checks: checks, Units: listed, Problems: pages.Problems(checks, listed), Updating: pages.Updating(listed),
 		Groups: pages.CheckGroups(checks), Revision: revision,
 	}
@@ -234,7 +234,7 @@ func TestAppsIsByteIdentical(t *testing.T) {
 		{"apps-map.html", "apps.html", "map", "/apps?view=map"},
 	} {
 		data := appsData{shell: shell{Title: "Deployments", Path: "/apps", Identity: "sam@swhurl.com", ReadAt: "09:43",
-			RefreshURL: one.refresh, Assets: "92d0885d31c0", AutoRefresh: true},
+			RefreshURL: one.refresh, Assets: "93e3b193821e", AutoRefresh: true},
 			AppsPage: pages.AppsPageOf(pages.AppsInput{Rows: rows, View: one.view, Env: "staging", RefreshURL: one.refresh,
 				Stacks: map[string]string{"web": "typescript", "my-api": "typescript"}, Site: site})}
 		var rendered bytes.Buffer
@@ -261,7 +261,7 @@ func TestEgressIsByteIdentical(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := egressData{shell: shell{Title: "Egress", Path: "/egress", Identity: "sam@swhurl.com", ReadAt: "09:43",
-		RefreshURL: "/egress", Assets: "92d0885d31c0"},
+		RefreshURL: "/egress", Assets: "93e3b193821e"},
 		EgressPage: pages.EgressPageOf(appsRows(t), pages.Site{Domain: "homelab.swhurl.com", Owner: "samclement"})}
 	var rendered bytes.Buffer
 	if err := server.templates["egress.html"].ExecuteTemplate(&rendered, "base", data); err != nil {
@@ -301,7 +301,7 @@ func TestUnitIsByteIdentical(t *testing.T) {
 		}
 	}
 	data := unitData{shell: shell{Title: unit.Name, Path: "/units/" + unit.Name, Identity: "sam@swhurl.com",
-		ReadAt: "09:43", RefreshURL: "/units/" + unit.Name, Assets: "92d0885d31c0"},
+		ReadAt: "09:43", RefreshURL: "/units/" + unit.Name, Assets: "93e3b193821e"},
 		Unit: unit, Refused: pages.RefusedUnits[unit.Name], Detail: unit.Ready.Detail, App: unitApp(unit.Name)}
 	if data.Detail == "" {
 		data.Detail = "applied " + unit.Revision
@@ -329,7 +329,7 @@ func TestTeamsIsByteIdentical(t *testing.T) {
 	}
 	site := pages.Site{Domain: "homelab.swhurl.com", Owner: "samclement"}
 	data := teamsData{shell: shell{Title: "Teams", Path: "/teams", Identity: "sam@swhurl.com", ReadAt: "09:43",
-		RefreshURL: "/teams", Assets: "92d0885d31c0"},
+		RefreshURL: "/teams", Assets: "93e3b193821e"},
 		TeamsPage: pages.TeamsPageOf(nil, false, appsRows(t), site,
 			map[string]string{"web": "typescript", "my-api": "typescript"}, map[string]string{})}
 	data.RegistryError = "No GitHub token is configured, so the team registry on main cannot be read."
@@ -422,7 +422,7 @@ func TestCatalogueIsByteIdentical(t *testing.T) {
 			Env: "prod", Kind: "event", Team: "nobody", Site: site, Offers: orchestration.ConsoleOffers(tree, rows, "prod")}},
 	} {
 		data := catalogueData{shell: shell{Title: "Catalogue", Path: "/catalogue", Identity: "sam@swhurl.com", ReadAt: "09:43",
-			RefreshURL: one.refresh, Assets: "92d0885d31c0"}, CataloguePage: pages.CataloguePageOf(one.input)}
+			RefreshURL: one.refresh, Assets: "93e3b193821e"}, CataloguePage: pages.CataloguePageOf(one.input)}
 		var rendered bytes.Buffer
 		if err := server.templates["catalogue.html"].ExecuteTemplate(&rendered, "base", data); err != nil {
 			t.Fatal(err)
@@ -453,7 +453,7 @@ func TestJobRowsRender(t *testing.T) {
 	}
 	unit := listed[0]
 	unitPage := unitData{shell: shell{Title: unit.Name, Path: "/units/" + unit.Name, Identity: "sam@swhurl.com",
-		ReadAt: "09:43", RefreshURL: "/units/" + unit.Name, Assets: "92d0885d31c0"},
+		ReadAt: "09:43", RefreshURL: "/units/" + unit.Name, Assets: "93e3b193821e"},
 		Unit: unit, Refused: pages.RefusedUnits[unit.Name], Detail: unit.Ready.Detail, App: unitApp(unit.Name)}
 	unitPage.JobViews = []jobView{
 		{ID: 61, Action: "reconcile", Identity: "sam@swhurl.com", State: "interrupted", StartedClock: "21:29"},
@@ -469,7 +469,7 @@ func TestJobRowsRender(t *testing.T) {
 	}
 
 	teams := teamsData{shell: shell{Title: "Teams", Path: "/teams", Identity: "sam@swhurl.com", ReadAt: "09:43",
-		RefreshURL: "/teams", Assets: "92d0885d31c0"},
+		RefreshURL: "/teams", Assets: "93e3b193821e"},
 		TeamsPage: pages.TeamsPage{Teams: []pages.TeamView{{Name: "web",
 			Job: &pages.TeamJob{ID: 63, Action: "team edit", State: "succeeded"}}}}}
 	rendered.Reset()

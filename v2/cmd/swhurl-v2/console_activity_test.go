@@ -100,7 +100,7 @@ func activityServer(t *testing.T) (*consoleServer, orchestration.ChangeReads) {
 }
 
 func activityShell(path string, autoRefresh bool, jobs []pages.Job) shell {
-	return shell{Path: path, Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: path, Assets: "92d0885d31c0",
+	return shell{Path: path, Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: path, Assets: "93e3b193821e",
 		AutoRefresh: autoRefresh, HasGithub: true, Running: runningJobs(jobViewsOf(jobs))}
 }
 

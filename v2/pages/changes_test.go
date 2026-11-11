@@ -320,3 +320,14 @@ func TestMergePlan(t *testing.T) {
 		t.Fatalf("mode = %q", got)
 	}
 }
+
+// A stage's name says what it ends in, so only a stage that happened lets the name stand alone: every other state's
+// words are shown beside it.
+func TestOnlyAStageThatHappenedHidesItsState(t *testing.T) {
+	for state := range stageMarks {
+		settled := Stage{State: state}.Settled()
+		if want := state == "done" || state == "reached"; settled != want {
+			t.Errorf("%s: settled = %v, want %v", state, settled, want)
+		}
+	}
+}

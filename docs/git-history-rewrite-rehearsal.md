@@ -1,4 +1,4 @@
-# Git history rewrite: offline rehearsal (10 November 2026)
+# Git history rewrite: offline rehearsals (10–11 November 2026)
 
 The task record for removing `v2/swhurl-v2`, the committed 11 MB binary, from this repository's history. This covers
 approved rehearsal steps 1–3: inventory, external backups, and a rewrite in a separate clone that was then verified.
@@ -6,8 +6,12 @@ It also records a read-only look at what GitHub keeps and the separately approve
 in §9. Stage A does not authorise a production reader, deployment or history cutover. **No rewritten history was pushed, reconciled or changed live.** The history rewrite touched only scratch clones;
 no `gc` ran in an existing repository.
 
-Every artefact is in `/home/sam/history-rehearsals/20261110T214207Z/` (`$D` below): `scripts/`, `logs/`, `backup/`,
-`rewrite/`, `check/`, `scratch/`. That is 421 MB in total.
+The first rehearsal's artefacts are in `/home/sam/history-rehearsals/20261110T214207Z/` (`$D` in §§1–10): `scripts/`,
+`logs/`, `backup/`, `rewrite/`, `check/`, `scratch/`. The refreshed rehearsal, its backup limits and independent review
+are in [§11](#11-refreshed-rehearsal-after-the-pr-merges-11-november-2026). **Only offline preparation and rehearsal
+were approved; history cutover remains unapproved.** The Activity reader was subsequently deployed
+([live evidence](current-state.md#activity-reads-a-merge-commits-four-files-not-its-archive-10-november-2026)); the
+rollout gates recorded in §§9–10 describe those earlier stages, not a remaining deployment task.
 
 ## 1. Scope
 
@@ -205,27 +209,34 @@ Nothing was edited. Whether to map the docs' references through `commit-map` is 
   even if signatures were kept, and that count grows with every commit.
 - **Sizes:** the measured figures are in §4. GitHub's own repository size and its tarball sizes after a push were not
   measured and cannot be promised.
-- **Reversibility:** the backups in §3 restore every ref and stash commit, as the restore test shows. What a
-  force-push makes hard to undo is other clones, open PRs and evidence links, not the data.
+- **Reversibility:** the first rehearsal's backups restore its captured refs and stash commits, not all local
+  state. The refreshed inventory found unbacked reflog-only commits and local work, and deliberately excludes one
+  stash's untracked Secret ([§11](#11-refreshed-rehearsal-after-the-pr-merges-11-november-2026)). A force-push also
+  affects other clones, pull requests and evidence links; restoring captured refs is not a complete rollback.
 - **Purge:** a force-push alone is not a guaranteed purge. `refs/pull/*`, `merge_commit_sha` and GitHub's
   fetch-by-SHA keep the old commits available, as shown in §5.
 
 ## 8. Cutover gate (not approved)
 
-Stop conditions met in this rehearsal: none of backup, rewrite or check failed. The cutover stays **blocked** on these
-decisions:
+The refreshed rehearsal passes the content and build checks, but **does not establish cutover readiness**. These
+are the current gates; counts are from §11's `01909470` baseline, not the first rehearsal:
 
-1. **Activity:** after a rewrite, Activity's mapping from a change to its tree would still fetch the binary-era
-   archives of PRs #101 and #102 through `merge_commit_sha`. A rewrite does not fix that read. That needs its own
-   approved change: mapping through `commit-map`, or deciding those rows another way.
-2. **Pull-request refs:** what to do about `refs/pull/*` and the 5 open PRs that reach the binary. Either accept that
-   they remain or ask GitHub Support, an outward action that needs separate approval.
-3. **Signatures:** accept losing the 73 signatures and getting a new SHA for every commit, or approve trying a
-   signature-preserving tool first.
-4. **Before any force-push:** freeze `main` (it moved during this session); re-run steps 1–3 on the then-current
-   remote; decide about the docs' SHA references (§6); plan for the other worktrees, clones and their dirty work
-   (§2), which would all need re-cloning or rebasing; and plan Flux's `GitRepository` and its reconcile, under the
-   AGENTS.md confirm-first rule.
+1. **Activity and old identities:** the deployed targeted reader avoids binary-era archives independently of a
+   rewrite. It still reads PRs #101 and #102 at GitHub's original `merge_commit_sha`. A branch rewrite changes neither
+   those identities nor GitHub's historical objects; decide whether retaining that dependency is acceptable before
+   any attempt at a GitHub-wide purge. No SHA-mapping compatibility layer is approved or required by this rehearsal.
+2. **Pull-request refs:** no PRs are open, but 17 retained `refs/pull/*/head` still reach the binary era. Accept that
+   retention or separately approve a GitHub Support request; force-pushing branches alone is not a guaranteed purge.
+3. **Signatures:** decide whether to accept removing 72 signatures and changing every commit SHA, or separately
+   approve a signature-preserving experiment. Approval to rehearse the pinned tool is not approval of that loss live.
+4. **References and recovery:** decide how to handle the 933 distinct old commit ids cited in the current tree,
+   including evidence docs and generated revision fields. Preserve local-only commits and dirty work, decide the
+   reflog backup scope, and explicitly handle the partially backed-up stash and its Secret (§11). Plan checkout
+   migration and rollback. At cutover, run the mutation-tested gate (§11) against the final rewrite.
+5. **Before any force-push:** explicitly approve the exact ref changes and a freeze of all writers, not just the
+   operator's checkout; refresh the inventory/backups/rehearsal at the final remote tip. Plan Flux's `GitRepository`
+   transition and reconcile, console/automation continuity, live checks and rollback under the confirm-first rule.
+   `main` was not frozen in either rehearsal.
 
 ## 9. Stage A: Activity read experiment (10 November 2026)
 
@@ -384,3 +395,122 @@ flux-reconcile`, then a cold Activity and job page on the deployed console with 
 [current state](current-state.md). Not exercised: the real GitHub API (only scripted transports), a pod restart,
 rate limits and concurrent users. One merge commit per page is kept as approved, and raising it waits for that
 measurement.
+
+## 11. Refreshed rehearsal after the PR merges (11 November 2026)
+
+**Approved scope:** bring the clean checkout current, refresh inventory and external backups with restore tests,
+repeat the path-only rewrite in an independent scratch clone, verify content and size, and run `make check` and
+`make check-v2`. No force-push, live action, GitHub setting/support request or signature-preserving experiment was
+approved. The parent fast-forwarded local `main` from `a01ed4e9` to `01909470`; the worker changed no source.
+
+**Artefacts:** `/home/sam/history-rehearsals/20261111T001804Z/` (1.1 GB), called `$R` here. The detailed report is
+`$R/report.md`; scripts and command/test logs are in `scripts/` and `logs/`. The earlier rehearsal directory was not
+changed. Independent read-only review confirmed the key verification/check results and identified the limits below.
+
+### Baseline and backups
+
+Remote `main` was `0190947080447ffdb28da801cf67c9733a5f1559`: 30 branches, 107 retained PR head refs, no tags and
+**zero open PRs**. The mirror created around 00:18–00:20Z matched the 07:19Z remote inventory. All 137 remote refs
+were still unchanged at 07:33:48Z. This was observation, not a freeze.
+
+| Backup | Bytes | Restore evidence |
+| --- | --- | --- |
+| `$R/backup/swhurl-platform-remote-all.bundle` | 50,608,866 | restored refs equal; `bundle verify` and `fsck --full` rc 0 |
+| `$R/backup/swhurl-platform-local-all.bundle` | 48,385,343 | restored local refs equal; `bundle verify` and `fsck --full` rc 0 |
+| `$R/backup/swhurl-platform-local-extra.git` | 48,924,474 on disk | captured stash/worktree refs equal after a separate clone; `fsck` rc 0 |
+
+Bundle SHA256s and exact refs are in `logs/step1-sizes-sha256.txt` and `step1-*-refs.txt`. Git's local bundle also
+listed worktree HEAD pseudo-refs that clone does not recreate; the extra repository preserves detached HEADs under
+ordinary refs. Step 1 exited 1 for two disclosed reasons: that pseudo-ref comparison and permission errors from the
+limited clone search. Restored ordinary ref comparisons and fscks passed; this is not an unconditional all-green
+inventory script result.
+
+**Backup limits — not a complete local recovery set:**
+
+- One stash (`stash@{1}`, `1d23fe5b`) has an untracked parent containing a plaintext Secret manifest. Marker-only
+  inspection found one Secret/data block and no SOPS/ENC marker; no values were emitted (`review-secret-markers.txt`).
+  The new backup excludes that parent, its known blob and the stash commit itself; it keeps the base, index and
+  worktree tree. Exact recovery of this stash is therefore **not possible from the new backup alone**. The original
+  checkout and the first rehearsal's stash backup retain it; neither was deleted or changed. Whether to keep the
+  earlier copy is an operator decision, not approval to rotate or delete anything.
+- Other exact stashes include their already-stashed untracked files. Current uncommitted files were not copied;
+  no comprehensive Secret screening of the other stashed files was recorded. Absence checks prove the known blob
+  is absent, not that every backup object is free of Secrets.
+- Three dirty worktrees and two dirty clones have changes not backed up here. Two clean clones,
+  `/tmp/producer-commit-check.{5YnOJ3,yq3Q6k}`, each hold a local-only commit (`b915f441`, `dfab9480`) also not backed up.
+  Names/states are in `step1-inventory-local.txt` and `step1-other-clones.txt`; no worktree or clone was reset/pruned.
+- A post-run review found **268 reflog-reachable commits outside the restored local/extra backup reachability
+  sets**, including the deliberately excluded stash objects. The parent confirmed that gap, listing ids only in
+  `review-reflog-unbacked-commits.txt`. These include amended/rebased/reset-away work. No full reflog backup was
+  attempted. Reflog totals can change between inspections.
+- The clone search was depth-limited under `~/ghq`, `~` and `/tmp`, matched origins containing `swhurl-platform`, and
+  compared other clones' branches/tags. It cannot establish that every clone or local-only object has been found.
+
+### Rewrite and verification
+
+The same pinned `git-filter-repo==2.47.0` command removed only `v2/swhurl-v2` in
+`$R/rewrite/swhurl-platform.rewritten.git`, cloned independently from the remote bundle. No existing repository was
+rewritten, garbage-collected or repacked.
+
+- **2,546 commits preserved; 0 dropped; all changed SHA.** All 137 refs match the maps. For 2,220 commits the tree id
+  is unchanged; 326 trees differ only by the binary path. Mapped parents and other headers match; 115 messages differ
+  only in mapped abbreviated SHAs. No unexplained differences (`step2-verify-rewrite.log`, rc 0).
+- **72 signatures removed**, including the root signature, so even pre-binary commits change identity. This is a
+  rehearsed outcome, **not acceptance of signature loss at cutover**.
+- All 10 historical binary blobs are absent from both stored and reachable objects, and no rewritten commit holds
+  or touches the path. `fsck --full --no-dangling --strict` passes.
+- Current `main` maps `01909470` → `f1f4d75f4b8e13ca440d85405168b5cb9bd3a801`; both trees are exactly
+  `58af85173af62445286066e2b4f49bab634119ce`. The maps are preserved in `rewrite/filter-repo-maps/`.
+- **Gate under mutation tests.** The gate is `scripts/verify_rewrite.py` plus `scripts/check_absent.sh` (the absence
+  check, extracted from the step-2 script). `scripts/test_gate.py` builds a synthetic history and rewrites it with
+  the same pinned command. That history has a signed tip, a mergetag merge, abbreviated ids in messages, a tag, a
+  branch still holding the path and a directory left empty. The test then requires the gate to pass the rewrite and to
+  fail 28 mutations of it, each for exactly its expected failure classes. The mutations cover map rows, a real
+  filter-repo prune, refs, `HEAD`, signatures, mergetags, headers, messages, parents, trees, stored or referenced
+  blobs, new content at the path, and alternates.
+  The step-2 verifier let four of them pass (rc 0): a deleted ref whose commits stayed reachable, a `ref-map` old id
+  not matching the original ref, a changed `HEAD`, and an old id put back where filter-repo had rewritten it. It also
+  crashed on a missing object. The verifier now checks `ref-map` against the original's refs and ids, compares
+  `HEAD`, fails on an unrewritten id that resolves to a mapped old commit, and counts missing objects. The fixed gate
+  meets all 32 expectations (`logs/step5-gate-tests-{step2,fixed}-verifier.log`). On real data it still passes this
+  rewrite (0 unexplained, 0 unrewritten ids, binary absent). Three real-data mutations (a deleted branch, a retained
+  signature on `main`, a referenced removed blob) each fail for their own reason only (`logs/step5-real-*`).
+  **Limits:** a real prune also reports `parents_bad` (filter-repo re-parents; the verifier expects the parent to
+  vanish). This rewrite drops nothing, so only the failing direction is affected. An annotated tag would fail the ref
+  check (this repository has none). The verifier's step-2 version is kept as `verify_rewrite.step2.py`.
+
+### Size, retention and checks
+
+| Local measure | Before | After |
+| --- | --- | --- |
+| Identically repacked independent scratch clones | 46,450 KiB | 8,876 KiB |
+| Branches-only bundle | 46,725,848 B | 8,261,927 B |
+| PR #101 merge archive | 8,299,847 B | 2,220,731 B |
+| PR #102 merge archive | 8,299,839 B | 2,220,708 B |
+
+These are not promises about GitHub storage. **17 retained PR head refs still reach the binary era; 8 tips hold it.**
+The original #101/#102 merge trees still contain it. No open PRs does not make a branch rewrite a GitHub-wide purge.
+The tree contains 1,348 occurrences of 933 distinct old commit ids, none resolving in rewritten history; most are
+in docs, with two generated revision fields and test/provenance references. No workflow file cites a local commit id.
+These references were inventoried, not rewritten.
+
+Both checks ran on rewritten `main`, under the machine lease, with nonexistent kubeconfig, credentials unset and
+isolated caches/config. Downloads and local `kubectl kustomize` rendering were allowed; no cluster action ran.
+
+- First `make check`: rc 2 because the isolated Helm cache was paired with the operator's existing repository config.
+  Correcting `HELM_CONFIG_HOME` inside the rehearsal directory fixed it; no source change was needed.
+- Final **`make check`: rc 0** — 299 Python tests, 98 codegraph tests, 32 render entrypoints and real OTel fixtures;
+  three existing deprecated-component warnings (`k8sobjects`, `hostmetrics`, `kubeletstats`). `check-docs`: 0 errors,
+  0 warnings. Its reachability check covers registered progress pages, not all historical documentation references.
+- **`make check-v2`: rc 0** on both attempts — 49 Go packages and rendered-file comparison pass. The rewritten
+  checkout remains clean. Exact logs/exit codes are `logs/step4-*`.
+
+**Evidence limits:** one timing annotation was edited into the filter log after execution; end-state script hashes
+are not an immutable execution audit, and the exact first-attempt check script was not retained after the Helm fix.
+Some supporting inventories ran outside step wrappers. No outside-D cache writes could be conclusively attributed
+to this run; concurrent processes were active. The report records these limits rather than claiming perfect
+isolation or tamper-evident logs.
+
+**Next gate:** review and approve a cutover design addressing §8. Nothing was pushed or changed live. This turn did
+not change v2's capabilities, its status page or workstream registry; it establishes refreshed offline evidence for
+repository maintenance only.

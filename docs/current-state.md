@@ -24,8 +24,12 @@ What has been verified on the live cluster, and when: current facts first, then 
   including 239 Python tests, 98 codegraph tests and both collectors with all 79 fixtures; shell syntax and
   `git diff --check` passed. The parent reviewed the code directly after both independent review attempts hit
   a provider quota limit.
-- **Not exercised:** the docker path awaits CI (`CONTAINER_RUNTIME=docker`); these are local checks, not live
-  collector changes.
+- **CI and live:** [Validate 43122753382](https://github.com/samclement/swhurl-platform/actions/runs/43122753382)
+  passed every job for `bd1b3f4d`, including collector validation and fixtures with `CONTAINER_RUNTIME=docker`.
+  Its bot commit `74706642` deployed console and notify image `src-43797f5c5dba4563`. After pulling it,
+  `make flux-reconcile`, `make verify-platform` and `make app-status APP=<app> ENV=<env>` for all eleven
+  recorded instances passed; each instance was healthy at the applied revision. The collector manifests and
+  live collector configuration did not change.
 
 ## The MongoDB restore test is deleted (12 November 2026)
 

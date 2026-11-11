@@ -29,9 +29,11 @@ What has been verified on the live cluster, and when: current facts first, then 
   repaired and its push URL disabled.
 - **Not yet seen:** whether Renovate keeps updating #111/#112 itself or asks for a rebase. GitHub's 17 retained
   `refs/pull/*` and old merge commits still reach the binary on GitHub; no Support request was made.
-- **Unrelated, found during the window:** Deploy v2 has failed since at least 03:38 UTC. Its Go tests run Python
-  without PyYAML (`ModuleNotFoundError: No module named 'yaml'`), so the staging image lag `verify-platform` warns
-  about is not being deployed.
+- **Deploy v2 fixed (`bb37939f`):** it had failed since 9 November because its `make check-v2` ran Python without
+  PyYAML (`ModuleNotFoundError: No module named 'yaml'`). The fault was unrelated to the cutover. The workflow now
+  installs the `check` dependency group, as Validate and Render do. Its next run passed and deployed the six staging
+  images it had been holding back (`d56cadcd`). `make verify-platform` then had no failures or warnings, and all ten
+  instances are healthy.
 
 ## NATS chart 2.15.2, and flag watches that survive a restart (10 November 2026)
 

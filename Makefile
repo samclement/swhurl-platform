@@ -11,7 +11,6 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help reconcile verify-logs flux-install \
-	app-hooks \
 	console-image \
 	platform-certs-staging platform-certs-prod destroy-data \
 	check-otel check-secrets \
@@ -228,6 +227,25 @@ app-repo:
 	"$$work/swhurl-v2" app-repo --app "$$NAME" --type "$$TYPE" --set "team=$$TEAM" --requested-by "$$identity" \
 		--hook-host "$$host" $${STACK:+--stack "$$STACK"} $${DESCRIPTION:+--description "$$DESCRIPTION"} \
 		$${OWNER:+--owner "$$OWNER"} $(if $(filter true,$(RESUME)),--resume) $(if $(filter true,$(DRY_RUN)),--dry-run)
+
+# The image webhook on every app repository whose staging release publishes the app's own image, ghcr.io/samclement/<app>
+# (swhurl-v2 app-hooks): a missing one is created, a stale, disabled or wrong-event one repointed, a correct one left
+# alone, none deleted. GH_TOKEN (else gh auth token) lists and writes the webhooks; the Receiver's token is decrypted
+# from SOPS with SOPS_AGE_KEY_FILE (else ./age.agekey). Both are required before anything is built, and reach v2 in its
+# environment only. DRY_RUN=true lists the webhooks and writes nothing. Needs Go 1.26.0, sops and jq.
+APP_HOOKS_TOKEN = platform/flux-webhook/image-secret.sops.yaml
+.PHONY: app-hooks
+app-hooks:
+	@set -Eeuo pipefail; \
+	if [ -z "$${GH_TOKEN:-}" ]; then GH_TOKEN=$$(gh auth token) || GH_TOKEN=; fi; \
+	[ -n "$$GH_TOKEN" ] || { echo "[ERROR] app-hooks: no GitHub token: set GH_TOKEN or sign in with gh auth login" >&2; exit 1; }; \
+	key="$${SOPS_AGE_KEY_FILE:-./age.agekey}"; \
+	IMAGE_WEBHOOK_TOKEN=$$(SOPS_AGE_KEY_FILE="$$key" sops decrypt --extract '["stringData"]["token"]' $(APP_HOOKS_TOKEN)) || IMAGE_WEBHOOK_TOKEN=; \
+	[ -n "$$IMAGE_WEBHOOK_TOKEN" ] || { echo "[ERROR] app-hooks: cannot read the image webhook token from $(APP_HOOKS_TOKEN) (age key at $$key?)" >&2; exit 1; }; \
+	export -n GH_TOKEN IMAGE_WEBHOOK_TOKEN; \
+	$(V2_BUILD); \
+	host="flux-webhook.$$(jq -er '.routing.baseDomain | strings | select(length > 0)' v2/testdata/profile.json)"; \
+	GH_TOKEN="$$GH_TOKEN" IMAGE_WEBHOOK_TOKEN="$$IMAGE_WEBHOOK_TOKEN" "$$work/swhurl-v2" app-hooks --records v2-records --owner samclement --hook-host "$$host" $(if $(filter true,$(DRY_RUN)),--dry-run)
 
 # The team registry, v2-records/teams.json, and the notification files v2 renders from it (swhurl-v2 team). Each
 # recipe edits files only: commit and push them. team-channel reads the address without showing it on a terminal,

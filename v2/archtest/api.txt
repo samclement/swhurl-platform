@@ -591,6 +591,9 @@ kernel: const FirstPort int32 = 30101
 kernel: const GiveChannel TeamAction = "channel"
 kernel: const IdentityMismatch Code = "identity_mismatch"
 kernel: const ImageAutomationUnit = "platform-image-automation"
+kernel: const ImageHookInPlace ImageHookState = "in-place"
+kernel: const ImageHookMissing ImageHookState = "missing"
+kernel: const ImageHookStale ImageHookState = "stale"
 kernel: const ImageInterval = "1h"
 kernel: const ImagePolicyExtract = `$run`
 kernel: const ImagePolicyPattern = `^(?P<run>[0-9]+)-[0-9a-f]{7,40}$`
@@ -674,6 +677,9 @@ kernel: func FlagSubject(environment, application, flag string) string
 kernel: func FlagsBucket(environment string) string
 kernel: func FlagsPrefix(environment, application string) string
 kernel: func FlagsStream(environment string) string
+kernel: func ImageHookApps(staging map[string][]byte, owner string) []ImageHookApp
+kernel: func ImageHookEvents() []string
+kernel: func ImageHookURL(token, host string) string
 kernel: func ImageParts(image string) (host, repository string, err error)
 kernel: func ImagePolicyName(application string) string
 kernel: func ImageRepository(image string) string
@@ -684,6 +690,7 @@ kernel: func NamespaceOf(application, environment string) string
 kernel: func NewUserKey(seed [32]byte) UserKey
 kernel: func NewestTag(tags []string) (ImageTag, bool)
 kernel: func Ownership(claims []Claim) []Conflict
+kernel: func PlanImageHook(listed []ListedHook, want string) ImageHookPlan
 kernel: func RecordFolder(root, application, environment string) string
 kernel: func RenderAuth(namespaces []string, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) (ResourceSet, error)
@@ -756,11 +763,15 @@ kernel: type EventSubscription struct {Publisher, Event string Stream, Consumer 
 kernel: type Events struct {Key string `json:"key,omitempty"` Subscriptions []string `json:"subscriptions,omitempty"`}
 kernel: type File struct {Path string `json:"path"` Document json.RawMessage `json:"document"`}
 kernel: type Grants struct {Exposure string `json:"exposure"` Egress []string `json:"egress,omitempty"`}
+kernel: type ImageHookApp struct {Application, Repository, Problem string}
+kernel: type ImageHookPlan struct {State ImageHookState ID int}
+kernel: type ImageHookState string
 kernel: type ImageTag struct {Name string Run int64 Commit string}
 kernel: type Inputs struct {App AppID `json:"app"` Release ReleaseID `json:"release"` Instance InstanceRevision `json:"instance"` Profile ProfileID `json:"profile"` Calls ConnectionsID `json:"calls"`}
 kernel: type InstanceFacts struct {Application, Environment string Configuration Configuration Exposure string Calls []Call Callers []string Database string Storage Storage Egress *Egress Team string Broker BrokerIdentity Description string Offers *Offers}
 kernel: type InstanceRevision string
 kernel: type InstanceSpec struct {SchemaVersion int32 `json:"schemaVersion"` Application string `json:"application"` Environment string `json:"environment"` Release ReleaseID `json:"release"` Configuration Configuration `json:"configuration"` Grants Grants `json:"grants"` Bindings Bindings `json:"bindings"` Storage Storage `json:"storage,omitempty"` Calls []string `json:"calls,omitempty"` Allows []string `json:"allows,omitempty"` Events Events `json:"events,omitempty"`}
+kernel: type ListedHook struct {ID int Active bool Events []string URL string}
 kernel: type NATS struct {URL string `json:"url"` Namespace string `json:"namespace"` Port int32 `json:"port"` Labels map[string]string `json:"labels"` DecryptionSecret string `json:"decryptionSecret"` ControllerKey string `json:"controllerKey"` ConsoleKey string `json:"consoleKey"`}
 kernel: type NATSUser struct {Application, Environment, NKey string Publishes bool Subscriptions []EventSubscription}
 kernel: type NATSUsers struct {ControllerKey, ConsoleKey string Instances []NATSUser}
@@ -1162,6 +1173,7 @@ orchestration: func (StackContract) Stack(name string) (Stack, bool)
 orchestration: func (StackContract) Type(key string) (AppType, bool)
 orchestration: func AcquireChart(profile kernel.PlatformProfile, repositories []byte, cache string, acquirer helm.Acquirer) (string, error)
 orchestration: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
+orchestration: func AppHooks(ctx context.Context, inputs AppHooksInputs) ([]AppHookOutcome, error)
 orchestration: func AppRepo(ctx context.Context, inputs AppRepoInputs) (AppRepository, error)
 orchestration: func BootstrapClickStack(ctx context.Context, ports BootstrapPorts, options BootstrapOptions) (BootstrapReport, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
@@ -1220,6 +1232,8 @@ orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, op
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Accepted struct {Request notify.Request Caller string Channels []string Failure error}
+orchestration: type AppHookOutcome struct {Application, Repository string State kernel.ImageHookState Problem string}
+orchestration: type AppHooksInputs struct {Staging map[string][]byte Owner, HookHost string GitHubToken, HookToken string DryRun bool Repos github.RepositoryWriter}
 orchestration: type AppRepoInputs struct {Name, Type, Stack, Description string Owner, Identity, PlatformRepository string Settings []string Resume, DryRun bool Contract []byte Work string Token, ReposToken, HookToken, HookHost string Source github.Console Renderer copier.Renderer Repos github.RepositoryWriter Images func(image string) (registry.Reader, error) Now func() time.Time Sleep func(time.Duration) Note func(string)}
 orchestration: type AppRepository struct {Image, Digest, Repository, Commit, URL string Stack, Template string Created bool}
 orchestration: type AppType struct {Key string Stacks []string Answers []Named Exposure string}

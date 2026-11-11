@@ -21,7 +21,6 @@ IMPORTERS = {
     'tools/swhurl/apps/offers.py',
     'tools/swhurl/apps/promotion.py',
     'tools/swhurl/apps/release.py',
-    'tools/swhurl/imagehooks.py',
     'tools/swhurl/livetests/team_scenario.py',
 }
 

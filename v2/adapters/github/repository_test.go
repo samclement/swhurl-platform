@@ -136,8 +136,15 @@ func TestRepositoryRequests(t *testing.T) {
 	if ref := requests[len(requests)-3]; ref.Method != http.MethodPatch || ref.Body["sha"] != scene.Commit {
 		t.Fatalf("ref update = %#v", ref)
 	}
-	for _, sent := range bodiesOf(requests, "/hooks") {
-		if sent["name"] != "web" || sent["active"] != true {
+	for _, request := range requests[len(requests)-2:] {
+		sent := request.Body
+		if request.Method == http.MethodPost && sent["name"] != "web" {
+			t.Fatalf("create hook sent %#v", sent)
+		}
+		if _, named := sent["name"]; request.Method == http.MethodPatch && named {
+			t.Fatalf("update hook sent create-only name: %#v", sent)
+		}
+		if sent["active"] != true {
 			t.Fatalf("hook sent %#v", sent)
 		}
 		config := sent["config"].(map[string]any)

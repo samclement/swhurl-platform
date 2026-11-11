@@ -59,7 +59,7 @@ it. The writer functions are in `tools/swhurl/apps/cli.py`, `new.py`, `offers.py
 | `app-secret` | secret names/values | none (secrets are not modelled) | **delete** (inert, below) |
 | `app-new` | a new staging instance | `swhurl-v2 create` (records only, offline 1 November 2026) | **deleted 1 November 2026** with the §10 slice: the declaration label carries the offered documents, so `check-templates` runs the producer and `swhurl-v2 declaration` instead, and the console's New app runs `create` ([the brief](iteration-2-plan.md#10-the-declaration-travels-with-the-image-approved-1-november-2026)) |
 | `app-repo` | a GitHub repository from a template | `swhurl-v2 app-repo` (9 November 2026); `make app-repo` is bash over it and the console's New app relays it | **keep**: the command remains, its Python (`apps/repo.py`) is deleted |
-| `app-hooks` | image webhooks | none yet | **keep** |
+| `app-hooks` | image webhooks | `swhurl-v2 app-hooks` (live no-op verified 11 November 2026); `make app-hooks` is bash over it | **keep**: the command remains, its Python (`imagehooks.py`) is deleted |
 | `team-*`, `channel-*` | `apps/teams.yaml` | none (v2 reads the team string, not the registry) | **keep** |
 | `app-status`, `app-logs`, `app-reconcile` | reads only | n/a | **keep** |
 
@@ -71,7 +71,7 @@ first act is to write a v1 record for an instance v2 owns, so **decision 1a dele
 grants, alert thresholds, job schedule, secret values) are recorded as lost until v2 models them. `app-new`,
 `app-repo`, `app-hooks`, `team-*` and `channel-*` were not in that position: they needed no existing record — they were
 the create path, the GitHub side and the shared team registry, none of which v2 writes. **Decision 1b kept them**;
-`app-new` is now deleted, `app-repo` runs the v2 command that creates the repository and opens its staging pull request, and the rest remain.
+`app-new` is now deleted, `app-repo` runs the v2 command that creates the repository and opens its staging pull request, `app-hooks` runs `swhurl-v2 app-hooks`, and the rest remain.
 The create flow after phase 3 was `app-repo` → `app-new` → `swhurl-v2 migrate` → delete the v1 record and switch the
 unit, the sequence all 13 migrations took: a v1-created instance was a staging post, not a state the platform stayed
 in. Since 9 November 2026 `app-repo` is `swhurl-v2 app-repo`: it creates the repository, waits for its first image and

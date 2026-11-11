@@ -2,6 +2,26 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## `make app-hooks` runs Go (11 November 2026)
+
+- **What changed:** `make app-hooks` is `swhurl-v2 app-hooks` ([§26](iteration-2-plan.md#26-the-image-webhooks-in-go-app-hooks-approved-11-november-2026));
+  `tools/swhurl/imagehooks.py` and `tests/test_app_hooks.py`'s Python cases are deleted, and the file now tests the
+  recipe. A malformed staging release record is now an app's `[ERROR]` and a failing exit, where Python skipped it.
+- **Checked offline:** the kernel, orchestration and command tests (selection, every plan case, dry run, per-app
+  failures that let the others run, refusals before any call, no credential in output) and the recipe test with fake
+  `gh`, `sops` and `go` (stops on a failed or empty `gh auth token`, a failed or empty decrypt; tokens only in the
+  command's environment, not the build's) pass; the adapter's request test checks that create sends `name: web`
+  and update omits it. A dry run over this checkout's records selects `demo-shop` → `samclement/demo-shop` as Python
+  did. `make check-v2` and `make check` pass.
+- **Live:** `make app-hooks DRY_RUN=true` and then `make app-hooks` both exited 0; all seven repositories
+  (`demo-notifier`, `demo-orders`, `demo-shop`, `demo-shopper`, `swhurl-try-10`, `swhurl-try-30`, `test-01`) reported
+  `is in place`. Neither pass planned or performed a webhook write. `make verify-platform` exited 0: the
+  `app-images` Receiver is Ready and each repository's latest delivery returned 200. Its separate Image Automation
+  group warned that `demo-orders/staging`'s newest registry image differs from this checkout's release record;
+  no deployment was attempted here.
+- **Not exercised live:** creating a missing hook or updating a stale one; those paths have offline tests.
+  No token was rotated, no hook changed and no Flux reconciliation requested.
+
 ## A new worker from the Go console, test-01 (11 November 2026)
 
 - **What happened:** the console's New app (job #67) opened #113 for `test-01/staging`, a TypeScript worker on team

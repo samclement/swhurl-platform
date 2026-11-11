@@ -135,8 +135,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 takes=(Var('NAME', '<app>'), Var('TYPE', '<type>'), Var('TEAM', '<team>'),
                        Var('STACK', '<stack>', required=False), Var('DESCRIPTION', '"..."', required=False),
                        Var('RESUME', 'true', required=False)), dry_run=READS),
-        Command('app-hooks', "Create or repoint the image webhook on every auto-deploy app's repository (idempotent)", GITHUB,
-                'swhurl.imagehooks:main', dry_run=READS),
+        Command('app-hooks', "Create or repoint the image webhook on every auto-deploy app's repository (idempotent; "
+                'swhurl-v2 app-hooks; needs Go 1.26.0)', GITHUB, dry_run=READS),
         Command('team-add', 'Register a team in v2-records/teams.json (swhurl-v2 team; needs Go 1.26.0)', GIT,
                 takes=(Var('NAME', '<team>'), Var('DESCRIPTION', '"what it owns"', required=False))),
         Command('team-edit', "Change a team's description and/or name; a rename is refused while an app names it", GIT,

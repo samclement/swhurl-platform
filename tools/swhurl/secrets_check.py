@@ -27,7 +27,6 @@ from urllib.parse import urlsplit, urlunsplit
 import yaml
 
 from swhurl import ROOT, platform, yamlio
-from swhurl import imagehooks as hooks
 from swhurl.run import CommandError, Runner
 
 
@@ -51,7 +50,8 @@ INGESTION_FILES = ('platform/clickstack/secret.sops.yaml', 'platform/otel/secret
 # A value kept in two Secrets: what it is, and (file, key) of each copy.
 SHARED = {
     # the Receiver's Secret and the console's copy, which it adds to new app repositories
-    'the image webhook token': ((str(hooks.TOKEN_FILE), 'token'), ('platform/console/secret.sops.yaml', hooks.CONSOLE_TOKEN_KEY)),
+    'the image webhook token': (('platform/flux-webhook/image-secret.sops.yaml', 'token'),
+                                ('platform/console/secret.sops.yaml', 'IMAGE_WEBHOOK_TOKEN')),
     # Flux's github-dispatch Provider uses the console's GitHub token (docs/operations.md#secrets)
     'the GitHub dispatch token': (('platform/image-automation/dispatch-secret.sops.yaml', 'token'),
                                   ('platform/console/secret.sops.yaml', 'GITHUB_TOKEN')),

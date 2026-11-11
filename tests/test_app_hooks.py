@@ -1,91 +1,117 @@
-"""make app-hooks: the image webhook is created, repointed or left alone; the token stays off command lines."""
-import hashlib
-import io
+"""make app-hooks: the recipe stops without either token and hands both to swhurl-v2 in its environment only.
+
+The decisions are v2's (``swhurl-v2 app-hooks``, tested in Go); this is the glue: fake ``gh``, ``sops`` and ``go``
+executables on PATH, where the fake ``go build`` writes a fake ``swhurl-v2`` that records its arguments and whether
+it was given the tokens, so nothing is built, decrypted or sent.
+"""
 import json
+import os
+import subprocess
+import tempfile
 import unittest
-from contextlib import redirect_stdout
-from unittest import mock
+from pathlib import Path
 
-from swhurl import imagehooks as hooks
-from swhurl.run import FakeRunner, Result
+from swhurl import ROOT
 
-TOKEN = 'fixture-image-webhook-token'
-HOST = 'flux-webhook.example.test'
+GH_TOKEN = 'fixture-gh-token'
+HOOK_TOKEN = 'fixture-image-webhook-token'
+HOST = 'flux-webhook.' + json.loads((ROOT / 'v2/testdata/profile.json').read_text())['routing']['baseDomain']
+
+FAKE = """#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+tool = Path(sys.argv[0]).name
+with open(os.environ['CALLS'], 'a') as f:
+    f.write(json.dumps({'tool': tool, 'argv': sys.argv[1:], 'key': os.environ.get('SOPS_AGE_KEY_FILE'),
+                        'gh': os.environ.get('GH_TOKEN') == os.environ['WANT_GH'],
+                        'hook': os.environ.get('IMAGE_WEBHOOK_TOKEN') == os.environ['WANT_HOOK']}) + '\\n')
+mode = os.environ.get(tool.upper().replace('-', '_') + '_MODE', 'ok')
+if mode == 'fail':
+    print(tool + ': refused by the fixture', file=sys.stderr)
+    sys.exit(1)
+if tool == 'gh':
+    print('' if mode == 'empty' else os.environ['WANT_GH'])
+elif tool == 'sops':
+    print('' if mode == 'empty' else os.environ['WANT_HOOK'])
+elif tool == 'go':  # go build -o PATH ./cmd/swhurl-v2: the built binary is this script
+    out = Path(sys.argv[sys.argv.index('-o') + 1])
+    out.write_text(Path(sys.argv[0]).read_text())
+    out.chmod(0o700)
+else:
+    print('[OK] notes: image webhook on samclement/notes is in place')
+"""
 
 
-class Repo:
-    def __init__(self, existing=None):
-        self.sent = []
-        r = self.runner = FakeRunner()
-        r.on('gh', 'api', 'repos/samclement/notes/hooks', stdout=json.dumps(existing or []))
-        r.on('gh', 'api', '--method', handler=self.write)
+class AppHooksRecipeTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.bin = Path(self.tmp.name)
+        self.calls = self.bin / 'calls'
+        for tool in ('gh', 'sops', 'go'):
+            (self.bin / tool).write_text(FAKE)
+            (self.bin / tool).chmod(0o700)
+        self.env = {name: value for name, value in os.environ.items()
+                    if name not in ('GH_TOKEN', 'SOPS_AGE_KEY_FILE', 'IMAGE_WEBHOOK_TOKEN', 'DRY_RUN')}
+        self.env.update(PATH=f'{self.bin}:{os.environ["PATH"]}', CALLS=str(self.calls), WANT_GH=GH_TOKEN,
+                        WANT_HOOK=HOOK_TOKEN)
 
-    def write(self, args, body):
-        self.sent.append((args[3], args[4], json.loads(body)))
-        return Result(args, 0, '{}')
+    def run_make(self, *args, **env):
+        result = subprocess.run(['make', '--no-print-directory', 'app-hooks', *args], cwd=ROOT,
+                                env={**self.env, **env}, capture_output=True, text=True)
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
+        for secret in (GH_TOKEN, HOOK_TOKEN):
+            self.assertNotIn(secret, result.stdout + result.stderr)
+            self.assertFalse([call for call in calls if any(secret in arg for arg in call['argv'])],
+                             'a token on a command line')
+        return result, calls
 
-    def ensure(self):
-        return hooks.ensure(self.runner, 'samclement/notes', TOKEN, HOST)
+    def test_stops_without_a_github_token(self):
+        for mode in ('fail', 'empty'):
+            with self.subTest(gh=mode):
+                self.calls.unlink(missing_ok=True)
+                result, calls = self.run_make(GH_MODE=mode)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('no GitHub token', result.stderr)
+                self.assertEqual([call['tool'] for call in calls], ['gh'], 'nothing decrypted or built')
+
+    def test_stops_when_the_webhook_token_cannot_be_read(self):
+        for mode in ('fail', 'empty'):
+            with self.subTest(sops=mode):
+                self.calls.unlink(missing_ok=True)
+                result, calls = self.run_make(GH_TOKEN=GH_TOKEN, SOPS_MODE=mode)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('cannot read the image webhook token from platform/flux-webhook/image-secret.sops.yaml '
+                              '(age key at ./age.agekey?)', result.stderr)
+                self.assertEqual([call['tool'] for call in calls], ['sops'], 'gh not asked, nothing built')
+
+    def test_hands_both_tokens_to_v2_in_its_environment(self):
+        result, calls = self.run_make()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '[OK] notes: image webhook on samclement/notes is in place\n')
+        gh, sops, go, v2 = calls
+        self.assertEqual((gh['tool'], gh['argv']), ('gh', ['auth', 'token']))
+        self.assertEqual(sops['argv'], ['decrypt', '--extract', '["stringData"]["token"]',
+                                        'platform/flux-webhook/image-secret.sops.yaml'])
+        self.assertEqual(sops['key'], './age.agekey')
+        self.assertEqual(go['tool'], 'go')
+        self.assertFalse(go['gh'] or go['hook'], 'the build must not receive either token')
+        self.assertEqual(v2['argv'], ['app-hooks', '--records', 'v2-records', '--owner', 'samclement', '--hook-host', HOST])
+        self.assertTrue(v2['gh'] and v2['hook'], 'both tokens in the environment of swhurl-v2')
+
+    def test_a_given_token_and_key_are_used_and_a_dry_run_is_passed_on(self):
+        result, calls = self.run_make('DRY_RUN=true', GH_TOKEN=GH_TOKEN, SOPS_AGE_KEY_FILE='/keys/age.agekey')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call['tool'] for call in calls], ['sops', 'go', 'swhurl-v2'])
+        self.assertEqual(calls[0]['key'], '/keys/age.agekey')
+        self.assertEqual(calls[2]['argv'][-1], '--dry-run')
+        self.assertFalse(calls[1]['gh'] or calls[1]['hook'], 'inherited tokens must not reach the build')
+        self.assertTrue(calls[2]['gh'] and calls[2]['hook'])
+
+    def test_a_failing_v2_fails_the_target(self):
+        result, _ = self.run_make(GH_TOKEN=GH_TOKEN, SWHURL_V2_MODE='fail')
+        self.assertNotEqual(result.returncode, 0)
 
 
-class AppHooksTests(unittest.TestCase):
-    def test_the_url_is_the_path_flux_derives_for_the_receiver(self):
-        digest = hashlib.sha256(f'{TOKEN}app-imagesflux-system'.encode()).hexdigest()
-        self.assertEqual(hooks.hook_url(TOKEN, HOST), f'https://{HOST}/hook/{digest}')
-
-    def test_creates_a_missing_webhook_with_the_token_on_stdin_only(self):
-        repo = Repo(existing=[{'id': 1, 'active': True, 'events': ['push'], 'config': {'url': 'https://elsewhere/x'}}])
-        self.assertEqual(repo.ensure(), 'created')
-        (method, path, body), = repo.sent
-        self.assertEqual((method, path), ('POST', 'repos/samclement/notes/hooks'))
-        self.assertEqual(body['events'], ['package', 'registry_package'])
-        self.assertEqual(body['config'], {'url': hooks.hook_url(TOKEN, HOST), 'content_type': 'json', 'secret': TOKEN,
-                                          'insecure_ssl': '0'})
-        self.assertFalse([c for c in repo.runner.calls if any(TOKEN in a for a in c)])
-        self.assertEqual(repo.runner.redact(f'x {TOKEN}'), 'x <redacted>')
-
-    def test_leaves_a_correct_webhook_and_repoints_a_stale_or_disabled_one(self):
-        good = {'id': 7, 'active': True, 'events': ['registry_package', 'package'],
-                'config': {'url': hooks.hook_url(TOKEN, HOST)}}
-        repo = Repo(existing=[good])
-        self.assertEqual(repo.ensure(), 'ok')
-        self.assertEqual(repo.sent, [])
-        for name, stale in {'rotated token': {'config': {'url': hooks.hook_url('old', HOST)}},
-                            'disabled': {'active': False}, 'events': {'events': ['push']}}.items():
-            with self.subTest(name=name):
-                repo = Repo(existing=[{**good, **stale}])
-                self.assertEqual(repo.ensure(), 'updated')
-                (method, path, body), = repo.sent
-                self.assertEqual((method, path), ('PATCH', 'repos/samclement/notes/hooks/7'))
-                self.assertEqual((body['active'], body['config']['url']), (True, hooks.hook_url(TOKEN, HOST)))
-
-    def test_a_dry_run_changes_nothing(self):
-        repo = Repo()
-        repo.runner.dry_run = True
-        self.assertEqual(repo.ensure(), 'created')
-        self.assertEqual(repo.sent, [])
-        self.assertNotIn(TOKEN, '\n'.join(repo.runner.echoed))
-
-    def test_repositories_come_from_the_scanned_images(self):
-        # Staging is v2's, so the repository comes from the instance's own release record; a v1 instance states
-        # the same fact in apps/.
-        found = hooks.auto_deploy_repositories()
-        self.assertEqual(found.get('demo-shop'), 'samclement/demo-shop')
-        self.assertEqual(found.get('swhurl-try-30'), 'samclement/swhurl-try-30')
-
-    def test_command_output_distinguishes_existing_live_and_planned_webhooks(self):
-        for dry_run in (False, True):
-            for state in ('ok', 'created', 'updated'):
-                with self.subTest(dry_run=dry_run, state=state):
-                    runner = FakeRunner(dry_run=dry_run)
-                    out = io.StringIO()
-                    with mock.patch.object(hooks, 'read_token', return_value=TOKEN), \
-                            mock.patch.object(hooks, 'webhook_host', return_value=HOST), \
-                            mock.patch.object(hooks, 'auto_deploy_repositories', return_value={'notes': 'samclement/notes'}), \
-                            mock.patch.object(hooks, 'ensure', return_value=state), redirect_stdout(out):
-                        code = hooks.main([], runner)
-                    expected = 'is in place' if state == 'ok' else state
-                    if dry_run and state != 'ok':
-                        expected = f'would be {state}'
-                    self.assertEqual(code, 0)
-                    self.assertEqual(out.getvalue(), f'[OK] notes: image webhook on samclement/notes {expected}\n')
+if __name__ == '__main__':
+    unittest.main()

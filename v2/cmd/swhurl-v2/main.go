@@ -57,6 +57,7 @@ const usage = `usage:
   swhurl-v2 app-repo --app NAME --type TYPE [--stack STACK] [--description TEXT] [--set NAME=VALUE]... \
       --requested-by IDENTITY [--repository OWNER/REPO] [--owner OWNER] [--hook-host HOST] \
       [--contract FILE] [--resume] [--dry-run]
+  swhurl-v2 app-hooks --records DIR --owner OWNER --hook-host HOST [--dry-run]
   swhurl-v2 image-declaration [--app-dir DIR]
   swhurl-v2 declaration --label FILE --app APPLICATION --team TEAM [--exposure GRANT]
   swhurl-v2 names --catalogue NAMES.json --app-dir DIR
@@ -266,6 +267,15 @@ creating one. The tokens are the environment's: CONSOLE_TOKEN for the pull reque
 repository, IMAGE_WEBHOOK_TOKEN for the webhook (a failure there is a warning), and CONSOLE_REPO or --repository names
 the platform repository.
 
+app-hooks keeps the image webhook on the repository of every app whose staging release under --records publishes
+the app's own image, ghcr.io/OWNER/APP: GitHub then calls Flux's app-images Receiver on --hook-host when the
+repository publishes one. A repository with no webhook to that host gets one, one that posts elsewhere (the token
+was rotated), is disabled or takes other events is changed, and a correct one is left alone; none is deleted. The
+tokens are the environment's: GH_TOKEN lists and writes the webhooks and IMAGE_WEBHOOK_TOKEN signs them. An app
+whose record cannot be read or whose repository GitHub refuses is an [ERROR] line and the others still run; the exit
+status is then 1. A records tree or record that cannot be read stops before any call. --dry-run lists the webhooks
+and says what would change, and writes nothing.
+
 declaration decodes the declaration label an image build printed, applies the creation rules an instance of it would
 face, and reports what the image states. It reads no image, no registry and no cluster, and writes nothing: the stack
 templates' check uses it to prove a rendered app declares what the platform can create.
@@ -463,6 +473,7 @@ func commands() map[string]func(cli, request) int {
 		"console":                 cli.console,
 		"change":                  cli.change,
 		"app-repo":                cli.appRepo,
+		"app-hooks":               cli.appHooks,
 		"unit":                    cli.unit,
 	}
 }
@@ -537,8 +548,11 @@ func (r *request) parseFlags(args []string) (*flag.FlagSet, error) {
 	flags.SetOutput(io.Discard) // flag errors can echo rejected values
 	r.registerInputs(flags)
 	r.registerExtras(flags, r.command)
-	if r.command == "app-repo" {
+	switch r.command {
+	case "app-repo":
 		r.registerAppRepoFlags(flags)
+	case "app-hooks":
+		r.registerAppHooksFlags(flags)
 	}
 	err := flags.Parse(args)
 	flags.Visit(func(f *flag.Flag) {
@@ -887,6 +901,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"console":                 (*request).consoleNamed,
 	"change":                  (*request).changeNamed,
 	"app-repo":                (*request).appRepoNamed,
+	"app-hooks":               func(r *request) []string { return []string{r.records, r.owner, r.hookHost} },
 	"unit":                    (*request).unitNamed,
 }
 

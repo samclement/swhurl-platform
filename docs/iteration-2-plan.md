@@ -2396,3 +2396,39 @@ cases (the argv with one credential, the lines kept, a refusal as v2's last line
 `make check-docs`. Live: suspend, resume and reconcile a throwaway app's unit from the deployed console, the job page's
 lines and the unit page's state compared with the same action run by Python before this slice, then `make
 verify-platform` ([current state](current-state.md)).
+
+## 26. The image webhooks in Go: `app-hooks` (approved 11 November 2026)
+
+**Decision.** `make app-hooks` runs `swhurl-v2 app-hooks --records v2-records --owner samclement --hook-host
+flux-webhook.<routing.baseDomain>`, and `imagehooks.py` with its tests is deleted; the catalogue keeps the target
+without a `run` function, as `app-repo` did.
+
+**Semantics.** An app gets the webhook when its **staging** release record publishes its own platform image,
+`ghcr.io/<owner>/<app>` (Python's `APP_OWNER`, `samclement`); production and other images are never candidates. For
+each, the repository's webhooks are listed and, by the URL's host: a correct one (active, the Receiver's URL derived
+from the token, exactly `package` and `registry_package`) is left alone, the first stale, disabled or wrong-event one
+is changed, and with none one is created. Nothing is deleted, and webhooks to other hosts are not the platform's.
+
+**Contract.** The kernel owns the decisions (`ImageHookApps`, `PlanImageHook`, `ImageHookURL`, `ImageHookEvents`;
+`app-repo` uses the same URL and events); `orchestration.AppHooks` lists and writes through the existing
+`RepositoryWriter` (`Hooks`, `CreateHook`, `UpdateHook`); the command reads the records, prints one line per app and
+chooses the exit status. Credentials come from the environment only: `GH_TOKEN` lists and writes, `IMAGE_WEBHOOK_TOKEN`
+signs. The recipe takes `GH_TOKEN` or `gh auth token` and `stringData.token` from
+`platform/flux-webhook/image-secret.sops.yaml` (`SOPS_AGE_KEY_FILE`, else `./age.agekey`), stops before building
+when either is empty or unreadable, and passes both in the command's environment, never as an argument or to the
+build. Only webhook creation sends GitHub's `name: web`; updating an existing hook omits that create-only field.
+`--dry-run` lists the webhooks and writes nothing.
+
+**Deliberate change.** Python skipped a malformed release record silently. Now a record that cannot be decoded or
+names another application, and a listing or write GitHub refuses, are that app's `[ERROR]` line; the other apps still
+run and the exit status is 1. A records tree or record that cannot be read stops before any call. The host comes from
+the v2 profile, as `make app-repo`'s does, not from `platform-settings`. `verify-platform`'s own selection
+(`appHookRepositories`) is unchanged.
+
+**Verification.** Kernel tests for the URL, selection (own image, other owner or registry, renamed repository,
+malformed, wrong application) and every plan case; orchestration tests with a per-repository fake for create,
+repoint, in place, dry run, per-app failures that let others run, and refusals without inputs; command tests for the
+lines, exit statuses, refusals before any call, no credential in output, and the platform's own records; a recipe
+test with fake `gh`, `sops` and `go` proving it stops on auth, decrypt and empty-token failures and passes the tokens
+only in the environment. `make check-v2`, `make check`. Live (operator): `make app-hooks DRY_RUN=true`, then
+`make app-hooks`, then `make verify-platform`'s Image Webhooks ([current state](current-state.md)).

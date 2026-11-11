@@ -370,7 +370,7 @@ func hookAddress(raw string) bool {
 	return err == nil && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil
 }
 
-// hookCall creates or changes one webhook with the one body GitHub takes for both.
+// hookCall creates or changes one webhook. Only creation names the hook's type.
 func (a *repositoryAPI) hookCall(ctx context.Context, method, path, repository, token string, hook RepositoryHook) error {
 	if err := validate(repository, token); err != nil {
 		return err
@@ -379,7 +379,7 @@ func (a *repositoryAPI) hookCall(ctx context.Context, method, path, repository, 
 		return &Error{"invalid hook: it names no URL or no event"}
 	}
 	body := struct {
-		Name   string   `json:"name"`
+		Name   string   `json:"name,omitempty"`
 		Active bool     `json:"active"`
 		Events []string `json:"events"`
 		Config struct {
@@ -388,7 +388,10 @@ func (a *repositoryAPI) hookCall(ctx context.Context, method, path, repository, 
 			Secret      string `json:"secret"`
 			Insecure    string `json:"insecure_ssl"`
 		} `json:"config"`
-	}{Name: "web", Active: hook.Active, Events: hook.Events}
+	}{Active: hook.Active, Events: hook.Events}
+	if method == http.MethodPost {
+		body.Name = "web"
+	}
 	body.Config.URL, body.Config.ContentType, body.Config.Secret, body.Config.Insecure = hook.URL, "json", hook.Secret, "0"
 	return a.answer(ctx, method, path, token, body, nil)
 }

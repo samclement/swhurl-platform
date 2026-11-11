@@ -2,8 +2,6 @@ package orchestration
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -18,6 +16,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
+	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
 // A new app's repository: render one stack template into a folder of our own, create the public repository with the
@@ -30,12 +29,6 @@ import (
 const (
 	// appImageHost is where an app repository's workflow publishes: GHCR, as the cluster pulls anonymously.
 	appImageHost = "ghcr.io"
-	// appHookReceiver and appHookNamespace name the Flux Receiver the webhook calls; Flux derives its path from them
-	// and the token, which is why the platform builds that path rather than storing it.
-	appHookReceiver  = "app-images"
-	appHookNamespace = "flux-system"
-	// appHookEvents are the GitHub events an image publication sends: a package, by either name GitHub uses.
-	appHookEvents = "package,registry_package"
 	// firstImageTimeout and imagePoll bound the wait for the first image: a build is about two minutes.
 	firstImageTimeout = 10 * time.Minute
 	imagePoll         = 5 * time.Second
@@ -388,20 +381,13 @@ func addImageHook(ctx context.Context, inputs AppRepoInputs, repository string) 
 			"Add it with make app-hooks")
 		return
 	}
-	hook := github.RepositoryHook{URL: appHookURL(inputs.HookToken, inputs.HookHost), Secret: inputs.HookToken,
-		Events: strings.Split(appHookEvents, ","), Active: true}
+	hook := github.RepositoryHook{URL: kernel.ImageHookURL(inputs.HookToken, inputs.HookHost), Secret: inputs.HookToken,
+		Events: kernel.ImageHookEvents(), Active: true}
 	if err := inputs.Repos.CreateHook(ctx, repository, inputs.ReposToken, hook); err != nil {
 		inputs.Note("Warning: no image webhook (" + err.Error() + "); new images are found within the hour. Add it with make app-hooks")
 		return
 	}
 	inputs.Note("Added the image webhook: Flux scans as soon as an image is published")
-}
-
-// appHookURL is where Flux's app-images Receiver listens: Flux derives the path from the token, its name and
-// namespace.
-func appHookURL(token, host string) string {
-	digest := sha256.Sum256([]byte(token + appHookReceiver + appHookNamespace))
-	return "https://" + host + "/hook/" + hex.EncodeToString(digest[:])
 }
 
 // appImage is the image repository an app's workflow publishes to.

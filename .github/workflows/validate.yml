@@ -289,16 +289,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          version: '0.10.9'
-
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
         with:
@@ -309,18 +299,9 @@ jobs:
         with:
           version: 'v3.19.0'
 
-      - name: Install validation dependencies
-        run: python3 -m pip install --group check
-
-      - name: Cache checksum-verified OTel collector binaries
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/swhurl-platform/otelcol
-          key: otelcol-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('platform/otel/helmrelease-*.yaml') }}
-          restore-keys: |
-            otelcol-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Validate collector configuration with its exact release
+      - name: Validate collector configuration in the image each release renders
+        env:
+          CONTAINER_RUNTIME: docker
         run: make check-otel
 
   # The console image (docs/console.md#deploy-a-new-console). On a push to main it is built alongside

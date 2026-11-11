@@ -23,7 +23,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 # What a command touches (the Touches column of docs/commands.md).
-LOCAL = 'Local'  # this checkout at most; may read the network (templates, a collector binary)
+LOCAL = 'Local'  # this checkout at most; may read the network (templates, a chart, a collector image)
 GIT = 'Git'  # edits files for you to commit
 READ = 'Cluster (read)'
 CLUSTER = 'Cluster'
@@ -179,7 +179,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command('check-apps', "v2's records match Git and every compiled instance passes Go Kubernetes policy (needs Go and Helm; no arguments)", LOCAL),
         Command('check-templates', "Render each app type from its stack template (v2/contract/stacks.json); its names must be listed and the label its build writes must pass swhurl-v2 declaration (needs network, jq and uvx; builds swhurl-v2 unless SWHURL_V2 names one)",
                 LOCAL),
-        Command('check-otel', 'Render the OTel collectors and validate their config with that exact otelcol-k8s release', LOCAL, 'swhurl.otel:main'),
+        Command('check-otel', "Render the OTel collectors; validate each config and run the log fixtures in the image its release renders (needs helm, kubectl, jq, openssl, curl and podman, or CONTAINER_RUNTIME=docker)",
+                LOCAL, takes=(Var('CONTAINER_RUNTIME', 'docker', required=False, env=True),)),
         Command('check-lint', 'Lint the Python tooling and the bash that stays (needs uv)', LOCAL),
         Command('check-codegraph', 'Unit tests for the code graph development aid (devtools/codegraph)', LOCAL),
         Command('check-docs', 'Compare the workstream registry and its status pages with Git (swhurl-v2 workstreams): state, next gate, uncommitted work, cited commits, page-per-change (needs Go 1.26.0)', LOCAL),

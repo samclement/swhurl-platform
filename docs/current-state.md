@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## `check-otel` runs in the collector's own image (11 November 2026)
+
+- **What changed:** `make check-otel` is [`platform/otel/check.sh`](../platform/otel/check.sh), bash with no Python.
+  It renders each collector's HelmRelease with `helm template --repo` at its pinned version, reading the YAML with
+  `kubectl patch --local`. It runs `validate` in the image the rendered workload names, with the rendered config
+  byte for byte and the rendered feature gates. Only the pod's environment is stubbed: an empty directory at each
+  volume mount, a placeholder service-account token with a throwaway CA, the API server's variables, and
+  `127.0.0.1` for `valueFrom`. It then runs `tests/fixtures/logs.json` through the logs pipeline's transform and
+  filter processors in that image; [`fixtures.jq`](../platform/otel/fixtures.jq) builds the input and the runtime
+  config and compares the output. `otel.py` and its test are deleted, and so are `logs.py`'s fixture harness and
+  its tests, ported to `tests/test_check_otel.py`. With them go the checksum-verified `otelcol-k8s` download and
+  its CI cache, the `root_path` and `auth_type` rewrites and the deprecated-alias scan. `verify-logs`' live half and
+  `charts.py`, which the ClickStack render test still uses, stay.
+- **Checked offline:** `make check-otel` with podman: both collectors are accepted by
+  `docker.io/otel/opentelemetry-collector-k8s:0.163.2`, and 6 events and 73 node fixtures pass, the counts the
+  Python check reported. A pipeline naming a removed processor fails with the collector's reason, and a wrong
+  fixture expectation fails as `pino: incorrect severityNumber`. The jq verdict matched `logs.check_records` on
+  every fixture and on six altered record sets before the Python was deleted. `make test` passes, with fake Helm
+  and runtime cases for a rejection, a render failure and a runtime failure. Full `make check` passed locally,
+  including 239 Python tests, 98 codegraph tests and both collectors with all 79 fixtures; shell syntax and
+  `git diff --check` passed. The parent reviewed the code directly after both independent review attempts hit
+  a provider quota limit.
+- **Not exercised:** the docker path awaits CI (`CONTAINER_RUNTIME=docker`); these are local checks, not live
+  collector changes.
+
 ## The MongoDB restore test is deleted (12 November 2026)
 
 - **What changed:** the operator decided MongoDB's restore test is not worth porting: ClickStack's MongoDB holds

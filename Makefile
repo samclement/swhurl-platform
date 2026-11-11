@@ -13,7 +13,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 COMMANDS := help reconcile verify-logs flux-install \
 	console-image \
 	platform-certs-staging platform-certs-prod destroy-data \
-	check-otel check-secrets \
+	check-secrets \
 	live-test-lifecycle live-test-reloader live-test-app-template \
 	live-test-call-identity live-test-network-policy live-test-team-scenario
 
@@ -88,6 +88,11 @@ check-repo:
 .PHONY: check-apps
 check-apps:
 	@bash v2/check-apps.sh
+
+# Helm renders each collector; its own image validates the config and runs the log fixtures (podman; CI sets docker).
+.PHONY: check-otel
+check-otel:
+	@bash platform/otel/check.sh
 
 .PHONY: check-templates
 check-templates:

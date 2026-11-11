@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: `check-otel` as bash over the collector's own image, the first slice of the road approved on 11 November
+Gate: `verify-logs` shrinks: its live half becomes one saved query and `logs.py` and `clickstack.py` are deleted, the second slice of the road approved on 11 November
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -41,6 +41,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Feature flags in Go: the signed NATS key-value adapter, the card's rows, `swhurl-v2 flags` and the console asking it | done | [record](current-state.md#feature-flags-are-gos-and-the-consoles-card-asks-it-8-november-2026) |
 | The console server in Go: `swhurl-v2 console` serves Overview, Platform, Deployments (list and map), Egress, a Flux unit, Teams, the Catalogue (with each app's own OpenAPI and AsyncAPI documents), Activity, a job's page (each change followed past its pull request to the cluster), an app instance's page and the page that waits for it, a promotion's review and the New app form — byte-identically from embedded templates and assets, with the oauth2 identity, `/healthz` and `--dev` | done | [signed off](current-state.md#the-unreachable-python-leaves-and-the-console-is-signed-off-12-november-2026), [pages](current-state.md#the-console-server-serves-its-pages-9-november-2026), [catalogue](current-state.md#the-catalogue-is-the-consoles-documents-and-all-9-november-2026), [activity](current-state.md#activity-and-a-jobs-page-are-the-consoles-9-november-2026), [app, pending, promotion and New app](current-state.md#the-app-page-pending-promotion-and-new-app-are-the-consoles-9-november-2026), [Activity keeps a change it saw](current-state.md#activity-keeps-a-change-it-saw-and-reads-history-one-archive-at-a-time-10-november-2026), [and reads a merge commit's four files](current-state.md#activity-reads-a-merge-commits-four-files-not-its-archive-10-november-2026), [a waiting stage says so on screen](current-state.md#a-new-worker-from-the-go-console-test-01-11-november-2026) |
 | Platform verification in Go (`swhurl-v2 verify`: all twenty-four groups, six of them the console's cluster scope) | done | [record](current-state.md#every-platform-check-is-go-7-november-2026); the egress check asks a port only of an instance that reaches the proxy, and the events check warns when JetStream cannot fit another app stream ([record](current-state.md#a-new-worker-from-the-go-console-test-01-11-november-2026)) |
+| `check-otel` as bash in the collector's own image (`platform/otel/check.sh`: `helm template`, then `validate` and the log fixtures in the rendered image), `otel.py` and the Python fixture harness retired | done | [record](current-state.md#check-otel-runs-in-the-collectors-own-image-11-november-2026) |
 | Template check without Python but Copier | done | [record](current-state.md#the-template-check-leaves-python-5-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
 | Bulk status and revision evidence | done | [record](current-state.md#bulk-status-and-revision-evidence-in-go-3-november-2026) |
@@ -83,7 +84,7 @@ loses its `run=` function.
 
 | Python surface | What replaces it | State |
 | --- | --- | --- |
-| Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2`, team/channel validation and all of `check-docs` (`swhurl-v2 workstreams`); the legacy fixture checker/API retirement is independently reviewed and live-verified, and the v1 model oracle it kept alive is deleted with the rest of the unreachable Python ([record](current-state.md#the-unreachable-python-leaves-and-the-console-is-signed-off-12-november-2026)). `check-apps` runs no Python: explicit Go chart acquisition and shell sequencing replace its entrypoint glue and the CI fetch recipes. Python chart acquisition remains for OTel and ClickStack, not policy decisions; `check-templates` is shell over Go (`names`, the producer and `declaration`) with Copier its only Python, and the stack and name catalogues are v2's JSON (`v2/contract/`), which Python still reads; all twenty-four of `verify-platform`'s groups are `swhurl-v2 verify --scope platform`, host facts included (`flux-controllers` against `clusters/home/flux-system/install/flux.json`, `notification-heartbeat` from the `--heartbeat` file the recipe writes), and the console's Overview and Platform pages call its six cluster-only ones (`--scope cluster`); `verify.py`, the `verify-run` command, `notifications/checks.py` and `tests/test_verify.py` are deleted, and `platform_checks.py`, the report reader Python's console shared, is deleted with them ([slice 4](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026), [delivered](current-state.md#every-platform-check-is-go-7-november-2026)); `check-repo` is `swhurl-v2 check-repo` with the render, `bash -n` and opt-in `flux-schema` steps in `v2/check-repo.sh`, and `validate.py` is deleted ([§17](iteration-2-plan.md#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026), [offline](current-state.md#check-repo-runs-go-and-validatepy-is-retired-8-november-2026)) |
+| Platform checks (`check-apps`, `verify-platform`, `check-templates`, `check-repo`) | v2 checks in Go | partial: Go owns `render --check`, all-instance Kubernetes policy, `check-v2`, team/channel validation and all of `check-docs` (`swhurl-v2 workstreams`); the legacy fixture checker/API retirement is independently reviewed and live-verified, and the v1 model oracle it kept alive is deleted with the rest of the unreachable Python ([record](current-state.md#the-unreachable-python-leaves-and-the-console-is-signed-off-12-november-2026)). `check-apps` runs no Python: explicit Go chart acquisition and shell sequencing replace its entrypoint glue and the CI fetch recipes. Python chart acquisition (`charts.py`) remains only for the ClickStack render test in `tests/test_manifest_policy.py`, not policy decisions, and `check-otel` is bash over Helm and the collector's image ([record](current-state.md#check-otel-runs-in-the-collectors-own-image-11-november-2026)); `check-templates` is shell over Go (`names`, the producer and `declaration`) with Copier its only Python, and the stack and name catalogues are v2's JSON (`v2/contract/`), which Python still reads; all twenty-four of `verify-platform`'s groups are `swhurl-v2 verify --scope platform`, host facts included (`flux-controllers` against `clusters/home/flux-system/install/flux.json`, `notification-heartbeat` from the `--heartbeat` file the recipe writes), and the console's Overview and Platform pages call its six cluster-only ones (`--scope cluster`); `verify.py`, the `verify-run` command, `notifications/checks.py` and `tests/test_verify.py` are deleted, and `platform_checks.py`, the report reader Python's console shared, is deleted with them ([slice 4](iteration-2-plan.md#slice-the-rest-of-verify-platform-approved-6-november-2026), [delivered](current-state.md#every-platform-check-is-go-7-november-2026)); `check-repo` is `swhurl-v2 check-repo` with the render, `bash -n` and opt-in `flux-schema` steps in `v2/check-repo.sh`, and `validate.py` is deleted ([§17](iteration-2-plan.md#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026), [offline](current-state.md#check-repo-runs-go-and-validatepy-is-retired-8-november-2026)) |
 | Recovery and backup tooling (`recovery.py`, `backupset.py`) | `make restore-sqlite` is `swhurl-v2 restore`, the backup image's Go tool runs the jobs, `backup-mongodb` and `backup-sqlite` are bash, and both freshness checks are `swhurl-v2 verify --scope platform`'s | done: MongoDB's restore test was deleted rather than ported — its only subject is ClickStack's own metadata, which `make clickstack-bootstrap` and the dashboard reconciler rebuild — so `recovery.py` and `backupset.py` are gone; MongoDB is still backed up nightly ([record](current-state.md#the-mongodb-restore-test-is-deleted-12-november-2026)) |
 | `clickstack-bootstrap` | Go | done: `swhurl-v2 clickstack-bootstrap` ([contract](iteration-2-plan.md#16-clickstack-bootstrap-in-go-approved-7-november-2026), [evidence](current-state.md#clickstack-bootstrap-runs-go-7-november-2026)); `clickstack.py` keeps the ClickHouse query `verify-logs` and the team scenario share |
 | Operator commands (`commands.py`, the `make` targets) | `swhurl-v2` subcommands or bash | partial: the instance and delivery commands are Go (`edit`, `remove`, `promote`, `create`, `deploy`, `render`, `status`, `mint`, `restore`), and `app-status` is `swhurl-v2 status`; `app-logs`, `app-reconcile`, `suspend`, `resume`, `backup-mongodb` and `backup-sqlite` are bash ([`host/ops.sh`](../host/ops.sh)); the three host timers (`host-dns`, `host-heartbeat`, `host-probe`) are Makefile recipes over `host/install-timer.sh` with no command function; `restore-sqlite` is `swhurl-v2 restore`; the team targets are bash over `swhurl-v2 team`; `make v2-render` is the one writer of the platform files the records derive, and the Python snapshot export and v2's migration, shadow and preview commands are deleted (§18); `destroy-data` stays Python, a safety decision with its own tests |
@@ -109,29 +110,28 @@ person's on the PR's branch ([record](current-state.md#one-renovate-pr-bumps-app
 **B. The rest of the road.** What still runs Python, in the order it leaves; each is its own slice. Each surface is
 shrunk, retired or ported (the rule is under [durable decisions](#durable-decisions)):
 
-1. **`check-otel`: shrink to bash.** `helm template` each collector's HelmRelease and run `validate` in the collector
-   image that release pins (docker in CI, podman locally). `charts.py` and `otel.py` are deleted, and with them the
-   checksum-verified `otelcol-k8s` download, the `${env:…}` rewrite and the deprecated-alias scan. Nothing new
-   reaches outside, so it needs no approval of its own.
-2. **`verify-logs`: shrink.** The offline parser fixtures run in the same collector image. The live half is a
-   diagnostic, not a test, so it becomes one saved query (a ClickStack dashboard or an SQL file), not a command.
-   `logs.py` and `clickstack.py` are deleted.
-3. **Live tests: retire three, reshape one.** `live-test-network-policy`, `live-test-reloader` and
+1. **`verify-logs`: shrink.** The offline parser fixtures already run in the collector's image (`make check-otel`).
+   The live half is a diagnostic, not a test, so it becomes one saved query (a ClickStack dashboard or an SQL file),
+   not a command. `logs.py` and `clickstack.py` are deleted.
+2. **Live tests: retire three, reshape one.** `live-test-network-policy`, `live-test-reloader` and
    `live-test-call-identity` are deleted without replacement. What they proved of k3s, Reloader and the API server is
    recorded in current-state, and what this repository owns is checked offline: `check-apps`' `network-policy` and
    `call-tokens` rules, and `make check-v2`'s comparison of the rendered keys and Reloader's watch list.
    `live-test-team-scenario`, the one end-to-end proof that a call, an event and a trace cross apps, becomes a check
    over instances already running instead of parsing a deployed release, so `apps/` and `interface.py` are deleted,
    not ported.
-4. **`flux`: port.** `flux-install`, `reconcile` and `flux-wait` move to Go. Running `flux install` is the one new
+3. **`flux`: port.** `flux-install`, `reconcile` and `flux-wait` move to Go. Running `flux install` is the one new
    external effect left, and it needs its own approval.
-5. **`bots` and `images`: port.** These are CI's bot commits and the console image pin.
-6. **Kept checks: port with the same behaviour.** `check-secrets` (it guards the double-base64 problem that caused
+4. **`bots` and `images`: port.** These are CI's bot commits and the console image pin.
+5. **Kept checks: port with the same behaviour.** `check-secrets` (it guards the double-base64 problem that caused
    an outage), `platform-certs-*`, `destroy-data` with its guards, and `live-test-lifecycle` and
    `live-test-app-template`, which test this repository's own lifecycle and template code.
-7. **Last:** the catalogue itself (`commands.py`, `run.py`, the Makefile dispatch) goes when no Python command is
+6. **Last:** the catalogue itself (`commands.py`, `run.py`, the Makefile dispatch) goes when no Python command is
    left. The Python tests in `tests/` are deleted with the Python they test, never ported; Go gets tests of its own
    decisions.
+
+`charts.py` has one caller left, the ClickStack render test in `tests/test_manifest_policy.py`; it stays until that
+test is replaced or retired, and leaves with it.
 
 Copier in the console image stays Python: it renders a new app's repository
 ([§23](iteration-2-plan.md#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)).

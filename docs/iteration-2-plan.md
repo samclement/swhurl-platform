@@ -425,7 +425,8 @@ with no Python execution path. Explicit paths or flags exit 2 before file reads 
 acquires the chart through [`v2/chart.sh`](../v2/chart.sh), then runs `check-rendered.sh --chart DIR`.
 Render-equality failure stops before policy; the gate preserves Go's report, diagnostics and nonzero
 status. Validate and Deploy-v2 use the same acquisition script to populate the cache before Go tests.
-Python's [`charts.py`](../tools/swhurl/charts.py) remains only for OTel and ClickStack checks.
+Python's [`charts.py`](../tools/swhurl/charts.py) remains only for the ClickStack render test in
+`tests/test_manifest_policy.py`; `check-otel` renders with `helm template --repo` ([`platform/otel/check.sh`](../platform/otel/check.sh)).
 
 #### Chart acquisition (approved 5 November 2026)
 

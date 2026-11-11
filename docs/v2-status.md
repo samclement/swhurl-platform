@@ -101,10 +101,11 @@ not migration.
 
 **A. The record.** One open item, and it changes no behaviour.
 
-1. **Renovate's app-template bumps take a hand step.** The chart version is the profile's, which Renovate
-   cannot see, so its PR fails `make check-v2`; #47 (5.2.1 → 5.3.0) was redone by hand for every release and
-   instance ([record](current-state.md#app-template-530-for-the-platform-and-every-instance-10-november-2026), [steps](operations.md#chart-updates)).
-   Open: the v2 tests that repeat the version could read it from the profile.
+1. **Renovate's app-template bumps take a shorter hand step.** One Renovate PR bumps the profile and the
+   three platform releases together, and the v2 tests read the version from the profile; the render and the
+   goldens (compiled, profile identity, `chart-prod.json`) are still a person's, on the PR's branch
+   ([record](current-state.md#one-renovate-pr-bumps-app-template-everywhere-11-november-2026), [steps](operations.md#chart-updates)).
+   Open: a CI job that finishes the branch, if bumps become frequent.
 2. **A flag watch survives a NATS restart** (done 10 November 2026): an app's user also holds the nameless
    consumer create on its own environment's flags stream, which `nats.js` uses to re-create its ordered
    consumer, so it may read another instance's overrides there ([record](current-state.md#nats-chart-2152-and-flag-watches-that-survive-a-restart-10-november-2026)).

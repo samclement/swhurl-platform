@@ -14,6 +14,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files/filestest"
 	"github.com/samclement/swhurl-platform/v2/adapters/helm"
 	"github.com/samclement/swhurl-platform/v2/adapters/helm/helmtest"
+	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
 func policyRun(t *testing.T, charts helm.Renderer, args ...string) (int, policyDocument, string, string) {
@@ -40,9 +41,10 @@ func TestPolicyVisitsEveryInstanceEvenAfterARenderFailure(t *testing.T) {
 	if status != 1 || len(report.Instances) != 3 || len(renderer.Calls) != 3 {
 		t.Fatalf("status %d, %d instances, %d calls: %s", status, len(report.Instances), len(renderer.Calls), diagnostic)
 	}
+	pinned := profileChart(t)
 	namespaces := []string{}
 	for _, call := range renderer.Calls {
-		if call.Chart != "explicit-local-chart" || call.ChartName != "app-template" || call.ChartVersion != "5.3.0" {
+		if call.Chart != "explicit-local-chart" || call.ChartName != pinned.Name || call.ChartVersion != pinned.Version {
 			t.Fatal("chart identity not supplied from the profile")
 		}
 		namespaces = append(namespaces, call.Namespace)
@@ -120,13 +122,24 @@ func (r *oneFailure) Render(request helm.Request) ([]json.RawMessage, error) {
 	}
 	return r.delegate.Render(request)
 }
+
+// profileChart is the chart the platform profile pins, so a version bump edits the profile alone.
+func profileChart(t *testing.T) kernel.Chart {
+	t.Helper()
+	profile, err := kernel.DecodeProfile(fixture(t, "profile.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return profile.Chart
+}
 func realPolicyChart(t *testing.T) string {
 	t.Helper()
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	chart := filepath.Join(cache, "swhurl-platform/charts/app-template-5.3.0")
+	pinned := profileChart(t)
+	chart := filepath.Join(cache, "swhurl-platform/charts", pinned.Name+"-"+pinned.Version)
 	_, binary := exec.LookPath("helm")
 	_, metadata := os.Stat(filepath.Join(chart, "Chart.yaml"))
 	if binary != nil || metadata != nil {

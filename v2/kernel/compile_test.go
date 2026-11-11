@@ -134,7 +134,7 @@ func TestProfileDecoding(t *testing.T) {
 		{"null list", strings.Replace(text, `["infra-base"]`, `null`, 1), Invalid, "delivery.dependsOn"},
 		{"list of numbers", strings.Replace(text, `["infra-base"]`, `[1]`, 1), Invalid, "profile"},
 		{"repeated dependency", strings.Replace(text, `["infra-base"]`, `["infra-base", "infra-base"]`, 1), Invalid, "delivery.dependsOn"},
-		{"bad version", strings.Replace(text, `"5.3.0"`, `"v5.3.0"`, 1), Invalid, "chart.version"},
+		{"bad version", strings.Replace(text, `"`+profile(t).Chart.Version+`"`, `"v`+profile(t).Chart.Version+`"`, 1), Invalid, "chart.version"},
 		{"escaping root", strings.Replace(text, `"v2-apps"`, `"../v2-apps"`, 1), Invalid, "delivery.outputRoot"},
 		{"absolute root", strings.Replace(text, `"v2-apps"`, `"/v2-apps"`, 1), Invalid, "delivery.outputRoot"},
 		{"zero startup period", strings.Replace(text, `"startupPeriodSeconds": 5`, `"startupPeriodSeconds": 0`, 1), Invalid, "workload.startupPeriodSeconds"},
@@ -207,7 +207,7 @@ func TestCompiledResources(t *testing.T) {
 			`"SWHURL_APP":"demo-orders"`, `"SWHURL_ENV":"prod"`, `"SWHURL_NOTIFY_URL":"http://notify.notify.svc.cluster.local:8080"`, `"OTEL_SERVICE_NAME":"demo-orders"`, `"OTEL_EXPORTER_OTLP_ENDPOINT":"http://$(HOST_IP):4318"`, `"audience":"notify"`, `"path":"notify/token"`, `"replicas":1`,
 			`"limits":{"memory":"256Mi"},"requests":{"cpu":"10m","memory":"256Mi"}`,
 			`"runAsUser":65532`, `"automountServiceAccountToken":false`, `"failureThreshold":24`,
-			`"sourceRef":{"kind":"HelmRepository","name":"bjw-s","namespace":"flux-system"}`, `"version":"5.3.0"`},
+			`"sourceRef":{"kind":"HelmRepository","name":"bjw-s","namespace":"flux-system"}`, `"version":"` + profile(t).Chart.Version + `"`},
 		"v2-apps/instances/demo-orders/prod/resourcequota.json": {`"hard":{"limits.memory":"4Gi","pods":"14","requests.cpu":"2","requests.memory":"2Gi"}`},
 		"v2-apps/instances/demo-orders/prod/networkpolicy.json": {
 			// The only way out is the collector the release says it reports to: no proxy (no allocation), no calls.

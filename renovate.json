@@ -4,7 +4,8 @@
     "config:recommended"
   ],
   "enabledManagers": [
-    "flux"
+    "flux",
+    "custom.regex"
   ],
   "flux": {
     "managerFilePatterns": [
@@ -21,6 +22,30 @@
         "docker"
       ],
       "enabled": false
+    },
+    {
+      "description": "One PR moves app-template in the platform's HelmReleases and v2's profile together.",
+      "matchDatasources": [
+        "helm"
+      ],
+      "matchPackageNames": [
+        "app-template"
+      ],
+      "groupName": "app-template"
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "v2's profile pins app-template for every app instance; bump it with the platform's three app-template releases (docs/operations.md#chart-updates).",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^v2/testdata/profile\\.json$/"
+      ],
+      "matchStrings": [
+        "\"name\": \"(?<depName>app-template)\",\\s*\"version\": \"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://bjw-s-labs.github.io/helm-charts"
     }
   ]
 }

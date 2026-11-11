@@ -2,6 +2,22 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## One Renovate PR bumps app-template everywhere (11 November 2026)
+
+- **What changed:** `renovate.json` adds a regex manager for `chart.version` in `v2/testdata/profile.json` (helm
+  datasource, the `bjw-s` repository's URL) and groups `app-template` across managers, so the profile moves in the
+  same PR as the console's, egress proxy's and notify's HelmReleases. The v2 tests that repeated the version
+  (`TestPolicyVisitsEveryInstanceEvenAfterARenderFailure`, the real-chart path in `cmd/swhurl-v2/policy_test.go` and
+  `policy/chart_test.go`, `TestProfileDecoding`'s bad version, `TestCompiledResources`) read it from the profile;
+  the goldens stay literal ([chart updates](operations.md#chart-updates)).
+- **Checked offline:** `renovate-config-validator` accepts the file. A local `renovate --platform=local
+  --dry-run=lookup` extracts app-template 5.3.0 from the three HelmReleases and the profile; on a scratch copy with
+  all four at 5.2.1 it proposes 5.3.0 for each on the one branch `renovate/app-template`. With only the profile set
+  to 5.2.1, the failing tests are the goldens alone: `TestProfileIdentity`, `TestGoldenCompilations`, `TestBinary`
+  and `TestFullFeatureFixtureMatchesRealPinnedChart` (`chart_mismatch`). `make check` and `make check-v2` pass.
+- **Not exercised:** the hosted Mend app on a real app-template release; it reads `renovate.json` from `main`, so
+  the next release's PR is the first evidence.
+
 ## `make app-hooks` runs Go (11 November 2026)
 
 - **What changed:** `make app-hooks` is `swhurl-v2 app-hooks` ([§26](iteration-2-plan.md#26-the-image-webhooks-in-go-app-hooks-approved-11-november-2026));

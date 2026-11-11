@@ -29,7 +29,14 @@ func TestFullFeatureFixtureMatchesRealPinnedChart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chart := filepath.Join(cache, "swhurl-platform/charts/app-template-5.3.0")
+	// The profile pins the chart, so a version bump edits the profile alone; a stale fixture then fails below.
+	var profile struct {
+		Chart struct{ Name, Version string }
+	}
+	if raw, err := os.ReadFile("../testdata/profile.json"); err != nil || json.Unmarshal(raw, &profile) != nil {
+		t.Fatal("the platform profile names no chart")
+	}
+	chart := filepath.Join(cache, "swhurl-platform/charts", profile.Chart.Name+"-"+profile.Chart.Version)
 	_, binary := exec.LookPath("helm")
 	_, metadata := os.Stat(filepath.Join(chart, "Chart.yaml"))
 	if binary != nil || metadata != nil {

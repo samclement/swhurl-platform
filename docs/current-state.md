@@ -2,6 +2,14 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Platform telemetry baseline (11 November 2026)
+
+- **Measured** with `host/telemetry-inventory.sh 24` (read-only ClickHouse queries in its pod), before any change, for the [platform telemetry](platform-telemetry-status.md) workstream. Rows per hour: metrics ≈586,000, logs ≈12,600, traces ≈4,700.
+- **Logs:** every platform namespace reaches ClickStack, parsed (console, notify, flux-system, ingress, cert-manager, messaging, platform-system, egress, logging, observability). The console's lines are the notification checker's minute line (≈15,900 a day) and page timing lines (`page files … elapsed_ms=`, ≈17,700 a day), with no line per request or job. Traefik wrote **2 lines in 24 hours**: `logs.access.format: json` is set in `infra/traefik/helmchartconfig.yaml`, but access logs are not enabled.
+- **Traces:** only the apps and HyperDX (`hdx-oss-api`, 10% sampled). No platform service sends spans.
+- **Metrics:** each platform service has only its kubelet and cluster metrics (25–31 names). No Prometheus endpoint is scraped, so there are no Flux, cert-manager, oauth2-proxy, NATS or Reloader service metrics. Backup jobs appear as one `ServiceName` per job run.
+- **Dashboards:** only `App: <app>`. The [apps page](apps.md#dashboards) describes a scheduled-job row that the Go reconciler does not build: `v2/dashboards/apps.go` refuses a CronJob release, and no Go code has the "Last runs" tile.
+
 ## History rewritten without the committed `v2/swhurl-v2` binary (11 November 2026)
 
 - **Cut over at 13:49 UTC:** the runbook in [the task record](git-history-rewrite-rehearsal.md#12-cutover-runbook-11-november-2026)

@@ -418,12 +418,19 @@ func platformEgress(e EgressEvidence, compiled []CompiledInstance) []PlatformEnt
 		entries = append(entries, bad(problem))
 	}
 	if len(problems) == 0 {
-		entries = append(entries, ok(fmt.Sprintf("%d instance(s) each have a port of their own", len(compiled))))
+		users := 0
+		for _, instance := range compiled {
+			if _, uses := instance.proxyPort(); uses {
+				users++
+			}
+		}
+		entries = append(entries, ok(fmt.Sprintf("%d instance(s) use the proxy, each on a port of its own", users)))
 	}
 	return entries
 }
 
-// portProblems are the compiled instances with no port on the proxy, and every port two of them share.
+// portProblems are the compiled instances that reach the proxy on a port the allocation does not give them, and every
+// port two of them share. An instance with no grant and no database reaches no proxy, and the render gives it no port.
 func portProblems(e EgressEvidence, compiled []CompiledInstance) []string {
 	if e.Problem != "" {
 		return []string{fmt.Sprintf("%s cannot be read (%s), so the proxy's ports are unchecked", CheckoutAllocation, e.Problem)}
@@ -434,10 +441,20 @@ func portProblems(e EgressEvidence, compiled []CompiledInstance) []string {
 	}
 	found, owners := []string{}, map[int32][]string{}
 	for _, instance := range compiled {
+		reached, uses := instance.proxyPort()
+		if !uses {
+			continue
+		}
 		name := instance.Application + "/" + instance.Environment
 		port, allocated := ports[name]
-		if !allocated {
-			found = append(found, name+" has no port on the egress proxy: its records render the allocation (docs/services.md#egress-proxy)")
+		switch {
+		case !allocated:
+			found = append(found, fmt.Sprintf("%s reaches the proxy on port %d, which the allocation does not give it: its "+
+				"records render the allocation (docs/services.md#egress-proxy)", name, reached))
+			continue
+		case port != reached:
+			found = append(found, fmt.Sprintf("%s reaches the proxy on port %d, but the allocation gives it %d: its "+
+				"records render the allocation (docs/services.md#egress-proxy)", name, reached, port))
 			continue
 		}
 		owners[port] = append(owners[port], name)
@@ -453,4 +470,30 @@ func portProblems(e EgressEvidence, compiled []CompiledInstance) []string {
 		found = append(found, fmt.Sprintf("port %d is shared by %s", port, strings.Join(owners[port], ", ")))
 	}
 	return found
+}
+
+// proxyPort is the port the instance's compiled NetworkPolicy lets it reach the proxy on, and whether it reaches the
+// proxy at all: a rule to the proxy's namespace, as the render writes one for an instance that needs egress.
+func (c CompiledInstance) proxyPort() (int32, bool) {
+	var policy struct {
+		Spec struct {
+			Egress []struct {
+				Ports []struct{ Port int32 }
+				To    []struct {
+					NamespaceSelector struct{ MatchLabels map[string]string }
+				}
+			}
+		}
+	}
+	if json.Unmarshal(c.Files["networkpolicy.json"], &policy) != nil {
+		return 0, false
+	}
+	for _, rule := range policy.Spec.Egress {
+		for _, to := range rule.To {
+			if to.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] == PlatformEgress.Namespace && len(rule.Ports) == 1 {
+				return rule.Ports[0].Port, true
+			}
+		}
+	}
+	return 0, false
 }

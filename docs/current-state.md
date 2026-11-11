@@ -15,9 +15,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   approval they were deleted from a one-off `nats-box` pod using the controller's nkey, each only after checking it had no
   Stream object and 0 messages. Reserved fell to 514 MiB; `staging-test-01` went Ready, `app-test-01-staging` Ready, and
   the pod processes events with no `503` since.
-- **`make verify-platform` reports one false failure:** `test-01/staging has no port on the egress proxy`. The renderer
-  gives a port only to an instance with a grant or a database (`kernel.NeedsEgress`, since 26 October), and the Go port of
-  the check (6 November) expects one for every instance; test-01 is the first instance created with neither. Open.
+- **`make verify-platform`'s egress check was wrong for it:** it wanted a proxy port for every instance, while the render
+  gives one only to an instance with a grant or a database (`kernel.NeedsEgress`, since 26 October); test-01 is the first
+  instance created with neither. The check now reads the port from the instance's compiled NetworkPolicy and requires
+  that one, alone, in the allocation; `make verify-platform` passes with `6 instance(s) use the proxy, each on a port of its own`.
 - **Not exercised:** the console job reaching "Live in staging" was not watched after the fixes.
 
 ## Platform telemetry baseline (11 November 2026)

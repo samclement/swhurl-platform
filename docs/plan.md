@@ -63,8 +63,6 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Removed apps keep their JetStream streams** (`preventDelete: true`), each reserving 64 MiB of the 1 GiB store, so
       about eight removals fill it and the next new stream is refused. Removal should delete the stream, or the limit
       account for it.
-    - **`verify-platform`'s egress port check** expects a port for every instance; the render gives one only to an
-      instance that needs egress (`kernel.NeedsEgress`).
     - **The console's stages read as done when they are not:** a waiting stage shows its done name ("Merged") and keeps
       its state ("waiting for you", "not reached") in screen-reader-only text. Show the state on screen for every stage
       that is not done.

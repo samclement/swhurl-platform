@@ -1,6 +1,7 @@
 package observe
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -257,7 +258,10 @@ func TestEvents(t *testing.T) {
 func TestEgress(t *testing.T) {
 	runScopeCases(t, "egress", []scopeCase{
 		{"both replicas run", unchanged, CheckOK, "the egress proxy runs 2 replicas"},
-		{"every instance has a port", unchanged, CheckOK, "1 instance(s) each have a port of their own"},
+		{"every instance that reaches the proxy has its port", proxied("staging", 30100), CheckOK,
+			"1 instance(s) use the proxy, each on a port of its own"},
+		{"an instance that reaches no proxy needs no port", func(s *ScopeEvidence) { s.Egress.Ports = nil }, CheckOK,
+			"0 instance(s) use the proxy, each on a port of its own"},
 		{"one replica warns", func(s *ScopeEvidence) {
 			s.Egress.Proxy = presentRead(PlatformEgress, `{"spec":{"replicas":2},"status":{"readyReplicas":1}}`)
 		}, CheckWarn, "the egress proxy runs 1 of 2 replicas: a restart would stop outbound traffic meanwhile"},
@@ -268,15 +272,35 @@ func TestEgress(t *testing.T) {
 		{"a failed read fails", func(s *ScopeEvidence) { s.Egress.Proxy = Read{Status: Unavailable} },
 			CheckBad, "cannot read the egress proxy (egress/egress): apps cannot reach outside the cluster (make reconcile UNIT=platform-egress)"},
 		{"an absent proxy fails", func(s *ScopeEvidence) { s.Egress.Proxy = Read{Status: Absent} }, CheckBad, "the egress proxy (egress/egress) is missing"},
-		{"an instance with no port fails", func(s *ScopeEvidence) { s.Egress.Ports = nil },
-			CheckBad, "hello/staging has no port on the egress proxy: its records render the allocation (docs/services.md#egress-proxy)"},
+		{"a proxy user with no port fails", func(s *ScopeEvidence) { proxied("staging", 30100)(s); s.Egress.Ports = nil },
+			CheckBad, "hello/staging reaches the proxy on port 30100, which the allocation does not give it: its records render the allocation (docs/services.md#egress-proxy)"},
+		{"a proxy user on another port fails", proxied("staging", 30101),
+			CheckBad, "hello/staging reaches the proxy on port 30101, but the allocation gives it 30100"},
 		{"a shared port fails", func(s *ScopeEvidence) {
-			s.Compiled = append(s.Compiled, CompiledInstance{Application: "hello", Environment: "prod"})
+			proxied("staging", 30100)(s)
+			prod := compiledHello()
+			prod.Environment = "prod"
+			s.Compiled = append(s.Compiled, prod)
+			proxied("prod", 30100)(s)
 			s.Egress.Ports = append(s.Egress.Ports, InstancePort{"hello", "prod", 30100})
 		}, CheckBad, "port 30100 is shared by hello/staging, hello/prod"},
 		{"an unreadable allocation fails", func(s *ScopeEvidence) { s.Egress.Problem = "invalid: egress" },
 			CheckBad, "platform/egress/allocation.json cannot be read (invalid: egress), so the proxy's ports are unchecked"},
 	})
+}
+
+// proxied gives the compiled hello instance in env the NetworkPolicy rule the render writes for one that reaches
+// the proxy on port.
+func proxied(env string, port int) func(*ScopeEvidence) {
+	return func(s *ScopeEvidence) {
+		for i := range s.Compiled {
+			if s.Compiled[i].Environment == env {
+				s.Compiled[i].Files["networkpolicy.json"] = []byte(fmt.Sprintf(`{"kind":"NetworkPolicy","spec":{"egress":[`+
+					`{"ports":[{"port":%d,"protocol":"TCP"}],"to":[{"namespaceSelector":{"matchLabels":`+
+					`{"kubernetes.io/metadata.name":"egress"}}}]}]}}`, port))
+			}
+		}
+	}
 }
 
 func TestChannels(t *testing.T) {

@@ -44,7 +44,7 @@ var PlatformCatalogue = []PlatformCatalogueEntry{
 		"NATS and its controller run, and every stream and consumer v2 rendered is Ready",
 		"Cluster (read), this checkout, `swhurl-v2 verify`"},
 	{"egress", "Egress proxy",
-		"The egress proxy runs both replicas, with a port of its own for every instance v2 compiled",
+		"The egress proxy runs both replicas, and each instance that reaches it does so on a port of its own from the allocation",
 		"Cluster (read), this checkout, `swhurl-v2 verify`"},
 	{"channels", "Notification channels",
 		"The team routes are Git's and every channel has its Secret (a team without a channel warns)",

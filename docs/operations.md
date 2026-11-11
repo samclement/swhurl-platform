@@ -45,7 +45,7 @@ console's, reads neither and refuses both flags.
 | `isolation` | Every instance v2 compiled has its namespace, a registered team, the platform quota and a NetworkPolicy | Cluster (read), this checkout, `swhurl-v2 verify` |
 | `signing-keys` | The signing keys and token issuer apps were given are the cluster's | Cluster (read), this checkout, `swhurl-v2 verify` |
 | `events` | NATS and its controller run, and every stream and consumer v2 rendered is Ready | Cluster (read), this checkout, `swhurl-v2 verify` |
-| `egress` | The egress proxy runs both replicas, with a port of its own for every instance v2 compiled | Cluster (read), this checkout, `swhurl-v2 verify` |
+| `egress` | The egress proxy runs both replicas, and each instance that reaches it does so on a port of its own from the allocation | Cluster (read), this checkout, `swhurl-v2 verify` |
 | `channels` | The team routes are Git's and every channel has its Secret (a team without a channel warns) | Cluster (read), this checkout, Secrets (read), `swhurl-v2 verify` |
 | `backups` | The newest MongoDB backup in S3, archive and metadata, is younger than `BACKUP_MAX_AGE_HOURS` (26) | Cluster (read), S3 (list), `swhurl-v2 verify` |
 | `sqlite-backups` | Each instance whose release declares a SQLite database has a backup in S3 as young | this checkout, S3 (list), `swhurl-v2 verify` |

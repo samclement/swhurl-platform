@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: the last Python chart acquisition (`charts`, `otel`), once the operator approves that slice
+Gate: `check-otel` as bash over the collector's own image, the first slice of the road approved on 11 November
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -106,11 +106,34 @@ version from the profile, but the render and the goldens (compiled, profile iden
 person's on the PR's branch ([record](current-state.md#one-renovate-pr-bumps-app-template-everywhere-11-november-2026),
 [steps](operations.md#chart-updates)). Open: a CI job that finishes the branch, if bumps become frequent.
 
-**B. The rest of the road.** What still runs Python, in the order it leaves; each is its own slice. `charts` and
-`otel` (`check-otel` is the last Python chart
-acquisition), then `logs` (`verify-logs`) and `flux`, then `bots` and `images` (CI's bot commits), then `destroy-data`,
-then `livetests/`. The catalogue itself (`commands.py`, `run.py`, the Makefile dispatch) and the Python test harness go
-last, when no Python command is left. Copier in the console image stays Python: it renders a new app's repository
+**B. The rest of the road.** What still runs Python, in the order it leaves; each is its own slice. Each surface is
+shrunk, retired or ported (the rule is under [durable decisions](#durable-decisions)):
+
+1. **`check-otel`: shrink to bash.** `helm template` each collector's HelmRelease and run `validate` in the collector
+   image that release pins (docker in CI, podman locally). `charts.py` and `otel.py` are deleted, and with them the
+   checksum-verified `otelcol-k8s` download, the `${env:…}` rewrite and the deprecated-alias scan. Nothing new
+   reaches outside, so it needs no approval of its own.
+2. **`verify-logs`: shrink.** The offline parser fixtures run in the same collector image. The live half is a
+   diagnostic, not a test, so it becomes one saved query (a ClickStack dashboard or an SQL file), not a command.
+   `logs.py` and `clickstack.py` are deleted.
+3. **Live tests: retire three, reshape one.** `live-test-network-policy`, `live-test-reloader` and
+   `live-test-call-identity` are deleted without replacement. What they proved of k3s, Reloader and the API server is
+   recorded in current-state, and what this repository owns is checked offline: `check-apps`' `network-policy` and
+   `call-tokens` rules, and `make check-v2`'s comparison of the rendered keys and Reloader's watch list.
+   `live-test-team-scenario`, the one end-to-end proof that a call, an event and a trace cross apps, becomes a check
+   over instances already running instead of parsing a deployed release, so `apps/` and `interface.py` are deleted,
+   not ported.
+4. **`flux`: port.** `flux-install`, `reconcile` and `flux-wait` move to Go. Running `flux install` is the one new
+   external effect left, and it needs its own approval.
+5. **`bots` and `images`: port.** These are CI's bot commits and the console image pin.
+6. **Kept checks: port with the same behaviour.** `check-secrets` (it guards the double-base64 problem that caused
+   an outage), `platform-certs-*`, `destroy-data` with its guards, and `live-test-lifecycle` and
+   `live-test-app-template`, which test this repository's own lifecycle and template code.
+7. **Last:** the catalogue itself (`commands.py`, `run.py`, the Makefile dispatch) goes when no Python command is
+   left. The Python tests in `tests/` are deleted with the Python they test, never ported; Go gets tests of its own
+   decisions.
+
+Copier in the console image stays Python: it renders a new app's repository
 ([§23](iteration-2-plan.md#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)).
 
 ## Deferred features
@@ -190,6 +213,8 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   `make v2-deps` bootstraps with checksums and builds/checks stay offline (4 November 2026).
 - The stack and name catalogues are v2's files (`v2/contract/stacks.json`, `names.json`), one writer each; Python
   reads them until its consumers leave, and the console image copies them (5 November 2026).
+- A test earns a Go port only if it keeps catching regressions in code this repository owns. A one-time proof of
+  k3s or a third-party component is retired, and its evidence stays in current-state (11 November 2026).
 - The v1 Python model is bounded, not ported: nothing new imports it and it only shrinks, with the v1
   renderer's interface tests in `tests/test_interface.py` (3 November 2026).
 

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "application": "test-01",
+  "environment": "staging",
+  "release": "rel-sha256:ca300c096c69706d313f0d804b92f71080250570d843b53aeb45802ddb6af3a3",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "private"
+  },
+  "bindings": {},
+  "storage": {},
+  "events": {
+    "key": "UCOITE6AZENRWLCZW7I57IU63HAAN2S6ZI326IDUPPDWXLQSMPRZZTLQ",
+    "subscriptions": [
+      "demo-orders.created"
+    ]
+  }
+}

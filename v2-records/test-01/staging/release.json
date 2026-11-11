@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "application": "test-01",
+  "source": {
+    "repository": "samclement/test-01",
+    "commit": "06a5aed17c05f9d494ec9cc796ea75a36e6cbe8b"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/test-01",
+    "digest": "sha256:09ec53952928aaf31eb2eae44649ede27bd339332b0c414e5161ac609cefecad",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "worker",
+    "port": 0,
+    "healthPath": "",
+    "uid": 65532
+  },
+  "telemetry": true,
+  "publishes": [
+    "worked"
+  ],
+  "description": "A swhurl app",
+  "documents": [
+    "events",
+    "flags"
+  ],
+  "releaseId": "rel-sha256:ca300c096c69706d313f0d804b92f71080250570d843b53aeb45802ddb6af3a3"
+}

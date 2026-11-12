@@ -25,6 +25,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   dry run that only diffs, and a real run's apply, rollouts and deletes, with fake `flux` and `kubectl`.
 - **Not exercised:** a real `make flux-install` (it would change nothing while the diff is empty), and a wait
   that stops at a failing unit on the cluster.
+- **Delivery:** the first Validate run for `6d25c985` failed one new test, which compared `make reconcile`'s plan
+  without `-s` and so saw a parent make's directory lines; with that fixed in `be0fc9e6`,
+  [Validate 43178817509](https://github.com/samclement/swhurl-platform/actions/runs/43178817509) passed every job
+  and its bot commit `09b87d27` deployed console image `src-a4bd5a569f8e4e40`. At that HEAD `make flux-reconcile`
+  waited through `swhurl-v2 flux-wait` with all 32 units `[OK]`, `make verify-platform` passed with no warning
+  (the Flux controllers at v2.8.1 with the settings in Git), and `swhurl-v2 status --all` reported all eleven
+  instances running.
 
 ## The team scenario reads running traffic, and three live proofs are retired (12 November 2026)
 

@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import json
 
-from swhurl import ROOT, interface, lifecycle
+from swhurl import ROOT, lifecycle
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 NS = 'lifecycle-test'
 UNIT = 'lifecycle-test'
 ORPHAN_UNIT = 'lifecycle-test-orphan'
-LABEL = interface.label('lifecycle-test')
+LABEL = 'platform.swhurl.com/lifecycle-test'
 READER_OVERRIDES = json.dumps({'spec': {
     'automountServiceAccountToken': False,
     'volumes': [{'name': 'd', 'persistentVolumeClaim': {'claimName': 'data'}}],

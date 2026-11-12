@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The team scenario reads running traffic, and three live proofs are retired (12 November 2026)
+
+- **What changed:** `live-test-network-policy`, `live-test-reloader` and `live-test-call-identity` are deleted
+  without replacement, under the rule that a one-time proof of k3s or a third-party component is retired. Their
+  evidence stays below ([call identity and network policy](#team-platform-t0-call-identity-and-network-policy-proofs-10-october-2026),
+  [Reloader](#reloader-pr07a)); what this
+  repository owns is checked offline by `check-apps`' `network-policy` and `call-tokens` rules and by
+  `make check-v2`'s comparison of the rendered keys and Reloader's watch list. `live-test-team-scenario` no longer
+  takes `CALLER`, `CALLEE` and `SUBSCRIBER` or sends a request: it builds `swhurl-v2`, reads `status --all --json`
+  over the records at HEAD, takes in `ENV` the first callee by name that has a caller and publishes an event someone
+  subscribes to, and checks the newest trace of the last 10 minutes in which the callee served that caller: the
+  publish and the subscriber's `process <callee>.<event>` span in it, each app's spans carrying the team its records
+  name (before: its namespace label), and the callee's log line naming the caller. With nothing left reading a
+  deployed HelmRelease, `tools/swhurl/apps/`, `interface.py` and `clickstack.py` are deleted with
+  `tests/test_instance.py`; `lifecycle` and `app_template` keep the three literals they used. Python under `tools/`
+  and `tests/` loses 1,191 lines and gains 151.
+- **Checked live, read-only:** `make live-test-team-scenario` chose `demo-shop` → `demo-orders` → `demo-notifier`
+  in staging from the records and passed its six checks on trace `aa34d699…`, which demo-shopper's traffic had
+  produced. The first version sent the old request from the Traefik pod and got a 404: the demo apps do not keep the
+  stack templates' `/call/<app>` example route, which is why the scenario now reads traffic instead of driving it.
+- **Checked offline:** `make test` passes, including the scenario's verdicts for no matching trace, a trace without
+  the event, a wrong or missing team, no caller-naming log line, no chain in the environment and an unusable status.
+- **Not exercised:** a live failing verdict, and an environment where no app drives the chain (the check then says
+  so rather than sending traffic).
+
 ## Log coverage is a saved query (11 November 2026)
 
 - **What changed:** [`platform/clickstack/log-coverage.sql`](../platform/clickstack/log-coverage.sql) replaces
@@ -4596,7 +4621,7 @@ Steps 5 and 6 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-oct
 
 ## Instance module (12 October 2026)
 
-`7bd9c5c`, `74be2a2` and `5d29c05`: an app in one environment has one module, [`instance.py`](../tools/swhurl/apps/instance.py), for its names, its folder and how one is recognised ([glossary](../GLOSSARY.md)). A refactor: `make app-sync` on the result changed no file in `apps/`, `clusters/home/` or `platform/`. Console image `src-a016c849bb2b5263` (deployed as `fe6f0a0`); the console and the notify service rolled out on it and `make verify-platform` passed.
+`7bd9c5c`, `74be2a2` and `5d29c05`: an app in one environment has one module, `instance.py` (since deleted), for its names, its folder and how one is recognised ([glossary](../GLOSSARY.md)). A refactor: `make app-sync` on the result changed no file in `apps/`, `clusters/home/` or `platform/`. Console image `src-a016c849bb2b5263` (deployed as `fe6f0a0`); the console and the notify service rolled out on it and `make verify-platform` passed.
 
 - **Commands:** `make app-status APP=demo-orders ENV=staging` reports as before; `APP=Bad` and `ENV=dev` are refused with "no instance …: APP must be a DNS label and ENV one of staging, prod" (exit 2). `DRY_RUN=true make clickstack-dashboards` found 8 apps.
 - **Console, through a port-forward with the identity header:** the Apps/Services list (10 instances), app pages for a staging and a production instance, the catalogue, Platform, a unit page and Teams answer 200; `/apps/Bad/staging` and `/apps/demo-orders/dev` answer 404.

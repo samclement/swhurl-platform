@@ -195,16 +195,10 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     )),
     ('Live tests', (
         _live_test('lifecycle', 'livetests.lifecycle:main', 'Prove suspend, uninstall, destroy-data and Orphan on a throwaway app'),
-        _live_test('reloader', 'livetests.reloader:main', 'Prove Reloader restarts only opted-in workloads in watched namespaces'),
         _live_test('app-template', 'livetests.app_template:main', 'Deploy the generated app fixtures through Flux, check, remove'),
-        _live_test('call-identity', 'livetests.call_identity:main',
-                   "Prove a callee with no API token can verify a caller's audience-bound token (SKIP_ROTATION=true)"),
-        _live_test('network-policy', 'livetests.network_policy:main',
-                   'Prove a NetworkPolicy on app pods blocks other namespaces but not Traefik or probes'),
         _live_test('team-scenario', 'livetests.team_scenario:main',
-                   'One request through a call and an event on three deployed apps, checked in ClickStack',
-                   Var('CALLER', '<app>', env=True), Var('CALLEE', '<app>', env=True), Var('SUBSCRIBER', '<app>', env=True),
-                   Var('ENV', 'staging', required=False, env=True), touches=CLUSTER),
+                   'The newest trace through a call and an event on three running apps the records link, checked in ClickStack (needs Go 1.26.0)',
+                   Var('ENV', 'staging', required=False, env=True), touches=READ),
     )),
     ('Host', (
         _timer('host-dns', 'Install or update the Route 53 dynamic DNS timer (records in host/dns.env; needs sudo)'),

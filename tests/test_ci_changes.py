@@ -52,7 +52,7 @@ class CIChangeClassificationTests(unittest.TestCase):
         for paths in ([], ['apps/weather/prod/release.yaml', 'apps/weather/prod/helmrelease.yaml'],
                       ['apps/weather/prod/release.yaml', 'clusters/home/kustomization.yaml'],
                       ['apps/weather/qa/release.yaml'], ['tests/fixtures/apps/apps/x/staging/release.yaml'],
-                      ['apps/weather/prod/release.yaml', 'tools/swhurl/apps/instance.py']):
+                      ['apps/weather/prod/release.yaml', 'tools/swhurl/commands.py']):
             with self.subTest(paths=paths):
                 self.assertFalse(records_only(paths))
 

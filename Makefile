@@ -14,8 +14,7 @@ COMMANDS := help reconcile flux-install \
 	console-image \
 	platform-certs-staging platform-certs-prod destroy-data \
 	check-secrets \
-	live-test-lifecycle live-test-reloader live-test-app-template \
-	live-test-call-identity live-test-network-policy live-test-team-scenario
+	live-test-lifecycle live-test-app-template live-test-team-scenario
 
 .PHONY: $(COMMANDS)
 $(COMMANDS):

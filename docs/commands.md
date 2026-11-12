@@ -90,11 +90,8 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 | Target | Does | Touches |
 | --- | --- | --- |
 | `live-test-lifecycle` † | Prove lifecycle commands on a throwaway app | Cluster (throwaway) |
-| `live-test-reloader` † | Prove Reloader's opt-in and namespace scope | Cluster (throwaway) |
 | `live-test-app-template` † | Deploy the generated fixtures through Flux, check, remove | Cluster (throwaway) |
-| `live-test-call-identity` † | Prove a callee with no API token verifies a caller's short-lived, audience-bound service-account token against the cluster's public keys handed to it as a ConfigMap, and that the Kubernetes API refuses that token. Waits about 8 minutes for the kubelet to replace the token (`SKIP_ROTATION=true` skips that) | Cluster (throwaway) |
-| `live-test-team-scenario CALLER= CALLEE= SUBSCRIBER= [ENV=staging]` † | Send one request through three deployed, linked apps (CALLER calls CALLEE, which publishes an event SUBSCRIBER receives) and check in ClickStack that one trace holds all three, with the caller named and each app's team. The apps need the stack templates' example routes | Cluster (one request; creates nothing) |
-| `live-test-network-policy` † | Prove a NetworkPolicy selecting an app's pods blocks another namespace while Traefik, probes and an unselected pod on 8089 keep working | Cluster (throwaway) |
+| `live-test-team-scenario [ENV=staging]` † | Find three running apps that `swhurl-v2 status --all` says are linked in ENV (an app calling an app that publishes an event a third app subscribes to; the first such callee by name, with its first caller and subscriber) and check in ClickStack the newest trace of the last 10 minutes in which the callee served the caller: the caller named, the event published and processed in it, each app's team as its records state, and the callee's log line naming the caller. Something must drive the call (demo-shopper does); needs Go 1.26.0 | Cluster (read) |
 
 ## Host
 

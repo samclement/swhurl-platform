@@ -55,7 +55,7 @@ else:
         """Every target whose DRY_RUN=true only prints a plan (commands.PLAN), so CI keeps no list of them."""
         targets = [name for name, command in commands.TARGETS.items()
                    if command.dry_run == commands.PLAN and not command.missing({})]
-        self.assertGreater(len(targets), 14)
+        self.assertGreater(len(targets), 11)
 
         def plan(target):
             return subprocess.run(['make', target, 'DRY_RUN=true'], cwd=ROOT, capture_output=True, text=True, env=self.env)

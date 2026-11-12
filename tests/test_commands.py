@@ -170,12 +170,7 @@ class MakeTests(unittest.TestCase):
                          ['notes', 'staging'])
 
     def test_variables_become_arguments(self):
-        for target, env, expected in (
-                ('verify-logs', {}, ['--minutes', '15']),
-                ('verify-logs', {'MINUTES': '60'}, ['--minutes', '60']),
-                ('console-dev', {'PORT': '9000'}, ['--port', '9000'])):
-            with self.subTest(target=target, env=env):
-                self.assertEqual(TARGETS[target].arguments(env), expected)
+        self.assertEqual(TARGETS['console-dev'].arguments({'PORT': '9000'}), ['--port', '9000'])
 
     def test_the_console_is_v2s_and_the_makefile_runs_it(self):
         """The console is Go: its target is a recipe that builds and runs swhurl-v2, and no Python function serves it."""

@@ -119,8 +119,6 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command('notifications-check', 'Preview lifecycle and health notifications without sending or saving (swhurl-v2; needs Go 1.26.0 and jq)', READ),
         Command('notifications-heartbeat', 'Alert if the notification checker is stale (the host timer runs it; swhurl-v2; needs Go 1.26.0)',
                 READ, takes=(MORE,), dry_run=READS),
-        Command('verify-logs', 'Summarize fresh log parsing, severity and trace coverage (no bodies)', READ,
-                'swhurl.logs:main', takes=(Var('MINUTES', '15', required=False, flag='--minutes', default='15'),)),
         Command('flux-install', 'Install or upgrade the Flux controllers at the pinned version with the settings in Git', CLUSTER,
                 'swhurl.flux:install_main', dry_run=READS),
         Command('flux-bootstrap', 'Apply the root units and sources (Flux must already be installed)', CLUSTER),

@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Log coverage is a saved query (11 November 2026)
+
+- **What changed:** [`platform/clickstack/log-coverage.sql`](../platform/clickstack/log-coverage.sql) replaces
+  `make verify-logs`, its command-catalogue row, `logs.py` and the two Python tests. It returns only aggregate
+  counts, workload/service/parser identities and the latest timestamp; unclassified logs are labelled explicitly.
+  The [run instructions](services.md#structured-logs) pass a typed `minutes` parameter through ClickHouse's client.
+  This diagnostic no longer inventories running pods or warns about quiet containers; no rows means no logs
+  observed in the selected window, not a successful health check. The 79 offline parser fixtures stay in
+  `make check-otel`. `clickstack.py` remains only for the team scenario and leaves with its reshape.
+- **Checked live, read-only:** the saved query returned 59 aggregate groups over 15 minutes and 151 over
+  60 minutes. Every row had exactly the documented ten columns, a nonempty parser label and coverage counts
+  between zero and its record count. No log bodies or arbitrary attribute values were selected or printed.
+  The retiring Python command's two tests passed before deletion. A zero-minute window returned no rows, and
+  a nonnumeric `minutes` parameter failed with a nonzero exit. Full `make check` passed: 237 Python tests,
+  98 codegraph tests and all 79 OTel fixtures; shell syntax checks and `git diff --check` also passed.
+- **Delivery:** no collector or ClickStack configuration changes; CI and the usual post-push platform checks
+  are pending for this tooling-only change.
+
 ## `check-otel` runs in the collector's own image (11 November 2026)
 
 - **What changed:** `make check-otel` is [`platform/otel/check.sh`](../platform/otel/check.sh), bash with no Python.

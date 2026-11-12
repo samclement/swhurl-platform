@@ -10,7 +10,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
-COMMANDS := help reconcile verify-logs flux-install \
+COMMANDS := help reconcile flux-install \
 	console-image \
 	platform-certs-staging platform-certs-prod destroy-data \
 	check-secrets \

@@ -1,7 +1,7 @@
 """ClickStack helpers the remaining Python shares: ClickHouse queries.
 
-``make clickstack-bootstrap`` is ``swhurl-v2 clickstack-bootstrap``; what is left here serves ``verify-logs`` and
-the team scenario.
+``make clickstack-bootstrap`` is ``swhurl-v2 clickstack-bootstrap``; only the team scenario still uses this helper.
+Log coverage is the saved query in ``platform/clickstack/log-coverage.sql``.
 """
 from __future__ import annotations
 

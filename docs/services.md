@@ -72,7 +72,7 @@ For example, `{"level":30,"msg":"request completed","req":{"method":"GET"},"stat
 
 cert-manager's three components, Traefik's existing log streams, Reloader, the platform collectors and console emit native JSON. cert-manager's klog JSON uses `v` for informational records and `err` for error records; the source-specific mapping handles these without guessing from message text. Console access logs include method, path and status; its action audit records include identity, action, unit, state, job ID and link ([console](console.md#how-it-is-protected)). Verbosity and access-log enablement stay at their existing settings.
 
-HyperDX also sends already structured native OTLP logs directly to ClickStack, alongside its stdout stream. Those retain their SDK attributes and trace context; `verify-logs` identifies scope `node-logger` as `native-otlp`, without claiming they passed through a node parser. Missing SDK severity remains unspecified. Native map-valued OTLP bodies passing through the node collector remain structured maps.
+HyperDX also sends already structured native OTLP logs directly to ClickStack, alongside its stdout stream. Those retain their SDK attributes and trace context; the [log coverage query](../platform/clickstack/log-coverage.sql) identifies scope `node-logger` as `native-otlp`, without claiming they passed through a node parser. Missing SDK severity remains unspecified. Native map-valued OTLP bodies passing through the node collector remain structured maps.
 
 Nested objects flatten to dotted attribute names, arrays remain JSON strings, and objects below four map levels remain JSON strings. The collector's `ottl.functions.enableLambda` gate enables the bounded array-preserving mapping; `make check-otel` uses that same gate and runs synthetic fixtures through the actual deployed collector version, including CRI partial lines and Docker framing. This catches changed parser behaviour during collector upgrades.
 
@@ -82,7 +82,17 @@ When the body changes, `LogAttributes.log.record.original` retains the complete 
 
 **Volume.** HyperDX's own traces are sampled at 10% (`OTEL_TRACES_SAMPLER_ARG` in `hyperdx.config`). Host metrics are scraped every 30 s, kubelet metrics and cluster state every 60 s (`collection_interval` in the two OTel HelmReleases). ClickStack's scrape of ClickHouse's own metrics (about half of all metric rows) stays at 30 s: the chart's `global.otelCollector.customConfig` is merged below the remote configuration HyperDX pushes over OpAMP, which defines that receiver, so it has no effect there. These cut stored rows, not ClickHouse's CPU, which is dominated by merging many tiny inserts ([current state](current-state.md#steps-2-and-3-and-the-final-comparison)): every batch the ClickStack collector flushes becomes a part, and with only a few parts in a daily partition the merge selector rewrites the day's growing part every five or so new ones. The collector therefore flushes every 30 s (`HYPERDX_OTEL_BATCH_TIMEOUT` in `hyperdx.config`, which the collector reads as its environment; the chart's default is 5 s), so telemetry reaches HyperDX, and its alerts, up to 30 s late ([current state](current-state.md#clickhouse-merge-rewrites-2-november-2026)).
 
-In ClickStack's Logs source, try `LogAttributes.log.parser:json`, or `ResourceAttributes.k8s.namespace.name:demo-orders-prod AND LogAttributes.method:GET`; open a result to see fields, its original line and any linked trace. `make verify-logs` reports fresh format/severity/trace coverage for every running container without printing bodies or attribute values; quiet containers are reported separately. It also includes events and host timers that logged within the selected window (`MINUTES=`, default 15). The systemd/k3s journal is not collected.
+In ClickStack's Logs source, try `LogAttributes.log.parser:json`, or `ResourceAttributes.k8s.namespace.name:demo-orders-prod AND LogAttributes.method:GET`; open a result to see fields, its original line and any linked trace. The saved [log coverage query](../platform/clickstack/log-coverage.sql) reports counts of observed logs by namespace, pod, container, service and parser, with severity, trace and original-line coverage and the latest timestamp. It includes events and host timers observed in the window, labels logs without a known parser `unclassified`, and returns no bodies or arbitrary attribute values. The systemd/k3s journal is not collected.
+
+Run with `!` from the repository root (read-only; change `--param_minutes=15` for a different window):
+
+```bash
+export KUBECONFIG="$HOME/.kube/config"
+kubectl -n observability exec -i clickstack-clickhouse-clickhouse-0-0-0 -- \
+  clickhouse-client --param_minutes=15 < platform/clickstack/log-coverage.sql
+```
+
+This is a diagnostic query, not a health gate. No rows means no logs were observed in that window; the query does not enumerate running containers or identify quiet ones. Use `make verify-platform` for platform health and `make check-otel` for the offline parser fixtures.
 
 **Sign-in.** `https://clickstack.<BASE_DOMAIN>` sits behind Google sign-in, then HyperDX's own login. HyperDX has no setting for its first account: `make clickstack-bootstrap` registers `CLICKSTACK_ADMIN_EMAIL` with `CLICKSTACK_ADMIN_PASSWORD` while no team exists, and HyperDX closes registration once one does (`make verify-platform` checks that it is closed). Read the password with `sops -d --extract '["stringData"]["CLICKSTACK_ADMIN_PASSWORD"]' platform/clickstack/secret.sops.yaml`. Invite further users from the UI.
 

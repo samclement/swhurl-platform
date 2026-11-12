@@ -40,16 +40,6 @@ jobs:
           ref: main
           fetch-depth: 0   # the commit may need to be made again on a newer main
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: pyproject.toml
-
-      - name: Install validation dependencies
-        run: python3 -m pip install --group check
-
       # v2's render writes the resolution, every compiled folder and unit, the egress allocation and the proxy's
       # objects, platform/auth, the NATS user list and Reloader's watch list from the records.
       - name: Setup Go
@@ -94,8 +84,8 @@ jobs:
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-        # tools/swhurl/bots.py: a fresh worktree of the newest main, v2's render, checks, one commit, a
+        # host/push-main.sh: a fresh worktree of the newest main, v2's render, checks, one commit, a
         # non-forced push; a push lost to another writer renders again on the newer main.
         run: |
           set -Eeuo pipefail
-          PYTHONPATH=tools python3 -m swhurl bot-render | tee -a "$GITHUB_STEP_SUMMARY"
+          host/push-main.sh render | tee -a "$GITHUB_STEP_SUMMARY"

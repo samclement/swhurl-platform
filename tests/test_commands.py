@@ -159,9 +159,9 @@ class MakeTests(unittest.TestCase):
                 self.assertIn(usage, err)
 
     def test_dry_run_is_refused_where_the_command_has_no_dry_run(self):
-        code, out, err, executed = run_make('console-image', {'DRY_RUN': 'true'})
+        code, out, err, executed = run_make('check-secrets', {'DRY_RUN': 'true'})
         self.assertEqual((code, out, executed), (2, '', []))
-        self.assertIn('make console-image has no dry run', err)
+        self.assertIn('make check-secrets has no dry run', err)
 
     def test_a_variable_the_command_reads_itself_is_left_to_it(self):
         self.assertEqual(TARGETS['restore-sqlite'].missing({'APP': 'notes', 'ENV': 'staging'}), [])
@@ -186,7 +186,7 @@ class MakeTests(unittest.TestCase):
         self.assertEqual(seen, [['status', 'web']])
 
     def test_only_a_target_with_a_function_runs_through_make(self):
-        for target in ('flux-reconcile', 'notifications-check', 'bot-render', 'nothing'):
+        for target in ('flux-reconcile', 'notifications-check', 'console-image', 'nothing'):
             with self.subTest(target=target):
                 code, _, err, _ = run_make(target, {})
                 self.assertEqual(code, 2)

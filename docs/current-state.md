@@ -2,6 +2,31 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The bots and the console image pin leave Python (12 November 2026)
+
+- **What changed:** `tools/swhurl/bots.py`, `tools/swhurl/images.py` and `tests/test_bots.py` are deleted, with
+  the `bot-render` and `bot-deploy-v2` internal commands and `platform.CONSOLE_IMAGE_INPUTS`. Render, Deploy v2
+  and Validate's deploy job run [`host/push-main.sh`](../host/push-main.sh) `render`, `deploy` and
+  `console-image --expect src-<hash>`: a fresh worktree of the newest `main`, the change, the checks, one commit
+  with `main` as its parent and a push that is never forced, five attempts, as before. `make console-image` is
+  [`images/pin-console.sh`](../images/pin-console.sh), which takes the content tag from `images/content-tag.sh
+  console --committed` (the only computation of it now) and the digest from GHCR with the token on `curl`'s
+  standard input. Render and Validate's deploy job no longer install Python; Deploy v2 keeps it for `check-v2`'s
+  chart test.
+- **Deliberately changed:** the merge gate's extra commit parents and `ready` hook are gone with it (nothing used
+  them since §20); the console pin prints `pushed <commit> to main` like the other two.
+- **Checked offline:** `tests/test_push_main.py` (18 cases) runs both scripts against a real bare `origin`, with a
+  fake `make` that can push from a second clone while the bot checks: a render and its message, nothing to
+  render, a lost push landing on top of the other writer, five lost pushes failing, a failed check shown, not
+  pushed and not retried, a held deploy pushing the others and failing, the pin on the newest `main` (both
+  HelmReleases, only four lines, the render carried, the checkout untouched, the token never in an argument), a
+  `main` that builds other inputs or moved to them after a lost push, already pinned, unpublished, uncommitted
+  inputs, a release with two tag lines or an unmarked notify release, and `make console-image DRY_RUN=true`.
+  Eight mutations of the scripts (a forced push, four attempts, a failed check not stopping, a held deploy not
+  failing, no `--expect` check, a lax tag count, the token off stdin, no uncommitted refusal) each failed the
+  tests. `make check-repo check-apps` passed with `python` and `python3` stubbed to fail on `PATH`.
+- **Not exercised yet:** the three workflows on GitHub.
+
 ## The Flux commands leave Python (12 November 2026)
 
 - **What changed:** `tools/swhurl/flux.py` and `tests/test_flux.py` are deleted. `make flux-reconcile` ends with

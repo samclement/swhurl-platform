@@ -46,7 +46,7 @@ flowchart LR
 | **App developer** (a team member) | Build, ship, connect and observe an app without touching Kubernetes | The app's repository, the console, the stack template's helpers |
 | **Operator** (owns the platform and merges every pull request) | Keep the platform healthy, review changes, manage teams, recover data | `make` targets, `swhurl-v2`, the console, GitHub |
 | **The running app** | Find and call other apps, publish and receive events, read flags, send notices, export telemetry | The [runtime interface](#43-the-runtime-interface-what-a-running-app-gets): environment variables, token files, helpers |
-| **Bots** (Deploy, Render, Validate, Renovate) | Keep `main` rendered, deploy staging images, pin the console image, propose chart updates | `bots.push_main`, pull requests |
+| **Bots** (Deploy, Render, Validate, Renovate) | Keep `main` rendered, deploy staging images, pin the console image, propose chart updates | [`host/push-main.sh`](../host/push-main.sh), pull requests |
 
 On this homelab one person holds both human roles. The journeys keep the roles apart because the platform does: a developer's push cannot do what an operator's review does.
 
@@ -387,7 +387,7 @@ Names starting `SWHURL_`, `OTEL_` or `KUBERNETES_`, plus `HOST_IP` and `DATABASE
 | Receivers | GitHub push → reconcile; app image → registry scan ([push webhook](services.md#push-webhook), [image webhook](services.md#image-webhook)) |
 | `ImageRepository` and `ImagePolicy` per staging instance | Picks the newest `RUN-SHA` and fires the `image-dispatch` Alert |
 | Workflows | **Validate** (checks, deploys the console image), **Deploy** (staging images), **Render** (re-renders a records-only commit) |
-| `bots.push_main` | How every bot writes `main`: fresh worktree, change, `make check-repo check-apps`, one commit, never a forced push |
+| [`host/push-main.sh`](../host/push-main.sh) | How every bot writes `main`: fresh worktree, change, `make check-repo check-apps` (a deploy: `make check-v2`), one commit, never a forced push |
 | Console pull requests | `console/*` branches, merged by a person ([review and merge](console.md#review-and-merge)) |
 
 ### 4.7 Platform primitives an instance is built from

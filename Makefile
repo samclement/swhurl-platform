@@ -11,7 +11,6 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help \
-	console-image \
 	platform-certs-staging platform-certs-prod destroy-data \
 	check-secrets \
 	live-test-lifecycle live-test-app-template live-test-team-scenario
@@ -31,6 +30,12 @@ app-logs app-reconcile:
 	@DRY_RUN=$(DRY_RUN) ./host/ops.sh $(@:app-%=%) "$$APP" "$$ENV"
 suspend resume:
 	@DRY_RUN=$(DRY_RUN) ./host/ops.sh $@ "$$TARGET"
+# Pin the console to the image Validate published for this commit (images/pin-console.sh; edits files only).
+.PHONY: console-image
+console-image:
+	@[ "$(DRY_RUN)" != true ] || { echo "[ERROR] make console-image has no dry run: DRY_RUN=true would be ignored, so nothing was done" >&2; exit 2; }; \
+	pinned=$$(bash images/pin-console.sh) || exit 1; echo "$$pinned"; \
+	case "$$pinned" in '[OK] pinned'*) echo '[INFO] Next: commit, push, make flux-reconcile' ;; esac
 # Flux's controllers with the settings in Git (host/flux-install.sh), which reads DRY_RUN from the environment.
 .PHONY: flux-install
 flux-install:

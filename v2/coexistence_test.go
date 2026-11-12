@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -42,9 +43,8 @@ func TestCoexistence(t *testing.T) {
 	if count == 0 {
 		t.Fatal("no Flux paths checked; discovery contract changed")
 	}
-	platform := read("tools/swhurl/platform.py")
-	inputs := regexp.MustCompile(`(?m)^CONSOLE_IMAGE_INPUTS = (.+)$`).FindStringSubmatch(platform)
-	if len(inputs) != 2 || !strings.Contains(inputs[1], "'tools'") || !strings.Contains(inputs[1], "'v2'") {
+	inputs := regexp.MustCompile(`(?m)^\s+console\) paths=\(([^)]+)\)`).FindStringSubmatch(read("images/content-tag.sh"))
+	if len(inputs) != 2 || !slices.Contains(strings.Fields(inputs[1]), "tools") || !slices.Contains(strings.Fields(inputs[1]), "v2") {
 		t.Fatal("re-check console content-hash inputs")
 	}
 	// Since the deletion plan's phase 2 (decision 2) the console image ships swhurl-v2: it writes v2's records by

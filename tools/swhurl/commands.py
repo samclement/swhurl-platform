@@ -146,7 +146,7 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 READ, takes=(APP, ENV)),
         Command('app-logs', 'Recent workload logs (FOLLOW=true, TAIL=N, PREVIOUS=true)', READ, takes=(APP, ENV)),
         Command('app-reconcile', 'Fetch Git and reconcile only that instance', CLUSTER, takes=(APP, ENV), dry_run=PLAN),
-        Command('console-image', 'Pin platform/console to the image published for this commit', GIT, 'swhurl.images:main'),
+        Command('console-image', 'Pin platform/console to the image published for this commit (images/pin-console.sh)', GIT),
         Command('console-dev', 'Web console on http://127.0.0.1:8080 as a fixed dev identity (swhurl-v2; needs Go 1.26.0)',
                 CLUSTER, takes=(Var('PORT', '8080', required=False, flag='--port', default='8080'),)),
     )),
@@ -212,9 +212,6 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
 
 INTERNAL = (
     Command('make', 'Run a make target: its arguments come from the make variables in the environment', run='swhurl.commands:make', internal=True),
-    Command('bot-render', 'CI (Render): render the newest main from its records, check it and push it', run='swhurl.bots:main_render', internal=True),
-    Command('bot-deploy-v2', 'CI (Deploy v2): bring every v2-owned staging instance to its newest image, check it and push it',
-            run='swhurl.bots:main_deploy_v2', internal=True),
 )
 
 COMMANDS: dict[str, Command] = {command.name: command for commands in (*(found for _, found in SECTIONS), INTERNAL) for command in commands}

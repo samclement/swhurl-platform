@@ -509,7 +509,7 @@ There is no transaction spanning GitHub, GHCR, Git, Kubernetes and S3. Useful gu
 
 **Retry the operation whose contract supports retry—not the whole chain indiscriminately.** A lost Git push can trigger a fresh plan against newer `main`. It must not automatically create another repository or reinterpret an already-approved release as “latest staging.”
 
-[`bots.py`](../tools/swhurl/bots.py)'s `push_main` is a basis for optimistic publication. The separate Validate image-pin route in [`images.py`](../tools/swhurl/images.py) remains a distinct implementation.
+`bots.py`'s `push_main` is a basis for optimistic publication. The separate Validate image-pin route in `images.py` remains a distinct implementation. (Both since replaced by [`host/push-main.sh`](../host/push-main.sh).)
 
 ## 5. Artefact D — Build configuration, state and provenance
 

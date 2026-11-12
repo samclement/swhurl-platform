@@ -465,7 +465,7 @@ jobs:
 
   # Deploys the image once every check above passed (a check skipped for an app-only commit counts
   # as passed): on the newest main it pins platform/console/helmrelease.yaml to that image, checks it
-  # and pushes the commit like every bot (swhurl console-image --expect --commit), unless main has
+  # and pushes the commit like every bot (host/push-main.sh console-image --expect), unless main has
   # since moved to other image inputs, whose own run pins them. Pushes made with GITHUB_TOKEN start
   # no workflows, so the pin commit starts no Validate run.
   deploy-console:
@@ -480,11 +480,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0   # the pin is made again on a newer main when another writer pushed first
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
 
       # The pin is checked like every bot push (make check-repo check-apps on the newest main), and
       # check-apps compiles v2's records with Go; on a main whose records Render has not rendered yet the
@@ -508,14 +503,8 @@ jobs:
         with:
           version: 'v3.19.0'
 
-      - name: Install validation dependencies
-        run: |
-          set -Eeuo pipefail
-          python3 -m pip install --quiet --upgrade 'pip>=25.1'
-          python3 -m pip install --quiet --group check
-
-      # tools/swhurl/bots.py: a fresh worktree of the newest main, the pin, checks, one commit, a
-      # non-forced push; a push lost to another writer pins again on the newer main.
+      # host/push-main.sh: a fresh worktree of the newest main, the pin (images/pin-console.sh), checks, one
+      # commit, a non-forced push; a push lost to another writer pins again on the newer main.
       - name: Pin the console on main (deploys it)
         env:
           GIT_AUTHOR_NAME: github-actions[bot]
@@ -524,5 +513,5 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           set -Eeuo pipefail
-          PYTHONPATH=tools python3 -m swhurl console-image \
-            --expect "src-${{ needs.console-image.outputs.content }}" --commit | tee -a "$GITHUB_STEP_SUMMARY"
+          host/push-main.sh console-image \
+            --expect "src-${{ needs.console-image.outputs.content }}" | tee -a "$GITHUB_STEP_SUMMARY"

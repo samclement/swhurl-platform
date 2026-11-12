@@ -77,7 +77,7 @@ else:
         result = subprocess.run(['make', 'reconcile'], cwd=ROOT, env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn('Usage: make reconcile UNIT=<name>', result.stderr)
-        result = subprocess.run(['make', 'reconcile', 'UNIT=gw', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
+        result = subprocess.run(['make', '-s', 'reconcile', 'UNIT=gw', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, 'Plan (reconcile gw):\n  would run: swhurl-v2 unit --action reconcile --unit gw\n')

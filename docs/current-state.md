@@ -25,7 +25,17 @@ What has been verified on the live cluster, and when: current facts first, then 
   Eight mutations of the scripts (a forced push, four attempts, a failed check not stopping, a held deploy not
   failing, no `--expect` check, a lax tag count, the token off stdin, no uncommitted refusal) each failed the
   tests. `make check-repo check-apps` passed with `python` and `python3` stubbed to fail on `PATH`.
-- **Not exercised yet:** the three workflows on GitHub.
+- **Delivery:** [Validate 43201097337](https://github.com/samclement/swhurl-platform/actions/runs/43201097337) for
+  `cef8e66a` passed every job, and its deploy job, without Python, pinned both HelmReleases to
+  `src-66d7cd4be9cc65cf`, checked 172 rendered files and pushed `2577d4e8` as `github-actions[bot]` with `cef8e66a`
+  its only parent. [Render 43201097219](https://github.com/samclement/swhurl-platform/actions/runs/43201097219)
+  found `main` rendered and stopped before the bot, and a dispatched
+  [Deploy v2 43201550107](https://github.com/samclement/swhurl-platform/actions/runs/43201550107) ran
+  `host/push-main.sh deploy` to `Nothing changed.` At `2577d4e8`, `make flux-reconcile` passed,
+  `make verify-platform` passed with no warning (the console and the notify service on `src-66d7cd4be9cc65cf`,
+  built from the current tooling) and `swhurl-v2 status --all` reported all eleven instances healthy.
+- **Not exercised:** Render's push (it needs a records-only commit), a deploy that moves an image, and a push lost
+  to another writer on GitHub; all three are covered by the offline tests against real Git.
 
 ## The Flux commands leave Python (12 November 2026)
 

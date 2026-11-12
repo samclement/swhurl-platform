@@ -17,8 +17,11 @@ What has been verified on the live cluster, and when: current facts first, then 
   The retiring Python command's two tests passed before deletion. A zero-minute window returned no rows, and
   a nonnumeric `minutes` parameter failed with a nonzero exit. Full `make check` passed: 237 Python tests,
   98 codegraph tests and all 79 OTel fixtures; shell syntax checks and `git diff --check` also passed.
-- **Delivery:** no collector or ClickStack configuration changes; CI and the usual post-push platform checks
-  are pending for this tooling-only change.
+- **Delivery:** [Validate 43124131229](https://github.com/samclement/swhurl-platform/actions/runs/43124131229)
+  passed all jobs for `9d4a8cf9`. Its bot commit `5e1d60f8` deployed console and notify image
+  `src-51266ac8f66864e8`. After pulling it, `make flux-reconcile`, `make verify-platform` and
+  `make app-status APP=<app> ENV=<env>` for all eleven recorded instances passed. No collector or ClickStack
+  configuration changed.
 
 ## `check-otel` runs in the collector's own image (11 November 2026)
 

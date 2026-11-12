@@ -26,6 +26,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   the event, a wrong or missing team, no caller-naming log line, no chain in the environment and an unusable status.
 - **Not exercised:** a live failing verdict, and an environment where no app drives the chain (the check then says
   so rather than sending traffic).
+- **Delivery:** [Validate 43174919971](https://github.com/samclement/swhurl-platform/actions/runs/43174919971)
+  passed every job for `18fe84a7`, and its bot commit `daf5c333` deployed console image `src-5e93eb235891c3d0`.
+  After pulling it, `make flux-reconcile` and `make verify-platform` passed with no warning, `swhurl-v2 status --all`
+  reported all eleven instances healthy, and `make live-test-team-scenario` passed again at that HEAD.
 
 ## Log coverage is a saved query (11 November 2026)
 

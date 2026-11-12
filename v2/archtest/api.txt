@@ -897,6 +897,11 @@ observe: const CheckoutProfile = "v2/testdata/profile.json"
 observe: const CheckoutRecords = "v2-records"
 observe: const CheckoutTeams = "v2-records/teams.json"
 observe: const Different = "different"
+observe: const FluxFailed FluxProgress = "failed"
+observe: const FluxReady FluxProgress = "ready"
+observe: const FluxSource = "swhurl-platform"
+observe: const FluxSuspended FluxProgress = "suspended"
+observe: const FluxWaiting FluxProgress = "waiting"
 observe: const IsNotRunning Verdict = "not_running"
 observe: const IsRunning Verdict = "running"
 observe: const NotApplied = "not_applied"
@@ -1013,6 +1018,7 @@ observe: func EncodeReport(report Report) ([]byte, error)
 observe: func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error)
 observe: func EventNamespaces(compiled []CompiledInstance) []string
 observe: func Explain(target Target, evidence Evidence) (Report, error)
+observe: func FluxUnitAt(object []byte, revision string) (FluxUnitState, error)
 observe: func GitHubRepository(repository string) bool
 observe: func ImagePolicies(list List) []ImagePolicy
 observe: func IndexCandidates(lists []List) (Candidates, error)
@@ -1067,7 +1073,9 @@ observe: type Evidence struct {Source string ObservedAt string Objects []Read Po
 observe: type Finding struct {Field, Outcome, Reason string}
 observe: type FluxEvidence struct {Settings FluxSettings Problem string Deployments map[string]Read}
 observe: type FluxFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` Suspended *bool `json:"suspended"` Conditions []Condition `json:"conditions"`}
+observe: type FluxProgress string
 observe: type FluxSettings struct {Version string `json:"version"` ExtraComponents []string `json:"extraComponents"` RemovedComponents []string `json:"removedComponents"` Args map[string][]string `json:"args"`}
+observe: type FluxUnitState struct {Name string Progress FluxProgress Message string}
 observe: type HeartbeatEvidence struct {Supplied bool Text string}
 observe: type Hook struct {Active bool Events []string Host string Code *int Message string}
 observe: type HookListing struct {Hooks []Hook MissingToken bool Problem string}
@@ -1141,6 +1149,11 @@ orchestration: const BootstrapWarn BootstrapLevel = "warn"
 orchestration: const FluxReconcile FluxAction = "reconcile"
 orchestration: const FluxResume FluxAction = "resume"
 orchestration: const FluxSuspend FluxAction = "suspend"
+orchestration: const FluxWaitBad FluxWaitLevel = "bad"
+orchestration: const FluxWaitHeading FluxWaitLevel = "heading"
+orchestration: const FluxWaitInfo FluxWaitLevel = "info"
+orchestration: const FluxWaitOK FluxWaitLevel = "ok"
+orchestration: const FluxWaitWarn FluxWaitLevel = "warn"
 orchestration: const JobComplete = "complete"
 orchestration: const JobFailed = "failed"
 orchestration: const JobRunning = "running"
@@ -1209,6 +1222,7 @@ orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]b
 orchestration: func FlagDeclaration(document []byte) ([]producer.Flag, string)
 orchestration: func Flags(ctx context.Context, store nats.KV, environment, application string, flags []producer.Flag, declarationProblem string, now time.Time) FlagCard
 orchestration: func Flux(ctx context.Context, inputs FluxInputs) error
+orchestration: func FluxWait(ctx context.Context, inputs FluxWaitInputs) (bool, error)
 orchestration: func ImageDeclaration(reader appsource.Reader, root string) (string, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
@@ -1270,6 +1284,9 @@ orchestration: type FlagOverride struct {Value any Readable bool StoredAt time.T
 orchestration: type FlagRow struct {Name string Flag producer.Flag Undeclared bool Overridden bool Override FlagOverride AgeDays int Stale bool Effective any}
 orchestration: type FluxAction string
 orchestration: type FluxInputs struct {Action FluxAction Unit string Cluster Cluster Now func() time.Time Sleep func(time.Duration) Progress func(string)}
+orchestration: type FluxWaitInputs struct {Reader kube.Reader Timeout time.Duration Poll time.Duration Now func() time.Time Sleep func(time.Duration) Progress func(FluxWaitLine)}
+orchestration: type FluxWaitLevel string
+orchestration: type FluxWaitLine struct {Level FluxWaitLevel Text string}
 orchestration: type HeartbeatOptions struct {Now float64 Jobs []heartbeat.Job StatePath string DryRun bool}
 orchestration: type HeartbeatOutcome struct {Job heartbeat.Job Decision heartbeat.Decision Notice heartbeat.Notice Due, Sent bool Err error}
 orchestration: type HeartbeatPorts struct {Cluster kube.Reader Data kube.Data Platform ntfy.Publisher State hoststate.Store}

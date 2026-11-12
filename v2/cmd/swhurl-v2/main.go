@@ -85,6 +85,7 @@ const usage = `usage:
   swhurl-v2 flags --records DIR --app APPLICATION --env ENVIRONMENT [--set FLAG=TEXT | --clear FLAG] [--json]
   swhurl-v2 console [--port PORT] (--kubeconfig KUBECONFIG.json | --in-cluster) [--dev]
   swhurl-v2 unit --action reconcile|suspend|resume --unit NAME (--kubeconfig KUBECONFIG.json | --in-cluster)
+  swhurl-v2 flux-wait --kubeconfig KUBECONFIG.json
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
 platform's tag policy, and writes the record pair and the compiled files under --out. With --records it reads
@@ -182,6 +183,12 @@ registers CLICKSTACK_ADMIN_EMAIL with CLICKSTACK_ADMIN_PASSWORD when no team exi
 CLICKSTACK_INGESTION_KEY when it differs; run again it changes nothing. Credentials travel only in the programs it
 runs by API-server exec, on stdin. --dry-run reads and decides, and writes nothing. It prints [OK], [INFO] and
 [WARN] lines, and [BAD] with exit status 1 where it stopped.
+
+flux-wait waits up to twenty minutes for every Flux unit in flux-system to report Ready at the revision the
+swhurl-platform GitRepository fetched, following the source to a newer revision if a commit lands meanwhile. It
+prints [OK] for each unit as it gets there and [WARN] for a suspended one, which it skips, and stops with [BAD] and
+exit status 1 at the first unit that fails at that revision, with the unit's own message, or at the timeout. A
+failed read is an error and exit status 1. It only reads.
 
 policy is read-only: it validates the complete records tree and team/channel availability under --out,
 then templates the explicit local --chart for every compiled instance, production included. Chart metadata
@@ -475,6 +482,7 @@ func commands() map[string]func(cli, request) int {
 		"app-repo":                cli.appRepo,
 		"app-hooks":               cli.appHooks,
 		"unit":                    cli.unit,
+		"flux-wait":               cli.fluxWait,
 	}
 }
 
@@ -612,11 +620,7 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
 		return
 	}
-	if command == "unit" {
-		flags.Var(&once{value: &r.action}, "action", "reconcile, suspend or resume")
-		flags.Var(&once{value: &r.unit}, "unit", "the Flux unit, in the flux-system namespace")
-		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
-		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
+	if r.registerFluxFlags(flags, command) {
 		return
 	}
 	if command == "notify-serve" {
@@ -685,6 +689,22 @@ func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool 
 		flags.Var(&once{value: &r.eventsSecret}, "events-secret", "the instance's encrypted events Secret (optional)")
 		flags.Var(&once{value: &r.offers}, "offers", "the folder holding the documents the instance publishes (optional)")
 		r.registerOut(flags)
+	default:
+		return false
+	}
+	return true
+}
+
+// registerFluxFlags is the flags of the two Flux commands: one unit's action, and the wait for every unit.
+func (r *request) registerFluxFlags(flags *flag.FlagSet, command string) bool {
+	switch command {
+	case "unit":
+		flags.Var(&once{value: &r.action}, "action", "reconcile, suspend or resume")
+		flags.Var(&once{value: &r.unit}, "unit", "the Flux unit, in the flux-system namespace")
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
+	case "flux-wait":
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 	default:
 		return false
 	}
@@ -903,6 +923,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"app-repo":                (*request).appRepoNamed,
 	"app-hooks":               func(r *request) []string { return []string{r.records, r.owner, r.hookHost} },
 	"unit":                    (*request).unitNamed,
+	"flux-wait":               func(r *request) []string { return []string{r.kubeconfig} },
 }
 
 // statusNamed is what a live read needs: the instance's records, the profile, the revision to expect and exactly one

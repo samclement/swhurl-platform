@@ -2,6 +2,30 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The Flux commands leave Python (12 November 2026)
+
+- **What changed:** `tools/swhurl/flux.py` and `tests/test_flux.py` are deleted. `make flux-reconcile` ends with
+  `swhurl-v2 flux-wait`, which reads the `swhurl-platform` GitRepository and every Kustomization in `flux-system`
+  through the API server and waits up to 20 minutes for each to be Ready at the fetched revision, with the same
+  lines, the same following of a newer commit and the same exit status as before; the per-unit decision is
+  `observe.FluxUnitAt`. `make reconcile UNIT=` runs `swhurl-v2 unit --action reconcile` (the source, then the
+  unit), which waits 10 minutes instead of 20 and refuses `cluster-sources` and `cluster-stack` (before: allowed;
+  `flux-reconcile` reconciles both). `make flux-install` is bash, [`host/flux-install.sh`](../host/flux-install.sh),
+  over `flux install --export`, `kubectl kustomize` and a server-side `kubectl apply` as the `flux` field manager:
+  v2 gains no install effect, by the operator's choice of 12 November.
+- **Checked live:** before the push, from this change's working tree, `make flux-reconcile` passed with all 32
+  units `[OK]` in about 7 s; `make reconcile UNIT=app-swhurl-try-10-staging` fetched and applied
+  `main@sha1:c65b8aff…`; `make reconcile UNIT=cluster-stack` was refused with exit 2 and no request; and
+  `make flux-install DRY_RUN=true` with `flux` 2.8.1 printed `[OK] no changes` (the live controllers match the
+  render) and the commands it would run.
+- **Checked offline:** Go tests of the unit decision (ready, waiting at an older revision or generation, not-yet
+  reasons, still reconciling, failed, suspended, another source), the wait (following a commit, first failure,
+  suspended skip, timeout, no artifact, failed and malformed reads) and the command over a TLS test server; the
+  script's refusal of another `flux` CLI before any `kubectl` call, of a render without the patched arguments, a
+  dry run that only diffs, and a real run's apply, rollouts and deletes, with fake `flux` and `kubectl`.
+- **Not exercised:** a real `make flux-install` (it would change nothing while the diff is empty), and a wait
+  that stops at a failing unit on the cluster.
+
 ## The team scenario reads running traffic, and three live proofs are retired (12 November 2026)
 
 - **What changed:** `live-test-network-policy`, `live-test-reloader` and `live-test-call-identity` are deleted

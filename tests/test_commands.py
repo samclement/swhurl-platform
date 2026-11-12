@@ -152,8 +152,7 @@ class DocTests(unittest.TestCase):
 class MakeTests(unittest.TestCase):
     def test_a_missing_variable_is_refused_with_the_usage_line(self):
         for target, env, usage in (
-                ('destroy-data', {}, 'Usage: make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>'),
-                ('reconcile', {'UNIT': ''}, 'Usage: make reconcile UNIT=<name>')):
+                ('destroy-data', {}, 'Usage: make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>'),):
             with self.subTest(target=target):
                 code, out, err, executed = run_make(target, env)
                 self.assertEqual((code, out, executed), (2, '', []))

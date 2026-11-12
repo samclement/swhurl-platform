@@ -10,7 +10,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
-COMMANDS := help reconcile flux-install \
+COMMANDS := help \
 	console-image \
 	platform-certs-staging platform-certs-prod destroy-data \
 	check-secrets \
@@ -31,6 +31,10 @@ app-logs app-reconcile:
 	@DRY_RUN=$(DRY_RUN) ./host/ops.sh $(@:app-%=%) "$$APP" "$$ENV"
 suspend resume:
 	@DRY_RUN=$(DRY_RUN) ./host/ops.sh $@ "$$TARGET"
+# Flux's controllers with the settings in Git (host/flux-install.sh), which reads DRY_RUN from the environment.
+.PHONY: flux-install
+flux-install:
+	@DRY_RUN=$(DRY_RUN) ./host/flux-install.sh
 .PHONY: backup-mongodb backup-sqlite
 backup-mongodb backup-sqlite:
 	@DRY_RUN=$(DRY_RUN) ./host/ops.sh backup $(@:backup-%=%)
@@ -42,7 +46,21 @@ flux-reconcile:
 	flux reconcile source git swhurl-platform -n flux-system --timeout=20m
 	flux reconcile kustomization cluster-sources -n flux-system --timeout=20m
 	flux reconcile kustomization cluster-stack -n flux-system --timeout=20m
-	$(SWHURL) flux-wait
+	@$(V2_BUILD); \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	"$$work/swhurl-v2" flux-wait --kubeconfig "$$work/kubeconfig.json"
+
+# Fetch Git and reconcile one unit (swhurl-v2 unit: the source, then the unit, each through the API server), refusing
+# the two root units make flux-bootstrap applies. The JSON kubeconfig is private and removed with the build directory.
+.PHONY: reconcile
+reconcile:
+	@[[ -n "$${UNIT:-}" ]] || { echo 'Usage: make reconcile UNIT=<name>' >&2; exit 2; }; \
+	if [[ "$(DRY_RUN)" == true ]]; then \
+		printf 'Plan (reconcile %s):\n  would run: swhurl-v2 unit --action reconcile --unit %s\n' "$$UNIT" "$$UNIT"; exit 0; \
+	fi; \
+	$(V2_BUILD); \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	"$$work/swhurl-v2" unit --action reconcile --unit "$$UNIT" --kubeconfig "$$work/kubeconfig.json"
 
 .PHONY: install
 install:

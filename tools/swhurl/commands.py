@@ -113,14 +113,14 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     ('Deploy and verify', (
         Command('flux-reconcile', 'Fetch Git, reconcile the source layer and the stack, wait for every unit at that revision', CLUSTER),
         Command('install', 'flux-reconcile, then verify-platform (SKIP_VERIFY=1 skips the checks)', CLUSTER, dry_run=PLAN),
-        Command('reconcile', 'Fetch Git and reconcile one Flux unit (for example after changing its Secret)', CLUSTER,
-                'swhurl.flux:reconcile_main', takes=(Var('UNIT', '<name>'),), dry_run=PLAN),
+        Command('reconcile', 'Fetch Git and reconcile one Flux unit (for example after changing its Secret; swhurl-v2 unit; needs Go 1.26.0)',
+                CLUSTER, takes=(Var('UNIT', '<name>'),), dry_run=PLAN),
         Command('verify-platform', 'Every live platform check: swhurl-v2 verify, then two host checks (never prints keys; needs Go 1.26.0)', READ),
         Command('notifications-check', 'Preview lifecycle and health notifications without sending or saving (swhurl-v2; needs Go 1.26.0 and jq)', READ),
         Command('notifications-heartbeat', 'Alert if the notification checker is stale (the host timer runs it; swhurl-v2; needs Go 1.26.0)',
                 READ, takes=(MORE,), dry_run=READS),
         Command('flux-install', 'Install or upgrade the Flux controllers at the pinned version with the settings in Git', CLUSTER,
-                'swhurl.flux:install_main', dry_run=READS),
+                dry_run=READS),
         Command('flux-bootstrap', 'Apply the root units and sources (Flux must already be installed)', CLUSTER),
         Command('clickstack-bootstrap', 'Register the ClickStack admin and set the team ingestion key from SOPS (idempotent; swhurl-v2; needs Go 1.26.0)',
                 CLUSTER, dry_run=READS),
@@ -215,8 +215,6 @@ INTERNAL = (
     Command('bot-render', 'CI (Render): render the newest main from its records, check it and push it', run='swhurl.bots:main_render', internal=True),
     Command('bot-deploy-v2', 'CI (Deploy v2): bring every v2-owned staging instance to its newest image, check it and push it',
             run='swhurl.bots:main_deploy_v2', internal=True),
-    Command('flux-wait', 'Wait for every Flux unit to apply the fetched Git revision (flux-reconcile ends with it)',
-            run='swhurl.flux:main', internal=True),
 )
 
 COMMANDS: dict[str, Command] = {command.name: command for commands in (*(found for _, found in SECTIONS), INTERNAL) for command in commands}

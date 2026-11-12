@@ -72,6 +72,16 @@ else:
         result = subprocess.run(['make', 'app-reconcile', 'APP=web'], cwd=ROOT, env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn('Usage: make app-reconcile APP=<app> ENV=<env>', result.stderr)
+
+    def test_reconcile_needs_a_unit_and_its_dry_run_only_plans(self):
+        result = subprocess.run(['make', 'reconcile'], cwd=ROOT, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('Usage: make reconcile UNIT=<name>', result.stderr)
+        result = subprocess.run(['make', 'reconcile', 'UNIT=gw', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, 'Plan (reconcile gw):\n  would run: swhurl-v2 unit --action reconcile --unit gw\n')
+        self.assertFalse(self.calls.exists(), 'A refused or planned reconcile called a cluster tool')
         self.assertFalse(self.calls.exists())
 
     def test_restore_sqlite_refuses_without_exact_confirmation(self):
@@ -393,3 +403,74 @@ class OpsScriptTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FluxInstallScriptTests(unittest.TestCase):
+    """host/flux-install.sh behind make flux-install: it refuses a flux CLI other than flux.json's version before any
+    kubectl call, renders the export with the Git patches, and only a real run applies. The fake flux states
+    ``CLIENT`` as its version; the fake kubectl renders ``RENDERED`` and has ``DIFF_RC`` differences."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.bin = Path(self.tmp.name)
+        self.calls = self.bin / 'calls'
+        self.settings = json.loads((ROOT / 'clusters/home/flux-system/install/flux.json').read_text())
+        (self.bin / 'flux').write_text('#!/usr/bin/env bash\n'
+                                       'printf "%s\\n" "flux $*" >> "$CALLS"\n'
+                                       '[[ $1 == version ]] && echo "flux: $CLIENT"\n'
+                                       '[[ $1 == install ]] && echo "# exported components"\nexit 0\n')
+        (self.bin / 'kubectl').write_text('#!/usr/bin/env bash\n'
+                                          'printf "%s\\n" "kubectl $*" >> "$CALLS"\n'
+                                          'if [[ $1 == kustomize ]]; then ls "$2" >> "$CALLS"; echo "$RENDERED"; fi\n'
+                                          '[[ $1 == diff ]] && exit "${DIFF_RC:-0}"\nexit 0\n')
+        for name in ('flux', 'kubectl'):
+            (self.bin / name).chmod(0o700)
+        args = ' '.join(arg for values in self.settings['args'].values() for arg in values)
+        self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}', CALLS=str(self.calls),
+                        CLIENT=f'v{self.settings["version"]}', RENDERED=f'kind: Deployment\nargs: {args}')
+
+    def install(self, **env):
+        result = subprocess.run(['make', '-s', 'flux-install'], cwd=ROOT, env={**self.env, **env},
+                                capture_output=True, text=True)
+        called = self.calls.read_text().splitlines() if self.calls.exists() else []
+        self.calls.unlink(missing_ok=True)
+        return result, called
+
+    def test_a_different_flux_cli_is_refused_before_kubectl(self):
+        result, called = self.install(CLIENT='v0.0.1')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f'pins {self.settings["version"]}; install flux {self.settings["version"]}', result.stderr)
+        self.assertEqual(called, ['flux version --client'])
+
+    def test_a_render_without_the_patched_arguments_is_refused(self):
+        result, called = self.install(RENDERED='kind: Deployment')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('rendered kustomize-controller lacks --requeue-dependency=5s', result.stderr)
+        self.assertFalse([c for c in called if c.startswith(('kubectl apply', 'kubectl delete', 'kubectl -n'))])
+
+    def test_a_dry_run_diffs_and_applies_nothing(self):
+        result, called = self.install(DRY_RUN='true', DIFF_RC='1')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('would run: kubectl apply --server-side --field-manager=flux --force-conflicts', result.stdout)
+        self.assertNotIn('[OK] no changes', result.stdout)
+        self.assertTrue(any(c.startswith('kubectl diff --server-side --field-manager=flux -f ') for c in called), called)
+        self.assertFalse([c for c in called if c.startswith(('kubectl apply', 'kubectl delete', 'kubectl -n'))], called)
+        result, _ = self.install(DRY_RUN='true', DIFF_RC='2')
+        self.assertNotEqual(result.returncode, 0, 'a diff that could not compare fails the dry run')
+
+    def test_renders_the_export_with_the_git_patches_applies_as_flux_and_deletes_removed_components(self):
+        result, called = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        extra = ','.join(self.settings['extraComponents'])
+        self.assertIn(f'flux install --export --namespace flux-system --components-extra={extra}', called)
+        kustomize = called.index(next(c for c in called if c.startswith('kubectl kustomize ')))
+        self.assertEqual(called[kustomize + 1:kustomize + 4], ['flux.json', 'gotk-components.yaml', 'kustomization.yaml'])
+        self.assertTrue(any(c.startswith('kubectl apply --server-side --field-manager=flux --force-conflicts -f ')
+                            for c in called), called)
+        self.assertEqual(sum(' rollout status deployment/' in c for c in called), 4 + len(self.settings['extraComponents']))
+        for name in self.settings['removedComponents']:
+            label = f'app.kubernetes.io/component={name},app.kubernetes.io/part-of=flux'
+            self.assertIn(f'kubectl -n flux-system delete deployment,serviceaccount -l {label} --ignore-not-found', called)
+            self.assertIn(f'kubectl delete customresourcedefinitions -l {label} --ignore-not-found', called)
+        self.assertIn('[OK] Flux controllers applied and rolled out', result.stdout)

@@ -21,6 +21,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/git"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/helm"
+	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/nats"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
@@ -76,6 +77,8 @@ const usage = `usage:
   swhurl-v2 check-repo [--root DIR] [--rendered PATH | --json]
   swhurl-v2 check-secrets [--root DIR] --age-key-file FILE
   swhurl-v2 platform-certs [--root DIR] --issuer NAME [--dry-run]
+  swhurl-v2 team-scenario (--records DIR --env ENVIRONMENT --profile PROFILE.json --kubeconfig KUBECONFIG.json \
+      [--calls CALLS.json] [--egress EGRESS.json] | --dry-run)
   swhurl-v2 destroy-data --target pvc/NAMESPACE/NAME|pv/NAME --confirm TARGET --kubeconfig KUBECONFIG.json [--dry-run]
   swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--scope cluster] [--source NAME] [--json]
   swhurl-v2 verify --scope platform --kubeconfig KUBECONFIG.json --root DIR [--console-tag TAG]
@@ -364,6 +367,12 @@ Delete, deletes the claim, and waits for the provisioner to delete the volume an
 recreate it; a read that fails refuses too. --dry-run makes every check and no change. A refusal is one [ERROR]
 line and exits 2 with nothing changed; a change that failed exits 1.
 
+team-scenario reads, in ClickHouse, the newest trace of the last 10 minutes in which three apps the records link
+in ENVIRONMENT held a call and an event: the first app by name that another calls and that publishes an event a
+third subscribes to. It checks the publish and its processing in that trace, each app's team on its spans and the
+callee's log line naming the caller. It sends and creates nothing. --dry-run prints the plan and reads nothing. No
+chain is one [ERROR] line and exits 1; a failed check exits 1 after the report.
+
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
 started but did not complete, a render --check that found a difference, a name the catalogue does not list, a
@@ -496,6 +505,7 @@ func commands() map[string]func(cli, request) int {
 		"check-secrets":           cli.checkSecrets,
 		"platform-certs":          cli.platformCerts,
 		"destroy-data":            cli.destroyData,
+		"team-scenario":           cli.teamScenario,
 		"verify":                  cli.verify,
 		"notify-serve":            cli.notifyServe,
 		"notifications-check":     cli.notificationsCheck,
@@ -741,8 +751,8 @@ func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool 
 	return true
 }
 
-// registerClusterFlags is the flags of the commands that act on cluster objects themselves: one Flux unit's action,
-// the wait for every unit, and destroy-data.
+// registerClusterFlags is the flags of the commands that act on or read cluster objects themselves: one Flux unit's
+// action, the wait for every unit, destroy-data and team-scenario.
 func (r *request) registerClusterFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
 	case "unit":
@@ -757,6 +767,14 @@ func (r *request) registerClusterFlags(flags *flag.FlagSet, command string) bool
 		flags.Var(&once{value: &r.confirm}, "confirm", "the target again, exactly")
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "make every check and no change")
+	case "team-scenario":
+		flags.Var(&once{value: &r.records}, "records", "the tree every v2-owned instance keeps its records in")
+		flags.Var(&once{value: &r.env}, "env", "the environment whose instances the chain is chosen from")
+		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
+		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
+		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "print the plan and read nothing")
 	default:
 		return false
 	}
@@ -966,6 +984,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"check-secrets":           func(r *request) []string { return []string{r.root, r.ageKey} },
 	"platform-certs":          func(r *request) []string { return []string{r.root, r.issuer} },
 	"destroy-data":            func(r *request) []string { return []string{r.target, r.kubeconfig} },
+	"team-scenario":           (*request).teamScenarioNamed,
 	"verify":                  (*request).verifyNamed,
 	"notify-serve":            func(r *request) []string { return []string{r.listen} },
 	"notifications-check":     (*request).checkerNamed,
@@ -994,6 +1013,14 @@ func (r *request) statusNamed() []string {
 		return []string{r.records, r.profile, r.revision}
 	}
 	return []string{r.records, r.app, r.env, r.profile, r.revision}
+}
+
+// teamScenarioNamed is the records, environment and cluster a run reads; a dry run reads none of them.
+func (r *request) teamScenarioNamed() []string {
+	if r.dryRun {
+		return []string{}
+	}
+	return []string{r.records, r.env, r.profile, r.kubeconfig}
 }
 
 // checkRepoNamed is the checkout check-repo reads; --rendered prints manifests, so it takes no --json.
@@ -1199,6 +1226,9 @@ type cli struct {
 	// dataClusterOf is the cluster destroy-data reads and changes; nil is the API server the kubeconfig names, and a
 	// test supplies a scripted cluster so a run needs no network.
 	dataClusterOf func() (dataCluster, error)
+	// executorOf is the exec port team-scenario queries ClickHouse through; nil is the API server the kubeconfig
+	// names, and a test supplies a scripted one so a run needs no network.
+	executorOf func() kube.Executor
 }
 
 // environment is one variable of this process's environment.

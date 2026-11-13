@@ -1304,6 +1304,7 @@ orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.
 orchestration: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
 orchestration: func StatusAll(ctx context.Context, inputs StatusInputs, instances []Inputs) (observe.Collection, error)
 orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, options DashboardOptions) (DashboardReport, error)
+orchestration: func TeamScenario(ctx context.Context, inputs TeamScenarioInputs) ([]teamscenario.Line, error)
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Accepted struct {Request notify.Request Caller string Channels []string Failure error}
@@ -1391,6 +1392,7 @@ orchestration: type StackContract struct {Copier string Stacks []Stack Types []A
 orchestration: type StatusInputs struct {Inputs Revision string RecordsRoot string SharedPaths []string Changes *observe.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
+orchestration: type TeamScenarioInputs struct {Instances []Inputs Environment string Executor kube.Executor}
 pages: const ConsoleAppsRoot = "v2-apps/instances"
 pages: const ConsoleAuthFolder = "platform/auth"
 pages: const ConsoleCallsFile = ConsoleRecordsRoot + "/calls.json"
@@ -1680,6 +1682,30 @@ secretcheck: type File struct {Path string Failure Failure Documents []map[strin
 secretcheck: type Level string
 secretcheck: type Line struct {Level Level Value bool Text string}
 secretcheck: type Report struct {Lines []Line Errors, Warnings int}
+teamscenario: const Bad Level = "bad"
+teamscenario: const Info Level = "info"
+teamscenario: const Minutes = 10
+teamscenario: const OK Level = "ok"
+teamscenario: const Passed = "Team scenario passed."
+teamscenario: const Plan = `Check in ClickStack that the team platform's whole chain held for the traffic three running apps already carry: - CALLER calls CALLEE with its platform-issued token, and CALLEE names it as the caller - CALLEE publishes one of its events, and SUBSCRIBER receives it - one trace holds all three apps' spans, each with the team its records name, and the callee's log line names the caller make live-test-team-scenario [ENV=staging] The three apps are chosen from the records' declarations (what swhurl-v2 status --all reports as each instance's inventory): in ENV, the first app (by name) that another app calls and that publishes an event a third app subscribes to, with its first caller and subscriber. Something must drive that call (the demo's demo-shopper does, every 30 seconds): the check reads the newest trace of the last 10 minutes in which CALLEE served CALLER. Sends nothing and creates nothing: it only reads.`
+teamscenario: const Section Level = "section"
+teamscenario: func (*Preflight) Error() string
+teamscenario: func (Chain) LogQuery(traceID string) string
+teamscenario: func (Chain) Logged(traceID, answer string) []Line
+teamscenario: func (Chain) Section(environment string) string
+teamscenario: func (Chain) Served(answer string) (string, []Line)
+teamscenario: func (Chain) SpansQuery(traceID string) string
+teamscenario: func (Chain) Teams(apps map[string]App, answer string) []Line
+teamscenario: func (Chain) TraceQuery() string
+teamscenario: func Choose(environment string, apps map[string]App) (Chain, error)
+teamscenario: func Passes(lines []Line) bool
+teamscenario: func QueryFailed(reason string) Line
+teamscenario: func Text(lines []Line) string
+teamscenario: type App struct {Team string Calls, Publishes, Subscriptions []string}
+teamscenario: type Chain struct {Caller, Callee, Event, Subscriber string}
+teamscenario: type Level string
+teamscenario: type Line struct {Level Level Text string}
+teamscenario: type Preflight struct {Reason string}
 workstreams: const MaxLines = 250
 workstreams: const Registry = "docs/workstreams.md"
 workstreams: func Check(c Checkout) []Result

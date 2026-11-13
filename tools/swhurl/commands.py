@@ -196,9 +196,9 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     ('Live tests', (
         _live_test('lifecycle', 'livetests.lifecycle:main', 'Prove suspend, uninstall, destroy-data and Orphan on a throwaway app'),
         _live_test('app-template', 'livetests.app_template:main', 'Deploy the generated app fixtures through Flux, check, remove'),
-        _live_test('team-scenario', 'livetests.team_scenario:main',
-                   'The newest trace through a call and an event on three running apps the records link, checked in ClickStack (needs Go 1.26.0)',
-                   Var('ENV', 'staging', required=False, env=True), touches=READ),
+        Command('live-test-team-scenario', 'The newest trace through a call and an event on three running apps the records link, '
+                'checked in ClickStack (swhurl-v2 team-scenario; needs Go 1.26.0)', READ,
+                takes=(Var('ENV', 'staging', required=False, env=True),), dry_run=PLAN),
     )),
     ('Host', (
         _timer('host-dns', 'Install or update the Route 53 dynamic DNS timer (records in host/dns.env; needs sudo)'),

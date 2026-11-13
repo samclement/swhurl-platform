@@ -2,6 +2,20 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The team scenario runs Go (13 November 2026)
+
+- **What changed:** `make live-test-team-scenario` is `swhurl-v2 team-scenario` ([§30](iteration-2-plan.md#30-live-test-team-scenario-in-go-approved-13-november-2026)):
+  the pure `teamscenario` package chooses the chain and judges ClickHouse's answers, and `orchestration.TeamScenario`
+  takes each instance's declaration from its records and queries ClickHouse by API-server exec.
+  `tools/swhurl/livetests/team_scenario.py` and its tests are deleted.
+- **Deliberately changed:** the chain comes from the records alone (no temporary build, kubeconfig copy or live
+  `status --all`); names and the trace ID are checked before they enter a query; records that do not compile exit 2.
+- **Checked on the live cluster, read only:** Python from `HEAD` and Go printed the same lines for `ENV=staging`
+  (`demo-shop` → `demo-orders` → `demo-orders.created` → `demo-notifier`, every check `[OK]`, the same trace
+  `ae5a2514…` when run back to back), and the same `[ERROR] no prod instances form a chain` for `ENV=prod`.
+  `make live-test-team-scenario` through the new recipe passed in staging, and `DRY_RUN=true` printed the plan.
+- **Not exercised:** a failed check live (every staging check passed); each is covered offline.
+
 ## `destroy-data` runs Go (13 November 2026)
 
 - **What changed:** `make destroy-data` is `swhurl-v2 destroy-data` ([§29](iteration-2-plan.md#29-destroy-data-in-go-approved-13-november-2026)):

@@ -54,7 +54,7 @@ flowchart LR
   end
 ```
 
-One request through that chain is one trace: `reports` and `orders` each name their caller (`caller.type`, `caller.id`), and `notifier` handles the event inside the same trace. `make live-test-team-scenario` finds such a chain among the running instances from their records (`swhurl-v2 status --all`) and checks the newest trace ClickStack recorded through it. It is a proof of the contract on one node, not of capacity.
+One request through that chain is one trace: `reports` and `orders` each name their caller (`caller.type`, `caller.id`), and `notifier` handles the event inside the same trace. `make live-test-team-scenario` (`swhurl-v2 team-scenario`) finds such a chain among the instances from their records and checks the newest trace ClickStack recorded through it. It is a proof of the contract on one node, not of capacity.
 
 ## Flux units
 

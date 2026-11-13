@@ -91,7 +91,7 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 | --- | --- | --- |
 | `live-test-lifecycle` † | Prove lifecycle commands on a throwaway app | Cluster (throwaway) |
 | `live-test-app-template` † | Deploy the generated fixtures through Flux, check, remove | Cluster (throwaway) |
-| `live-test-team-scenario [ENV=staging]` † | Find three running apps that `swhurl-v2 status --all` says are linked in ENV (an app calling an app that publishes an event a third app subscribes to; the first such callee by name, with its first caller and subscriber) and check in ClickStack the newest trace of the last 10 minutes in which the callee served the caller: the caller named, the event published and processed in it, each app's team as its records state, and the callee's log line naming the caller. Something must drive the call (demo-shopper does); needs Go 1.26.0 | Cluster (read) |
+| `live-test-team-scenario [ENV=staging]` † | `swhurl-v2 team-scenario`: find three apps the records link in ENV (an app calling an app that publishes an event a third app subscribes to; the first such callee by name, with its first caller and subscriber) and check in ClickStack the newest trace of the last 10 minutes in which the callee served the caller: the caller named, the event published and processed in it, each app's team as its records state, and the callee's log line naming the caller. Something must drive the call (demo-shopper does); needs Go 1.26.0 | Cluster (read) |
 
 ## Host
 

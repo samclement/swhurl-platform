@@ -2603,3 +2603,48 @@ tests of the metadata request and its refusals; command tests that a refusal rea
 Read-only parity on the live cluster, `DRY_RUN=true`, Python from `HEAD` and Go: two mounted claims, a missing claim,
 a bound volume, a missing volume, a differing confirmation, a short target and another kind. `make check-v2`, `make
 check`, then `make live-test-lifecycle`, which destroys its own throwaway claim through the new path.
+
+## 30. `live-test-team-scenario` in Go (approved 13 November 2026)
+
+The first of the three kept live tests ([remaining work B.1](v2-status.md#remaining-work)), ported with the same
+behaviour. It only reads, and every primitive it needs already existed: the declaration `status --all` reports as each
+instance's inventory, and `clickhouse-client` by API-server exec, as `verify` runs it.
+
+**Decision.** `make live-test-team-scenario [ENV=staging]` runs `swhurl-v2 team-scenario --env E --records v2-records
+--profile v2/testdata/profile.json --calls v2-records/calls.json --egress platform/egress/allocation.json --kubeconfig
+K`, with the kubeconfig exported as `restore-sqlite` does; `DRY_RUN=true` runs `--dry-run`, which prints the plan and
+reads nothing. `tools/swhurl/livetests/team_scenario.py` and its tests are deleted; the catalogue keeps the target
+without a `run` function, and `livetests/__init__.py` stays for the other two.
+
+**Semantics (retained).** The chain is the first app by name that another app calls and that publishes an event a
+third subscribes to, with its first caller and subscriber by name. The window is 10 minutes, a complete trace is
+preferred and then the newest, and the three queries against `otel_traces` and `otel_logs` are Python's, byte for
+byte. The checks are the publish and its processing in that trace, each app's team on its spans, and the callee's
+log line naming the caller; the lines, the HyperDX hint and the exit statuses are Python's (no chain is `[ERROR] …`
+and exit 1; a failed check is exit 1 after the report).
+
+| Layer | Owns | Does not own |
+| --- | --- | --- |
+| 0 `teamscenario` (new, pure) | Choosing the chain, the query text, the verdicts on the TSV answers, the lines and the plan | Records, the cluster |
+| 1 adapters | The existing `kube.Executor` (`clickstack-clickhouse-clickhouse-0-0-0`, `clickhouse-server`) and file reads | Deciding anything |
+| 2 `orchestration.TeamScenario` | Each instance's declaration from its records (no read of the cluster), the chain, the queries in order, stopping at one ClickHouse does not answer | Printing, exit codes |
+| 3 command | Flags, the lines, the exit status | The decisions |
+
+**Deliberate changes.**
+
+- The chain comes from the records' declarations alone. Python built the Go binary into a temporary directory,
+  copied the kubeconfig out with `kubectl config view --raw` and ran a whole live `status --all`, only for the
+  inventories; the inventory is the same declaration, so nothing of the cluster is read before the first query.
+- ClickHouse is reached by exec through the API server, not `kubectl exec`; a query it does not answer is `[BAD]
+  ClickHouse query failed: …` naming v2's reason or the client's exit status, rather than a command line.
+- App and event names are checked against the name shape before they enter a query, and the trace ID ClickHouse
+  answers must be hex before it enters the next; Python interpolated both unchecked.
+- Records that do not compile are v2's validation error and exit 2, where Python's `status --all` failure was a
+  preflight `[ERROR]` and exit 1.
+
+**Verification.** Pure tests of the chain (name order, ties, another app's event, an event not published, names a
+query cannot hold), the queries against Python's strings, and each verdict; orchestration tests over the kubetest
+`Executor` (the three requests in order, each failed query stops the run, no query without a chain or with bad
+records); command tests (the dry run reads nothing, the exit status follows the verdicts, missing flags are a usage
+error). Live and read-only, Python from `HEAD` and Go: the same lines for `ENV=staging` (the same trace ID when run
+together) and the same `[ERROR]` for `ENV=prod`, which has no chain. `make check-v2`, `make check`.

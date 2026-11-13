@@ -16,6 +16,12 @@ What has been verified on the live cluster, and when: current facts first, then 
   (`observability/data-volume-clickstack-mongodb-0`, `demo-shop-staging/demo-shop`), a missing claim, a bound volume,
   a missing volume, a differing `CONFIRM`, a short target and another kind. The only differences were make's own line
   number and the usage line's indent. Nothing was changed.
+- **CI and live:** Validate and Render passed for `977e8b85`, and Validate deployed console image
+  `src-d72f8f73e99ea961` (`ef1db518`). `make live-test-lifecycle` passed through the new path: `make destroy-data`
+  without `CONFIRM` exited 2 and left the claim, then deleted `lifecycle-test/data` and its volume
+  `pvc-1e0c90df…`; the local-path provisioner logged the host directory deleted at 11:38:30 UTC, and no namespace,
+  unit or volume of the test remains. After `make flux-reconcile`, `make verify-platform` passed with the console on
+  the new image.
 - **Not exercised:** the Helm and Flux refusals live (every claim on the cluster is mounted, so the pod check refuses
   first); they are covered offline.
 

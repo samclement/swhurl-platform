@@ -2,6 +2,35 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The app-template test runs Go over instances v2 renders (13 November 2026)
+
+- **Capability:** `make live-test-app-template` is `swhurl-v2 app-template-test`. It deploys the two prod
+  instances v2 renders from `tests/fixtures/app-template/records` (team `smoke`: `smoke-worker`, private, on
+  demo-notifier's image; `smoke-web`, signed-in, SQLite on 64 MiB, on demo-shop's image) through their own rendered
+  units, checks them and removes them
+  ([§33](iteration-2-plan.md#33-live-test-app-template-in-go-over-instances-v2-renders-approved-13-november-2026)).
+  The render is committed; `make v2-render` writes it and `make check-v2` fails while it is stale. A new read-only
+  adapter, `adapters/route`, makes the one HTTPS request for the sign-in redirect. `tools/swhurl/livetests/`,
+  `tests/fixtures/apps` and its `.sops.yaml` rule are deleted, and `v2/incident` no longer accepts the old fixture
+  root.
+- **Dropped:** the two Secret checks (a declared secret without a value; SOPS decrypted and injected): v2 refuses
+  `secrets`, and they return with that [deferred feature](v2-status.md#deferred-features).
+- **Offline evidence:** pure, orchestration (a passing run, each leftover refused, a failed install cleaned up, the
+  namespace and volume guards, a cancelled run), route-adapter (an `httptest` TLS server) and command tests;
+  `go test ./...`, `make check-v2` (the fixture render: 27 files, none differing) and `make check` passed on
+  `ae244962`; `DRY_RUN=true make live-test-app-template` printed the plan and read nothing.
+- **Live proof:** on `ae244962` after `make flux-reconcile`, every line was `[OK]`: both units Ready, the worker
+  without Service or Ingress, the web pod non-root without a service-account token,
+  `https://smoke-web.homelab.swhurl.com` answering 302 to Google sign-in, the claim Bound on `local-path-retain`,
+  `/data/app.db` non-empty, the image pinned by digest, `DATABASE_PATH=/data/app.db`, one replica with `Recreate`,
+  and the pod Ready on its `/healthz` probes. This also shows both template images run without the events, NATS and
+  telemetry settings. `App template test passed.`, then `[INFO] Cleaned up app-template test instances`.
+- **Cleanup:** independent reads found neither namespace, neither unit and no volume claimed from a `smoke`
+  namespace.
+- **Delivery and health:** Validate run `43498815262` passed for `ae244962`, and bot commit `1f83d180` deployed
+  console image `src-733e608e0214ac52`; after reconciling it, `make verify-platform` passed with no warning.
+- **Not exercised:** the backup CronJob `smoke-web` brings with it (the test does not span its schedule).
+
 ## Host suspend and resume use Go (13 November 2026)
 
 - **Capability:** `make suspend` and `make resume` retain TARGET's Kustomization and HelmRelease forms but call

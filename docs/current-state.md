@@ -53,10 +53,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   notify `/healthz` both return 200 and the console root without an identity returns 401; the forwards
   were stopped afterwards. No identity header was forged and no form was submitted.
   GHCR's linux/amd64 compressed layers total 71,107,077 bytes, down from 71,922,329 (815,252 bytes, 1.1%).
-- **Still pending:** the installed probe timer/service must be removed in the operator's terminal;
-  no sudo or host-unit change was performed during delivery. Genuine signed-in browsing and end-to-end
-  New app creation on this image remain unexercised; no public app repository, instance, data or
-  credential was created, changed or removed by these checks.
+- **Host retirement verified (13 November 2026):** after the operator reported removal, both unit
+  files were absent from `/etc/systemd/system`, both units had `LoadState=not-found` and empty
+  `FragmentPath`, and `systemctl list-timers --all` listed no probe. The timer was `inactive/dead`;
+  the service retained its historical `failed/failed` state, not a running or installed service.
+  No agent sudo or host-unit change was performed. The probe retirement and approved cleanup are complete.
+- **Still unexercised:** genuine signed-in browsing and end-to-end New app creation on this image;
+  no public app repository, instance, data or credential was created, changed or removed by these checks.
 
 ## The last of `tools/` leaves (13 November 2026)
 

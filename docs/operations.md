@@ -265,10 +265,12 @@ Removal leaves the incident file and log in place. To test delivery without touc
 The host connectivity probe, its templates and `host-probe` make targets are retired without a replacement.
 This checkout no longer records its once-a-minute internet diagnostics. Deleting files in Git does **not**
 stop an already installed systemd timer; until it is removed, it will try to run the missing script.
-Live removal is pending, not performed by this cleanup. Existing logs are kept.
+The operator removed the installed units on 13 November 2026; both units are not found and no probe
+is scheduled ([evidence](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026)).
+Existing logs are kept.
 
-**Run in your own terminal** on the host (needs `sudo`), after checking `systemctl cat` shows the managed
-connectivity-probe units from this checkout, not unrelated units:
+For another host with the old units still installed, **run in your own terminal** (needs `sudo`),
+after checking `systemctl cat` shows the managed connectivity-probe units, not unrelated units:
 
 ```bash
 systemctl cat connectivity-probe.timer connectivity-probe.service

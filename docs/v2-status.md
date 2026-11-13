@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: blocked
-Gate: operator removes the installed probe units
+Status: in progress
+Gate: choose the next slice from remaining work or deferred features
 Uncommitted: none
 
 **The goal is one Go platform implementation.** v2 becomes the platform's only implementation —
@@ -50,7 +50,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Host suspend and resume through Go for units and HelmReleases | done | [contract](iteration-2-plan.md#32-make-suspend-and-make-resume-use-go-approved-13-november-2026), [record](current-state.md#host-suspend-and-resume-use-go-13-november-2026) |
 | The command catalogue without Python: each target one `##` line in the Makefile, `make help` an `awk` over them, `commands.py` and its dispatch deleted | done | [contract](iteration-2-plan.md#34-the-command-catalogue-leaves-python-make-help-over-the-makefiles-own-lines-approved-13-november-2026), [record](current-state.md#the-command-catalogue-leaves-python-13-november-2026) |
 | The last of `tools/swhurl` (`charts.py`, `run.py`, `platform.py`, `yamlio.py`) and Validate's classifier (`.github/records-only.sh`, the dead app-only path dropped) | done | [contract](iteration-2-plan.md#35-the-last-of-tools-the-clickstack-render-test-pulls-its-own-chart-and-validates-classifier-is-bash-approved-13-november-2026), [record](current-state.md#the-last-of-tools-leaves-13-november-2026) |
-| Top-level Python regression suite and host probe dropped; Copier-only runtime dependencies | partial | [delivered console image; installed probe units pending](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026) |
+| Top-level Python regression suite and host probe dropped; Copier-only runtime dependencies | done | [delivered console image and host removal verified](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026) |
 | Live log coverage as a saved SQL diagnostic, Python command retired | done | [record](current-state.md#log-coverage-is-a-saved-query-11-november-2026) |
 | Template check without Python but Copier | done | [record](current-state.md#the-template-check-leaves-python-5-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
@@ -95,7 +95,7 @@ stays for Go, collector and live checks; Go, backup and codegraph tests stay int
 | Copier in the console image and template checks | Kept upstream Python tool | Pinned alone in `pyproject.toml`/`uv.lock`; Jinja2 and PyYAML remain transitive dependencies, not platform runtime libraries. No Starlette, uvicorn, httpx, check or backup group remains |
 | Codegraph and its own tests (`devtools/codegraph/`) | Kept read-only, standard-library development aid | Separate from the platform and console image; `check-codegraph` and Ruff remain in `make check` and CI |
 | Go chart tests' YAML reader (`python3` importing `yaml`) | Kept upstream test-only dependency | Validate and Deploy v2 explicitly install `PyYAML==6.0.3` with Python 3.12, outside the Copier-only runtime groups |
-| Host connectivity probe | Dropped, no replacement | Source, systemd templates, make targets and installer support removed; installed units still need [manual removal](operations.md#connectivity-probe) |
+| Host connectivity probe | Dropped, no replacement | Source, systemd templates, make targets and installer support removed; installed units removed and no timer scheduled ([record](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026)) |
 
 ## Remaining work
 
@@ -134,8 +134,8 @@ shrunk, retired or ported (the rule is under [durable decisions](#durable-decisi
    probe and its installation support are dropped, not ported. Copier is the only runtime Python
    dependency group; Go chart tests retain explicitly pinned test-only PyYAML. CI passed and the
    deployed console/notify image contains Copier and none of the retired packages; all 11 instances
-   are healthy. Next: the operator removes the installed probe units. Genuine signed-in New app
-   creation on this image remains unexercised ([record](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026)).
+   are healthy. The operator removed the installed probe units; both are not found and no timer is
+   scheduled. Cleanup is complete. Genuine signed-in New app creation on this image remains unexercised ([record](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026)).
 
 Copier in the console image stays Python: it renders a new app's repository
 ([§23](iteration-2-plan.md#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)).

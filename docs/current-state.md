@@ -2,6 +2,25 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## `platform-certs` runs Go (13 November 2026)
+
+- **What changed:** `make platform-certs-staging` and `make platform-certs-prod` are `swhurl-v2 platform-certs`
+  ([§28](iteration-2-plan.md#28-platform-certs-in-go-approved-13-november-2026)): the pure `certissuer` package
+  decides the one-line edit, `orchestration.SetCertIssuer` parses through `adapters/manifests` and writes atomically
+  through `adapters/files`. `tools/swhurl/settings.py`, `tests/test_settings.py` and `platform.ISSUERS` are deleted;
+  the catalogue keeps both targets without a function.
+- **Deliberately changed:** settings or issuer files that are not YAML, and an edit that would leave the settings
+  not YAML, are one `[ERROR]` line instead of a traceback.
+- **Checked offline:** in scratch copies of the real settings and issuers, Python from `HEAD` and Go agreed on
+  stdout, stderr, exit status and the resulting files in 62 of 64 runs: eight settings variants (the real file, a
+  trailing comment, the key missing, a second line, a Secret, a nested `CERT_ISSUER`, an anchor, no file) by four
+  issuers (`letsencrypt-staging`, `letsencrypt-prod`, `selfsigned`, `letsencrypt-prd`) by dry run or not. The two
+  others are the anchor's update and dry run, where Python crashed and Go refused with exit 1 as designed. On the
+  real tree `make platform-certs-prod DRY_RUN=true` printed `already set` and `make platform-certs-staging
+  DRY_RUN=true` printed `would update`, and the file was unchanged.
+- **Live:** nothing; the command edits only the checkout.
+- **Not exercised:** a real switch of the issuer, which needs a commit, a reconcile and new certificates.
+
 ## `check-secrets` runs Go (13 November 2026)
 
 - **What changed:** `make check-secrets` is `swhurl-v2 check-secrets` ([§27](iteration-2-plan.md#27-check-secrets-in-go-approved-13-november-2026)):

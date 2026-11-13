@@ -151,10 +151,10 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 CLUSTER, takes=(Var('PORT', '8080', required=False, flag='--port', default='8080'),)),
     )),
     ('Settings', (
-        Command('platform-certs-staging', 'Set CERT_ISSUER in platform-settings to letsencrypt-staging', GIT,
-                'swhurl.settings:platform_certs', ('letsencrypt-staging',), dry_run=PLAN),
-        Command('platform-certs-prod', 'Set CERT_ISSUER in platform-settings to letsencrypt-prod', GIT,
-                'swhurl.settings:platform_certs', ('letsencrypt-prod',), dry_run=PLAN),
+        Command('platform-certs-staging', 'Set CERT_ISSUER in platform-settings to letsencrypt-staging (swhurl-v2 platform-certs; '
+                'needs Go 1.26.0)', GIT, dry_run=PLAN),
+        Command('platform-certs-prod', 'Set CERT_ISSUER in platform-settings to letsencrypt-prod (swhurl-v2 platform-certs; '
+                'needs Go 1.26.0)', GIT, dry_run=PLAN),
     )),
     ('Lifecycle, backup and recovery', (
         Command('suspend', 'flux suspend a unit or release; workloads and data untouched', CLUSTER,

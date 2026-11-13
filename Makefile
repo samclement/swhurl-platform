@@ -11,7 +11,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help \
-	platform-certs-staging platform-certs-prod destroy-data \
+	destroy-data \
 	live-test-lifecycle live-test-app-template live-test-team-scenario
 
 .PHONY: $(COMMANDS)
@@ -95,6 +95,12 @@ V2_BUILD = set -Eeuo pipefail; work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 
 .PHONY: v2-deps
 v2-deps:
 	cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org go mod download go.yaml.in/yaml/v3
+
+# CERT_ISSUER in platform-settings, the one line changed and comments kept (swhurl-v2 platform-certs): only a
+# letsencrypt-* ClusterIssuer in infra/issuers. It edits the file only: commit and push it. Needs Go 1.26.0.
+.PHONY: platform-certs-staging platform-certs-prod
+platform-certs-staging platform-certs-prod:
+	@$(V2_BUILD); "$$work/swhurl-v2" platform-certs --root . --issuer "letsencrypt-$(@:platform-certs-%=%)" $(if $(filter true,$(DRY_RUN)),--dry-run)
 
 # Every tracked SOPS Secret decrypted in memory (swhurl-v2 check-secrets): placeholders, empty values, probable double
 # encoding and the copies kept equal, compared by hashes; no value is printed. The age key is SOPS_AGE_KEY_FILE, else

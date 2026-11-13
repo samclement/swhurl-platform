@@ -2509,3 +2509,46 @@ an empty one, so a file of nothing else has no document.
   changes. Nothing in the scratch copy is committed or pushed.
 - `make check-v2`, `make check`, then `make check-secrets` on the real tree. No live effect: the check never reaches
   the cluster.
+
+## 28. `platform-certs` in Go (approved 13 November 2026)
+
+The second kept check ([remaining work B.1](v2-status.md#remaining-work)), ported with the same behaviour. It only
+edits one Git-tracked file, which the operator commits and pushes.
+
+**Decision.** `make platform-certs-staging` and `make platform-certs-prod` run `swhurl-v2 platform-certs --root .
+--issuer letsencrypt-<staging|prod>`, adding `--dry-run` when `DRY_RUN=true`. `settings.py` and
+`tests/test_settings.py` are deleted, and so is `platform.ISSUERS`, which only they read. The catalogue keeps both
+targets without a `run` function.
+
+**Semantics.** The command sets `CERT_ISSUER` in
+`clusters/home/flux-system/sources/configmap-platform-settings.yaml` to `--issuer`. The issuer must be a
+`ClusterIssuer` named `letsencrypt-*` in a `*.yaml` file under `infra/issuers/`; a self-signed one is in Git but is
+refused. The file must be one ConfigMap with a `data` mapping and exactly one indented `CERT_ISSUER:` line. That
+line becomes `<indent>CERT_ISSUER: <issuer>`, dropping any trailing comment on it, and the edit is written only when
+the data decoded again equals the data before with that one value changed. An issuer already set writes nothing,
+and so does a dry run, which still makes and confirms the edit. The write is atomic, with a temporary file renamed
+over the old one.
+
+**Contract.** Python's lines and exit statuses: `[INFO] CERT_ISSUER updated to|would update to <issuer> in <path>` or
+`already set to <issuer>`, then `[INFO] Local Git edits only. Commit + push, then run: make flux-reconcile`, exit 0;
+a refusal is one `[ERROR] <reason>` line on stderr and exit 1, with the reasons in Python's words. A missing flag
+exits 2 with v2's usage, where Python printed its own usage line.
+
+| Layer | Owns | Does not own |
+| --- | --- | --- |
+| 0 `certissuer` (new, pure) | Which issuers may be named, the data of one ConfigMap, the one-line edit, the confirmation that only the value changed, and the messages | Reading or writing files, parsing YAML |
+| 1 `adapters/manifests` (existing YAML), `adapters/files` (existing `Snapshot` and atomic `Write`) | The parse; the issuer folder's read and the settings file's write | Deciding anything |
+| 2 `orchestration.SetCertIssuer` | The order of the checks (issuer, then file, then data, then edit), the second parse, and the write unless already set or a dry run | Printing, exit codes |
+| 3 command | `--root`, `--issuer`, `--dry-run`, reading the two inputs, the lines and the exit status | The decisions |
+
+**Deliberate changes.** Two places where Python crashes with a traceback: settings text that is not YAML, or whose
+edit makes it not YAML (a YAML anchor on the `CERT_ISSUER` line that another value refers to), is one `[ERROR]` line,
+and an issuer file that is not YAML is `[ERROR] infra/issuers/<file>: not YAML`. The line match uses spaces and tabs
+where Python's `\s+` also crossed blank lines; the edited bytes are the same.
+
+**Verification.** Pure tests of each decision; orchestration tests of each Python test case (only the one line
+changes, already set and dry run write nothing, the five refusals, the nested `CERT_ISSUER` trap) plus the anchor and
+a broken issuer file; command tests on a copy of this repository's own issuers and settings. Parity offline, scratch
+only: Python from `HEAD` and Go over eight settings variants, four issuers and both dry-run modes, comparing stdout,
+stderr, exit status and the resulting files. `make check-v2`, `make check`, `make test`, then `make
+platform-certs-prod DRY_RUN=true` on the real tree. No live effect.

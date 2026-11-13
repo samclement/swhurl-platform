@@ -50,7 +50,7 @@ Creation, the GitHub side, the shared team registry and the read-only operations
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `platform-certs-staging`, `platform-certs-prod` † | Set `CERT_ISSUER` in `platform-settings`: only issuers defined in Git, one line changed, comments kept | Git |
+| `platform-certs-staging`, `platform-certs-prod` † | Set `CERT_ISSUER` in `platform-settings` (`swhurl-v2 platform-certs`; needs Go 1.26.0): only `letsencrypt-*` issuers defined in Git, one line changed, comments kept | Git |
 
 ## Lifecycle, backup and recovery
 

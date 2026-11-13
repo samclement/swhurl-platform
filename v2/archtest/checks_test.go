@@ -101,6 +101,7 @@ func f(count int) int {
 		"kernel/b.go":        "package kernel\n\nfunc g() { count = 2 }\n",
 		"producer/a.go":      "package producer\n",
 		"calls/calls.go":     "package calls\n",
+		"certissuer/a.go":    "package certissuer\n",
 		"checkrepo/a.go":     "package checkrepo\n",
 		"dashboards/a.go":    "package dashboards\n",
 		"events/events.go":   "package events\n",

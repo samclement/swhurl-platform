@@ -19,7 +19,6 @@ SOURCES = CLUSTER / 'flux-system/sources'
 SETTINGS = SOURCES / 'configmap-platform-settings.yaml'
 HELM_REPOSITORIES = SOURCES / 'helmrepositories.yaml'
 GIT_REPOSITORIES = SOURCES / 'gitrepositories.yaml'
-ISSUERS = Path('infra/issuers')
 # v2's platform profile.
 PROFILE = Path('v2/testdata/profile.json')
 AGE_KEY = Path('age.agekey')

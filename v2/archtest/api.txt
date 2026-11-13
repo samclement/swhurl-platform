@@ -453,6 +453,23 @@ calls: type Pair struct {Caller, Callee, Environment string CalleePort int32}
 calls: type Refusal struct {Application, Environment, Callee, Reason string}
 calls: type Resolution struct {Pairs []Pair Waiting []Wait Refused []Refusal}
 calls: type Wait struct {Caller, Callee, Environment, Reason string}
+certissuer: const AlreadySet Outcome = iota
+certissuer: const IssuersDir = "infra/issuers"
+certissuer: const Key = "CERT_ISSUER"
+certissuer: const Path = "clusters/home/flux-system/sources/configmap-platform-settings.yaml"
+certissuer: const Reminder = "[INFO] Local Git edits only. Commit + push, then run: make flux-reconcile"
+certissuer: const Updated
+certissuer: const WouldUpdate
+certissuer: func (*Refusal) Error() string
+certissuer: func Allowed(issuers []string, issuer string) error
+certissuer: func Confirm(before, after map[string]any, issuer string) error
+certissuer: func Current(data map[string]any) (string, error)
+certissuer: func Data(documents []map[string]any) (map[string]any, error)
+certissuer: func Issuers(documents []map[string]any) []string
+certissuer: func Messages(outcome Outcome, issuer string) []string
+certissuer: func SetLine(text []byte, issuer string) ([]byte, error)
+certissuer: type Outcome int
+certissuer: type Refusal struct {Reason string}
 checkrepo: const Catalogue = "v2/contract/names.json"
 checkrepo: func (*Finding) Error() string
 checkrepo: func Check(r Repository, names Names) Report
@@ -1247,6 +1264,7 @@ orchestration: func Records(files map[string][]byte) (ConsoleRecords, error)
 orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
 orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
+orchestration: func SetCertIssuer(inputs CertIssuerInputs, issuer string, dryRun bool, root string, decoder manifests.Decoder, writer files.Writer) (certissuer.Outcome, error)
 orchestration: func SetFlag(ctx context.Context, store nats.KV, environment, application, name, text string, flags []producer.Flag) error
 orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
 orchestration: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
@@ -1265,6 +1283,7 @@ orchestration: type BootstrapLine struct {Level BootstrapLevel Text string}
 orchestration: type BootstrapOptions struct {DryRun bool Wait, Interval time.Duration}
 orchestration: type BootstrapPorts struct {Data kube.Data Installer clickstack.Installer}
 orchestration: type BootstrapReport struct {Lines []BootstrapLine}
+orchestration: type CertIssuerInputs struct {Issuers []files.TreeFile Settings []byte}
 orchestration: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(ctx context.Context, commit string, units []string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Cached func(commit string, units []string) bool Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
 orchestration: type CheckOptions struct {Now float64 Base, PlatformAddress, NotifyAddress, Token string DryRun bool}
 orchestration: type CheckReport struct {State *incident.State Offered []CheckerDelivery}

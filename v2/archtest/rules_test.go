@@ -66,6 +66,7 @@ var Rules = []Rule{
 // (one per external dependency, speaking domain terms), 2 commands that wire adapters to the model.
 var Layers = map[string]int{
 	"calls":                              0,
+	"certissuer":                         0,
 	"checkrepo":                          0,
 	"secretcheck":                        0,
 	"dashboards":                         0,
@@ -125,7 +126,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"incident", "calls", "checkrepo", "dashboards", "events", "heartbeat", "kernel", "notify", "observe", "pages", "policy", "producer", "secretcheck", "workstreams"}
+var Pure = []string{"incident", "calls", "certissuer", "checkrepo", "dashboards", "events", "heartbeat", "kernel", "notify", "observe", "pages", "policy", "producer", "secretcheck", "workstreams"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,

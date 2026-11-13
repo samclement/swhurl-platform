@@ -75,6 +75,7 @@ const usage = `usage:
   swhurl-v2 workstreams --repo-root DIR
   swhurl-v2 check-repo [--root DIR] [--rendered PATH | --json]
   swhurl-v2 check-secrets [--root DIR] --age-key-file FILE
+  swhurl-v2 platform-certs [--root DIR] --issuer NAME [--dry-run]
   swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--scope cluster] [--source NAME] [--json]
   swhurl-v2 verify --scope platform --kubeconfig KUBECONFIG.json --root DIR [--console-tag TAG]
       [--heartbeat FILE] [--source NAME] [--json]
@@ -350,6 +351,12 @@ value that is probably base64-encoded twice. It then compares, by SHA-256, the c
 ClickStack ingestion key, the image webhook token, the GitHub dispatch token and the ntfy platform destination. No
 value or fingerprint is printed. An error exits 1; a missing key file or a checkout that cannot be read exits 2.
 
+platform-certs sets CERT_ISSUER in the checkout's platform-settings ConfigMap (clusters/home/flux-system/sources) to
+--issuer, which must be a letsencrypt-* ClusterIssuer under infra/issuers. Only that one line changes: the edit is
+refused unless the file has exactly one indented CERT_ISSUER: line and its data, decoded again, differs only in that
+value. An issuer already set and --dry-run write nothing. It only edits the file: commit and push it. A refusal is
+one [ERROR] line and exits 1, as make platform-certs-* always has.
+
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
 started but did not complete, a render --check that found a difference, a name the catalogue does not list, a
@@ -480,6 +487,7 @@ func commands() map[string]func(cli, request) int {
 		"workstreams":             cli.workstreams,
 		"check-repo":              cli.checkRepo,
 		"check-secrets":           cli.checkSecrets,
+		"platform-certs":          cli.platformCerts,
 		"verify":                  cli.verify,
 		"notify-serve":            cli.notifyServe,
 		"notifications-check":     cli.notificationsCheck,
@@ -524,7 +532,7 @@ type request struct {
 	stateFlag, maxAgeFlag                       *once
 	rotate, check, json, inCluster, all, dryRun bool
 	cluster, dev                                bool
-	confirm, ageKey, cleared                    string
+	confirm, ageKey, cleared, issuer            string
 	urlTTL                                      time.Duration
 	urlTTLSet                                   bool
 	outFlag                                     *once
@@ -640,8 +648,8 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 	r.registerBridgeFlags(flags, command)
 }
 
-// registerCheckFlags adds the flags of the two checks that read the checkout at --root, and reports whether it
-// handled the command.
+// registerCheckFlags adds the flags of the commands that read the checkout at --root, and reports whether it handled
+// the command.
 func (r *request) registerCheckFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
 	case "check-repo":
@@ -653,6 +661,11 @@ func (r *request) registerCheckFlags(flags *flag.FlagSet, command string) bool {
 		r.root = "."
 		flags.Var(&once{value: &r.root}, "root", "the top of the checkout whose Secrets are checked (default: the working directory)")
 		flags.Var(&once{value: &r.ageKey}, "age-key-file", "the age identity sops decrypts with")
+	case "platform-certs":
+		r.root = "."
+		flags.Var(&once{value: &r.root}, "root", "the top of the checkout whose settings are edited (default: the working directory)")
+		flags.Var(&once{value: &r.issuer}, "issuer", "the letsencrypt-* ClusterIssuer CERT_ISSUER names")
+		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "decide and confirm the edit; write nothing")
 	default:
 		return false
 	}
@@ -937,6 +950,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"workstreams":             func(r *request) []string { return []string{r.repoRoot} },
 	"check-repo":              (*request).checkRepoNamed,
 	"check-secrets":           func(r *request) []string { return []string{r.root, r.ageKey} },
+	"platform-certs":          func(r *request) []string { return []string{r.root, r.issuer} },
 	"verify":                  (*request).verifyNamed,
 	"notify-serve":            func(r *request) []string { return []string{r.listen} },
 	"notifications-check":     (*request).checkerNamed,

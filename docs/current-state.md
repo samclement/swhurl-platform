@@ -18,8 +18,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   `data` value in the second document of a file and an empty value (exit 1), differing ingestion-key copies (1), a
   missing webhook-token copy (1), ntfy copies differing only in their query (0) and in their topic (1), and a file
   encrypted to another recipient (1). No dummy value appeared in any output. The adapter's contract test decrypted
-  what it encrypted with a throwaway `age-keygen` identity and refused a wrong one; `make check-v2`, `make check`
-  and `make test` passed.
+  what it encrypted with a throwaway identity the test makes itself and refused a wrong one; `make check-v2`,
+  `make check` and `make test` passed.
+- **Delivery:** the first push, `8350c078`, failed Validate's v2 job: the contract test then ran `age-keygen`, which
+  the runner lacks. The test now makes its identities with `crypto/ecdh`, so CI needs no new tool.
 - **Live:** nothing; the check reads only the checkout and the local key.
 - **Not exercised:** a real Secret that is not base64 or not a map (none exists; the pure tests cover both).
 

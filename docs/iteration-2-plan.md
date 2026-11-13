@@ -2498,8 +2498,9 @@ an empty one, so a file of nothing else has no document.
 
 - **Pure tests:** the six Python tests (destinations, double encoding, shared tokens, the ingestion key, the backup
   writer's two-document file, every document read), plus the three deliberate changes.
-- **Adapter contract test** with a throwaway key from `age-keygen` in `t.TempDir()`. It is skipped without `sops` or
-  `age-keygen`, as the encrypt test is, and `REQUIRE_SOPS=1` requires it. Plus missing-binary, exit and oversize cases.
+- **Adapter contract test** with throwaway X25519 identities the test makes in `t.TempDir()` (standard library, so CI
+  needs no `age-keygen`). It is skipped without `sops`, as the encrypt test is, and `REQUIRE_SOPS=1` requires it. Plus
+  missing-binary, exit and empty-answer cases.
 - **Command tests:** the lines, the exit statuses 0, 1 and 2, and no value on either stream.
 - **Parity, offline, scratch only:** in a scratch copy, run Python's and Go's checks and `diff` their outputs. Do
   this on today's tree, and on mutants encrypted to the platform's public recipient: `REPLACE_ME`, an empty value, a

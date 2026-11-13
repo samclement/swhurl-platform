@@ -2,6 +2,8 @@ package sops_test
 
 import (
 	"bytes"
+	"crypto/ecdh"
+	"crypto/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,24 +90,19 @@ func refused(t *testing.T, err error, reason string) bool {
 	return ok && refusal.Reason == reason
 }
 
-// The real adapter decrypts what it encrypted, with a throwaway identity made for the test: the platform's own key
+// The real adapter decrypts what it encrypted, with throwaway identities made for the test: the platform's own key
 // is never read by a test.
 func TestDecryptContract(t *testing.T) {
-	for _, tool := range []string{"sops", "age-keygen"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			if os.Getenv("REQUIRE_SOPS") == "1" {
-				t.Fatalf("%s is required here: %v", tool, err)
-			}
-			t.Skipf("%s is not installed (REQUIRE_SOPS=1 requires it)", tool)
+	if _, err := exec.LookPath("sops"); err != nil {
+		if os.Getenv("REQUIRE_SOPS") == "1" {
+			t.Fatalf("sops is required here: %v", err)
 		}
+		t.Skip("sops is not installed (REQUIRE_SOPS=1 requires it)")
 	}
 	dir := t.TempDir()
-	key, wrong := identity(t, dir, "key"), identity(t, dir, "wrong")
-	public, err := exec.Command("age-keygen", "-y", key).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	encrypted, err := sops.New().Encrypt(plaintext(t), strings.TrimSpace(string(public)))
+	key, public := identity(t, dir, "key")
+	wrong, _ := identity(t, dir, "wrong")
+	encrypted, err := sops.New().Encrypt(plaintext(t), public)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,14 +113,65 @@ func TestDecryptContract(t *testing.T) {
 	sopstest.DecryptContract(t, sops.New(), path, key, wrong, "never-a-real-seed")
 }
 
-// identity writes a new age identity under dir and returns its path.
-func identity(t *testing.T, dir, name string) string {
+// identity writes a new age X25519 identity under dir, as age-keygen would, and returns its path and recipient.
+func identity(t *testing.T, dir, name string) (string, string) {
 	t.Helper()
-	path := filepath.Join(dir, name)
-	if out, err := exec.Command("age-keygen", "-o", path).CombinedOutput(); err != nil {
-		t.Fatalf("age-keygen: %v: %s", err, out)
+	private, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return path
+	path := filepath.Join(dir, name)
+	secret := strings.ToUpper(bech32(t, "age-secret-key-", private.Bytes()))
+	if err := os.WriteFile(path, []byte(secret+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path, bech32(t, "age", private.PublicKey().Bytes())
+}
+
+// bech32 is BIP 173's encoding of data under hrp, which age writes its keys in.
+func bech32(t *testing.T, hrp string, data []byte) string {
+	t.Helper()
+	const charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+	var groups []byte // 8-bit bytes regrouped into 5-bit values
+	accumulator, bits := 0, 0
+	for _, b := range data {
+		accumulator, bits = accumulator<<8|int(b), bits+8
+		for bits >= 5 {
+			bits -= 5
+			groups = append(groups, byte(accumulator>>bits&31))
+		}
+	}
+	if bits > 0 {
+		groups = append(groups, byte(accumulator<<(5-bits)&31))
+	}
+	var values []byte
+	for _, c := range hrp {
+		values = append(values, byte(c>>5))
+	}
+	values = append(values, 0)
+	for _, c := range hrp {
+		values = append(values, byte(c&31))
+	}
+	values = append(append(values, groups...), 0, 0, 0, 0, 0, 0)
+	checksum := 1
+	for _, v := range values {
+		top := checksum >> 25
+		checksum = (checksum&0x1ffffff)<<5 ^ int(v)
+		for i, generator := range []int{0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3} {
+			if top>>i&1 == 1 {
+				checksum ^= generator
+			}
+		}
+	}
+	checksum ^= 1
+	out := []byte(hrp + "1")
+	for _, g := range groups {
+		out = append(out, charset[g])
+	}
+	for i := 0; i < 6; i++ {
+		out = append(out, charset[checksum>>(5*(5-i))&31])
+	}
+	return string(out)
 }
 
 func TestDecryptMissingOrFailingCommand(t *testing.T) {

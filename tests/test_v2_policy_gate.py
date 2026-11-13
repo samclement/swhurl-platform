@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl import ROOT, commands, yamlio
+from swhurl import ROOT, yamlio
 
 
 class V2PolicyGateTests(unittest.TestCase):
@@ -87,7 +87,7 @@ esac
                         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_entrypoint_and_ci_use_one_acquisition_path(self):
-        self.assertFalse(commands.TARGETS['check-apps'].run)
+        self.assertIn('check-apps:\n\t@bash v2/check-apps.sh\n', (ROOT / 'Makefile').read_text())
         self.assertFalse((ROOT / 'tools/swhurl/apps/validation.py').exists())
         for name in ('validate.yml', 'deploy-v2.yml'):
             workflow = yamlio.load((ROOT / '.github/workflows' / name).read_text())

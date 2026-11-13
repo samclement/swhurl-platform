@@ -2873,3 +2873,42 @@ from the host to the app's public route. v2 has no HTTP probe today, and Python 
 - **Checks:** `make check-v2` (including `render --check` over the fixture), `make check`, and the `bash -n` loop.
 - **Live:** `make live-test-app-template` against the pushed revision, all checks `[OK]`, with nothing left behind
   (no unit, namespace or volume).
+
+## 34. The command catalogue leaves Python: `make help` over the Makefile's own lines (approved 13 November 2026)
+
+The last step of [remaining work B](v2-status.md#remaining-work). After §27–§33, only `make help` ran Python: the
+Makefile handed it to `python3 -m swhurl make help`, and `tools/swhurl/commands.py` (49 entries) existed for that
+text and for the tests that compare the Makefile and [commands](commands.md) with it.
+
+**Decision.** Each target is stated once, in a line at the top of the Makefile, in help's order:
+
+```
+##@ Deploy and verify
+## reconcile | Cluster | plan | Fetch Git and reconcile one Flux unit (…) | UNIT=<name>
+```
+
+The fields are the target, what it touches, what `DRY_RUN=true` does (`plan`, `reads` or `-`), the help line and,
+when it takes any, its variables as help shows them (optional ones in `[]`). `make help` is
+`awk -f tools/make-help.awk Makefile`; its output is byte-identical to the Python list apart from `help`'s own line.
+Padding is by bytes plus the mark's width by hand, so gawk, mawk and busybox awk print the same.
+`tools/swhurl/commands.py`, `__main__.py`, `report.py` (no caller left) and `kube.py` (only its own test imported it)
+are deleted, along with `tests/test_kube.py` and the `Report` and CLI tests in `tests/test_runner.py`.
+
+**Contracts.**
+- `tests/test_commands.py` reads the lines. It fails when they and `.PHONY` differ, when a line has other than four
+  or five fields, when a touch or dry-run word is unknown, when the verb rule (`check*` is Local, `verify-*` is
+  Cluster (read)) breaks, when `make help` omits a target or misaligns a column, or when a row of
+  [commands](commands.md) differs in variables, optional brackets, the † mark or Touches.
+- `tests/test_command_safety.py` runs every `plan` target that needs no variable with `DRY_RUN=true` and fake cluster
+  tools, as before; the list now comes from the lines (13 targets).
+- A missing variable and a refused dry run are each recipe's own (they already were for every target but `help`).
+  `make help DRY_RUN=true` no longer refuses: it prints the list.
+
+**What stays.** `run.py` (`Runner`, `FakeRunner`), `yamlio.py`, `platform.py` and `charts.py` remain, because the
+ClickStack render test in `tests/test_manifest_policy.py` acquires its chart through them; they leave with that test.
+`tools/ci_changes.py` stays in Validate. Copier stays Python in the console image (§23).
+
+**Verification.** `make test` and `make check`; one mutation per contract (a deleted line, `plan` set to `-`, a
+required variable made optional, a wrong touch) fails `make test K=test_commands`; `make help` compared with the
+Python output and run under gawk, Debian's mawk and busybox awk. Nothing changes on the cluster. The console image
+copies `tools/`, so Validate rebuilds and deploys it; `make verify-platform` then confirms it runs.

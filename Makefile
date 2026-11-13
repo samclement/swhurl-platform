@@ -1,20 +1,78 @@
 SHELL := /usr/bin/env bash
-# Operator interface. Every target is stated once, in tools/swhurl/commands.py: its
-# variables, help line and what it touches (make help prints them; a test fails when a
-# target here and a command there differ). Recipes here stay plain sequencing and host
-# scripts; logic lives in tools/swhurl (see docs/contributing.md).
-SWHURL := PYTHONPATH=$(CURDIR)/tools python3 -m swhurl
+# Operator interface. Every target is stated once, in the lines below: "##@ <section>", then
+# "## <target> | <touches> | <dry run: plan, reads or -> | <help>[ | <variables>]" in the order make help prints
+# them (tools/make-help.awk). tests/test_commands.py fails when these lines, the targets and docs/commands.md differ,
+# and runs every target whose dry run is "plan". Recipes stay sequencing and host scripts; decisions are swhurl-v2's.
+#
+##@ Deploy and verify
+## flux-reconcile | Cluster | - | Fetch Git, reconcile the source layer and the stack, wait for every unit at that revision
+## install | Cluster | plan | flux-reconcile, then verify-platform (SKIP_VERIFY=1 skips the checks)
+## reconcile | Cluster | plan | Fetch Git and reconcile one Flux unit (for example after changing its Secret; swhurl-v2 unit; needs Go 1.26.0) | UNIT=<name>
+## verify-platform | Cluster (read) | - | Every live platform check: swhurl-v2 verify, then two host checks (never prints keys; needs Go 1.26.0)
+## notifications-check | Cluster (read) | - | Preview lifecycle and health notifications without sending or saving (swhurl-v2; needs Go 1.26.0 and jq)
+## notifications-heartbeat | Cluster (read) | reads | Alert if the notification checker is stale (the host timer runs it; swhurl-v2; needs Go 1.26.0) | [ARGS="..."]
+## flux-install | Cluster | reads | Install or upgrade the Flux controllers at the pinned version with the settings in Git
+## flux-bootstrap | Cluster | - | Apply the root units and sources (Flux must already be installed)
+## clickstack-bootstrap | Cluster | reads | Register the ClickStack admin and set the team ingestion key from SOPS (idempotent; swhurl-v2; needs Go 1.26.0)
+## clickstack-dashboards | Cluster | reads | Keep platform webhooks and app dashboards and alerts in ClickStack; delete removed apps' ones (swhurl-v2; needs Go 1.26.0)
+##@ Apps
+## app-repo | GitHub | reads | Create the app's GitHub repository from a stack template, wait for its first image and open the pull request that creates it (swhurl-v2 app-repo; needs Go 1.26.0) | NAME=<app> TYPE=<type> TEAM=<team> [STACK=<stack>] [DESCRIPTION="..."] [RESUME=true]
+## app-hooks | GitHub | reads | Create or repoint the image webhook on every auto-deploy app's repository (idempotent; swhurl-v2 app-hooks; needs Go 1.26.0)
+## team-add | Git | - | Register a team in v2-records/teams.json (swhurl-v2 team; needs Go 1.26.0) | NAME=<team> [DESCRIPTION="what it owns"]
+## team-edit | Git | - | Change a team's description and/or name; a rename is refused while an app names it | NAME=<team> [DESCRIPTION="..."] [RENAME=<new>]
+## team-remove | Git | - | Remove a team nothing names and that has no channel | NAME=<team>
+## team-channel | Git | - | Give a team its notification channel or a new address (prompts without showing it); REMOVE=true takes it away | NAME=<team> [REMOVE=true]
+## app-status | Cluster (read) | - | Its state against v2's records at HEAD: Git applied, the image, replicas, route, certificate, failing containers (needs Go 1.26.0) | APP=<app> ENV=<env>
+## app-logs | Cluster (read) | - | Recent workload logs (FOLLOW=true, TAIL=N, PREVIOUS=true) | APP=<app> ENV=<env>
+## app-reconcile | Cluster | plan | Fetch Git and reconcile only that instance | APP=<app> ENV=<env>
+## console-image | Git | - | Pin platform/console to the image published for this commit (images/pin-console.sh)
+## console-dev | Cluster | - | Web console on http://127.0.0.1:8080 as a fixed dev identity (swhurl-v2; needs Go 1.26.0) | [PORT=8080]
+##@ Settings
+## platform-certs-staging | Git | plan | Set CERT_ISSUER in platform-settings to letsencrypt-staging (swhurl-v2 platform-certs; needs Go 1.26.0)
+## platform-certs-prod | Git | plan | Set CERT_ISSUER in platform-settings to letsencrypt-prod (swhurl-v2 platform-certs; needs Go 1.26.0)
+##@ Lifecycle, backup and recovery
+## suspend | Cluster | plan | Suspend a Flux unit or HelmRelease; workloads and data untouched (swhurl-v2 unit; needs Go 1.26.0) | TARGET=kustomization/<name>|helmrelease/<ns>/<name>
+## resume | Cluster | plan | Resume a Flux unit or HelmRelease and wait until it is applied (swhurl-v2 unit; needs Go 1.26.0) | TARGET=kustomization/<name>|helmrelease/<ns>/<name>
+## destroy-data | Cluster | reads | Delete a released claim or volume and its host data (swhurl-v2 destroy-data; needs Go 1.26.0) | TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>
+## backup-mongodb | Cluster | plan | Run ClickStack MongoDB's backup job now and show its result
+## backup-sqlite | Cluster | reads | Run every app SQLite database's backup job now and show the results
+## restore-sqlite | Cluster | reads | Restore an app's SQLite database with swhurl-v2 restore from its newest backup (stops the app meanwhile; needs Go 1.26.0) | APP=<app> ENV=<env> CONFIRM=<app>/<env>
+##@ Offline checks
+## check | Local | - | The offline checks in parallel; CI also renders the templates (check-templates)
+## check-repo | Local | - | Doc links and tables, SOPS structure, settings and render paths (swhurl-v2); render and substitute each path, shell syntax; SCHEMA=1 adds flux-schema (needs Go) | [SCHEMA=1]
+## test | Local | - | Unit tests for the tooling, console, manifests and command safety; K= runs only matching classes (needs uv) | [K=<pattern>]
+## check-apps | Local | - | v2's records match Git and every compiled instance passes Go Kubernetes policy (needs Go and Helm; no arguments)
+## check-templates | Local | - | Render each app type from its stack template (v2/contract/stacks.json); its names must be listed and the label its build writes must pass swhurl-v2 declaration (needs network, jq and uvx; builds swhurl-v2 unless SWHURL_V2 names one)
+## check-otel | Local | - | Render the OTel collectors; validate each config and run the log fixtures in the image its release renders (needs helm, kubectl, jq, openssl, curl and podman, or CONTAINER_RUNTIME=docker) | [CONTAINER_RUNTIME=docker]
+## check-lint | Local | - | Lint the Python tooling and the bash that stays (needs uv)
+## check-codegraph | Local | - | Unit tests for the code graph development aid (devtools/codegraph)
+## check-docs | Local | - | Compare the workstream registry and its status pages with Git (swhurl-v2 workstreams): state, next gate, uncommitted work, cited commits, page-per-change (needs Go 1.26.0)
+## v2-deps | Local | - | Download the pinned v2 YAML parser with checksum verification before offline builds and checks
+## check-v2 | Local | - | Format, vet and test the Go v2 module, its design guardrails included (needs Go 1.26.0)
+## v2-render | Git | - | Render what the records decide when the tree disagrees with them: every compiled folder and unit, the resolution, the egress allocation and the proxy's objects, auth, NATS's users and Reloader's list (needs Go 1.26.0)
+## v2-deploy | Git | - | Bring every v2-owned staging instance to the newest image its repository publishes (v2-records and v2-apps; needs Go 1.26.0)
+## v2-report | Local | - | What a change does to v2 against the merge base with BASE: API, budgets, packages, imports, files, exceptions | [BASE=origin/main] [AFTER=<rev>] [FORMAT=json]
+## check-secrets | Local | - | Decrypt tracked Secrets locally; flag placeholders and double encoding (never prints values; swhurl-v2 check-secrets; needs Go 1.26.0 and sops)
+## help | Local | - | List the targets, from the ## lines at the top of the Makefile
+##@ Live tests
+## live-test-lifecycle | Cluster (throwaway) | plan | Prove suspend, uninstall, destroy-data and Orphan on a throwaway app (swhurl-v2 lifecycle-test; needs Go 1.26.0)
+## live-test-app-template | Cluster (throwaway) | plan | Deploy two instances v2 renders from fixture records through Flux, check, remove (swhurl-v2 app-template-test; needs Go 1.26.0)
+## live-test-team-scenario | Cluster (read) | plan | The newest trace through a call and an event on three running apps the records link, checked in ClickStack (swhurl-v2 team-scenario; needs Go 1.26.0) | [ENV=staging]
+##@ Host
+## host-dns | Host | plan | Install or update the Route 53 dynamic DNS timer (records in host/dns.env; needs sudo)
+## host-dns-delete | Host | plan | Remove the dynamic DNS timer
+## host-heartbeat | Host | plan | Install or update the five-minute notification heartbeat timer (needs sudo)
+## host-heartbeat-delete | Host | plan | Remove the notification heartbeat timer
+## host-probe | Host | plan | Install or update the every-minute connectivity probe timer (needs sudo)
+## host-probe-delete | Host | plan | Remove the connectivity probe timer
+
 DRY_RUN ?= false
 INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 .DEFAULT_GOAL := help
 
-# Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
-# the environment, refuses a missing one and runs the command's function.
-COMMANDS := help
-
-.PHONY: $(COMMANDS)
-$(COMMANDS):
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) make $@
+.PHONY: help
+help:
+	@awk -f tools/make-help.awk Makefile
 
 # The console is v2's: a Go server, built here, with no Python in its path.
 .PHONY: console-dev

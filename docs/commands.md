@@ -1,8 +1,8 @@
 # Commands
 
-Every `make` target, grouped by task. Each is stated once, in [`tools/swhurl/commands.py`](../tools/swhurl/commands.py): its variables, its help line, whether it takes `DRY_RUN=true` and what it touches. `make help` prints that list, a target refuses a missing variable with its usage line, and a test fails when a row here differs from it in name, variables, the † mark or the first word of **Touches**.
+Every `make` target, grouped by task. Each is stated once, in a `##` line at the top of the [Makefile](../Makefile): its variables, its help line, whether it takes `DRY_RUN=true` and what it touches. `make help` prints those lines, a target refuses a missing variable with its usage line, and a test fails when a row here differs from it in name, variables, the † mark or the first word of **Touches**.
 
-**Touches:** **Local** is this checkout at most (some read the network); **Git** edits files for you to commit; **Cluster (read)** reads the live cluster; **Cluster** changes it; **Cluster (throwaway)** creates and removes labelled test resources; **GitHub** creates or changes a repository there; **Host** installs system units. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting; any other target that runs through `swhurl` or [`host/ops.sh`](../host/ops.sh) refuses `DRY_RUN=true` and does nothing. Variables in `[]` are optional.
+**Touches:** **Local** is this checkout at most (some read the network); **Git** edits files for you to commit; **Cluster (read)** reads the live cluster; **Cluster** changes it; **Cluster (throwaway)** creates and removes labelled test resources; **GitHub** creates or changes a repository there; **Host** installs system units. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting; a target without the mark that would act refuses `DRY_RUN=true` and does nothing. Variables in `[]` are optional.
 
 ## Deploy and verify
 
@@ -83,7 +83,7 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 | `v2-deploy` | Bring every **v2-owned staging instance** to the newest image its repository publishes: for each `v2-records/<app>/staging`, the platform's tag policy picks the newest tag, v2 reads the declaration the image's build wrote into its config labels, refuses a fact the instance cannot take, and writes the record pair and the compiled files (`swhurl-v2 deploy --records`; the [v2 Deploy workflow](../.github/workflows/deploy-v2.yml) runs it). One instance that refuses or fails keeps its image while the others deploy, and the run fails. Needs Go 1.26.0 and read-only access to the public registry ([deploy a new image](apps.md#deploy-a-new-image)) | Git |
 | `v2-report [BASE=origin/main] [AFTER=<rev>] [FORMAT=json]` | What a change does to v2: `v2/` in the working tree as Git carries it, ignored files left out, (or at `AFTER`) against the merge base with `BASE`, as exported API, budget, package and layer, import, file and rule-setting changes, with the ones to justify listed under review; a [report, not a gate](iteration-2-plan.md#change-report). `FORMAT=json` prints the document for agents | Local |
 | `check-secrets` | Decrypt every tracked Secret in memory; fail on empty or `REPLACE_ME`, warn on probable double encoding. Needs the age key, so CI cannot run it | Local |
-| `help` | List every target with its variables, the † mark and what it touches | Local |
+| `help` | List every target with its variables, the † mark and what it touches, from the Makefile's `##` lines | Local |
 
 ## Live tests
 

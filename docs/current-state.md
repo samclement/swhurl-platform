@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The command catalogue leaves Python (13 November 2026)
+
+- **Capability:** no `make` target runs Python. Each target is one line at the top of the Makefile
+  (`## <target> | <touches> | <dry run> | <help>[ | <variables>]`, under `##@ <section>`), and `make help` is
+  `awk -f tools/make-help.awk Makefile`
+  ([§34](iteration-2-plan.md#34-the-command-catalogue-leaves-python-make-help-over-the-makefiles-own-lines-approved-13-november-2026)).
+  `tools/swhurl/commands.py`, `__main__.py`, `report.py` and `kube.py` are deleted with `tests/test_kube.py` and the
+  `Report` and CLI tests; `tests/test_commands.py` checks the lines against `.PHONY`, `make help` and
+  [commands](commands.md), and `tests/test_command_safety.py` takes its 13 plan-only targets from them.
+- **Changed for the operator:** `make help` prints the same list (only `help`'s own line changed), and
+  `make help DRY_RUN=true` prints it instead of refusing. The AGENTS.md rule: new operator logic is `swhurl-v2` or
+  bash, and a new target is a recipe plus its `##` line.
+- **Offline evidence:** `make help` byte-identical to the Python list but for that line, under gawk 5.4, Debian's mawk
+  and busybox awk 1.37; `make test` (160 tests) and `make check-lint` passed; four mutations of the lines (a target
+  dropped, `plan` set to `-`, a required variable made optional, a wrong touch) each failed `make test K=test_commands`.
+- **Not changed:** the cluster. What Python remains is `run.py`, `yamlio.py`, `platform.py` and `charts.py` for the
+  ClickStack render test, `tools/ci_changes.py` in Validate, and Copier in the console image.
+
 ## The app-template test runs Go over instances v2 renders (13 November 2026)
 
 - **Capability:** `make live-test-app-template` is `swhurl-v2 app-template-test`. It deploys the two prod
@@ -4987,7 +5005,7 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 
 ## Each command stated once (13 October 2026)
 
-`41b5dd3`: [`commands.py`](../tools/swhurl/commands.py) states every command once, and the Makefile, `make help`, the usage lines and the [commands page](commands.md) follow it ([plan](plan.md) section 0, item 15, candidate 9). Console image `src-6c5f85889fd70b6c` (`6178a8d`).
+`41b5dd3`: `commands.py` states every command once, and the Makefile, `make help`, the usage lines and the [commands page](commands.md) follow it ([plan](plan.md) section 0, item 15, candidate 9). Console image `src-6c5f85889fd70b6c` (`6178a8d`).
 
 - **After the deploy:** `make flux-reconcile` reached every unit Ready at `6178a8d`; `make verify-platform` passed with 99 `[OK]` lines and no warnings; `console-notifications` and `console-dashboards` jobs ran each minute on the new image (no CronJob stall this time).
 - **Through `make`, on the live cluster:** `make app-status APP=test-1 ENV=staging` (and with `APP` and `ENV` from the environment) showed Healthy; `make verify-logs MINUTES=5` read five minutes; `make app-scale APP=x` stopped with `Usage: make app-scale APP=<app> ENV=<env> ARGS="--replicas N ..."` and exit 2; `make team-edit NAME=nope ARGS='--description "two words"'` reached the command's own refusal with the quoted words as one argument.

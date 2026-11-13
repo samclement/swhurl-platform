@@ -1,8 +1,5 @@
-"""Operator tooling for the Swhurl platform.
-
-Run as ``python3 -m swhurl <command>`` with ``tools/`` on ``PYTHONPATH``; the
-Makefile does this for every target. External tools (kubectl, flux, helm,
-sops, age) are always called through :class:`swhurl.run.Runner`.
+"""What is left of the v1 operator tooling: the Runner, YAML I/O and the chart acquisition the ClickStack
+render test uses. Tests import it with ``tools/`` on ``PYTHONPATH``; no make target runs it.
 """
 from pathlib import Path
 

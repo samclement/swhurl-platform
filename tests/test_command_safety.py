@@ -12,7 +12,9 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from swhurl import ROOT, commands
+from test_commands import plans
+
+from swhurl import ROOT
 
 
 class CommandSafetyTests(unittest.TestCase):
@@ -52,9 +54,8 @@ else:
                 self.assertFalse(self.calls.exists(), 'A refused destroy-data called a cluster tool')
 
     def test_every_dry_run_that_plans_calls_no_cluster_tool(self):
-        """Every target whose DRY_RUN=true only prints a plan (commands.PLAN), so CI keeps no list of them."""
-        targets = [name for name, command in commands.TARGETS.items()
-                   if command.dry_run == commands.PLAN and not command.missing({})]
+        """Every target whose DRY_RUN=true only prints a plan (its Makefile line says plan), so CI keeps no list of them."""
+        targets = plans()
         self.assertGreater(len(targets), 11)
 
         def plan(target):

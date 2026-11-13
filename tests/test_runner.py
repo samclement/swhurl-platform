@@ -1,14 +1,10 @@
-"""The swhurl foundation: Runner/FakeRunner, Report and the command dispatcher."""
-import io
+"""The swhurl foundation: Runner, FakeRunner and SharedReads."""
 import os
-import subprocess
 import sys
 import threading
 import time
 import unittest
 
-from swhurl import ROOT
-from swhurl.report import Report
 from swhurl.run import REDACTED, CommandError, FakeRunner, Result, Runner, SharedReads
 
 SECRET = 'fixture-secret-token-value'
@@ -188,53 +184,6 @@ class FakeRunnerTests(unittest.TestCase):
         self.assertEqual(fake.calls, [])
         self.assertEqual(fake.planned, [('kubectl', 'delete', 'pvc', 'data')])
         self.assertEqual(fake.echoed, ['  would run: kubectl delete pvc data'])
-
-
-class ReportTests(unittest.TestCase):
-    def test_counts_and_exit_code(self):
-        out = io.StringIO()
-        report = Report(out)
-        report.section('Flux')
-        report.ok('unit Ready')
-        report.warn('slow')
-        self.assertEqual(report.exit_code(), 0)
-        report.bad('unit failed')
-        self.assertEqual((report.failures, report.warnings, report.exit_code()), (1, 1, 1))
-        self.assertEqual(out.getvalue(), '\n== Flux ==\n[OK] unit Ready\n[WARN] slow\n[BAD] unit failed\n')
-
-
-class ReportEntryTests(unittest.TestCase):
-    def test_entries_record_section_level_and_redacted_message(self):
-        report = Report(io.StringIO(), redact=lambda text: text.replace(SECRET, REDACTED))
-        report.info('before any section')
-        report.section('Flux')
-        report.ok('unit Ready')
-        report.bad(f'mismatch {SECRET}')
-        report.detail('hint lines are not entries')
-        self.assertEqual([(e.section, e.level, e.message) for e in report.entries],
-                         [('', 'info', 'before any section'), ('Flux', 'ok', 'unit Ready'),
-                          ('Flux', 'bad', f'mismatch {REDACTED}')])
-
-
-class ReportRedactionTests(unittest.TestCase):
-    def test_report_redacts_through_the_runner(self):
-        runner = Runner()
-        runner.add_secret(SECRET)
-        out = io.StringIO()
-        report = Report(out, redact=runner.redact)
-        report.bad(f'mismatch against {SECRET}')
-        self.assertNotIn(SECRET, out.getvalue())
-        self.assertEqual(report.lines, [f'[BAD] mismatch against {REDACTED}'])
-
-
-class CliTests(unittest.TestCase):
-    def run_cli(self, *args):
-        return subprocess.run([sys.executable, '-m', 'swhurl', *args], cwd=ROOT, capture_output=True, text=True,
-                              env={**os.environ, 'PYTHONPATH': str(ROOT / 'tools')})
-
-    def test_unknown_or_missing_command_exits_2(self):
-        self.assertEqual(self.run_cli('nope').returncode, 2)
-        self.assertEqual(self.run_cli().returncode, 2)
 
 
 class SharedReadsTests(unittest.TestCase):

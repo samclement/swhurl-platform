@@ -374,7 +374,7 @@ Names starting `SWHURL_`, `OTEL_` or `KUBERNETES_`, plus `HOST_IP` and `DATABASE
 | Platform services | `notify-serve`, `notifications-check`, `notifications-heartbeat`, `clickstack-dashboards`, `clickstack-bootstrap` | Run as jobs or services |
 | Checks | `check-repo`, `policy`, `names`, `declaration`, `image-declaration`, `workstreams`, `chart` | Offline |
 
-**`make` targets** are named for what they touch: `check*` never touches the cluster, `verify-*` only reads it, and `live-test-*` acts on it with resources the test removes. Every target is listed once in [commands](commands.md), and [`tools/swhurl/commands.py`](../tools/swhurl/commands.py) declares each.
+**`make` targets** are named for what they touch: `check*` never touches the cluster, `verify-*` only reads it, and `live-test-*` acts on it with resources the test removes. Every target is listed once in [commands](commands.md), and a `##` line at the top of the [Makefile](../Makefile) declares each.
 
 **Console routes** (served by `swhurl-v2 console`, behind sign-in): `/` Overview, `/apps` (list and `?view=map`), `/apps/APP/ENV`, `/apps/APP/staging/promotion`, `/catalogue`, `/teams`, `/platform`, `/egress`, `/units/UNIT`, `/activity`, `/jobs/ID` (with `/events` streamed), `/new`, `/healthz`. See [console](console.md#use-it).
 

@@ -118,6 +118,7 @@ shrunk, retired or ported (the rule is under [durable decisions](#durable-decisi
    `live-test-app-template`, which test this repository's own lifecycle and template code, and
    `live-test-team-scenario`, which reads the chain from `swhurl-v2 status --all` and its newest trace from ClickHouse
    ([record](current-state.md#the-team-scenario-reads-running-traffic-and-three-live-proofs-are-retired-12-november-2026)).
+   `check-secrets` goes first; its design is proposed in [§27](iteration-2-plan.md#27-check-secrets-in-go-proposed-13-november-2026).
 2. **Last:** the catalogue itself (`commands.py`, `run.py`, the Makefile dispatch) goes when no Python command is
    left. The Python tests in `tests/` are deleted with the Python they test, never ported; Go gets tests of its own
    decisions.

@@ -2433,3 +2433,74 @@ lines, exit statuses, refusals before any call, no credential in output, and the
 test with fake `gh`, `sops` and `go` proving it stops on auth, decrypt and empty-token failures and passes the tokens
 only in the environment. `make check-v2`, `make check`. Live (operator): `make app-hooks DRY_RUN=true`, then
 `make app-hooks`, then `make verify-platform`'s Image Webhooks ([current state](current-state.md)).
+
+## 27. `check-secrets` in Go (proposed 13 November 2026)
+
+The first of the kept checks ([remaining work B.1](v2-status.md#remaining-work)), ported with the same behaviour. It
+guards the double-base64 problem that caused an outage, and it only reads. The rest of B.1 waits for its own section.
+
+**Decision (proposed).** `make check-secrets` runs `swhurl-v2 check-secrets --root .`. `secrets_check.py` and
+`tests/test_secrets_check.py` are deleted. The catalogue keeps the target without a `run` function, as `app-hooks`
+did.
+
+**Semantics (retained).** Every `*.sops.y*ml` file Git tracks, apart from `.sops.yaml`, is decrypted in memory, and
+each document of each file is checked:
+
+- **An `[ERROR]` line** for each of these: a file that cannot be decrypted, cannot be read or holds no document; a
+  document that is not a Secret; an empty value; a `REPLACE_ME` value outside `tests/fixtures/`.
+- **A `[WARN]` line** for a `data` value of at least 16 bytes whose base64 decodes to printable text, which means it
+  was probably encoded twice.
+- **Three comparisons across files, by SHA-256 only:**
+  - `CLICKSTACK_INGESTION_KEY` is in exactly the ClickStack and OTel Secrets, and both copies are equal.
+  - The image webhook token and the GitHub dispatch token are each identical in their two Secrets.
+  - The platform ntfy destination matches the notification checker's copy once both have lost their query and
+    fragment.
+
+The output keeps Python's lines in Python's order (`[OK] <file>: <namespace>/<name> (<n> data, <n> stringData)`,
+then the comparisons, then `<e> error(s), <w> warning(s).`). Those lines name files, keys and counts, never a value or
+a fingerprint. The exit status is 0, 1 when there is any error, and 2 when there is no age key (`SOPS_AGE_KEY_FILE`,
+else `./age.agekey`).
+
+**Boundaries and contract.**
+
+| Layer | Owns | Does not own |
+| --- | --- | --- |
+| 0 `secretcheck` (new, pure) | The rules above and the table of copies kept equal (`INGESTION_FILES`, `SHARED` and `NTFY_DESTINATIONS`, as Python has them). Input: each file's path, whether it is a fixture, and either its parsed documents or why it could not be read. Output: the ordered findings and the counts | Reading files, keys or Git |
+| 1 `adapters/sops`: a new `Decrypter` beside `Encrypter` | `sops --config /dev/null decrypt --input-type yaml --output-type yaml <path>`, with `SOPS_AGE_KEY_FILE` set from its argument in the child's environment only. Stderr is discarded. Output is bounded by `MaxDocument`. A failure is a fixed reason (`sops_exit_N`, `sops_not_available`, `output_too_large`) | Reading the key itself; deciding what a value means |
+| 1 `adapters/git` (existing `Read`) and `adapters/manifests` (existing YAML) | The tracked list and the parse | — |
+| 2 `orchestration.CheckSecrets` | The tracked list, then a decrypt and parse of each file, then the decisions | Printing, exit codes |
+| 3 command | `--root`, the key file's path, the lines and the exit status | The decisions |
+
+The plaintext crosses one boundary, the adapter's return value, and lives only in memory until the fingerprints and
+findings have been made from it. A test passes known plaintext through the whole command and asserts that no value
+and no fingerprint appears on stdout or stderr.
+
+**Rule change this needs.** The `no-subprocess` allowlist is unchanged: the code stays in the same directory. What
+changes is the text of the sops exception, which becomes "encryption, and local decryption with a key file the
+operator's command names". The package comment loses "reads no private key" and says instead that `Encrypt` needs
+none and `Decrypt` passes the key file's path only to `sops` through its environment. The console's encrypter is
+unchanged. Its pod holds no key, so the decrypter is never wired there; a test proves the console's wiring has no
+`Decrypter`.
+
+**Deliberate changes.** These are three places where Python crashes with a traceback today:
+
+- A `data` value that is not strict base64 becomes `[ERROR] <where>: not base64`.
+- A `data` or `stringData` that is not a map becomes `[ERROR] <file>: a document is not a Secret`.
+- A Git listing that fails exits 2 with one line.
+
+Nothing else changes, including the warning's threshold and the fixture exemption.
+
+**Verification.**
+
+- **Pure tests:** the six Python tests (destinations, double encoding, shared tokens, the ingestion key, the backup
+  writer's two-document file, every document read), plus the three deliberate changes.
+- **Adapter contract test** with a throwaway key from `age-keygen` in `t.TempDir()`. It is skipped without `sops` or
+  `age-keygen`, as the encrypt test is, and `REQUIRE_SOPS=1` requires it. Plus missing-binary, exit and oversize cases.
+- **Command tests:** the lines, the exit statuses 0, 1 and 2, and no value on either stream.
+- **Parity, offline, scratch only:** in a scratch copy, run Python's and Go's checks and `diff` their outputs. Do
+  this on today's tree, and on mutants encrypted to the platform's public recipient: `REPLACE_ME`, an empty value, a
+  double-encoded value, differing ingestion copies, a missing shared copy, ntfy copies that differ only in their
+  query (which must pass), and a two-document file. The outputs must be identical, apart from the three deliberate
+  changes. Nothing in the scratch copy is committed or pushed.
+- `make check-v2`, `make check`, then `make check-secrets` on the real tree. No live effect: the check never reaches
+  the cluster.

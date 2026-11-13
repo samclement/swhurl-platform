@@ -133,6 +133,10 @@ Steps 4 and 5 are independent of each other: either may go first after step 3's 
 
 `devtools/codegraph/` holds the package `codegraph`, its tests and its [README](../devtools/codegraph/README.md). It is outside `tools/`, so it is not in the console image or its content hash, and uses the Python standard library only (`requires-python` as the repository). `AGENTS.md` and [contributing](contributing.md#operator-tooling) carry the narrow exception: it lives outside `tools/swhurl`, reads Git through its own layer A instead of `Runner`, and is not a `swhurl` command. `make check-codegraph` runs its tests, `make check` includes it, `make check-lint` lints it, and CI runs both.
 
+The [README](../devtools/codegraph/README.md) examples scan `devtools/codegraph/codegraph` at HEAD;
+the old platform Python is available only at pinned historical revisions. The tool and its tests remain
+unchanged by the [Python cleanup](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026).
+
 ### Step 1: the core (done)
 
 Layers A–C, the snapshot document and `codegraph snapshot <ref> --scope <dir> [--repo <dir>] [--text]`.

@@ -543,7 +543,7 @@ Recorded responses suit reads. Changes need small **behavioural fakes** that imp
 v1 is evidence to evaluate, not the specification of v2 or an expected-output generator. Under the [design principles](#design-principles), classify relevant behaviour as **preserve**, **deliberately change**, **remove** or **not yet modelled**, using the [architecture review](architecture-review.md) and [model review](model-review.html). This is not a requirement to model every v1 feature now. Starting points:
 
 - `tests/fixtures/instance`: a frozen staging/production example with records and rendered resources (deleted with the v1 writer).
-- [`tests/fakecluster.py`](../tests/fakecluster.py): the report `swhurl-v2 verify`'s cluster scope gives a healthy platform, as the console's tests read it.
+- [`tests/fakecluster.py`](https://github.com/samclement/swhurl-platform/blob/fde0582376b1625fc5b11a5749d28abb3aa870d1/tests/fakecluster.py): the report `swhurl-v2 verify`'s cluster scope gives a healthy platform, as the console's tests read it.
 - `tests/test_console_stages.py` (deleted with the console port): earlier targets, current intent and live observations combined; `v2/pages/changes.go` and its tests carry the intent now.
 - [`v2/kernel/edit_test.go`](../v2/kernel/edit_test.go): deterministic rendering and relationship rules in the v2 model.
 

@@ -1,5 +1,4 @@
-# Not a distributable package: this table only gives uv a Python floor and a lock
-# (uv.lock) for the dependency groups below.
+# Not a distributable package: uv locks the one Python runtime tool, Copier.
 [project]
 name = "swhurl-platform"
 version = "0"
@@ -7,13 +6,13 @@ requires-python = ">=3.11"
 
 [tool.uv]
 package = false
-default-groups = ["check", "console"]
+default-groups = ["copier"]
 
-# Lint settings for the tests and devtools (run: uvx ruff@0.16.9 check tests devtools).
+# The code graph development aid and its tests use only the standard library.
+# Lint with: uvx ruff@0.16.9 check devtools
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["tests/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
@@ -22,23 +21,5 @@ ignore = ["E501"]
 [tool.ruff.lint.isort]
 known-first-party = ["codegraph"]
 
-# Python packages, locked in uv.lock. `check`: the offline checks (CI also runs
-# pip install --group check for the non-test steps). `console`: the web console
-# (httpx is also the test client; copier renders new app repositories). `make test` and `make console-dev` run both
-# through `uv run --frozen`.
 [dependency-groups]
-check = [
-    "PyYAML==6.0.3",
-    "ruamel-yaml==0.19.1",
-]
-# `backup`: the backup jobs' image (images/backup), with `check`; not a default group.
-backup = [
-    "pymongo==4.18.2",
-]
-console = [
-    "copier==9.18.2",
-    "httpx==0.28.1",
-    "jinja2==3.1.6",
-    "starlette==1.7.0",
-    "uvicorn==0.54.0",
-]
+copier = ["copier==9.18.2"]

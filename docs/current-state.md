@@ -2,6 +2,44 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Python tests and the host probe retired offline (13 November 2026)
+
+- **Capability:** the approved cleanup drops all top-level `tests/*.py`, `make test` and its CI step,
+  and the host connectivity probe, its systemd templates, make targets and installer support. Nothing
+  replaces those regression checks or diagnostics. Manifest/workflow/image/script checks, catalogue
+  consistency, automatic plan-only dry runs and the ClickStack chart-secret render check are lost.
+- **Kept:** `tests/fixtures/` for Go, collector and live checks; v2 and backup Go tests; the read-only
+  codegraph tool and its separate Python tests. Its README now scans the surviving package at HEAD.
+  Copier is the only direct Python runtime dependency; Jinja2 and PyYAML in the console image are
+  its transitive dependencies. The retained Go chart tests separately call `python3` with PyYAML:
+  Validate and Deploy v2 explicitly install test-only `PyYAML==6.0.3` with Python 3.12, outside the
+  Copier-only project groups. Repo/apps jobs still install no Python dependencies.
+- **Offline evidence:** before deletion, `make test` passed all 110 tests. Afterwards `make check`
+  passed (including 98 codegraph tests, Ruff/ShellCheck, 79 OTel log fixtures and all-instance policy),
+  as did `make check-v2` and the backup module's `gofmt`, `go vet ./...` and `go test -count=1 ./...`.
+  After review identified the Go chart tests' PyYAML subprocess,
+  `REQUIRE_HELM=1 REQUIRE_SOPS=1 make check-v2` passed again with a clean Python 3.12 venv first on `PATH`, only pip and explicitly
+  installed `PyYAML==6.0.3`, and user/global site packages excluded. `yaml` was absent before install;
+  its version, module location, all distributions and site-package paths were verified inside the venv.
+  This run used checksum-verified Helm 3.19.0, sops 3.12.1, kubectl 1.34.4 and cached pinned charts.
+  Shell syntax checks covered existing `host/*.sh` and `tests/fixtures/*.sh` files without failing on
+  an unmatched glob. The four remaining host timer install/delete dry runs passed; `probe` and missing
+  installer arguments refused with exit 2; `make -n test`, `make -n host-probe` and
+  `make -n host-probe-delete` each refused. README snapshot/entries/reach/journeys/view examples produced real documents
+  (156 nodes at HEAD); the historical example now names reachable `d39300aa` rather than an unknown ref.
+  `uv lock --check` passed with no retained package version changed; a fresh Copier-only environment
+  rendered a local template and omitted the retired packages. The console Dockerfile's Alpine `deps`
+  stage built; Copier 9.18.2 rendered the same template as UID 65532 with a read-only root and no network.
+  Workflow YAML parsed, the lifecycle fixture rendered, and `git diff --check` passed.
+- **Host inspection / delivery:** the parent session inspected the installed probe: its timer was
+  `active/waiting`, its service `failed/failed`, and both `FragmentPath` values named their respective
+  `/etc/systemd/system/connectivity-probe.*` files. Its `sudo -n true` check exited 1, so non-interactive
+  sudo was unavailable. No host change was performed; the units have not been stopped or removed.
+  Use the [host removal runbook](operations.md#connectivity-probe) in an interactive terminal.
+  Delivery of this cleanup is approved: commit/push, Validate's image build and bot pin, then reconcile
+  and read-only live checks. CI and live deployment evidence are pending; a signed-in new-app creation
+  remains deliberately unexercised, and installed probe removal stays an operator action.
+
 ## The last of `tools/` leaves (13 November 2026)
 
 - **Capability:** `tools/swhurl` is gone and no workflow runs Python of this repository's own but the tests

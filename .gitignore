@@ -19,7 +19,7 @@ __pycache__/
 # Local scratch notes (keep untracked)
 todo.md
 
-# uv environment (make test, make console-dev)
+# Local uv environment (Copier)
 .venv/
 
 # pigram local secrets/cache

@@ -32,8 +32,8 @@ FROM docker.io/library/python:3.12-alpine@sha256:4c47124a8391cb7a9f571164147d154
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-# The check and console groups (the defaults), exactly as locked; nothing else.
-RUN UV_PROJECT_ENVIRONMENT=/app/.venv uv sync --frozen --no-cache --no-install-project
+# Only Copier and its transitive dependencies, exactly as locked.
+RUN UV_PROJECT_ENVIRONMENT=/app/.venv uv sync --frozen --only-group copier --no-cache --no-install-project
 
 FROM docker.io/library/python:3.12-alpine@sha256:4c47124a8391cb7a9f571164147d154777cf012a4ece5f86097130d7a4478111
 # No curl: PRs and new repositories go through GitHub's API, in the v2 binary. git only for Copier, the venv's, which

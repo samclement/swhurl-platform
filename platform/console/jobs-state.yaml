@@ -1,4 +1,4 @@
-# The console's record of its jobs (tools/swhurl/console/jobstore.py): one key per job, written by the
+# The console's record of its jobs (v2/adapters/kube/jobs.go): one key per job, written by the
 # pod that runs it, so a restart neither loses the Activity list nor hides a job that was cut short.
 # Flux owns the object metadata, never data: normal reconciliation keeps the records.
 apiVersion: v1

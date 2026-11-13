@@ -121,6 +121,6 @@ One machine runs k3s. cert-manager gets certificates from Let's Encrypt, the pac
 | `images/` | Container images built from this repo (the console) |
 | `tools/` | `make-help.awk`, which prints `make help` from the Makefile's `##` lines |
 | `host/` | Host systemd timers for dynamic DNS and the heartbeat, and the bash operator commands (`ops.sh`) |
-| `tests/` | Offline tests and fixtures |
+| `tests/fixtures/` | Fixtures retained for Go, collector and live checks; no top-level Python test suite |
 
 </details>

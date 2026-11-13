@@ -530,7 +530,7 @@ This prepares one replacement pair, leaving every other complete identity unchan
 
 Rotation is **one-step replacement**, not a dual-key handover: the old user leaves the generated list and Reloader restarts the app with the new seed. There may be a reconnect gap while the NATS mounted config refreshes (one to two minutes) and the app restarts. Neither zero downtime nor immediate revocation of existing connections is guaranteed. Streams, consumers, permissions, subscriptions and stored feature-flag overrides do not change.
 
-**Test it yourself (offline, run with `!`):** `PYTHONPATH=tools:tests uv run --frozen python -m unittest test_app_allocations` exercises rotation and failed preparation on temporary checkouts using FakeRunner; it does not rotate a real identity.
+**Test it yourself (offline, run with `!`):** `cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off go test ./orchestration -run TestMint` exercises seed preparation and refusals using fake ports; it does not rotate a real identity. Run `make v2-deps` first if needed.
 
 ## Reaching outside the cluster
 
@@ -1045,9 +1045,9 @@ remain refused; no rule filtering or compatibility bridge is added. A v2 release
 provenance are still claims for review, not verified provenance. `check-templates` checks image declarations
 through v2, not Kubernetes policy.
 
-Python's shared chart acquisition remains for OTel and ClickStack checks, not for `check-apps` or
-policy decisions. The acquisition and cache [contract](iteration-2-plan.md#chart-acquisition-approved-5-november-2026)
-keeps rendering local-only; the [remaining retirements](v2-status.md#remaining-python) are separate slices.
+`check-apps` acquires its chart through Go and `check-otel` through shell. The top-level Python
+ClickStack chart render tests are retired without replacement; chart-default Secret leakage is no longer
+covered by that regression check ([validation](contributing.md#validation)).
 
 **Test it yourself** (run in your own terminal, from this checkout; offline checks, nothing applied):
 

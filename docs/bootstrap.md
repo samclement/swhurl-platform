@@ -14,7 +14,7 @@ export KUBECONFIG=$HOME/.kube/config
 kubectl -n kube-system get deploy traefik metrics-server
 ```
 
-Local tools: `kubectl`, `flux`, `helm`, `sops`, `age`, `curl`, Python 3.11+ with PyYAML, Go 1.26.0 (`make verify-platform` and the other v2 targets build `swhurl-v2`), and AWS CLI v2 (`aws`) for DNS and S3 backups. Install these from their official package sources before continuing; the commands below assume they are on `PATH`.
+Local tools: `kubectl`, `flux`, `helm`, `sops`, `age`, `curl`, Python 3.11+ and `uv` ([local validation](contributing.md#validation)), Go 1.26.0 (`make verify-platform` and the other v2 targets build `swhurl-v2`), and AWS CLI v2 (`aws`) for DNS and S3 backups. Install these from their official package sources before continuing; the commands below assume they are on `PATH`.
 
 Point your router at the node: external `80 → 31514` and `443 → 30313` (Traefik NodePorts pinned in [`infra/traefik/helmchartconfig.yaml`](../infra/traefik/helmchartconfig.yaml)).
 

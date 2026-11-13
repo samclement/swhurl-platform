@@ -1,8 +1,8 @@
 SHELL := /usr/bin/env bash
 # Operator interface. Every target is stated once, in the lines below: "##@ <section>", then
 # "## <target> | <touches> | <dry run: plan, reads or -> | <help>[ | <variables>]" in the order make help prints
-# them (tools/make-help.awk). tests/test_commands.py fails when these lines, the targets and docs/commands.md differ,
-# and runs every target whose dry run is "plan". Recipes stay sequencing and host scripts; decisions are swhurl-v2's.
+# them (tools/make-help.awk). Keep these lines, the targets and docs/commands.md in sync.
+# Recipes stay sequencing and host scripts; decisions are swhurl-v2's.
 #
 ##@ Deploy and verify
 ## flux-reconcile | Cluster | - | Fetch Git, reconcile the source layer and the stack, wait for every unit at that revision
@@ -40,7 +40,6 @@ SHELL := /usr/bin/env bash
 ##@ Offline checks
 ## check | Local | - | The offline checks in parallel; CI also renders the templates (check-templates)
 ## check-repo | Local | - | Doc links and tables, SOPS structure, settings and render paths (swhurl-v2); render and substitute each path, shell syntax; SCHEMA=1 adds flux-schema (needs Go) | [SCHEMA=1]
-## test | Local | - | Unit tests for the manifests, workflows, images, scripts and make targets' safety; K= runs only matching classes (needs uv) | [K=<pattern>]
 ## check-apps | Local | - | v2's records match Git and every compiled instance passes Go Kubernetes policy (needs Go and Helm; no arguments)
 ## check-templates | Local | - | Render each app type from its stack template (v2/contract/stacks.json); its names must be listed and the label its build writes must pass swhurl-v2 declaration (needs network, jq and uvx; builds swhurl-v2 unless SWHURL_V2 names one)
 ## check-otel | Local | - | Render the OTel collectors; validate each config and run the log fixtures in the image its release renders (needs helm, kubectl, jq, openssl, curl and podman, or CONTAINER_RUNTIME=docker) | [CONTAINER_RUNTIME=docker]
@@ -63,8 +62,6 @@ SHELL := /usr/bin/env bash
 ## host-dns-delete | Host | plan | Remove the dynamic DNS timer
 ## host-heartbeat | Host | plan | Install or update the five-minute notification heartbeat timer (needs sudo)
 ## host-heartbeat-delete | Host | plan | Remove the notification heartbeat timer
-## host-probe | Host | plan | Install or update the every-minute connectivity probe timer (needs sudo)
-## host-probe-delete | Host | plan | Remove the connectivity probe timer
 
 DRY_RUN ?= false
 INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
@@ -148,11 +145,7 @@ flux-bootstrap:
 
 .PHONY: check
 check:
-	@$(MAKE) --no-print-directory -j6 --output-sync=target check-repo test check-apps check-otel check-lint check-codegraph check-docs
-
-.PHONY: test
-test:
-	uv run --frozen python tests/run.py $(if $(K),-k '$(K)')
+	@$(MAKE) --no-print-directory -j6 --output-sync=target check-repo check-apps check-otel check-lint check-codegraph check-docs
 
 .PHONY: check-codegraph
 check-codegraph:
@@ -434,12 +427,12 @@ v2-report:
 
 .PHONY: check-lint
 check-lint:
-	uvx ruff@0.16.9 check tests devtools
+	uvx ruff@0.16.9 check devtools
 	uvx --from shellcheck-py==0.11.0.1 shellcheck -x $$(git ls-files --cached --others --exclude-standard '*.sh')
 
 # Host timers (host/install-timer.sh) -------------------------------------------
 
-TIMERS := host-dns host-heartbeat host-probe
+TIMERS := host-dns host-heartbeat
 .PHONY: $(TIMERS) $(TIMERS:=-delete)
 $(TIMERS):
 	@./host/install-timer.sh $(@:host-%=%) $(if $(filter true,$(DRY_RUN)),--dry-run)

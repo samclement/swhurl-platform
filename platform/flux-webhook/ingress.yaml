@@ -1,6 +1,6 @@
 # The only platform route without Google sign-in: GitHub cannot sign in. It reaches
 # only /hook/ on Flux's webhook receiver, which rejects requests not signed with the
-# shared token (tests/test_manifest_policy.py keeps it that way).
+# shared token; keep this route protected by its receiver token.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

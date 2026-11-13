@@ -37,7 +37,7 @@ spec:
       jetstream:
         enabled: true
         fileStore:
-          # Every stream is capped (64Mi, seven days: tools/swhurl/apps/events.py), so the volume
+          # Every stream is capped (64Mi, seven days: v2/kernel/events.go), so the volume
           # bounds the number of publishing apps, not their traffic. Not backed up: an event
           # stream is not a system of record.
           maxSize: 1Gi

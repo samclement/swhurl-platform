@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Whether a change is only input records, so Validate checks it as the Render workflow will push it: rendered first
-# (make -s v2-render), then check-repo, check-apps and the tests. Reads the changed paths NUL-separated on stdin
+# (make -s v2-render), then check-repo, check-apps and the Go checks. Reads the changed paths NUL-separated on stdin
 # (git diff --name-only -z) and prints true when there is at least one and every one is under v2-records/ or is a
 # team's channel Secret (platform/notify/channels/channel-<team>.sops.yaml, which swhurl-v2 team writes). Anything
 # else, or no paths, prints false: that change is checked as committed, so stale rendered files fail.

@@ -6,5 +6,5 @@ metadata:
 data:
   CERT_ISSUER: letsencrypt-prod
   # Parent domain of every platform host and the sign-in cookie. Apps write their hosts
-  # literally; tools/swhurl reads this value for the app policy.
+  # literally; v2 reads this value for repository checks.
   BASE_DOMAIN: homelab.swhurl.com

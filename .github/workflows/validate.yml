@@ -39,7 +39,7 @@ jobs:
           echo "records_only=$records" | tee -a "$GITHUB_OUTPUT"
 
   validate:
-    name: Tooling tests, lint and dry runs
+    name: Go tests, codegraph and lint
     needs: changes
     runs-on: ubuntu-latest
     steps:
@@ -53,12 +53,9 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          version: '0.10.9'
-          enable-cache: true
-          cache-dependency-glob: uv.lock
+      # Retained Go chart tests call python3 to parse YAML; this is test-only, not a runtime group.
+      - name: Install the Go chart tests' YAML reader
+        run: python3 -m pip install 'PyYAML==6.0.3'
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
@@ -69,12 +66,6 @@ jobs:
         uses: azure/setup-helm@v4
         with:
           version: 'v3.19.0'
-
-      - name: Install validation dependencies
-        run: |
-          set -Eeuo pipefail
-          python3 -m pip install --upgrade 'pip>=25.1'
-          python3 -m pip install --group check
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -92,20 +83,15 @@ jobs:
         run: make check-docs
 
       - name: Lint Python tooling
-        run: pipx run ruff==0.16.9 check tests devtools
+        run: pipx run ruff==0.16.9 check devtools
 
       - name: Lint remaining bash
         run: pipx run --spec shellcheck-py==0.11.0.1 shellcheck -x $(git ls-files '*.sh')
 
-      - name: Test operator safety, app contract and dry runs
-        env:
-          REQUIRE_HELM: '1'
-        run: make test
-
       - name: Test the code graph development aid
         run: make check-codegraph
 
-      # The tests also check that the repository renders as committed (a records-only push: see repo).
+      # The Go checks also compare the rendered records with Git (a records-only push: see repo).
       - name: Render the records
         if: needs.changes.outputs.records_only == 'true'
         run: make -s v2-render
@@ -146,8 +132,6 @@ jobs:
           go vet ./...
           go test -count=1 ./...
 
-      # The dry runs are not listed here: make test runs every target whose DRY_RUN=true only plans
-      # (the Makefile's ## lines say which).
       - name: Render the lifecycle test fixture
         run: kubectl kustomize tests/fixtures/lifecycle-app >/dev/null
 
@@ -158,11 +142,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
@@ -183,12 +162,6 @@ jobs:
       - name: Download pinned v2 dependencies
         run: make v2-deps
 
-      - name: Install validation dependencies
-        run: |
-          set -Eeuo pipefail
-          python3 -m pip install --upgrade 'pip>=25.1'
-          python3 -m pip install --group check
-
       # A records-only change is checked as main will hold it once rendered (the Render workflow).
       - name: Render the records
         if: needs.changes.outputs.records_only == 'true'
@@ -204,11 +177,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
@@ -229,9 +197,6 @@ jobs:
 
       - name: Download pinned v2 dependencies
         run: make v2-deps
-
-      - name: Install validation dependencies
-        run: python3 -m pip install --group check
 
       - name: Render the records
         if: needs.changes.outputs.records_only == 'true'

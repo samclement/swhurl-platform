@@ -39,16 +39,14 @@ jobs:
         with:
           fetch-depth: 0   # the bot starts each attempt from a worktree of the newest main
 
-      # make check-v2's chart test reads YAML through Python (PyYAML)
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: pyproject.toml
 
-      - name: Install validation dependencies
-        run: python3 -m pip install --group check
+      # Retained Go chart tests call python3 to parse YAML; this is test-only, not a runtime group.
+      - name: Install the Go chart tests' YAML reader
+        run: python3 -m pip install 'PyYAML==6.0.3'
 
       - name: Setup Go
         uses: actions/setup-go@v7

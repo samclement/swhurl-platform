@@ -17,8 +17,12 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Offline evidence:** `make help` byte-identical to the Python list but for that line, under gawk 5.4, Debian's mawk
   and busybox awk 1.37; `make test` (160 tests) and `make check-lint` passed; four mutations of the lines (a target
   dropped, `plan` set to `-`, a required variable made optional, a wrong touch) each failed `make test K=test_commands`.
-- **Not changed:** the cluster. What Python remains is `run.py`, `yamlio.py`, `platform.py` and `charts.py` for the
-  ClickStack render test, `tools/ci_changes.py` in Validate, and Copier in the console image.
+- **Delivery and health:** Validate run `43506793232` passed for `68580551` (tooling tests, lint and dry runs
+  included), and bot commit `d7fa1eb6` deployed console image `src-347c1bd136e159b2`, rebuilt only because the image
+  copies `tools/`. After `make flux-reconcile`, `make verify-platform` passed with no warning, and both console
+  CronJobs scheduled on the new image.
+- **Not changed:** anything else on the cluster. What Python remains is `run.py`, `yamlio.py`, `platform.py` and
+  `charts.py` for the ClickStack render test, `tools/ci_changes.py` in Validate, and Copier in the console image.
 
 ## The app-template test runs Go over instances v2 renders (13 November 2026)
 

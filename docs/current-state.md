@@ -2,7 +2,7 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
-## Host suspend and resume use Go, offline (13 November 2026)
+## Host suspend and resume use Go (13 November 2026)
 
 - **Capability:** `make suspend` and `make resume` retain TARGET's Kustomization and HelmRelease forms but call
   `swhurl-v2 unit --target`, sharing the lifecycle test's unit action rather than `host/ops.sh`'s Flux CLI path
@@ -14,9 +14,25 @@ What has been verified on the live cluster, and when: current facts first, then 
   `make check` passed (188 Python tests, the Go workstream check, render/policy, collector fixtures, lint and
   codegraph checks). Host shell syntax checks passed with `nullglob` enabled: this checkout has no
   `tests/fixtures/*.sh` files. `git diff --check` passed.
-- **Live boundary:** nothing applied. The shared unit action was proven in §31; the make entrypoints and the new
-  HelmRelease resume branch still require a separately approved live proof. Independent review was unavailable
-  because the reviewer model's quota was exhausted; the implementation was self-reviewed.
+- **Live proof:** on `5685d0e3`, after the operator approved the disposable resources and their cleanup, the labelled
+  `suspend-resume-test` Kustomization applied `tests/fixtures/suspend-resume` from Git: a labelled namespace and an
+  app-template 5.3.0 HelmRelease running one unprivileged BusyBox sleeper, with no service or storage. For each of
+  `TARGET=kustomization/suspend-resume-test` and `TARGET=helmrelease/suspend-resume-test/suspend-resume-test`,
+  `make suspend` succeeded and `spec.suspend` read back true, while the Deployment stayed Available and the same
+  pod UID stayed Running, ready and at zero restarts. `make resume` succeeded, `spec.suspend` read back false,
+  `lastHandledReconcileAt` matched the requested annotation, `observedGeneration` matched metadata's generation,
+  and Ready was true. The unit printed applied revision `main@sha1:5685d0e3…`; the release printed `5.3.0`.
+  Both resumes left that same pod running. This closes §31's make-entrypoint coverage gap and proves the release
+  branch against the controller, not only the fake.
+- **Cleanup:** the test namespace had no PVCs; deleting the owned test unit pruned its HelmRelease and workload,
+  then the label-guarded namespace deletion completed. Independent reads confirmed the test unit, namespace and
+  HelmRelease absent. No PVC or PV was created or deleted.
+- **Delivery and health:** Validate run `43487282510` passed for `5685d0e3`; bot commit `59e7a346` deployed console
+  image `src-66ddbea6b2e62bf4`. After pulling and `make flux-reconcile`, `make verify-platform` passed without
+  warnings, and `make app-status APP=… ENV=…` reported healthy for all 11 recorded instances. The initial check
+  warned about the old console image while its deployment was pending; that warning cleared on the new image.
+- **Review boundary:** independent review was unavailable because the reviewer model's quota was exhausted;
+  the implementation was self-reviewed. Live failure and timeout branches remain offline-tested only.
 
 ## The lifecycle test runs Go (13 November 2026)
 

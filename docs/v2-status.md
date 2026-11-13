@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: prove host suspend/resume live, then port the last kept check (`live-test-app-template`) with the same behaviour
+Gate: port the last kept check (`live-test-app-template`) with the same behaviour
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -47,7 +47,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | `destroy-data` in Go (`swhurl-v2 destroy-data`: the pure `datadestroy` guards over the API server, Helm's records read by name only), `lifecycle.py` retired | done | [record](current-state.md#destroy-data-runs-go-13-november-2026) |
 | `live-test-team-scenario` in Go (`swhurl-v2 team-scenario`: the pure `teamscenario` chain and verdicts, the chain from the records alone, ClickHouse by API-server exec), `team_scenario.py` retired | done | [record](current-state.md#the-team-scenario-runs-go-13-november-2026) |
 | `live-test-lifecycle` in Go (`swhurl-v2 lifecycle-test`: the pure `lifecycletest` verdicts, v2's unit actions and destroy-data in process, the marker by API-server exec), `livetests/lifecycle.py` retired | done | [record](current-state.md#the-lifecycle-test-runs-go-13-november-2026) |
-| Host suspend and resume through Go for units and HelmReleases (offline verified; live entrypoint proof pending) | partial | [contract](iteration-2-plan.md#32-make-suspend-and-make-resume-use-go-approved-13-november-2026), [record](current-state.md#host-suspend-and-resume-use-go-offline-13-november-2026) |
+| Host suspend and resume through Go for units and HelmReleases | done | [contract](iteration-2-plan.md#32-make-suspend-and-make-resume-use-go-approved-13-november-2026), [record](current-state.md#host-suspend-and-resume-use-go-13-november-2026) |
 | Live log coverage as a saved SQL diagnostic, Python command retired | done | [record](current-state.md#log-coverage-is-a-saved-query-11-november-2026) |
 | Template check without Python but Copier | done | [record](current-state.md#the-template-check-leaves-python-5-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
@@ -130,11 +130,6 @@ shrunk, retired or ported (the rule is under [durable decisions](#durable-decisi
 2. **Last:** the catalogue itself (`commands.py`, `run.py`, the Makefile dispatch) goes when no Python command is
    left. The Python tests in `tests/` are deleted with the Python they test, never ported; Go gets tests of its own
    decisions.
-
-`make suspend` and `make resume` now call `swhurl-v2 unit --target` for both units and HelmReleases
-([§32](iteration-2-plan.md#32-make-suspend-and-make-resume-use-go-approved-13-november-2026)). Offline checks cover the
-Makefile entrypoints and both API paths; a live entrypoint and HelmRelease proof is still pending. The lifecycle test
-exercises the shared Kustomization action in process, not the make targets.
 
 `charts.py` has one caller left, the ClickStack render test in `tests/test_manifest_policy.py`; it stays until that
 test is replaced or retired, and leaves with it.

@@ -2760,7 +2760,8 @@ and exclusive flags. Make-level fakes check argument passing, failure propagatio
 plans. `archtest/api.txt` records the intentional `FluxInputs.Release` and `FluxRelease` API additions; no guardrail
 is relaxed. Run `make check-v2`, `make check` and the host/fixture `bash -n` loop before committing. The lifecycle test
 already uses the same unit action in process, but does not exercise the Makefile entrypoint or HelmRelease branch;
-a live proof of those remains a separate, confirm-first gate before claiming the §31 coverage gap closed.
+the separately approved live proof below exercised both make entrypoints and closes the §31 coverage gap
+([evidence](current-state.md#host-suspend-and-resume-use-go-13-november-2026)).
 
 **Live proof (approved 13 November).** `tests/fixtures/suspend-resume` contains only a labelled namespace and a
 HelmRelease of the pinned app-template chart, running a token-free, unprivileged BusyBox sleeper with no storage or

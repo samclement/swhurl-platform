@@ -11,7 +11,7 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Scope:** [`infra/traefik/helmchartconfig.yaml`](../infra/traefik/helmchartconfig.yaml) turns on
   `logs.access.enabled` (format `json`, already set) and Traefik's own OTLP tracing at a 100% sample rate, and adds
   `HOST_IP` from the pod's `status.hostIP` plus
-  `--tracing.otlp.http.endpoint=http://$(HOST_IP):4318/v1/tracing`, the address apps already send to. Nothing writes
+  `--tracing.otlp.http.endpoint=http://$(HOST_IP):4318`, the address apps already send to. Nothing writes
   the host's address into Git, and no other unit or app changed.
 - **Offline:** `helm template` of the pinned chart (traefik 38.0.201, app v3.5) with these values renders
   `--accesslog=true`, `--accesslog.format=json`, `--tracing.sampleRate=1`, `--tracing.otlp=true`,

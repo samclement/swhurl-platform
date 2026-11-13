@@ -30,7 +30,10 @@ spec:
         http:
           enabled: true
     additionalArguments:
-      - "--tracing.otlp.http.endpoint=http://$(HOST_IP):4318/v1/tracing"
+      # No path: Traefik appends `/v1/traces`, the only path the collector's OTLP/HTTP receiver answers.
+      # Traefik's documented default, `/v1/tracing`, gets a 404 and the spans vanish without an error in
+      # Traefik's log.
+      - "--tracing.otlp.http.endpoint=http://$(HOST_IP):4318"
     ports:
       web:
         nodePort: 31514

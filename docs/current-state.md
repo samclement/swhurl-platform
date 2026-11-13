@@ -36,9 +36,27 @@ What has been verified on the live cluster, and when: current facts first, then 
   `/etc/systemd/system/connectivity-probe.*` files. Its `sudo -n true` check exited 1, so non-interactive
   sudo was unavailable. No host change was performed; the units have not been stopped or removed.
   Use the [host removal runbook](operations.md#connectivity-probe) in an interactive terminal.
-  Delivery of this cleanup is approved: commit/push, Validate's image build and bot pin, then reconcile
-  and read-only live checks. CI and live deployment evidence are pending; a signed-in new-app creation
-  remains deliberately unexercised, and installed probe removal stays an operator action.
+- **Delivery and CI:** cleanup `efdcd9d7` was pushed to `main`; [Validate run 43518286630](https://github.com/samclement/swhurl-platform/actions/runs/43518286630)
+  passed all nine jobs, including the Go chart tests with explicit PyYAML, codegraph, backup, templates,
+  image builds and Deploy the console. Bot pin `c0eb0397` set both console and notify to
+  `src-0705661c3972e762`, index digest `sha256:1628dda9ce93cf0ffbdeb8a8cb2d3aa38e6b572b80c9bc61565903e56c70b189`.
+  The clean checkout pulled that pin with `git pull --rebase`. CI's Node.js 20 action-deprecation and
+  ubuntu-latest migration notices were non-blocking; action upgrades are outside this cleanup.
+- **Live evidence at the bot pin:** with `KUBECONFIG` exported, `make flux-reconcile` settled all 32 units
+  at `c0eb0397`; `make verify-platform` passed with 88 OK and no BAD/WARN, and `make app-status` reported
+  all 11 instances healthy at that revision. Console and notify each had one Ready pod, zero restarts,
+  and the exact tag/digest above. `console-dashboards-29910143` and `console-notifications-29910143`
+  both completed on that image. A tiny `importlib.metadata`/module-presence check in each deployment
+  found Copier 9.18.2 and 21 distributions, with httpx, Starlette, uvicorn, pymongo and ruamel absent.
+  Public HTTP `/`, `/healthz`, `/apps`, `/catalogue` and `/new` returned 301 to HTTPS; their signed-out
+  HTTPS requests returned 302 to Google sign-in. Temporary loopback port-forwards proved console and
+  notify `/healthz` both return 200 and the console root without an identity returns 401; the forwards
+  were stopped afterwards. No identity header was forged and no form was submitted.
+  GHCR's linux/amd64 compressed layers total 71,107,077 bytes, down from 71,922,329 (815,252 bytes, 1.1%).
+- **Still pending:** the installed probe timer/service must be removed in the operator's terminal;
+  no sudo or host-unit change was performed during delivery. Genuine signed-in browsing and end-to-end
+  New app creation on this image remain unexercised; no public app repository, instance, data or
+  credential was created, changed or removed by these checks.
 
 ## The last of `tools/` leaves (13 November 2026)
 

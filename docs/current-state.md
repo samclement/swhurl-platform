@@ -2,6 +2,30 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Traefik's requests reach ClickStack (13 November 2026)
+
+- **Capability:** slice 1 of [platform telemetry](platform-telemetry-status.md): every request at the edge leaves one
+  JSON access line and one Traefik span in ClickStack, so the platform services behind the ingress are observable
+  without an app's own telemetry. Traefik's Prometheus and OTLP metrics were held back to slice 4, whose rule is a
+  keep-list and a day-long cost baseline before any new metric source.
+- **Scope:** [`infra/traefik/helmchartconfig.yaml`](../infra/traefik/helmchartconfig.yaml) turns on
+  `logs.access.enabled` (format `json`, already set) and Traefik's own OTLP tracing at a 100% sample rate, and adds
+  `HOST_IP` from the pod's `status.hostIP` plus
+  `--tracing.otlp.http.endpoint=http://$(HOST_IP):4318/v1/tracing`, the address apps already send to. Nothing writes
+  the host's address into Git, and no other unit or app changed.
+- **Offline:** `helm template` of the pinned chart (traefik 38.0.201, app v3.5) with these values renders
+  `--accesslog=true`, `--accesslog.format=json`, `--tracing.sampleRate=1`, `--tracing.otlp=true`,
+  `--tracing.otlp.http=true`, `--tracing.otlp.http.endpoint=http://$(HOST_IP):4318/v1/tracing` and the `HOST_IP`
+  environment variable from `status.hostIP`; the chart emits no empty endpoint argument that could override it. A
+  local `traefik:v3.5` container accepted exactly those tracing flags and posted to an OTLP/HTTP sink at
+  `/v1/tracing` when a request was made, so the flags are Traefik's and the export happens. The new `traefik-access`
+  case in `tests/fixtures/logs.json` is a real line from that container (a 200 response with platform values):
+  `make check-otel` parses it through the deployed collector (74 node fixtures) as `log.parser=json` with
+  `ClientHost`, `DownstreamStatus`, `RequestMethod`, `RequestPath`, `entryPointName` and `RouterName` as attributes
+  and INFO severity.
+- **Not exercised yet:** the cluster. This entry records the offline half; what was seen after the reconcile is
+  added below the same day.
+
 ## Python tests and the host probe retired offline (13 November 2026)
 
 - **Capability:** the approved cleanup drops all top-level `tests/*.py`, `make test` and its CI step,

@@ -9,7 +9,28 @@ spec:
       general:
         format: json
       access:
+        # One JSON line per request at the edge, the only place that sees every app's and platform
+        # service's traffic ([platform telemetry](../../docs/platform-telemetry-status.md)).
+        enabled: true
         format: json
+    # Requests get a Traefik span, the parent of an app's own span. Pods reach the node collector's OTLP
+    # receiver on the host's own address exactly as apps do, so HOST_IP is the node's IP and the kubelet
+    # expands it in the argument below; a literal here would restate the host's address in Git.
+    env:
+      - name: HOST_IP
+        valueFrom:
+          fieldRef:
+            fieldPath: status.hostIP
+    tracing:
+      # The volume is still small (apps send about 4,700 spans an hour); lower it when the cost of a day
+      # says so ([D3](../../docs/platform-telemetry-status.md#open-decisions)).
+      sampleRate: 1.0
+      otlp:
+        enabled: true
+        http:
+          enabled: true
+    additionalArguments:
+      - "--tracing.otlp.http.endpoint=http://$(HOST_IP):4318/v1/tracing"
     ports:
       web:
         nodePort: 31514

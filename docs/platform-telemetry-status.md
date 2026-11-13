@@ -1,7 +1,7 @@
 # Platform telemetry: progress, remaining slices and the next gate
 
-Status: proposed
-Gate: the operator approves slice 1 and answers D1 and D2
+Status: in progress
+Gate: the operator approves slice 2 (D1) and answers D4
 Uncommitted: none
 
 **The goal: every platform service is observable in ClickStack the way an app is.** Its logs, its requests
@@ -30,8 +30,8 @@ Before reading anything else in a new session:
 5. One slice per session, opened with `/slice`. If the slice touches `v2/`, read the v2
    [design principles](iteration-2-plan.md#design-principles) and update [v2 status](v2-status.md) as well.
 
-**Next:** slice 1, once the operator approves it. Each slice below lists its files, so its session reads
-those and nothing more.
+**Next:** slice 2 (`Platform: <service>` dashboards), once the operator approves it (D1) and answers D4.
+Each slice below lists its files, so its session reads those and nothing more.
 
 ## Where it stands
 
@@ -40,7 +40,7 @@ those and nothing more.
 | Platform pod logs parsed into ClickStack (all namespaces, JSON and named formats) | done | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
 | Node, pod and container metrics per platform service | done | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
 | HyperDX's own traces and metrics (10% sampled) | done | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
-| Request telemetry at the ingress: `access.format: json` is set but access logs are off, and no OTLP export | partial | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
+| Request telemetry at the ingress: one JSON access line and one OTLP span per request, 100% sampled | done | [record](current-state.md#traefiks-requests-reach-clickstack-13-november-2026) |
 | Console and notify telemetry: plain-text and timing lines only, no per-request or per-job line, no spans | partial | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
 | Service metrics: Flux, cert-manager, oauth2-proxy and Reloader expose Prometheus that nothing scrapes; NATS has no exporter | partial | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
 | Generated dashboards: apps only (`App: <app>`, web and worker); none for platform services | partial | [apps](apps.md#dashboards) |
@@ -50,19 +50,6 @@ those and nothing more.
 
 Ordered. Each slice is one session and one commit (or a short series), checked offline, then applied and
 verified live, with a dated `current-state.md` entry. Files are where to start, not a limit.
-
-**S1. Requests at the edge (Traefik): configuration only.**
-- Change: in `infra/traefik/helmchartconfig.yaml`, turn on access logs, and OTLP tracing and metrics to the
-  node collector (`HOST_IP:4318`, the apps' path; `platform/otel/helmrelease-daemonset.yaml` already
-  receives it). Set a trace sample rate (D3). Read the chart's values at the k3s-pinned version first;
-  Traefik 3 keys differ from older docs.
-- Check: Traefik becomes the parent span of app requests. An app's web tiles count `SpanKind = 'Server'` in its
-  own namespace, so they shouldn't double count. Confirm the worker `ParentSpanId = ''` tiles are
-  unaffected.
-- Verify: add an access-log fixture to `tests/fixtures/logs.json` and run `make check-otel`, then `make check`.
-  Live: `host/telemetry-inventory.sh 1` shows `kube-system/traefik` access lines and spans, and a console
-  page load appears as a Traefik span.
-- Docs: [services](services.md#clickstack-and-otel) (what Traefik sends), [current state](current-state.md).
 
 **S2. `Platform: <service>` dashboards in the reconciler (`v2/dashboards`, `v2/orchestration/dashboards.go`).**
 - Meaning: a platform service is an entry in a fixed Go catalogue: name, namespace, container selector, kind
@@ -109,12 +96,11 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
-| D1 | Approve S1 and S2 as the first slices? | Yes: S1 is configuration only and lights up every service behind the ingress | S1 |
 | D2 | Console telemetry: (1) structured JSON lines, (2) a stdlib OTLP/HTTP trace exporter in v2 (a new external-effect adapter, separate approval), (3) an OTel Go SDK exception to stdlib-only | (1); revisit (2) if a console trace is ever needed | S3 |
-| D3 | Traefik trace sample rate | 100% while the volume is small (apps send ≈4,700 spans an hour); lower if S4's cost gate says so | S1 |
 | D4 | Scheduled-job row: restore it in Go (S2) or correct the apps page now | Restore in S2; the backup jobs need it | S2 |
 | D5 | NATS exporter sidecar (one more container in `messaging`) | Yes, with a keep-list | S4 |
 | D6 | Platform alert names: `swhurl:platform/<service>:<preset>` or a separate prefix | `swhurl:platform/<service>:<preset>`, one parser | S5 |
+| D1 | Approve slice 2 as the next slice? | Yes: the catalogue and its dashboards make the telemetry reachable | S2 |
 
 ## Deferred features
 
@@ -130,6 +116,9 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
 ## Durable decisions
 
 - Telemetry enters through the node collector's OTLP port or its log files; no service holds the ingestion key.
+- Traefik's access logs and spans reach the node collector on `$(HOST_IP):4318`, the address apps use; the host's
+  address is never written in Git. Traefik's spans are 100% sampled until a day's cost says otherwise.
+- Traefik's Prometheus and OTLP metrics stay off until a scrape has a keep-list and a day-long cost baseline.
 - v2 stays stdlib-only: no OpenTelemetry Go SDK without a separate approval (D2).
 - Dashboards are generated, never hand-edited: the definition is Go, and a UI edit is overwritten on the next run.
 - The platform catalogue is Go, checked against Git's units; the cluster never adds a platform dashboard.

@@ -525,6 +525,25 @@
   }
  },
  {
+  "name": "traefik-access",
+  "resource": {
+   "k8s.pod.name": "traefik-test"
+  },
+  "input": "{\"ClientAddr\":\"192.168.1.200:33748\",\"ClientHost\":\"192.168.1.200\",\"ClientPort\":\"33748\",\"ClientUsername\":\"-\",\"DownstreamContentSize\":1234,\"DownstreamStatus\":200,\"Duration\":27973,\"GzipRatio\":0,\"OriginContentSize\":1234,\"OriginDuration\":24100,\"OriginStatus\":200,\"Overhead\":3873,\"RequestAddr\":\"console.homelab.swhurl.com\",\"RequestContentSize\":0,\"RequestCount\":1,\"RequestHost\":\"console.homelab.swhurl.com\",\"RequestMethod\":\"GET\",\"RequestPath\":\"/activity\",\"RequestPort\":\"-\",\"RequestProtocol\":\"HTTP/2.0\",\"RequestScheme\":\"https\",\"RetryAttempts\":0,\"RouterName\":\"console-console-homelab-swhurl-com-route-6f9c2@kubernetes\",\"ServiceAddr\":\"10.42.0.133:8080\",\"ServiceName\":\"console-console-homelab-swhurl-com-svc-6f9c2@kubernetes\",\"StartLocal\":\"2026-11-14T00:00:00.000000000Z\",\"StartUTC\":\"2026-11-14T00:00:00.000000000Z\",\"entryPointName\":\"websecure\",\"level\":\"info\",\"msg\":\"\",\"time\":\"2026-11-14T00:00:00Z\"}",
+  "expected": {
+   "attributes": {
+    "log.parser": "json",
+    "ClientHost": "192.168.1.200",
+    "DownstreamStatus": 200,
+    "RequestMethod": "GET",
+    "RequestPath": "/activity",
+    "entryPointName": "websecure",
+    "RouterName": "console-console-homelab-swhurl-com-route-6f9c2@kubernetes"
+   },
+   "severityNumber": 9
+  }
+ },
+ {
   "name": "console-json",
   "resource": {
    "k8s.pod.name": "console-test"

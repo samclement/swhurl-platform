@@ -1,6 +1,6 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: in progress
+Status: parked
 Gate: choose the next slice from remaining work or deferred features
 Uncommitted: none
 

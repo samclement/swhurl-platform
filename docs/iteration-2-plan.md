@@ -2937,7 +2937,8 @@ The gate after §34. Two things outside the tests still ran Python: `charts.py` 
   as before. A pull request whose range cannot be read is now checked as committed, as a push already was.
 - The console image copies no `tools/`, no platform-settings ConfigMap and no `v2/contract/`: only the Python tooling
   read them, and the Go console reads the stack catalogue from the pinned tree. `images/content-tag.sh console`
-  hashes `images/console`, `.dockerignore`, `pyproject.toml`, `uv.lock` and `v2`.
+  hashes `images/console`, `.dockerignore`, `pyproject.toml`, `uv.lock` and `v2`, and `v2/coexistence_test.go`
+  requires `v2` among them, no longer `tools`, and allows no `COPY` of `v2/contract/`.
 
 **What stays Python.** The tests in `tests/` (they check Git's content and run the make targets and scripts), the
 code graph aid, the host's connectivity probe and Copier in the console image.

@@ -134,7 +134,8 @@ shrunk, retired or ported (the rule is under [durable decisions](#durable-decisi
    ([§34](iteration-2-plan.md#34-the-command-catalogue-leaves-python-make-help-over-the-makefiles-own-lines-approved-13-november-2026)).
 3. **The last of `tools/`** (done 13 November 2026). The ClickStack render test pulls its own chart, so
    `charts.py`, `run.py`, `platform.py` and `yamlio.py` are deleted; Validate's records-only rule is
-   `.github/records-only.sh` over v2's inputs, and the app-only fast path, which matched only v1's layout, is gone
+   `.github/records-only.sh` over v2's inputs, and the app-only fast path, which matched only v1's layout, is gone;
+   v2's coexistence guard no longer expects `tools` among the console image's inputs
    ([§35](iteration-2-plan.md#35-the-last-of-tools-the-clickstack-render-test-pulls-its-own-chart-and-validates-classifier-is-bash-approved-13-november-2026)).
 4. **Next:** the Python left has no rule yet. A Python test of Python is deleted with it, never ported, and Go
    gets tests of its own decisions; but the tests in `tests/` check Git's content and run the make targets and

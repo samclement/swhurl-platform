@@ -44,13 +44,12 @@ func TestCoexistence(t *testing.T) {
 		t.Fatal("no Flux paths checked; discovery contract changed")
 	}
 	inputs := regexp.MustCompile(`(?m)^\s+console\) paths=\(([^)]+)\)`).FindStringSubmatch(read("images/content-tag.sh"))
-	if len(inputs) != 2 || !slices.Contains(strings.Fields(inputs[1]), "tools") || !slices.Contains(strings.Fields(inputs[1]), "v2") {
+	if len(inputs) != 2 || !slices.Contains(strings.Fields(inputs[1]), "v2") {
 		t.Fatal("re-check console content-hash inputs")
 	}
 	// Since the deletion plan's phase 2 (decision 2) the console image ships swhurl-v2: it writes v2's records by
 	// running the binary, never by modelling them in Python. The image gets the compiled binary from one build
-	// stage; no later COPY may pull v2's sources, and Flux still never deploys v2/ (the assertions above). The one
-	// exception is v2/contract/, data rather than source: the stack and name catalogues the tooling reads.
+	// stage; no later COPY may pull v2's sources, and Flux still never deploys v2/ (the assertions above).
 	dockerfile := read("images/console/Dockerfile")
 	if !strings.Contains(dockerfile, "\nCOPY v2/ ./\n") {
 		t.Fatal("console image does not build v2: expected a stage that copies v2/")
@@ -68,7 +67,7 @@ func TestCoexistence(t *testing.T) {
 		}
 		words := strings.Fields(line)
 		for _, source := range words[1 : len(words)-1] {
-			if source == "." || strings.ContainsAny(source, "*[") || (strings.HasPrefix(source, "v2") && source != "v2/contract/" && !strings.Contains(stage, "AS v2")) {
+			if source == "." || strings.ContainsAny(source, "*[") || (strings.HasPrefix(source, "v2") && !strings.Contains(stage, "AS v2")) {
 				t.Fatal("console COPY can consume more than its build inputs")
 			}
 		}

@@ -18,6 +18,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   HelmRelease, `test_every_chart_secret_comes_from_the_sops_secret` failed naming `MONGODB_PASSWORD`. The classifier
   printed true for records with a channel Secret and false for an empty list, a rendered file beside a record, the
   routes, `channels/kustomization.yaml`, a fixture's records, a v1 path and pull request #113's files.
+- **First push:** Validate run `43509526814` failed for `99dff8f2` in `make check-v2`: `TestCoexistence` still
+  required `tools` among the console's content-hash inputs. Nothing was deployed. The guard is corrected in the
+  next commit.
 - **Not changed:** anything on the cluster but the console's image.
 
 ## The command catalogue leaves Python (13 November 2026)

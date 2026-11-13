@@ -101,10 +101,6 @@ class Command:
         return [word for item in self.takes for word in ([item] if isinstance(item, str) else item.arguments(env))]
 
 
-def _live_test(name: str, module: str, help: str, *takes: Var, touches: str = THROWAWAY) -> Command:
-    return Command(f'live-test-{name}', help, touches, f'swhurl.{module}', takes=takes, dry_run=PLAN)
-
-
 def _timer(name: str, help: str) -> Command:
     return Command(name, help, HOST, dry_run=PLAN)
 
@@ -196,7 +192,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     ('Live tests', (
         Command('live-test-lifecycle', 'Prove suspend, uninstall, destroy-data and Orphan on a throwaway app '
                 '(swhurl-v2 lifecycle-test; needs Go 1.26.0)', THROWAWAY, dry_run=PLAN),
-        _live_test('app-template', 'livetests.app_template:main', 'Deploy the generated app fixtures through Flux, check, remove'),
+        Command('live-test-app-template', 'Deploy two instances v2 renders from fixture records through Flux, check, remove '
+                '(swhurl-v2 app-template-test; needs Go 1.26.0)', THROWAWAY, dry_run=PLAN),
         Command('live-test-team-scenario', 'The newest trace through a call and an event on three running apps the records link, '
                 'checked in ClickStack (swhurl-v2 team-scenario; needs Go 1.26.0)', READ,
                 takes=(Var('ENV', 'staging', required=False, env=True),), dry_run=PLAN),

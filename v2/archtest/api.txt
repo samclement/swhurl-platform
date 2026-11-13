@@ -404,6 +404,20 @@ adapters/registry: type Error struct {Code, Subject, Reason string}
 adapters/registry: type Image struct {Digest string MediaType string Labels map[string]string}
 adapters/registry: type Reader interface {Tags(ctx context.Context) ([]string, error) Describe(ctx context.Context, reference string) (Image, error)}
 adapters/registry: type Remote struct {}
+adapters/route/routetest: func (*Fake) Get(_ context.Context, address string) (route.Answer, error)
+adapters/route/routetest: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) route.Prober)
+adapters/route/routetest: func New() *Fake
+adapters/route/routetest: type Fake struct {Answers map[string][]route.Answer Asked []string}
+adapters/route/routetest: type Scenario struct {Redirecting, Serving, Unreachable string Location string}
+adapters/route: const Failed = "failed"
+adapters/route: const RefusedRequest = "refused_request"
+adapters/route: func (*Error) Error() string
+adapters/route: func (*Routes) Get(ctx context.Context, address string) (Answer, error)
+adapters/route: func New() Prober
+adapters/route: type Answer struct {Status int Location string}
+adapters/route: type Error struct {Code, Subject, Reason string}
+adapters/route: type Prober interface {Get(ctx context.Context, address string) (Answer, error)}
+adapters/route: type Routes struct {}
 adapters/s3/s3test: func (*Fake) Get(_ context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
 adapters/s3/s3test: func (*Fake) List(_ context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
 adapters/s3/s3test: func (*Fake) PresignURL(_ context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)
@@ -445,6 +459,61 @@ adapters/sops: type DecryptError struct {Reason string}
 adapters/sops: type Decrypter interface {Decrypt(path, keyFile string) ([]byte, error)}
 adapters/sops: type Encrypter interface {Encrypt(document []byte, recipient string) ([]byte, error)}
 adapters/sops: type Error struct {Reason string}
+apptemplatetest: const AppLabel = "platform.swhurl.com/app"
+apptemplatetest: const Bad Level = "bad"
+apptemplatetest: const Claim = Web
+apptemplatetest: const Container = "main"
+apptemplatetest: const Database = "/data/app.db"
+apptemplatetest: const Done Level = "done"
+apptemplatetest: const Environment = "prod"
+apptemplatetest: const Fixture = "tests/fixtures/app-template"
+apptemplatetest: const FluxNamespace = "flux-system"
+apptemplatetest: const Info Level = "info"
+apptemplatetest: const IngressFile = Fixture + "/v2-apps/instances/" + Web + "/" + Environment + "/ingress.json"
+apptemplatetest: const OK Level = "ok"
+apptemplatetest: const Passed = "App template test passed."
+apptemplatetest: const Plan = `Deploy two throwaway instances v2 renders from the fixture records (tests/fixtures/app-template, reconciled from the pushed Git revision) through real Flux units, check them, and remove them: smoke-worker-prod worker: runs, has no Service or Ingress smoke-web-prod authenticated web app with SQLite, digest-pinned: route redirects to sign-in, claim on local-path-retain, database written, DATABASE_PATH set, one replica, stop-first updates, Ready on its declared health probes Touches only the app-smoke-*-prod units, their namespaces and the web app's volume.`
+apptemplatetest: const PodSelector = "app.kubernetes.io/name=" + Web + ",app.kubernetes.io/controller=" + Container
+apptemplatetest: const ReaderPod = "reader"
+apptemplatetest: const ReclaimDelete = `{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}`
+apptemplatetest: const ReleaseFile = Fixture + "/records/" + Web + "/" + Environment + "/release.json"
+apptemplatetest: const SignIn = "https://accounts.google.com/"
+apptemplatetest: const StorageClass = "local-path-retain"
+apptemplatetest: const Web = "smoke-web"
+apptemplatetest: const Worker = "smoke-worker"
+apptemplatetest: const Workload = Web
+apptemplatetest: func (*Preflight) Error() string
+apptemplatetest: func Answer(status int, location string) string
+apptemplatetest: func Apps() []string
+apptemplatetest: func ClaimBound(claim []byte) Line
+apptemplatetest: func Claimed(volume []byte) bool
+apptemplatetest: func CleanedUp() Line
+apptemplatetest: func Conclusion(lines []Line) []Line
+apptemplatetest: func Decode(units map[string][]byte, ingress, release []byte) (Rendered, error)
+apptemplatetest: func Deployed(document []byte) (security Line, pinned []Line)
+apptemplatetest: func Failed(reason string) Line
+apptemplatetest: func Finished(phase string) bool
+apptemplatetest: func FixtureUnit(app string, document []byte) ([]byte, error)
+apptemplatetest: func Format(line Line) string
+apptemplatetest: func Labelled(namespace []byte, app string) bool
+apptemplatetest: func Leftovers(app string) error
+apptemplatetest: func Namespace(app string) string
+apptemplatetest: func Passes(lines []Line) bool
+apptemplatetest: func ProbedReady(pods [][]byte, healthPath string) Line
+apptemplatetest: func Protected(host string, redirected bool, last string) Line
+apptemplatetest: func ReaderDocument() []byte
+apptemplatetest: func ReadyMessage(unit []byte) string
+apptemplatetest: func SignInRedirect(status int, location string) bool
+apptemplatetest: func Text(lines []Line) string
+apptemplatetest: func Unexposed(services, ingresses int) Line
+apptemplatetest: func Unit(app string) string
+apptemplatetest: func UnitFile(app string) string
+apptemplatetest: func UnitReady(app string) Line
+apptemplatetest: func Written(phase string) Line
+apptemplatetest: type Level string
+apptemplatetest: type Line struct {Level Level Text string}
+apptemplatetest: type Preflight struct {Reason string}
+apptemplatetest: type Rendered struct {Units map[string][]byte Host string HealthPath string}
 calls: const CalleeAbsent = "callee_absent"
 calls: const CalleeNotWeb = "callee_not_web"
 calls: const NoConsent = "no_consent"
@@ -1309,6 +1378,7 @@ orchestration: func AcquireChart(profile kernel.PlatformProfile, repositories []
 orchestration: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
 orchestration: func AppHooks(ctx context.Context, inputs AppHooksInputs) ([]AppHookOutcome, error)
 orchestration: func AppRepo(ctx context.Context, inputs AppRepoInputs) (AppRepository, error)
+orchestration: func AppTemplateTest(ctx context.Context, inputs AppTemplateTestInputs) ([]apptemplatetest.Line, error)
 orchestration: func BootstrapClickStack(ctx context.Context, ports BootstrapPorts, options BootstrapOptions) (BootstrapReport, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
 orchestration: func CheckNotifications(ctx context.Context, ports CheckerPorts, options CheckOptions) (CheckReport, error)
@@ -1376,6 +1446,7 @@ orchestration: type AppHookOutcome struct {Application, Repository string State 
 orchestration: type AppHooksInputs struct {Staging map[string][]byte Owner, HookHost string GitHubToken, HookToken string DryRun bool Repos github.RepositoryWriter}
 orchestration: type AppRepoInputs struct {Name, Type, Stack, Description string Owner, Identity, PlatformRepository string Settings []string Resume, DryRun bool Contract []byte Work string Token, ReposToken, HookToken, HookHost string Source github.Console Renderer copier.Renderer Repos github.RepositoryWriter Images func(image string) (registry.Reader, error) Now func() time.Time Sleep func(time.Duration) Note func(string)}
 orchestration: type AppRepository struct {Image, Digest, Repository, Commit, URL string Stack, Template string Created bool}
+orchestration: type AppTemplateTestInputs struct {Cluster Cluster Route route.Prober Rendered apptemplatetest.Rendered Now func() time.Time Sleep func(time.Duration) Say func(apptemplatetest.Line)}
 orchestration: type AppType struct {Key string Stacks []string Answers []Named Exposure string}
 orchestration: type BootstrapLevel string
 orchestration: type BootstrapLine struct {Level BootstrapLevel Text string}

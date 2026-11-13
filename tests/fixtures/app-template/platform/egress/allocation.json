@@ -1,0 +1,15 @@
+{
+  "kind": "v2-egress",
+  "version": 1,
+  "revision": "592127db3a120b0821da44e028477ce4d30b640a",
+  "instances": [
+    {
+      "application": "smoke-web",
+      "environment": "prod",
+      "port": 30101,
+      "grants": [
+        "swhurl-platform-backups-110927251694.s3.eu-west-2.amazonaws.com:443"
+      ]
+    }
+  ]
+}

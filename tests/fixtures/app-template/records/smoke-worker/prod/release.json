@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "application": "smoke-worker",
+  "source": {
+    "repository": "samclement/demo-notifier",
+    "commit": "f44d8e94f69e8488072ede9274aca043315bb58e"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/demo-notifier",
+    "digest": "sha256:8f63a35640d53097038893171c13f25c3565a899fe718c0775909df1c38dbe7e",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "worker",
+    "port": 0,
+    "healthPath": "",
+    "uid": 65532
+  },
+  "description": "App-template live test: a private worker on the demo-notifier image",
+  "releaseId": "rel-sha256:2c20b5843a2e3dd67e37e8b12c3020375e76156385e086d65831c37ef934891b"
+}

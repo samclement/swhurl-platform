@@ -2,7 +2,6 @@ package orchestration
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/lifecycletest"
@@ -43,53 +42,6 @@ func lifecycleReaderRef() observe.Ref {
 func lifecycleVolumeRef(name string) observe.Ref {
 	ref, _ := kube.RefOf("", "PersistentVolume", "", name)
 	return ref
-}
-
-// read is one object's document, nil when the server says it is absent, or an error naming why it could not be read:
-// a failed read is never taken for absence.
-func (r *lifecycleRun) read(ref observe.Ref) ([]byte, error) {
-	return readObject(r.ctx, r.inputs.Cluster.Reader, ref, ref.Kind+" "+ref.Name)
-}
-
-// present is whether the server says the object exists.
-func (r *lifecycleRun) present(ref observe.Ref) (bool, error) {
-	document, err := r.read(ref)
-	return document != nil, err
-}
-
-// wait polls met until it holds or limit passes. A read that fails is retried, and named when the wait times out;
-// what is the failure's words.
-func (r *lifecycleRun) wait(limit time.Duration, what string, met func() (bool, error)) error {
-	started := r.inputs.Now()
-	last := ""
-	for {
-		done, err := met()
-		if err == nil && done {
-			return nil
-		}
-		last = ""
-		if err != nil {
-			last = err.Error()
-		}
-		if r.ctx.Err() != nil {
-			return fmt.Errorf("%s: wait stopped: %w", what, r.ctx.Err())
-		}
-		if r.inputs.Now().Sub(started) >= limit {
-			if last != "" {
-				return fmt.Errorf("%s after %s (last read: %s)", what, limit, last)
-			}
-			return fmt.Errorf("%s after %s", what, limit)
-		}
-		r.inputs.Sleep(lifecyclePoll)
-	}
-}
-
-// gone is whether the server says the object is absent.
-func (r *lifecycleRun) gone(ref observe.Ref) func() (bool, error) {
-	return func() (bool, error) {
-		present, err := r.present(ref)
-		return !present, err
-	}
 }
 
 // ready is whether a unit's Ready condition is True.

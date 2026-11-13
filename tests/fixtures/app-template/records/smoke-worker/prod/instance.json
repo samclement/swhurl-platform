@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "application": "smoke-worker",
+  "environment": "prod",
+  "release": "rel-sha256:2c20b5843a2e3dd67e37e8b12c3020375e76156385e086d65831c37ef934891b",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 384
+  },
+  "grants": {
+    "exposure": "private"
+  },
+  "bindings": {},
+  "storage": {}
+}

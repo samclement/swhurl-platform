@@ -20,7 +20,7 @@ class V2PolicyGateTests(unittest.TestCase):
             marker = root / 'called'
             env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', UNEXPECTED_CALL=str(marker))
             for script in ('check-apps.sh', 'chart.sh'):
-                for argv in (['tests/fixtures/apps/smoke-web/staging'], ['--chart', '/local/chart'], ['--help']):
+                for argv in (['v2-apps/instances/demo-shop/prod'], ['--chart', '/local/chart'], ['--help']):
                     result = subprocess.run(['bash', str(ROOT / 'v2' / script), *argv], cwd=root,
                                             env=env, capture_output=True, text=True)
                     self.assertEqual(result.returncode, 2)
@@ -57,7 +57,8 @@ esac
             calls = root / 'calls'
             for chart, render, policy, expected, sequence in (
                     (7, 0, 0, 7, ['chart']), (0, 7, 0, 1, ['chart', 'render']),
-                    (0, 0, 9, 9, ['chart', 'render', 'policy']), (0, 0, 0, 0, ['chart', 'render', 'policy'])):
+                    (0, 0, 9, 9, ['chart', 'render', 'render', 'policy']),
+                    (0, 0, 0, 0, ['chart', 'render', 'render', 'policy'])):
                 with self.subTest(chart=chart, render=render, policy=policy):
                     calls.unlink(missing_ok=True)
                     env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', POLICY_TEST_CLI=str(root / 'cli'),

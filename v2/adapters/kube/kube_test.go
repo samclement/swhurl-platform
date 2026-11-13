@@ -707,6 +707,7 @@ func TestRefOfStatesTheVersion(t *testing.T) {
 	for _, tt := range []struct{ group, kind, apiVersion string }{
 		{"", "Namespace", "v1"},
 		{"", "Pod", "v1"},
+		{"", "Service", "v1"},
 		{"apps", "Deployment", "apps/v1"},
 		{"networking.k8s.io", "NetworkPolicy", "networking.k8s.io/v1"},
 		{"helm.toolkit.fluxcd.io", "HelmRelease", "helm.toolkit.fluxcd.io/v2"},

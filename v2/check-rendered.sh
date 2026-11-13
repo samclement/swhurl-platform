@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Every file v2 derives from the records must be what Git holds: the resolution (v2-records/calls.json), each
 # instance's compiled folder and unit (v2-apps/ and clusters/home/app-*.json), the egress allocation and the
-# proxy's two files, the auth folder, NATS's user list and Reloader's watch list. `render --check` renders them
-# from the records in the working tree and compares, so an uncommitted record change counts; it writes nothing.
+# proxy's two files, the auth folder, NATS's user list and Reloader's watch list, and the same for the app-template
+# live test's fixture (tests/fixtures/app-template). `render --check` renders them from the records in the working
+# tree and compares, so an uncommitted record change counts; it writes nothing.
 # make check-v2 runs it, which is how CI runs it. How to re-render: docs/services.md#egress-proxy.
 set -Eeuo pipefail
 
@@ -22,6 +23,12 @@ trap 'rm -rf "$work"' EXIT
 if ! "$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --check; then
   echo "not what the records render (docs/services.md#egress-proxy): render them from the working tree, review"
   echo "the diff and commit it; do not edit a derived file by hand."
+  exit 1
+fi
+# The app-template live test deploys instances rendered from its own records; Flux reads them from Git.
+fixture=tests/fixtures/app-template
+if ! "$work/swhurl-v2" render --records "$fixture/records" --profile v2/testdata/profile.json --out "$fixture" --check; then
+  echo "$fixture is not what its records render: run make v2-render, review the diff and commit it."
   exit 1
 fi
 

@@ -120,7 +120,7 @@ func TestInvalidSnapshotCannotEvaluateHealthy(t *testing.T) {
 }
 
 func TestCurrentAndLegacyInstanceRoots(t *testing.T) {
-	for _, path := range []string{"./apps/example/staging", "./tests/fixtures/apps/apps/example/staging", "./v2-apps/instances/example/staging"} {
+	for _, path := range []string{"./apps/example/staging", "./v2-apps/instances/example/staging"} {
 		data := testSnapshot(t)
 		object(data.Units[0], "spec")["path"] = path
 		state, err := Evaluate(nil, data, 1791028800, "https://console.example.test", true)
@@ -128,7 +128,7 @@ func TestCurrentAndLegacyInstanceRoots(t *testing.T) {
 			t.Fatalf("instance path %s not discovered: %v", path, err)
 		}
 	}
-	for _, path := range []string{"./elsewhere/example/staging", "./v2-apps/example/staging", "./v2-apps/instances/example/dev", "./v2-apps/instances/INVALID/prod", "./v2-apps/instances/example/staging/other", "v2-apps/instances/example/staging"} {
+	for _, path := range []string{"./elsewhere/example/staging", "./tests/fixtures/apps/apps/example/staging", "./v2-apps/example/staging", "./v2-apps/instances/example/dev", "./v2-apps/instances/INVALID/prod", "./v2-apps/instances/example/staging/other", "v2-apps/instances/example/staging"} {
 		data := testSnapshot(t)
 		object(data.Units[0], "spec")["path"] = path
 		state, err := Evaluate(nil, data, 1791028800, "https://console.example.test", true)

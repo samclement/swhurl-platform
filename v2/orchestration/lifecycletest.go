@@ -22,7 +22,6 @@ const (
 	lifecycleNamespace = 3 * time.Minute
 	lifecycleDeleted   = 5 * time.Minute
 	lifecycleSettle    = 10 * time.Second
-	lifecyclePoll      = 2 * time.Second
 	// lifecycleLogLines bounds the reader pod's log: the marker is one line.
 	lifecycleLogLines = 100
 )
@@ -44,7 +43,7 @@ type LifecycleTestInputs struct {
 // after it do not run; the passed line follows when nothing failed, and the cleanup always runs last, even when the
 // caller's context is cancelled. The lines are returned as well as said.
 func LifecycleTest(ctx context.Context, inputs LifecycleTestInputs) ([]lifecycletest.Line, error) {
-	run := &lifecycleRun{ctx: ctx, inputs: inputs}
+	run := &lifecycleRun{liveCluster: liveCluster{ctx, inputs.Cluster.Reader, inputs.Now, inputs.Sleep}, inputs: inputs}
 	if err := run.preflight(); err != nil {
 		return nil, err
 	}
@@ -66,7 +65,7 @@ func LifecycleTest(ctx context.Context, inputs LifecycleTestInputs) ([]lifecycle
 // lifecycleRun is one run: the lines said so far, the marker the workload wrote, and every volume the test's claim was
 // seen bound to, which the cleanup destroys.
 type lifecycleRun struct {
-	ctx      context.Context
+	liveCluster
 	inputs   LifecycleTestInputs
 	lines    []lifecycletest.Line
 	original string
@@ -258,7 +257,8 @@ func (r *lifecycleRun) orphan() error {
 // seen bound to whose claim lived in the namespace. Nothing it does fails the run, and it runs even when the caller's
 // context is cancelled.
 func (r *lifecycleRun) cleanup() {
-	c := &lifecycleRun{ctx: context.WithoutCancel(r.ctx), inputs: r.inputs}
+	c := &lifecycleRun{liveCluster: r.liveCluster, inputs: r.inputs}
+	c.ctx = context.WithoutCancel(r.ctx)
 	for _, unit := range []string{lifecycletest.Unit, lifecycletest.OrphanUnit} {
 		_ = c.deleteUnit(unit)
 	}

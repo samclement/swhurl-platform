@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "application": "smoke-web",
+  "environment": "prod",
+  "release": "rel-sha256:4079ed33e6ae74ed6b3154a64dbda75cef3ba5e2c8c8faee2e8151c4bfccdf94",
+  "configuration": {
+    "replicas": 1,
+    "memoryMiB": 128
+  },
+  "grants": {
+    "exposure": "authenticated-web"
+  },
+  "bindings": {},
+  "storage": {
+    "sizeMiB": 64
+  }
+}

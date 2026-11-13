@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "application": "smoke-web",
+  "source": {
+    "repository": "samclement/demo-shop",
+    "commit": "3bf4f9cf0c6ba37578f4420e67721cfe9f0a6138"
+  },
+  "artifact": {
+    "image": "ghcr.io/samclement/demo-shop",
+    "digest": "sha256:663a105fd982b27adee41f94142cde90641da8d96a27452358a67052958793b7",
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "platform": "linux/amd64"
+  },
+  "runtime": {
+    "kind": "web",
+    "port": 8080,
+    "healthPath": "/healthz",
+    "uid": 65532
+  },
+  "database": "sqlite",
+  "description": "App-template live test: a signed-in web app with SQLite on the demo-shop image",
+  "releaseId": "rel-sha256:4079ed33e6ae74ed6b3154a64dbda75cef3ba5e2c8c8faee2e8151c4bfccdf94"
+}

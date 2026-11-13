@@ -1358,7 +1358,7 @@ notices (deployed, failed, rolled back, uninstalled) and health incidents (unhea
 reminders), and delivers them to the platform topic, with a copy for the notify service when the notice is about an
 app. **Its state document and its wire contracts stay as they are**; everything else is v2's design.
 
-**Kept exactly** (each retained case of the retired Python tests has [Go coverage](../v2/incident/testdata/README.md#all-42-legacy-cases), time an argument):
+**Kept exactly** (each retained case of the retired Python tests has [Go coverage](../v2/incident/testdata/README.md#all-41-legacy-cases), time an argument):
 
 - **The state:** `console/notification-state` key `state.json`, version 1, the same shape (`started`,
   `last_success`, `instances`, `seen`, `pending`, `monitor`, `notify_service`) and the same notice keys, so Go
@@ -2771,3 +2771,105 @@ suspended spec, unchanged available workload and same pod identity; after resume
 the current generation and Ready. The test unit does not enter the platform's root unit list. Cleanup removes only
 the labelled test unit and its release, then the labelled namespace (the fixture keeps it from pruning), and checks
 that all three are absent. No PVC or PV is created or deleted.
+
+## 33. `live-test-app-template` in Go, over instances v2 renders (approved 13 November 2026)
+
+The last kept live test ([remaining work B.1](v2-status.md#remaining-work)). The operator chose on 13 November not
+to port it as it is: it deploys `tests/fixtures/apps`, a frozen v1-shaped root that nothing produces any more. It now
+deploys throwaway instances that v2 renders from fixture records, so it proves the cluster runs what `render`
+writes for a template-built app. Unlike §27–§32, this is not a port with the same behaviour.
+
+**Decision.** `make live-test-app-template` runs `swhurl-v2 app-template-test --kubeconfig K`, with the kubeconfig
+exported as `restore-sqlite` does. `DRY_RUN=true` runs `--dry-run`, which prints the plan, reads nothing and needs no
+kubeconfig. `tools/swhurl/livetests/app_template.py`, `livetests/__init__.py` (it has no users left) and their tests
+are deleted, along with `tests/fixtures/apps`. The catalogue keeps the target without a `run` function.
+
+**Fixture.**
+- `tests/fixtures/app-template/records/` holds the records, written by hand once:
+  - one team, `smoke`, with a placeholder channel encrypted to the profile's recipient (render refuses a team
+    without a channel);
+  - two apps, both `prod`, so no ImageRepository or ImagePolicy is rendered and image automation never scans them:
+    - `smoke-worker`: a worker, `private`, with the image `demo-notifier` runs, by digest;
+    - `smoke-web`: a web app, `authenticated-web`, `database: sqlite`, `storage.sizeMiB: 64`, with the image
+      `demo-shop` runs, by digest.
+- The images are the template-built demo images, which the throwaway clean-up rule does not delete. Neither
+  instance has `events.key`, `calls`, `allows`, `subscriptions` or `egress`. The template apps run without
+  `SWHURL_EVENTS_URL` (the Kotlin template's `Events.kt` says so; the TypeScript one is assumed to and is proved by
+  the first live run).
+- `tests/fixtures/app-template/` holds that root's render, committed, because Flux reads Git. `make v2-render` writes
+  it too, and `make check-v2` runs `render --check` over it, so a kernel change cannot leave it stale.
+
+**What the run touches.** Only the Kustomizations `app-smoke-worker-prod` and `app-smoke-web-prod`, the namespaces
+`smoke-worker-prod` and `smoke-web-prod`, and the one volume the run sees bound to `smoke-web-prod`'s claim.
+
+**What the run does.**
+1. **Preflight.** If either namespace or unit already exists, refuse before changing anything:
+   `[ERROR] … already exists; clean up first`, exit 1. If the cluster cannot be read, refuse with
+   `[ERROR] cannot check for leftovers: …`.
+2. **Install.** Create each unit from its rendered `clusters/home/app-<app>-prod.json`, with only `spec.path`
+   rewritten into the fixture tree. Python did the same with its fixture units. Each unit must be Ready within
+   10 minutes; a unit that isn't is `[BAD]`, and the steps after it do not run.
+3. **Checks.** Each is `[BAD]` on failure, and the test goes on:
+   - The worker has no Service or Ingress (retained).
+   - The web pod has `runAsNonRoot: true` and `automountServiceAccountToken: false` (retained).
+   - `https://smoke-web.<domain>/` answers `302` to `https://accounts.google.com/` within 30 tries 5 seconds apart
+     (retained; the certificate is not verified, as with `curl -k`).
+   - The claim is on `local-path-retain` and Bound (retained).
+   - `/data/app.db` is non-empty, read by §31's short-lived reader pod. Python's busybox wrote `/data/log`; this is
+     the template app's own database.
+   - The image is pinned by digest, `DATABASE_PATH=/data/app.db`, there is one replica, and the strategy is
+     `Recreate` (retained).
+   - New: the web pod is Ready on its declared `healthPath` probes. This proves the rendered probes match a real
+     template image.
+4. **Cleanup.** It always runs, including after an interrupt. As in §31:
+   - both units are deleted and waited for;
+   - each namespace is deleted only while it is labelled `platform.swhurl.com/app=<its app>` (render's label, the
+     guard Python used);
+   - the seen volume is set to reclaim `Delete`, but only while its claim's namespace is `smoke-web-prod`.
+
+   Then `[INFO] Cleaned up app-template test instances`. Exit 0 when no line is `[BAD]`, else 1.
+
+| Layer | Owns | Does not own |
+| --- | --- | --- |
+| 0 `apptemplatetest` (new, pure) | The plan, the fixed names, the path rewrite, each fact read from an object, each verdict and its words, the lines. It reuses `lifecycletest`'s Ready, available, volume, reader-pod and running-pod facts; any that the layer rules keep private move into a shared package in the same change. | The cluster, HTTP |
+| 1 adapters | The existing `kube` calls (`Create`, `Read`, `List`, `Patch`, `Delete`, `Executor`). New: `adapters/route`, one HTTPS GET that does not follow redirects, verifies no certificate and returns the status and `Location`. | Deciding anything |
+| 2 `orchestration.AppTemplateTest` | The steps in order, polls on the supplied clock, and the cleanup that runs last even after a failed step or a cancelled context | Printing, exit codes |
+| 3 command | The flags, each line as it is said, an interrupt that lets the cleanup run, the exit status | The decisions |
+
+**Needs the operator's approval:** `adapters/route` is a new adapter with an external effect: a read-only GET
+from the host to the app's public route. v2 has no HTTP probe today, and Python ran `curl`.
+
+**Deliberate changes.**
+- Two instances instead of three, both prod, built from v2's records rather than a v1 generator.
+- Dropped: the two Secret checks (a declared secret without a value; SOPS decrypted and injected). v2 refuses
+  `secrets` ([deferred features](v2-status.md#deferred-features)). The checks come back with that row.
+- The fixture's units keep render's `dependsOn` and the `backup-writer` substitution. So `smoke-web` brings its
+  nightly backup CronJob, which runs only if the test spans its schedule.
+- The fixture's aggregates (egress allocation, NATS users, auth, Reloader) are committed but applied by no unit. The
+  pods' `HTTPS_PROXY` therefore names a port the real proxy does not grant them; neither app needs egress.
+- Each run issues one Let's Encrypt certificate for `smoke-web.<domain>`, as Python's did. That is within the
+  weekly duplicate limit of five for a run or two a week.
+- Retiring `tests/fixtures/apps` also changes the following:
+  - its `.sops.yaml` rule goes;
+  - `v2/incident` stops accepting `tests/fixtures/apps/apps` as a root (its test and `testdata/legacy.json` change
+    with it);
+  - `tests/test_ci_changes.py` and `tests/test_v2_policy_gate.py` lose their references;
+  - `docs/contributing.md` (frozen fixtures) and `docs/apps.md` (whose `check-apps.sh <path>` example is already
+    stale: the script takes no path) are rewritten.
+
+**Verification.**
+- **Pure tests:** each verdict and its words, the path rewrite, each fact read, and the line format.
+- **Orchestration tests** over a kubetest fake with Flux's, the provisioner's and pruning's behaviour, plus a fake
+  route:
+  - a passing run's lines in order;
+  - the preflight refusing each leftover, and an unreadable cluster, with no change;
+  - a failed install still cleaned up;
+  - failed checks that let the run go on;
+  - the namespace label guard and the volume guard;
+  - a cancelled run cleaned up.
+- **Adapter tests:** `route` against an `httptest` TLS server (no redirect followed, status and `Location`
+  returned, a refused connection is an error).
+- **Command tests:** the dry run reads nothing, a failed step's exit 1, and a missing flag is a usage error.
+- **Checks:** `make check-v2` (including `render --check` over the fixture), `make check`, and the `bash -n` loop.
+- **Live:** `make live-test-app-template` against the pushed revision, all checks `[OK]`, with nothing left behind
+  (no unit, namespace or volume).

@@ -6,11 +6,13 @@ and tests are retired. Their frozen captures and the case map below remain the r
 
 ## Provenance and boundaries
 
-- `legacy.json`: **139 captured Evaluate calls** (two synthetic pending notices normalized below), captured before Go implementation by running the **40 retained tests**
+- `legacy.json`: **138 captured Evaluate calls** (two synthetic pending notices normalized below), captured before Go implementation by running the **40 retained tests**
   from [the retired Python tests](https://github.com/samclement/swhurl-platform/blob/25dbe522a87eeec16791b383c8c34a7a6ca6930a/tests/test_notifications.py), with inputs and expected output deep-copied at each call. Capture ran against
   the unchanged Python implementation; 40 tests passed. The two `JobTests` were deliberately excluded. Go's
   `TestLegacyEvaluations` checks every captured result and verifies input/previous-state ownership. Nothing regenerates
-  the golden answers during a check; the Python implementation is evidence, not a runtime Go dependency.
+  the golden answers during a check; the Python implementation is evidence, not a runtime Go dependency. The capture
+  held 139 calls: the one of `LifecycleTests.app_template_fixtures_use_the_same_discovery` went with the retired
+  `tests/fixtures/apps` root it checked.
 - `snapshot.json`: the healthy app snapshot from that capture, without Events. Integrations add API-required name/namespace
   fields the pure-domain fixture does not need. No Secret or real address appears in these inputs.
 - `state-v1.json`: a sanitized **real-shaped Python-produced** version-1 incident/outbox document taken from the frozen
@@ -56,7 +58,7 @@ to borrow the permissive conventions of an ownership/expiry test fixture.
    survive successful later sends, a later checkpoint failure, and restart. One refusal skips the other copies for the
    pass without holding up the platform topic. Copy failures alone do not fail the pass; platform/state/snapshot failures do.
 4. The standalone Go command requires explicit `CONSOLE_URL`; it does not parse checkout YAML or hardcode a cluster domain.
-5. Current `./v2-apps/instances/<app>/<env>` paths are recognized alongside the two legacy roots, fixing Python discovery.
+5. Current `./v2-apps/instances/<app>/<env>` paths are recognized alongside the legacy `./apps` root, fixing Python discovery.
    A resumed state may therefore acquire app identities it never recorded before. Existing `started` and Event-history
    boundaries still apply; only a truly absent state establishes a new baseline. Live state continuation was verified at cutover.
 
@@ -64,7 +66,7 @@ The named state GET is an API/RBAC correction, **not expanded permissions**: a f
 `list`, whereas the existing Role grants only `get`/`patch` on `notification-state`. Pending copies, notice keys, wording,
 incident clocks, state version, wire documents and at-least-once acceptance/checkpoint semantics are retained.
 
-## All 42 legacy cases
+## All 41 legacy cases
 
 `golden` means `incident.TestLegacyEvaluations/<class>.<case>` (including each captured subscenario). Tests named additionally
 cover effects or diagnostics not represented by an Evaluate result. Two rows are explicit scope omissions, not successes.
@@ -85,7 +87,6 @@ cover effects or diagnostics not represented by an Evaluate result. Two rows are
 | `LifecycleTests.failure_attempts_are_deduplicated_immediately_and_history_keeps_last_sixteen` | golden |
 | `LifecycleTests.event_time_fallback_and_history_boundary_with_source_controller` | golden |
 | `LifecycleTests.same_pass_upgrade_failure_and_rollback_are_combined` | golden |
-| `LifecycleTests.app_template_fixtures_use_the_same_discovery` | golden |
 | `LifecycleTests.baseline_does_not_replay_history_and_noop_is_silent` | golden |
 | `LifecycleTests.lifecycle_titles_environments_and_priorities` | golden |
 | `LifecycleTests.filters_tests_pushes_other_controllers_unmanaged_and_old_uids` | golden |

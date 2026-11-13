@@ -50,7 +50,7 @@ func instancePath(path string) (string, string, bool) {
 	root := strings.Join(parts[:len(parts)-2], "/")
 	app, env := parts[len(parts)-2], parts[len(parts)-1]
 	valid, _ := regexp.MatchString(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`, app)
-	return app, env, valid && (env == "staging" || env == "prod") && (root == "apps" || root == "tests/fixtures/apps/apps" || root == "v2-apps/instances")
+	return app, env, valid && (env == "staging" || env == "prod") && (root == "apps" || root == "v2-apps/instances")
 }
 func link(base string, entry Object, removed bool) string {
 	if flag(entry, "console") {

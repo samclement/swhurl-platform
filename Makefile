@@ -10,8 +10,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
-COMMANDS := help \
-	live-test-app-template
+COMMANDS := help
 
 .PHONY: $(COMMANDS)
 $(COMMANDS):
@@ -126,6 +125,17 @@ destroy-data:
 	$(V2_BUILD); umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
 	"$$work/swhurl-v2" destroy-data --target "$$TARGET" --confirm "$${CONFIRM:-}" --kubeconfig "$$work/kubeconfig.json" $(if $(filter true,$(DRY_RUN)),--dry-run)
 
+# Two throwaway instances v2 renders from the fixture records (tests/fixtures/app-template, reconciled from the pushed
+# revision) deployed through their rendered units, checked and removed (swhurl-v2 app-template-test); it touches only
+# their two units, namespaces and the web app's volume, and cleans them up last. DRY_RUN=true prints the plan. Needs
+# Go 1.26.0.
+.PHONY: live-test-app-template
+live-test-app-template:
+	@$(V2_BUILD); \
+	if [ "$(DRY_RUN)" = true ]; then "$$work/swhurl-v2" app-template-test --dry-run; exit; fi; \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	"$$work/swhurl-v2" app-template-test --kubeconfig "$$work/kubeconfig.json"
+
 # Suspend and resume, uninstall, destroy-data and an Orphan unit proved on the throwaway fixture
 # tests/fixtures/lifecycle-app, reconciled from the pushed revision (swhurl-v2 lifecycle-test); it touches only its two
 # lifecycle-test units, namespace and volumes, and cleans them up last. DRY_RUN=true prints the plan. Needs Go 1.26.0.
@@ -184,12 +194,19 @@ check-v2:
 		&& go vet ./... && go test -count=1 ./... && ./check-rendered.sh
 
 # Render the whole tree from v2's records: the resolution, every compiled folder and unit, the egress allocation and
-# the proxy's objects, platform/auth, NATS's user list and Reloader's watch list. It writes only when the tree
-# disagrees with them -- the check ignores the commit the two documents record -- so the Render workflow, which runs
-# this on every push, does not bump that line on every push. Needs Go 1.26.0.
+# the proxy's objects, platform/auth, NATS's user list and Reloader's watch list; then the same for the app-template
+# live test's fixture (tests/fixtures/app-template, from its own records). It writes only when a tree disagrees with
+# its records -- the check ignores the commit the two documents record -- so the Render workflow, which runs this on
+# every push, does not bump that line on every push. Needs Go 1.26.0.
 .PHONY: v2-render
 v2-render:
-	@$(V2_BUILD); 	if "$$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --check >/dev/null; then echo "the tree is what the records render; nothing written"; else "$$work/swhurl-v2" render --records v2-records --profile v2/testdata/profile.json --out . --revision "$$(git rev-parse HEAD)"; fi
+	@$(V2_BUILD); \
+	for tree in .:v2-records tests/fixtures/app-template:tests/fixtures/app-template/records; do \
+		out=$${tree%%:*}; records=$${tree#*:}; \
+		if "$$work/swhurl-v2" render --records "$$records" --profile v2/testdata/profile.json --out "$$out" --check >/dev/null; then \
+			echo "$$out: the tree is what the records render; nothing written"; \
+		else "$$work/swhurl-v2" render --records "$$records" --profile v2/testdata/profile.json --out "$$out" --revision "$$(git rev-parse HEAD)"; fi; \
+	done
 
 # Bring every v2-owned staging instance to the newest image its repository publishes, with v2's own records and
 # files: swhurl-v2 deploy --records reads v2-records/<app>/staging, delivers each instance on its own, and fails the

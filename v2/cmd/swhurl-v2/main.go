@@ -25,6 +25,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/nats"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
+	"github.com/samclement/swhurl-platform/v2/adapters/route"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/kernel"
@@ -80,6 +81,7 @@ const usage = `usage:
   swhurl-v2 team-scenario (--records DIR --env ENVIRONMENT --profile PROFILE.json --kubeconfig KUBECONFIG.json \
       [--calls CALLS.json] [--egress EGRESS.json] | --dry-run)
   swhurl-v2 lifecycle-test (--kubeconfig KUBECONFIG.json | --dry-run)
+  swhurl-v2 app-template-test (--kubeconfig KUBECONFIG.json | --dry-run)
   swhurl-v2 destroy-data --target pvc/NAMESPACE/NAME|pv/NAME --confirm TARGET --kubeconfig KUBECONFIG.json [--dry-run]
   swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--scope cluster] [--source NAME] [--json]
   swhurl-v2 verify --scope platform --kubeconfig KUBECONFIG.json --root DIR [--console-tag TAG]
@@ -383,6 +385,16 @@ bound to, and cleans them up last, even after a failed step or an interrupt. --d
 nothing. Leftovers from an earlier run are one [ERROR] line and exit 1 with nothing changed; a failed check or step
 exits 1 after the report.
 
+app-template-test deploys the two instances v2 renders from the fixture records under tests/fixtures/app-template,
+read from this checkout and reconciled from the pushed revision: it creates each rendered unit with its path pointed
+into the fixture, checks the worker has no Service or Ingress, and checks the web app's pod defaults, its route's
+redirect to sign-in (asked over HTTPS without verifying the certificate), its claim, its database on the volume, its
+digest, database path, single replica and stop-first updates, and its pod Ready on its declared health probes. It
+touches only the units app-smoke-worker-prod and app-smoke-web-prod, their namespaces and the volume the web app's
+claim was bound to, and cleans them up last, even after a failed step or an interrupt. --dry-run prints the plan and
+reads nothing. Leftovers from an earlier run are one [ERROR] line and exit 1 with nothing changed; a failed check or
+step exits 1 after the report.
+
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
 started but did not complete, a render --check that found a difference, a name the catalogue does not list, a
@@ -517,6 +529,7 @@ func commands() map[string]func(cli, request) int {
 		"destroy-data":            cli.destroyData,
 		"team-scenario":           cli.teamScenario,
 		"lifecycle-test":          cli.lifecycleTest,
+		"app-template-test":       cli.appTemplateTest,
 		"verify":                  cli.verify,
 		"notify-serve":            cli.notifyServe,
 		"notifications-check":     cli.notificationsCheck,
@@ -763,7 +776,7 @@ func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool 
 }
 
 // registerClusterFlags is the flags of the commands that act on or read cluster objects themselves: one Flux unit's
-// action, the wait for every unit, destroy-data, team-scenario and lifecycle-test.
+// action, the wait for every unit, destroy-data, team-scenario, lifecycle-test and app-template-test.
 func (r *request) registerClusterFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
 	case "unit":
@@ -787,7 +800,7 @@ func (r *request) registerClusterFlags(flags *flag.FlagSet, command string) bool
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "print the plan and read nothing")
-	case "lifecycle-test":
+	case "lifecycle-test", "app-template-test":
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "print the plan and read nothing")
 	default:
@@ -1001,6 +1014,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"destroy-data":            func(r *request) []string { return []string{r.target, r.kubeconfig} },
 	"team-scenario":           (*request).teamScenarioNamed,
 	"lifecycle-test":          (*request).lifecycleTestNamed,
+	"app-template-test":       (*request).lifecycleTestNamed,
 	"verify":                  (*request).verifyNamed,
 	"notify-serve":            func(r *request) []string { return []string{r.listen} },
 	"notifications-check":     (*request).checkerNamed,
@@ -1039,7 +1053,7 @@ func (r *request) teamScenarioNamed() []string {
 	return []string{r.records, r.env, r.profile, r.kubeconfig}
 }
 
-// lifecycleTestNamed is the cluster a run changes; a dry run reads none.
+// lifecycleTestNamed is the cluster a run of lifecycle-test or app-template-test changes; a dry run reads none.
 func (r *request) lifecycleTestNamed() []string {
 	if r.dryRun {
 		return []string{}
@@ -1248,9 +1262,11 @@ type cli struct {
 	natsStore func(context.Context, string, string, string) (nats.KV, error)
 	// clock is the time an override's age is measured from; nil is the wall clock.
 	clock func() time.Time
-	// dataClusterOf is the cluster destroy-data and lifecycle-test read and change; nil is the API server the kubeconfig names, and a
-	// test supplies a scripted cluster so a run needs no network.
+	// dataClusterOf is the cluster destroy-data, lifecycle-test and app-template-test read and change; nil is the API
+	// server the kubeconfig names, and a test supplies a scripted cluster so a run needs no network.
 	dataClusterOf func() (dataCluster, error)
+	// prober asks app-template-test's route; nil is HTTPS, and a test supplies a fake so a run needs no network.
+	prober route.Prober
 	// executorOf is the exec port team-scenario queries ClickHouse through and lifecycle-test reads its marker
 	// through; nil is the API server the kubeconfig
 	// names, and a test supplies a scripted one so a run needs no network.

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "teams": {
+    "smoke": {
+      "description": "The app-template live test's throwaway instances",
+      "channel": {
+        "name": "smoke",
+        "transport": "ntfy"
+      }
+    }
+  }
+}

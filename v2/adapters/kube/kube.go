@@ -418,6 +418,7 @@ func kinds() map[pathKey]resource {
 		{"", "PersistentVolume"}:                         {"v1", "persistentvolumes", false},
 		{"", "Event"}:                                    {"v1", "events", true},
 		{"", "Pod"}:                                      {"v1", "pods", true},
+		{"", "Service"}:                                  {"v1", "services", true},
 		{"", "ResourceQuota"}:                            {"v1", "resourcequotas", true},
 		{"apps", "Deployment"}:                           {"apps/v1", "deployments", true},
 		{"apps", "StatefulSet"}:                          {"apps/v1", "statefulsets", true},

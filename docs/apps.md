@@ -1036,8 +1036,8 @@ state the boundary, including retirement of the legacy-only quota reserve. Helm 
 Helm's own values/template processing can round before that boundary.
 
 **Go owns all app-policy decisions.** The legacy Python fixture checker and explicit-path API are
-retired, not translated into another Go mode. The frozen `tests/fixtures/apps/` root stays only as the data
-`live-test-app-template` deploys; the v1 model oracle that read it is deleted. Go's
+retired, not translated into another Go mode. The frozen v1 fixture root and the v1 model oracle that read it are
+deleted. Go's
 [policy mutation tests](../v2/policy/policy_test.go) own the supported v2 rules. Legacy-only quota
 reserve, `public`/host-override routes, reviewed exceptions, alert settings, alternate storage classes and
 `platform-image` provenance/exemptions are not preserved as policy contracts. Unsupported v2 records
@@ -1053,7 +1053,7 @@ keeps rendering local-only; the [remaining retirements](v2-status.md#remaining-p
 
 ```bash
 make check-apps
-bash v2/check-apps.sh tests/fixtures/apps/smoke-web/staging
+bash v2/check-apps.sh v2-apps/instances/demo-shop/prod
 # The second command must print usage and exit 2; paths are no longer accepted.
 ```
 

@@ -159,9 +159,14 @@ class MakeTests(unittest.TestCase):
                 self.assertIn(usage, err)
 
     def test_dry_run_is_refused_where_the_command_has_no_dry_run(self):
-        code, out, err, executed = run_make('check-secrets', {'DRY_RUN': 'true'})
+        code, out, err, executed = run_make('help', {'DRY_RUN': 'true'})
         self.assertEqual((code, out, executed), (2, '', []))
-        self.assertIn('make check-secrets has no dry run', err)
+        self.assertIn('make help has no dry run', err)
+        # check-secrets is a recipe over swhurl-v2, which refuses before building anything.
+        result = subprocess.run(['make', '--no-print-directory', 'check-secrets', 'DRY_RUN=true'], cwd=ROOT,
+                                capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout), (2, ''))
+        self.assertIn('make check-secrets has no dry run', result.stderr)
 
     def test_a_variable_the_command_reads_itself_is_left_to_it(self):
         self.assertEqual(TARGETS['restore-sqlite'].missing({'APP': 'notes', 'ENV': 'staging'}), [])

@@ -420,17 +420,25 @@ adapters/s3: type Client struct {}
 adapters/s3: type Credentials struct {AccessKey, SecretKey, SessionToken string}
 adapters/s3: type Error struct {Code, Subject, Reason string}
 adapters/s3: type Reader interface {List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error) Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error) // PresignURL is a time-limited read of one object, for a caller that must hand the read to someone // else — a restore pod — without giving it the bucket credential. PresignURL(ctx context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)}
+adapters/sops/sopstest: func (*Decrypter) Decrypt(path, keyFile string) ([]byte, error)
 adapters/sops/sopstest: func (*Fake) Encrypt(document []byte, recipient string) ([]byte, error)
 adapters/sops/sopstest: func Contract(t *testing.T, open func(*testing.T) sops.Encrypter, document []byte, recipient string)
+adapters/sops/sopstest: func DecryptContract(t *testing.T, decrypter sops.Decrypter, path, keyFile, wrongKeyFile, value string)
 adapters/sops/sopstest: func New() *Fake
 adapters/sops/sopstest: type Call struct {Document []byte Recipient string}
+adapters/sops/sopstest: type Decrypter struct {Files map[string][]byte KeyFiles []string}
 adapters/sops/sopstest: type Fake struct {Output []byte Err error Calls []Call}
 adapters/sops: const MaxDocument = 1 << 20
+adapters/sops: const RefusedDecryption = "refused_decryption"
 adapters/sops: const RefusedEncryption = "refused_encryption"
+adapters/sops: func (*Command) Decrypt(path, keyFile string) ([]byte, error)
 adapters/sops: func (*Command) Encrypt(document []byte, recipient string) ([]byte, error)
+adapters/sops: func (*DecryptError) Error() string
 adapters/sops: func (*Error) Error() string
 adapters/sops: func New() *Command
 adapters/sops: type Command struct {Binary string}
+adapters/sops: type DecryptError struct {Reason string}
+adapters/sops: type Decrypter interface {Decrypt(path, keyFile string) ([]byte, error)}
 adapters/sops: type Encrypter interface {Encrypt(document []byte, recipient string) ([]byte, error)}
 adapters/sops: type Error struct {Reason string}
 calls: const CalleeAbsent = "callee_absent"
@@ -1193,6 +1201,7 @@ orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, wr
 orchestration: func CheckNotifications(ctx context.Context, ports CheckerPorts, options CheckOptions) (CheckReport, error)
 orchestration: func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
 orchestration: func CheckRepo(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error)) (checkrepo.Report, error)
+orchestration: func CheckSecrets(root string, reader git.Reader, decrypter sops.Decrypter, decoder manifests.Decoder, keyFile string) (secretcheck.Report, error)
 orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)
 orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, application, name string) error
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
@@ -1600,6 +1609,22 @@ producer: type Field struct {Name any Value any}
 producer: type Flag struct {Name string Declaration Object}
 producer: type Object []Field
 producer: type Source struct {Runtime Object Telemetry bool Database string DatabaseSizeMiB, MemoryMiB json.Number Secrets []any Description, APIPath, APIFile, EventsFile string Flags Object}
+secretcheck: const Error Level = "ERROR"
+secretcheck: const IngestionKey = "CLICKSTACK_INGESTION_KEY"
+secretcheck: const None Failure = iota
+secretcheck: const OK Level = "OK"
+secretcheck: const Placeholder = "REPLACE_ME"
+secretcheck: const Undecryptable
+secretcheck: const Unparsable
+secretcheck: const Warn Level = "WARN"
+secretcheck: func Check(files []File) Report
+secretcheck: func LooksDoubleEncoded(raw []byte) bool
+secretcheck: func Tracked(paths []string) []string
+secretcheck: type Failure int
+secretcheck: type File struct {Path string Failure Failure Documents []map[string]any}
+secretcheck: type Level string
+secretcheck: type Line struct {Level Level Value bool Text string}
+secretcheck: type Report struct {Lines []Line Errors, Warnings int}
 workstreams: const MaxLines = 250
 workstreams: const Registry = "docs/workstreams.md"
 workstreams: func Check(c Checkout) []Result

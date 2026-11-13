@@ -32,3 +32,24 @@ func TestFakeRecordsTheCallAndCanFail(t *testing.T) {
 		t.Fatal("a configured failure was not returned")
 	}
 }
+
+func TestDecryptContract(t *testing.T) {
+	fake := &sopstest.Decrypter{Files: map[string][]byte{"a.sops.yaml": []byte("stringData:\n  K: the-value\n")}}
+	sopstest.DecryptContract(t, wrongKey{fake, "wrong.agekey"}, "a.sops.yaml", "age.agekey", "wrong.agekey", "the-value")
+	if fake.KeyFiles[0] != "age.agekey" {
+		t.Fatalf("key files = %q", fake.KeyFiles)
+	}
+}
+
+// wrongKey is a fake decrypter that refuses one key file, as sops refuses an identity the file is not encrypted to.
+type wrongKey struct {
+	*sopstest.Decrypter
+	wrong string
+}
+
+func (w wrongKey) Decrypt(path, keyFile string) ([]byte, error) {
+	if keyFile == w.wrong {
+		return nil, &sops.DecryptError{Reason: "sops_exit_128"}
+	}
+	return w.Decrypter.Decrypt(path, keyFile)
+}

@@ -2,6 +2,27 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## `check-secrets` runs Go (13 November 2026)
+
+- **What changed:** `make check-secrets` is `swhurl-v2 check-secrets` ([§27](iteration-2-plan.md#27-check-secrets-in-go-approved-13-november-2026)):
+  the pure `secretcheck` package decides, `orchestration.CheckSecrets` lists the tracked files through
+  `adapters/git` and decrypts each through the new `sops.Decrypter`, which runs `sops decrypt` with only
+  `SOPS_AGE_KEY_FILE` in the child's environment. `tools/swhurl/secrets_check.py` and `tests/test_secrets_check.py`
+  are deleted; the catalogue keeps the target without a function, and the recipe refuses `DRY_RUN=true` as the
+  dispatch did.
+- **Deliberately changed:** a `data` value that is not base64, a `data` or `stringData` that is not a map, and a
+  failed Git listing are one line each instead of a traceback; the four smaller differences are listed in §27.
+- **Checked offline:** on the real tree the two checks printed the same 46 lines (`diff` empty) and both exited 0,
+  and `make check-secrets` then printed them again. In a scratch clone with dummy values only, seven cases gave
+  identical output and exit status from Python and Go: the tree as it is, a `REPLACE_ME` value, a double-encoded
+  `data` value in the second document of a file and an empty value (exit 1), differing ingestion-key copies (1), a
+  missing webhook-token copy (1), ntfy copies differing only in their query (0) and in their topic (1), and a file
+  encrypted to another recipient (1). No dummy value appeared in any output. The adapter's contract test decrypted
+  what it encrypted with a throwaway `age-keygen` identity and refused a wrong one; `make check-v2`, `make check`
+  and `make test` passed.
+- **Live:** nothing; the check reads only the checkout and the local key.
+- **Not exercised:** a real Secret that is not base64 or not a map (none exists; the pure tests cover both).
+
 ## The bots and the console image pin leave Python (12 November 2026)
 
 - **What changed:** `tools/swhurl/bots.py`, `tools/swhurl/images.py` and `tests/test_bots.py` are deleted, with

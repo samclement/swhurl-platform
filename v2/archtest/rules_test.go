@@ -67,6 +67,7 @@ var Rules = []Rule{
 var Layers = map[string]int{
 	"calls":                              0,
 	"checkrepo":                          0,
+	"secretcheck":                        0,
 	"dashboards":                         0,
 	"incident":                           0,
 	"events":                             0,
@@ -124,7 +125,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"incident", "calls", "checkrepo", "dashboards", "events", "heartbeat", "kernel", "notify", "observe", "pages", "policy", "producer", "workstreams"}
+var Pure = []string{"incident", "calls", "checkrepo", "dashboards", "events", "heartbeat", "kernel", "notify", "observe", "pages", "policy", "producer", "secretcheck", "workstreams"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
@@ -163,7 +164,7 @@ var signalImports = []string{"syscall"}
 var signalAllowed = []string{"cmd/swhurl-v2"}
 
 // subprocessAllowed is restricted to the four approved adapter directories, never their fakes or subpackages.
-// SOPS encrypts; Helm explicitly acquires a pinned chart or renders a local chart; Git reads one checkout; Copier
+// SOPS encrypts, and decrypts locally with a key file the operator's command names; Helm explicitly acquires a pinned chart or renders a local chart; Git reads one checkout; Copier
 // renders one pinned stack template. No exception permits subprocess cluster access or arbitrary commands.
 var subprocessAllowed = []string{"adapters/sops", "adapters/helm", "adapters/git", "adapters/copier"}
 

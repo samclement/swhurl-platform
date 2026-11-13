@@ -1,4 +1,4 @@
-// Package sopstest is the fake for sops.Encrypter and the contract suite both implementations run.
+// Package sopstest is the fakes for sops.Encrypter and sops.Decrypter and the contract suites both implementations run.
 package sopstest
 
 import (
@@ -70,5 +70,50 @@ func Contract(t *testing.T, open func(*testing.T) sops.Encrypter, document []byt
 	var refusal *sops.Error
 	if !errors.As(err, &refusal) || refusal.Reason != "no_recipient" {
 		t.Fatalf("an empty recipient = %v, want refused_encryption: no_recipient", err)
+	}
+}
+
+// Decrypter answers each path from Files, the plaintext a test chose, and records the key file it was handed. A path
+// it does not hold is refused as a wrong key is, with sops's exit status.
+type Decrypter struct {
+	Files    map[string][]byte
+	KeyFiles []string
+}
+
+var _ sops.Decrypter = (*Decrypter)(nil)
+
+// Decrypt returns the configured plaintext for path, refusing an empty path or key file as the real adapter does.
+func (d *Decrypter) Decrypt(path, keyFile string) ([]byte, error) {
+	d.KeyFiles = append(d.KeyFiles, keyFile)
+	if path == "" || keyFile == "" {
+		return nil, &sops.DecryptError{Reason: "no_file_or_key"}
+	}
+	plaintext, held := d.Files[path]
+	if !held {
+		return nil, &sops.DecryptError{Reason: "sops_exit_128"}
+	}
+	return bytes.Clone(plaintext), nil
+}
+
+// DecryptContract is the behaviour every sops.Decrypter must have: the file at path decrypts with keyFile to a
+// document holding value, a wrong key file is refused with a fixed reason, and no refusal carries the value.
+func DecryptContract(t *testing.T, decrypter sops.Decrypter, path, keyFile, wrongKeyFile, value string) {
+	t.Helper()
+	out, err := decrypter.Decrypt(path, keyFile)
+	if err != nil {
+		t.Fatalf("decrypting: %v", err)
+	}
+	if !bytes.Contains(out, []byte(value)) {
+		t.Fatalf("the plaintext lacks the value:\n%s", out)
+	}
+	for _, refused := range [][2]string{{path, wrongKeyFile}, {path, ""}, {"", keyFile}} {
+		_, err := decrypter.Decrypt(refused[0], refused[1])
+		var refusal *sops.DecryptError
+		if !errors.As(err, &refusal) || refusal.Reason == "" {
+			t.Fatalf("Decrypt(%q, %q) = %v, want a refused_decryption", refused[0], refused[1], err)
+		}
+		if bytes.Contains([]byte(err.Error()), []byte(value)) {
+			t.Fatalf("the refusal carries the value: %v", err)
+		}
 	}
 }

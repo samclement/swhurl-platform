@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: in progress
-Gate: port the kept checks (`check-secrets`, `platform-certs-*`, `destroy-data`, three live tests) with the same behaviour
+Gate: port the remaining kept checks (`platform-certs-*`, `destroy-data`, three live tests) with the same behaviour
 Uncommitted: none
 
 **The goal is one Go implementation and no Python.** v2 becomes the platform's only implementation —
@@ -42,6 +42,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | The console server in Go: `swhurl-v2 console` serves Overview, Platform, Deployments (list and map), Egress, a Flux unit, Teams, the Catalogue (with each app's own OpenAPI and AsyncAPI documents), Activity, a job's page (each change followed past its pull request to the cluster), an app instance's page and the page that waits for it, a promotion's review and the New app form — byte-identically from embedded templates and assets, with the oauth2 identity, `/healthz` and `--dev` | done | [signed off](current-state.md#the-unreachable-python-leaves-and-the-console-is-signed-off-12-november-2026), [pages](current-state.md#the-console-server-serves-its-pages-9-november-2026), [catalogue](current-state.md#the-catalogue-is-the-consoles-documents-and-all-9-november-2026), [activity](current-state.md#activity-and-a-jobs-page-are-the-consoles-9-november-2026), [app, pending, promotion and New app](current-state.md#the-app-page-pending-promotion-and-new-app-are-the-consoles-9-november-2026), [Activity keeps a change it saw](current-state.md#activity-keeps-a-change-it-saw-and-reads-history-one-archive-at-a-time-10-november-2026), [and reads a merge commit's four files](current-state.md#activity-reads-a-merge-commits-four-files-not-its-archive-10-november-2026), [a waiting stage says so on screen](current-state.md#a-new-worker-from-the-go-console-test-01-11-november-2026) |
 | Platform verification in Go (`swhurl-v2 verify`: all twenty-four groups, six of them the console's cluster scope) | done | [record](current-state.md#every-platform-check-is-go-7-november-2026); the egress check asks a port only of an instance that reaches the proxy, and the events check warns when JetStream cannot fit another app stream ([record](current-state.md#a-new-worker-from-the-go-console-test-01-11-november-2026)) |
 | `check-otel` as bash in the collector's own image (`platform/otel/check.sh`: `helm template`, then `validate` and the log fixtures in the rendered image), `otel.py` and the Python fixture harness retired | done | [record](current-state.md#check-otel-runs-in-the-collectors-own-image-11-november-2026) |
+| `check-secrets` in Go (`swhurl-v2 check-secrets`: the pure `secretcheck` decisions over a local SOPS decrypt), `secrets_check.py` retired | done | [record](current-state.md#check-secrets-runs-go-13-november-2026) |
 | Live log coverage as a saved SQL diagnostic, Python command retired | done | [record](current-state.md#log-coverage-is-a-saved-query-11-november-2026) |
 | Template check without Python but Copier | done | [record](current-state.md#the-template-check-leaves-python-5-november-2026) |
 | Offers and documents | done | [record](current-state.md#every-image-states-its-documents-and-the-productions-follow-1-november-2026) |
@@ -113,12 +114,12 @@ person's on the PR's branch ([record](current-state.md#one-renovate-pr-bumps-app
 **B. The rest of the road.** What still runs Python, in the order it leaves; each is its own slice. Each surface is
 shrunk, retired or ported (the rule is under [durable decisions](#durable-decisions)):
 
-1. **Kept checks: port with the same behaviour.** `check-secrets` (it guards the double-base64 problem that caused
-   an outage), `platform-certs-*`, `destroy-data` with its guards, `live-test-lifecycle` and
+1. **Kept checks: port with the same behaviour.** `platform-certs-*`, `destroy-data` with its guards, `live-test-lifecycle` and
    `live-test-app-template`, which test this repository's own lifecycle and template code, and
    `live-test-team-scenario`, which reads the chain from `swhurl-v2 status --all` and its newest trace from ClickHouse
    ([record](current-state.md#the-team-scenario-reads-running-traffic-and-three-live-proofs-are-retired-12-november-2026)).
-   `check-secrets` goes first; its design is proposed in [§27](iteration-2-plan.md#27-check-secrets-in-go-proposed-13-november-2026).
+   `check-secrets` went first ([§27](iteration-2-plan.md#27-check-secrets-in-go-approved-13-november-2026)); each
+   remaining one has its own design for approval.
 2. **Last:** the catalogue itself (`commands.py`, `run.py`, the Makefile dispatch) goes when no Python command is
    left. The Python tests in `tests/` are deleted with the Python they test, never ported; Go gets tests of its own
    decisions.

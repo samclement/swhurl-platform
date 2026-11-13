@@ -597,7 +597,7 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 | `stdlib-only` | v2 imports only the standard library and its own packages except `go.yaml.in/yaml/v3` **v3.0.6**, approved 4 November 2026, imported only by `adapters/helm`, `adapters/appsource`, `adapters/manifests` and `adapters/copier` (including their tests; `adapters/appsource` approved 5 November 2026, `adapters/manifests`, which decodes the checkout's Kubernetes manifests for `check-repo`, [8 November 2026](#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026), and `adapters/copier`, which reads a stack template's `copier.yml`, [9 November 2026](#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)). The check refuses other imports, modules, versions and module replacement directives. Pure packages remain standard-library-only; this does not approve YAML kubeconfigs. |
 | `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
 | `pure` | Pure packages import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments: `time` is allowed for parsing and comparing a *supplied* timestamp, and its clock functions (`time.Now`, `time.Since`, `time.Until`, timers and ticks) are refused by call. |
-| `no-subprocess` | v2 code (not its tests) starts processes only in the encryption adapter `adapters/sops`, the approved chart-rendering adapter `adapters/helm`, the read-only checkout adapter `adapters/git` and the template-rendering adapter `adapters/copier`, names no `kubectl` or `flux` command anywhere, and imports `syscall` only in `cmd/swhurl-v2`, where it names the SIGTERM a pod is replaced with ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine; Git avoids a second reader of its index and object store; Copier avoids a second template renderer. The Git exception, approved 5 November 2026, is [four fixed reads of one checkout](#the-workstream-check-in-go-approved-5-november-2026), with no write, fetch or general command runner. The Helm exception, approved 4 November 2026, is `helm template` for app-policy checks and, approved 5 November 2026, explicit profile-pinned `helm pull` for the check cache ([contract](#chart-acquisition-approved-5-november-2026)): no cluster reads, install, upgrade, implicit dependency fetching or arbitrary command runner. The Copier exception, approved 9 November 2026, is [one pinned render of a public stack template](#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026), with no credential in its environment or arguments. The checked allowlist admits exactly the four adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm and Copier invocations. The signal exception starts nothing: a pod's replacement sends SIGTERM, and the console takes no new job and waits up to 840 seconds for the ones it runs, inside the pod's 900. |
+| `no-subprocess` | v2 code (not its tests) starts processes only in the SOPS adapter `adapters/sops` (encryption, and local decryption with a key file the operator's command names, [§27](#27-check-secrets-in-go-approved-13-november-2026)), the approved chart-rendering adapter `adapters/helm`, the read-only checkout adapter `adapters/git` and the template-rendering adapter `adapters/copier`, names no `kubectl` or `flux` command anywhere, and imports `syscall` only in `cmd/swhurl-v2`, where it names the SIGTERM a pod is replaced with ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine; Git avoids a second reader of its index and object store; Copier avoids a second template renderer. The Git exception, approved 5 November 2026, is [four fixed reads of one checkout](#the-workstream-check-in-go-approved-5-november-2026), with no write, fetch or general command runner. The Helm exception, approved 4 November 2026, is `helm template` for app-policy checks and, approved 5 November 2026, explicit profile-pinned `helm pull` for the check cache ([contract](#chart-acquisition-approved-5-november-2026)): no cluster reads, install, upgrade, implicit dependency fetching or arbitrary command runner. The Copier exception, approved 9 November 2026, is [one pinned render of a public stack template](#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026), with no credential in its environment or arguments. The checked allowlist admits exactly the four adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm and Copier invocations. The signal exception starts nothing: a pod's replacement sends SIGTERM, and the console takes no new job and waits up to 840 seconds for the ones it runs, inside the pod's 900. |
 | `public-api` | The exported API of every library package matches `archtest/api.txt`, so an interface change is a deliberate, reviewed diff. |
 | `budgets` | No function exceeds complexity 10 or 60 lines unless `archtest/budgets.json` lists it with a reason; a listed function may shrink but not grow, and its entry goes once it fits. |
 | `places` | A package's place matches its layer: layer 0 is listed in `Pure`, layer 1 is under `adapters/`, layer 2 is `orchestration`, layer 3 is a `main` package under `cmd/` ([why](#extension-recipes)). |
@@ -2434,12 +2434,12 @@ test with fake `gh`, `sops` and `go` proving it stops on auth, decrypt and empty
 only in the environment. `make check-v2`, `make check`. Live (operator): `make app-hooks DRY_RUN=true`, then
 `make app-hooks`, then `make verify-platform`'s Image Webhooks ([current state](current-state.md)).
 
-## 27. `check-secrets` in Go (proposed 13 November 2026)
+## 27. `check-secrets` in Go (approved 13 November 2026)
 
 The first of the kept checks ([remaining work B.1](v2-status.md#remaining-work)), ported with the same behaviour. It
 guards the double-base64 problem that caused an outage, and it only reads. The rest of B.1 waits for its own section.
 
-**Decision (proposed).** `make check-secrets` runs `swhurl-v2 check-secrets --root .`. `secrets_check.py` and
+**Decision.** `make check-secrets` runs `swhurl-v2 check-secrets --root . --age-key-file "${SOPS_AGE_KEY_FILE:-./age.agekey}"`, and refuses `DRY_RUN=true` as before. `secrets_check.py` and
 `tests/test_secrets_check.py` are deleted. The catalogue keeps the target without a `run` function, as `app-hooks`
 did.
 
@@ -2466,7 +2466,7 @@ else `./age.agekey`).
 | Layer | Owns | Does not own |
 | --- | --- | --- |
 | 0 `secretcheck` (new, pure) | The rules above and the table of copies kept equal (`INGESTION_FILES`, `SHARED` and `NTFY_DESTINATIONS`, as Python has them). Input: each file's path, whether it is a fixture, and either its parsed documents or why it could not be read. Output: the ordered findings and the counts | Reading files, keys or Git |
-| 1 `adapters/sops`: a new `Decrypter` beside `Encrypter` | `sops --config /dev/null decrypt --input-type yaml --output-type yaml <path>`, with `SOPS_AGE_KEY_FILE` set from its argument in the child's environment only. Stderr is discarded. Output is bounded by `MaxDocument`. A failure is a fixed reason (`sops_exit_N`, `sops_not_available`, `output_too_large`) | Reading the key itself; deciding what a value means |
+| 1 `adapters/sops`: a new `Decrypter` beside `Encrypter` | `sops --config /dev/null decrypt --input-type yaml --output-type yaml <path>`, with `SOPS_AGE_KEY_FILE` set from its argument in the child's environment only. Stderr is discarded. Output is bounded by `MaxDocument`. A failure is a `DecryptError` with a fixed reason (`sops_exit_N`, `sops_not_available`, `empty_output`, `output_too_large`, `no_file_or_key`) | Reading the key itself; deciding what a value means |
 | 1 `adapters/git` (existing `Read`) and `adapters/manifests` (existing YAML) | The tracked list and the parse | — |
 | 2 `orchestration.CheckSecrets` | The tracked list, then a decrypt and parse of each file, then the decisions | Printing, exit codes |
 | 3 command | `--root`, the key file's path, the lines and the exit status | The decisions |
@@ -2478,9 +2478,9 @@ and no fingerprint appears on stdout or stderr.
 **Rule change this needs.** The `no-subprocess` allowlist is unchanged: the code stays in the same directory. What
 changes is the text of the sops exception, which becomes "encryption, and local decryption with a key file the
 operator's command names". The package comment loses "reads no private key" and says instead that `Encrypt` needs
-none and `Decrypt` passes the key file's path only to `sops` through its environment. The console's encrypter is
-unchanged. Its pod holds no key, so the decrypter is never wired there; a test proves the console's wiring has no
-`Decrypter`.
+none and `Decrypt` passes the key file's path only to `sops`, as the child's whole environment, so no other key is
+tried. The console's encrypter is unchanged; only `check-secrets` reads the command's decrypter, and the console's
+pod holds no key.
 
 **Deliberate changes.** These are three places where Python crashes with a traceback today:
 
@@ -2488,7 +2488,11 @@ unchanged. Its pod holds no key, so the decrypter is never wired there; a test p
 - A `data` or `stringData` that is not a map becomes `[ERROR] <file>: a document is not a Secret`.
 - A Git listing that fails exits 2 with one line.
 
-Nothing else changes, including the warning's threshold and the fixture exemption.
+Nothing else changes, including the warning's threshold and the fixture exemption. Four smaller differences came
+with the port, none reachable by a file sops writes from this repository: a document's value findings are in key
+order (Python's was the file's); an unset namespace or name shows as `-` (Python printed `None`); a null
+`stringData` value is empty (Python checked the word `None`); and a document that is a list or a scalar reads as
+an empty one, so a file of nothing else has no document.
 
 **Verification.**
 

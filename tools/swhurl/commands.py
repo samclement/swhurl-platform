@@ -189,8 +189,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command('v2-report', 'What a change does to v2 against the merge base with BASE: API, budgets, packages, imports, files, exceptions',
                 LOCAL, takes=(Var('BASE', 'origin/main', required=False, default='origin/main'), Var('AFTER', '<rev>', required=False),
                               Var('FORMAT', 'json', required=False))),
-        Command('check-secrets', 'Decrypt tracked Secrets locally; flag placeholders and double encoding (never prints values)', LOCAL,
-                'swhurl.secrets_check:main'),
+        Command('check-secrets', 'Decrypt tracked Secrets locally; flag placeholders and double encoding (never prints values; '
+                'swhurl-v2 check-secrets; needs Go 1.26.0 and sops)', LOCAL),
         Command('help', 'List the targets, from tools/swhurl/commands.py', LOCAL, 'swhurl.commands:help_main'),
     )),
     ('Live tests', (

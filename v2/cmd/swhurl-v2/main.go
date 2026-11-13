@@ -74,6 +74,7 @@ const usage = `usage:
       [--description TEXT] [--rename NEW] [--transport ntfy]
   swhurl-v2 workstreams --repo-root DIR
   swhurl-v2 check-repo [--root DIR] [--rendered PATH | --json]
+  swhurl-v2 check-secrets [--root DIR] --age-key-file FILE
   swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--scope cluster] [--source NAME] [--json]
   swhurl-v2 verify --scope platform --kubeconfig KUBECONFIG.json --root DIR [--console-tag TAG]
       [--heartbeat FILE] [--source NAME] [--json]
@@ -341,10 +342,18 @@ result to --rendered PATH, which reads it on stdin, applies that path's substitu
 unresolved ${...} or a document without apiVersion, kind or metadata is a [BAD] line on stderr and exit 1. Git is
 only read, and only files inside DIR are opened.
 
+check-secrets decrypts, in memory, every *.sops.yaml and *.sops.yml file the checkout at --root (default the working
+directory) tracks, apart from .sops.yaml, with the age identity in --age-key-file, which only sops reads. It prints one
+line per Secret document and an [ERROR] for a file that does not decrypt or parse, a document that is not a Secret, an
+empty value, a REPLACE_ME value outside tests/fixtures and a data value that is not base64, and a [WARN] for a data
+value that is probably base64-encoded twice. It then compares, by SHA-256, the copies the platform keeps of the
+ClickStack ingestion key, the image webhook token, the GitHub dispatch token and the ntfy platform destination. No
+value or fingerprint is printed. An error exits 1; a missing key file or a checkout that cannot be read exits 2.
+
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
 started but did not complete, a render --check that found a difference, a name the catalogue does not list, a
-policy render/rule failure, a workstream record that disagrees with its checkout, a check-repo finding, chart dependency
+policy render/rule failure, a workstream record that disagrees with its checkout, a check-repo finding, a check-secrets error, chart dependency
 resolution/acquisition failure, or file and output I/O failure.
 `
 
@@ -470,6 +479,7 @@ func commands() map[string]func(cli, request) int {
 		"team":                    cli.team,
 		"workstreams":             cli.workstreams,
 		"check-repo":              cli.checkRepo,
+		"check-secrets":           cli.checkSecrets,
 		"verify":                  cli.verify,
 		"notify-serve":            cli.notifyServe,
 		"notifications-check":     cli.notificationsCheck,
@@ -605,11 +615,7 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-flags document instead of the rows")
 		return
 	}
-	if command == "check-repo" {
-		r.root = "."
-		flags.Var(&once{value: &r.root}, "root", "the top of the checkout to check (default: the working directory)")
-		flags.Var(&once{value: &r.rendered}, "rendered", "an active render path whose rendered manifests are on stdin")
-		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-check-repo document instead of the text")
+	if r.registerCheckFlags(flags, command) {
 		return
 	}
 	if command == "console" {
@@ -632,6 +638,25 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		return
 	}
 	r.registerBridgeFlags(flags, command)
+}
+
+// registerCheckFlags adds the flags of the two checks that read the checkout at --root, and reports whether it
+// handled the command.
+func (r *request) registerCheckFlags(flags *flag.FlagSet, command string) bool {
+	switch command {
+	case "check-repo":
+		r.root = "."
+		flags.Var(&once{value: &r.root}, "root", "the top of the checkout to check (default: the working directory)")
+		flags.Var(&once{value: &r.rendered}, "rendered", "an active render path whose rendered manifests are on stdin")
+		flags.Var(&onceBool{value: &r.json}, "json", "print the v2-check-repo document instead of the text")
+	case "check-secrets":
+		r.root = "."
+		flags.Var(&once{value: &r.root}, "root", "the top of the checkout whose Secrets are checked (default: the working directory)")
+		flags.Var(&once{value: &r.ageKey}, "age-key-file", "the age identity sops decrypts with")
+	default:
+		return false
+	}
+	return true
 }
 
 // registerRecordFlags adds the flags of the commands that work from one instance's records, and reports
@@ -911,6 +936,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"team":                    (*request).teamNamed,
 	"workstreams":             func(r *request) []string { return []string{r.repoRoot} },
 	"check-repo":              (*request).checkRepoNamed,
+	"check-secrets":           func(r *request) []string { return []string{r.root, r.ageKey} },
 	"verify":                  (*request).verifyNamed,
 	"notify-serve":            func(r *request) []string { return []string{r.listen} },
 	"notifications-check":     (*request).checkerNamed,
@@ -1108,6 +1134,9 @@ type cli struct {
 	// nor sops. Commands that never mint are given the real ones too.
 	seed      func() ([32]byte, error)
 	encrypter sops.Encrypter
+	// decrypter is what check-secrets decrypts with, and nothing else reads it; nil is sops on PATH, and a test
+	// supplies a fake so it needs neither sops nor a key.
+	decrypter sops.Decrypter
 	// stdin is where a channel's address is read from; a test supplies its own.
 	stdin io.Reader
 	// inCluster is where status --in-cluster finds the pod's ServiceAccount; a test supplies a folder and an

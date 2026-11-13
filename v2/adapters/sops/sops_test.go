@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
@@ -84,4 +86,57 @@ func refused(t *testing.T, err error, reason string) bool {
 	t.Helper()
 	refusal, ok := err.(*sops.Error)
 	return ok && refusal.Reason == reason
+}
+
+// The real adapter decrypts what it encrypted, with a throwaway identity made for the test: the platform's own key
+// is never read by a test.
+func TestDecryptContract(t *testing.T) {
+	for _, tool := range []string{"sops", "age-keygen"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			if os.Getenv("REQUIRE_SOPS") == "1" {
+				t.Fatalf("%s is required here: %v", tool, err)
+			}
+			t.Skipf("%s is not installed (REQUIRE_SOPS=1 requires it)", tool)
+		}
+	}
+	dir := t.TempDir()
+	key, wrong := identity(t, dir, "key"), identity(t, dir, "wrong")
+	public, err := exec.Command("age-keygen", "-y", key).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := sops.New().Encrypt(plaintext(t), strings.TrimSpace(string(public)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "secret.sops.yaml")
+	if err := os.WriteFile(path, encrypted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sopstest.DecryptContract(t, sops.New(), path, key, wrong, "never-a-real-seed")
+}
+
+// identity writes a new age identity under dir and returns its path.
+func identity(t *testing.T, dir, name string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if out, err := exec.Command("age-keygen", "-o", path).CombinedOutput(); err != nil {
+		t.Fatalf("age-keygen: %v: %s", err, out)
+	}
+	return path
+}
+
+func TestDecryptMissingOrFailingCommand(t *testing.T) {
+	_, err := (&sops.Command{Binary: "sops-that-is-not-installed"}).Decrypt("a.sops.yaml", "key")
+	if refusal, ok := err.(*sops.DecryptError); !ok || refusal.Reason != "sops_not_available" {
+		t.Fatalf("a missing binary: %v", err)
+	}
+	_, err = (&sops.Command{Binary: "false"}).Decrypt("a.sops.yaml", "key")
+	if refusal, ok := err.(*sops.DecryptError); !ok || refusal.Reason != "sops_exit_1" {
+		t.Fatalf("a failing command: %v", err)
+	}
+	_, err = (&sops.Command{Binary: "true"}).Decrypt("a.sops.yaml", "key")
+	if refusal, ok := err.(*sops.DecryptError); !ok || refusal.Reason != "empty_output" {
+		t.Fatalf("an empty answer: %v", err)
+	}
 }

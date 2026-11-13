@@ -12,7 +12,6 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help \
 	platform-certs-staging platform-certs-prod destroy-data \
-	check-secrets \
 	live-test-lifecycle live-test-app-template live-test-team-scenario
 
 .PHONY: $(COMMANDS)
@@ -96,6 +95,14 @@ V2_BUILD = set -Eeuo pipefail; work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 
 .PHONY: v2-deps
 v2-deps:
 	cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org go mod download go.yaml.in/yaml/v3
+
+# Every tracked SOPS Secret decrypted in memory (swhurl-v2 check-secrets): placeholders, empty values, probable double
+# encoding and the copies kept equal, compared by hashes; no value is printed. The age key is SOPS_AGE_KEY_FILE, else
+# ./age.agekey, and only sops reads it, so CI cannot run this. Needs Go 1.26.0 and sops.
+.PHONY: check-secrets
+check-secrets:
+	@[ "$(DRY_RUN)" != true ] || { echo "[ERROR] make check-secrets has no dry run: DRY_RUN=true would be ignored, so nothing was done" >&2; exit 2; }; \
+	$(V2_BUILD); "$$work/swhurl-v2" check-secrets --root . --age-key-file "$${SOPS_AGE_KEY_FILE:-./age.agekey}"
 
 # The workstream record against Git (docs/workstreams.md#what-make-check-docs-enforces): swhurl-v2 reads this checkout.
 .PHONY: check-docs

@@ -1,12 +1,14 @@
 // Package sops encrypts one document with SOPS to a public age recipient, by running the `sops` command with the
-// plaintext on its standard input. It is one of the two approved subprocess adapters (see the `no-subprocess` rule and
-// docs/iteration-2-plan.md#guardrails): the format — age for the data key, AES-GCM for the values, the SOPS
-// envelope — has a maintained implementation, and a second one written here would be a hand-built cipher.
+// plaintext on its standard input, and decrypts one tracked file locally for make check-secrets. It is one of the
+// approved subprocess adapters (see the `no-subprocess` rule and docs/iteration-2-plan.md#guardrails): the format —
+// age for the data key, AES-GCM for the values, the SOPS envelope — has a maintained implementation, and a second one
+// written here would be a hand-built cipher.
 //
-// It reads no private key. Encryption needs only the recipient, so a minted secret is encrypted to the
-// platform's public key and the operator's identity is never in this process. Nothing but the ciphertext leaves
-// it: stderr is read to learn that the command failed and never echoed, because a tool's error text is not a
-// place to risk a plaintext.
+// Encrypt needs no private key: a minted secret is encrypted to the platform's public key, so the operator's
+// identity is never in this process. Decrypt is handed the path of the operator's key file and passes it only to
+// `sops`, in the child's environment, which holds nothing else; this process never opens the key. The console
+// wires only the encrypter. stderr is read to learn that the command failed and never echoed, because a tool's
+// error text is not a place to risk a plaintext.
 package sops
 
 import (
@@ -60,23 +62,67 @@ func (c *Command) Encrypt(document []byte, recipient string) ([]byte, error) {
 	command := exec.Command(c.Binary, "--config", "/dev/null", "--encrypt", "--age", recipient,
 		"--encrypted-regex", encryptedRegex, "--input-type", "yaml", "--output-type", "yaml", "/dev/stdin")
 	command.Stdin = bytes.NewReader(document)
+	out, reason := run(command)
+	if reason != "" {
+		return nil, refuse(reason)
+	}
+	return out, nil
+}
+
+// RefusedDecryption is the code every decryption failure carries: a decryption that did not happen.
+const RefusedDecryption = "refused_decryption"
+
+// Decrypter turns one encrypted file into its plaintext, with the age identity in a key file.
+type Decrypter interface {
+	Decrypt(path, keyFile string) ([]byte, error)
+}
+
+// DecryptError names a fixed reason and never carries the file's content or the command's own output.
+type DecryptError struct{ Reason string }
+
+func (e *DecryptError) Error() string { return RefusedDecryption + ": " + e.Reason }
+
+var _ Decrypter = (*Command)(nil)
+
+// Decrypt runs sops in decrypt mode on the file at path, with SOPS_AGE_KEY_FILE set to keyFile as the child's whole
+// environment, so no other key the operator's shell or home holds is tried. The plaintext is returned to the caller,
+// which must not show it. A missing binary, a non-zero exit (a wrong key, a file that is not SOPS), an empty answer
+// and an oversized one are refused rather than returned as partial output.
+func (c *Command) Decrypt(path, keyFile string) ([]byte, error) {
+	if path == "" || keyFile == "" {
+		return nil, &DecryptError{Reason: "no_file_or_key"}
+	}
+	// --config /dev/null: no creation rule of the directory the operator runs in applies; decryption reads the file's
+	// own metadata.
+	command := exec.Command(c.Binary, "--config", "/dev/null", "decrypt", "--input-type", "yaml", "--output-type", "yaml", path)
+	command.Env = []string{"SOPS_AGE_KEY_FILE=" + keyFile}
+	out, reason := run(command)
+	if reason != "" {
+		return nil, &DecryptError{Reason: reason}
+	}
+	return out, nil
+}
+
+// run runs one sops command with its stderr discarded and its output bounded: the output, or the fixed reason it
+// failed.
+func run(command *exec.Cmd) ([]byte, string) {
 	var discarded bytes.Buffer
 	command.Stderr = &discarded
 	out, err := command.Output()
 	var exit *exec.ExitError
 	switch {
 	case errors.Is(err, exec.ErrNotFound), errors.As(err, new(*exec.Error)):
-		return nil, refuse("sops_not_available")
+		return nil, "sops_not_available"
 	case errors.As(err, &exit):
-		return nil, refuse(fmt.Sprintf("sops_exit_%d", exit.ExitCode()))
+		return nil, fmt.Sprintf("sops_exit_%d", exit.ExitCode())
 	case err != nil:
-		return nil, refuse("sops_not_available")
+		return nil, "sops_not_available"
 	case len(out) == 0:
-		return nil, refuse("empty_output")
+		return nil, "empty_output"
 	case len(out) > MaxDocument:
-		return nil, refuse("output_too_large")
+		return nil, "output_too_large"
 	}
-	return out, nil
+	return out, ""
 }
 
 // refuse is a fixed reason, so a diagnostic says what failed without saying what was encrypted.

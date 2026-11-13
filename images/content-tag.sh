@@ -7,8 +7,7 @@
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 case "${1:-}" in
-  console) paths=(images/console .dockerignore pyproject.toml uv.lock tools v2
-                  clusters/home/flux-system/sources/configmap-platform-settings.yaml) ;;
+  console) paths=(images/console .dockerignore pyproject.toml uv.lock v2) ;;
   backup) paths=(images/backup .dockerignore) ;;
   *) echo "usage: $0 console|backup [--committed]" >&2; exit 2 ;;
 esac

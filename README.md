@@ -119,7 +119,7 @@ One machine runs k3s. cert-manager gets certificates from Let's Encrypt, the pac
 | `apps/` | A pointer only: each app's code lives in its own repository, made from a [stack template](docs/apps.md#stacks-and-features), and its records in `v2-records/`, beside the team registry (`teams.json`) |
 | `v2-records/` | What each app instance is, as records; `v2-apps/` holds what they compile to, and `v2/` is the compiler ([apps](docs/apps.md)) |
 | `images/` | Container images built from this repo (the console) |
-| `tools/swhurl/` | Python operator tooling behind every `make` target, and the console's code |
+| `tools/` | `make-help.awk`, which prints `make help` from the Makefile's `##` lines |
 | `host/` | Host systemd timers for dynamic DNS and the heartbeat, and the bash operator commands (`ops.sh`) |
 | `tests/` | Offline tests and fixtures |
 

@@ -8,7 +8,8 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+ROOT = Path(__file__).resolve().parents[1]
+
 
 DOCKERFILE = (ROOT / 'images/console/Dockerfile').read_text()
 

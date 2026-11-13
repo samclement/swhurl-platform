@@ -983,7 +983,7 @@ Avoid a universal component registry, generic workflow/DAG language, event sourc
 | Projections | `apps/state.py`, `console/stages.py` |
 | External command boundary | `Runner` / `FakeRunner` |
 
-Paths in this table are relative to [`tools/swhurl/`](../tools/swhurl).
+Paths in this table are relative to `tools/swhurl/` (deleted 13 November 2026).
 
 The current implementation is closer to this kernel than “rewrite from scratch” suggests. The largest missing conceptual boundary is release construction/identity versus environment selection. The largest optional complexity surface is cross-system historical workflow tracking.
 

@@ -40,7 +40,7 @@ SHELL := /usr/bin/env bash
 ##@ Offline checks
 ## check | Local | - | The offline checks in parallel; CI also renders the templates (check-templates)
 ## check-repo | Local | - | Doc links and tables, SOPS structure, settings and render paths (swhurl-v2); render and substitute each path, shell syntax; SCHEMA=1 adds flux-schema (needs Go) | [SCHEMA=1]
-## test | Local | - | Unit tests for the tooling, console, manifests and command safety; K= runs only matching classes (needs uv) | [K=<pattern>]
+## test | Local | - | Unit tests for the manifests, workflows, images, scripts and make targets' safety; K= runs only matching classes (needs uv) | [K=<pattern>]
 ## check-apps | Local | - | v2's records match Git and every compiled instance passes Go Kubernetes policy (needs Go and Helm; no arguments)
 ## check-templates | Local | - | Render each app type from its stack template (v2/contract/stacks.json); its names must be listed and the label its build writes must pass swhurl-v2 declaration (needs network, jq and uvx; builds swhurl-v2 unless SWHURL_V2 names one)
 ## check-otel | Local | - | Render the OTel collectors; validate each config and run the log fixtures in the image its release renders (needs helm, kubectl, jq, openssl, curl and podman, or CONTAINER_RUNTIME=docker) | [CONTAINER_RUNTIME=docker]
@@ -152,7 +152,7 @@ check:
 
 .PHONY: test
 test:
-	PYTHONPATH=$(CURDIR)/tools uv run --frozen python tests/run.py $(if $(K),-k '$(K)')
+	uv run --frozen python tests/run.py $(if $(K),-k '$(K)')
 
 .PHONY: check-codegraph
 check-codegraph:
@@ -434,7 +434,7 @@ v2-report:
 
 .PHONY: check-lint
 check-lint:
-	uvx ruff@0.16.9 check tools tests devtools
+	uvx ruff@0.16.9 check tests devtools
 	uvx --from shellcheck-py==0.11.0.1 shellcheck -x $$(git ls-files --cached --others --exclude-standard '*.sh')
 
 # Host timers (host/install-timer.sh) -------------------------------------------

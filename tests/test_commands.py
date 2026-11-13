@@ -3,8 +3,12 @@ import re
 import subprocess
 import unittest
 from dataclasses import dataclass
+from pathlib import Path
 
-from swhurl import ROOT, yamlio
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+
 
 # What a target touches (the Touches column of docs/commands.md).
 TOUCHES = ('Local', 'Git', 'Cluster (read)', 'Cluster', 'Cluster (throwaway)', 'GitHub', 'Host')
@@ -90,7 +94,7 @@ class SpecTests(unittest.TestCase):
                 self.assertNotIn(name, phony())
 
     def test_the_notify_service_is_go(self):
-        manifest = yamlio.load((ROOT / 'platform/notify/helmrelease.yaml').read_text())
+        manifest = yaml.safe_load((ROOT / 'platform/notify/helmrelease.yaml').read_text())
         main = manifest['spec']['values']['controllers']['main']['containers']['main']
         self.assertEqual(main['command'], ['swhurl-v2', 'notify-serve'])
 

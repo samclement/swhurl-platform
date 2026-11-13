@@ -14,7 +14,7 @@ from pathlib import Path
 
 from test_commands import plans
 
-from swhurl import ROOT
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class CommandSafetyTests(unittest.TestCase):

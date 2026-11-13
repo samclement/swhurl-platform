@@ -4,14 +4,65 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import unittest
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, charts, platform
-from swhurl.run import Runner
+ROOT = Path(__file__).resolve().parents[1]
+CLUSTER = Path('clusters/home')
+ROOT_UNITS = CLUSTER / 'flux-system/kustomizations.yaml'
+SOURCES = CLUSTER / 'flux-system/sources'
+SETTINGS = SOURCES / 'configmap-platform-settings.yaml'
+HELM_REPOSITORIES = SOURCES / 'helmrepositories.yaml'
+
+
+def flux_unit_documents(root: Path = ROOT) -> Iterator[tuple[Path, dict]]:
+    """Every Flux Kustomization defined in Git, with the file that defines it.
+
+    A unit file may be YAML or JSON: JSON is a YAML subset, both are read the same way, and the v2
+    compiler writes its units as JSON. Either must be found, or a unit Flux applies goes unchecked.
+    """
+    files = [root / ROOT_UNITS, *sorted(p for p in (root / CLUSTER).iterdir() if p.suffix in ('.yaml', '.yml', '.json'))]
+    for path in files:
+        for doc in yaml.safe_load_all(path.read_text()):
+            if (isinstance(doc, dict) and doc.get('apiVersion') == 'kustomize.toolkit.fluxcd.io/v1'
+                    and doc.get('kind') == 'Kustomization'):
+                yield path, doc
+
+
+@dataclass(frozen=True)
+class Unit:
+    """One Flux unit (GLOSSARY.md) as Git defines it."""
+    name: str
+    path: Path  # the directory it applies, from the repository root
+    depends_on: tuple[str, ...]
+    decrypts: bool  # it decrypts SOPS Secrets
+    spec: dict
+
+    @property
+    def is_app(self) -> bool:
+        """An app instance's unit (``app-<app>-<env>``) rather than a shared one."""
+        return self.name.startswith('app-')
+
+
+def units(root: Path = ROOT) -> list[Unit]:
+    """Every Flux unit defined in Git: the two root units, the shared ones, then one per app instance."""
+    found = []
+    for _, doc in flux_unit_documents(root):
+        spec = doc.get('spec') or {}
+        found.append(Unit(doc['metadata']['name'], Path(spec.get('path', '')),
+                          tuple(d['name'] for d in spec.get('dependsOn') or []), 'decryption' in spec, spec))
+    return found
+
+
+def settings() -> dict:
+    """The platform-settings ConfigMap's data, which Flux substitutes into the shared units."""
+    return yaml.safe_load((ROOT / SETTINGS).read_text())['data']
 
 
 class UnitDiscoveryTests(unittest.TestCase):
@@ -20,34 +71,34 @@ class UnitDiscoveryTests(unittest.TestCase):
     def test_yaml_and_json_units_are_discovered(self):
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root)
-        (root / platform.ROOT_UNITS).parent.mkdir(parents=True)
-        (root / platform.ROOT_UNITS).write_text('')
+        (root / ROOT_UNITS).parent.mkdir(parents=True)
+        (root / ROOT_UNITS).write_text('')
         unit = {'apiVersion': 'kustomize.toolkit.fluxcd.io/v1', 'kind': 'Kustomization',
                 'metadata': {'name': 'app-json-staging', 'namespace': 'flux-system'},
                 'spec': {'path': './v2-apps/instances/x/staging', 'prune': True, 'dependsOn': [{'name': 'infra-base'}]}}
-        (root / platform.CLUSTER / 'app-json-staging.json').write_text(json.dumps(unit))
+        (root / CLUSTER / 'app-json-staging.json').write_text(json.dumps(unit))
         shared = dict(unit, metadata={'name': 'platform-shared', 'namespace': 'flux-system'})
-        (root / platform.CLUSTER / 'platform-shared.yaml').write_text(yaml.safe_dump(shared))
-        units = {discovered.name: discovered for discovered in platform.units(root)}
-        self.assertEqual(set(units), {'app-json-staging', 'platform-shared'})
-        self.assertTrue(units['app-json-staging'].is_app)
-        self.assertFalse(units['platform-shared'].is_app)
-        self.assertEqual(units['app-json-staging'].path, Path('v2-apps/instances/x/staging'))
-        self.assertEqual(units['app-json-staging'].depends_on, ('infra-base',))
+        (root / CLUSTER / 'platform-shared.yaml').write_text(yaml.safe_dump(shared))
+        found = {unit.name: unit for unit in units(root)}
+        self.assertEqual(set(found), {'app-json-staging', 'platform-shared'})
+        self.assertTrue(found['app-json-staging'].is_app)
+        self.assertFalse(found['platform-shared'].is_app)
+        self.assertEqual(found['app-json-staging'].path, Path('v2-apps/instances/x/staging'))
+        self.assertEqual(found['app-json-staging'].depends_on, ('infra-base',))
 
 
 class ManifestPolicyTests(unittest.TestCase):
     def test_shared_flux_units_orphan_on_deletion_and_apps_prune(self):
-        units = platform.units()
-        for unit in units:
+        found = units()
+        for unit in found:
             with self.subTest(unit=unit.name):
                 self.assertEqual(unit.spec.get('deletionPolicy', 'MirrorPrune'), 'MirrorPrune' if unit.is_app else 'Orphan')
         for name in ('infra-cert-manager', 'infra-issuers', 'platform-clickstack', 'platform-otel'):
-            self.assertIn(name, [unit.name for unit in units])
+            self.assertIn(name, [unit.name for unit in found])
 
     def test_flux_units_decouple_apps_and_order_issuers(self):
-        units = platform.units()
-        deps = {unit.name: set(unit.depends_on) for unit in units}
+        found = units()
+        deps = {unit.name: set(unit.depends_on) for unit in found}
         for name, required in deps.items():
             self.assertLessEqual(required, set(deps), f'{name} depends on an unknown unit')
 
@@ -61,27 +112,17 @@ class ManifestPolicyTests(unittest.TestCase):
         for app in (n for n in deps if n.startswith('app-')):
             self.assertFalse(closure(app) & {'platform-clickstack', 'platform-otel'},
                              f'{app} must not wait for observability')
-        for unit in units:
+        for unit in found:
             with self.subTest(unit=unit.name):
                 self.assertEqual(unit.decrypts, any((ROOT / unit.path).rglob('*.sops.yaml')),
                                  'decryption must match encrypted Secrets in the path')
 
-    def test_names_the_tooling_types_exist_in_git(self):
-        """A unit or namespace named in the tooling is one Git defines: a rename fails here, not on the cluster."""
-        named = set()
-        for path in (ROOT / 'tools/swhurl').rglob('*.py'):
-            named |= set(re.findall(r"'((?:cluster|infra|platform)-[a-z0-9-]+)'", path.read_text()))
-        other = {'platform-settings', 'platform-system', 'platform-certs', 'platform-signing-keys',
-                 'platform-certs-staging', 'platform-certs-prod'}  # not units
-        self.assertLessEqual(named - other, {unit.name for unit in platform.units()})
-        self.assertLessEqual({'messaging', 'notify', 'console', 'platform-system'}, platform.namespaces())
-
     def test_platform_hosts_come_from_base_domain(self):
         """Platform manifests name the domain only through ${BASE_DOMAIN}; units using a setting substitute it."""
-        domain = platform.base_domain()
-        settings = set(yaml.safe_load((ROOT / platform.SETTINGS).read_text())['data'])
+        known = settings()
+        domain = known['BASE_DOMAIN']
         host = re.compile(rf'(?<![@\w.-])(?:[\w-]+\.)*{re.escape(domain)}\b')  # a mailbox (ops@domain) is not a host
-        for _, unit in platform.flux_unit_documents():
+        for _, unit in flux_unit_documents():
             spec = unit['spec']
             if spec['path'].startswith(('./apps/', './clusters/')):
                 continue  # apps write hosts literally (the app policy checks them); roots hold only units and sources
@@ -92,7 +133,7 @@ class ManifestPolicyTests(unittest.TestCase):
                     self.assertFalse(host.search(text), f'use ${{BASE_DOMAIN}} instead of the literal {domain}')
                 used |= set(re.findall(r'(?<!\$)\$\{(\w+)\}', text))
             with self.subTest(unit=unit['metadata']['name']):
-                self.assertLessEqual(used, settings, 'unknown setting')
+                self.assertLessEqual(used, set(known), 'unknown setting')
                 substitutes = [s['name'] for s in (spec.get('postBuild') or {}).get('substituteFrom', [])]
                 self.assertEqual('platform-settings' in substitutes, bool(used))
 
@@ -172,6 +213,28 @@ class ManifestPolicyTests(unittest.TestCase):
         for email in approved:
             self.assertRegex(email, r'^[^@\s*]+@[^@\s*]+\.[^@\s*]+$')
 
+    def test_only_the_flux_webhook_route_skips_sign_in(self):
+        """Raw platform Ingresses need sign-in, except GitHub's webhook to Flux's receiver (chart Ingresses: other tests)."""
+        unauthenticated = []
+        for unit in units():
+            if unit.path.parts[0] != 'platform':
+                continue
+            for path in sorted((ROOT / unit.path).rglob('*.yaml')):
+                for doc in yaml.safe_load_all(path.read_text()):
+                    if doc and doc.get('kind') == 'Ingress' and 'router.middlewares' not in str(doc['metadata']):
+                        unauthenticated.append(doc)
+        self.assertEqual([d['metadata']['name'] for d in unauthenticated], ['flux-webhook'])
+        paths = [p for rule in unauthenticated[0]['spec']['rules'] for p in rule['http']['paths']]
+        self.assertEqual([(p['path'], p['backend']['service']['name']) for p in paths], [('/hook/', 'webhook-receiver')])
+        receiver = yaml.safe_load((ROOT / 'platform/flux-webhook/receiver.yaml').read_text())
+        self.assertEqual(receiver['spec']['secretRef']['name'], 'github-webhook-token')
+        images = yaml.safe_load((ROOT / 'platform/flux-webhook/image-receiver.yaml').read_text())
+        self.assertEqual(images['spec']['secretRef']['name'], 'image-webhook-token')
+        self.assertEqual([(r['kind'], r['matchLabels']) for r in images['spec']['resources']],
+                         [('ImageRepository', {'platform.swhurl.com/managed': 'true'})],
+                         'an app repository webhook may only start image scans')
+        self.assertIn("req.ref == 'refs/heads/main'", receiver['spec']['resourceFilter'])
+
 
 @unittest.skipUnless(shutil.which('helm') or os.environ.get('REQUIRE_HELM'), 'helm not installed')
 class ClickStackRenderTests(unittest.TestCase):
@@ -180,22 +243,24 @@ class ClickStackRenderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.release = yaml.safe_load((ROOT / 'platform/clickstack/helmrelease.yaml').read_text())
-        settings = yaml.safe_load((ROOT / platform.SETTINGS).read_text())['data']
-        cls.domain = settings['BASE_DOMAIN']
+        known = settings()
+        cls.domain = known['BASE_DOMAIN']
         values_text = yaml.safe_dump(cls.release['spec']['values'])
-        for key, value in settings.items():
+        for key, value in known.items():
             values_text = values_text.replace(f'${{{key}}}', str(value))
         spec = cls.release['spec']['chart']['spec']
-        runner = Runner()
-        chart = charts.chart_dir(spec['chart'], spec['version'],
-                                     charts.helm_repositories()[spec['sourceRef']['name']], runner)
-        cls.chart_defaults = yaml.safe_load((chart / 'values.yaml').read_text())
+        repositories = {d['metadata']['name']: d['spec']['url'] for d in
+                        yaml.safe_load_all((ROOT / HELM_REPOSITORIES).read_text()) if d and d['kind'] == 'HelmRepository'}
         stubs = [f'{v["targetPath"]}=stub-{v["valuesKey"].lower()}' for v in cls.release['spec']['valuesFrom']]
-        with tempfile.NamedTemporaryFile('w', suffix='.yaml') as values:
-            values.write(values_text)
-            values.flush()
-            out = runner.output(['helm', 'template', 'clickstack', str(chart), '-n', 'observability',
-                                 '-f', values.name, '--set', ','.join(stubs)])
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(['helm', 'pull', spec['chart'], '--repo', repositories[spec['sourceRef']['name']],
+                            '--version', spec['version'], '--untar', '--untardir', tmp], check=True, capture_output=True)
+            chart = Path(tmp) / spec['chart']
+            cls.chart_defaults = yaml.safe_load((chart / 'values.yaml').read_text())
+            values = Path(tmp) / 'values.yaml'
+            values.write_text(values_text)
+            out = subprocess.run(['helm', 'template', 'clickstack', str(chart), '-n', 'observability', '-f', str(values),
+                                  '--set', ','.join(stubs)], check=True, capture_output=True, text=True).stdout
         cls.docs = [d for d in yaml.safe_load_all(out) if d]
 
     def find(self, kind, name=None):
@@ -218,28 +283,6 @@ class ClickStackRenderTests(unittest.TestCase):
         self.assertEqual([r['host'] for r in ingress['spec']['rules']], [f'clickstack.{self.domain}'])
         config = self.find('ConfigMap', 'clickstack-config')['data']
         self.assertEqual(config['FRONTEND_URL'], f'https://clickstack.{self.domain}')
-
-    def test_only_the_flux_webhook_route_skips_sign_in(self):
-        """Raw platform Ingresses need sign-in, except GitHub's webhook to Flux's receiver (chart Ingresses: other tests)."""
-        unauthenticated = []
-        for unit in platform.units():
-            if unit.path.parts[0] != 'platform':
-                continue
-            for path in sorted((ROOT / unit.path).rglob('*.yaml')):
-                for doc in yaml.safe_load_all(path.read_text()):
-                    if doc and doc.get('kind') == 'Ingress' and 'router.middlewares' not in str(doc['metadata']):
-                        unauthenticated.append(doc)
-        self.assertEqual([d['metadata']['name'] for d in unauthenticated], ['flux-webhook'])
-        paths = [p for rule in unauthenticated[0]['spec']['rules'] for p in rule['http']['paths']]
-        self.assertEqual([(p['path'], p['backend']['service']['name']) for p in paths], [('/hook/', 'webhook-receiver')])
-        receiver = yaml.safe_load((ROOT / 'platform/flux-webhook/receiver.yaml').read_text())
-        self.assertEqual(receiver['spec']['secretRef']['name'], 'github-webhook-token')
-        images = yaml.safe_load((ROOT / 'platform/flux-webhook/image-receiver.yaml').read_text())
-        self.assertEqual(images['spec']['secretRef']['name'], 'image-webhook-token')
-        self.assertEqual([(r['kind'], r['matchLabels']) for r in images['spec']['resources']],
-                         [('ImageRepository', {'platform.swhurl.com/managed': 'true'})],
-                         'an app repository webhook may only start image scans')
-        self.assertIn("req.ref == 'refs/heads/main'", receiver['spec']['resourceFilter'])
 
     def test_mongodb_data_survives_claim_deletion(self):
         templates = self.find('MongoDBCommunity')['spec']['statefulSet']['spec']['volumeClaimTemplates']

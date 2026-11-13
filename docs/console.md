@@ -185,7 +185,7 @@ written: it runs `swhurl-v2 change` in its own process, so a job's lines are the
 job's link. Nothing cross-app is implied: a kind's pull request carries its own records and what `render` derives from
 them.
 
-Validate checks a console pull request like any other, and an app-only diff takes its narrower app-only path: `check-repo`
+Validate checks a console pull request like any other, every job of it: `check-repo`
 renders the registered units and substitutes them as Flux does (`swhurl-v2 check-repo`; schema validation is the
 operator's opt-in `SCHEMA=1`), and `check-apps` checks render equality and actual chart-output policy over every compiled
 v2 instance ([the app policy](apps.md#the-app-policy)). Operator commits still require the full `make check` described in

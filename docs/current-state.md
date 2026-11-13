@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The last of `tools/` leaves (13 November 2026)
+
+- **Capability:** `tools/swhurl` is gone and no workflow runs Python of this repository's own but the tests
+  ([§35](iteration-2-plan.md#35-the-last-of-tools-the-clickstack-render-test-pulls-its-own-chart-and-validates-classifier-is-bash-approved-13-november-2026)).
+  The ClickStack render test pulls its chart with `helm pull --untar` and keeps its four assertions; `charts.py`,
+  `run.py`, `platform.py`, `yamlio.py` and their tests are deleted, and the Flux unit reader lives in
+  `tests/test_manifest_policy.py`. Validate's records-only rule is `.github/records-only.sh` over `v2-records/` and
+  the channel Secrets; `tools/ci_changes.py` and its app-only fast path, which matched only v1's layout, are deleted.
+  The console image no longer copies `tools/`, the settings ConfigMap or `v2/contract/`, and its content tag no
+  longer hashes them.
+- **Changed for the operator:** none in use. A pull request of only records (under `v2-records/`) is now checked
+  rendered, as one of `apps/` records was in v1; a change to `tools/make-help.awk` no longer rebuilds the console.
+- **Offline evidence:** `make test` (110 tests) passed; with one `valuesFrom` entry removed from the ClickStack
+  HelmRelease, `test_every_chart_secret_comes_from_the_sops_secret` failed naming `MONGODB_PASSWORD`. The classifier
+  printed true for records with a channel Secret and false for an empty list, a rendered file beside a record, the
+  routes, `channels/kustomization.yaml`, a fixture's records, a v1 path and pull request #113's files.
+- **Not changed:** anything on the cluster but the console's image.
+
 ## The command catalogue leaves Python (13 November 2026)
 
 - **Capability:** no `make` target runs Python. Each target is one line at the top of the Makefile
@@ -4954,7 +4972,7 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 
 ## One inventory of Flux units and namespaces (12 October 2026)
 
-`e4c41c3` gives the Flux units and the namespaces Git defines one reader (`platform.units()`, `platform.namespaces()` in [`platform.py`](../tools/swhurl/platform.py)). The tests that parsed unit files by hand use it, a test fails when the tooling names a unit or namespace Git does not define, and `make check-repo` compares the [Flux units table](architecture.md#flux-units) with Git. Nothing on the cluster changed. Console image `src-a39c85a66db30499` (deployed as `5d2adb1`); Validate passed on the commit, and after `make flux-reconcile`, `make verify-platform` passed with no warning.
+`e4c41c3` gives the Flux units and the namespaces Git defines one reader (`platform.units()`, `platform.namespaces()` in `tools/swhurl/platform.py`). The tests that parsed unit files by hand use it, a test fails when the tooling names a unit or namespace Git does not define, and `make check-repo` compares the [Flux units table](architecture.md#flux-units) with Git. Nothing on the cluster changed. Console image `src-a39c85a66db30499` (deployed as `5d2adb1`); Validate passed on the commit, and after `make flux-reconcile`, `make verify-platform` passed with no warning.
 
 - **The doc check found a fault on its first run:** the table listed `platform-otel` as taking settings; the unit has no substitution. Corrected; `make check-repo` now prints `docs/architecture.md lists the 17 shared Flux units and their inputs`.
 - **Offline:** `make test` passed (636 tests); `check-apps`, `check-templates` and `check-otel` passed on the same tree before a fix to one new test.

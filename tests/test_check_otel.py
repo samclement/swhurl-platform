@@ -12,7 +12,8 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+ROOT = Path(__file__).resolve().parents[1]
+
 
 RELAY = 'receivers:\n  otlp: {}\nexporters:\n  debug: {}\nservice:\n  pipelines:\n    logs: {receivers: [otlp], exporters: [debug]}\n'
 RENDERED = yaml.safe_dump_all([

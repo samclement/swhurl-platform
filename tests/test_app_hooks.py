@@ -11,8 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl import ROOT
-
+ROOT = Path(__file__).resolve().parents[1]
 GH_TOKEN = 'fixture-gh-token'
 HOOK_TOKEN = 'fixture-image-webhook-token'
 HOST = 'flux-webhook.' + json.loads((ROOT / 'v2/testdata/profile.json').read_text())['routing']['baseDomain']

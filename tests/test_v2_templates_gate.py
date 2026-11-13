@@ -8,7 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl import ROOT
+ROOT = Path(__file__).resolve().parents[1]
+
 
 CATALOGUE = json.loads((ROOT / 'v2/contract/stacks.json').read_text())
 FIRST_TEAM = next(iter(json.loads((ROOT / 'v2-records/teams.json').read_text())['teams']))

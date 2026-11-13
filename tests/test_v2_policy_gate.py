@@ -5,7 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl import ROOT, yamlio
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+
 
 
 class V2PolicyGateTests(unittest.TestCase):
@@ -90,7 +93,7 @@ esac
         self.assertIn('check-apps:\n\t@bash v2/check-apps.sh\n', (ROOT / 'Makefile').read_text())
         self.assertFalse((ROOT / 'tools/swhurl/apps/validation.py').exists())
         for name in ('validate.yml', 'deploy-v2.yml'):
-            workflow = yamlio.load((ROOT / '.github/workflows' / name).read_text())
+            workflow = yaml.safe_load((ROOT / '.github/workflows' / name).read_text())
             fetches = [step for job in workflow['jobs'].values() for step in job.get('steps', [])
                        if step.get('name') == 'Fetch the chart v2 compiles for']
             self.assertEqual(len(fetches), 1)

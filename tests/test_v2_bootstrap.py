@@ -1,9 +1,11 @@
 """Pinned downloads are an explicit step, never an offline check's network fallback."""
 import unittest
+from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+ROOT = Path(__file__).resolve().parents[1]
+
 
 
 class V2BootstrapTests(unittest.TestCase):

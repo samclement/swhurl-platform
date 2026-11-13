@@ -425,8 +425,8 @@ with no Python execution path. Explicit paths or flags exit 2 before file reads 
 acquires the chart through [`v2/chart.sh`](../v2/chart.sh), then runs `check-rendered.sh --chart DIR`.
 Render-equality failure stops before policy; the gate preserves Go's report, diagnostics and nonzero
 status. Validate and Deploy-v2 use the same acquisition script to populate the cache before Go tests.
-Python's [`charts.py`](../tools/swhurl/charts.py) remains only for the ClickStack render test in
-`tests/test_manifest_policy.py`; `check-otel` renders with `helm template --repo` ([`platform/otel/check.sh`](../platform/otel/check.sh)).
+The ClickStack render test in `tests/test_manifest_policy.py` pulls its own chart with `helm pull`
+([§35](#35-the-last-of-tools-the-clickstack-render-test-pulls-its-own-chart-and-validates-classifier-is-bash-approved-13-november-2026)); `check-otel` renders with `helm template --repo` ([`platform/otel/check.sh`](../platform/otel/check.sh)).
 
 #### Chart acquisition (approved 5 November 2026)
 
@@ -2912,3 +2912,37 @@ ClickStack render test in `tests/test_manifest_policy.py` acquires its chart thr
 required variable made optional, a wrong touch) fails `make test K=test_commands`; `make help` compared with the
 Python output and run under gawk, Debian's mawk and busybox awk. Nothing changes on the cluster. The console image
 copies `tools/`, so Validate rebuilds and deploys it; `make verify-platform` then confirms it runs.
+
+## 35. The last of `tools/`: the ClickStack render test pulls its own chart, and Validate's classifier is bash (approved 13 November 2026)
+
+The gate after §34. Two things outside the tests still ran Python: `charts.py` (with `run.py`, `platform.py` and
+`yamlio.py` under it), which only the ClickStack render test in `tests/test_manifest_policy.py` used, and
+`tools/ci_changes.py`, which Validate's first job ran to sort a change's paths.
+
+**Decisions.**
+- The ClickStack render test **stays and acquires its own chart**: `helm pull <chart> --repo <url> --version <v>
+  --untar` into a temporary directory, then `helm template` with the release's values, settings substituted and
+  `valuesFrom` stubbed, as before. It is the only check that a ClickStack bump cannot put a chart-default secret on
+  the cluster ([services](services.md)), and Renovate bumps that chart. The chart is no longer cached between runs.
+  The test of the Flux webhook route, which never needed Helm, moves to the plain manifest tests.
+- The Flux unit reader (`units()`, YAML or JSON) moves into `tests/test_manifest_policy.py`, its one reader, and every
+  test finds the repository from its own path. `tools/swhurl/` is deleted with `tests/test_runner.py`,
+  `tests/test_yamlio.py`, `tests/test_charts.py`, and `test_names_the_tooling_types_exist_in_git`, whose subject is
+  gone.
+- The classifier's **app-only fast path is dropped, not ported**: its patterns (`apps/<app>/...`,
+  `clusters/home/app-*.yaml`) are v1's layout and match nothing v2 writes, so every pull request already ran every
+  job. **Records-only** is [`.github/records-only.sh`](../.github/records-only.sh), retargeted to v2's inputs: true
+  when there is at least one path and every one is under `v2-records/` or is a team's channel Secret
+  (`platform/notify/channels/channel-<team>.sops.yaml`); the jobs then render with `make -s v2-render` before checking,
+  as before. A pull request whose range cannot be read is now checked as committed, as a push already was.
+- The console image copies no `tools/`, no platform-settings ConfigMap and no `v2/contract/`: only the Python tooling
+  read them, and the Go console reads the stack catalogue from the pinned tree. `images/content-tag.sh console`
+  hashes `images/console`, `.dockerignore`, `pyproject.toml`, `uv.lock` and `v2`.
+
+**What stays Python.** The tests in `tests/` (they check Git's content and run the make targets and scripts), the
+code graph aid, the host's connectivity probe and Copier in the console image.
+
+**Verification.** `make test` and `make check`; the classifier against hand-made path lists (records, a channel, a
+rendered file beside a record, the routes, a fixture's records, an empty list) and pull requests #113 and #109; a
+deliberately leaked chart secret fails `ClickStackRenderTests`. The image changes, so Validate rebuilds and deploys
+the console; `make verify-platform` then confirms it runs.

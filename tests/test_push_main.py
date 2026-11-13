@@ -14,8 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONSOLE = 'platform/console/helmrelease.yaml'
 NOTIFY = 'platform/notify/helmrelease.yaml'
-INPUTS = ('images/console/Dockerfile', '.dockerignore', 'pyproject.toml', 'uv.lock', 'tools/x', 'v2/x',
-          'clusters/home/flux-system/sources/configmap-platform-settings.yaml')
+INPUTS = ('images/console/Dockerfile', '.dockerignore', 'pyproject.toml', 'uv.lock', 'v2/x')
 DIGEST = 'sha256:' + 'b' * 64
 IDENTITY = {'GIT_AUTHOR_NAME': 'github-actions[bot]', 'GIT_AUTHOR_EMAIL': 'bot@example.invalid',
             'GIT_COMMITTER_NAME': 'github-actions[bot]', 'GIT_COMMITTER_EMAIL': 'bot@example.invalid'}
@@ -208,7 +207,7 @@ class PushMainTests(Fixture):
         self.assertIn('nothing to do: main now builds', out)
 
     def test_main_moving_to_other_inputs_after_a_lost_push_pins_nothing(self):
-        code, out = self.run_bot('console-image', '--expect', self.tag(), RACE='1', RACE_FILE='tools/x')
+        code, out = self.run_bot('console-image', '--expect', self.tag(), RACE='1', RACE_FILE='v2/x')
         self.assertEqual(code, 0, out)
         self.assertIn('nothing to do: main now builds', out)
         self.assertEqual([m for _, m in self.pushed()], ['other writer 0'])
@@ -244,7 +243,7 @@ class PinConsoleTests(Fixture):
 
     def test_uncommitted_inputs_are_refused(self):
         before = (self.checkout / CONSOLE).read_text()
-        (self.checkout / 'tools/x').write_text('changed\n')
+        (self.checkout / 'v2/x').write_text('changed\n')
         code, out = self.pin()
         self.assertEqual(code, 1, out)
         self.assertIn('uncommitted changes', out)

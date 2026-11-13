@@ -42,13 +42,7 @@ RUN apk add --no-cache git
 COPY --from=tools /out/ /usr/local/bin/
 COPY --from=v2 /out/swhurl-v2 /usr/local/bin/swhurl-v2
 COPY --from=deps /app/.venv /app/.venv
-COPY tools/ /app/tools/
-# The tooling reads BASE_DOMAIN from here when it is imported.
-COPY clusters/home/flux-system/sources/configmap-platform-settings.yaml /app/clusters/home/flux-system/sources/
-# The stack and name catalogues are v2's files; the tooling reads them when it is imported.
-COPY v2/contract/ /app/v2/contract/
 ENV PATH=/app/.venv/bin:$PATH \
-    PYTHONPATH=/app/tools \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/tmp \

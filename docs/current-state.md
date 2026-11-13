@@ -18,9 +18,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   HelmRelease, `test_every_chart_secret_comes_from_the_sops_secret` failed naming `MONGODB_PASSWORD`. The classifier
   printed true for records with a channel Secret and false for an empty list, a rendered file beside a record, the
   routes, `channels/kustomization.yaml`, a fixture's records, a v1 path and pull request #113's files.
-- **First push:** Validate run `43509526814` failed for `99dff8f2` in `make check-v2`: `TestCoexistence` still
-  required `tools` among the console's content-hash inputs. Nothing was deployed. The guard is corrected in the
-  next commit.
+- **Delivery and health:** Validate run `43509526814` failed for `99dff8f2` in `make check-v2` (`TestCoexistence`
+  still required `tools` among the console's content-hash inputs), so nothing was deployed; `630f98ad` corrected the
+  guard, and run `43510290326` passed every job, its classifier printing `records_only=false` for the push, and bot
+  commit `87502212` deployed console image `src-61767c40649334ef`. After `make flux-reconcile`, `make
+  verify-platform` passed with no BAD or WARN line. In the new pod `/app` holds only `.venv`, `PYTHONPATH` is unset
+  and `copier --version` prints 9.18.2; `/healthz`, `/apps`, `/catalogue` and `/new` (its stacks from the pinned
+  tree) answered 200 through a port-forward; both console CronJobs completed on the new image.
 - **Not changed:** anything on the cluster but the console's image.
 
 ## The command catalogue leaves Python (13 November 2026)

@@ -14,6 +14,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   (`demo-shop` → `demo-orders` → `demo-orders.created` → `demo-notifier`, every check `[OK]`, the same trace
   `ae5a2514…` when run back to back), and the same `[ERROR] no prod instances form a chain` for `ENV=prod`.
   `make live-test-team-scenario` through the new recipe passed in staging, and `DRY_RUN=true` printed the plan.
+- **CI and live:** Validate and Render passed for `5f6793df`, and Validate deployed console image
+  `src-d0e0bb21db645cd7` (`515f5092`). After `make flux-reconcile`, `make verify-platform` passed with no warning,
+  every recorded instance's `make app-status` was healthy, and `make live-test-team-scenario` passed again at
+  `HEAD` (trace `30269914…`).
 - **Not exercised:** a failed check live (every staging check passed); each is covered offline.
 
 ## `destroy-data` runs Go (13 November 2026)

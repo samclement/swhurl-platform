@@ -21,8 +21,13 @@ What has been verified on the live cluster, and when: current facts first, then 
   what it encrypted with a throwaway identity the test makes itself and refused a wrong one; `make check-v2`,
   `make check` and `make test` passed.
 - **Delivery:** the first push, `8350c078`, failed Validate's v2 job: the contract test then ran `age-keygen`, which
-  the runner lacks. The test now makes its identities with `crypto/ecdh`, so CI needs no new tool.
-- **Live:** nothing; the check reads only the checkout and the local key.
+  the runner lacks. The test now makes its identities with `crypto/ecdh`, so CI needs no new tool. [Validate
+  43342322253](https://github.com/samclement/swhurl-platform/actions/runs/43342322253) for `6c60571f` passed every
+  job, and its deploy job pinned the console to `src-d9a0e0b492429084` (`544fc73c`). At `544fc73c`,
+  `make flux-reconcile` and `make verify-platform` passed (the console and the notify service on the new image,
+  built from the current tooling), and `make check-secrets` reported 0 errors and 0 warnings.
+- **Live:** nothing changed on the cluster but the console image the tooling change rebuilt; the check reads only
+  the checkout and the local key.
 - **Not exercised:** a real Secret that is not base64 or not a map (none exists; the pure tests cover both).
 
 ## The bots and the console image pin leave Python (12 November 2026)

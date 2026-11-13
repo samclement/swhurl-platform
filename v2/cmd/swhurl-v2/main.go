@@ -79,6 +79,7 @@ const usage = `usage:
   swhurl-v2 platform-certs [--root DIR] --issuer NAME [--dry-run]
   swhurl-v2 team-scenario (--records DIR --env ENVIRONMENT --profile PROFILE.json --kubeconfig KUBECONFIG.json \
       [--calls CALLS.json] [--egress EGRESS.json] | --dry-run)
+  swhurl-v2 lifecycle-test (--kubeconfig KUBECONFIG.json | --dry-run)
   swhurl-v2 destroy-data --target pvc/NAMESPACE/NAME|pv/NAME --confirm TARGET --kubeconfig KUBECONFIG.json [--dry-run]
   swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--scope cluster] [--source NAME] [--json]
   swhurl-v2 verify --scope platform --kubeconfig KUBECONFIG.json --root DIR [--console-tag TAG]
@@ -373,6 +374,14 @@ third subscribes to. It checks the publish and its processing in that trace, eac
 callee's log line naming the caller. It sends and creates nothing. --dry-run prints the plan and reads nothing. No
 chain is one [ERROR] line and exits 1; a failed check exits 1 after the report.
 
+lifecycle-test proves the lifecycle contract on the throwaway fixture tests/fixtures/lifecycle-app: it creates the
+Kustomization lifecycle-test, suspends and resumes it, deletes it and checks the prune-protected namespace, claim and
+data are kept, runs destroy-data without and then with its confirmation, and checks an Orphan unit's deletion leaves
+its workload running. It touches only those two units, the namespace lifecycle-test and the volumes its claim was
+bound to, and cleans them up last, even after a failed step or an interrupt. --dry-run prints the plan and reads
+nothing. Leftovers from an earlier run are one [ERROR] line and exit 1 with nothing changed; a failed check or step
+exits 1 after the report.
+
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
 started but did not complete, a render --check that found a difference, a name the catalogue does not list, a
@@ -506,6 +515,7 @@ func commands() map[string]func(cli, request) int {
 		"platform-certs":          cli.platformCerts,
 		"destroy-data":            cli.destroyData,
 		"team-scenario":           cli.teamScenario,
+		"lifecycle-test":          cli.lifecycleTest,
 		"verify":                  cli.verify,
 		"notify-serve":            cli.notifyServe,
 		"notifications-check":     cli.notificationsCheck,
@@ -752,7 +762,7 @@ func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool 
 }
 
 // registerClusterFlags is the flags of the commands that act on or read cluster objects themselves: one Flux unit's
-// action, the wait for every unit, destroy-data and team-scenario.
+// action, the wait for every unit, destroy-data, team-scenario and lifecycle-test.
 func (r *request) registerClusterFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
 	case "unit":
@@ -773,6 +783,9 @@ func (r *request) registerClusterFlags(flags *flag.FlagSet, command string) bool
 		flags.Var(&once{value: &r.profile}, "profile", "platform profile file")
 		flags.Var(&once{value: &r.callFile}, "calls", "resolved connections document (optional)")
 		flags.Var(&once{value: &r.egressFile}, "egress", "egress allocation document (optional)")
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "print the plan and read nothing")
+	case "lifecycle-test":
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "print the plan and read nothing")
 	default:
@@ -985,6 +998,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"platform-certs":          func(r *request) []string { return []string{r.root, r.issuer} },
 	"destroy-data":            func(r *request) []string { return []string{r.target, r.kubeconfig} },
 	"team-scenario":           (*request).teamScenarioNamed,
+	"lifecycle-test":          (*request).lifecycleTestNamed,
 	"verify":                  (*request).verifyNamed,
 	"notify-serve":            func(r *request) []string { return []string{r.listen} },
 	"notifications-check":     (*request).checkerNamed,
@@ -1021,6 +1035,14 @@ func (r *request) teamScenarioNamed() []string {
 		return []string{}
 	}
 	return []string{r.records, r.env, r.profile, r.kubeconfig}
+}
+
+// lifecycleTestNamed is the cluster a run changes; a dry run reads none.
+func (r *request) lifecycleTestNamed() []string {
+	if r.dryRun {
+		return []string{}
+	}
+	return []string{r.kubeconfig}
 }
 
 // checkRepoNamed is the checkout check-repo reads; --rendered prints manifests, so it takes no --json.
@@ -1223,10 +1245,11 @@ type cli struct {
 	natsStore func(context.Context, string, string, string) (nats.KV, error)
 	// clock is the time an override's age is measured from; nil is the wall clock.
 	clock func() time.Time
-	// dataClusterOf is the cluster destroy-data reads and changes; nil is the API server the kubeconfig names, and a
+	// dataClusterOf is the cluster destroy-data and lifecycle-test read and change; nil is the API server the kubeconfig names, and a
 	// test supplies a scripted cluster so a run needs no network.
 	dataClusterOf func() (dataCluster, error)
-	// executorOf is the exec port team-scenario queries ClickHouse through; nil is the API server the kubeconfig
+	// executorOf is the exec port team-scenario queries ClickHouse through and lifecycle-test reads its marker
+	// through; nil is the API server the kubeconfig
 	// names, and a test supplies a scripted one so a run needs no network.
 	executorOf func() kube.Executor
 }

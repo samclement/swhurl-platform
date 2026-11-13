@@ -89,7 +89,7 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `live-test-lifecycle` † | Prove lifecycle commands on a throwaway app | Cluster (throwaway) |
+| `live-test-lifecycle` † | `swhurl-v2 lifecycle-test`: on a throwaway app, prove that suspend leaves it running and resume reconciles, that uninstall keeps the prune-protected namespace, claim and data, that destroy-data refuses without a confirmation and then deletes the claim, volume and data, and that deleting an `Orphan` unit leaves its workload; cleans up after itself; needs Go 1.26.0 | Cluster (throwaway) |
 | `live-test-app-template` † | Deploy the generated fixtures through Flux, check, remove | Cluster (throwaway) |
 | `live-test-team-scenario [ENV=staging]` † | `swhurl-v2 team-scenario`: find three apps the records link in ENV (an app calling an app that publishes an event a third app subscribes to; the first such callee by name, with its first caller and subscriber) and check in ClickStack the newest trace of the last 10 minutes in which the callee served the caller: the caller named, the event published and processed in it, each app's team as its records state, and the callee's log line naming the caller. Something must drive the call (demo-shopper does); needs Go 1.26.0 | Cluster (read) |
 

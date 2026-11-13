@@ -77,7 +77,7 @@ func TestWriterChangesObjects(t *testing.T) {
 	if err := w.Create(context.Background(), key, []byte(`{"apiVersion":"v1","kind":"Secret"}`)); err != nil {
 		t.Fatal(err)
 	}
-	// A Job is creatable too, and only the two table kinds are: a Deployment can be patched and deleted
+	// A Job is creatable too, and only the table's kinds are: a Deployment can be patched and deleted
 	// because it can be named, but never created.
 	restore, err := kube.WritableRefOf("batch", "Job", "hello-staging", "restore-1")
 	if err != nil {
@@ -115,6 +115,57 @@ func TestWriterChangesObjects(t *testing.T) {
 	if server.requests[0].Header.Get("Content-Type") != "application/merge-patch+json" ||
 		server.bodies[0] != `{"spec":{"suspend":true}}` {
 		t.Fatalf("patch: %q %q", server.requests[0].Header.Get("Content-Type"), server.bodies[0])
+	}
+}
+
+// The lifecycle test's two kinds are creatable: its throwaway unit posts to Flux's collection in flux-system, and the
+// pod that reads its claim to the namespace's pods. Each reaches the stated path with its document, and is deleted by
+// name like any object the reader can name.
+func TestWriterCreatesTheLifecycleTestsKinds(t *testing.T) {
+	server := &writing{}
+	w := writer(t, server)
+	unit, err := kube.WritableRefOf("kustomize.toolkit.fluxcd.io", "Kustomization", "flux-system", "lifecycle-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod, err := kube.WritableRefOf("", "Pod", "lifecycle-test", "reader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unit.APIVersion != "kustomize.toolkit.fluxcd.io/v1" || pod.APIVersion != "v1" {
+		t.Fatalf("versions %q %q", unit.APIVersion, pod.APIVersion)
+	}
+	for _, change := range []func() error{
+		func() error { return w.Create(context.Background(), unit, []byte(`{"kind":"Kustomization"}`)) },
+		func() error { return w.Create(context.Background(), pod, []byte(`{"kind":"Pod"}`)) },
+		func() error { return w.Delete(context.Background(), unit) },
+		func() error { return w.Delete(context.Background(), pod) },
+	} {
+		if err := change(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []struct{ method, path, body string }{
+		{http.MethodPost, "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations", `{"kind":"Kustomization"}`},
+		{http.MethodPost, "/api/v1/namespaces/lifecycle-test/pods", `{"kind":"Pod"}`},
+		{http.MethodDelete, "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/lifecycle-test", ""},
+		{http.MethodDelete, "/api/v1/namespaces/lifecycle-test/pods/reader", ""},
+	}
+	if len(server.requests) != len(want) {
+		t.Fatalf("%d requests", len(server.requests))
+	}
+	for i, request := range want {
+		got := server.requests[i]
+		if got.Method != request.method || got.URL.Path != request.path || server.bodies[i] != request.body {
+			t.Errorf("request %d: %s %s %q", i, got.Method, got.URL.Path, server.bodies[i])
+		}
+	}
+	if got := server.requests[0].Header.Get("Content-Type"); got != "application/json" {
+		t.Fatalf("create content type %q", got)
+	}
+	// An invalid name is refused before anything is sent.
+	if _, err := kube.WritableRefOf("", "Pod", "lifecycle-test", "Not_A_Name"); err == nil {
+		t.Fatal("an invalid pod name was accepted")
 	}
 }
 

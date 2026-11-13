@@ -11,7 +11,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help \
-	live-test-lifecycle live-test-app-template
+	live-test-app-template
 
 .PHONY: $(COMMANDS)
 $(COMMANDS):
@@ -110,6 +110,16 @@ destroy-data:
 	[ "$${CONFIRM:-}" = "$$TARGET" ] || { echo "[ERROR] destroy-data permanently deletes $$TARGET and its data. Re-run with CONFIRM=$$TARGET" >&2; exit 2; }; \
 	$(V2_BUILD); umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
 	"$$work/swhurl-v2" destroy-data --target "$$TARGET" --confirm "$${CONFIRM:-}" --kubeconfig "$$work/kubeconfig.json" $(if $(filter true,$(DRY_RUN)),--dry-run)
+
+# Suspend and resume, uninstall, destroy-data and an Orphan unit proved on the throwaway fixture
+# tests/fixtures/lifecycle-app, reconciled from the pushed revision (swhurl-v2 lifecycle-test); it touches only its two
+# lifecycle-test units, namespace and volumes, and cleans them up last. DRY_RUN=true prints the plan. Needs Go 1.26.0.
+.PHONY: live-test-lifecycle
+live-test-lifecycle:
+	@$(V2_BUILD); \
+	if [ "$(DRY_RUN)" = true ]; then "$$work/swhurl-v2" lifecycle-test --dry-run; exit; fi; \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	"$$work/swhurl-v2" lifecycle-test --kubeconfig "$$work/kubeconfig.json"
 
 # The newest trace through a call and an event on three running apps the records link in ENV (default staging),
 # checked in ClickHouse (swhurl-v2 team-scenario): it only reads. DRY_RUN=true prints the plan. Needs Go 1.26.0.

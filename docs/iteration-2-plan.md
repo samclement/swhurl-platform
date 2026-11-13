@@ -2648,3 +2648,82 @@ query cannot hold), the queries against Python's strings, and each verdict; orch
 records); command tests (the dry run reads nothing, the exit status follows the verdicts, missing flags are a usage
 error). Live and read-only, Python from `HEAD` and Go: the same lines for `ENV=staging` (the same trace ID when run
 together) and the same `[ERROR]` for `ENV=prod`, which has no chain. `make check-v2`, `make check`.
+
+## 31. `live-test-lifecycle` in Go (approved 13 November 2026)
+
+The second of the three kept live tests ([remaining work B.1](v2-status.md#remaining-work)), ported with the same
+behaviour. It is the one that changes the cluster: it creates two Flux units, and through them a namespace, a claim
+and a workload, and deletes them again. The lifecycle changes it proves are v2's own use cases, called in process:
+the unit actions ([§25](#25-the-flux-unit-actions-in-go-step-2b-proposed-9-november-2026)) and destroy-data
+([§29](#29-destroy-data-in-go-approved-13-november-2026)).
+
+**Decision.** `make live-test-lifecycle` runs `swhurl-v2 lifecycle-test --kubeconfig K`, with the kubeconfig exported
+as `restore-sqlite` does; `DRY_RUN=true` runs `--dry-run`, which prints the plan, reads nothing and needs no
+kubeconfig. `tools/swhurl/livetests/lifecycle.py` and its tests are deleted; the catalogue keeps the target without a
+`run` function, and `livetests/__init__.py` stays for `live-test-app-template`. The fixture
+`tests/fixtures/lifecycle-app` is unchanged.
+
+**Semantics (retained).** It touches only the Kustomizations `lifecycle-test` (`MirrorPrune`) and
+`lifecycle-test-orphan` (`Orphan`) in `flux-system`, each Python's document field for field (interval 10m, the
+`swhurl-platform` GitRepository, the fixture's path, prune, wait, timeout 5m), the namespace `lifecycle-test` and its
+volumes. The namespace or either unit already present refuses before any change: `[ERROR] lifecycle-test namespace or
+lifecycle-test Kustomizations already exist; clean up first`, exit 1. The steps, their waits and their lines are
+Python's:
+
+1. **Install:** the unit Ready within 6 minutes, the workload available within 3, the marker read in its running pod,
+   the claim's volume named.
+2. **Suspend and resume:** the unit's `spec.suspend`, the workload still available, Ready within 3 minutes of resume.
+3. **Uninstall:** the unit deleted, the workload pruned within 2 minutes (its pods' 2-minute wait is not a check), the
+   namespace and the Bound claim kept, and the marker read back through a short-lived pod `reader` (busybox 1.37,
+   `cat /data/marker`, no service-account token, never restarted) that has Succeeded within 2 minutes.
+4. **Destroy data:** refused without a confirmation, the claim untouched, then the claim and its volume gone.
+5. **Orphan:** the Orphan unit Ready within 6 minutes, the workload available within 3, the unit deleted, 10 seconds,
+   the workload still available.
+
+A step that cannot go on is one `[BAD]` line and the steps after it do not run; a failed check is `[BAD]` and the
+test goes on. `Lifecycle test passed.` follows when nothing failed. The cleanup then always runs: both units deleted
+and waited for, the namespace deleted (waited for up to 3 minutes) only while it is labelled
+`platform.swhurl.com/lifecycle-test=true`, each volume set to reclaim `Delete` and waited for up to 2 minutes, then
+`[INFO] Cleaned up lifecycle-test test resources`. Exit 0 when no line is `[BAD]`, else 1. The unit actions and
+destroy-data print nothing, as the captured output of Python's `make` calls did.
+
+| Layer | Owns | Does not own |
+| --- | --- | --- |
+| 0 `lifecycletest` (new, pure) | The plan, the fixed names, the two unit documents and the reader pod's, what each object read says (Ready, suspended, available, volume, phase, label, a volume's claim namespace, the running pod), each verdict and its words, the lines | The cluster |
+| 1 `adapters/kube` | `writableKinds` gains Flux's `Kustomization` and the core `Pod`, so `Create` can post them; the existing `Read`, `List`, `Patch`, `Delete`, `Logs` and `Executor` | Deciding anything |
+| 2 `orchestration.LifecycleTest` | The steps in order, each poll on the supplied clock and sleep, `Flux` (suspend, resume) and `DestroyData` in process, the cleanup that runs last even after a failed step or a cancelled context | Printing, exit codes |
+| 3 command | The flag, each line as it is said, an interrupt that stops the step under way and lets the cleanup run, the exit status | The decisions |
+
+**Deliberate changes.**
+
+- Suspend, resume and destroy-data are v2's use cases called in process, not `make suspend`, `make resume` and `make
+  destroy-data`: v2 starts no process to reach the cluster. `make suspend` and `make resume` still run `host/ops.sh`
+  (`flux suspend|resume`), and this test no longer proves them live; the operator accepted that gap, and moving them
+  to `swhurl-v2 unit` is its own later slice ([remaining work](v2-status.md#remaining-work)). The refused destroy is
+  destroy-data's refusal, where Python checked for exit status 2.
+- Resume waits as `swhurl-v2 unit` does, for the controller to handle the request and report Ready (up to 10
+  minutes), before the 3-minute Ready check.
+- A read that fails is a `[BAD]` line naming v2's reason and stops the steps, where Python took a failed `kubectl get`
+  for absence; a failed preflight read refuses (`[ERROR] cannot check for leftovers: …`). A wait that times out names
+  what it waited for, and the last failed read (`Kustomization lifecycle-test not Ready after 6m0s`), not a `kubectl`
+  command line.
+- The marker is read by API-server exec in the first Running pod labelled `app=writer` (container `writer`), not
+  `kubectl exec deploy/writer`; the reader pod is created from its document rather than `kubectl run --overrides`, so
+  it lacks `kubectl run`'s `run=reader` label.
+- Waits `kubectl` left unbounded are bounded: a deleted unit or reader pod is waited for up to 5 minutes, the unit's
+  own timeout.
+- The cleanup destroys only the volumes the run saw its claim bound to (at install, and once more before it deletes
+  the namespace), each re-read and patched only while its claim's namespace is `lifecycle-test`. Python listed every
+  volume in the cluster; v2 has no unselected read of a cluster-scoped kind, so a volume an earlier, crashed run left
+  is no longer swept.
+- An interrupt stops the step under way and the cleanup still runs, as Python's did.
+- The plan says `destroy-data`, not `make destroy-data`.
+
+**Verification.** Pure tests of each verdict and its words, the two documents against Python's, each fact read and the
+line format; orchestration tests over a kubetest fake with Flux's, the provisioner's and pruning's behaviour: the lines
+of the operator's passing Python run on 13 November, byte for byte (the volume's name aside), with the changes in
+order; the preflight refusing each leftover and an unreadable cluster with no change; a failed step at each step,
+with its wait's timeout, still cleaned up; check waits as failed checks; the namespace label guard; a cancelled run
+cleaned up. Adapter tests of the two new kinds' paths; command tests (a passing run's stdout byte for byte, a failed
+step's exit 1, leftovers, the dry run reads nothing, a missing flag is a usage error). `make check-v2`, `make check`,
+then `make live-test-lifecycle` against the pushed revision, compared line for line with the Python run.

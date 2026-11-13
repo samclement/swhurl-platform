@@ -865,6 +865,69 @@ kernel: type UserKey struct {Seed string Public string}
 kernel: type Workload struct {CPURequestMilli int32 `json:"cpuRequestMilli"` StartupSeconds int32 `json:"startupSeconds"` StartupPeriodSeconds int32 `json:"startupPeriodSeconds"`}
 kernel: type WorkloadFacts struct {Kind string Image, Digest string Source string Port int32 HealthPath string UID int32 Telemetry bool Publishes []string}
 kernel: var DocumentRoles = map[string]string{"api": "openapi.json", "events": "asyncapi.yaml", "flags": "flags.json"}
+lifecycletest: const Bad Level = "bad"
+lifecycletest: const Claim = "data"
+lifecycletest: const Container = "writer"
+lifecycletest: const DestroyStep = "Destroy data"
+lifecycletest: const Done Level = "done"
+lifecycletest: const FixturePath = "./tests/fixtures/lifecycle-app"
+lifecycletest: const FluxNamespace = "flux-system"
+lifecycletest: const Info Level = "info"
+lifecycletest: const InstallStep = "Install disposable app"
+lifecycletest: const Label = "platform.swhurl.com/lifecycle-test"
+lifecycletest: const Marker = "/data/marker"
+lifecycletest: const MirrorPrune DeletionPolicy = "MirrorPrune"
+lifecycletest: const Namespace = "lifecycle-test"
+lifecycletest: const OK Level = "ok"
+lifecycletest: const Orphan DeletionPolicy = "Orphan"
+lifecycletest: const OrphanStep = "Orphan deletion policy (shared units)"
+lifecycletest: const OrphanUnit = "lifecycle-test-orphan"
+lifecycletest: const Passed = "Lifecycle test passed."
+lifecycletest: const Plan = `Prove the lifecycle contract on a disposable app (tests/fixtures/lifecycle-app, reconciled from the pushed Git revision). Touches only resources it creates: Flux Kustomizations named lifecycle-test*, namespace lifecycle-test and its PVs. 1. suspend leaves the workload and data running; resume reconciles again 2. uninstall (deleting an app-style unit) removes the workload but keeps the prune-protected namespace, claim and data 3. destroy-data refuses without CONFIRM, then deletes the claim, PV and data 4. a unit with deletionPolicy: Orphan (as the shared units use) leaves its resources running when the unit itself is deleted`
+lifecycletest: const ReaderPod = "reader"
+lifecycletest: const ReclaimDelete = `{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}`
+lifecycletest: const Section Level = "section"
+lifecycletest: const Selector = "app=writer"
+lifecycletest: const SuspendStep = "Suspend and resume"
+lifecycletest: const Target = "pvc/" + Namespace + "/" + Claim
+lifecycletest: const UninstallStep = "Uninstall (delete app unit)"
+lifecycletest: const Unit = "lifecycle-test"
+lifecycletest: const Workload = "writer"
+lifecycletest: func (*Preflight) Error() string
+lifecycletest: func Available(deployment []byte) (bool, error)
+lifecycletest: func ClaimDestroyed(present bool) Line
+lifecycletest: func ClaimKept(phase string) Line
+lifecycletest: func ClaimUntouched(present bool) Line
+lifecycletest: func Claimed(volume []byte) bool
+lifecycletest: func CleanedUp() Line
+lifecycletest: func Conclusion(lines []Line) []Line
+lifecycletest: func DataIntact(original, read string) Line
+lifecycletest: func DestroyRefused(refused bool) Line
+lifecycletest: func Failed(reason string) Line
+lifecycletest: func Format(line Line) string
+lifecycletest: func Labelled(namespace []byte) bool
+lifecycletest: func Leftovers() error
+lifecycletest: func NamespaceKept(present bool) Line
+lifecycletest: func OrphanKept(available bool) Line
+lifecycletest: func Passes(lines []Line) bool
+lifecycletest: func PhaseOf(document []byte) (string, error)
+lifecycletest: func Pruned(gone bool) Line
+lifecycletest: func ReaderDocument() []byte
+lifecycletest: func Ready(unit []byte) (bool, error)
+lifecycletest: func ResumedReady(ready bool) Line
+lifecycletest: func RunningPod(pods [][]byte) (string, error)
+lifecycletest: func RunningWhileSuspended(available bool) Line
+lifecycletest: func Suspended(unit []byte) (bool, error)
+lifecycletest: func Text(lines []Line) string
+lifecycletest: func UnitDocument(name string, policy DeletionPolicy) []byte
+lifecycletest: func UnitSuspended(suspended bool) Line
+lifecycletest: func VolumeDestroyed(volume string, present bool) Line
+lifecycletest: func VolumeOf(claim []byte) (string, error)
+lifecycletest: func Wrote(marker, volume string) Line
+lifecycletest: type DeletionPolicy string
+lifecycletest: type Level string
+lifecycletest: type Line struct {Level Level Text string}
+lifecycletest: type Preflight struct {Reason string}
 notify: const AddressKey = "address"
 notify: const AlertSecret = "notify-alerts"
 notify: const AlertSecretKey = "secret"
@@ -1284,6 +1347,7 @@ orchestration: func Flags(ctx context.Context, store nats.KV, environment, appli
 orchestration: func Flux(ctx context.Context, inputs FluxInputs) error
 orchestration: func FluxWait(ctx context.Context, inputs FluxWaitInputs) (bool, error)
 orchestration: func ImageDeclaration(reader appsource.Reader, root string) (string, error)
+orchestration: func LifecycleTest(ctx context.Context, inputs LifecycleTestInputs) ([]lifecycletest.Line, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
 orchestration: func NewNotifier(publisher ntfy.Publisher) *Notifier
@@ -1361,6 +1425,7 @@ orchestration: type JobStore interface {// Load is every record the store holds,
 orchestration: type JobWork func(ctx context.Context, line func(string)) (link string, err error)
 orchestration: type Jobs struct {}
 orchestration: type JobsInputs struct {Store JobStore Owner string Now func() time.Time Sleep func(time.Duration) Redact func(string) string Audit func(string)}
+orchestration: type LifecycleTestInputs struct {Cluster Cluster Secrets kube.SecretNamer Executor kube.Executor Now func() time.Time Sleep func(time.Duration) Say func(lifecycletest.Line)}
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
 orchestration: type Named struct {Name, Value string}

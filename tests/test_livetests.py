@@ -8,21 +8,17 @@ from swhurl.livetests import (
     LiveTest,
     Preflight,
     app_template,
-    lifecycle,
     run_live_test,
 )
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
 
-def kube(existing=None, fail_on=None):
+def kube(existing=None):
     """A FakeRunner answering every kubectl call; ``existing`` maps 'kind/name' to objects."""
     existing = existing or {}
 
     def handler(args, _input):
-        joined = ' '.join(args)
-        if fail_on and fail_on in joined:
-            return Result(args, 1, '', f'fixture failure in {fail_on}')
         if 'get' in args and '-o' in args and 'json' in args:
             kind, name = args[args.index('get') + 1], (args[args.index('get') + 2] if len(args) > args.index('get') + 2 else '')
             obj = existing.get(f'{kind}/{name}')
@@ -47,7 +43,7 @@ def run(module, runner):
 
 class FrameworkTests(unittest.TestCase):
     def test_dry_run_prints_plan_and_calls_nothing(self):
-        for module in (lifecycle, app_template):
+        for module in (app_template,):
             with self.subTest(module=module.__name__):
                 runner = FakeRunner(dry_run=True)
                 code, text = run(module, runner)
@@ -96,7 +92,6 @@ class FrameworkTests(unittest.TestCase):
 class PreflightTests(unittest.TestCase):
     def test_each_test_refuses_leftovers_without_mutating(self):
         cases = {
-            lifecycle: {'namespace/lifecycle-test': {'metadata': {}}},
             app_template: {'namespace/smoke-web-staging': {'metadata': {}}},
         }
         for module, existing in cases.items():
@@ -106,14 +101,6 @@ class PreflightTests(unittest.TestCase):
                 self.assertEqual(code, 1)
                 self.assertIn('[ERROR]', text)
                 self.assertEqual(mutating(runner), [])
-
-    def test_a_failure_mid_test_still_cleans_up(self):
-        runner = kube(fail_on='rollout status deploy/writer')
-        code, text = run(lifecycle, runner)
-        self.assertEqual(code, 1)
-        self.assertIn('[INFO] Cleaned up lifecycle-test test resources', text)
-        self.assertIn(('kubectl', '-n', 'flux-system', 'delete', 'kustomization', 'lifecycle-test',
-                       'lifecycle-test-orphan', '--ignore-not-found', '--wait=true'), runner.calls)
 
 
 if __name__ == '__main__':

@@ -194,7 +194,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command('help', 'List the targets, from tools/swhurl/commands.py', LOCAL, 'swhurl.commands:help_main'),
     )),
     ('Live tests', (
-        _live_test('lifecycle', 'livetests.lifecycle:main', 'Prove suspend, uninstall, destroy-data and Orphan on a throwaway app'),
+        Command('live-test-lifecycle', 'Prove suspend, uninstall, destroy-data and Orphan on a throwaway app '
+                '(swhurl-v2 lifecycle-test; needs Go 1.26.0)', THROWAWAY, dry_run=PLAN),
         _live_test('app-template', 'livetests.app_template:main', 'Deploy the generated app fixtures through Flux, check, remove'),
         Command('live-test-team-scenario', 'The newest trace through a call and an event on three running apps the records link, '
                 'checked in ClickStack (swhurl-v2 team-scenario; needs Go 1.26.0)', READ,

@@ -2,6 +2,22 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The lifecycle test runs Go (13 November 2026)
+
+- **What changed:** `make live-test-lifecycle` is `swhurl-v2 lifecycle-test` ([§31](iteration-2-plan.md#31-live-test-lifecycle-in-go-approved-13-november-2026)):
+  the pure `lifecycletest` package holds the plan, the documents and the verdicts, and `orchestration.LifecycleTest`
+  creates its two throwaway units and reader pod through the API server, suspends and resumes through v2's unit
+  action and destroys the claim through `orchestration.DestroyData`, in process. `Kustomization` and `Pod` join the
+  `kube` adapter's writable kinds. `tools/swhurl/livetests/lifecycle.py` and its tests are deleted.
+- **Deliberately changed:** `make suspend` and `make resume` (still `host/ops.sh` over `flux`) are no longer proven
+  live; cleanup destroys only the volumes the run saw its claim bound to, not every volume whose claim lived in the
+  namespace; a failed read is `[BAD]` with v2's reason.
+- **Checked on the live cluster:** Python from `HEAD` and then Go from the working tree each passed; their output was
+  identical line for line apart from the volume's name (`pvc-eff38af8…`, `pvc-0b3520bf…`). Afterwards no
+  `lifecycle-test` namespace, unit or volume remained, including the volume the Orphan step's claim bound.
+- **Not exercised:** a failed step live (every check passed) and an interrupt during the run; each failure path and
+  its cleanup is covered offline.
+
 ## The team scenario runs Go (13 November 2026)
 
 - **What changed:** `make live-test-team-scenario` is `swhurl-v2 team-scenario` ([§30](iteration-2-plan.md#30-live-test-team-scenario-in-go-approved-13-november-2026)):

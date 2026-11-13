@@ -108,6 +108,7 @@ func f(count int) int {
 		"events/events.go":   "package events\n",
 		"heartbeat/a.go":     "package heartbeat\n",
 		"teamscenario/a.go":  "package teamscenario\n",
+		"lifecycletest/a.go": "package lifecycletest\n",
 		"incident/a.go":      "package incident\n",
 		"notify/notify.go":   "package notify\n",
 		"observe/explain.go": "package observe\n",

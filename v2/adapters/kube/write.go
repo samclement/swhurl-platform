@@ -30,11 +30,14 @@ var _ Writer = (*API)(nil)
 
 // writableKinds is the table of objects v2 may create. A Secret is writable here and still never readable
 // through Reader: `kinds` refuses it, so this table is not an invitation to read one. A Job is the restore's
-// transient object; patching and deleting an object the reader can already name is not limited to it.
+// transient object; a Kustomization is the lifecycle test's throwaway unit and a Pod the short-lived reader of its
+// claim. Patching and deleting an object the reader can already name is not limited to these.
 func writableKinds() map[pathKey]resource {
 	return map[pathKey]resource{
 		{"", "Secret"}:   {"v1", "secrets", true},
 		{"batch", "Job"}: {"batch/v1", "jobs", true},
+		{"", "Pod"}:      {"v1", "pods", true},
+		{"kustomize.toolkit.fluxcd.io", "Kustomization"}: {"kustomize.toolkit.fluxcd.io/v1", "kustomizations", true},
 	}
 }
 

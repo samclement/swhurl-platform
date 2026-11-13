@@ -84,6 +84,59 @@ else:
         self.assertFalse(self.calls.exists(), 'A refused or planned reconcile called a cluster tool')
         self.assertFalse(self.calls.exists())
 
+    def test_suspend_and_resume_hand_the_target_to_swhurl_v2(self):
+        """The recipe passes TARGET to swhurl-v2 unit, which checks its shape and names (its own tests), and says what a
+        suspend leaves running only after it succeeded. The dry run and a missing target call nothing."""
+        fake = self.bin / 'unit-recipe'
+        fake.write_text('''#!/usr/bin/env python3
+import os, stat, sys
+from pathlib import Path
+assert sys.argv[6] == '--kubeconfig'
+config = Path(sys.argv[7])
+assert config.read_text().strip() == '{}'
+assert stat.S_IMODE(config.stat().st_mode) == 0o600
+Path(os.environ['RECEIPT']).write_text(str(config))
+with open(os.environ['CALLS'], 'a') as f:
+    f.write('swhurl-v2 ' + ' '.join(sys.argv[1:6]) + '\\n')
+sys.exit(int(os.environ.get('GO_RC', '0')))
+''')
+        fake.chmod(0o700)
+        build = f'V2_BUILD=set -eu; work=$$(mktemp -d); trap \'rm -rf "$$work"\' EXIT; cp {fake} "$$work/swhurl-v2"'
+        receipt = self.bin / 'unit-receipt'
+        thaw = '[INFO] HelmReleases it created keep reconciling'
+        for action, target, go_rc, info in (('suspend', 'kustomization/gw', '0', 2), ('suspend', 'helmrelease/ns/r', '0', 1),
+                                            ('resume', 'helmrelease/ns/r', '0', 0), ('suspend', 'kustomization/gw', '2', 0)):
+            with self.subTest(action=action, target=target, go_rc=go_rc):
+                self.calls.unlink(missing_ok=True)
+                result = subprocess.run(['make', '-s', action, f'TARGET={target}', build], cwd=ROOT,
+                                        env=dict(self.env, GO_RC=go_rc, RECEIPT=str(receipt)), capture_output=True, text=True)
+                self.assertEqual(result.returncode != 0, go_rc != '0', result.stdout + result.stderr)
+                self.assertEqual(self.calls.read_text().splitlines(),
+                                 ['kubectl', f'swhurl-v2 unit --action {action} --target {target}'])
+                self.assertEqual(result.stdout.count('[INFO]'), info, result.stdout)
+                self.assertEqual(thaw in result.stdout, info == 2)
+                self.assertFalse(Path(receipt.read_text()).exists(), 'private kubeconfig survived recipe exit')
+        self.calls.unlink(missing_ok=True)
+        receipt.unlink()
+        kubectl = self.bin / 'kubectl'
+        kubectl.write_text('#!/usr/bin/env bash\necho kubectl >> "$CALLS"\nexit 1\n')
+        kubectl.chmod(0o700)
+        result = subprocess.run(['make', '-s', 'suspend', 'TARGET=kustomization/gw', build], cwd=ROOT,
+                                env=dict(self.env, RECEIPT=str(receipt)), capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls.read_text().splitlines(), ['kubectl'])
+        self.assertNotIn('[INFO]', result.stdout)
+        self.assertFalse(receipt.exists(), 'Go ran after kubeconfig export failed')
+        self.calls.unlink()
+        result = subprocess.run(['make', '-s', 'suspend', 'TARGET=kustomization/gw', 'DRY_RUN=true'], cwd=ROOT,
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout), (0, 'Plan (suspend kustomization/gw):\n'
+                                                                 '  would run: swhurl-v2 unit --action suspend --target kustomization/gw\n'))
+        result = subprocess.run(['make', '-s', 'resume'], cwd=ROOT, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('Usage: make resume TARGET=kustomization/<name>|helmrelease/<ns>/<name>', result.stderr)
+        self.assertFalse(self.calls.exists(), 'A planned or refused suspend called a tool')
+
     def test_restore_sqlite_refuses_without_exact_confirmation(self):
         for confirm in ('', 'notes/prod', 'notes-staging'):
             with self.subTest(confirm=confirm):
@@ -281,7 +334,7 @@ print('{"message":"heartbeat"}')
 
 
 class OpsScriptTests(unittest.TestCase):
-    """host/ops.sh behind make app-logs, app-reconcile, suspend, resume, backup-mongodb and backup-sqlite: the argv
+    """host/ops.sh behind make app-logs, app-reconcile, backup-mongodb and backup-sqlite: the argv
     each tool gets, and refusals that call none. The fake kubectl answers ``get`` with ``GET_RC`` (0: the object
     exists), lists ``CRONJOBS`` as the backup CronJobs and states ``JOB_STATE`` as a Job's true conditions."""
 
@@ -332,39 +385,6 @@ class OpsScriptTests(unittest.TestCase):
                 result, called = self.make('app-logs', f'APP={app}', f'ENV={env}')
                 self.assertEqual((result.returncode, called), (2, []))
                 self.assertIn(message, result.stderr)
-
-    def test_suspend_and_resume_check_the_target_then_call_flux(self):
-        result, called = self.make('suspend', 'TARGET=kustomization/homelab-a')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(called, ['kubectl -n flux-system get kustomization homelab-a',
-                                  'flux suspend kustomization homelab-a -n flux-system'])
-        self.assertIn('suspend them separately to freeze Helm', result.stdout)
-        result, called = self.make('resume', 'TARGET=helmrelease/ns/r')
-        self.assertEqual((result.returncode, result.stdout), (0, ''))
-        self.assertEqual(called[-1], 'flux resume helmrelease r -n ns')
-
-    def test_suspend_dry_run_reads_but_does_not_call_flux(self):
-        result, called = self.make('suspend', 'TARGET=kustomization/homelab-a', 'DRY_RUN=true')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(called, ['kubectl -n flux-system get kustomization homelab-a'])
-        self.assertEqual(result.stdout, 'Plan (suspend kustomization/homelab-a):\n'
-                                        '  would run: flux suspend kustomization homelab-a -n flux-system\n')
-
-    def test_a_missing_or_malformed_target_is_refused(self):
-        result, called = self.make('suspend', 'TARGET=kustomization/nope', GET_RC='1')
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('kustomization flux-system/nope not found', result.stderr)
-        self.assertEqual(called, ['kubectl -n flux-system get kustomization nope'], 'no flux call')
-        for target, message in (('', 'Usage: make suspend TARGET='), ('pvc/ns/c', 'Usage: make suspend TARGET='),
-                                ('kustomization/a/b', 'Use kustomization/<name>'),
-                                ('kustomization/-A', 'Use kustomization/<name>'),
-                                ('helmrelease/r', 'Use helmrelease/<namespace>/<name>'),
-                                ('helmrelease/ns/r/x', 'Use helmrelease/<namespace>/<name>'),
-                                ('helmrelease//r', 'Use helmrelease/<namespace>/<name>')):
-            with self.subTest(target=target):
-                result, called = self.make('resume', f'TARGET={target}')
-                self.assertEqual((result.returncode, called), (2, []))
-                self.assertIn(message.replace('suspend', 'resume'), result.stderr)
 
     def test_backup_sqlite_runs_every_app_job_but_mongodbs_and_shows_each_log(self):
         cronjobs = 'notes-staging/notes-backup observability/backup-mongodb'

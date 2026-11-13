@@ -9,6 +9,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // writing is a server that answers one write at a time and records what it was asked.
@@ -215,5 +216,23 @@ func TestWriterRefusals(t *testing.T) {
 		t.Fatal(err)
 	} else if _, err := api.Read(context.Background(), secret); err == nil {
 		t.Fatal("a Secret was read through the reader")
+	}
+}
+
+// A name or namespace the API cannot hold is refused before any request, whether the reader or only the writer
+// states the kind: a unit is both, a Secret only the writer's.
+func TestWriterRefusesANameBeforeAnyRequest(t *testing.T) {
+	unit, _ := kube.RefOf("kustomize.toolkit.fluxcd.io", "Kustomization", "flux-system", "-A")
+	secret := observe.Ref{APIVersion: "v1", Kind: "Secret", Namespace: "-n", Name: "s"}
+	server := &writing{}
+	api := writer(t, server)
+	if err := api.Patch(context.Background(), unit, []byte(`{}`)); err == nil || err.Error() != "refused_request: resource: invalid_name" {
+		t.Fatalf("a unit's name: %v", err)
+	}
+	if err := api.Delete(context.Background(), secret); err == nil || err.Error() != "refused_request: resource: invalid_namespace" {
+		t.Fatalf("a Secret's namespace: %v", err)
+	}
+	if len(server.requests) != 0 {
+		t.Fatalf("a refused name made %d requests", len(server.requests))
 	}
 }

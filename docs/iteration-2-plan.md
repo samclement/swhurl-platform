@@ -2727,3 +2727,46 @@ with its wait's timeout, still cleaned up; check waits as failed checks; the nam
 cleaned up. Adapter tests of the two new kinds' paths; command tests (a passing run's stdout byte for byte, a failed
 step's exit 1, leftovers, the dry run reads nothing, a missing flag is a usage error). `make check-v2`, `make check`,
 then `make live-test-lifecycle` against the pushed revision, compared line for line with the Python run.
+
+## 32. `make suspend` and `make resume` use Go (approved 13 November 2026)
+
+**Decision.** Keep `TARGET=kustomization/<name>|helmrelease/<namespace>/<name>`, but replace `host/ops.sh`'s
+`flux suspend|resume` with `swhurl-v2 unit --action suspend|resume --target TARGET`. The existing `--unit NAME`
+entrypoint and the console remain unchanged. The command accepts exactly one of `--unit` and `--target`, and exactly
+one credential (`--kubeconfig` or `--in-cluster`). Make exports the caller's kubeconfig into a private temporary file,
+removed on success or failure, as `make reconcile` does. No new external-effect adapter is needed.
+
+**Contract and boundaries.** The command parses TARGET's shape; the Kubernetes adapter validates its names before a
+request. `orchestration.Flux` accepts exactly one unit or `FluxRelease` (namespace and name), patches only that
+object's `spec.suspend`, and reports progress through its existing callback. A missing object is an error, not a
+successful no-op; a failed API operation stops the action. Kustomizations are in `flux-system`; HelmReleases use the
+namespace TARGET names. The two root units remain refused. A release named like a root unit is not a root unit.
+Suspension leaves running workloads and data alone, and suspending a unit does not suspend its HelmReleases. Make
+prints those reminders only after a successful suspend.
+
+**Deliberate changes.** Resume also annotates the selected object with `reconcile.fluxcd.io/requestedAt` and waits,
+up to 10 minutes, for that request handled, `observedGeneration` current and Ready true. It does not request a release's
+source or its owning unit; Helm's last attempted chart revision is printed only after that success. Handled Ready
+false is a failure, and a timeout says the reconciliation may still finish. Explicit reconcile of a HelmRelease is
+refused: use the unit that applies it. `DRY_RUN=true` only prints the intended command, with no cluster read or Go
+build; unlike the old dry run, it does not prove the object exists or validate TARGET beyond its presence. Non-dry
+malformed targets and API errors exit 2. Go progress replaces the Flux CLI's output. The adapter's write-table
+fallback must not bypass name validation on a kind both tables know; regression tests pin that boundary.
+
+**Verification.** Orchestration tests cover both objects' patches, release resume and its revision, missing objects,
+ambiguous/absent selection and refused release reconcile; existing wait tests pin handled requests, generation,
+Ready, failures and timeouts. Command tests exercise TLS API paths and output, malformed targets without requests,
+and exclusive flags. Make-level fakes check argument passing, failure propagation, suspend reminders and read-free
+plans. `archtest/api.txt` records the intentional `FluxInputs.Release` and `FluxRelease` API additions; no guardrail
+is relaxed. Run `make check-v2`, `make check` and the host/fixture `bash -n` loop before committing. The lifecycle test
+already uses the same unit action in process, but does not exercise the Makefile entrypoint or HelmRelease branch;
+a live proof of those remains a separate, confirm-first gate before claiming the §31 coverage gap closed.
+
+**Live proof (approved 13 November).** `tests/fixtures/suspend-resume` contains only a labelled namespace and a
+HelmRelease of the pinned app-template chart, running a token-free, unprivileged BusyBox sleeper with no storage or
+service. A disposable, labelled Kustomization `suspend-resume-test` applies that path from the pushed revision. Refuse
+if its namespace or unit already exists. Invoke both make targets on the unit, then on its HelmRelease, proving the
+suspended spec, unchanged available workload and same pod identity; after resume, prove the request is handled at
+the current generation and Ready. The test unit does not enter the platform's root unit list. Cleanup removes only
+the labelled test unit and its release, then the labelled namespace (the fixture keeps it from pruning), and checks
+that all three are absent. No PVC or PV is created or deleted.

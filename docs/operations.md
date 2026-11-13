@@ -174,6 +174,14 @@ Deploy, update and uninstall through Git. Removing an app instance's unit from `
 | `make destroy-data TARGET=pvc/<ns>/<name> CONFIRM=pvc/<ns>/<name>` | Delete an unused claim, its volume and host directory | **Destroyed** |
 | `make destroy-data TARGET=pv/<name> CONFIRM=pv/<name>` | Delete a `Released` retained volume and its directory | **Destroyed** |
 
+`suspend` and `resume` use `swhurl-v2 unit` against the API server (Go 1.26.0 required), not the Flux CLI.
+A unit target is in `flux-system`; a release target is in the namespace named. Suspending a unit leaves its
+HelmReleases reconciling their last applied spec. Resume clears `spec.suspend`, requests reconciliation of the
+selected object and waits up to 10 minutes for Flux to handle that request at its current generation and report
+Ready; a failure or timeout fails the command, though reconciliation may still finish. The two root units
+`cluster-sources` and `cluster-stack` are refused. `DRY_RUN=true` only prints the intended command: it neither
+reads the cluster nor proves the target exists.
+
 `destroy-data` refuses while a pod mounts the claim or a Helm release or Flux unit still manages it, because they would recreate it, and when it cannot read one of them. `DRY_RUN=true` runs only the checks and says what it would change.
 
 Deleting a shared Flux unit by mistake is safe: shared units use `deletionPolicy: Orphan`, so their resources keep running unmanaged. Re-create a deleted root unit with `make flux-bootstrap`. There is no whole-platform reset.

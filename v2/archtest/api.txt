@@ -1412,7 +1412,8 @@ orchestration: type FlagCard struct {Rows []FlagRow Problem string}
 orchestration: type FlagOverride struct {Value any Readable bool StoredAt time.Time}
 orchestration: type FlagRow struct {Name string Flag producer.Flag Undeclared bool Overridden bool Override FlagOverride AgeDays int Stale bool Effective any}
 orchestration: type FluxAction string
-orchestration: type FluxInputs struct {Action FluxAction Unit string Cluster Cluster Now func() time.Time Sleep func(time.Duration) Progress func(string)}
+orchestration: type FluxInputs struct {Action FluxAction Unit string Release *FluxRelease Cluster Cluster Now func() time.Time Sleep func(time.Duration) Progress func(string)}
+orchestration: type FluxRelease struct {Namespace string Name string}
 orchestration: type FluxWaitInputs struct {Reader kube.Reader Timeout time.Duration Poll time.Duration Now func() time.Time Sleep func(time.Duration) Progress func(FluxWaitLine)}
 orchestration: type FluxWaitLevel string
 orchestration: type FluxWaitLine struct {Level FluxWaitLevel Text string}

@@ -56,7 +56,7 @@ Creation, the GitHub side, the shared team registry and the read-only operations
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `suspend`, `resume` `TARGET=kustomization/<name>\|helmrelease/<ns>/<name>` † | `flux suspend/resume`; workloads and data untouched | Cluster |
+| `suspend`, `resume` `TARGET=kustomization/<name>\|helmrelease/<ns>/<name>` † | `swhurl-v2 unit --target`; workloads and data untouched; resume waits for Flux to apply it (needs Go 1.26.0). Dry run only prints a plan ([lifecycle](operations.md#lifecycle)) | Cluster |
 | `destroy-data TARGET=pvc/<ns>/<name>\|pv/<name> CONFIRM=<TARGET>` † | Delete a released claim or volume and its host data (`swhurl-v2 destroy-data`; needs Go 1.26.0; [lifecycle](operations.md#lifecycle)) | Cluster |
 | `backup-mongodb` † | Start a Job from ClickStack MongoDB's backup CronJob (`observability/backup-mongodb`), wait for it and show its log ([`host/ops.sh`](../host/ops.sh)); the job dumps, encrypts and publishes to `clickstack-mongodb/` ([operations](operations.md#backups-and-recovery)) | Cluster, S3 |
 | `backup-sqlite` † | Start a Job from each app SQLite database's backup CronJob (`<app>-backup`), wait for them and show their logs; each copies, checks, encrypts and publishes to `app-sqlite/<namespace>/`. No app with a database: nothing to do | Cluster, S3 |

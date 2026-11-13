@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,9 +12,9 @@ import (
 )
 
 // A unit action is one of the three changes the console makes to a Flux unit: reconcile it, suspend it, or resume it
-// (which also reconciles). The console keeps the lines this prints as the job's output and reads the unit's page
-// afterwards, so each line and each refusal is the sentence the console has always shown. Nothing here runs kubectl
-// or the flux command: the unit and its source are read and annotated through the API server.
+// (which also reconciles). make suspend and make resume also suspend and resume one HelmRelease. The console keeps
+// the lines this prints as the job's output and reads the unit's page afterwards. Nothing here runs kubectl or the
+// flux command: the unit, its source and the selected release are read and patched through the API server.
 
 // FluxAction is one of the three changes a unit action makes.
 type FluxAction string
@@ -30,6 +31,7 @@ const (
 	fluxPoll        = 2 * time.Second
 	fluxRequestedAt = "reconcile.fluxcd.io/requestedAt"
 	fluxUnitGroup   = "kustomize.toolkit.fluxcd.io"
+	fluxHelmGroup   = "helm.toolkit.fluxcd.io"
 	fluxSourceGroup = "source.toolkit.fluxcd.io"
 )
 
@@ -40,29 +42,50 @@ var fluxSources = map[string]bool{"GitRepository": true, "OCIRepository": true, 
 // fluxRoots are the units make flux-bootstrap applies: Flux does not reconcile them, so no action here may.
 var fluxRoots = map[string]bool{"cluster-sources": true, "cluster-stack": true}
 
-// FluxInputs is one unit action: what to do, to which unit, on which cluster, and how time and lines arrive. Every
-// port is supplied by the caller, so the command prints and a test waits without sleeping.
+// FluxInputs is one unit action: what to do, to which unit or release, on which cluster, and how time and lines
+// arrive. Every port is supplied by the caller, so the command prints and a test waits without sleeping.
 type FluxInputs struct {
-	Action   FluxAction
-	Unit     string
+	Action FluxAction
+	Unit   string
+	// Release is the HelmRelease a suspend or resume changes instead of a unit; nil is the unit.
+	Release  *FluxRelease
 	Cluster  Cluster
 	Now      func() time.Time
 	Sleep    func(time.Duration)
 	Progress func(string)
 }
 
+// FluxRelease is one HelmRelease a suspend or resume changes.
+type FluxRelease struct {
+	Namespace string
+	Name      string
+}
+
 // Flux performs one unit action. It refuses a root unit before touching the cluster, and a reconcile of a suspended
 // unit before annotating anything: a refused action makes no write.
 func Flux(ctx context.Context, inputs FluxInputs) error {
+	if (inputs.Unit == "") == (inputs.Release == nil) {
+		return errors.New("invalid: target: name exactly one unit or release")
+	}
+	run := &fluxRun{ctx: ctx, inputs: inputs}
+	if inputs.Release != nil {
+		switch inputs.Action {
+		case FluxSuspend, FluxResume:
+			return run.setSuspended("HelmRelease", inputs.Release.Namespace, inputs.Release.Name,
+				inputs.Action == FluxSuspend)
+		case FluxReconcile:
+			return errors.New("a HelmRelease is reconciled with the unit that applies it: reconcile the unit")
+		}
+		return &Refusal{"unit.action", "not_reconcile_suspend_or_resume"}
+	}
 	if fluxRoots[inputs.Unit] {
 		return fmt.Errorf("%s is applied by make flux-bootstrap, not by Flux", inputs.Unit)
 	}
-	run := &fluxRun{ctx: ctx, inputs: inputs}
 	switch inputs.Action {
 	case FluxReconcile:
 		return run.reconcile()
 	case FluxSuspend, FluxResume:
-		return run.setSuspended(inputs.Action == FluxSuspend)
+		return run.setSuspended("Kustomization", fluxNamespace, inputs.Unit, inputs.Action == FluxSuspend)
 	}
 	return &Refusal{"unit.action", "not_reconcile_suspend_or_resume"}
 }
@@ -98,15 +121,19 @@ func (r *fluxRun) reconcile() error {
 	return r.request("Kustomization", fluxNamespace, r.inputs.Unit)
 }
 
-// setSuspended suspends the unit, or resumes it and reconciles: resuming a unit that Flux has not applied would
-// leave the cluster behind Git.
-func (r *fluxRun) setSuspended(suspend bool) error {
+// setSuspended suspends the unit or release, or resumes it and reconciles: resuming one that Flux has not applied
+// would leave the cluster behind Git.
+func (r *fluxRun) setSuspended(kind, namespace, name string, suspend bool) error {
 	action := "resuming"
 	if suspend {
 		action = "suspending"
 	}
-	r.say("► %s Kustomization %s", action, r.inputs.Unit)
-	ref, err := fluxRefOf("Kustomization", fluxNamespace, r.inputs.Unit)
+	where := ""
+	if namespace != fluxNamespace {
+		where = " in " + namespace + " namespace"
+	}
+	r.say("► %s %s %s%s", action, kind, name, where)
+	ref, err := fluxRefOf(kind, namespace, name)
 	if err != nil {
 		return err
 	}
@@ -115,13 +142,16 @@ func (r *fluxRun) setSuspended(suspend bool) error {
 		return err
 	}
 	if err := r.inputs.Cluster.Writer.Patch(r.ctx, ref, patch); err != nil {
+		if failureReason(err) == observe.ReasonNotFound {
+			return fmt.Errorf("no %s named '%s'%s", kind, name, where)
+		}
 		return err
 	}
 	if suspend {
-		r.say("✔ Kustomization %s suspended", r.inputs.Unit)
+		r.say("✔ %s %s suspended", kind, name)
 		return nil
 	}
-	return r.request("Kustomization", fluxNamespace, r.inputs.Unit)
+	return r.request(kind, namespace, name)
 }
 
 // request annotates one object with a token, then waits until the controller reports that request handled.
@@ -173,8 +203,12 @@ func (r *fluxRun) wait(kind string, ref observe.Ref, token string) error {
 
 // applied is what a handled request fetched or applied, as the unit's own status states it.
 func (r *fluxRun) applied(kind string, status fluxStatus) {
-	if kind == "Kustomization" {
+	switch kind {
+	case "Kustomization":
 		r.say("✔ applied revision %s", status.LastAppliedRevision)
+		return
+	case "HelmRelease":
+		r.say("✔ applied revision %s", status.LastAttemptedRevision)
 		return
 	}
 	r.say("✔ fetched revision %s", status.Artifact.Revision)
@@ -224,11 +258,14 @@ func absentOrUnavailable(kind, name string, read observe.Read) error {
 	return unavailable(kind+" "+name, reasonOf(read))
 }
 
-// fluxRefOf is the reference to one object this action reads or annotates: a unit, or one of its sources.
+// fluxRefOf is the reference to one object this action reads or annotates: a unit, one of its sources, or a release.
 func fluxRefOf(kind, namespace, name string) (observe.Ref, error) {
 	group := fluxSourceGroup
-	if kind == "Kustomization" {
+	switch kind {
+	case "Kustomization":
 		group = fluxUnitGroup
+	case "HelmRelease":
+		group = fluxHelmGroup
 	}
 	return kube.RefOf(group, kind, namespace, name)
 }
@@ -286,6 +323,7 @@ type fluxStatus struct {
 	ObservedGeneration     int64  `json:"observedGeneration"`
 	LastHandledReconcileAt string `json:"lastHandledReconcileAt"`
 	LastAppliedRevision    string `json:"lastAppliedRevision"`
+	LastAttemptedRevision  string `json:"lastAttemptedRevision"`
 	Artifact               struct {
 		Revision string `json:"revision"`
 	} `json:"artifact"`

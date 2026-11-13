@@ -91,7 +91,8 @@ const usage = `usage:
   swhurl-v2 clickstack-bootstrap [--dry-run] --kubeconfig KUBECONFIG.json
   swhurl-v2 flags --records DIR --app APPLICATION --env ENVIRONMENT [--set FLAG=TEXT | --clear FLAG] [--json]
   swhurl-v2 console [--port PORT] (--kubeconfig KUBECONFIG.json | --in-cluster) [--dev]
-  swhurl-v2 unit --action reconcile|suspend|resume --unit NAME (--kubeconfig KUBECONFIG.json | --in-cluster)
+  swhurl-v2 unit --action reconcile|suspend|resume (--unit NAME | --target kustomization/NAME|helmrelease/NAMESPACE/NAME) \
+    (--kubeconfig KUBECONFIG.json | --in-cluster)
   swhurl-v2 flux-wait --kubeconfig KUBECONFIG.json
 
 deploy brings one staging instance, or every v2-owned one, to the newest image its repository publishes by the
@@ -768,6 +769,7 @@ func (r *request) registerClusterFlags(flags *flag.FlagSet, command string) bool
 	case "unit":
 		flags.Var(&once{value: &r.action}, "action", "reconcile, suspend or resume")
 		flags.Var(&once{value: &r.unit}, "unit", "the Flux unit, in the flux-system namespace")
+		flags.Var(&once{value: &r.target}, "target", "kustomization/NAME or helmrelease/NAMESPACE/NAME, as make suspend takes it")
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
 	case "flux-wait":
@@ -1053,12 +1055,13 @@ func (r *request) checkRepoNamed() []string {
 	return []string{r.root}
 }
 
-// unitNamed is one action on one unit, and exactly one credential: a kubeconfig or the pod's own ServiceAccount.
+// unitNamed is one action on one unit or target, and exactly one credential: a kubeconfig or the pod's own
+// ServiceAccount.
 func (r *request) unitNamed() []string {
-	if (r.kubeconfig != "") == r.inCluster || r.action == "" || r.unit == "" {
+	if (r.kubeconfig != "") == r.inCluster || r.action == "" || (r.unit == "") == (r.target == "") {
 		return []string{""}
 	}
-	return []string{r.unit}
+	return []string{r.unit + r.target}
 }
 
 // consoleNamed is the console's port and exactly one credential, a kubeconfig or the pod's own ServiceAccount

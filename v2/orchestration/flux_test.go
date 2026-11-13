@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -15,13 +16,14 @@ import (
 // The unit's own document states its spec; every other read states a generation and a status, and reports the
 // annotating request handled once the cluster has seen that object read handled times before.
 type fluxCluster struct {
-	unhandled int    // token-bearing reads that still report the request unhandled
-	spec      string // the unit's spec, as the cluster holds it
-	ready     string
-	message   string
-	absent    bool
-	readErr   error
-	writeErr  error
+	staleGeneration bool   // Ready and the handled token may still describe a previous spec
+	unhandled       int    // token-bearing reads that still report the request unhandled
+	spec            string // the unit's spec, as the cluster holds it
+	ready           string
+	message         string
+	absent          bool
+	readErr         error
+	writeErr        error
 
 	reads   []observe.Ref
 	writes  []observe.Ref
@@ -49,7 +51,7 @@ func (f *fluxCluster) Read(_ context.Context, ref observe.Ref) (observe.Read, er
 // document is one object as the cluster holds it: the unit's spec, and a status that reports this object's request
 // handled once it has been read unhandled times since the annotation.
 func (f *fluxCluster) document(ref observe.Ref) []byte {
-	status := map[string]any{"observedGeneration": 3, "lastAppliedRevision": revision,
+	status := map[string]any{"observedGeneration": 3, "lastAppliedRevision": revision, "lastAttemptedRevision": "1.2.3",
 		"artifact":   map[string]any{"revision": revision},
 		"conditions": []any{map[string]any{"type": "Ready", "status": "Unknown", "message": ""}}}
 	if token := f.tokens[ref]; token != "" {
@@ -58,6 +60,9 @@ func (f *fluxCluster) document(ref observe.Ref) []byte {
 			status["lastHandledReconcileAt"] = token
 			status["conditions"] = []any{map[string]any{"type": "Ready", "status": f.ready, "message": f.message}}
 		}
+	}
+	if f.staleGeneration {
+		status["observedGeneration"] = 2
 	}
 	document := map[string]any{"metadata": map[string]any{"generation": 3}, "status": status}
 	if ref.Kind == "Kustomization" {
@@ -123,9 +128,15 @@ type fluxResult struct {
 // runFlux performs one action against a scripted cluster, with a clock its own pauses advance.
 func runFlux(t *testing.T, cluster *fluxCluster, unit string, action FluxAction) fluxResult {
 	t.Helper()
+	return runFluxOn(t, cluster, unit, nil, action)
+}
+
+// runFluxOn is runFlux on a unit or, when release is not nil, that HelmRelease.
+func runFluxOn(t *testing.T, cluster *fluxCluster, unit string, release *FluxRelease, action FluxAction) fluxResult {
+	t.Helper()
 	clock := time.Date(2026, time.November, 9, 12, 0, 0, 0, time.UTC)
 	found := fluxResult{}
-	err := Flux(context.Background(), FluxInputs{Action: action, Unit: unit,
+	err := Flux(context.Background(), FluxInputs{Action: action, Unit: unit, Release: release,
 		Cluster: Cluster{Reader: cluster, Writer: cluster},
 		Now:     func() time.Time { return clock },
 		Sleep:   func(pause time.Duration) { clock = clock.Add(pause); found.sleeps = append(found.sleeps, pause) },
@@ -294,5 +305,90 @@ func TestFluxRefusesAnUnknownAction(t *testing.T) {
 	found := runFlux(t, newFluxCluster(), "gw", FluxAction("delete"))
 	if found.err == nil || found.err.Error() != "refused: unit.action: not_reconcile_suspend_or_resume" {
 		t.Fatalf("error %v", found.err)
+	}
+}
+
+// An ambiguous or absent target is refused before any cluster call.
+func TestFluxNeedsExactlyOneTarget(t *testing.T) {
+	for _, unit := range []string{"", "gw"} {
+		cluster := newFluxCluster()
+		var release *FluxRelease
+		if unit != "" {
+			release = &FluxRelease{Namespace: "ns", Name: "r"}
+		}
+		found := runFluxOn(t, cluster, unit, release, FluxSuspend)
+		if found.err == nil || found.err.Error() != "invalid: target: name exactly one unit or release" ||
+			len(cluster.writes)+len(cluster.reads) != 0 {
+			t.Fatalf("target %q %v: %v", unit, release, found.err)
+		}
+	}
+}
+
+// A release is suspended by its own spec, and resumed and waited for as a unit is: make suspend freezes Helm itself.
+func TestFluxSuspendsAndResumesARelease(t *testing.T) {
+	cluster := newFluxCluster()
+	release := &FluxRelease{Namespace: "ns", Name: "r"}
+	ref, _ := fluxRefOf("HelmRelease", "ns", "r")
+	if ref.APIVersion != "helm.toolkit.fluxcd.io/v2" {
+		t.Fatalf("ref %v", ref)
+	}
+	suspended := runFluxOn(t, cluster, "", release, FluxSuspend)
+	if suspended.err != nil {
+		t.Fatal(suspended.err)
+	}
+	if strings.Join(suspended.lines, "\n") != "► suspending HelmRelease r in ns namespace\n✔ HelmRelease r suspended" {
+		t.Fatalf("lines %q", suspended.lines)
+	}
+	if len(cluster.writes) != 1 || cluster.writes[0] != ref || string(cluster.patches[0]) != `{"spec":{"suspend":true}}` {
+		t.Fatalf("wrote %v %s", cluster.writes, cluster.patches)
+	}
+	resumed := runFluxOn(t, cluster, "", release, FluxResume)
+	if resumed.err != nil {
+		t.Fatal(resumed.err)
+	}
+	if strings.Join(resumed.lines, "\n") != strings.Join([]string{"► resuming HelmRelease r in ns namespace",
+		"► annotating HelmRelease r in ns namespace", "◎ waiting for HelmRelease reconciliation",
+		"✔ applied revision 1.2.3"}, "\n") {
+		t.Fatalf("lines %q", resumed.lines)
+	}
+	if len(cluster.writes) != 3 || cluster.writes[1] != ref || cluster.writes[2] != ref ||
+		string(cluster.patches[1]) != `{"spec":{"suspend":false}}` {
+		t.Fatalf("wrote %v %s", cluster.writes, cluster.patches)
+	}
+	for _, read := range cluster.reads {
+		if read != ref {
+			t.Fatalf("a release's resume read %v", read)
+		}
+	}
+}
+
+// A handled request with Ready true is not current if the controller has not observed the resumed spec.
+func TestFluxReleaseResumeRequiresTheCurrentGeneration(t *testing.T) {
+	cluster := newFluxCluster()
+	cluster.staleGeneration = true
+	found := runFluxOn(t, cluster, "", &FluxRelease{Namespace: "ns", Name: "r"}, FluxResume)
+	if found.err == nil || !strings.Contains(found.err.Error(), "timed out after 10m waiting for HelmRelease r") ||
+		len(found.sleeps) != 300 {
+		t.Fatalf("stale generation: %v, pauses %d", found.err, len(found.sleeps))
+	}
+}
+
+// A release is reconciled with its unit, and a missing one says so: neither leaves a change behind.
+func TestFluxRefusesAReleaseReconcileAndNamesAMissingRelease(t *testing.T) {
+	cluster := newFluxCluster()
+	found := runFluxOn(t, cluster, "", &FluxRelease{Namespace: "ns", Name: "r"}, FluxReconcile)
+	if found.err == nil || found.err.Error() != "a HelmRelease is reconciled with the unit that applies it: reconcile the unit" ||
+		len(cluster.writes)+len(cluster.reads) != 0 {
+		t.Fatalf("reconcile: %v, %v %v", found.err, cluster.writes, cluster.reads)
+	}
+	missing := newFluxCluster()
+	missing.writeErr = &kube.Error{Code: kube.Failed, Subject: "write", Reason: observe.ReasonNotFound}
+	found = runFluxOn(t, missing, "", &FluxRelease{Namespace: "ns", Name: "r"}, FluxSuspend)
+	if found.err == nil || found.err.Error() != "no HelmRelease named 'r' in ns namespace" {
+		t.Fatalf("missing release: %v", found.err)
+	}
+	found = runFluxOn(t, missing, "gw", nil, FluxResume)
+	if found.err == nil || found.err.Error() != "no Kustomization named 'gw'" {
+		t.Fatalf("missing unit: %v", found.err)
 	}
 }

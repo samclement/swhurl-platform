@@ -57,12 +57,16 @@ func (a *unitAPI) answer(w http.ResponseWriter, r *http.Request) {
 	}
 	// A read identifies the object it names: the adapter refuses a document that is not the one it asked for.
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	kind, name := "GitRepository", parts[len(parts)-1]
+	kind, name, namespace := "GitRepository", parts[len(parts)-1], parts[len(parts)-3]
 	version := "source.toolkit.fluxcd.io/v1"
-	if parts[len(parts)-2] == "kustomizations" {
+	switch parts[len(parts)-2] {
+	case "kustomizations":
 		kind, version = "Kustomization", "kustomize.toolkit.fluxcd.io/v1"
+	case "helmreleases":
+		kind, version = "HelmRelease", "helm.toolkit.fluxcd.io/v2"
+		status["lastAttemptedRevision"] = "1.2.3"
 	}
-	document := map[string]any{"apiVersion": version, "kind": kind, "metadata": map[string]any{"name": name, "namespace": "flux-system", "generation": 3}, "status": status}
+	document := map[string]any{"apiVersion": version, "kind": kind, "metadata": map[string]any{"name": name, "namespace": namespace, "generation": 3}, "status": status}
 	if kind == "Kustomization" {
 		document["spec"] = json.RawMessage(a.spec)
 	}
@@ -141,6 +145,7 @@ func TestUnitNeedsOneCredentialAndAUnit(t *testing.T) {
 		{"unit", "--action", "reconcile", "--unit", "gw"},
 		{"unit", "--unit", "gw", "--in-cluster"},
 		{"unit", "--action", "reconcile", "--in-cluster"},
+		{"unit", "--action", "suspend", "--unit", "gw", "--target", "kustomization/gw", "--in-cluster"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			status, out, diagnostic := runInCluster(t, unitMount(t, server), args...)
@@ -148,5 +153,53 @@ func TestUnitNeedsOneCredentialAndAUnit(t *testing.T) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", status, out, diagnostic)
 			}
 		})
+	}
+}
+
+// make suspend's target names a unit or one HelmRelease; a release is patched and waited for in its own namespace.
+func TestUnitTargetsAUnitOrARelease(t *testing.T) {
+	api, server := newUnitAPI(t, `{}`)
+	status, out, diagnostic := runInCluster(t, unitMount(t, server), "unit", "--action", "suspend", "--target", "kustomization/gw", "--in-cluster")
+	if status != 0 || out != "► suspending Kustomization gw\n✔ Kustomization gw suspended\n" {
+		t.Fatalf("exit %d, stdout %q, stderr %q", status, out, diagnostic)
+	}
+	release := "/apis/helm.toolkit.fluxcd.io/v2/namespaces/ns/helmreleases/r"
+	api.requests = nil
+	status, out, diagnostic = runInCluster(t, unitMount(t, server), "unit", "--action", "resume", "--target", "helmrelease/ns/r", "--in-cluster")
+	want := strings.Join([]string{
+		"► resuming HelmRelease r in ns namespace",
+		"► annotating HelmRelease r in ns namespace",
+		"◎ waiting for HelmRelease reconciliation",
+		"✔ applied revision 1.2.3",
+	}, "\n") + "\n"
+	if status != 0 || out != want {
+		t.Fatalf("exit %d, stdout %q, stderr %q", status, out, diagnostic)
+	}
+	if strings.Join(api.requests, "\n") != strings.Join([]string{"PATCH " + release, "PATCH " + release, "GET " + release}, "\n") {
+		t.Fatalf("requests %v", api.requests)
+	}
+}
+
+// A target of another shape, or a name the API cannot hold, is refused before anything reaches the cluster.
+func TestUnitRefusesAMalformedTargetWithoutARequest(t *testing.T) {
+	api, server := newUnitAPI(t, `{}`)
+	for target, message := range map[string]string{
+		"pvc/ns/c":           "use kustomization/<name> or helmrelease/<namespace>/<name>",
+		"kustomization/":     "use kustomization/<name>",
+		"kustomization/a/b":  "use kustomization/<name>",
+		"helmrelease/r":      "use helmrelease/<namespace>/<name>",
+		"helmrelease//r":     "use helmrelease/<namespace>/<name>",
+		"helmrelease/ns/r/x": "use helmrelease/<namespace>/<name>",
+		"kustomization/-A":   "refused_request: resource: invalid_name",
+		"helmrelease/-n/r":   "refused_request: resource: invalid_namespace",
+		"helmrelease/ns/-r":  "refused_request: resource: invalid_name",
+	} {
+		status, _, diagnostic := runInCluster(t, unitMount(t, server), "unit", "--action", "resume", "--target", target, "--in-cluster")
+		if status != 2 || !strings.Contains(diagnostic, message) {
+			t.Fatalf("%s: exit %d: %s", target, status, diagnostic)
+		}
+	}
+	if len(api.requests) != 0 {
+		t.Fatalf("a refused target made %v", api.requests)
 	}
 }

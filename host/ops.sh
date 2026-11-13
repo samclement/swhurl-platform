@@ -3,14 +3,10 @@
 #
 #   ops.sh logs <app> <env>          make app-logs      (TAIL=N, FOLLOW=true, PREVIOUS=true)
 #   ops.sh reconcile <app> <env>     make app-reconcile
-#   ops.sh suspend|resume <target>   make suspend|resume TARGET=kustomization/<name>|helmrelease/<ns>/<name>
 #   ops.sh backup mongodb|sqlite     make backup-mongodb, make backup-sqlite
 #
-# DRY_RUN=true prints what reconcile, suspend, resume and backup would change and changes nothing; logs has no
-# dry run.
+# DRY_RUN=true prints what reconcile and backup would change and changes nothing; logs has no dry run.
 set -Eeuo pipefail
-
-NAME='[a-z0-9]([-a-z0-9.]*[a-z0-9])?'  # a Kubernetes object name, so none reads as a flag
 
 usage() { echo "Usage: make $1" >&2; exit 2; }
 refuse() { echo "[ERROR] $1" >&2; exit 2; }
@@ -41,28 +37,6 @@ reconcile() {
   dry && echo "Plan (app-reconcile $1/$2):"
   change flux reconcile source git swhurl-platform -n flux-system --timeout=5m
   change flux reconcile kustomization "app-$1-$2" -n flux-system --timeout=10m
-}
-
-suspend_resume() {  # <suspend|resume> <target>
-  local action=$1 text=$2 kind namespace name
-  if [[ $text == kustomization/* ]]; then
-    kind=kustomization namespace=flux-system name=${text#kustomization/}
-    [[ $name =~ ^$NAME$ ]] || refuse 'Use kustomization/<name>'
-  elif [[ $text == helmrelease/* ]]; then
-    local rest=${text#helmrelease/}
-    kind=helmrelease namespace=${rest%%/*} name=${rest#*/}
-    [[ $rest == */* && $namespace =~ ^$NAME$ && $name =~ ^$NAME$ ]] || refuse 'Use helmrelease/<namespace>/<name>'
-  else
-    usage "$action TARGET=kustomization/<name>|helmrelease/<ns>/<name>"
-  fi
-  kubectl -n "$namespace" get "$kind" "$name" >/dev/null 2>&1 || refuse "$kind $namespace/$name not found"
-  dry && echo "Plan ($action $text):"
-  change flux "$action" "$kind" "$name" -n "$namespace"
-  if [[ $action == suspend ]] && ! dry; then
-    echo "[INFO] Git changes stop applying to $text; running workloads and data are untouched."
-    [[ $kind == kustomization ]] && echo '[INFO] HelmReleases it created keep reconciling their last applied spec; suspend them separately to freeze Helm.'
-  fi
-  return 0
 }
 
 BACKUP_LABEL='platform.swhurl.com/backup=true'
@@ -130,7 +104,6 @@ backup() {  # <mongodb|sqlite>: a Job from each backup CronJob, run now; waits f
 
 case ${1:-} in
   logs | reconcile) "$1" "${2:-}" "${3:-}" ;;
-  suspend | resume) suspend_resume "$1" "${2:-}" ;;
   backup) [[ ${2:-} =~ ^(mongodb|sqlite)$ ]] || usage 'backup-mongodb | make backup-sqlite'; backup "$2" ;;
-  *) echo "usage: $0 logs|reconcile <app> <env> | suspend|resume <target> | backup mongodb|sqlite" >&2; exit 2 ;;
+  *) echo "usage: $0 logs|reconcile <app> <env> | backup mongodb|sqlite" >&2; exit 2 ;;
 esac

@@ -2,6 +2,22 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Host suspend and resume use Go, offline (13 November 2026)
+
+- **Capability:** `make suspend` and `make resume` retain TARGET's Kustomization and HelmRelease forms but call
+  `swhurl-v2 unit --target`, sharing the lifecycle test's unit action rather than `host/ops.sh`'s Flux CLI path
+  ([§32](iteration-2-plan.md#32-make-suspend-and-make-resume-use-go-approved-13-november-2026)). Resume waits for the
+  selected object's handled request, current generation and Ready. Dry runs only print a plan.
+- **Offline evidence:** API-path/output tests, release suspend/resume and generation checks, exclusive-target
+  refusals, missing objects and malformed-name write regressions; make-level fake executables cover argument
+  passing, failure propagation, reminders, private kubeconfig cleanup and read-free plans. `make check-v2` passed;
+  `make check` passed (188 Python tests, the Go workstream check, render/policy, collector fixtures, lint and
+  codegraph checks). Host shell syntax checks passed with `nullglob` enabled: this checkout has no
+  `tests/fixtures/*.sh` files. `git diff --check` passed.
+- **Live boundary:** nothing applied. The shared unit action was proven in §31; the make entrypoints and the new
+  HelmRelease resume branch still require a separately approved live proof. Independent review was unavailable
+  because the reviewer model's quota was exhausted; the implementation was self-reviewed.
+
 ## The lifecycle test runs Go (13 November 2026)
 
 - **What changed:** `make live-test-lifecycle` is `swhurl-v2 lifecycle-test` ([§31](iteration-2-plan.md#31-live-test-lifecycle-in-go-approved-13-november-2026)):

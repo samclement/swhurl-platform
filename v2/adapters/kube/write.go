@@ -137,6 +137,13 @@ func (a *API) writableResourceOf(ref observe.Ref, method string) (resource, erro
 	if ref.Name == "" {
 		return resource, &Error{RefusedRequest, "resource", "name_required"}
 	}
+	// Whichever table named the kind, a name or namespace the API cannot hold never reaches it.
+	if resource.namespaced && !namePattern.MatchString(ref.Namespace) {
+		return resource, &Error{RefusedRequest, "resource", "invalid_namespace"}
+	}
+	if !namePattern.MatchString(ref.Name) {
+		return resource, &Error{RefusedRequest, "resource", "invalid_name"}
+	}
 	return resource, nil
 }
 

@@ -23,11 +23,26 @@ console-dev:
 	@DRY_RUN=; $(V2_BUILD); "$$work/swhurl-v2" console --dev --port "$${PORT:-8080}"
 
 # One or two kubectl or flux calls (host/ops.sh), which read their variables from the environment.
-.PHONY: app-logs app-reconcile suspend resume
+.PHONY: app-logs app-reconcile
 app-logs app-reconcile:
 	@DRY_RUN=$(DRY_RUN) ./host/ops.sh $(@:app-%=%) "$$APP" "$$ENV"
+
+# Stop or restart Flux applying Git to one unit or HelmRelease (swhurl-v2 unit --target, which checks TARGET's shape
+# and names before any request); workloads and data are untouched. DRY_RUN=true prints the plan and reads nothing.
+# Needs Go 1.26.0.
+.PHONY: suspend resume
 suspend resume:
-	@DRY_RUN=$(DRY_RUN) ./host/ops.sh $@ "$$TARGET"
+	@[ -n "$${TARGET:-}" ] || { echo 'Usage: make $@ TARGET=kustomization/<name>|helmrelease/<ns>/<name>' >&2; exit 2; }; \
+	if [ "$(DRY_RUN)" = true ]; then \
+		printf 'Plan (%s %s):\n  would run: swhurl-v2 unit --action %s --target %s\n' $@ "$$TARGET" $@ "$$TARGET"; exit 0; \
+	fi; \
+	$(V2_BUILD); \
+	umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	"$$work/swhurl-v2" unit --action $@ --target "$$TARGET" --kubeconfig "$$work/kubeconfig.json"; \
+	if [ $@ = suspend ]; then \
+		echo "[INFO] Git changes stop applying to $$TARGET; running workloads and data are untouched."; \
+		case "$$TARGET" in kustomization/*) echo '[INFO] HelmReleases it created keep reconciling their last applied spec; suspend them separately to freeze Helm.';; esac; \
+	fi
 # Pin the console to the image Validate published for this commit (images/pin-console.sh; edits files only).
 .PHONY: console-image
 console-image:

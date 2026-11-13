@@ -174,7 +174,7 @@ Deploy, update and uninstall through Git. Removing an app instance's unit from `
 | `make destroy-data TARGET=pvc/<ns>/<name> CONFIRM=pvc/<ns>/<name>` | Delete an unused claim, its volume and host directory | **Destroyed** |
 | `make destroy-data TARGET=pv/<name> CONFIRM=pv/<name>` | Delete a `Released` retained volume and its directory | **Destroyed** |
 
-`destroy-data` refuses while a pod mounts the claim or a Helm release or Flux unit still manages it, because they would recreate it. `DRY_RUN=true` runs only the checks.
+`destroy-data` refuses while a pod mounts the claim or a Helm release or Flux unit still manages it, because they would recreate it, and when it cannot read one of them. `DRY_RUN=true` runs only the checks and says what it would change.
 
 Deleting a shared Flux unit by mistake is safe: shared units use `deletionPolicy: Orphan`, so their resources keep running unmanaged. Re-create a deleted root unit with `make flux-bootstrap`. There is no whole-platform reset.
 

@@ -65,6 +65,24 @@ func (f *Fake) Secrets(_ context.Context, namespace string, selector kube.Select
 	return found, nil
 }
 
+// SecretNames lists the names of the namespace's Secrets the labels pick, as the metadata-only list does; a failure
+// the scenario names as "secretnames <labels>" is returned after the call is recorded.
+func (f *Fake) SecretNames(_ context.Context, namespace, labels string) ([]string, error) {
+	if labels == "" {
+		return nil, &kube.Error{Code: kube.RefusedRequest, Subject: "selector", Reason: "required"}
+	}
+	if err := f.listing("secretnames", namespace, kube.Selector{Labels: labels}); err != nil {
+		return nil, err
+	}
+	names := []string{}
+	for _, secret := range f.SecretData[namespace] {
+		if matches(labels, secret.Labels) {
+			names = append(names, secret.Name)
+		}
+	}
+	return names, nil
+}
+
 // GetSecret is the fake's named get of a Secret, distinct from the selected list and its permission: a copy, or nil
 // when the fake holds none of that name.
 func (f *Fake) GetSecret(_ context.Context, namespace, name string) (*kube.Secret, error) {

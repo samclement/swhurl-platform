@@ -2552,3 +2552,54 @@ a broken issuer file; command tests on a copy of this repository's own issuers a
 only: Python from `HEAD` and Go over eight settings variants, four issuers and both dry-run modes, comparing stdout,
 stderr, exit status and the resulting files. `make check-v2`, `make check`, `make test`, then `make
 platform-certs-prod DRY_RUN=true` on the real tree. No live effect.
+
+## 29. `destroy-data` in Go (approved 13 November 2026)
+
+The third kept check ([remaining work B.1](v2-status.md#remaining-work)), ported with the same behaviour. It is the
+only command that deletes data and v2's most destructive effect: it deletes a claim, and the provisioner then deletes
+the host directory. The `kube` adapter's existing `Patch` and `Delete` make the changes; what is new is that effect
+and one read of Secret names.
+
+**Decision.** `make destroy-data TARGET=… CONFIRM=…` runs `swhurl-v2 destroy-data --target T --confirm C --kubeconfig
+K [--dry-run]`, with the kubeconfig exported as `restore-sqlite` does. The recipe refuses a missing `TARGET` and a
+`CONFIRM` that differs before it builds anything, so those refusals run no tool. `tools/swhurl/lifecycle.py` and
+`tests/test_lifecycle.py` are deleted; the catalogue keeps the target without a `run` function. The lifecycle live
+test calls `make destroy-data`, without and then with `CONFIRM`, instead of importing the Python.
+
+**Semantics (retained).** A target is `pvc/<namespace>/<name>` or `pv/<name>`, and the confirmation repeats it
+exactly; both are checked before the kubeconfig is read. A claim is refused when it is missing, when a running,
+pending or terminating pod mounts it, when Helm's storage Secrets (`owner=helm,name=<release>`, the release from
+`meta.helm.sh/release-name`) still exist, or when its Flux Kustomization (`kustomize.toolkit.fluxcd.io/name`, in
+`flux-system` unless labelled otherwise) still exists. A volume is refused when it is missing or not `Released`. The
+changes are, in order: the volume's reclaim policy becomes `Delete`; the claim is deleted and waited for (2 minutes);
+the volume is waited for (2 minutes) as the provisioner deletes it and its directory. A claim that never bound has
+no volume step. The messages are Python's, and so are the exit statuses: a refusal is `[ERROR] …` and exit 2 with
+nothing changed, a failed change exit 1, success `[OK] Destroyed … (PV … and its data)`.
+
+| Layer | Owns | Does not own |
+| --- | --- | --- |
+| 0 `datadestroy` (new, pure) | The target's shape, the confirmation, the decisions over what was read (claim, pods, unit), the ordered changes, the messages | Reading the cluster |
+| 1 `adapters/kube` | Existing `Read`, `ListNamespace`, `Patch` and `Delete`; new `SecretNamer.SecretNames(namespace, labels)`, a metadata-only list (`PartialObjectMetadataList`) that returns names and refuses any other answer, so no Secret's data reaches it. `Reader` still refuses Secrets | Deciding anything |
+| 2 `orchestration.DestroyData` | The reads, the decisions, a dry run's stop, the changes and the polls (clock and sleep supplied) | Printing, exit codes |
+| 3 command | Flags, the lines, the exit status | The decisions |
+
+**Deliberate changes.**
+
+- A read that fails refuses. Python treated a failed `kubectl get` of the Flux unit as "the unit is gone", and a
+  failed read of the claim as "not found"; Go reports the failure and exits 1, changing nothing.
+- The dry run describes its changes in words (`would set PV … reclaim policy to Delete`, `would delete PVC … and
+  wait for it to go`, `would wait for PV … and its data to go`); v2 names no `kubectl` command.
+- The Helm check lists names only; Python fetched the release Secrets whole.
+- A failed change names the change and v2's reason rather than a `kubectl` command line, and the usage line loses
+  Python's docstring indent.
+
+**Not done:** deleting the claim with a `uid` precondition, so a claim re-created between the checks and the delete is
+not the one deleted. Python does not either.
+
+**Verification.** Pure tests of each decision and message; orchestration tests over a fake with the provisioner's
+behaviour (each Python case: every refusal changes nothing, finished pods and retired owners do not block, the order
+of changes, the released-volume path, a failed change exits 1) plus each failed read and both waits' timeouts; adapter
+tests of the metadata request and its refusals; command tests that a refusal reads no kubeconfig and reaches no cluster.
+Read-only parity on the live cluster, `DRY_RUN=true`, Python from `HEAD` and Go: two mounted claims, a missing claim,
+a bound volume, a missing volume, a differing confirmation, a short target and another kind. `make check-v2`, `make
+check`, then `make live-test-lifecycle`, which destroys its own throwaway claim through the new path.

@@ -11,7 +11,6 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 # Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
 # the environment, refuses a missing one and runs the command's function.
 COMMANDS := help \
-	destroy-data \
 	live-test-lifecycle live-test-app-template live-test-team-scenario
 
 .PHONY: $(COMMANDS)
@@ -101,6 +100,16 @@ v2-deps:
 .PHONY: platform-certs-staging platform-certs-prod
 platform-certs-staging platform-certs-prod:
 	@$(V2_BUILD); "$$work/swhurl-v2" platform-certs --root . --issuer "letsencrypt-$(@:platform-certs-%=%)" $(if $(filter true,$(DRY_RUN)),--dry-run)
+
+# A claim, or a Released volume, and its host data (swhurl-v2 destroy-data): refused unless CONFIRM repeats TARGET
+# (checked here first, so that refusal runs no tool), and while a pod mounts the claim or a Helm release or Flux unit
+# would recreate it. DRY_RUN=true makes the checks only. Needs Go 1.26.0.
+.PHONY: destroy-data
+destroy-data:
+	@[ -n "$${TARGET:-}" ] || { echo 'Usage: make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>' >&2; exit 2; }; \
+	[ "$${CONFIRM:-}" = "$$TARGET" ] || { echo "[ERROR] destroy-data permanently deletes $$TARGET and its data. Re-run with CONFIRM=$$TARGET" >&2; exit 2; }; \
+	$(V2_BUILD); umask 077; kubectl config view --raw -o json > "$$work/kubeconfig.json"; \
+	"$$work/swhurl-v2" destroy-data --target "$$TARGET" --confirm "$${CONFIRM:-}" --kubeconfig "$$work/kubeconfig.json" $(if $(filter true,$(DRY_RUN)),--dry-run)
 
 # Every tracked SOPS Secret decrypted in memory (swhurl-v2 check-secrets): placeholders, empty values, probable double
 # encoding and the copies kept equal, compared by hashes; no value is printed. The age key is SOPS_AGE_KEY_FILE, else

@@ -6,7 +6,7 @@ Flux Kustomizations named lifecycle-test*, namespace lifecycle-test and its PVs.
   1. suspend leaves the workload and data running; resume reconciles again
   2. uninstall (deleting an app-style unit) removes the workload but keeps
      the prune-protected namespace, claim and data
-  3. destroy-data refuses without CONFIRM, then deletes the claim, PV and data
+  3. make destroy-data refuses without CONFIRM, then deletes the claim, PV and data
   4. a unit with deletionPolicy: Orphan (as the shared units use) leaves its
      resources running when the unit itself is deleted
 """
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 
-from swhurl import ROOT, lifecycle
+from swhurl import ROOT
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 NS = 'lifecycle-test'
@@ -98,15 +98,12 @@ def body(t: LiveTest) -> None:
 
     t.step('Destroy data')
     target = f'pvc/{NS}/data'
-    try:
-        lifecycle.run_action('destroy-data', target, confirm='', runner=t.runner)
-        refused = False
-    except lifecycle.LifecycleError:
-        refused = True
+    destroy = ['make', '-s', 'destroy-data', f'TARGET={target}']
+    refused = t.runner.run([*destroy, 'CONFIRM='], cwd=ROOT, check=False, mutating=True).returncode == 2
     t.check(refused, 'destroy-data refuses without CONFIRM', 'destroy-data ran without CONFIRM')
     t.check(t.get('-n', NS, 'get', 'pvc', 'data') is not None,
             'claim untouched by refused destroy', 'claim removed by refused destroy')
-    lifecycle.destroy_data(t.runner, lifecycle.parse_target('destroy-data', target), out=lambda _line: None)
+    t.runner.run([*destroy, f'CONFIRM={target}'], cwd=ROOT, mutating=True)
     t.check(t.get('-n', NS, 'get', 'pvc', 'data') is None, 'claim destroyed', 'claim still exists')
     t.check(t.get('get', 'pv', pv) is None, f'PV {pv} and its data destroyed', f'PV {pv} still exists')
 

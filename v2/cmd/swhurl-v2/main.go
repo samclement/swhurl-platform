@@ -76,6 +76,7 @@ const usage = `usage:
   swhurl-v2 check-repo [--root DIR] [--rendered PATH | --json]
   swhurl-v2 check-secrets [--root DIR] --age-key-file FILE
   swhurl-v2 platform-certs [--root DIR] --issuer NAME [--dry-run]
+  swhurl-v2 destroy-data --target pvc/NAMESPACE/NAME|pv/NAME --confirm TARGET --kubeconfig KUBECONFIG.json [--dry-run]
   swhurl-v2 verify (--kubeconfig KUBECONFIG.json | --in-cluster) [--scope cluster] [--source NAME] [--json]
   swhurl-v2 verify --scope platform --kubeconfig KUBECONFIG.json --root DIR [--console-tag TAG]
       [--heartbeat FILE] [--source NAME] [--json]
@@ -357,6 +358,12 @@ refused unless the file has exactly one indented CERT_ISSUER: line and its data,
 value. An issuer already set and --dry-run write nothing. It only edits the file: commit and push it. A refusal is
 one [ERROR] line and exits 1, as make platform-certs-* always has.
 
+destroy-data deletes a claim, or a Released volume, and its host data: it sets the volume's reclaim policy to
+Delete, deletes the claim, and waits for the provisioner to delete the volume and its directory. It refuses unless
+--confirm repeats --target exactly, and while a pod mounts the claim or a Helm release or Flux Kustomization would
+recreate it; a read that fails refuses too. --dry-run makes every check and no change. A refusal is one [ERROR]
+line and exits 2 with nothing changed; a change that failed exits 1.
+
 Exit 0: success/no-op (for status: a report was printed, whatever its state; for restore --confirm: the
 data was restored and the app is back); 2: usage/validation/refusal, nothing changed; 1: a restore that
 started but did not complete, a render --check that found a difference, a name the catalogue does not list, a
@@ -488,6 +495,7 @@ func commands() map[string]func(cli, request) int {
 		"check-repo":              cli.checkRepo,
 		"check-secrets":           cli.checkSecrets,
 		"platform-certs":          cli.platformCerts,
+		"destroy-data":            cli.destroyData,
 		"verify":                  cli.verify,
 		"notify-serve":            cli.notifyServe,
 		"notifications-check":     cli.notificationsCheck,
@@ -532,7 +540,7 @@ type request struct {
 	stateFlag, maxAgeFlag                       *once
 	rotate, check, json, inCluster, all, dryRun bool
 	cluster, dev                                bool
-	confirm, ageKey, cleared, issuer            string
+	confirm, ageKey, cleared, issuer, target    string
 	urlTTL                                      time.Duration
 	urlTTLSet                                   bool
 	outFlag                                     *once
@@ -634,7 +642,7 @@ func (r *request) registerExtras(flags *flag.FlagSet, command string) {
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
 		return
 	}
-	if r.registerFluxFlags(flags, command) {
+	if r.registerClusterFlags(flags, command) {
 		return
 	}
 	if command == "notify-serve" {
@@ -733,8 +741,9 @@ func (r *request) registerChangeFlags(flags *flag.FlagSet, command string) bool 
 	return true
 }
 
-// registerFluxFlags is the flags of the two Flux commands: one unit's action, and the wait for every unit.
-func (r *request) registerFluxFlags(flags *flag.FlagSet, command string) bool {
+// registerClusterFlags is the flags of the commands that act on cluster objects themselves: one Flux unit's action,
+// the wait for every unit, and destroy-data.
+func (r *request) registerClusterFlags(flags *flag.FlagSet, command string) bool {
 	switch command {
 	case "unit":
 		flags.Var(&once{value: &r.action}, "action", "reconcile, suspend or resume")
@@ -743,6 +752,11 @@ func (r *request) registerFluxFlags(flags *flag.FlagSet, command string) bool {
 		flags.Var(&onceBool{value: &r.inCluster}, "in-cluster", "use this pod's ServiceAccount instead of a kubeconfig")
 	case "flux-wait":
 		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+	case "destroy-data":
+		flags.Var(&once{value: &r.target}, "target", "pvc/NAMESPACE/NAME or pv/NAME: what is deleted, with its data")
+		flags.Var(&once{value: &r.confirm}, "confirm", "the target again, exactly")
+		flags.Var(&once{value: &r.kubeconfig}, "kubeconfig", "kubeconfig file, in JSON")
+		flags.Var(&onceBool{value: &r.dryRun}, "dry-run", "make every check and no change")
 	default:
 		return false
 	}
@@ -951,6 +965,7 @@ var requiredFlags = map[string]func(*request) []string{
 	"check-repo":              (*request).checkRepoNamed,
 	"check-secrets":           func(r *request) []string { return []string{r.root, r.ageKey} },
 	"platform-certs":          func(r *request) []string { return []string{r.root, r.issuer} },
+	"destroy-data":            func(r *request) []string { return []string{r.target, r.kubeconfig} },
 	"verify":                  (*request).verifyNamed,
 	"notify-serve":            func(r *request) []string { return []string{r.listen} },
 	"notifications-check":     (*request).checkerNamed,
@@ -1181,6 +1196,9 @@ type cli struct {
 	natsStore func(context.Context, string, string, string) (nats.KV, error)
 	// clock is the time an override's age is measured from; nil is the wall clock.
 	clock func() time.Time
+	// dataClusterOf is the cluster destroy-data reads and changes; nil is the API server the kubeconfig names, and a
+	// test supplies a scripted cluster so a run needs no network.
+	dataClusterOf func() (dataCluster, error)
 }
 
 // environment is one variable of this process's environment.

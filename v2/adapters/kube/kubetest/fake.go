@@ -65,6 +65,7 @@ var _ kube.Reader = (*Fake)(nil)
 var _ kube.Writer = (*Fake)(nil)
 var _ kube.Reviewer = (*Fake)(nil)
 var _ kube.Data = (*Fake)(nil)
+var _ kube.SecretNamer = (*Fake)(nil)
 var _ kube.Issuer = (*Fake)(nil)
 
 // New returns a fake that answers from the scenario.

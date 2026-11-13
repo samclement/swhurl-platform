@@ -2,6 +2,23 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## `destroy-data` runs Go (13 November 2026)
+
+- **What changed:** `make destroy-data` is `swhurl-v2 destroy-data` ([§29](iteration-2-plan.md#29-destroy-data-in-go-approved-13-november-2026)):
+  the pure `datadestroy` package decides, `orchestration.DestroyData` reads and changes the cluster through the API
+  server, and Helm's records are read by a new metadata-only `SecretNamer`, so no Secret's data is fetched. The recipe
+  refuses a missing `TARGET` or a differing `CONFIRM` before building anything. `tools/swhurl/lifecycle.py` and
+  `tests/test_lifecycle.py` are deleted, and the lifecycle live test calls `make destroy-data`.
+- **Deliberately changed:** a read that fails refuses (Python took an unreadable Flux unit for a deleted one); the
+  dry run describes its changes in words instead of `kubectl` lines; a failed change names v2's reason.
+- **Checked on the live cluster, read only:** `make destroy-data … DRY_RUN=true` from `HEAD` (Python) and from the
+  change (Go) gave the same exit status (2) and `[ERROR]` line for eight targets: two mounted claims
+  (`observability/data-volume-clickstack-mongodb-0`, `demo-shop-staging/demo-shop`), a missing claim, a bound volume,
+  a missing volume, a differing `CONFIRM`, a short target and another kind. The only differences were make's own line
+  number and the usage line's indent. Nothing was changed.
+- **Not exercised:** the Helm and Flux refusals live (every claim on the cluster is mounted, so the pod check refuses
+  first); they are covered offline.
+
 ## `platform-certs` runs Go (13 November 2026)
 
 - **What changed:** `make platform-certs-staging` and `make platform-certs-prod` are `swhurl-v2 platform-certs`

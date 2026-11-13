@@ -42,13 +42,13 @@ else:
             path.chmod(0o700)
 
     def test_destroy_data_refuses_without_exact_confirmation(self):
-        cases = (('pvc/ns/data', ''), ('pvc/ns/data', 'pvc/ns/other'), ('pv/name', 'pv/other'),
-                 ('pvc/ns', 'pvc/ns'), ('secret/ns/x', 'secret/ns/x'), ('', ''))
+        """A target of the wrong shape is refused by swhurl-v2 before it reads the kubeconfig (its own tests)."""
+        cases = (('pvc/ns/data', ''), ('pvc/ns/data', 'pvc/ns/other'), ('pv/name', 'pv/other'), ('', ''))
         for target, confirm in cases:
             with self.subTest(target=target, confirm=confirm):
                 result = subprocess.run(['make', 'destroy-data', f'TARGET={target}', f'CONFIRM={confirm}'],
                                         cwd=ROOT, env=self.env, capture_output=True, text=True)
-                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertFalse(self.calls.exists(), 'A refused destroy-data called a cluster tool')
 
     def test_every_dry_run_that_plans_calls_no_cluster_tool(self):

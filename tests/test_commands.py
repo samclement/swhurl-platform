@@ -1,6 +1,7 @@
 """Each command is stated once (swhurl/commands.py): the Makefile, make help, usage and docs/commands.md follow it."""
 import importlib
 import io
+import os
 import re
 import subprocess
 import unittest
@@ -151,12 +152,11 @@ class DocTests(unittest.TestCase):
 
 class MakeTests(unittest.TestCase):
     def test_a_missing_variable_is_refused_with_the_usage_line(self):
-        for target, env, usage in (
-                ('destroy-data', {}, 'Usage: make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>'),):
-            with self.subTest(target=target):
-                code, out, err, executed = run_make(target, env)
-                self.assertEqual((code, out, executed), (2, '', []))
-                self.assertIn(usage, err)
+        # destroy-data is a recipe over swhurl-v2, which refuses a missing TARGET before building anything.
+        result = subprocess.run(['make', '--no-print-directory', 'destroy-data'], cwd=ROOT, capture_output=True, text=True,
+                                env={k: v for k, v in os.environ.items() if k not in ('TARGET', 'CONFIRM')})
+        self.assertEqual((result.returncode, result.stdout), (2, ''))
+        self.assertIn('Usage: make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>', result.stderr)
 
     def test_dry_run_is_refused_where_the_command_has_no_dry_run(self):
         code, out, err, executed = run_make('help', {'DRY_RUN': 'true'})

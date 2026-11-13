@@ -57,7 +57,7 @@ Creation, the GitHub side, the shared team registry and the read-only operations
 | Target | Does | Touches |
 | --- | --- | --- |
 | `suspend`, `resume` `TARGET=kustomization/<name>\|helmrelease/<ns>/<name>` † | `flux suspend/resume`; workloads and data untouched | Cluster |
-| `destroy-data TARGET=pvc/<ns>/<name>\|pv/<name> CONFIRM=<TARGET>` † | Delete a released claim or volume and its host data ([lifecycle](operations.md#lifecycle)) | Cluster |
+| `destroy-data TARGET=pvc/<ns>/<name>\|pv/<name> CONFIRM=<TARGET>` † | Delete a released claim or volume and its host data (`swhurl-v2 destroy-data`; needs Go 1.26.0; [lifecycle](operations.md#lifecycle)) | Cluster |
 | `backup-mongodb` † | Start a Job from ClickStack MongoDB's backup CronJob (`observability/backup-mongodb`), wait for it and show its log ([`host/ops.sh`](../host/ops.sh)); the job dumps, encrypts and publishes to `clickstack-mongodb/` ([operations](operations.md#backups-and-recovery)) | Cluster, S3 |
 | `backup-sqlite` † | Start a Job from each app SQLite database's backup CronJob (`<app>-backup`), wait for them and show their logs; each copies, checks, encrypts and publishes to `app-sqlite/<namespace>/`. No app with a database: nothing to do | Cluster, S3 |
 | `restore-sqlite APP= ENV= CONFIRM=<app>/<env>` † | Restore an app's SQLite database with `swhurl-v2 restore` from its newest backup in S3 (`FROM=<key>` and `MAX_AGE=<duration>` for an older one; `AGE_KEY_FILE`; needs S3 read access and Go 1.26.0): suspends its HelmRelease, stops the app, restores and checks the copy in a job, keeps the replaced files in `before-restore-<UTC>/`, starts the app. `DRY_RUN=true` prints v2's plan ([backups](operations.md#backups-and-recovery)) | Cluster |

@@ -249,6 +249,7 @@ adapters/kube/kubetest: func (*Fake) Logs(_ context.Context, ref observe.Ref, _ 
 adapters/kube/kubetest: func (*Fake) Patch(_ context.Context, ref observe.Ref, _ []byte) error
 adapters/kube/kubetest: func (*Fake) Read(_ context.Context, ref observe.Ref) (observe.Read, error)
 adapters/kube/kubetest: func (*Fake) Review(_ context.Context, token, audience string) (kube.TokenReview, error)
+adapters/kube/kubetest: func (*Fake) SecretNames(_ context.Context, namespace, labels string) ([]string, error)
 adapters/kube/kubetest: func (*Fake) Secrets(_ context.Context, namespace string, selector kube.Selector) ([]kube.Secret, error)
 adapters/kube/kubetest: func (*Fake) SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error
 adapters/kube/kubetest: func (*Fake) SetConfigMapKeys(_ context.Context, namespace, name string, keys map[string]*string, fieldManager string) error
@@ -287,6 +288,7 @@ adapters/kube: func (*API) Logs(ctx context.Context, ref observe.Ref, tailLines 
 adapters/kube: func (*API) Patch(ctx context.Context, ref observe.Ref, patch []byte) error
 adapters/kube: func (*API) Read(ctx context.Context, ref observe.Ref) (observe.Read, error)
 adapters/kube: func (*API) Review(ctx context.Context, token, audience string) (TokenReview, error)
+adapters/kube: func (*API) SecretNames(ctx context.Context, namespace, labels string) ([]string, error)
 adapters/kube: func (*API) Secrets(ctx context.Context, namespace string, selector Selector) ([]Secret, error)
 adapters/kube: func (*API) SetConfigMapKey(ctx context.Context, namespace, name, key, value, fieldManager string) error
 adapters/kube: func (*API) SetConfigMapKeys(ctx context.Context, namespace, name string, data map[string]*string, fieldManager string) error
@@ -297,6 +299,7 @@ adapters/kube: func (Connection) Executor() (Executor, error)
 adapters/kube: func (Connection) Issuer() (Issuer, error)
 adapters/kube: func (Connection) Reader() (Reader, error)
 adapters/kube: func (Connection) Reviewer() (Reviewer, error)
+adapters/kube: func (Connection) SecretNamer() (SecretNamer, error)
 adapters/kube: func (Connection) Writer() (Writer, error)
 adapters/kube: func (JobRecords) Alive(ctx context.Context, owner string) (bool, error)
 adapters/kube: func (JobRecords) Load(ctx context.Context) ([]string, error)
@@ -324,6 +327,7 @@ adapters/kube: type JobRecords struct {Data Data Pods Reader Namespace string Na
 adapters/kube: type Reader interface {Read(ctx context.Context, ref observe.Ref) (observe.Read, error) List(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListAllNamespaces(ctx context.Context, ref observe.Ref, selector string) (observe.List, error) ListNamespace(ctx context.Context, ref observe.Ref) (observe.List, error)}
 adapters/kube: type Reviewer interface {Review(ctx context.Context, token, audience string) (TokenReview, error)}
 adapters/kube: type Secret struct {Name string Labels map[string]string Data map[string][]byte}
+adapters/kube: type SecretNamer interface {// SecretNames lists the names of the Secrets a label selector picks in one namespace. A failed or partial list // is an error, never fewer names. SecretNames(ctx context.Context, namespace, labels string) ([]string, error)}
 adapters/kube: type Selector struct {Name, Labels string}
 adapters/kube: type SigningKeys struct {Issuer string Keys []byte}
 adapters/kube: type TokenReview struct {Authenticated bool Audiences []string Username string}
@@ -536,6 +540,35 @@ dashboards: type Webhook struct {ID string `json:"id,omitempty"` Name string `js
 dashboards: type WebhookStep struct {Action Action ID string Webhook Webhook}
 dashboards: var ErrNoRecords = errors.New("the records name no app instance; no change made")
 dashboards: var ErrPlatformAddress = errors.New("the platform ntfy address is not an HTTPS topic URL without a query or fragment")
+datadestroy: const AwaitVolumeGone Change = "volume"
+datadestroy: const Claim Kind = "pvc"
+datadestroy: const DeleteClaim Change = "claim"
+datadestroy: const FluxNamespace = "flux-system"
+datadestroy: const ReclaimDelete = `{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}`
+datadestroy: const SetReclaimDelete Change = "reclaim"
+datadestroy: const Usage = "destroy-data pvc/<ns>/<name> | pv/<name> (CONFIRM=<same target>)"
+datadestroy: const Volume Kind = "pv"
+datadestroy: func (*Refusal) Error() string
+datadestroy: func Changes(target Target, volume string) []Change
+datadestroy: func ClaimFactsOf(object []byte) (ClaimFacts, error)
+datadestroy: func ClaimMounted(target Target) error
+datadestroy: func ClaimNotFound(target Target) error
+datadestroy: func Confirm(target Target, confirm string) error
+datadestroy: func Destroyed(target Target, volume string) string
+datadestroy: func HelmSelector(release string) string
+datadestroy: func MountedByActivePod(pods [][]byte, claim string) (bool, error)
+datadestroy: func ParseTarget(text string) (Target, error)
+datadestroy: func Plan(target Target, volume string) []string
+datadestroy: func ReleaseExists(target Target, release string) error
+datadestroy: func UnitExists(unit string) error
+datadestroy: func VolumeNotFound(target Target) error
+datadestroy: func VolumeReleased(target Target, object []byte) error
+datadestroy: type Change string
+datadestroy: type ClaimFacts struct {Volume string Release string Unit string UnitNamespace string}
+datadestroy: type Kind string
+datadestroy: type Refusal struct {Message string}
+datadestroy: type Target struct {Kind Kind Namespace, Name string Text string}
+datadestroy: var ErrUsage = errors.New(Usage)
 events: const ConsumerCollision = "consumer_collision"
 events: const InvalidSubscription = "invalid_subscription"
 events: const NotPublished = "not_published"
@@ -1243,6 +1276,7 @@ orchestration: func ConsoleTeams(tree map[string][]byte) (map[string]pages.TeamI
 orchestration: func ConsoleUnits(ctx context.Context, collector kube.Collector) ([][]byte, error)
 orchestration: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
 orchestration: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
+orchestration: func DestroyData(ctx context.Context, inputs DestroyInputs) (DestroyOutcome, error)
 orchestration: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
 orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
 orchestration: func FlagDeclaration(document []byte) ([]producer.Flag, string)
@@ -1305,6 +1339,8 @@ orchestration: type DashboardReport struct {Lines []DashboardLine}
 orchestration: type Delivered struct {Entry notify.Entry Err error Retry bool}
 orchestration: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
 orchestration: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
+orchestration: type DestroyInputs struct {Reader kube.Reader Writer kube.Writer Secrets kube.SecretNamer Target datadestroy.Target DryRun bool Now func() time.Time Sleep func(time.Duration)}
+orchestration: type DestroyOutcome struct {Volume string Made []datadestroy.Change}
 orchestration: type Editable struct {InstanceInputs Change string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}
 orchestration: type Edition struct {Application, Environment, Change string Before, After kernel.InstanceSpec Compilation kernel.Compilation ResolutionStale bool AllocationStale bool Written []files.Outcome}
 orchestration: type FlagCard struct {Rows []FlagRow Problem string}

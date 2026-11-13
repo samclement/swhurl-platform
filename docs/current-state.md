@@ -18,7 +18,10 @@ What has been verified on the live cluster, and when: current facts first, then 
   others are the anchor's update and dry run, where Python crashed and Go refused with exit 1 as designed. On the
   real tree `make platform-certs-prod DRY_RUN=true` printed `already set` and `make platform-certs-staging
   DRY_RUN=true` printed `would update`, and the file was unchanged.
-- **Live:** nothing; the command edits only the checkout.
+- **CI and live:** Validate passed every job for `8c667797` and deployed console image `src-bc30918e5993c15a`
+  (`001e08f3`). After `make flux-reconcile`, `make verify-platform` passed: the console, the notify service and
+  both console CronJobs run that image, and the notification checker succeeded on it. The command itself changes
+  nothing on the cluster.
 - **Not exercised:** a real switch of the issuer, which needs a commit, a reconcile and new certificates.
 
 ## `check-secrets` runs Go (13 November 2026)

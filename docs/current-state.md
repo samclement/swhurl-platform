@@ -15,6 +15,9 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Checked on the live cluster:** Python from `HEAD` and then Go from the working tree each passed; their output was
   identical line for line apart from the volume's name (`pvc-eff38af8…`, `pvc-0b3520bf…`). Afterwards no
   `lifecycle-test` namespace, unit or volume remained, including the volume the Orphan step's claim bound.
+- **CI and live:** Validate and Render passed for `d2d40215`, and Validate deployed console image
+  `src-95c8cb9c5d1ef162` (`b83534cc`). After `make flux-reconcile`, `make verify-platform` passed with no warning and
+  the console on the new image, and every recorded instance's `make app-status` was healthy.
 - **Not exercised:** a failed step live (every check passed) and an interrupt during the run; each failure path and
   its cleanup is covered offline.
 

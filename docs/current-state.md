@@ -23,8 +23,23 @@ What has been verified on the live cluster, and when: current facts first, then 
   `make check-otel` parses it through the deployed collector (74 node fixtures) as `log.parser=json` with
   `ClientHost`, `DownstreamStatus`, `RequestMethod`, `RequestPath`, `entryPointName` and `RouterName` as attributes
   and INFO severity.
-- **Not exercised yet:** the cluster. This entry records the offline half; what was seen after the reconcile is
-  added below the same day.
+- **Deployed and live:** commit `b8de9170` was reconciled; the k3s helm-controller upgraded Traefik (pod started
+  23:32:00 UTC, then 23:40:47 for the endpoint fix in `2d34d85c`) and `kubectl exec` on the pod shows
+  `--tracing.otlp.http.endpoint=http://192.168.1.200:4318`, with `HOST_IP` expanded by the kubelet. A page load
+  then left a JSON access line in Traefik's log carrying `TraceId`, `SpanId` and `RouterName`, and ClickHouse held
+  the matching trace: `kube-system/traefik` contributed 194 `Server` spans and 5 `Client` spans in eight minutes,
+  and `host/telemetry-inventory.sh 1` lists the service beside the apps (4,832 trace rows an hour, 12,006 log rows,
+  both within the traffic's normal swing). Traefik's `Server` spans are roots, and its `AuthRequest` client span
+  is their child, so the edge's own request tree is intact. `make verify-platform` passed.
+- **What the flags nearly hid:** Traefik's documented default endpoint path, `/v1/tracing`, is answered `404` by
+  the collector's OTLP/HTTP receiver (which serves `/v1/traces`), the export fails with no error in Traefik's log,
+  and the first reconcile looked correct — flags present, access lines present — while ClickHouse held no Traefik
+  span at all. The endpoint therefore carries no path and Traefik appends `/v1/traces`. A trace that never arrives
+  is checked at the receiver, not in the sender's configuration.
+- **Not exercised:** a signed-in request, so no app span has yet been seen parented by a Traefik span (every app
+  route needs sign-in); most access lines are internet scanners asking for `test-2.homelab.swhurl.com`'s `.env`,
+  `.git/HEAD` and similar, so the edge's spans count scan traffic as well as real requests; and no `Platform:`
+  dashboard or tile reads any of it yet (slice 2).
 
 ## Python tests and the host probe retired offline (13 November 2026)
 

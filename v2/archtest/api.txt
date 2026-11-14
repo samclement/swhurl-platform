@@ -609,7 +609,7 @@ dashboards: type Dashboard struct {ID string `json:"id,omitempty"` Name string `
 dashboards: type DashboardStep struct {Action Action App string ID string Dashboard Dashboard}
 dashboards: type Instance struct {Application, Environment, Kind, Alerts string}
 dashboards: type Select struct {AggFn string `json:"aggFn"` Level float64 `json:"level,omitempty"` ValueExpression string `json:"valueExpression,omitempty"` Where string `json:"where"` WhereLanguage string `json:"whereLanguage"` Alias string `json:"alias,omitempty"`}
-dashboards: type Service struct {Name string Kind string Namespace string Container string HostPrefix string RunMarker string PodPattern string}
+dashboards: type Service struct {Name string Kind string Namespace string Container string HostPrefix string RunMarker string PodPattern string RequestMarker string JobMarker string}
 dashboards: type Source struct {ID, Kind, Table string}
 dashboards: type Sources struct {Traces, Logs string}
 dashboards: type Tile struct {ID string `json:"id,omitempty"` Name string `json:"name"` X int `json:"x"` Y int `json:"y"` W int `json:"w"` H int `json:"h"` Config TileConfig `json:"config"`}
@@ -1503,10 +1503,11 @@ orchestration: type HeartbeatOutcome struct {Job heartbeat.Job Decision heartbea
 orchestration: type HeartbeatPorts struct {Cluster kube.Reader Data kube.Data Platform ntfy.Publisher State hoststate.Store}
 orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 orchestration: type InstanceInputs struct {Inputs InstancePath string}
+orchestration: type JobEvent struct {ID int Action string Target string Identity string State string Link string Duration time.Duration}
 orchestration: type JobStore interface {// Load is every record the store holds, as written; anything malformed is not a job. Load(ctx context.Context) ([]string, error) // Save writes each record, and deletes the records whose value is nil, in one change: two pods writing at once // cannot drop each other's keys. Save(ctx context.Context, records map[int]*string) error // Alive is whether the pod that ran a job still exists. An unreadable answer counts as alive. Alive(ctx context.Context, owner string) (bool, error)}
 orchestration: type JobWork func(ctx context.Context, line func(string)) (link string, err error)
 orchestration: type Jobs struct {}
-orchestration: type JobsInputs struct {Store JobStore Owner string Now func() time.Time Sleep func(time.Duration) Redact func(string) string Audit func(string)}
+orchestration: type JobsInputs struct {Store JobStore Owner string Now func() time.Time Sleep func(time.Duration) Redact func(string) string Audit func(JobEvent)}
 orchestration: type LifecycleTestInputs struct {Cluster Cluster Secrets kube.SecretNamer Executor kube.Executor Now func() time.Time Sleep func(time.Duration) Say func(lifecycletest.Line)}
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}

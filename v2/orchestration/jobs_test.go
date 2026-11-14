@@ -97,27 +97,27 @@ func (s *jobRecords) kept(t *testing.T, id int) pages.Job {
 	return job
 }
 
-// auditLog is the registry's audit lines, read while a job may still be writing them.
+// auditLog is the registry's audit events, read while a job may still be writing them.
 type auditLog struct {
-	mu    sync.Mutex
-	lines []string
+	mu     sync.Mutex
+	events []JobEvent
 }
 
-// add keeps one line.
-func (a *auditLog) add(line string) {
+// add keeps one event.
+func (a *auditLog) add(event JobEvent) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.lines = append(a.lines, line)
+	a.events = append(a.events, event)
 }
 
-// all is the lines so far.
-func (a *auditLog) all() []string {
+// all is the events so far.
+func (a *auditLog) all() []JobEvent {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return slices.Clone(a.lines)
+	return slices.Clone(a.events)
 }
 
-// jobInputs is a registry with a fixed clock, a real pause and its audit lines collected.
+// jobInputs is a registry with a fixed clock, a real pause and its audit events collected.
 func jobInputs(store *jobRecords) (JobsInputs, *auditLog) {
 	audit := &auditLog{}
 	now := time.Date(2026, time.November, 9, 12, 0, 0, 0, time.UTC)
@@ -168,8 +168,10 @@ func TestJobsRunOneJobPerTargetAndRecordItsLines(t *testing.T) {
 		t.Fatalf("record %+v", kept)
 	}
 	lines := audit.all()
-	if len(lines) != 2 || !strings.HasSuffix(lines[1], "succeeded (job 1) https://github.com/owner/repo/pull/42") {
-		t.Fatalf("audit %q", lines)
+	if len(lines) != 2 || lines[0].State != "started" || lines[1].State != "succeeded" ||
+		lines[1].ID != 1 || lines[1].Action != "reconcile" || lines[1].Target != "gw" ||
+		lines[1].Link != "https://github.com/owner/repo/pull/42" {
+		t.Fatalf("audit %+v", lines)
 	}
 }
 
@@ -190,8 +192,8 @@ func TestAJobsErrorIsItsLastLine(t *testing.T) {
 		t.Fatalf("lines %q", failed.Lines)
 	}
 	lines := audit.all()
-	if !strings.HasPrefix(lines[len(lines)-1], "[ERROR]") {
-		t.Fatalf("audit %q", lines)
+	if last := lines[len(lines)-1]; last.State != "failed" || last.ID != 1 {
+		t.Fatalf("audit %+v", lines)
 	}
 }
 
@@ -283,8 +285,8 @@ func TestJobsSettleAJobWhosePodIsGone(t *testing.T) {
 		t.Fatalf("a job whose pod is alive is %s", running.State)
 	}
 	lines := audit.all()
-	if len(lines) != 1 || !strings.Contains(lines[0], "interrupted (job 1)") {
-		t.Fatalf("audit %q", lines)
+	if len(lines) != 1 || lines[0].State != "interrupted" || lines[0].ID != 1 {
+		t.Fatalf("audit %+v", lines)
 	}
 }
 

@@ -560,6 +560,60 @@
   }
  },
  {
+  "name": "console-request-line",
+  "resource": {
+   "k8s.pod.name": "console-test"
+  },
+  "input": "{\"time\":\"2026-11-14T10:00:00.000000+00:00\",\"level\":\"INFO\",\"logger\":\"console\",\"message\":\"Request completed\",\"event\":\"request\",\"method\":\"GET\",\"route\":\"GET /apps/{app}/{env}\",\"status\":200,\"duration_ms\":12}",
+  "expected": {
+   "attributes": {
+    "log.parser": "json",
+    "event": "request",
+    "method": "GET",
+    "route": "GET /apps/{app}/{env}",
+    "status": 200,
+    "duration_ms": 12
+   },
+   "body": "Request completed",
+   "severityNumber": 9
+  }
+ },
+ {
+  "name": "console-job-line",
+  "resource": {
+   "k8s.pod.name": "console-test"
+  },
+  "input": "{\"time\":\"2026-11-14T10:00:00.000000+00:00\",\"level\":\"INFO\",\"logger\":\"console\",\"message\":\"[AUDIT] sam@swhurl.com scale hello-ts/staging: succeeded (job 7) https://github.com/samclement/hello-ts/pull/42\",\"event\":\"job\",\"action\":\"scale\",\"target\":\"hello-ts/staging\",\"state\":\"succeeded\",\"job\":7,\"duration_ms\":2500}",
+  "expected": {
+   "attributes": {
+    "log.parser": "json",
+    "event": "job",
+    "action": "scale",
+    "target": "hello-ts/staging",
+    "state": "succeeded",
+    "job": 7,
+    "duration_ms": 2500
+   },
+   "severityNumber": 9
+  }
+ },
+ {
+  "name": "console-job-failed-line",
+  "resource": {
+   "k8s.pod.name": "console-test"
+  },
+  "input": "{\"time\":\"2026-11-14T10:00:00.000000+00:00\",\"level\":\"ERROR\",\"logger\":\"console\",\"message\":\"[ERROR] sam@swhurl.com reconcile gw: failed (job 8)\",\"event\":\"job\",\"action\":\"reconcile\",\"target\":\"gw\",\"state\":\"failed\",\"job\":8,\"duration_ms\":90000}",
+  "expected": {
+   "attributes": {
+    "log.parser": "json",
+    "event": "job",
+    "state": "failed",
+    "duration_ms": 90000
+   },
+   "severityNumber": 17
+  }
+ },
+ {
   "name": "prefix-WARN",
   "resource": {
    "k8s.pod.name": "console-test"

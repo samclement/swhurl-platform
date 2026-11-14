@@ -98,6 +98,9 @@ func TestTheCatalogueIsWellFormedAndSorted(t *testing.T) {
 				t.Errorf("%q selects no pods", service.Name)
 			}
 		case LogsOnly:
+			if service.Namespace == "" {
+				t.Errorf("%q states no namespace", service.Name)
+			}
 		default:
 			t.Errorf("%q has kind %q", service.Name, service.Kind)
 		}
@@ -126,6 +129,9 @@ func TestPlatformTilesFollowTheServicesKind(t *testing.T) {
 		!strings.Contains(where, "'kube-system'") || !strings.Contains(where, "server.address'] LIKE 'console.%'") {
 		t.Errorf("edge requests %q: %q", board.Tiles[0].Name, where)
 	}
+	if len(board.Tiles) != 6 || board.Tiles[3].Name != "Error logs" {
+		t.Errorf("a web service with no jobs has %d tiles: %+v", len(board.Tiles), board.Tiles)
+	}
 	if !strings.Contains(board.Tiles[1].Config.Select[0].Where, "http.response.status_code'] >= '500'") {
 		t.Errorf("edge errors %q", board.Tiles[1].Config.Select[0].Where)
 	}
@@ -143,6 +149,44 @@ func TestPlatformTilesFollowTheServicesKind(t *testing.T) {
 		!strings.Contains(got.Config.Select[0].Where, "ClickStack dashboard pass completed") {
 		t.Errorf("job runs %q: %+v", got.Name, got.Config.Select)
 	}
+	// A service whose own jobs write lines gets job tiles under its request tiles, counting ends only.
+	jobs := Service{Name: "console", Kind: Web, Namespace: "console", Container: "main", HostPrefix: "console.",
+		JobMarker: "LogAttributes['event'] = 'job'"}
+	board = PlatformDefinition(jobs, "t1", "l1")
+	if len(board.Tiles) != 9 || board.Tiles[0].Name != "Requests per minute" || board.Tiles[3].Name != "Jobs per minute" ||
+		board.Tiles[3].Config.SourceID != "l1" {
+		t.Fatalf("a web service with jobs: %+v", board.Tiles)
+	}
+	finished := board.Tiles[3].Config.Select[0].Where
+	if !strings.Contains(finished, "event'] = 'job'") || !strings.Contains(finished, "state'] != 'started'") {
+		t.Errorf("jobs per minute counts %q", finished)
+	}
+	if failed := board.Tiles[4].Config.Select[0].Where; !strings.Contains(failed, "IN ('failed', 'interrupted')") {
+		t.Errorf("failed jobs counts %q", failed)
+	}
+	if p95 := board.Tiles[5].Config.Select[0]; p95.ValueExpression != "toFloat64OrZero(LogAttributes['duration_ms'])" ||
+		!strings.Contains(p95.Where, "state'] != 'started'") {
+		t.Errorf("job duration %+v", p95)
+	}
+	if board.Tiles[6].Name != "Error logs" || board.Tiles[8].Name != "Latest logs" {
+		t.Errorf("the job tiles did not sit above the log charts: %+v", board.Tiles)
+	}
+
+	// A service that reports no spans counts its own request lines instead.
+	requests := Service{Name: "notify", Kind: LogsOnly, Namespace: "notify", Container: "main",
+		RequestMarker: "LogAttributes['event'] = 'request'"}
+	board = PlatformDefinition(requests, "t1", "l1")
+	if len(board.Tiles) != 6 || board.Tiles[0].Name != "Requests per minute" || board.Tiles[0].Config.SourceID != "l1" {
+		t.Fatalf("a logs-only service with request lines: %+v", board.Tiles)
+	}
+	if failed := board.Tiles[1].Config.Select[0].Where; !strings.Contains(failed, "status'] >= '500'") {
+		t.Errorf("failed requests counts %q", failed)
+	}
+	if board.Tiles[2].Config.Select[0].ValueExpression != "toFloat64OrZero(LogAttributes['duration_ms'])" {
+		t.Errorf("request duration %+v", board.Tiles[2].Config.Select[0])
+	}
+
+	// A LogsOnly service without either marker keeps its logs and nothing else.
 	board = PlatformDefinition(only, "t1", "l1")
 	if len(board.Tiles) != 3 || board.Tiles[0].Name != "Error logs" || board.Tiles[2].Name != "Latest logs" {
 		t.Fatalf("logs-only tiles %+v", board.Tiles)
@@ -186,6 +230,15 @@ func TestTheCatalogueSelectsItsServices(t *testing.T) {
 			if service.Kind != Web || service.HostPrefix != "" || service.Namespace != "kube-system" {
 				t.Errorf("traefik %+v", service)
 			}
+		}
+		if service.Name == "console" && service.JobMarker != "LogAttributes['event'] = 'job'" {
+			t.Errorf("the console's own jobs are not charted: %+v", service)
+		}
+		if service.Name == "notify" && service.RequestMarker != "LogAttributes['event'] = 'request'" {
+			t.Errorf("notify's own requests are not charted: %+v", service)
+		}
+		if service.JobMarker != "" && service.RequestMarker != "" {
+			t.Errorf("%q states both a job and a request marker", service.Name)
 		}
 	}
 }

@@ -1,7 +1,7 @@
 # Platform telemetry: progress, remaining slices and the next gate
 
 Status: in progress
-Gate: the operator answers D2 (console telemetry), then slice 3
+Gate: slice 4's selective scrape, with its day-long cost baseline (D5)
 Uncommitted: none
 
 **The goal: every platform service is observable in ClickStack the way an app is.** Its logs, its requests
@@ -30,7 +30,7 @@ Before reading anything else in a new session:
 5. One slice per session, opened with `/slice`. If the slice touches `v2/`, read the v2
    [design principles](iteration-2-plan.md#design-principles) and update [v2 status](v2-status.md) as well.
 
-**Next:** slice 3 (the console's and notify's own request and job lines), once the operator answers D2.
+**Next:** slice 4 (a selective metrics scrape), with its day-long cost baseline; D5 decides the NATS exporter.
 Each slice below lists its files, so its session reads those and nothing more.
 
 ## Where it stands
@@ -41,7 +41,7 @@ Each slice below lists its files, so its session reads those and nothing more.
 | Node, pod and container metrics per platform service | done | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
 | HyperDX's own traces and metrics (10% sampled) | done | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
 | Request telemetry at the ingress: one JSON access line and one OTLP span per request, 100% sampled | done | [record](current-state.md#traefiks-requests-reach-clickstack-13-november-2026) |
-| Console and notify telemetry: plain-text and timing lines only, no per-request or per-job line, no spans | partial | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
+| Console and notify telemetry: one JSON line per request (method, route pattern, status, duration) and per job state change, and the console's own job tiles | done | [record](current-state.md#console-and-notify-telemetry-14-november-2026) |
 | Service metrics: Flux, cert-manager, oauth2-proxy and Reloader expose Prometheus that nothing scrapes; NATS has no exporter | partial | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
 | Generated dashboards: `App: <app>` for apps, and `Platform: <service>` for the thirteen catalogued platform services, including their scheduled jobs | done | [record](current-state.md#platform-dashboards-13-november-2026) |
 | Scheduled-job row: a platform job's dashboard counts the log line each completed run writes; an app cannot be a scheduled job, and [apps](apps.md#dashboards) now says so | done | [record](current-state.md#platform-dashboards-13-november-2026) |
@@ -50,12 +50,6 @@ Each slice below lists its files, so its session reads those and nothing more.
 
 Ordered. Each slice is one session and one commit (or a short series), checked offline, then applied and
 verified live, with a dated `current-state.md` entry. Files are where to start, not a limit.
-
-**S3. The console's and notify's own telemetry (per D2).** With D2's recommended option: one structured JSON
-line per HTTP request (method, route pattern, status, `duration_ms`, never a token or form value) and one per
-job (kind, outcome, `duration_ms`), via stdlib `log/slog` in `v2/cmd/swhurl-v2` (console, `notify-serve`).
-The collector's JSON parser takes them as they are. The console dashboard gains job tiles. Verify with a Go
-test of the line shape and redaction, `make check-v2` and a live page load and job seen in ClickStack.
 
 **S4. A selective metrics scrape.** A `prometheus` receiver on the cluster collector
 (`platform/otel/helmrelease-cluster.yaml`), each target with a keep-list:
@@ -79,7 +73,6 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
-| D2 | Console telemetry: (1) structured JSON lines, (2) a stdlib OTLP/HTTP trace exporter in v2 (a new external-effect adapter, separate approval), (3) an OTel Go SDK exception to stdlib-only | (1); revisit (2) if a console trace is ever needed | S3 |
 | D5 | NATS exporter sidecar (one more container in `messaging`) | Yes, with a keep-list | S4 |
 | D6 | Platform alert names: `swhurl:platform/<service>:<preset>` or a separate prefix | `swhurl:platform/<service>:<preset>`, one parser | S5 |
 
@@ -87,7 +80,7 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
 
 | Feature | v2 today | Reopen when |
 | --- | --- | --- |
-| Spans inside the console (handler, GitHub and Kubernetes calls) | None; S3 gives request and job lines | A console slowness can't be explained from the lines (D2 option 2) |
+| Spans inside the console (handler, GitHub and Kubernetes calls) | Request and job lines only, no spans | A console slowness can't be explained from the lines (D2 option 2) |
 | Squid metrics for the egress proxy | Access lines (`squid-access`) only | Egress volume or latency needs a graph |
 | HyperDX's own scrape of ClickHouse | Pushed over OpAMP; Git can't change it ([services](services.md#clickstack-and-otel)) | The chart exposes it |
 | An outside availability monitor | None; nothing in the cluster can see the cluster down | A public route matters to someone outside |
@@ -106,6 +99,10 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
 - `swhurl-app` and `swhurl-platform` are disjoint: each pass reads, updates and prunes only its own tag, and only
   the app pass records dashboard ids for the console and keeps the default alerts.
 - v2 stays stdlib-only: no OpenTelemetry Go SDK without a separate approval (D2).
+- Console and notify telemetry is structured JSON lines on stdout, written by v2 with the standard library: a request's
+  method, route *pattern* (never its path, query or form value), status and duration; a job's action, target, state,
+  duration and the audit text. Probes and assets write no request line, and a 5xx request or a failed job is an ERROR
+  line. D2 is answered with those lines (14 November 2026); a console trace would reopen it as a separate adapter.
 - Dashboards are generated, never hand-edited: the definition is Go, and a UI edit is overwritten on the next run.
 - The platform catalogue is Go, checked against Git's units; the cluster never adds a platform dashboard.
 - Tag `swhurl-platform` is the platform pass's alone; `swhurl-app` stays the app pass's alone.

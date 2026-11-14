@@ -57,7 +57,9 @@ ClickStack stores logs, metrics and traces: the HyperDX app (UI and API), ClickS
 oauth2-proxy, Flux, cert-manager, NATS, Reloader, the egress proxy, the backup jobs and HyperDX. The two families
 never cross: this pass reads, updates and deletes only `Platform:` dashboards, and the app pass only `App:` ones. A
 service behind the ingress counts Traefik's spans filtered by its request host, so it needs no OpenTelemetry SDK of
-its own; a service that reports only logs gets log tiles; a scheduled job counts the one log line that marks each
+its own; a service with no spans but its own request lines (notify) charts those, and the console's own jobs are
+charted from the line each start and end writes, a start not counted as a run; a service that reports only logs gets
+log tiles; a scheduled job counts the one log line that marks each
 completed run (the backup's `Published …`, the console jobs' pass-completed lines) and its error lines, because a
 failed run writes no marker. It deletes only a tagged dashboard named `Platform: <x>` whose service the catalogue no
 longer has, and an empty catalogue fails instead of deleting everything ([platform telemetry](platform-telemetry-status.md)).
@@ -83,7 +85,7 @@ For example, `{"level":30,"msg":"request completed","req":{"method":"GET"},"stat
 
 `LogAttributes.log.parser` identifies the matched format. Explicit string levels, Pino numeric levels and MongoDB's `s` field become OTel severity. Valid trace/span IDs at the top level or under `mdc` populate the record so a trace opens its logs. Existing OTLP severity, timestamps, attributes, resource identity and trace context take precedence. Source timestamps fill missing record timestamps; container timestamps remain authoritative.
 
-cert-manager's three components, Traefik's existing log streams, Reloader, the platform collectors and console emit native JSON. cert-manager's klog JSON uses `v` for informational records and `err` for error records; the source-specific mapping handles these without guessing from message text. Console access logs include method, path and status; its action audit records include identity, action, unit, state, job ID and link ([console](console.md#how-it-is-protected)). Verbosity and access-log enablement stay at their existing settings.
+cert-manager's three components, Traefik's existing log streams, Reloader, the platform collectors and console emit native JSON. cert-manager's klog JSON uses `v` for informational records and `err` for error records; the source-specific mapping handles these without guessing from message text. The console and notify write one JSON line per request and the console one per job state change, each in the console's shape: `event`, `method`, the route **pattern** (`GET /apps/{app}/{env}`, or `unmatched`), `status` and `duration_ms` for a request; `event`, `action`, `target`, `state`, `job` and, once it ended, `duration_ms` for a job, whose message is the `[AUDIT]` or `[ERROR]` audit line with its identity and link. The path, query, headers and body are never written, so a token or a form value cannot reach the log; probes (`/healthz`) and assets (`/static/`) write no request line; and a 5xx request, a failed job and an interrupted job are ERROR lines. A flag change keeps its plain `[AUDIT]` line ([console](console.md#how-it-is-protected)). Verbosity and access-log enablement stay at their existing settings.
 
 HyperDX also sends already structured native OTLP logs directly to ClickStack, alongside its stdout stream. Those retain their SDK attributes and trace context; the [log coverage query](../platform/clickstack/log-coverage.sql) identifies scope `node-logger` as `native-otlp`, without claiming they passed through a node parser. Missing SDK severity remains unspecified. Native map-valued OTLP bodies passing through the node collector remain structured maps.
 

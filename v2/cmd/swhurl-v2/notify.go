@@ -1,18 +1,15 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
@@ -105,7 +102,7 @@ type notifyService struct {
 func newNotifyService(connect orchestration.NotifyConnect, publisher ntfy.Publisher, log io.Writer,
 	now func() time.Time, random func() string) *notifyService {
 	return &notifyService{notifier: orchestration.NewNotifier(publisher), connect: connect, now: now,
-		randomKey: random, log: &jsonLog{out: log, now: now}, wake: make(chan struct{}, 1)}
+		randomKey: random, log: &jsonLog{out: log, now: now, name: "notify"}, wake: make(chan struct{}, 1)}
 }
 
 // handler is the service's endpoints: POST /v1/notify, POST /v1/alert and GET /healthz.
@@ -121,7 +118,7 @@ func (s *notifyService) handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = io.WriteString(w, "ok\n")
 	})
-	return mux
+	return logRequests(s.log, mux)
 }
 
 // endpoint answers one POST: 202 with the channels a copy was queued for, waking the delivery loop when there are
@@ -215,40 +212,4 @@ func (s *notifyService) pass(ctx context.Context) {
 	if err != nil {
 		s.log.write("ERROR", "Delivery pass failed: "+err.Error())
 	}
-}
-
-// jsonLog writes one JSON line per event, in the console's shape: time, level, logger and message.
-type jsonLog struct {
-	name string
-	lock sync.Mutex
-	out  io.Writer
-	now  func() time.Time
-}
-
-func (l *jsonLog) write(level, message string) {
-	line := compactJSON(struct {
-		Time    string `json:"time"`
-		Level   string `json:"level"`
-		Logger  string `json:"logger"`
-		Message string `json:"message"`
-	}{l.now().UTC().Format("2006-01-02T15:04:05.000000-07:00"), level, logName(l.name), message})
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	_, _ = l.out.Write(append(line, '\n'))
-}
-
-// compactJSON is a document as compact JSON without HTML escaping.
-func compactJSON(document any) []byte {
-	var out bytes.Buffer
-	encoder := json.NewEncoder(&out)
-	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(document) // maps of strings and string fields always encode
-	return bytes.TrimSuffix(out.Bytes(), []byte("\n"))
-}
-
-func logName(name string) string {
-	if name != "" {
-		return name
-	}
-	return "notify"
 }

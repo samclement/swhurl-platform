@@ -171,6 +171,9 @@ type consoleServer struct {
 	redact *jobRedactor
 	// log receives the console's audit lines: a flag change, and each job's start and end.
 	log io.Writer
+	// requests writes the console's own request and job lines, in one lock so a line is never interleaved; it is nil
+	// when the server keeps no log.
+	requests *jsonLog
 }
 
 func newConsoleServer(config consoleConfig) (*consoleServer, error) {
@@ -183,7 +186,8 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 		reposToken: config.ReposToken, hookToken: config.HookToken,
 		natsSeed: config.NatsSeed, natsURL: config.NatsURL, redact: &jobRedactor{}, log: config.Log,
 		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{},
-		events: consoleEvents{poll: 250 * time.Millisecond, keepAlive: 15 * time.Second}}
+		events:   consoleEvents{poll: 250 * time.Millisecond, keepAlive: 15 * time.Second},
+		requests: consoleLog(config.Log, config.Now)}
 	for _, secret := range config.Secrets {
 		server.redact.Add(secret)
 	}
@@ -234,9 +238,9 @@ func (s *consoleServer) startJobs(config consoleConfig) {
 	if config.Data == nil {
 		return
 	}
-	audit := func(string) {}
-	if config.Log != nil {
-		audit = func(line string) { fmt.Fprintln(config.Log, line) }
+	audit := func(orchestration.JobEvent) {}
+	if s.requests != nil {
+		audit = func(event orchestration.JobEvent) { writeJobEvent(s.requests, event) }
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -398,7 +402,8 @@ func consoleTemplates() (map[string]*template.Template, error) {
 // serve runs the server until it is stopped, with the reads bounded and the HTTP timeouts set.
 func (s *consoleServer) serve(out io.Writer, address string) int {
 	mux := s.routes()
-	server := &http.Server{Addr: address, Handler: s.identityMiddleware(mux), ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Addr: address, Handler: logRequests(s.requests, s.identityMiddleware(mux)),
+		ReadHeaderTimeout: 10 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -873,4 +878,12 @@ func (s *consoleServer) openPulls(ctx context.Context) ([]pullView, string) {
 		found = append(found, pullView{Number: pull.Number, Title: pull.Title, URL: pull.URL, Opened: pull.Opened})
 	}
 	return found, ""
+}
+
+// consoleLog is the writer of the console's own request and job lines, or nil when the server keeps no log.
+func consoleLog(out io.Writer, now func() time.Time) *jsonLog {
+	if out == nil {
+		return nil
+	}
+	return &jsonLog{out: out, now: now, name: "console"}
 }

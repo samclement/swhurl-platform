@@ -48,16 +48,29 @@ type JobStore interface {
 	Alive(ctx context.Context, owner string) (bool, error)
 }
 
+// JobEvent is one state change of a job, as the registry tells it: what ran, for whom, how it ended and how long it
+// took. State is "started", "succeeded", "failed" or "interrupted"; Duration is set once the job has ended, and Link
+// is the pull request an ended job opened, if any. The registry prints nothing: the caller writes the event as its
+// log line.
+type JobEvent struct {
+	ID       int
+	Action   string
+	Target   string
+	Identity string
+	State    string
+	Link     string
+	Duration time.Duration
+}
+
 // JobsInputs is what a registry of jobs is assembled from. Owner is the pod's name; Redact keeps a secret out of
-// every line and record (nil redacts nothing); Audit receives one line for each start and end, which reaches the
-// pod's log.
+// every line and record (nil redacts nothing); Audit receives each job's start and end, which reaches the pod's log.
 type JobsInputs struct {
 	Store  JobStore
 	Owner  string
 	Now    func() time.Time
 	Sleep  func(time.Duration)
 	Redact func(string) string
-	Audit  func(string)
+	Audit  func(JobEvent)
 }
 
 // Jobs is the console's registry of jobs: this process's own, and the records another pod left.
@@ -104,10 +117,12 @@ func (j *Jobs) settle(ctx context.Context) {
 		if !job.Running() || j.alive(ctx, job.Owner) {
 			continue
 		}
-		job = job.Interrupted(j.inputs.Now())
+		finished := j.inputs.Now()
+		job = job.Interrupted(finished)
 		j.before[id] = job
 		j.save(ctx, job, nil)
-		j.audit(fmt.Sprintf("[ERROR] %s %s %s: interrupted (job %d)", job.Identity, job.Action, job.Unit, job.ID))
+		j.audit(JobEvent{ID: job.ID, Action: job.Action, Target: job.Unit, Identity: job.Identity,
+			State: job.State, Duration: finished.Sub(job.Started)})
 	}
 }
 
@@ -176,7 +191,7 @@ func (j *Jobs) Start(ctx context.Context, action, target, identity string, resum
 	started := *job
 	j.mu.Unlock()
 	j.save(ctx, started, forget)
-	j.audit(fmt.Sprintf("[AUDIT] %s %s %s: started (job %d)", identity, action, target, started.ID))
+	j.audit(JobEvent{ID: started.ID, Action: action, Target: target, Identity: identity, State: "started"})
 	go j.run(context.WithoutCancel(ctx), job, work)
 	return started, nil
 }
@@ -219,16 +234,8 @@ func (j *Jobs) finish(ctx context.Context, job *pages.Job, link string, err erro
 	ended := *job
 	j.mu.Unlock()
 	j.save(ctx, ended, nil)
-	level := "[AUDIT]"
-	if err != nil {
-		level = "[ERROR]"
-	}
-	opened := ""
-	if link != "" {
-		opened = " " + link
-	}
-	j.audit(fmt.Sprintf("%s %s %s %s: %s (job %d)%s", level, ended.Identity, ended.Action, ended.Unit, ended.State,
-		ended.ID, opened))
+	j.audit(JobEvent{ID: ended.ID, Action: ended.Action, Target: ended.Unit, Identity: ended.Identity,
+		State: ended.State, Link: link, Duration: finished.Sub(ended.Started)})
 }
 
 // running is the id of the running job for one target, or 0.
@@ -377,10 +384,10 @@ func (j *Jobs) save(ctx context.Context, job pages.Job, forget []int) {
 	_ = j.inputs.Store.Save(ctx, records)
 }
 
-// audit reports one line to the pod's log, or nowhere when the caller keeps no log.
-func (j *Jobs) audit(line string) {
+// audit reports one event to the pod's log, or nowhere when the caller keeps no log.
+func (j *Jobs) audit(event JobEvent) {
 	if j.inputs.Audit != nil {
-		j.inputs.Audit(line)
+		j.inputs.Audit(event)
 	}
 }
 

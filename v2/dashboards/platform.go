@@ -35,6 +35,12 @@ type Service struct {
 	HostPrefix string // a web service behind the ingress: the start of the request host Traefik sees
 	RunMarker  string // a job: a SQL predicate on Body that marks one completed run
 	PodPattern string // a job whose pods live in many namespaces: a LIKE pattern on the pod name, instead of Namespace
+	// RequestMarker is the SQL predicate on a service's logs that marks one request's line, for a service that
+	// reports no spans: its request tiles then count those lines instead.
+	RequestMarker string
+	// JobMarker is the SQL predicate on a service's logs that marks one of its own jobs' lines (a start and an end
+	// both carry it): its job tiles count the ends, and time them.
+	JobMarker string
 }
 
 // DashboardName is the name of the service's dashboard, and how a dashboard is known to be its.
@@ -76,41 +82,69 @@ func (s Service) spanWhere() (where, noun, failed string, ok bool) {
 func PlatformDefinition(s Service, traces, logs string) Dashboard {
 	mine, errorLogs := s.logWhere(), s.logWhere()+" AND lower(SeverityText) IN ('error', 'fatal')"
 	tiles, row := []Tile{}, 0
-	if where, noun, failed, ok := s.spanWhere(); ok {
+	switch where, noun, failed, spans := s.spanWhere(); {
+	case s.RequestMarker != "":
+		tiles = append(tiles, requestLineTiles(mine, s.RequestMarker, logs, row)...)
+		row++
+	case spans:
 		tiles = append(tiles,
-			line(noun+" per minute", 0, 0, 8, traces, count(where, strings.ToLower(noun))),
-			line("Errors", 8, 0, 8, traces, count(where+" AND "+failed, "errors")),
-			line("p95 duration (ms)", 16, 0, 8, traces, Select{AggFn: "quantile", Level: 0.95,
+			line(noun+" per minute", 0, row*chartHeight, 8, traces, count(where, strings.ToLower(noun))),
+			line("Errors", 8, row*chartHeight, 8, traces, count(where+" AND "+failed, "errors")),
+			line("p95 duration (ms)", 16, row*chartHeight, 8, traces, Select{AggFn: "quantile", Level: 0.95,
 				ValueExpression: "Duration / 1e6", Where: where, WhereLanguage: "sql", Alias: "p95 ms"}),
 		)
-		row = 1
+		row++
+	}
+	if s.JobMarker != "" {
+		tiles = append(tiles, jobLineTiles(mine, s.JobMarker, logs, row)...)
+		row++
 	}
 	if s.Kind == Job {
 		// A run that fails writes no marker line, so the error lines are the failures; the marker counts the runs.
 		tiles = append(tiles,
-			line("Runs per minute", 0, 0, 8, logs, count(mine+" AND "+s.RunMarker, "runs")),
-			line("Error logs", 8, 0, 8, logs, count(errorLogs, "errors")),
-			line("Log lines", 16, 0, 8, logs, count(mine, "lines")),
+			line("Runs per minute", 0, row*chartHeight, 8, logs, count(mine+" AND "+s.RunMarker, "runs")),
+			line("Error logs", 8, row*chartHeight, 8, logs, count(errorLogs, "errors")),
+			line("Log lines", 16, row*chartHeight, 8, logs, count(mine, "lines")),
 		)
-		row = 1
+		row++
 	}
-	if row > 0 {
-		tiles = append(tiles,
-			line("Error logs", 0, chartHeight, 12, logs, count(errorLogs, "errors")),
-			line("Log lines", 12, chartHeight, 12, logs, count(mine, "lines")),
-		)
-		row = 2
-	} else {
-		tiles = append(tiles,
-			line("Error logs", 0, 0, 12, logs, count(errorLogs, "errors")),
-			line("Log lines", 12, 0, 12, logs, count(mine, "lines")),
-		)
-		row = 1
-	}
+	tiles = append(tiles,
+		line("Error logs", 0, row*chartHeight, 12, logs, count(errorLogs, "errors")),
+		line("Log lines", 12, row*chartHeight, 12, logs, count(mine, "lines")))
+	row++
 	tiles = append(tiles, Tile{Name: "Latest logs", X: 0, Y: row * chartHeight, W: 24, H: 6,
 		Config: TileConfig{DisplayType: "search", SourceID: logs, WhereLanguage: "sql", Where: mine,
 			Columns: "Timestamp, SeverityText, Body"}})
 	return Dashboard{Name: s.DashboardName(), Tags: []string{PlatformTag}, Tiles: tiles}
+}
+
+// requestLineTiles chart a service's own request lines: how many, how many failed and how slow. A failed request is
+// a 5xx, which is the service's; three-digit codes compare as text, as they do for the edge's spans.
+func requestLineTiles(mine, marker, logs string, row int) []Tile {
+	y := row * chartHeight
+	where := mine + " AND " + marker
+	return []Tile{
+		line("Requests per minute", 0, y, 8, logs, count(where, "requests")),
+		line("Failed requests", 8, y, 8, logs, count(where+" AND LogAttributes['status'] >= '500'", "failed")),
+		line("p95 duration (ms)", 16, y, 8, logs, Select{AggFn: "quantile", Level: 0.95,
+			ValueExpression: "toFloat64OrZero(LogAttributes['duration_ms'])", Where: where,
+			WhereLanguage: "sql", Alias: "p95 ms"}),
+	}
+}
+
+// jobLineTiles chart a service's own jobs from the line each start and end writes: a start is not a run, and a job
+// that was cut short by a pod's replacement counts as failed.
+func jobLineTiles(mine, marker, logs string, row int) []Tile {
+	y := row * chartHeight
+	finished := mine + " AND " + marker + " AND LogAttributes['state'] != 'started'"
+	return []Tile{
+		line("Jobs per minute", 0, y, 8, logs, count(finished, "jobs")),
+		line("Failed jobs", 8, y, 8, logs,
+			count(finished+" AND LogAttributes['state'] IN ('failed', 'interrupted')", "failed")),
+		line("p95 job duration (ms)", 16, y, 8, logs, Select{AggFn: "quantile", Level: 0.95,
+			ValueExpression: "toFloat64OrZero(LogAttributes['duration_ms'])", Where: finished,
+			WhereLanguage: "sql", Alias: "p95 ms"}),
+	}
 }
 
 // PlatformServices is the fixed catalogue: one entry per service that runs a workload of its own. A unit that runs
@@ -123,7 +157,8 @@ func PlatformServices() []Service {
 		{Name: "backup", Kind: Job, PodPattern: "%-backup-%", RunMarker: "Body LIKE 'Published %'"},
 		{Name: "cert-manager", Kind: LogsOnly, Namespace: "cert-manager"},
 		{Name: "clickstack", Kind: Web, Namespace: "observability", Container: "app", HostPrefix: "clickstack."},
-		{Name: "console", Kind: Web, Namespace: "console", Container: "main", HostPrefix: "console."},
+		{Name: "console", Kind: Web, Namespace: "console", Container: "main", HostPrefix: "console.",
+			JobMarker: "LogAttributes['event'] = 'job'"},
 		{Name: "console-dashboards", Kind: Job, Namespace: "console", Container: "main",
 			RunMarker: "Body LIKE 'ClickStack dashboard pass completed%'"},
 		{Name: "console-notifications", Kind: Job, Namespace: "console", Container: "main",
@@ -131,7 +166,8 @@ func PlatformServices() []Service {
 		{Name: "egress", Kind: LogsOnly, Namespace: "egress", Container: "main"},
 		{Name: "flux-controllers", Kind: LogsOnly, Namespace: "flux-system"},
 		{Name: "nats", Kind: LogsOnly, Namespace: "messaging", Container: "nats"},
-		{Name: "notify", Kind: LogsOnly, Namespace: "notify", Container: "main"},
+		{Name: "notify", Kind: LogsOnly, Namespace: "notify", Container: "main",
+			RequestMarker: "LogAttributes['event'] = 'request'"},
 		{Name: "oauth2-proxy", Kind: Web, Namespace: "ingress", Container: "oauth2-proxy", HostPrefix: "oauth."},
 		{Name: "reloader", Kind: LogsOnly, Namespace: "platform-system"},
 		// Traefik reports the requests it serves itself, so its own spans are its requests.

@@ -2,6 +2,39 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Console and notify telemetry (14 November 2026)
+
+- **Capability:** slice 3 of [platform telemetry](platform-telemetry-status.md): the console and notify report their own
+  requests, and the console reports its own jobs, as structured JSON lines ClickStack parses without a second
+  collector change. The console's generated dashboard gains job tiles, and notify's request tiles read its lines
+  because nothing reports spans for it.
+- **Scope:** `v2/orchestration/jobs.go` reports a `JobEvent` (id, action, target, identity, state, link, duration)
+  instead of a formatted line, and `v2/cmd/swhurl-v2` writes it: `jsonlog.go` keeps the console's line shape and
+  gained extra fields, `requestlog.go` wraps the console's and notify's handlers, `jobline.go` writes a job's audit
+  words plus its fields, and the console and notify construct the writer. `v2/dashboards/platform.go` gained
+  `RequestMarker` and `JobMarker`; the console entry carries the job marker, notify the request marker.
+- **Semantics settled while implementing:** a request line states its method, the route *pattern* the mux matched
+  (`GET /apps/{app}/{env}`, or `unmatched` when it matched none), the status and `duration_ms`; never the path, query,
+  header or form value, so a token cannot reach the log. `/healthz` and `/static/` write no line: a probe every few
+  seconds and every page's assets would bury what an operator did. A 5xx is an ERROR line; 4xx stays INFO because it
+  is the caller's. A job writes two lines — `started`, and `succeeded`, `failed` or `interrupted` — whose message is
+  the audit line the console has always logged (`[AUDIT] <who> <action> <target>: … (job N)`, with the PR's link),
+  so `[AUDIT]` still finds it, and whose fields are `event`, `action`, `target`, `state`, `job` and, once it ended,
+  `duration_ms`. Only ends count as runs; an interrupted job counts as a failure; its duration is how long it ran
+  before the next pod called it interrupted.
+- **Boundaries:** the registry prints nothing: it reports the event, and the command decides the line. The collector
+  needs no change — its JSON parser maps each field to an attribute, proved by three new cases in
+  `tests/fixtures/logs.json` through the deployed collector. Request lines are charted only where no spans exist
+  (notify); the console's requests stay Traefik's spans by request host, so nothing is counted twice.
+- **Offline:** `go test ./...` in `v2/` passed, including the job event's fields, a request line with a token in its
+  query absent from the output, the `unmatched` and 5xx cases, a stream flushing through the status recorder, the
+  console's 401 and its unlogged probe, notify's line and the dashboard's job and request tiles. `make check-otel`
+  passed with 77 node fixtures, the three new ones carrying `event`, `route`, `state` and `duration_ms` attributes.
+  `make check-v2` passed after the exported-API baseline gained `orchestration.JobEvent`, the new `JobsInputs.Audit`
+  type and the two `dashboards.Service` fields.
+- **Not exercised:** the deployed image, a page load's request line and a job's two lines seen in ClickStack, the two
+  updated platform dashboards, and a browser session.
+
 ## Platform dashboards (13 November 2026)
 
 - **Capability:** slice 2 of [platform telemetry](platform-telemetry-status.md): the dashboard reconciler keeps one

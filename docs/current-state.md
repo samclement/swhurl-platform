@@ -32,8 +32,30 @@ What has been verified on the live cluster, and when: current facts first, then 
   passed with 77 node fixtures, the three new ones carrying `event`, `route`, `state` and `duration_ms` attributes.
   `make check-v2` passed after the exported-API baseline gained `orchestration.JobEvent`, the new `JobsInputs.Audit`
   type and the two `dashboards.Service` fields.
-- **Not exercised:** the deployed image, a page load's request line and a job's two lines seen in ClickStack, the two
-  updated platform dashboards, and a browser session.
+- **Deployed and live:** CI pinned console `src-f17abb9c1208419c` as `1a327f2a`, and `make flux-reconcile` restarted
+  the console and notify pods on it; the two console CronJobs took it on their next run. The dashboard pass at
+  00:38:05 logged `updated Platform: console` and `updated Platform: notify`, and every later pass (00:47:04) lists
+  both as up to date, so the two definitions are the cluster's.
+- **Live lines:** through a port-forward with the identity and `Origin` headers a console page sends, `GET /`,
+  `GET /apps` and `GET /services` answered 200, 200 and 301, and the console's log held one line each —
+  `"route":"GET /","status":200,"duration_ms":1961`, `"route":"GET /apps",…,"duration_ms":2339` and
+  `"route":"GET /services","status":301` — while `/healthz` and `/static/app.css` wrote none. A request with no
+  identity wrote `"route":"unmatched","status":401`. The POST that started job 68 wrote the same line with
+  `"method":"POST","status":303`. Notify's port-forwarded `POST /v1/notify` with no token wrote
+  `"route":"POST /v1/notify","status":401`.
+- **Live job lines:** `POST /units/platform-notify/reconcile` started job 68 and the console logged
+  `[AUDIT] sam@swhurl.com reconcile platform-notify: started (job 68)` with `event=job`, `action=reconcile`,
+  `state=started`, then the same message as `succeeded` with `duration_ms=4157`.
+- **In ClickStack:** within minutes `default.otel_logs` held those lines with `event`, `route`, `method`, `status`,
+  `action`, `state` and `duration_ms` as attributes, and the tiles' own predicates counted them — the console's
+  finished jobs: 1 with p95 4157 ms; notify's request lines: 1. `make verify-platform` passed, including
+  `dashboard and alert sync succeeded in the last 5 minutes`.
+- **Found live and fixed:** the first image logged every answered request as `route=unmatched`, because the identity
+  middleware attached the operator to a copy of the request and the mux wrote its matched pattern on the copy. The
+  fix (`3bb8d76d`) attaches the identity to the request the middleware was given, and job 68's POST still showed
+  `unmatched` while the next image's page loads did not.
+- **Not exercised:** a signed-in browser session (the live page loads carried the identity header by hand), and an
+  interrupted job's line.
 
 ## Platform dashboards (13 November 2026)
 

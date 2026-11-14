@@ -127,6 +127,19 @@ func TestTheConsoleLogsTheRequestsItAnswers(t *testing.T) {
 	if out.Len() != 0 {
 		t.Fatalf("the probe was logged: %s", out.String())
 	}
+
+	// An answered request names the route the mux matched, which the middleware that attaches the identity must not
+	// copy away first.
+	overview, err := newConsoleServer(consoleConfig{Log: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	overview.identity = devIdentity
+	handler = logRequests(overview.requests, overview.identityMiddleware(overview.routes()))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/services", nil))
+	if got := line(t, out.String()); got["route"] != "GET /services" || got["status"] != float64(301) {
+		t.Fatalf("answered request %v", got)
+	}
 }
 
 // The notify service logs its own requests the same way.

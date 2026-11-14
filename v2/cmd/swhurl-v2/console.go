@@ -500,7 +500,8 @@ func (s *consoleServer) identityMiddleware(next http.Handler) http.Handler {
 			io.WriteString(w, "refused: the request did not come from a console page\n")
 			return
 		}
-		next.ServeHTTP(w, withIdentity(r, identity))
+		attachIdentity(r, identity)
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -523,8 +524,11 @@ type consoleIdentity struct{ Email string }
 
 type identityKey struct{}
 
-func withIdentity(r *http.Request, email string) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), identityKey{}, consoleIdentity{Email: email}))
+func attachIdentity(r *http.Request, email string) {
+	// The identity is attached to the request the middleware was given, not a copy: the mux writes its matched pattern
+	// on that same request, and the request's line reads it after the page has answered. One request has one
+	// goroutine, so the write cannot race.
+	*r = *r.WithContext(context.WithValue(r.Context(), identityKey{}, consoleIdentity{Email: email}))
 }
 
 func identityOf(r *http.Request) string {

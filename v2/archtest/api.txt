@@ -563,9 +563,13 @@ dashboards: const AlertPrefix = "swhurl:"
 dashboards: const AlertsAnnotation = "platform.swhurl.com/alerts"
 dashboards: const Create Action = "create"
 dashboards: const Delete Action = "delete"
+dashboards: const Job = "job"
 dashboards: const Keep Action = "keep"
 dashboards: const Leave Action = "leave"
+dashboards: const LogsOnly = "logs"
 dashboards: const NotifyWebhook = "swhurl notify"
+dashboards: const PlatformPrefix = "Platform: "
+dashboards: const PlatformTag = "swhurl-platform"
 dashboards: const PlatformWebhook = "ntfy: platform"
 dashboards: const RecordFieldManager = "dashboard-sync"
 dashboards: const RecordKey = "dashboards.json"
@@ -577,6 +581,7 @@ dashboards: const Web = "web"
 dashboards: const Worker = "worker"
 dashboards: func (*TileConfig) UnmarshalJSON(data []byte) error
 dashboards: func (App) DashboardName() string
+dashboards: func (Service) DashboardName() string
 dashboards: func (TileConfig) MarshalJSON() ([]byte, error)
 dashboards: func AlertName(app, presetKey string) string
 dashboards: func Definition(app App, traces, logs string) Dashboard
@@ -586,11 +591,14 @@ dashboards: func FromRecords(instances []Instance) ([]App, error)
 dashboards: func PickSources(sources []Source) (Sources, error)
 dashboards: func PlanAlerts(apps []App, live []Dashboard, existing []Alert, webhook string, prune bool) ([]AlertStep, error)
 dashboards: func PlanDashboards(apps []App, live []Dashboard, sources Sources, prune bool) ([]DashboardStep, error)
+dashboards: func PlanPlatformDashboards(services []Service, live []Dashboard, sources Sources, prune bool) ([]DashboardStep, error)
 dashboards: func PlanWebhooks(live []Webhook, wanted []Webhook) ([]WebhookStep, error)
+dashboards: func PlatformDefinition(s Service, traces, logs string) Dashboard
+dashboards: func PlatformServices() []Service
 dashboards: func Record(ids map[string]string) string
 dashboards: func Recordable(ids map[string]string) map[string]string
 dashboards: func Same(live, wanted Dashboard) bool
-dashboards: func Tagged(live []Dashboard) []Dashboard
+dashboards: func Tagged(live []Dashboard, tag string) []Dashboard
 dashboards: func Thresholds(spec string) (map[string]int, error)
 dashboards: type Action string
 dashboards: type Alert struct {ID string `json:"id,omitempty"` Name string `json:"name"` Tags []string `json:"tags"` Source string `json:"source"` DashboardID string `json:"dashboardId"` TileID string `json:"tileId"` Threshold int `json:"threshold"` ThresholdType string `json:"thresholdType"` Interval string `json:"interval"` Channel Channel `json:"channel"`}
@@ -601,6 +609,7 @@ dashboards: type Dashboard struct {ID string `json:"id,omitempty"` Name string `
 dashboards: type DashboardStep struct {Action Action App string ID string Dashboard Dashboard}
 dashboards: type Instance struct {Application, Environment, Kind, Alerts string}
 dashboards: type Select struct {AggFn string `json:"aggFn"` Level float64 `json:"level,omitempty"` ValueExpression string `json:"valueExpression,omitempty"` Where string `json:"where"` WhereLanguage string `json:"whereLanguage"` Alias string `json:"alias,omitempty"`}
+dashboards: type Service struct {Name string Kind string Namespace string Container string HostPrefix string RunMarker string PodPattern string}
 dashboards: type Source struct {ID, Kind, Table string}
 dashboards: type Sources struct {Traces, Logs string}
 dashboards: type Tile struct {ID string `json:"id,omitempty"` Name string `json:"name"` X int `json:"x"` Y int `json:"y"` W int `json:"w"` H int `json:"h"` Config TileConfig `json:"config"`}
@@ -608,6 +617,7 @@ dashboards: type TileConfig struct {DisplayType string SourceID string GroupBy s
 dashboards: type Webhook struct {ID string `json:"id,omitempty"` Name string `json:"name"` Service string `json:"service"` URL string `json:"url"` Description string `json:"description"` Body string `json:"body"`}
 dashboards: type WebhookStep struct {Action Action ID string Webhook Webhook}
 dashboards: var ErrNoRecords = errors.New("the records name no app instance; no change made")
+dashboards: var ErrNoServices = errors.New("the platform catalogue names no service; no change made")
 dashboards: var ErrPlatformAddress = errors.New("the platform ntfy address is not an HTTPS topic URL without a query or fragment")
 datadestroy: const AwaitVolumeGone Change = "volume"
 datadestroy: const Claim Kind = "pvc"

@@ -55,36 +55,80 @@ func PickSources(sources []Source) (Sources, error) {
 // exactly App: <app name>. A tagged dashboard named otherwise is left. Untagged dashboards are never considered.
 // Two tagged dashboards of one name, or one without an id, stop the plan: which to change would be a guess.
 func PlanDashboards(apps []App, live []Dashboard, sources Sources, prune bool) ([]DashboardStep, error) {
-	tagged, err := taggedDashboards(live)
+	wanted := make([]Dashboard, 0, len(apps))
+	for _, app := range apps {
+		wanted = append(wanted, Definition(app, sources.Traces, sources.Logs))
+	}
+	deletable := func(name string) bool {
+		app, ok := strings.CutPrefix(name, "App: ")
+		return ok && appName.MatchString(app)
+	}
+	return planFamily(Tag, wanted, live, prune, deletable)
+}
+
+// ErrNoServices is an empty platform catalogue: never read as "every platform service is gone".
+var ErrNoServices = errors.New("the platform catalogue names no service; no change made")
+
+// PlanPlatformDashboards is the same plan for the platform's own services, which carry PlatformTag: one dashboard
+// per catalogue entry named Platform: <service>, and with prune, delete each other tagged dashboard named
+// Platform: <x>. A tagged dashboard named otherwise is left, and no App: dashboard is ever read or deleted here.
+func PlanPlatformDashboards(services []Service, live []Dashboard, sources Sources, prune bool) ([]DashboardStep, error) {
+	if len(services) == 0 {
+		return nil, ErrNoServices
+	}
+	wanted := make([]Dashboard, 0, len(services))
+	for _, service := range services {
+		wanted = append(wanted, PlatformDefinition(service, sources.Traces, sources.Logs))
+	}
+	deletable := func(name string) bool {
+		service, ok := strings.CutPrefix(name, PlatformPrefix)
+		return ok && service != ""
+	}
+	return planFamily(PlatformTag, wanted, live, prune, deletable)
+}
+
+// planFamily brings the dashboards carrying one tag to one per wanted definition. deletable says which leftover
+// names the family may delete; every other tagged dashboard is left as it is.
+func planFamily(tag string, wanted []Dashboard, live []Dashboard, prune bool, deletable func(string) bool) ([]DashboardStep, error) {
+	tagged, err := taggedDashboards(live, tag)
 	if err != nil {
 		return nil, err
 	}
 	steps := []DashboardStep{}
-	for _, app := range apps {
-		wanted := Definition(app, sources.Traces, sources.Logs)
-		current, ok := tagged[wanted.Name]
-		delete(tagged, wanted.Name)
+	for _, definition := range wanted {
+		current, ok := tagged[definition.Name]
+		delete(tagged, definition.Name)
 		switch {
 		case !ok:
-			steps = append(steps, DashboardStep{Action: Create, App: app.Name, Dashboard: wanted})
-		case Same(current, wanted):
-			steps = append(steps, DashboardStep{Action: Keep, App: app.Name, ID: current.ID, Dashboard: wanted})
+			steps = append(steps, DashboardStep{Action: Create, App: ownerOf(definition.Name), Dashboard: definition})
+		case Same(current, definition):
+			steps = append(steps, DashboardStep{Action: Keep, App: ownerOf(definition.Name), ID: current.ID, Dashboard: definition})
 		default:
-			steps = append(steps, DashboardStep{Action: Update, App: app.Name, ID: current.ID, Dashboard: wanted})
+			steps = append(steps, DashboardStep{Action: Update, App: ownerOf(definition.Name), ID: current.ID, Dashboard: definition})
 		}
 	}
 	if !prune {
 		return steps, nil
 	}
-	return append(steps, staleDashboards(tagged)...), nil
+	return append(steps, staleDashboards(tagged, deletable)...), nil
 }
 
-// Tagged is the dashboards that carry the platform's tag.
-func Tagged(live []Dashboard) []Dashboard {
+// ownerOf is the dashboard's subject: the app or platform service its name states.
+func ownerOf(name string) string {
+	for _, prefix := range []string{"App: ", PlatformPrefix} {
+		if owner, ok := strings.CutPrefix(name, prefix); ok {
+			return owner
+		}
+	}
+	return ""
+}
+
+// Tagged is the dashboards that carry a tag: the app pass's or the platform pass's.
+func Tagged(live []Dashboard, tag string) []Dashboard {
 	tagged := []Dashboard{}
 	for _, board := range live {
-		for _, tag := range board.Tags {
-			if tag == Tag {
+		for _, found := range board.Tags {
+			if found == tag {
 				tagged = append(tagged, board)
 				break
 			}
@@ -93,9 +137,9 @@ func Tagged(live []Dashboard) []Dashboard {
 	return tagged
 }
 
-func taggedDashboards(live []Dashboard) (map[string]Dashboard, error) {
+func taggedDashboards(live []Dashboard, tag string) (map[string]Dashboard, error) {
 	tagged := map[string]Dashboard{}
-	for _, board := range Tagged(live) {
+	for _, board := range Tagged(live, tag) {
 		if _, twice := tagged[board.Name]; twice || board.ID == "" {
 			return nil, errors.New("ClickStack lists dashboard " + board.Name + " twice or without an id; no change made")
 		}
@@ -104,11 +148,11 @@ func taggedDashboards(live []Dashboard) (map[string]Dashboard, error) {
 	return tagged, nil
 }
 
-func staleDashboards(tagged map[string]Dashboard) []DashboardStep {
+func staleDashboards(tagged map[string]Dashboard, deletable func(string) bool) []DashboardStep {
 	steps := []DashboardStep{}
 	for name, board := range tagged {
 		action := Leave
-		if app, ok := strings.CutPrefix(name, "App: "); ok && appName.MatchString(app) {
+		if deletable(name) {
 			action = Delete
 		}
 		steps = append(steps, DashboardStep{Action: action, ID: board.ID, Dashboard: board})

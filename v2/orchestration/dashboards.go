@@ -66,6 +66,7 @@ type dashboardPass struct {
 	ports   DashboardPorts
 	options DashboardOptions
 	apps    []dashboards.App
+	sources dashboards.Sources
 	prune   bool
 	reason  string
 	report  DashboardReport
@@ -96,7 +97,10 @@ func (p *dashboardPass) run(ctx context.Context) error {
 	if err := p.dashboards(ctx, api); err != nil {
 		return err
 	}
-	return p.alerts(ctx, api, notify)
+	if err := p.alerts(ctx, api, notify); err != nil {
+		return err
+	}
+	return p.platformDashboards(ctx, api)
 }
 
 // discover finds the apps: from the records, every one or a failure; from the cluster, the app releases, which may
@@ -249,6 +253,7 @@ func (p *dashboardPass) dashboards(ctx context.Context, api clickstack.API) erro
 	if err != nil {
 		return err
 	}
+	p.sources = sources
 	live, err := api.Dashboards(ctx)
 	if err != nil {
 		return err
@@ -261,13 +266,13 @@ func (p *dashboardPass) dashboards(ctx context.Context, api clickstack.API) erro
 	if err != nil {
 		return err
 	}
-	if left := len(dashboards.Tagged(live)); !p.prune && left > 0 { // no prune: no app was found, so every one is left
+	if left := len(dashboards.Tagged(live, dashboards.Tag)); !p.prune && left > 0 { // no prune: no app was found, so every one is left
 		p.report.add(false, "no app releases found; not deleting dashboards ("+strconv.Itoa(left)+" left)")
 	}
 	if err := p.record(ctx, ids); err != nil {
 		return err
 	}
-	return p.pruneDashboards(ctx, api, steps)
+	return p.pruneDashboards(ctx, api, steps, p.reason)
 }
 
 // applyDashboards creates and updates, and returns each app's dashboard id ("" for one created without an id in
@@ -332,7 +337,9 @@ func (p *dashboardPass) record(ctx context.Context, ids map[string]string) error
 	return nil
 }
 
-func (p *dashboardPass) pruneDashboards(ctx context.Context, api clickstack.API, steps []dashboards.DashboardStep) error {
+// pruneDashboards deletes the family's leftovers, each with the reason it is gone, and leaves what is tagged but not
+// named for the family.
+func (p *dashboardPass) pruneDashboards(ctx context.Context, api clickstack.API, steps []dashboards.DashboardStep, reason string) error {
 	for _, step := range steps {
 		name := step.Dashboard.Name
 		switch {
@@ -340,15 +347,33 @@ func (p *dashboardPass) pruneDashboards(ctx context.Context, api clickstack.API,
 			p.report.add(false, "left "+name+": tagged "+dashboards.Tag+" but not named for an app")
 		case step.Action != dashboards.Delete:
 		case p.options.DryRun:
-			p.report.add(true, "would delete "+name+" ("+p.reason+")")
+			p.report.add(true, "would delete "+name+" ("+reason+")")
 		default:
 			if err := api.DeleteDashboard(ctx, step.ID); err != nil {
 				return err
 			}
-			p.report.add(true, "deleted "+name+" ("+p.reason+")")
+			p.report.add(true, "deleted "+name+" ("+reason+")")
 		}
 	}
 	return nil
+}
+
+// platformDashboards brings the platform services' own dashboards to the fixed catalogue: no record and no alerts,
+// which belong to apps. A dashboard tagged for the platform but named otherwise is left, and the app family's
+// dashboards are never read or deleted here.
+func (p *dashboardPass) platformDashboards(ctx context.Context, api clickstack.API) error {
+	live, err := api.Dashboards(ctx)
+	if err != nil {
+		return err
+	}
+	steps, err := dashboards.PlanPlatformDashboards(dashboards.PlatformServices(), live, p.sources, true)
+	if err != nil {
+		return err
+	}
+	if _, err := p.applyDashboards(ctx, api, steps); err != nil {
+		return err
+	}
+	return p.pruneDashboards(ctx, api, steps, "its service is not in the platform catalogue")
 }
 
 // alerts reads the dashboards again, since a created or updated one has new tile ids, and brings each app's
@@ -362,7 +387,7 @@ func (p *dashboardPass) alerts(ctx context.Context, api clickstack.API, notify s
 	if err != nil {
 		return err
 	}
-	steps, err := dashboards.PlanAlerts(p.apps, dashboards.Tagged(live), existing, notify, p.prune)
+	steps, err := dashboards.PlanAlerts(p.apps, dashboards.Tagged(live, dashboards.Tag), existing, notify, p.prune)
 	if err != nil {
 		return err
 	}
@@ -384,7 +409,7 @@ func (p *dashboardPass) alerts(ctx context.Context, api clickstack.API, notify s
 
 func appsWithDashboards(apps []dashboards.App, live []dashboards.Dashboard) int {
 	names := map[string]bool{}
-	for _, board := range dashboards.Tagged(live) {
+	for _, board := range dashboards.Tagged(live, dashboards.Tag) {
 		names[board.Name] = true
 	}
 	count := 0

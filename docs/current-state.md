@@ -2,6 +2,38 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Platform dashboards (13 November 2026)
+
+- **Capability:** slice 2 of [platform telemetry](platform-telemetry-status.md): the dashboard reconciler keeps one
+  HyperDX dashboard per platform service, `Platform: <service>`, tagged `swhurl-platform`, so the platform's own
+  components are charted the way apps are instead of only living in logs.
+- **Scope:** a fixed Go catalogue in [`v2/dashboards/platform.go`](../v2/dashboards/platform.go) with thirteen
+  entries — the console, its two CronJobs, notify, Traefik, oauth2-proxy, the Flux controllers, cert-manager, NATS,
+  Reloader, the egress proxy, the backup jobs and HyperDX — each stating its kind, and the namespace, container, log
+  marker or request host its tiles read. `v2/dashboards/plan.go` gained one family planner used by both passes;
+  `orchestration/dashboards.go` runs the platform pass after the app alerts, reusing the sources it already picked,
+  and records nothing for the console and creates no alerts.
+- **Semantics settled while implementing:** Traefik's spans carry the OpenTelemetry semantic conventions and no
+  router or service name (`server.address`, `http.request.method`, `http.response.status_code`, `entry_point`), so a
+  web service's request tiles filter Traefik's `Server` spans by its request-host prefix — no SDK and no router name
+  in the catalogue. Traefik marks no span status for a 4xx (`StatusCode` is `Unset` for the scanners' 404s), so a
+  failed edge request is `http.response.status_code >= '500'`. A job's runs are the one log line that marks a
+  completed run (**`Published …`** for a backup, the console jobs' pass-completed lines), and its failures are error
+  lines, because a failed run writes no marker.
+- **Boundaries:** the families are disjoint by tag — the app pass never reads, updates or deletes a `Platform:`
+  dashboard and the platform pass never touches an `App:` one — and only the app pass records ids for the console
+  and keeps the default alerts. A platform dashboard is deleted only when its name is `Platform: <x>` and `x` is no
+  longer in the catalogue; an empty catalogue is a failure (`ErrNoServices`), never "delete everything".
+- **Offline:** `go test ./...` in `v2/` passed, including the catalogue test that fails when a directory under
+  `platform/` or `infra/` is in neither the catalogue nor the test's explained list, the per-kind tile tests, the
+  family-isolation and prune tests, and the idempotence test. `make check-v2` passed after the exported-API
+  baseline gained the new catalogue and planner names (the `no-subprocess` rule named `flux` in the new file, so
+  the service is called `flux-controllers`, which is also what it is). The first dry run against the live cluster
+  read the apps as up to date, kept the two reserved webhooks and the seven apps' alerts, and planned thirteen
+  `would create Platform: …` lines, writing nothing.
+- **Not exercised yet:** the real pass on the cluster. This entry records the offline half and the dry run; what
+  HyperDX shows after the job ran is added below the same day.
+
 ## Traefik's requests reach ClickStack (13 November 2026)
 
 - **Capability:** slice 1 of [platform telemetry](platform-telemetry-status.md): every request at the edge leaves one

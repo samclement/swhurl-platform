@@ -55,7 +55,7 @@ func newDashWorld(t *testing.T) dashWorld {
 	h := &clickstacktest.Fake{Key: dashKey, URI: dashURI, Email: dashEmail, Held: clickstacktest.Inventory{
 		Sources: []dashboards.Source{{ID: "t1", Kind: "trace", Table: "otel_traces"}, {ID: "l1", Kind: "log", Table: "otel_logs"},
 			{ID: "m1", Kind: "metric"}},
-		Webhooks: ownedWebhooks(t)}}
+		Webhooks: ownedWebhooks(t), Dashboards: platformBoards()}}
 	return dashWorld{kube: k, hyperdx: h}
 }
 
@@ -155,7 +155,7 @@ func expectIn(t *testing.T, out string, want ...string) {
 // Python case 1: an app gets one alert per preset on its dashboard's tiles, through the notify webhook.
 func TestAnAppGetsItsDefaultAlertsThroughTheNotifyWebhook(t *testing.T) {
 	w := newDashWorld(t)
-	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{boardOf(webApp, idWeb)}
+	w.hold(boardOf(webApp, idWeb))
 	out, err := w.sync(t, []dashboards.App{webApp}, false)
 	if err != nil {
 		t.Fatal(out)
@@ -175,7 +175,7 @@ func TestANewOrRebuiltDashboardGetsAlertsOnItsNewTiles(t *testing.T) {
 	w := newDashWorld(t)
 	stale := boardOf(jobApp, idJob)
 	stale.Tiles = stale.Tiles[:1]
-	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{stale}
+	w.hold(stale)
 	w.hyperdx.Held.Alerts = []dashboards.Alert{defaultAlert("job", "errors", "Errors", idJob)}
 	out, err := w.sync(t, []dashboards.App{webApp, jobApp}, false)
 	if err != nil {
@@ -199,7 +199,7 @@ func TestANewOrRebuiltDashboardGetsAlertsOnItsNewTiles(t *testing.T) {
 // Python case 3: matching alerts are left; others are updated in place or deleted, in that order.
 func TestAlertsAreUpdatedInPlaceOrDeleted(t *testing.T) {
 	w := newDashWorld(t)
-	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{boardOf(webApp, idWeb)}
+	w.hold(boardOf(webApp, idWeb))
 	untagged := defaultAlert("web", "error-logs", "Error logs", idWeb)
 	untagged.Tags = []string{dashboards.Tag}
 	w.hyperdx.Held.Alerts = []dashboards.Alert{untagged, defaultAlert("web", "errors", "Errors", "old"),
@@ -221,7 +221,7 @@ func TestAlertsAreUpdatedInPlaceOrDeleted(t *testing.T) {
 func TestMissingWebhooksAreCreatedBeforeAlertsWithOneAuthentication(t *testing.T) {
 	w := newDashWorld(t)
 	w.hyperdx.Held.Webhooks = nil
-	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{boardOf(webApp, idWeb)}
+	w.hold(boardOf(webApp, idWeb))
 	out, err := w.sync(t, []dashboards.App{webApp}, false)
 	if err != nil {
 		t.Fatal(out)
@@ -246,7 +246,7 @@ func TestADryRunWritesNothing(t *testing.T) {
 	w := newDashWorld(t)
 	w.hyperdx.Held.Webhooks = []dashboards.Webhook{w.hyperdx.Held.Webhooks[0]}
 	w.hyperdx.Held.Webhooks[0].Body = "stale"
-	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{boardOf(webApp, idWeb), {ID: "d3", Name: "App: gone", Tags: []string{dashboards.Tag}}}
+	w.hold(boardOf(webApp, idWeb), dashboards.Dashboard{ID: "d3", Name: "App: gone", Tags: []string{dashboards.Tag}})
 	w.hyperdx.Held.Alerts = []dashboards.Alert{defaultAlert("gone", "errors", "Errors", "d3")}
 	out, err := w.sync(t, []dashboards.App{webApp, jobApp}, true)
 	if err != nil {
@@ -266,7 +266,7 @@ func TestTheClusterJobReadsAlertSettingsFromNamespaces(t *testing.T) {
 	w.kube.Collections[helmReleases] = [][]byte{release(t, "web", "staging", true)}
 	w.kube.Collections[appNamespaces] = [][]byte{namespaceOf("web-staging", "error-logs=20,errors=none")}
 	staging := dashboards.App{Name: "web", Kind: dashboards.Web, Environments: []string{"staging"}}
-	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{boardOf(staging, idWeb)}
+	w.hold(boardOf(staging, idWeb))
 	w.hyperdx.Held.Alerts = []dashboards.Alert{defaultAlert("web", "error-logs", "Error logs", idWeb), defaultAlert("web", "errors", "Errors", idWeb)}
 	out, err := w.sync(t, nil, false)
 	if err != nil {
@@ -303,8 +303,8 @@ func TestDashboardsAreCreatedKeptUpdatedAndDeletedByApp(t *testing.T) {
 	w := newDashWorld(t)
 	changed := boardOf(jobApp, idJob)
 	changed.Tiles = nil
-	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{boardOf(webApp, idWeb), changed,
-		{ID: "d3", Name: "App: gone", Tags: []string{dashboards.Tag}}, {ID: "d4", Name: "App: gone"}}
+	w.hold(boardOf(webApp, idWeb), changed, dashboards.Dashboard{ID: "d3", Name: "App: gone", Tags: []string{dashboards.Tag}},
+		dashboards.Dashboard{ID: "d4", Name: "App: gone"})
 	fresh := dashboards.App{Name: "new", Kind: dashboards.Web, Environments: []string{"staging"}}
 	out, err := w.sync(t, []dashboards.App{webApp, jobApp, fresh}, false)
 	if err != nil {
@@ -321,7 +321,7 @@ func TestDashboardsAreCreatedKeptUpdatedAndDeletedByApp(t *testing.T) {
 // record that cannot be written stops the pass before the alerts.
 func TestTheRecordIsWrittenOnlyWhenItChangedAndAFailedWriteStopsThePass(t *testing.T) {
 	w := newDashWorld(t)
-	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{boardOf(webApp, idWeb), boardOf(jobApp, idJob)}
+	w.hold(boardOf(webApp, idWeb), boardOf(jobApp, idJob))
 	out, err := w.sync(t, []dashboards.App{webApp, jobApp}, false)
 	want := `{"job": "` + idJob + `", "web": "` + idWeb + `"}`
 	if got := w.kube.ConfigMapData["console"][0].Data["dashboards.json"]; err != nil || got != want {
@@ -389,8 +389,9 @@ func TestTheClusterPassDeletesOnlyDashboardsNamedForAGoneApp(t *testing.T) {
 	for _, dry := range []bool{false, true} {
 		w := newDashWorld(t)
 		w.kube.Collections[helmReleases] = [][]byte{release(t, "kept", "staging", true)}
-		w.hyperdx.Held.Dashboards = []dashboards.Dashboard{boardOf(kept, idWeb), boardOf(gone, "d2"),
-			{ID: "c1", Name: "App: kept (copy)", Tags: []string{dashboards.Tag}}, {ID: "h1", Name: "App: other"}}
+		w.hold(boardOf(kept, idWeb), boardOf(gone, "d2"),
+			dashboards.Dashboard{ID: "c1", Name: "App: kept (copy)", Tags: []string{dashboards.Tag}},
+			dashboards.Dashboard{ID: "h1", Name: "App: other"})
 		out, err := w.sync(t, nil, dry)
 		if err != nil {
 			t.Fatal(out)
@@ -410,7 +411,7 @@ func TestTheClusterPassDeletesOnlyDashboardsNamedForAGoneApp(t *testing.T) {
 func TestEmptyDiscoveryRepairsWebhooksAndPrunesNothing(t *testing.T) {
 	w := newDashWorld(t)
 	w.hyperdx.Held.Webhooks[1].Body = "stale"
-	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{{ID: "old", Name: "App: gone", Tags: []string{dashboards.Tag}}}
+	w.hold(dashboards.Dashboard{ID: "old", Name: "App: gone", Tags: []string{dashboards.Tag}})
 	w.hyperdx.Held.Alerts = []dashboards.Alert{defaultAlert("gone", "errors", "Errors", "old")}
 	out, err := w.sync(t, nil, false)
 	if err != nil {
@@ -439,7 +440,7 @@ func TestDiscoveryFailureStopsBeforeTheAPI(t *testing.T) {
 // Deliberately changed: records that are missing or invalid stop the pass; nothing is deleted.
 func TestBadRecordsStopThePass(t *testing.T) {
 	w := newDashWorld(t)
-	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{boardOf(webApp, idWeb)}
+	w.hold(boardOf(webApp, idWeb))
 	bad := dashRecords(t, []dashboards.App{webApp})
 	bad[1].Release = []byte("{")
 	for _, records := range [][]RecordedInstance{{}, bad} {
@@ -472,7 +473,8 @@ func TestWebhooksAreCreatedRepairedAndKeptWithStableIDs(t *testing.T) {
 	w.hyperdx.Calls = nil
 	out, _ = w.sync(t, nil, false)
 	expectWrites(t, w.hyperdx, out)
-	if strings.Count(out, "is up to date") != 2 || w.hyperdx.Held.Webhooks[0] != manual {
+	if !strings.Contains(out, "ntfy: platform is up to date") || !strings.Contains(out, "swhurl notify is up to date") ||
+		w.hyperdx.Held.Webhooks[0] != manual {
 		t.Fatalf("%+v\n%s", w.hyperdx.Held.Webhooks, out)
 	}
 }
@@ -586,4 +588,85 @@ func TestClickStackRunnersExecInTheRightContainers(t *testing.T) {
 		got[1].Container != "app" || got[2].Pod != "clickstack-app-7d9f" || len(k.Reads) != 1 {
 		t.Fatalf("%+v, reads %d", got, len(k.Reads))
 	}
+}
+
+// The platform's own services get a dashboard each from the fixed catalogue, kept on the next pass, and a tagged
+// dashboard of a service the catalogue no longer has is deleted with its reason. They are never recorded for the
+// console and never carry an app's alerts.
+func TestPlatformDashboardsAreCreatedKeptAndPrunedWithoutARecord(t *testing.T) {
+	w := newDashWorld(t)
+	stale := dashboards.Dashboard{ID: "s1", Name: "Platform: gone", Tags: []string{dashboards.PlatformTag}}
+	w.hyperdx.Held.Dashboards = []dashboards.Dashboard{stale}
+	out, err := w.sync(t, []dashboards.App{webApp}, false)
+	if err != nil {
+		t.Fatal(out)
+	}
+	creates := 0
+	for _, call := range w.hyperdx.Writes() {
+		if call == "POST /dashboards" {
+			creates++
+		}
+	}
+	if want := len(dashboards.PlatformServices()) + 1; creates != want { // the catalogue, and App: web
+		t.Fatalf("%d dashboards created, want %d\n%s", creates, want, out)
+	}
+	expectIn(t, out, "created Platform: console", "deleted Platform: gone (its service is not in the platform catalogue)")
+	if record := w.kube.ConfigMapData["console"][0].Data["dashboards.json"]; strings.Contains(record, "Platform") ||
+		!strings.Contains(record, `"web"`) {
+		t.Fatalf("the record holds %s", record)
+	}
+	for _, alert := range w.hyperdx.Held.Alerts {
+		if strings.Contains(alert.Name, "platform") || strings.HasPrefix(alert.Name, "swhurl:console") {
+			t.Errorf("an alert names a platform service: %q", alert.Name)
+		}
+	}
+
+	w.hyperdx.Calls = nil
+	out, err = w.sync(t, []dashboards.App{webApp}, false)
+	if err != nil {
+		t.Fatal(out)
+	}
+	for _, call := range w.hyperdx.Writes() {
+		if strings.Contains(call, "/dashboards") {
+			t.Fatalf("a second pass wrote %q\n%s", call, out)
+		}
+	}
+	expectIn(t, out, "Platform: console is up to date", "Platform: nats is up to date")
+}
+
+// A dry run plans the platform dashboards and writes none of them.
+func TestAPlatformDryRunWritesNothing(t *testing.T) {
+	w := newDashWorld(t)
+	w.hyperdx.Held.Dashboards = nil // the catalogue's dashboards are missing, so a dry run would create them
+	_, err := w.sync(t, []dashboards.App{webApp}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range w.hyperdx.Writes() {
+		if strings.Contains(call, "/dashboards") {
+			t.Fatalf("a dry run wrote %q", call)
+		}
+	}
+	out, _ := w.sync(t, []dashboards.App{webApp}, true)
+	expectIn(t, out, "would create Platform: traefik")
+}
+
+// hold sets what HyperDX lists: the platform services' dashboards as they should be, then the test's own. A test
+// that wants the platform pass to create or delete something assigns Held.Dashboards itself.
+func (w dashWorld) hold(boards ...dashboards.Dashboard) {
+	w.hyperdx.Held.Dashboards = append(platformBoards(), boards...)
+}
+
+// platformBoards is every catalogue dashboard as HyperDX lists it: correct, with ids on it and its tiles.
+func platformBoards() []dashboards.Dashboard {
+	boards := []dashboards.Dashboard{}
+	for _, service := range dashboards.PlatformServices() {
+		board := dashboards.PlatformDefinition(service, "t1", "l1")
+		board.ID = "p-" + service.Name
+		for i := range board.Tiles {
+			board.Tiles[i].ID = board.ID + "-" + board.Tiles[i].Name
+		}
+		boards = append(boards, board)
+	}
+	return boards
 }

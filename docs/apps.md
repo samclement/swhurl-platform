@@ -969,11 +969,16 @@ An instance fails fast: if its pods are not Ready within 3 minutes of a change (
 
 The scheduled `console-dashboards` job gives every Flux-managed app a HyperDX dashboard named `App: <app>` (tag `swhurl-app`), with staging and production as separate lines:
 
-| Row | Web app | Worker | Scheduled job |
-| --- | --- | --- | --- |
-| Traces (needs `telemetry: otlp`) | Requests per minute, errors, p95 latency of server spans | Runs per minute, errors, p95 duration of root spans | **Runs**, **Failed runs** and **Run duration p95 (s)**: its root spans named `run`, one per run |
-| Second row | Error logs and log lines per minute | the same | **Last runs** (time, environment, status, seconds, reason) and error logs |
-| Logs | The latest log lines, with their environment | the same | the same |
+| Row | Web app | Worker |
+| --- | --- | --- |
+| Traces (needs `telemetry: otlp`) | Requests per minute, errors, p95 latency of server spans | Runs per minute, errors, p95 duration of root spans |
+| Second row | Error logs and log lines per minute | the same |
+| Logs | The latest log lines, with their environment | the same |
+
+An app has no scheduled-job row: v2 refuses the job kind, so the reconciler has no app job to chart. A **platform**
+job does have one — the backup jobs and the console's two CronJobs — on its own `Platform: <service>` dashboard, which counts
+the log line each completed run writes and its error lines, since a failed run writes no marker line
+([platform dashboards](services.md#clickstack-and-otel), [platform telemetry](platform-telemetry-status.md)).
 
 The in-cluster `console-dashboards` CronJob runs every minute. It asks Kubernetes for HelmRelease records in all namespaces, then keeps only records whose Flux labels identify an `app-<name>-<env>` unit in `flux-system` and whose release name and namespace match that app and environment. This excludes shared services and manually installed releases. It does not check readiness, so discovery starts as soon as the app Flux unit creates the HelmRelease, even while Helm is still installing it. The job groups discovered environments by app and creates or updates one HyperDX dashboard named `App: <app>`; first promotion adds a production line to the dashboard created for staging. The API call is to HyperDX; dashboards are not Kubernetes resources or Git files. Each run also records each app's dashboard id in the `console/app-dashboards` ConfigMap, which is what the console's **Dashboard ↗** links read ([console](console.md#automatic-app-dashboards)). This works whether a change came from a console pull request or from the command line.
 

@@ -1,7 +1,7 @@
 # Platform telemetry: progress, remaining slices and the next gate
 
 Status: in progress
-Gate: the operator approves slice 2 (D1) and answers D4
+Gate: the operator answers D2 (console telemetry), then slice 3
 Uncommitted: none
 
 **The goal: every platform service is observable in ClickStack the way an app is.** Its logs, its requests
@@ -30,7 +30,7 @@ Before reading anything else in a new session:
 5. One slice per session, opened with `/slice`. If the slice touches `v2/`, read the v2
    [design principles](iteration-2-plan.md#design-principles) and update [v2 status](v2-status.md) as well.
 
-**Next:** slice 2 (`Platform: <service>` dashboards), once the operator approves it (D1) and answers D4.
+**Next:** slice 3 (the console's and notify's own request and job lines), once the operator answers D2.
 Each slice below lists its files, so its session reads those and nothing more.
 
 ## Where it stands
@@ -43,30 +43,13 @@ Each slice below lists its files, so its session reads those and nothing more.
 | Request telemetry at the ingress: one JSON access line and one OTLP span per request, 100% sampled | done | [record](current-state.md#traefiks-requests-reach-clickstack-13-november-2026) |
 | Console and notify telemetry: plain-text and timing lines only, no per-request or per-job line, no spans | partial | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
 | Service metrics: Flux, cert-manager, oauth2-proxy and Reloader expose Prometheus that nothing scrapes; NATS has no exporter | partial | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
-| Generated dashboards: apps only (`App: <app>`, web and worker); none for platform services | partial | [apps](apps.md#dashboards) |
-| Scheduled-job dashboard row: [apps](apps.md#dashboards) describes it, but the Go reconciler refuses a CronJob (`v2/dashboards/apps.go`, `kind`) | partial | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
+| Generated dashboards: `App: <app>` for apps, and `Platform: <service>` for the thirteen catalogued platform services, including their scheduled jobs | done | [record](current-state.md#platform-dashboards-13-november-2026) |
+| Scheduled-job row: a platform job's dashboard counts the log line each completed run writes; an app cannot be a scheduled job, and [apps](apps.md#dashboards) now says so | done | [record](current-state.md#platform-dashboards-13-november-2026) |
 
 ## Remaining work
 
 Ordered. Each slice is one session and one commit (or a short series), checked offline, then applied and
 verified live, with a dated `current-state.md` entry. Files are where to start, not a limit.
-
-**S2. `Platform: <service>` dashboards in the reconciler (`v2/dashboards`, `v2/orchestration/dashboards.go`).**
-- Meaning: a platform service is an entry in a fixed Go catalogue: name, namespace, container selector, kind
-  (`web`, `worker` or `job`) and, for `web`, the Traefik router or service its request tiles filter on. A
-  test checks the catalogue against `platform/*` and `infra/*`, so a new unit can't be left out silently.
-- Ownership: the existing pass and `clickstack.API` adapter. Tag `swhurl-platform`. The app pass never reads,
-  writes or prunes that tag. The platform pass deletes only a tagged dashboard named exactly
-  `Platform: <x>` whose `x` the catalogue no longer has. An empty catalogue is a failure, never "delete
-  everything" (the same rule as `ErrNoRecords`).
-- Tiles: reuse `Definition`'s tiles, filtered by namespace. Web request tiles read Traefik's spans from S1.
-  The `job` kind restores the scheduled-job row (runs, failures, duration, last runs) for the backup and
-  console CronJobs, which also settles D4.
-- Verify: Go tests beside `dashboards_test.go` and `apps_test.go` (catalogue, prune, idempotent `Same`),
-  `make check-v2`, `make check`; live `DRY_RUN=true make clickstack-dashboards`, then the CronJob's next run
-  and `make verify-platform`.
-- Docs: [apps](apps.md#dashboards) or a services section for the platform family, [v2 status](v2-status.md)
-  (the reconciler's row), [console](console.md) if it links them.
 
 **S3. The console's and notify's own telemetry (per D2).** With D2's recommended option: one structured JSON
 line per HTTP request (method, route pattern, status, `duration_ms`, never a token or form value) and one per
@@ -97,10 +80,8 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
 | D2 | Console telemetry: (1) structured JSON lines, (2) a stdlib OTLP/HTTP trace exporter in v2 (a new external-effect adapter, separate approval), (3) an OTel Go SDK exception to stdlib-only | (1); revisit (2) if a console trace is ever needed | S3 |
-| D4 | Scheduled-job row: restore it in Go (S2) or correct the apps page now | Restore in S2; the backup jobs need it | S2 |
 | D5 | NATS exporter sidecar (one more container in `messaging`) | Yes, with a keep-list | S4 |
 | D6 | Platform alert names: `swhurl:platform/<service>:<preset>` or a separate prefix | `swhurl:platform/<service>:<preset>`, one parser | S5 |
-| D1 | Approve slice 2 as the next slice? | Yes: the catalogue and its dashboards make the telemetry reachable | S2 |
 
 ## Deferred features
 
@@ -119,6 +100,11 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
 - Traefik's access logs and spans reach the node collector on `$(HOST_IP):4318`, the address apps use; the host's
   address is never written in Git. Traefik's spans are 100% sampled until a day's cost says otherwise.
 - Traefik's Prometheus and OTLP metrics stay off until a scrape has a keep-list and a day-long cost baseline.
+- Platform dashboards come from a Go catalogue checked against `platform/*` and `infra/*`: a service behind the
+  ingress counts Traefik's spans by request host, a job counts the log line of each completed run, and an empty
+  catalogue fails rather than deleting every dashboard.
+- `swhurl-app` and `swhurl-platform` are disjoint: each pass reads, updates and prunes only its own tag, and only
+  the app pass records dashboard ids for the console and keeps the default alerts.
 - v2 stays stdlib-only: no OpenTelemetry Go SDK without a separate approval (D2).
 - Dashboards are generated, never hand-edited: the definition is Go, and a UI edit is overwritten on the next run.
 - The platform catalogue is Go, checked against Git's units; the cluster never adds a platform dashboard.

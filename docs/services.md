@@ -51,6 +51,17 @@ ClickStack stores logs, metrics and traces: the HyperDX app (UI and API), ClickS
 
 **At the edge.** Traefik writes one JSON access line per request (`logs.access.enabled` in [`infra/traefik/helmchartconfig.yaml`](../infra/traefik/helmchartconfig.yaml)) and sends one OTLP span per request, at a 100% sample rate, to the node collector. Both reach it on the node's own address, as an app's telemetry does: `--tracing.otlp.http.endpoint=http://$(HOST_IP):4318`, with `HOST_IP` taken from the pod's `status.hostIP`, so no address is written in Git. The endpoint carries **no path**: Traefik appends `/v1/traces`, the one path the collector's OTLP/HTTP receiver answers. Traefik's documented default, `/v1/tracing`, is answered `404` and the spans are lost with no error in Traefik's log, so a trace that never arrives is checked at the collector first. Traefik's span is the parent of an app's own span; an app's web tiles filter on its namespace, so they do not count Traefik's spans twice. A request Traefik answers itself — a redirect, a 404, a rejected sign-in — has a Traefik span and access line and no app span. Traefik's Prometheus and OTLP metrics stay off until a metrics scrape has a keep-list and a day's cost ([platform telemetry](platform-telemetry-status.md)).
 
+**Platform dashboards.** The same `console-dashboards` job keeps one dashboard per platform service, named
+`Platform: <service>` and tagged `swhurl-platform`, from a fixed catalogue in
+[`v2/dashboards/platform.go`](../v2/dashboards/platform.go): the console and its two jobs, notify, Traefik,
+oauth2-proxy, Flux, cert-manager, NATS, Reloader, the egress proxy, the backup jobs and HyperDX. The two families
+never cross: this pass reads, updates and deletes only `Platform:` dashboards, and the app pass only `App:` ones. A
+service behind the ingress counts Traefik's spans filtered by its request host, so it needs no OpenTelemetry SDK of
+its own; a service that reports only logs gets log tiles; a scheduled job counts the one log line that marks each
+completed run (the backup's `Published …`, the console jobs' pass-completed lines) and its error lines, because a
+failed run writes no marker. It deletes only a tagged dashboard named `Platform: <x>` whose service the catalogue no
+longer has, and an empty catalogue fails instead of deleting everything ([platform telemetry](platform-telemetry-status.md)).
+
 ### Structured logs
 
 For example, `{"level":30,"msg":"request completed","req":{"method":"GET"},"status":200}` becomes body `request completed`, severity INFO, and searchable `LogAttributes.req.method` and `LogAttributes.status`. The node collector parses after container framing and partial-line reassembly; ClickStack receives normalized OTLP, without a second platform parser at ingestion. Existing rows keep their original format.

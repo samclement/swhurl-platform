@@ -23,7 +23,7 @@ var coveredUnits = map[string][]string{
 	"platform/clickstack-operators": nil, // operators, whose lines the log filter drops as noise
 	"platform/console":              {"console", "console-dashboards", "console-notifications"},
 	"platform/egress":               {"egress"},
-	"platform/flags":                nil, // ConfigMaps and Streams
+	"platform/flags":                nil,                  // ConfigMaps and Streams
 	"platform/flux-webhook":         {"flux-controllers"}, // a Service in front of Flux's notification-controller
 	"platform/image-automation":     {"flux-controllers"}, // the image controllers run and log in flux-system
 	"platform/nats":                 {"nats"},

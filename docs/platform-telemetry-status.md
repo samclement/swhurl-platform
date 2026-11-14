@@ -1,7 +1,7 @@
 # Platform telemetry: progress, remaining slices and the next gate
 
 Status: in progress
-Gate: slice 3b deployed and a page's trace read in ClickStack, then slice 4's selective scrape
+Gate: slice 4's selective scrape, with its day-long cost baseline (D5)
 Uncommitted: none
 
 **The goal: every platform service is observable in ClickStack the way an app is.** Its logs, its requests
@@ -30,9 +30,8 @@ Before reading anything else in a new session:
 5. One slice per session, opened with `/slice`. If the slice touches `v2/`, read the v2
    [design principles](iteration-2-plan.md#design-principles) and update [v2 status](v2-status.md) as well.
 
-**Next:** deploy slice 3b and read a page's trace in ClickStack against the measured latencies
-([current state](current-state.md#console-page-latencies-14-november-2026)); then slice 4. Each slice below lists
-its files, so its session reads those and nothing more.
+**Next:** slice 4 (a selective metrics scrape), with its day-long cost baseline; D5 decides the NATS exporter.
+Each slice below lists its files, so its session reads those and nothing more.
 
 ## Where it stands
 
@@ -43,7 +42,7 @@ its files, so its session reads those and nothing more.
 | HyperDX's own traces and metrics (10% sampled) | done | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
 | Request telemetry at the ingress: one JSON access line and one OTLP span per request, 100% sampled | done | [record](current-state.md#traefiks-requests-reach-clickstack-13-november-2026) |
 | Console and notify telemetry: one JSON line per request (method, route pattern, status, duration) and per job state change, and the console's own job tiles | done | [record](current-state.md#console-and-notify-telemetry-14-november-2026) |
-| The console's own traces and metrics (S3b): a span per request, continuing Traefik's trace, with its reads inside; request and job counters and durations | partial | [contract](#remaining-work) |
+| The console's own traces and metrics (S3b): a span per request, continuing Traefik's trace, with its reads inside; request and job counters and durations | done | [record](current-state.md#console-traces-and-metrics-14-november-2026) |
 | Service metrics: Flux, cert-manager, oauth2-proxy and Reloader expose Prometheus that nothing scrapes; NATS has no exporter | partial | [baseline](current-state.md#platform-telemetry-baseline-11-november-2026) |
 | Generated dashboards: `App: <app>` for apps, and `Platform: <service>` for the thirteen catalogued platform services, including their scheduled jobs | done | [record](current-state.md#platform-dashboards-13-november-2026) |
 | Scheduled-job row: a platform job's dashboard counts the log line each completed run writes; an app cannot be a scheduled job, and [apps](apps.md#dashboards) now says so | done | [record](current-state.md#platform-dashboards-13-november-2026) |
@@ -52,19 +51,6 @@ its files, so its session reads those and nothing more.
 
 Ordered. Each slice is one session and one commit (or a short series), checked offline, then applied and
 verified live, with a dated `current-state.md` entry. Files are where to start, not a limit.
-
-**S3b. The console's own traces and metrics (D7 answered A, 14 November 2026; implemented offline).** What is
-built ([services](services.md#clickstack-and-otel) has the contract):
-- `v2/telemetry` (pure): ids, the W3C `traceparent` reader, spans, cumulative counters and histograms, and their
-  OTLP/JSON encoding, pinned by goldens. `v2/adapters/otlp`: one POST per export to `<endpoint>/v1/traces` or
-  `/v1/metrics`, 10 s, no redirects; a `partialSuccess` that rejected anything is a failure; errors never repeat the
-  endpoint or the answer.
-- `cmd/swhurl-v2`: decorators over the cluster reads, GitHub and the pinned tree's source record a span only inside a
-  request's span, so a job's own work makes none; a job that ended is one span of its own.
-- Wiring: `HOST_IP` and `OTEL_EXPORTER_OTLP_ENDPOINT` in [the console's HelmRelease](../platform/console/helmrelease.yaml).
-- Left: deploy, a live page's trace in ClickStack and its per-phase breakdown against the baseline, recorded in
-  `current-state.md`. Dashboard tiles from the metrics are a follow-up; the console dashboard's request tiles stay
-  Traefik's.
 
 **S4. A selective metrics scrape.** A `prometheus` receiver on the cluster collector
 (`platform/otel/helmrelease-cluster.yaml`), each target with a keep-list:

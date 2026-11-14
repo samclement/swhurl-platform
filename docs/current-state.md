@@ -2,6 +2,30 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Console traces and metrics (14 November 2026)
+
+- **Capability:** slice 3b of [platform telemetry](platform-telemetry-status.md): the console sends its own spans and
+  metrics over v2's stdlib OTLP/JSON exporter (`806f3ba5`, image `src-e009430f9e0df466` pinned by Validate in
+  `6daa8d80`); the contract is in [services](services.md#clickstack-and-otel).
+- **Offline:** `make check-v2` and `make check` passed; goldens pin both OTLP documents; the adapter's contract runs
+  against the fake and a scripted collector (partial rejection, redirect, unreachable, timeout); the console's tests
+  check a page's span tree, a continued `traceparent`, failed spans, a job's span, the 2,048-span bound and one log
+  line per export state change, under `-race`.
+- **Live:** after `make flux-reconcile` the console pod ran the new image with `OTEL_EXPORTER_OTLP_ENDPOINT` set to
+  its node's collector. The baseline's ten routes loaded twice each through a port-forward, with the identity set by
+  hand: cold/warm seconds within the baseline's spread (`/` 2.12/0.87, `/apps` 1.90/0.56, `/activity` 2.25/1.67,
+  `/platform` 0.08/0.09). In ClickStack (service `console`, 15 minutes): 25 span names with no error status; every
+  request line (22 of 22) carries the `trace_id` its record was given; a request sent with a hand-set `traceparent`
+  is one trace with `GET /platform` as the caller's child and its nine reads and render beneath it;
+  `console.requests` and `http.server.request.duration` are stored. No export-failure line. `make verify-platform`
+  passed (88 OK).
+- **What the spans say** (two loads per page, summed; reads run concurrently, so phases can exceed the page):
+  `/activity`'s two seconds are 14 `github.Pull` calls (4.2 s), not archives; `/`'s cold second is the pinned
+  tree's tarball (1.1 s); `/apps` reads seven apps' `swhurl.yaml` from GitHub (1.3 s); every page asks GitHub for
+  `main`'s revision (about 0.22 s each) and makes seven `kube.ListAllNamespaces` (about 0.11 s); a render is 1–30 ms.
+- **Not exercised:** a signed-in browser request through Traefik (the edge's own `traceparent`), a job's span live,
+  the SIGTERM flush, and dashboard tiles over the new metrics.
+
 ## Console page latencies (14 November 2026)
 
 - **What:** how long each console page takes, measured before instrumenting it (slice 3b's baseline): a

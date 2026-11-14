@@ -349,7 +349,7 @@ An adapter owns one external dependency and speaks domain terms ("read workload 
 | Operation and notification state | Store progress and incident state | In-memory store with conflicts, restarts, failures | Durability, concurrent writers |
 | ClickStack | Dashboards, alerts, webhooks, queries | Response fixtures, fake inventory | Service-specific update and authentication |
 | Notification delivery | Send to ntfy or elsewhere | Captured messages; rejection and timeout | Real transport |
-| OpenTelemetry collector | `adapters/otlp` posts a service's own spans and metrics as OTLP/HTTP JSON, one export per call (approved with [platform telemetry S3b](platform-telemetry-status.md#remaining-work), 14 November 2026) | Recorded `partialSuccess` answers, a collector fake that keeps documents | The node collector's acceptance and ClickStack's storage |
+| OpenTelemetry collector | `adapters/otlp` posts a service's own spans and metrics as OTLP/HTTP JSON, one export per call (approved with platform telemetry slice 3b, [live 14 November 2026](current-state.md#console-traces-and-metrics-14-november-2026)) | Recorded `partialSuccess` answers, a collector fake that keeps documents | The node collector's acceptance and ClickStack's storage |
 | Backups and storage | Object storage, snapshots, volumes, restore | Backup manifests, object listings, fault scenarios | Restorable data, incomplete uploads |
 | S3 (object store) | Listing one bucket prefix: its URI, SigV4, `ListObjectsV2` and its pages | Recorded `ListBucketResult`, AWS's published signing vector | Real credentials, real region discovery, many pages |
 | Identity | Authenticate a request, establish who is acting | Explicit test principals | Proxy header trust, sign-in integration |

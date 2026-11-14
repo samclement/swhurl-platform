@@ -52,6 +52,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 | Dated live evidence and unexercised paths | `docs/current-state.md` |
 | Code graph development aid: design, contracts, roadmap | `docs/visual-change-tool.md` |
 | Platform services' telemetry and dashboards: slices, decisions, resume steps | `docs/platform-telemetry-status.md` |
+| Workload identity (SPIFFE): phases, decisions, resume steps | `docs/workload-identity-status.md` |
 | Remaining planned work | `docs/plan.md` section 0 |
 
 ## Commands

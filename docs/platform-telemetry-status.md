@@ -1,7 +1,7 @@
 # Platform telemetry: progress, remaining slices and the next gate
 
 Status: in progress
-Gate: slice 4's selective scrape, with its day-long cost baseline (D5)
+Gate: the operator answers D7 (console traces and metrics), then slice 4's selective scrape
 Uncommitted: none
 
 **The goal: every platform service is observable in ClickStack the way an app is.** Its logs, its requests
@@ -30,8 +30,9 @@ Before reading anything else in a new session:
 5. One slice per session, opened with `/slice`. If the slice touches `v2/`, read the v2
    [design principles](iteration-2-plan.md#design-principles) and update [v2 status](v2-status.md) as well.
 
-**Next:** slice 4 (a selective metrics scrape), with its day-long cost baseline; D5 decides the NATS exporter.
-Each slice below lists its files, so its session reads those and nothing more.
+**Next:** slice 3b, the console's own traces and metrics, once the operator answers D7 (the measured latencies
+are in [current state](current-state.md#console-page-latencies-14-november-2026)). Each slice below lists its
+files, so its session reads those and nothing more.
 
 ## Where it stands
 
@@ -50,6 +51,26 @@ Each slice below lists its files, so its session reads those and nothing more.
 
 Ordered. Each slice is one session and one commit (or a short series), checked offline, then applied and
 verified live, with a dated `current-state.md` entry. Files are where to start, not a limit.
+
+**S3b. The console's own traces and metrics (operator's priority, 14 November 2026; awaiting D7).** A stdlib
+OTLP/HTTP JSON exporter, so a page can be read as a trace and the console's requests and jobs as metrics. The
+measured page latencies and the shared read path they point at are in
+[current state](current-state.md#console-page-latencies-14-november-2026).
+- `v2/telemetry` (pure, layer 0): the span and metric model and the OTLP/JSON encoding; declare it in `Layers`,
+  `Pure` and `api.txt`.
+- `v2/adapters/otlp` (layer 1, stdlib `net/http`): batched `/v1/traces` and `/v1/metrics` POSTs, bounded, a no-op
+  without an endpoint, flushed on SIGTERM; the adapter rule's interface, fake, `testdata` and contract suite.
+- Spans: the request root (route, status, duration, and `trace_id`/`span_id` on the existing request line so a log
+  opens its trace), children at every kube read, `ConsoleSource` `Revision`/`Tree`/`Files`, each `github.Console`
+  call, the template render, and each console job. The decorators live in `cmd/swhurl-v2`: a layer-1 package may not
+  import another adapter, and only `adapters/otlp` itself is one.
+- Metrics: a request counter and duration histogram by route and status; a job counter and duration by action and
+  state. Dashboard tiles are a follow-up; the console dashboard's request tiles stay Traefik's.
+- Wiring: the console HelmRelease's `HOST_IP` from `status.hostIP` and
+  `OTEL_EXPORTER_OTLP_ENDPOINT=http://$(HOST_IP):4318` (rule `otlp-host-ip`); no new dependency, and
+  `make check-otel`'s collector already accepts OTLP/HTTP JSON (checked live, 14 November 2026).
+- Proves it: the fake sink's payloads, `make check-v2` and `make check`, then a live page load's trace in ClickStack
+  and the per-route, per-phase breakdown of the pages measured, recorded in `current-state.md`.
 
 **S4. A selective metrics scrape.** A `prometheus` receiver on the cluster collector
 (`platform/otel/helmrelease-cluster.yaml`), each target with a keep-list:
@@ -73,6 +94,7 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
+| D7 | Console traces and metrics: (A) traces + metrics from one stdlib exporter, (B) traces now with metrics derived by the collector later, (C) phase timings on the existing request lines only | A; C first only if the number is needed today | S3b |
 | D5 | NATS exporter sidecar (one more container in `messaging`) | Yes, with a keep-list | S4 |
 | D6 | Platform alert names: `swhurl:platform/<service>:<preset>` or a separate prefix | `swhurl:platform/<service>:<preset>`, one parser | S5 |
 
@@ -80,7 +102,6 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
 
 | Feature | v2 today | Reopen when |
 | --- | --- | --- |
-| Spans inside the console (handler, GitHub and Kubernetes calls) | Request and job lines only, no spans | A console slowness can't be explained from the lines (D2 option 2) |
 | Squid metrics for the egress proxy | Access lines (`squid-access`) only | Egress volume or latency needs a graph |
 | HyperDX's own scrape of ClickHouse | Pushed over OpAMP; Git can't change it ([services](services.md#clickstack-and-otel)) | The chart exposes it |
 | An outside availability monitor | None; nothing in the cluster can see the cluster down | A public route matters to someone outside |
@@ -102,7 +123,8 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
 - Console and notify telemetry is structured JSON lines on stdout, written by v2 with the standard library: a request's
   method, route *pattern* (never its path, query or form value), status and duration; a job's action, target, state,
   duration and the audit text. Probes and assets write no request line, and a 5xx request or a failed job is an ERROR
-  line. D2 is answered with those lines (14 November 2026); a console trace would reopen it as a separate adapter.
+  line. D2 is answered with those lines (14 November 2026); the console's traces are D2's option 2, a separate
+  exporter adapter (slice 3b, pending D7).
 - Dashboards are generated, never hand-edited: the definition is Go, and a UI edit is overwritten on the next run.
 - The platform catalogue is Go, checked against Git's units; the cluster never adds a platform dashboard.
 - Tag `swhurl-platform` is the platform pass's alone; `swhurl-app` stays the app pass's alone.

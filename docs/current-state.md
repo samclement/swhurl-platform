@@ -2,6 +2,25 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Console page latencies (14 November 2026)
+
+- **What:** how long each console page takes, measured before instrumenting it (slice 3b's baseline): a
+  port-forward to the console's Service, the identity and `Origin` headers a console page sends, two sequential
+  GETs per route. Seconds, cold then warm; nothing wrote.
+- **Measured:** `/` 2.15 then 0.99; `/apps` 2.65 then 0.53; `/activity` 2.27 then 1.96; an app's page
+  (`/apps/demo-shop/staging`) 0.78 then 0.73; its promotion review 0.80 then 0.77; `/catalogue` 0.64 then 0.69;
+  `/teams` 0.61 then 0.64; `/egress` 0.59 then 0.58; `/new` 0.53 then 0.55; `/platform` 0.17 then 0.11; a job's
+  page (`/jobs/68`) 0.004 both times.
+- **What it points at:** `/platform` names units only and costs 0.1 s; every page that calls `readRows` (the pinned
+  tree at main's commit, `ConsoleStatus` over the cluster, per-app GitHub reads) costs about half a second warm and
+  two seconds cold; `/activity` pays about two seconds every time because it reads archives. A job's page is cheap
+  because its record is in memory. Which of those inside a page is the cost is what slice 3b's spans are for.
+- **Caveat:** one sample per pass, warm caches after the first, the identity header set by hand rather than a
+  signed-in browser, and the console ran alone on the cluster.
+- **Also checked:** the deployed node collector accepts OTLP/HTTP JSON at `$(HOST_IP):4318` — an empty
+  `{"resourceSpans":[]}` to `/v1/traces` and `{"resourceMetrics":[]}` to `/v1/metrics` both answered 200 with
+  `partialSuccess` — so `v2/adapters/otlp` needs no SDK and no protobuf encoder.
+
 ## Console and notify telemetry (14 November 2026)
 
 - **Capability:** slice 3 of [platform telemetry](platform-telemetry-status.md): the console and notify report their own

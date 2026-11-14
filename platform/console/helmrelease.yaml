@@ -57,6 +57,13 @@ spec:
               digest: sha256:7c77ff49a2d77cdddaaa7a0d528c599491eec173650493c96383a60d76091a96
             env:
               CONSOLE_REPO: samclement/swhurl-platform
+              # The console's own traces and metrics go to its node's collector, as an app's do
+              # (docs/platform-telemetry-status.md); HOST_IP sorts before the variable that uses it.
+              HOST_IP:
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.hostIP
+              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
             # GITHUB_TOKEN: create console/* branches and open PRs; APP_REPOS_TOKEN: create new app
             # repositories; IMAGE_WEBHOOK_TOKEN: sign the image webhook added to them
             # (secret.sops.yaml; docs/console.md#github-tokens). NATS_SEED: write feature flag

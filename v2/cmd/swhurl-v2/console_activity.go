@@ -81,7 +81,7 @@ func (s *consoleServer) activity(w http.ResponseWriter, r *http.Request) {
 	jobs := s.jobsOf(ctx)
 	data := s.readActivity(ctx, jobs, s.changeReads())
 	data.shell = s.pageWith(r, true, jobs)
-	s.render(w, http.StatusOK, "activity.html", data)
+	s.render(w, r, http.StatusOK, "activity.html", data)
 }
 
 // readActivity is every job as a change, and the open pull requests no remembered job opened: what is still moving
@@ -115,11 +115,11 @@ func (s *consoleServer) job(w http.ResponseWriter, r *http.Request) {
 	data, found := s.readJob(ctx, jobs, id, s.changeReads())
 	if !found {
 		page := errorData{shell: s.pageWith(r, false, jobs), Error: "No such job (only the newest jobs are kept)."}
-		s.render(w, http.StatusNotFound, "error.html", page)
+		s.render(w, r, http.StatusNotFound, "error.html", page)
 		return
 	}
 	data.shell = s.pageWith(r, false, jobs)
-	s.render(w, http.StatusOK, "job.html", data)
+	s.render(w, r, http.StatusOK, "job.html", data)
 }
 
 // readJob is one job's page; found is false when no remembered job has the id.

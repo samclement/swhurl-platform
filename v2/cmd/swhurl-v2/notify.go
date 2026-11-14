@@ -118,7 +118,7 @@ func (s *notifyService) handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = io.WriteString(w, "ok\n")
 	})
-	return logRequests(s.log, mux)
+	return logRequests(s.log, nil, mux)
 }
 
 // endpoint answers one POST: 202 with the channels a copy was queued for, waking the delivery loop when there are

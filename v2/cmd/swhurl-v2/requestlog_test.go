@@ -37,7 +37,7 @@ func TestARequestLineCarriesItsRouteAndStatusAndNothingElse(t *testing.T) {
 	mux.HandleFunc("GET /broken", func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "no", http.StatusInternalServerError)
 	})
-	handler := logRequests(requestLogger(&out, "console"), mux)
+	handler := logRequests(requestLogger(&out, "console"), nil, mux)
 
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/apps/hello/staging?token=s3cret", nil))
 	got := line(t, out.String())
@@ -63,7 +63,7 @@ func TestARequestLineCarriesItsRouteAndStatusAndNothingElse(t *testing.T) {
 // A request the mux answers itself, and one it never matched, are still one line and are named as such.
 func TestAnUnmatchedRequestIsOneLine(t *testing.T) {
 	var out bytes.Buffer
-	handler := logRequests(requestLogger(&out, "console"), http.NewServeMux())
+	handler := logRequests(requestLogger(&out, "console"), nil, http.NewServeMux())
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/nope", nil))
 	if got := line(t, out.String()); got["route"] != "unmatched" || got["method"] != "POST" || got["status"] != float64(404) {
 		t.Fatalf("line %v", got)
@@ -76,7 +76,7 @@ func TestProbesAndAssetsAreNotLogged(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {})
 	mux.HandleFunc("GET /static/", func(w http.ResponseWriter, _ *http.Request) {})
-	handler := logRequests(requestLogger(&out, "console"), mux)
+	handler := logRequests(requestLogger(&out, "console"), nil, mux)
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/healthz", nil))
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/static/app.css", nil))
 	if out.Len() != 0 {
@@ -98,7 +98,7 @@ func TestAStreamFlushesThroughTheRecorder(t *testing.T) {
 		flusher.Flush()
 		flushed = true
 	})
-	handler := logRequests(requestLogger(&out, "console"), mux)
+	handler := logRequests(requestLogger(&out, "console"), nil, mux)
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/jobs/1/events", nil))
 	if !flushed {
 		t.Fatal("the handler could not flush")
@@ -116,7 +116,7 @@ func TestTheConsoleLogsTheRequestsItAnswers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := logRequests(server.requests, server.identityMiddleware(server.routes()))
+	handler := logRequests(server.requests, nil, server.identityMiddleware(server.routes()))
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/apps", nil))
 	got := line(t, out.String())
 	if got["status"] != float64(401) || got["logger"] != "console" {
@@ -135,7 +135,7 @@ func TestTheConsoleLogsTheRequestsItAnswers(t *testing.T) {
 		t.Fatal(err)
 	}
 	overview.identity = devIdentity
-	handler = logRequests(overview.requests, overview.identityMiddleware(overview.routes()))
+	handler = logRequests(overview.requests, nil, overview.identityMiddleware(overview.routes()))
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/services", nil))
 	if got := line(t, out.String()); got["route"] != "GET /services" || got["status"] != float64(301) {
 		t.Fatalf("answered request %v", got)

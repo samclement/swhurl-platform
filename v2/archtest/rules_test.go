@@ -71,6 +71,7 @@ var Layers = map[string]int{
 	"datadestroy":                        0,
 	"secretcheck":                        0,
 	"teamscenario":                       0,
+	"telemetry":                          0,
 	"lifecycletest":                      0,
 	"apptemplatetest":                    0,
 	"dashboards":                         0,
@@ -110,6 +111,8 @@ var Layers = map[string]int{
 	"adapters/notifysvc/notifysvctest":   1,
 	"adapters/ntfy":                      1,
 	"adapters/ntfy/ntfytest":             1,
+	"adapters/otlp":                      1,
+	"adapters/otlp/otlptest":             1,
 	"adapters/registry":                  1,
 	"adapters/registry/registrytest":     1,
 	"adapters/route":                     1,
@@ -132,7 +135,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"incident", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "heartbeat", "kernel", "lifecycletest", "notify", "observe", "pages", "policy", "producer", "secretcheck", "teamscenario", "workstreams"}
+var Pure = []string{"incident", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "heartbeat", "kernel", "lifecycletest", "notify", "observe", "pages", "policy", "producer", "secretcheck", "teamscenario", "telemetry", "workstreams"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,

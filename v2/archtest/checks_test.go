@@ -116,6 +116,7 @@ func f(count int) int {
 		"pages/a.go":           "package pages\n",
 		"policy/policy.go":     "package policy\n",
 		"secretcheck/a.go":     "package secretcheck\n",
+		"telemetry/a.go":       "package telemetry\n",
 		"workstreams/a.go":     "package workstreams\n",
 	})
 	expect(t, checkPure(m),

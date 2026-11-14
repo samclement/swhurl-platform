@@ -51,7 +51,7 @@ func (s *consoleServer) catalogue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.shell = s.page(r, false)
-	s.render(w, http.StatusOK, "catalogue.html", data)
+	s.render(w, r, http.StatusOK, "catalogue.html", data)
 }
 
 // readCatalogue reads the cluster, the pinned tree and the documents of the environment the page shows, then computes
@@ -96,7 +96,7 @@ func (s *consoleServer) apps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.shell = s.page(r, true)
-	s.render(w, http.StatusOK, "apps.html", data)
+	s.render(w, r, http.StatusOK, "apps.html", data)
 }
 
 // readApps reads the cluster once and the two remote facts the list links to, then computes the page.
@@ -166,7 +166,7 @@ func (s *consoleServer) egress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.shell = s.page(r, false)
-	s.render(w, http.StatusOK, "egress.html", data)
+	s.render(w, r, http.StatusOK, "egress.html", data)
 }
 
 func (s *consoleServer) readEgress(ctx context.Context) (egressData, error) {
@@ -200,7 +200,7 @@ func (s *consoleServer) teams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.shell = s.page(r, false)
-	s.render(w, http.StatusOK, "teams.html", data)
+	s.render(w, r, http.StatusOK, "teams.html", data)
 }
 
 // readTeams reads the cluster, the registry and the two remote facts the cards link to.
@@ -275,7 +275,7 @@ func (s *consoleServer) unit(w http.ResponseWriter, r *http.Request) {
 		data.Detail = "applied " + unit.Revision
 	}
 	data.shell = s.page(r, false)
-	s.render(w, http.StatusOK, "unit.html", data)
+	s.render(w, r, http.StatusOK, "unit.html", data)
 }
 
 // findUnit is one unit of the cluster's units, and whether it is one of them.

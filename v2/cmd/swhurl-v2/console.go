@@ -30,6 +30,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/nats"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
+	"github.com/samclement/swhurl-platform/v2/telemetry"
 )
 
 // The console's templates and static assets travel inside the binary: the image carries no checkout.
@@ -79,7 +80,11 @@ func (c cli) console(r request) int {
 	data, _ := reader.(kube.Data)
 	writer, _ := reader.(kube.Writer)
 	owner, _ := os.Hostname()
-	server, err := newConsoleServer(consoleConfig{Reader: reader, Collector: collector, Data: data, Writer: writer,
+	trace, err := consoleTelemetryOf(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), c.out)
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
+	server, err := newConsoleServer(consoleConfig{Telemetry: trace, Reader: reader, Collector: collector, Data: data, Writer: writer,
 		Dev: r.dev,
 		Git: c.git, Repository: os.Getenv("CONSOLE_REPO"), Token: realToken(os.Getenv(consoleToken)),
 		AppRepos: realToken(os.Getenv(appReposToken)) != "", ReposToken: realToken(os.Getenv(appReposToken)),
@@ -122,6 +127,8 @@ type consoleConfig struct {
 	// ReposToken creates an app's repository and HookToken signs its image webhook: the two a new app needs, and only
 	// its job reads them.
 	ReposToken, HookToken string
+	// Telemetry records the console's spans and metrics; nil records none.
+	Telemetry *consoleTelemetry
 }
 
 // consoleServer is one running console: the pinned tree, the cluster reader and the templates.
@@ -174,15 +181,20 @@ type consoleServer struct {
 	// requests writes the console's own request and job lines, in one lock so a line is never interleaved; it is nil
 	// when the server keeps no log.
 	requests *jsonLog
+	// telemetry records the spans of each request and the counts and durations of requests and jobs; nil records none.
+	telemetry *consoleTelemetry
 }
 
 func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
-	server := &consoleServer{reader: config.Reader, writer: config.Writer, collector: config.Collector,
+	trace := config.Telemetry
+	config.Reader, config.Collector, config.Data = trace.traceReader(config.Reader), trace.traceCollector(config.Collector),
+		trace.traceData(config.Data)
+	server := &consoleServer{telemetry: trace, reader: config.Reader, writer: config.Writer, collector: config.Collector,
 		data: config.Data, now: config.Now,
-		appConsole: github.NewConsole(nil), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
+		appConsole: trace.traceGitHub(github.NewConsole(nil)), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
 		reposToken: config.ReposToken, hookToken: config.HookToken,
 		natsSeed: config.NatsSeed, natsURL: config.NatsURL, redact: &jobRedactor{}, log: config.Log,
 		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{},
@@ -196,7 +208,7 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	}
 	// A token reads pull requests either way, as the Python console's --dev does; --dev pins the checkout instead.
 	if config.Token != "" {
-		server.github = github.NewConsole(nil)
+		server.github = trace.traceGitHub(github.NewConsole(nil))
 		server.hasGitHub = true
 	}
 	if config.Dev {
@@ -204,10 +216,11 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 		if snapshots == nil {
 			snapshots = git.New()
 		}
-		server.pin(localConsole{snapshots: snapshots, root: "."})
+		server.pin(trace.traceSource(localConsole{snapshots: snapshots, root: "."}))
 		server.identity = devIdentity
 	} else {
-		server.pin(orchestration.ConsoleSourceOf{Console: server.github, Repository: config.Repository, Token: config.Token})
+		server.pin(trace.traceSource(orchestration.ConsoleSourceOf{Console: server.github, Repository: config.Repository,
+			Token: config.Token}))
 	}
 	static, err := fs.Sub(consoleFiles, "console/static")
 	if err != nil {
@@ -238,9 +251,11 @@ func (s *consoleServer) startJobs(config consoleConfig) {
 	if config.Data == nil {
 		return
 	}
-	audit := func(orchestration.JobEvent) {}
-	if s.requests != nil {
-		audit = func(event orchestration.JobEvent) { writeJobEvent(s.requests, event) }
+	audit := func(event orchestration.JobEvent) {
+		if s.requests != nil {
+			writeJobEvent(s.requests, event)
+		}
+		s.telemetry.job(event)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -402,10 +417,13 @@ func consoleTemplates() (map[string]*template.Template, error) {
 // serve runs the server until it is stopped, with the reads bounded and the HTTP timeouts set.
 func (s *consoleServer) serve(out io.Writer, address string) int {
 	mux := s.routes()
-	server := &http.Server{Addr: address, Handler: logRequests(s.requests, s.identityMiddleware(mux)),
+	server := &http.Server{Addr: address, Handler: logRequests(s.requests, s.telemetry, s.identityMiddleware(mux)),
 		ReadHeaderTimeout: 10 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()
+	exporting, stopExporting := context.WithCancel(context.Background())
+	defer stopExporting()
+	go s.telemetry.run(exporting)
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	return s.run(out, server, done, stop.Done())
@@ -467,6 +485,9 @@ func (s *consoleServer) run(out io.Writer, server *http.Server, done <-chan erro
 		if s.jobs != nil && !s.jobs.Drain(jobDrainLimit) {
 			fmt.Fprintln(out, "console: stopped with a job still running; the next pod calls it interrupted")
 		}
+		flushing, cancelFlush := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelFlush()
+		s.telemetry.flush(flushing)
 		return 0
 	}
 }
@@ -712,7 +733,7 @@ func (s *consoleServer) pageWith(r *http.Request, autoRefresh bool, jobs []pages
 		AutoRefresh: autoRefresh, HasGithub: s.hasGitHub, RefreshURL: r.URL.RequestURI(), Running: runningJobs(jobViewsOf(jobs))}
 }
 
-func (s *consoleServer) render(w http.ResponseWriter, status int, name string, data any) {
+func (s *consoleServer) render(w http.ResponseWriter, r *http.Request, status int, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	set, known := s.templates[name]
@@ -720,7 +741,10 @@ func (s *consoleServer) render(w http.ResponseWriter, status int, name string, d
 		fmt.Fprintf(os.Stderr, "console: no template %s\n", name)
 		return
 	}
-	if err := set.ExecuteTemplate(w, "base", data); err != nil {
+	_, span := s.telemetry.child(r.Context(), "render", telemetry.Attribute{Key: "console.template", Value: name})
+	err := set.ExecuteTemplate(w, "base", data)
+	span.end(err)
+	if err != nil {
 		// The status line is already sent: what is left is a truncated page, logged rather than hidden.
 		fmt.Fprintf(os.Stderr, "console: template %s: %v\n", name, err)
 	}
@@ -728,7 +752,7 @@ func (s *consoleServer) render(w http.ResponseWriter, status int, name string, d
 
 func (s *consoleServer) failure(w http.ResponseWriter, r *http.Request, status int, problem string) {
 	page := errorData{shell: s.page(r, false), Error: problem}
-	s.render(w, status, "error.html", page)
+	s.render(w, r, status, "error.html", page)
 }
 
 // overview reads the pinned tree and the cluster once, and shows what needs attention.
@@ -756,7 +780,7 @@ func (s *consoleServer) overview(w http.ResponseWriter, r *http.Request) {
 			data.Recent = append(data.Recent, job)
 		}
 	}
-	s.render(w, http.StatusOK, "overview.html", data)
+	s.render(w, r, http.StatusOK, "overview.html", data)
 }
 
 // readOverview is what a page shows to a failed read: Go's own words, never a fallback.
@@ -809,7 +833,7 @@ func (s *consoleServer) platform(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.shell = s.page(r, true)
-	s.render(w, http.StatusOK, "platform.html", data)
+	s.render(w, r, http.StatusOK, "platform.html", data)
 }
 
 func (s *consoleServer) readPlatform(ctx context.Context) (platformData, error) {

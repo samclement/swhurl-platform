@@ -1,0 +1,146 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "console"
+            }
+          }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "metrics": [
+            {
+              "description": "Requests answered",
+              "name": "console.requests",
+              "sum": {
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  {
+                    "asInt": "1",
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/activity"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": "502"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1794648600000000000",
+                    "timeUnixNano": "1794648660000000000"
+                  },
+                  {
+                    "asInt": "3",
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/apps"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": "200"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1794648600000000000",
+                    "timeUnixNano": "1794648660000000000"
+                  }
+                ],
+                "isMonotonic": true
+              },
+              "unit": "{request}"
+            },
+            {
+              "description": "",
+              "histogram": {
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/activity"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": "502"
+                        }
+                      }
+                    ],
+                    "bucketCounts": [
+                      "0",
+                      "0",
+                      "1",
+                      "0"
+                    ],
+                    "count": "1",
+                    "explicitBounds": [
+                      0.1,
+                      1,
+                      10
+                    ],
+                    "startTimeUnixNano": "1794648600000000000",
+                    "sum": 2,
+                    "timeUnixNano": "1794648660000000000"
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/apps"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": "200"
+                        }
+                      }
+                    ],
+                    "bucketCounts": [
+                      "2",
+                      "2",
+                      "0",
+                      "1"
+                    ],
+                    "count": "5",
+                    "explicitBounds": [
+                      0.1,
+                      1,
+                      10
+                    ],
+                    "startTimeUnixNano": "1794648600000000000",
+                    "sum": 31.65,
+                    "timeUnixNano": "1794648660000000000"
+                  }
+                ]
+              },
+              "name": "http.server.request.duration",
+              "unit": "s"
+            }
+          ],
+          "scope": {
+            "name": "swhurl-v2/console"
+          }
+        }
+      ]
+    }
+  ]
+}

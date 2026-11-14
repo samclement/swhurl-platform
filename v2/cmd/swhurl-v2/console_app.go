@@ -91,7 +91,7 @@ func (s *consoleServer) app(w http.ResponseWriter, r *http.Request) {
 	if row.Report.Live.Unit.Status == "absent" {
 		page := pendingData{shell: s.pageWith(r, false, jobs),
 			Pending: pages.PendingOf(instance, false, true, nil, nil, "")}
-		s.render(w, http.StatusOK, "pending.html", page)
+		s.render(w, r, http.StatusOK, "pending.html", page)
 		return
 	}
 	data, err := s.readApp(ctx, instance, tree, rows, *row)
@@ -100,7 +100,7 @@ func (s *consoleServer) app(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.shell = s.pageWith(r, false, jobs)
-	s.render(w, http.StatusOK, "app.html", data)
+	s.render(w, r, http.StatusOK, "app.html", data)
 }
 
 // appRow is the pinned tree, every row, and the instance's row (nil when the cluster has no such instance).
@@ -128,7 +128,7 @@ func (s *consoleServer) pending(w http.ResponseWriter, r *http.Request, instance
 		return
 	}
 	page := pendingData{shell: s.pageWith(r, false, jobs), Pending: pending}
-	s.render(w, http.StatusOK, "pending.html", page)
+	s.render(w, r, http.StatusOK, "pending.html", page)
 }
 
 // readApp is one instance's page: the pinned tree, the rows and the documents the page shows.
@@ -195,7 +195,7 @@ func (s *consoleServer) promotion(w http.ResponseWriter, r *http.Request) {
 	existing := pages.PullsFor(pulls, pages.Instance{App: app, Env: "prod"})
 	if len(existing) > 0 {
 		page := promotionData{shell: s.page(r, false), PromotionPage: pages.PromotionPage{App: app, PRs: existing}}
-		s.render(w, http.StatusOK, "promotion.html", page)
+		s.render(w, r, http.StatusOK, "promotion.html", page)
 		return
 	}
 	_, rows, err := s.readRows(ctx)
@@ -209,7 +209,7 @@ func (s *consoleServer) promotion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page := promotionData{shell: s.page(r, false), PromotionPage: pages.PromotionPage{App: app, Review: &review}}
-	s.render(w, http.StatusOK, "promotion.html", page)
+	s.render(w, r, http.StatusOK, "promotion.html", page)
 }
 
 // promotionReview is staging's image against production's, or why the promotion cannot be reviewed.

@@ -481,5 +481,5 @@ func (s *consoleServer) teamsRefusal(w http.ResponseWriter, r *http.Request, pro
 	}
 	data.Error = problem
 	data.shell = s.page(r, false)
-	s.render(w, http.StatusBadRequest, "teams.html", data)
+	s.render(w, r, http.StatusBadRequest, "teams.html", data)
 }

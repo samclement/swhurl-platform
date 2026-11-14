@@ -238,5 +238,5 @@ func (s *consoleServer) renderNewApp(w http.ResponseWriter, r *http.Request, rea
 		TeamsError: read.teamsError, Form: form, Connectable: read.connectable, Error: problem,
 		Github: s.hasGitHub, AppRepos: s.appRepos})
 	page.ChosenCalls, page.ChosenEvents = calls, events
-	s.render(w, status, "new_repo.html", newAppData{shell: s.page(r, false), NewAppPage: page})
+	s.render(w, r, status, "new_repo.html", newAppData{shell: s.page(r, false), NewAppPage: page})
 }

@@ -387,6 +387,23 @@ adapters/ntfy: func New(client *http.Client) Publisher
 adapters/ntfy: type Error struct {Code, Subject, Reason string}
 adapters/ntfy: type Publisher interface {Publish(ctx context.Context, address string, publication notify.Publication) error}
 adapters/ntfy: type Topics struct {}
+adapters/otlp/otlptest: func (*Fake) Attempts() int
+adapters/otlp/otlptest: func (*Fake) Metrics(_ context.Context, source telemetry.Source, metrics telemetry.Metrics) error
+adapters/otlp/otlptest: func (*Fake) Received() []Sent
+adapters/otlp/otlptest: func (*Fake) Traces(_ context.Context, source telemetry.Source, spans []telemetry.Span) error
+adapters/otlp/otlptest: func Contract(t *testing.T, open func(t *testing.T, refusing bool) (otlp.Exporter, func() []Sent))
+adapters/otlp/otlptest: func Scenario() (telemetry.Source, []telemetry.Span, telemetry.Metrics)
+adapters/otlp/otlptest: type Fake struct {Refusing bool Fail error}
+adapters/otlp/otlptest: type Sent struct {Path string Document []byte}
+adapters/otlp: const Failed = "failed"
+adapters/otlp: const RefusedRequest = "refused_request"
+adapters/otlp: func (*Collector) Metrics(ctx context.Context, source telemetry.Source, metrics telemetry.Metrics) error
+adapters/otlp: func (*Collector) Traces(ctx context.Context, source telemetry.Source, spans []telemetry.Span) error
+adapters/otlp: func (*Error) Error() string
+adapters/otlp: func New(client *http.Client, endpoint string) (*Collector, error)
+adapters/otlp: type Collector struct {}
+adapters/otlp: type Error struct {Code, Subject, Reason string}
+adapters/otlp: type Exporter interface {Traces(ctx context.Context, source telemetry.Source, spans []telemetry.Span) error Metrics(ctx context.Context, source telemetry.Source, metrics telemetry.Metrics) error}
 adapters/registry/registrytest: func (*Fake) Describe(_ context.Context, reference string) (registry.Image, error)
 adapters/registry/registrytest: func (*Fake) Tags(context.Context) ([]string, error)
 adapters/registry/registrytest: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) registry.Reader)
@@ -1854,6 +1871,34 @@ teamscenario: type Chain struct {Caller, Callee, Event, Subscriber string}
 teamscenario: type Level string
 teamscenario: type Line struct {Level Level Text string}
 teamscenario: type Preflight struct {Reason string}
+telemetry: const Client Kind = 3
+telemetry: const Internal Kind = 1
+telemetry: const Server Kind = 2
+telemetry: func (*Counter) Add(n uint64, attributes ...Attribute)
+telemetry: func (*Counter) Sum() Sum
+telemetry: func (*Histogram) Distribution() Distribution
+telemetry: func (*Histogram) Record(value float64, attributes ...Attribute)
+telemetry: func (SpanID) IsZero() bool
+telemetry: func (SpanID) String() string
+telemetry: func (TraceID) IsZero() bool
+telemetry: func (TraceID) String() string
+telemetry: func EncodeMetrics(source Source, metrics Metrics) ([]byte, error)
+telemetry: func EncodeTraces(source Source, spans []Span) ([]byte, error)
+telemetry: func ParseTraceparent(header string) (Parent, bool)
+telemetry: type Attribute struct {Key string Value any}
+telemetry: type Counter struct {Name, Unit, Description string}
+telemetry: type Distribution struct {Name, Unit, Description string Bounds []float64 Points []HistogramPoint}
+telemetry: type Histogram struct {Name, Unit, Description string Bounds []float64}
+telemetry: type HistogramPoint struct {Attributes []Attribute Count uint64 Sum float64 Buckets []uint64}
+telemetry: type Kind int
+telemetry: type Metrics struct {Start, At time.Time Sums []Sum Histograms []Distribution}
+telemetry: type Parent struct {Trace TraceID Span SpanID}
+telemetry: type Source struct {Resource []Attribute Scope string}
+telemetry: type Span struct {Trace TraceID ID SpanID Parent SpanID Name string Kind Kind Start, End time.Time Attributes []Attribute Failed bool Message string}
+telemetry: type SpanID [8]byte
+telemetry: type Sum struct {Name, Unit, Description string Points []SumPoint}
+telemetry: type SumPoint struct {Attributes []Attribute Value uint64}
+telemetry: type TraceID [16]byte
 workstreams: const MaxLines = 250
 workstreams: const Registry = "docs/workstreams.md"
 workstreams: func Check(c Checkout) []Result

@@ -31,8 +31,20 @@ What has been verified on the live cluster, and when: current facts first, then 
   the service is called `flux-controllers`, which is also what it is). The first dry run against the live cluster
   read the apps as up to date, kept the two reserved webhooks and the seven apps' alerts, and planned thirteen
   `would create Platform: …` lines, writing nothing.
-- **Not exercised yet:** the real pass on the cluster. This entry records the offline half and the dry run; what
-  HyperDX shows after the job ran is added below the same day.
+- **Deployed and live:** CI passed on `e4045d50` (its first run failed only on an unformatted test file, which
+  `gofmt` fixed), its Deploy job pinned console `src-c349f08ec4b6608e` as `85f676ce`, and `make flux-reconcile`
+  reported `platform-console`. The `console-dashboards` job that first ran on that image
+  (`console-dashboards-29910251`, 00:11:10 UTC) logged `created Platform: …` thirteen times and then
+  `ClickStack dashboard pass completed, dry_run=false`; the next run (`…-29910252`) logged 22 `is up to date` lines
+  — the thirteen services, seven apps and the two webhooks — and no create, update or delete, so a second pass
+  changes nothing. `make verify-platform` passed, including `dashboard and alert sync succeeded in the last 5
+  minutes`.
+- **The tiles read data:** the definitions' own filters against ClickHouse count 13 `Platform: console` requests in
+  two hours (Traefik's `Server` spans whose `server.address` starts `console.`), 6 backup runs in thirty hours
+  (`Published …` lines) and 120 console-notification runs in two hours, so the platform family is charted rather
+  than merely created. Evidence is the API's listing and the job's log, not a browser session.
+- **Not exercised:** the dashboards in a signed-in browser, a tile opened from HyperDX for a platform service, and
+  the deletion path — no catalogued service has been removed since the family existed.
 
 ## Traefik's requests reach ClickStack (13 November 2026)
 

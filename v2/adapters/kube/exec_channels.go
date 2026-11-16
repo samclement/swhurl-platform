@@ -1,10 +1,13 @@
 package kube
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"strconv"
+
+	"github.com/coder/websocket"
 )
 
 // execChannels owns remotecommand's multiplexed streams and terminal status. Terminal status alone
@@ -16,55 +19,58 @@ type execChannels struct {
 	size   int
 }
 
-func (s *execSocket) receive() (ExecResult, error) {
+// receive reads whole messages until the peer ends the stream. The library answers pings and closes;
+// a message cut off mid-way is never an ending, so a truncated fragment fails even after status.
+func receive(ctx context.Context, conn *websocket.Conn) (ExecResult, error) {
 	channels := execChannels{}
-	var message []byte
-	fragmented := false
 	for {
-		f, err := s.frame()
+		kind, reader, err := conn.Reader(ctx)
 		if err != nil {
-			return channels.finish(err, fragmented)
+			return channels.finish(err)
 		}
-		if f.opcode >= 8 {
-			closed, err := s.control(f)
-			if err != nil {
-				return ExecResult{}, err
-			}
-			if closed {
-				return channels.finish(io.EOF, fragmented)
-			}
-			continue
-		}
-
-		message, fragmented, err = appendFragment(message, fragmented, f)
-		if err != nil {
-			return ExecResult{}, err
-		}
-		if fragmented {
-			continue
+		message, err := io.ReadAll(reader)
+		if err != nil || kind != websocket.MessageBinary {
+			return ExecResult{}, execError("incomplete_stream")
 		}
 		if err := channels.accept(message); err != nil {
 			return ExecResult{}, err
 		}
-		message = nil
 	}
 }
 
-func appendFragment(message []byte, fragmented bool, f execFrame) ([]byte, bool, error) {
-	if f.opcode != 2 && f.opcode != 0 || (f.opcode == 0) != fragmented {
-		return nil, false, execError("malformed_fragment")
+// stdin sends the caller's bytes on channel 0 and then v5's close signal, which closes only stdin,
+// not stdout/status or the WebSocket.
+func stdin(ctx context.Context, conn *websocket.Conn, data []byte) error {
+	if data == nil {
+		return nil
 	}
-	if len(message)+len(f.body) > execLimit+1 {
-		return nil, false, execError("too_large")
+	for len(data) > 0 {
+		n := min(len(data), 16<<10)
+		if err := conn.Write(ctx, websocket.MessageBinary, append([]byte{0}, data[:n]...)); err != nil {
+			return err
+		}
+		data = data[n:]
 	}
-	return append(message, f.body...), !f.final, nil
+	return conn.Write(ctx, websocket.MessageBinary, []byte{255, 0})
 }
 
-func (c *execChannels) finish(err error, fragmented bool) (ExecResult, error) {
-	if errors.Is(err, io.EOF) && c.status && !fragmented {
-		return c.result, nil
+// finish is how the stream ended between messages: an orderly close (1000, 1001 or no code) or the
+// connection ending after terminal status is the run's result; an error close fails it even after
+// status arrived.
+func (c *execChannels) finish(err error) (ExecResult, error) {
+	switch websocket.CloseStatus(err) {
+	case websocket.StatusNormalClosure, websocket.StatusGoingAway, websocket.StatusNoStatusRcvd:
+	case -1:
+		if !errors.Is(err, io.EOF) {
+			return ExecResult{}, execError("incomplete_stream")
+		}
+	default:
+		return ExecResult{}, execError("closed_with_error")
 	}
-	return ExecResult{}, execError("incomplete_stream")
+	if !c.status {
+		return ExecResult{}, execError("incomplete_stream")
+	}
+	return c.result, nil
 }
 
 func (c *execChannels) accept(message []byte) error {

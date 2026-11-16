@@ -178,6 +178,8 @@ var Modules = []ApprovedModule{
 	{"github.com/nats-io/nkeys", "v0.4.16", []string{"adapters/nats"}, []string{"adapters/nats"}},
 	{"github.com/nats-io/nats-server/v2", "v2.15.2", nil, []string{"adapters/nats"}},
 	{"github.com/nats-io/nuid", "v1.0.1", nil, nil},
+	// The exec WebSocket: handshake, framing, pings and closes; the v5 channels stay adapters/kube's.
+	{"github.com/coder/websocket", "v1.8.15", []string{"adapters/kube"}, nil},
 	{"github.com/nats-io/jwt/v2", "v2.8.2", nil, nil},
 	{"github.com/klauspost/compress", "v1.20.3", nil, nil},
 	{"github.com/minio/highwayhash", "v1.0.4", nil, nil},

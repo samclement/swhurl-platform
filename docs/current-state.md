@@ -2,6 +2,23 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The exec WebSocket on `coder/websocket` (16 November 2026)
+
+- **Change:** `adapters/kube`'s `Executor` opens the exec WebSocket with `coder/websocket` v1.8.15 (no
+  dependencies of its own), approved as a [third-party module](iteration-2-plan.md#third-party-modules): the
+  handshake, RFC 6455 framing, masking, pings and the close exchange were hand-written (`exec_frames.go`, 159 lines,
+  and the handshake check, deleted). The Kubernetes v5 channels, the terminal status, the 1 MiB bound, the fixed
+  error reasons and the 30 s limit stay the adapter's. Its callers (`verify`, the dashboard reconciler, ClickStack
+  bootstrap, the team scenario) are unchanged.
+- **One semantic change:** after terminal status, a stream that ends one byte into a frame header now reads as the
+  stream ending (the library reports it as EOF, like an end between frames), not as `incomplete_stream`; a frame
+  cut in its length or body still fails. The test says so.
+- **Checks:** the adapter's tests still drive a server writing raw frames (fragments, ping and pong, close codes,
+  masked and reserved bits, oversize and truncated frames, refused handshakes, cancellation), all passing with
+  `-race -count=3`; a refused-handshake test server now closes its connection, because the library reads up to
+  1 KiB of a refusal's body for at most 3 s.
+- **Not yet exercised live:** `make verify-platform` and the console's dashboard job on the new image.
+
 ## The console's flag store reconnects (16 November 2026)
 
 - **Symptom:** the swhurl-try-10 staging page's Feature flags card said "Overrides could not be read: NATS closed

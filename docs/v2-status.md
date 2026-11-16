@@ -139,8 +139,8 @@ shrunk, retired or ported (the rule is under [durable decisions](#durable-decisi
    are healthy. The operator removed the installed probe units; both are not found and no timer is
    scheduled. Cleanup is complete. Genuine signed-in New app creation on this image remains unexercised ([record](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026)).
 
-**C. Libraries over hand-written protocols** ([modules](iteration-2-plan.md#third-party-modules)). NATS done (16 November 2026); next
-`adapters/kube`'s exec WebSocket on `coder/websocket`, then S3 signing on the AWS signer; the OTel SDK is undecided.
+**C. Libraries over hand-written protocols** ([modules](iteration-2-plan.md#third-party-modules)). NATS and `adapters/kube`'s exec
+WebSocket (`coder/websocket`) done (16 November 2026); next S3 signing on the AWS signer; the OTel SDK is undecided.
 
 Copier in the console image stays Python: it renders a new app's repository
 ([§23](iteration-2-plan.md#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)).

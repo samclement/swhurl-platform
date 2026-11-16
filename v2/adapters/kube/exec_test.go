@@ -223,9 +223,15 @@ func TestExecProtocolFailuresAreSafe(t *testing.T) {
 		"huge length":   func(c net.Conn) { c.Write([]byte{130, 127, 0, 0, 0, 0, 1, 0, 0, 0}) },
 		"noncanonical":  func(c net.Conn) { c.Write([]byte{130, 126, 0, 1, 1}) },
 		"truncated":     func(c net.Conn) { c.Write([]byte{130, 5, 1, 'a'}) },
+		// The stream ending after one byte of a frame header reads as the stream ending, which after status
+		// is the run's end (the library reports both as EOF); a frame cut anywhere later fails.
 		"truncated after status": func(c net.Conn) {
 			serverFrame(c, 2, true, []byte("\x03{\"status\":\"Success\"}"))
-			c.Write([]byte{130})
+			c.Write([]byte{130, 126, 0})
+		},
+		"truncated body after status": func(c net.Conn) {
+			serverFrame(c, 2, true, []byte("\x03{\"status\":\"Success\"}"))
+			c.Write([]byte{130, 5, 1, 'a'})
 		},
 		"fragment missing":     func(c net.Conn) { serverFrame(c, 0, true, []byte("\x01a")) },
 		"fragment interrupted": func(c net.Conn) { serverFrame(c, 2, false, []byte{1}); serverFrame(c, 2, true, []byte{1}) },
@@ -316,6 +322,10 @@ func TestExecUpgradeRefusalsAndCancellation(t *testing.T) {
 					w.Header().Set(map[string]string{"protocol": "Sec-WebSocket-Protocol", "upgrade": "Upgrade", "connection": "Connection"}[kind], "wrong")
 				}
 				w.WriteHeader(101)
+				// End the refused upgrade at once: a client may read a refusal's body until the peer closes.
+				if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+					conn.Close()
+				}
 			}))
 			defer server.Close()
 			api, _ := kube.NewAPI(server.URL, server.Client(), "")

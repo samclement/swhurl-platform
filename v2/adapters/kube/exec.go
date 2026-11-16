@@ -2,14 +2,12 @@ package kube
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha1"
-	"encoding/base64"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 // Executor runs in one named pod/container, separately from Reader and Data. A transport/protocol
@@ -51,19 +49,19 @@ func (a *API) Exec(ctx context.Context, request ExecRequest) (ExecResult, error)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	stream, err := a.upgradeExec(ctx, request)
+	conn, err := a.upgradeExec(ctx, request)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ExecResult{}, execError("timed_out")
+		}
 		return ExecResult{}, err
 	}
-	defer stream.Close()
-	stop := context.AfterFunc(ctx, func() { stream.Close() })
-	defer stop()
-	socket := &execSocket{stream: stream}
+	defer conn.CloseNow()
 	sent := make(chan error, 1)
-	go func() { sent <- socket.stdin(request.Stdin) }()
-	result, err := socket.receive()
+	go func() { sent <- stdin(ctx, conn, request.Stdin) }()
+	result, err := receive(ctx, conn)
 	// Closing also unblocks a writer when the peer stopped reading stdin.
-	stream.Close()
+	conn.CloseNow()
 	sendErr := <-sent
 	if ctx.Err() != nil {
 		return ExecResult{}, execError("timed_out")
@@ -101,12 +99,30 @@ func validateExec(r ExecRequest) error {
 
 func execError(reason string) error { return &Error{Failed, "exec", reason} }
 
-func (a *API) upgradeExec(ctx context.Context, r ExecRequest) (io.ReadWriteCloser, error) {
-	nonce := make([]byte, 16)
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, execError("transport")
+// upgradeExec opens the exec WebSocket: the v5 channel protocol only, no compression, and the
+// connection's own authorization. A refused upgrade is a fixed reason, never the server's words.
+func (a *API) upgradeExec(ctx context.Context, r ExecRequest) (*websocket.Conn, error) {
+	header := http.Header{}
+	if a.token != "" {
+		header.Set("Authorization", "Bearer "+a.token)
 	}
-	key := base64.StdEncoding.EncodeToString(nonce)
+	conn, response, err := websocket.Dial(ctx, a.execURL(r), &websocket.DialOptions{HTTPClient: a.client,
+		HTTPHeader: header, Subprotocols: []string{execProtocol}, CompressionMode: websocket.CompressionDisabled})
+	if err != nil {
+		return nil, dialRefusal(response, err)
+	}
+	// This client offers one subprotocol and no extension, so a server choosing otherwise has answered
+	// another handshake.
+	if conn.Subprotocol() != execProtocol || response.Header.Get("Sec-WebSocket-Extensions") != "" {
+		conn.CloseNow()
+		return nil, execError("upgrade_refused")
+	}
+	conn.SetReadLimit(execLimit + 1)
+	return conn, nil
+}
+
+// execURL is the pod's exec endpoint with the container, the argv and the channels it opens.
+func (a *API) execURL(r ExecRequest) string {
 	address := *a.base
 	address.Path = strings.TrimSuffix(address.Path, "/") + "/api/v1/namespaces/" + url.PathEscape(r.Namespace) + "/pods/" + url.PathEscape(r.Pod) + "/exec"
 	query := url.Values{"container": {r.Container}, "command": r.Command, "stdout": {"true"}, "stderr": {"true"}, "stdin": {"false"}, "tty": {"false"}}
@@ -114,45 +130,17 @@ func (a *API) upgradeExec(ctx context.Context, r ExecRequest) (io.ReadWriteClose
 		query.Set("stdin", "true")
 	}
 	address.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address.String(), nil)
-	if err != nil {
-		return nil, execError("transport")
-	}
-	req.Header = http.Header{"Connection": {"Upgrade"}, "Upgrade": {"websocket"}, "Sec-Websocket-Version": {"13"}, "Sec-Websocket-Key": {key}, "Sec-Websocket-Protocol": {execProtocol}}
-	if a.token != "" {
-		req.Header.Set("Authorization", "Bearer "+a.token)
-	}
-	response, err := a.client.Do(req)
-	if err != nil {
-		return nil, execError(failureReason(err))
-	}
-	return upgradedStream(response, key)
+	return address.String()
 }
 
-func upgradedStream(response *http.Response, key string) (io.ReadWriteCloser, error) {
-	sum := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
-	valid := response.StatusCode == http.StatusSwitchingProtocols &&
-		headerToken(response.Header.Get("Connection"), "upgrade") && strings.EqualFold(response.Header.Get("Upgrade"), "websocket") &&
-		response.Header.Get("Sec-WebSocket-Accept") == base64.StdEncoding.EncodeToString(sum[:]) &&
-		response.Header.Get("Sec-WebSocket-Protocol") == execProtocol &&
-		// This client offers no extension, so a server selecting one has answered another handshake.
-		response.Header.Get("Sec-WebSocket-Extensions") == ""
-	stream, writable := response.Body.(io.ReadWriteCloser)
-	if !valid || !writable {
-		response.Body.Close()
-		if response.StatusCode == http.StatusForbidden || response.StatusCode == http.StatusUnauthorized {
-			return nil, execError("forbidden")
-		}
-		return nil, execError("upgrade_refused")
+// dialRefusal is why the upgrade did not happen: no answer at all, a refused authorization, or an
+// answer that is not this handshake.
+func dialRefusal(response *http.Response, err error) error {
+	switch {
+	case response == nil:
+		return execError(failureReason(err))
+	case response.StatusCode == http.StatusForbidden || response.StatusCode == http.StatusUnauthorized:
+		return execError("forbidden")
 	}
-	return stream, nil
-}
-
-func headerToken(header, token string) bool {
-	for _, part := range strings.Split(header, ",") {
-		if strings.EqualFold(strings.TrimSpace(part), token) {
-			return true
-		}
-	}
-	return false
+	return execError("upgrade_refused")
 }

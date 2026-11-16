@@ -634,6 +634,7 @@ with no importer, so `go.mod` holds nothing unreviewed. A version bump edits `go
 | --- | --- | --- | --- |
 | `go.yaml.in/yaml/v3` | `adapters/helm`, `adapters/appsource`, `adapters/manifests`, `adapters/copier` | 4 November 2026 (`appsource` 5 November, [`manifests` 8 November](#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026), [`copier` 9 November](#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)) | Chart values, app sources, the checkout's manifests and a template's `copier.yml`; not kubeconfigs |
 | `github.com/nats-io/nats.go`, `github.com/nats-io/nkeys` | `adapters/nats` | 16 November 2026 | The flag store's client: keep-alive and reconnect, so the console's long-lived connection survives the server dropping it |
+| `github.com/coder/websocket` | `adapters/kube` | 16 November 2026 | The exec WebSocket (handshake, framing, pings, closes), which `adapters/kube` wrote by hand; the Kubernetes v5 channels stay its own |
 | `github.com/nats-io/nats-server/v2` | `adapters/nats` tests only | 16 November 2026 | An embedded server at the cluster's version, under the console's rendered permissions, for the adapter's contract test |
 
 #### Change report
@@ -1240,7 +1241,7 @@ time is the caller's. Values read from Secrets are compared, never printed, in a
 
 | Adapter | Gains |
 | --- | --- |
-| `adapters/kube` | `Reader` kinds ImagePolicy, Receiver, StatefulSet, Stream, Consumer, PersistentVolumeClaim, PersistentVolume; one read of the cluster's token issuer and signing keys (the OIDC discovery document and its JWKS), named in domain terms, not a raw path. Secrets and ConfigMaps only through `Data`. An `Executor` port: exec in one named pod and container through the API server over WebSocket (`v5.channel.k8s.io`, standard library only), optional stdin, bounded output, the exit status from the status channel. The commands are fixed strings in v2; the port is not reachable from `Reader` |
+| `adapters/kube` | `Reader` kinds ImagePolicy, Receiver, StatefulSet, Stream, Consumer, PersistentVolumeClaim, PersistentVolume; one read of the cluster's token issuer and signing keys (the OIDC discovery document and its JWKS), named in domain terms, not a raw path. Secrets and ConfigMaps only through `Data`. An `Executor` port: exec in one named pod and container through the API server over WebSocket (`v5.channel.k8s.io`, the framing [`coder/websocket`](#third-party-modules)'s), optional stdin, bounded output, the exit status from the status channel. The commands are fixed strings in v2; the port is not reachable from `Reader` |
 | `adapters/github` (new) | Read-only, `api.github.com` only: a repository's hooks with each one's latest delivery; whether a token is accepted and its `github-authentication-token-expiration`. Tokens are arguments, never logged or in errors |
 | `adapters/s3`, `adapters/registry` | Unchanged: `List` and `Describe` |
 

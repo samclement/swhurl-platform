@@ -313,7 +313,11 @@ func (s *consoleServer) changeFlag(w http.ResponseWriter, r *http.Request) {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	store := s.flagStore(ctx)
+	store, err := s.flagStore(ctx)
+	if err != nil {
+		s.failure(w, r, http.StatusBadGateway, "Overrides could not be written: "+err.Error())
+		return
+	}
 	declaration, problem := orchestration.FlagDeclaration(tree[flagDocument(instance)])
 	set := first(fields, "action") == "set"
 	if set {

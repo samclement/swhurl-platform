@@ -163,6 +163,7 @@ type consoleServer struct {
 	flagsMu      sync.Mutex
 	flagsStore   nats.KV
 	flagsTriedAt time.Time
+	flagsErr     error // why the last sign-in failed, until the next attempt
 
 	factsMu sync.Mutex
 	merged  map[int]pages.Pull // merged pull requests, by number

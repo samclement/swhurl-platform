@@ -686,6 +686,8 @@ The card marks an override older than 14 days (make the value the declared one i
 
 Overrides are not in Git and not backed up: if NATS loses them, every app returns to its declared values.
 
+When the card cannot read the overrides it says why above the declared flags and offers no change: a console with no NATS key says so, and one whose sign-in failed shows NATS's reason (it tries again a minute later). Once signed in, the console's connection reconnects by itself after NATS restarts.
+
 **Removing a flag** is the app developer's change: delete it from `swhurl.yaml` and the build no longer generates its accessor, so the compiler lists each place that still reads it.
 
 ## Secrets

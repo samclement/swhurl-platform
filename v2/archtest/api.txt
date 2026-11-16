@@ -1464,6 +1464,7 @@ orchestration: func Status(ctx context.Context, inputs StatusInputs) (observe.Re
 orchestration: func StatusAll(ctx context.Context, inputs StatusInputs, instances []Inputs) (observe.Collection, error)
 orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, options DashboardOptions) (DashboardReport, error)
 orchestration: func TeamScenario(ctx context.Context, inputs TeamScenarioInputs) ([]teamscenario.Line, error)
+orchestration: func UnreachableFlags(environment string, flags []producer.Flag, declarationProblem string, reason error, now time.Time) FlagCard
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type Accepted struct {Request notify.Request Caller string Channels []string Failure error}

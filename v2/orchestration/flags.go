@@ -87,6 +87,18 @@ func Flags(ctx context.Context, store nats.KV, environment, application string, 
 	return FlagCard{Rows: flagRows(environment, flags, overrides, now), Problem: strings.Join(problems, " ")}
 }
 
+// UnreachableFlags is the card when the console holds a key but its store could not be opened: the declaration's
+// rows and the reason the overrides are missing, which is not the no-key problem.
+func UnreachableFlags(environment string, flags []producer.Flag, declarationProblem string, reason error,
+	now time.Time) FlagCard {
+	problems := []string{}
+	if declarationProblem != "" {
+		problems = append(problems, declarationProblem)
+	}
+	problems = append(problems, "Overrides could not be read: "+reason.Error())
+	return FlagCard{Rows: flagRows(environment, flags, nil, now), Problem: strings.Join(problems, " ")}
+}
+
 // SetFlag writes one declared flag's override: the declaration types the form's text first, so a value the app could
 // not read is never stored. The write is idempotent, so a lost answer is safe to retry.
 func SetFlag(ctx context.Context, store nats.KV, environment, application, name, text string,

@@ -31,6 +31,11 @@ What has been verified on the live cluster, and when: current facts first, then 
   read its overrides again, and the console's log held no NATS error.
 - **Not yet exercised:** a signed-in browser through oauth2-proxy on this image, and a `nats-0` restart under the
   live console (the embedded-server test covers the reconnect).
+- **A failed first sign-in** (same day, follow-up): the card said "This console has no NATS key" when the console held
+  a key but NATS refused or could not be reached, because a failed open looked like no store. The console now keeps
+  the reason for the minute before it tries again, the card says "Overrides could not be read: <reason>" and offers
+  no change, and a Set or Clear answers 502 with it (`orchestration.UnreachableFlags`; console tests through
+  `flagCard` with a moving clock). Not exercised live: it needs NATS down while the console starts.
 
 ## Console traces and metrics (14 November 2026)
 

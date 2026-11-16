@@ -3,6 +3,7 @@ module github.com/samclement/swhurl-platform/v2
 go 1.26.0
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/coder/websocket v1.8.15
 	github.com/nats-io/nats-server/v2 v2.15.2
 	github.com/nats-io/nats.go v1.55.0
@@ -12,6 +13,7 @@ require (
 
 require (
 	github.com/antithesishq/antithesis-sdk-go v0.8.0-default-no-op // indirect
+	github.com/aws/smithy-go v1.28.9 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/minio/highwayhash v1.0.4 // indirect

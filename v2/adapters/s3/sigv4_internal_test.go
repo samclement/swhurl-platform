@@ -2,6 +2,8 @@ package s3
 
 import (
 	"net/http"
+	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -35,20 +37,22 @@ func TestSignMatchesThePublishedVector(t *testing.T) {
 	}
 }
 
-// AWS's published example for a presigned GET, reproduced exactly: the canonical query, the scope and the
-// signature. A restore pod reads one archive with this URL, so a wrong canonicalisation would be invisible
-// until a pod could not fetch its backup.
+// AWS's published example for a presigned GET: the scope, the expiry and the signature. A restore pod reads one
+// archive with this URL, so a wrong canonicalisation would be invisible until a pod could not fetch its backup.
 func TestPresignMatchesThePublishedVector(t *testing.T) {
 	at := time.Date(2013, 5, 24, 0, 0, 0, 0, time.UTC)
-	got := presignedURL("examplebucket.s3.amazonaws.com", "/test.txt", "us-east-1",
+	got, err := url.Parse(presignedURL("examplebucket.s3.amazonaws.com", "/test.txt", "us-east-1",
 		Credentials{AccessKey: "AKIAIOSFODNN7EXAMPLE", SecretKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"},
-		24*time.Hour, at)
-	want := "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256" +
-		"&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request" +
-		"&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host" +
-		"&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404"
-	if got != want {
-		t.Fatalf("presigned URL\n%s\nwant\n%s", got, want)
+		24*time.Hour, at))
+	if err != nil || got.Scheme != "https" || got.Host != "examplebucket.s3.amazonaws.com" || got.Path != "/test.txt" {
+		t.Fatalf("presigned URL %v, %v", got, err)
+	}
+	want := url.Values{"X-Amz-Algorithm": {"AWS4-HMAC-SHA256"},
+		"X-Amz-Credential": {"AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request"},
+		"X-Amz-Date":       {"20130524T000000Z"}, "X-Amz-Expires": {"86400"}, "X-Amz-SignedHeaders": {"host"},
+		"X-Amz-Signature": {"aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404"}}
+	if !reflect.DeepEqual(got.Query(), want) {
+		t.Fatalf("presigned query\n%v\nwant\n%v", got.Query(), want)
 	}
 }
 
@@ -78,16 +82,26 @@ func TestSignIncludesTheSessionToken(t *testing.T) {
 	}
 }
 
-// The canonical query is sorted and encoded once, whichever way the caller wrote it.
-func TestCanonicalQueryIsSortedAndEncodedOnce(t *testing.T) {
-	got := canonicalQuery("prefix=a%2Fb%2F&list-type=2&continuation-token=x%20y")
-	if want := "continuation-token=x%20y&list-type=2&prefix=a%2Fb%2F"; got != want {
-		t.Fatalf("canonical query %q, want %q", got, want)
+// A key with characters S3 escapes is signed as the request carries it, escaped once: the signatures the
+// hand-written signer gave this key (it restored an archive live on 27 October 2026), pinned so a doubled
+// escape cannot pass.
+func TestAnEscapedKeyIsSignedOnce(t *testing.T) {
+	at := time.Date(2026, 10, 27, 3, 4, 5, 0, time.UTC)
+	credentials := Credentials{AccessKey: "AKIAIOSFODNN7EXAMPLE", SecretKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
+	path := "/app-sqlite/hello%20staging/x%2By.db.age"
+	request, err := http.NewRequest(http.MethodGet, "https://bucket.s3.eu-west-2.amazonaws.com"+path, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := canonicalURI(""); got != "/" {
-		t.Fatalf("empty path %q", got)
+	sign(request, "eu-west-2", credentials, at)
+	if want := "Signature=03d73df308a6b5cbe5069b4ff460da8b8fe47d0d0b5f83a2a3802d5b9b52aa52"; !strings.HasSuffix(
+		request.Header.Get("Authorization"), want) {
+		t.Errorf("signed header %s, want %s", request.Header.Get("Authorization"), want)
 	}
-	if got := canonicalURI("/a b/c"); got != "/a%20b/c" {
-		t.Fatalf("path %q", got)
+	presigned, err := url.Parse(presignedURL("bucket.s3.eu-west-2.amazonaws.com", path, "eu-west-2", credentials,
+		time.Hour, at))
+	if err != nil || presigned.EscapedPath() != path ||
+		presigned.Query().Get("X-Amz-Signature") != "7b232a06684e14a4ccfbbdd0dd30069bb957a60f6b0a0dfb47762a8776707930" {
+		t.Errorf("presigned %v, %v", presigned, err)
 	}
 }

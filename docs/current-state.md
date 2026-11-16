@@ -2,6 +2,19 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## S3 signing on AWS's signer (16 November 2026)
+
+- **Change:** `adapters/s3` signs its listing and object requests, and the presigned URL a restore pod reads one
+  archive with, through `aws-sdk-go-v2`'s `aws/signer/v4` package (v1.48.0, with `smithy-go`; no service client),
+  approved as a [third-party module](iteration-2-plan.md#third-party-modules). The hand-written canonicalisation,
+  signing key and HMAC chain (about 150 lines) are deleted; the key's path is still escaped once by the adapter,
+  and S3's no-second-escape option is set on the signer.
+- **Checks:** AWS's published GET Object and presigned-GET vectors pass on the SDK (the presigned one compared as
+  query values: the SDK orders the parameters differently). A new vector for a key with a space and a `+` holds the
+  signatures the hand-written signer gave it, and fails if the no-second-escape option is dropped.
+- **Not yet exercised live:** a listing (`make app-status`'s backup line) and a restore's presigned read on the new
+  image.
+
 ## The exec WebSocket on `coder/websocket` (16 November 2026)
 
 - **Change:** `adapters/kube`'s `Executor` opens the exec WebSocket with `coder/websocket` v1.8.15 (no

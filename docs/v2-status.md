@@ -139,8 +139,8 @@ shrunk, retired or ported (the rule is under [durable decisions](#durable-decisi
    are healthy. The operator removed the installed probe units; both are not found and no timer is
    scheduled. Cleanup is complete. Genuine signed-in New app creation on this image remains unexercised ([record](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026)).
 
-**C. Libraries over hand-written protocols** ([modules](iteration-2-plan.md#third-party-modules)). NATS and `adapters/kube`'s exec
-WebSocket (`coder/websocket`) done (16 November 2026); next S3 signing on the AWS signer; the OTel SDK is undecided.
+**C. Libraries over hand-written protocols** ([modules](iteration-2-plan.md#third-party-modules)). NATS, `adapters/kube`'s exec
+WebSocket (`coder/websocket`) and S3 signing (AWS's signer) done (16 November 2026); the OTel SDK is undecided.
 
 Copier in the console image stays Python: it renders a new app's repository
 ([§23](iteration-2-plan.md#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)).
@@ -189,7 +189,7 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   one needs an outside host (28 October 2026).
 - Restore: v2 orchestrates and a pod decrypts, with a presigned URL for one archive and the age key in a
   Secret v2 creates and deletes (26 October 2026).
-- The bucket is read with a hand-written SigV4 signer and the operator's credentials; the region comes from
+- The bucket is read with AWS's SigV4 signer (hand-written until 16 November 2026) and the operator's credentials; the region comes from
   the bucket, not the profile (26 October 2026).
 - The egress proxy renders only its generated objects; its deployment stays hand-written and grants are
   enforced (25 October 2026).

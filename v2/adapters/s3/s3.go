@@ -309,11 +309,22 @@ func objectFailure(status int) *Error {
 	return &Error{"status", "object", observe.ReasonStatus}
 }
 
-// awsEscapePath encodes an object key's path segments the way the canonical request does.
+// awsEscapePath encodes an object key's path segments once, as S3 signs them: unreserved characters stay,
+// everything else is percent-encoded in upper case, and a space is %20.
 func awsEscapePath(key string) string {
 	segments := strings.Split(key, "/")
 	for i, segment := range segments {
-		segments[i] = awsEscape(segment)
+		var out strings.Builder
+		for j := 0; j < len(segment); j++ {
+			character := segment[j]
+			if character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z' ||
+				character >= '0' && character <= '9' || strings.IndexByte("-._~", character) >= 0 {
+				out.WriteByte(character)
+				continue
+			}
+			fmt.Fprintf(&out, "%%%02X", character)
+		}
+		segments[i] = out.String()
 	}
 	return strings.Join(segments, "/")
 }

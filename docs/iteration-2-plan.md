@@ -634,6 +634,7 @@ with no importer, so `go.mod` holds nothing unreviewed. A version bump edits `go
 | --- | --- | --- | --- |
 | `go.yaml.in/yaml/v3` | `adapters/helm`, `adapters/appsource`, `adapters/manifests`, `adapters/copier` | 4 November 2026 (`appsource` 5 November, [`manifests` 8 November](#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026), [`copier` 9 November](#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)) | Chart values, app sources, the checkout's manifests and a template's `copier.yml`; not kubeconfigs |
 | `github.com/nats-io/nats.go`, `github.com/nats-io/nkeys` | `adapters/nats` | 16 November 2026 | The flag store's client: keep-alive and reconnect, so the console's long-lived connection survives the server dropping it |
+| `github.com/aws/aws-sdk-go-v2` (its `aws/signer/v4` package only) | `adapters/s3` | 16 November 2026 | S3 request and presigned-URL signing, which `adapters/s3` wrote by hand; listing, reads and region discovery stay its own |
 | `github.com/coder/websocket` | `adapters/kube` | 16 November 2026 | The exec WebSocket (handshake, framing, pings, closes), which `adapters/kube` wrote by hand; the Kubernetes v5 channels stay its own |
 | `github.com/nats-io/nats-server/v2` | `adapters/nats` tests only | 16 November 2026 | An embedded server at the cluster's version, under the console's rendered permissions, for the adapter's contract test |
 

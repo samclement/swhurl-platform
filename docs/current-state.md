@@ -12,8 +12,10 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Checks:** AWS's published GET Object and presigned-GET vectors pass on the SDK (the presigned one compared as
   query values: the SDK orders the parameters differently). A new vector for a key with a space and a `+` holds the
   signatures the hand-written signer gave it, and fails if the no-second-escape option is dropped.
-- **Not yet exercised live:** a listing (`make app-status`'s backup line) and a restore's presigned read on the new
-  image.
+- **Live** (`67ecda66`, 09:45 UTC): `swhurl-v2 status --archive` for swhurl-try-10 staging, with the operator's AWS
+  credentials, discovered the bucket's region, listed its prefix and reported `Archive current`.
+- **Not yet exercised live:** a restore's presigned read on the SDK signer (covered by the published and pinned
+  vectors).
 
 ## The exec WebSocket on `coder/websocket` (16 November 2026)
 
@@ -30,7 +32,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   masked and reserved bits, oversize and truncated frames, refused handshakes, cancellation), all passing with
   `-race -count=3`; a refused-handshake test server now closes its connection, because the library reads up to
   1 KiB of a refusal's body for at most 3 s.
-- **Not yet exercised live:** `make verify-platform` and the console's dashboard job on the new image.
+- **Live** (`67ecda66`, console image `src-37a2e7d2ef7c31eb`, 09:42 UTC): the console's dashboard job ran on the new
+  image and completed its pass, which reads ClickStack's MongoDB through exec; `make verify-platform`, which also
+  execs into pods, passed.
 
 ## The console's flag store reconnects (16 November 2026)
 
@@ -65,7 +69,8 @@ What has been verified on the live cluster, and when: current facts first, then 
   a key but NATS refused or could not be reached, because a failed open looked like no store. The console now keeps
   the reason for the minute before it tries again, the card says "Overrides could not be read: <reason>" and offers
   no change, and a Set or Clear answers 502 with it (`orchestration.UnreachableFlags`; console tests through
-  `flagCard` with a moving clock). Not exercised live: it needs NATS down while the console starts.
+  `flagCard` with a moving clock). Live on `src-37a2e7d2ef7c31eb`: the card still reads swhurl-try-10 staging's
+  overrides. Not exercised live: a failed sign-in, which needs NATS down while the console starts.
 
 ## Console traces and metrics (14 November 2026)
 

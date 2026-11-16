@@ -46,7 +46,7 @@ SHELL := /usr/bin/env bash
 ## check-lint | Local | - | Lint the Python tooling and the bash that stays (needs uv)
 ## check-codegraph | Local | - | Unit tests for the code graph development aid (devtools/codegraph)
 ## check-docs | Local | - | Compare the workstream registry and its status pages with Git (swhurl-v2 workstreams): state, next gate, uncommitted work, cited commits, page-per-change (needs Go 1.26.0)
-## v2-deps | Local | - | Download the pinned v2 YAML parser with checksum verification before offline builds and checks
+## v2-deps | Local | - | Download v2's approved modules with checksum verification before offline builds and checks
 ## check-v2 | Local | - | Format, vet and test the Go v2 module, its design guardrails included (needs Go 1.26.0)
 ## v2-render | Git | - | Render what the records decide when the tree disagrees with them: every compiled folder and unit, the resolution, the egress allocation and the proxy's objects, auth, NATS's users and Reloader's list (needs Go 1.26.0)
 ## v2-deploy | Git | - | Bring every v2-owned staging instance to the newest image its repository publishes (v2-records and v2-apps; needs Go 1.26.0)
@@ -158,7 +158,7 @@ V2_BUILD = set -Eeuo pipefail; work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; 
 
 .PHONY: v2-deps
 v2-deps:
-	cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org go mod download go.yaml.in/yaml/v3
+	cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org go mod download
 
 # CERT_ISSUER in platform-settings, the one line changed and comments kept (swhurl-v2 platform-certs): only a
 # letsencrypt-* ClusterIssuer in infra/issuers. It edits the file only: commit and push it. Needs Go 1.26.0.

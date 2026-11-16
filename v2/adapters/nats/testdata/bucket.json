@@ -1,0 +1,9 @@
+{
+  "bucket": "flags-staging",
+  "description": "Feature flag overrides for staging",
+  "history": 5,
+  "max_value_size": 1024,
+  "max_bytes": 1048576,
+  "storage": "file",
+  "num_replicas": 1
+}

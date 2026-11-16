@@ -48,7 +48,7 @@ func readRepo(t *testing.T, path string) string {
 	return string(data)
 }
 
-func TestStdlibOnly(t *testing.T)      { report(t, checkStdlibOnly(module(t))) }
+func TestApprovedModules(t *testing.T) { report(t, checkApprovedModules(module(t))) }
 func TestLayers(t *testing.T)          { report(t, checkLayers(module(t))) }
 func TestPure(t *testing.T)            { report(t, checkPure(module(t))) }
 func TestOrchestration(t *testing.T)   { report(t, checkOrchestration(module(t), Orchestration)) }

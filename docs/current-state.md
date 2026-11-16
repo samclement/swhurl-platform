@@ -2,6 +2,30 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console's flag store reconnects (16 November 2026)
+
+- **Symptom:** the swhurl-try-10 staging page's Feature flags card said "Overrides could not be read: NATS closed
+  the connection: write tcp 10.42.0.135:39820->10.43.199.131:4222: write: broken pipe". The client address was the
+  console pod `console-655ccdc674-5qq5w` (up 41 hours), the server the `nats` Service; `nats-0` had been up 4.9
+  days with no restart since. The console opened one connection on its first page load and kept it, and its
+  hand-written client answered the server's keep-alives only during a request and never reconnected, so once NATS
+  closed the socket every card failed until the pod restarted. The apps, on the official clients, were unaffected.
+- **Change:** `adapters/nats` wraps the official `nats.go` client (with `nkeys` for the seed) behind the same `KV`
+  interface, so the flag model, `swhurl-v2 flags` and the console are unchanged; the console still keeps one store,
+  which now reconnects by itself, fails a call made while it is down at once with the reason, and is safe for
+  concurrent requests. Rule `stdlib-only` became `approved-modules`
+  ([third-party modules](iteration-2-plan.md#third-party-modules)): pure packages stay standard-library-only and
+  each module names the adapters that may import it. The kernel's seed decoding and signing, the scripted server
+  and its seven raw frames are deleted (the adapter is 193 lines, down from 491). `make v2-deps` and the console image download every
+  module in `go.mod`.
+- **Checks:** the adapter's contract runs against an embedded NATS server v2.15.2 (the cluster's version) under the
+  console's permissions as `kernel.RenderUsers` renders them, with the bucket created from the staging `KeyValue`
+  spec; a restarted server is reconnected to and its stored value read back; 64 concurrent reads each get their own
+  answer (`go test -race -count=3`). `make check-v2` and `make check` passed; `make check-docs` passes on the
+  committed tree.
+- **Not yet exercised:** the live console on the new image, and a page load after an idle stretch of more than a
+  few minutes.
+
 ## Console traces and metrics (14 November 2026)
 
 - **Capability:** slice 3b of [platform telemetry](platform-telemetry-status.md): the console sends its own spans and

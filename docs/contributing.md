@@ -26,7 +26,7 @@ share a contract suite. The parser
 exception is exactly that adapter, Helm and `adapters/manifests` (the checkout's Kubernetes YAML, for `check-repo`); no new dependency is needed. Run `make v2-deps` once before
 offline binary builds; Validate already bootstraps its template job's binary dependencies.
 
-Run `make v2-deps` once after checkout or a v2 dependency pin change, before offline builds/checks; CI and the console image build do so explicitly ([build contract](iteration-2-plan.md#offline-cli-and-build)).
+Run `make v2-deps` once after checkout or a change to v2's `go.mod`, before offline builds/checks; CI and the console image build do so explicitly ([build contract](iteration-2-plan.md#offline-cli-and-build)).
 
 Prerequisites (CI pins the same): `kubectl`, `helm`, `uv`, `jq`, Go 1.26 for `check-v2`, `check-apps`, `check-repo` and `check-docs` (the version `v2/go.mod` states), and Python 3 for the standard-library codegraph aid. The retained Go chart tests also execute `python3` with `PyYAML==6.0.3`: install it in the interpreter on `PATH` (`python3 -m pip install 'PyYAML==6.0.3'`, preferably in a virtual environment). Validate and Deploy v2 install this test-only dependency explicitly with Python 3.12; it is not a project dependency group. [`pyproject.toml`](../pyproject.toml) and `uv.lock` pin only Copier and its transitive dependencies; after changing its dependency group, run `uv lock` and commit `uv.lock`. The console image installs only that group. `make console-dev` builds and runs v2's Go console.
 

@@ -350,7 +350,8 @@ func prose(text string) template.HTML { return template.HTML(html.EscapeString(t
 // jsString is a value as JavaScript's own JSON text, which Jinja's tojson writes too.
 func jsString(value string) template.JS { return template.JS(pages.JinjaJSON(value)) }
 
-// flagsStore opens the console's NATS store once, and not again for a minute after a failure.
+// flagStore opens the console's NATS store once and keeps it, since the store reconnects by itself; after a failed
+// first sign-in it tries again a minute later.
 func (s *consoleServer) flagStore(ctx context.Context) nats.KV {
 	s.flagsMu.Lock()
 	defer s.flagsMu.Unlock()

@@ -98,7 +98,7 @@ its tests. Afterwards, update the uncovered boundaries in [services](services.md
   catalogue fails rather than deleting every dashboard.
 - `swhurl-app` and `swhurl-platform` are disjoint: each pass reads, updates and prunes only its own tag, and only
   the app pass records dashboard ids for the console and keeps the default alerts.
-- v2 stays stdlib-only: no OpenTelemetry Go SDK without a separate approval (D2).
+- No OpenTelemetry Go SDK in v2 without a separate approval (D2); v2's [approved modules](iteration-2-plan.md#third-party-modules) list what it may import.
 - Console and notify telemetry is structured JSON lines on stdout, written by v2 with the standard library: a request's
   method, route *pattern* (never its path, query or form value), status and duration; a job's action, target, state,
   duration and the audit text. Probes and assets write no request line, and a 5xx request or a failed job is an ERROR

@@ -357,7 +357,7 @@ adapters/nats/natstest: type Fake struct {Entries map[string]nats.Message Fail e
 adapters/nats/natstest: type Write struct {Subject string Value []byte Headers map[string]string}
 adapters/nats: const Timeout = 5 * time.Second
 adapters/nats: func Open(ctx context.Context, url, seed, inbox string) (KV, error)
-adapters/nats: type KV interface {// Keys is the subjects stored under a prefix, in the server's answer. Keys(ctx context.Context, stream, prefix string) ([]string, error) // Get is the newest message at a key: ErrAbsent when there is none. Get(ctx context.Context, stream, key string) (Message, error) // Put publishes one value at a subject and waits for JetStream's acknowledgement. Put(ctx context.Context, subject string, value []byte, headers map[string]string) error // Close ends the connection. Close() error}
+adapters/nats: type KV interface {// Keys is the subjects stored under a prefix, sorted. Keys(ctx context.Context, stream, prefix string) ([]string, error) // Get is the newest message at a key: ErrAbsent when there is none. Get(ctx context.Context, stream, key string) (Message, error) // Put publishes one value at a subject and waits for JetStream's acknowledgement. Put(ctx context.Context, subject string, value []byte, headers map[string]string) error // Close ends the connection. Close() error}
 adapters/nats: type Message struct {Value []byte Headers map[string]string StoredAt string}
 adapters/nats: var ErrAbsent = errors.New("the store holds no such key")
 adapters/notifysvc/notifysvctest: func (*Fake) Send(ctx context.Context, address, token string, request notifysvc.Request) error
@@ -818,7 +818,6 @@ kernel: func DecodeNameCatalogue(data []byte) (NameCatalogue, error)
 kernel: func DecodeProfile(data []byte) (PlatformProfile, error)
 kernel: func DecodeRelease(data []byte) (ReleaseBundle, error)
 kernel: func DecodeTeams(data []byte) (TeamRegistry, error)
-kernel: func DecodeUserSeed(text string) ([32]byte, error)
 kernel: func EgressGrants(grants []string) ([]string, error)
 kernel: func EncodeApp(app AppSpec) ([]byte, error)
 kernel: func EncodeCompilation(c Compilation) []byte
@@ -858,7 +857,6 @@ kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func RevisionOf(tag ImageTag, revision string) (string, error)
 kernel: func SelectPromotion(staging, target InstanceSpec, current, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
-kernel: func Sign(seed [32]byte, message []byte) []byte
 kernel: func SplitImage(reference string) (string, ImageTag, error)
 kernel: func SubscribersOf(data []byte, application, environment string) ([]string, error)
 kernel: func UnitPath(application, environment string, profile PlatformProfile) string

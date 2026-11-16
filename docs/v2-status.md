@@ -38,7 +38,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 | Backup and restore | done | [record](current-state.md#the-first-content-changing-restore-swhurl-try-10-staging-moved-back-a-day-27-october-2026) |
 | Promotion and rollback | done | [record](current-state.md#a-rollback-exercised-live-2-november-2026) |
 | Image declaration producer in Go | done | [workflow rollout](current-state.md#go-producer-adoption-by-template-workflows-5-november-2026) |
-| Feature flags in Go: the signed NATS key-value adapter, the card's rows, `swhurl-v2 flags` and the console asking it | done | [record](current-state.md#feature-flags-are-gos-and-the-consoles-card-asks-it-8-november-2026) |
+| Feature flags in Go: the NATS key-value adapter (the official client, which reconnects), the card's rows, `swhurl-v2 flags` and the console asking it | done | [record](current-state.md#feature-flags-are-gos-and-the-consoles-card-asks-it-8-november-2026), [reconnects](current-state.md#the-consoles-flag-store-reconnects-16-november-2026) |
 | The console server in Go: `swhurl-v2 console` serves Overview, Platform, Deployments (list and map), Egress, a Flux unit, Teams, the Catalogue (with each app's own OpenAPI and AsyncAPI documents), Activity, a job's page (each change followed past its pull request to the cluster), an app instance's page and the page that waits for it, a promotion's review and the New app form — byte-identically from embedded templates and assets, with the oauth2 identity, `/healthz` and `--dev` | done | [signed off](current-state.md#the-unreachable-python-leaves-and-the-console-is-signed-off-12-november-2026), [pages](current-state.md#the-console-server-serves-its-pages-9-november-2026), [catalogue](current-state.md#the-catalogue-is-the-consoles-documents-and-all-9-november-2026), [activity](current-state.md#activity-and-a-jobs-page-are-the-consoles-9-november-2026), [app, pending, promotion and New app](current-state.md#the-app-page-pending-promotion-and-new-app-are-the-consoles-9-november-2026), [Activity keeps a change it saw](current-state.md#activity-keeps-a-change-it-saw-and-reads-history-one-archive-at-a-time-10-november-2026), [and reads a merge commit's four files](current-state.md#activity-reads-a-merge-commits-four-files-not-its-archive-10-november-2026), [a waiting stage says so on screen](current-state.md#a-new-worker-from-the-go-console-test-01-11-november-2026) |
 | The console's and notify's own telemetry in Go: one structured line per request and per job state change, and the `Platform: <service>` dashboards' request and job tiles that count them | done | [record](current-state.md#console-and-notify-telemetry-14-november-2026) |
 | The console's own traces and metrics: the pure `telemetry` model and OTLP/JSON encoding, the `adapters/otlp` exporter, a span per request with its cluster, GitHub, pinned-tree and render reads inside, and request and job metrics | done | [record](current-state.md#console-traces-and-metrics-14-november-2026) |
@@ -139,6 +139,9 @@ shrunk, retired or ported (the rule is under [durable decisions](#durable-decisi
    are healthy. The operator removed the installed probe units; both are not found and no timer is
    scheduled. Cleanup is complete. Genuine signed-in New app creation on this image remains unexercised ([record](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026)).
 
+**C. Libraries over hand-written protocols** ([modules](iteration-2-plan.md#third-party-modules)). NATS done (16 November 2026); next
+`adapters/kube`'s exec WebSocket on `coder/websocket`, then S3 signing on the AWS signer; the OTel SDK is undecided.
+
 Copier in the console image stays Python: it renders a new app's repository
 ([§23](iteration-2-plan.md#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)).
 
@@ -215,8 +218,9 @@ Rules that constrain the next change, one line each. The reasoning stays in Git 
   local-only, with no cluster reads or install/upgrade (5 November 2026).
 - Read-only `git` is the third: four fixed reads of one checkout for the workstream check, with no write,
   fetch or general command runner (5 November 2026).
-- The only third-party v2 dependency is `go.yaml.in/yaml/v3` v3.0.6, confined to exactly `adapters/helm`, `adapters/appsource` and `adapters/manifests`;
-  `make v2-deps` bootstraps with checksums and builds/checks stay offline (4 November 2026).
+- Pure packages use the standard library alone; an adapter may use a library that owns a protocol, once approved
+  and listed in [`Modules`](iteration-2-plan.md#third-party-modules). `make v2-deps` bootstraps with checksums and
+  builds/checks stay offline (4 November 2026; adapters' libraries 16 November 2026).
 - The stack and name catalogues are v2's files (`v2/contract/stacks.json`, `names.json`), read by Go and shell;
   the console reads them from the pinned tree, not files copied into its image.
 - A test earns a Go port only if it keeps catching regressions in code this repository owns. A one-time proof of

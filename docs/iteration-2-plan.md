@@ -514,7 +514,7 @@ change is anything `git status` reports, so a new untracked file under a workstr
 - A failed request (forbidden, unavailable, timeout) is unavailable evidence; only a successful `404` means absent.
 - Raw fixtures are API JSON. That is the shape `kubectl get -o json` prints, so recorded v1 outputs can be reused.
 
-**Decided 25 October 2026: a thin `net/http` client, not `client-go`.** It is the reader [`adapters/kube`](../v2/adapters/kube/kube.go), uses only the standard library (`stdlib-only` outside the approved Helm, app-source and manifest parser boundaries), and takes the k3s material it needs as arguments: a CA bundle, a client certificate or key, and a bearer token. `client-go` would be complete but adds a large dependency tree and binary size for four kinds and two verbs. Resolving a kubeconfig or an in-cluster service-account token is **not** in that adapter: the YAML parser approval is confined to Helm, app-source and checkout-manifest reading, not kubeconfig reading; the `observe` command resolves it and hands the adapter its ingredients.
+**Decided 25 October 2026: a thin `net/http` client, not `client-go`.** It is the reader [`adapters/kube`](../v2/adapters/kube/kube.go), uses only the standard library (no [approved module](#third-party-modules) is a Kubernetes client), and takes the k3s material it needs as arguments: a CA bundle, a client certificate or key, and a bearer token. `client-go` would be complete but adds a large dependency tree and binary size for four kinds and two verbs. Resolving a kubeconfig or an in-cluster service-account token is **not** in that adapter: the YAML parser approval is confined to Helm, app-source and checkout-manifest reading, not kubeconfig reading; the `observe` command resolves it and hands the adapter its ingredients.
 
 ### Fixtures and fakes
 
@@ -595,7 +595,7 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 
 | Rule | What it enforces |
 | --- | --- |
-| `stdlib-only` | v2 imports only the standard library and its own packages except `go.yaml.in/yaml/v3` **v3.0.6**, approved 4 November 2026, imported only by `adapters/helm`, `adapters/appsource`, `adapters/manifests` and `adapters/copier` (including their tests; `adapters/appsource` approved 5 November 2026, `adapters/manifests`, which decodes the checkout's Kubernetes manifests for `check-repo`, [8 November 2026](#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026), and `adapters/copier`, which reads a stack template's `copier.yml`, [9 November 2026](#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)). The check refuses other imports, modules, versions and module replacement directives. Pure packages remain standard-library-only; this does not approve YAML kubeconfigs. |
+| `approved-modules` | v2 imports only the standard library, its own packages and the [approved third-party modules](#third-party-modules), each only from the adapters (and, where listed, the tests) it was approved for; `go.mod` requires exactly those modules at their approved versions, with no `replace`, `exclude` or `tool` directive. Pure packages import standard packages alone (rule `pure`). |
 | `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
 | `pure` | Pure packages import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments: `time` is allowed for parsing and comparing a *supplied* timestamp, and its clock functions (`time.Now`, `time.Since`, `time.Until`, timers and ticks) are refused by call. |
 | `no-subprocess` | v2 code (not its tests) starts processes only in the SOPS adapter `adapters/sops` (encryption, and local decryption with a key file the operator's command names, [§27](#27-check-secrets-in-go-approved-13-november-2026)), the approved chart-rendering adapter `adapters/helm`, the read-only checkout adapter `adapters/git` and the template-rendering adapter `adapters/copier`, names no `kubectl` or `flux` command anywhere, and imports `syscall` only in `cmd/swhurl-v2`, where it names the SIGTERM a pod is replaced with ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine; Git avoids a second reader of its index and object store; Copier avoids a second template renderer. The Git exception, approved 5 November 2026, is [four fixed reads of one checkout](#the-workstream-check-in-go-approved-5-november-2026), with no write, fetch or general command runner. The Helm exception, approved 4 November 2026, is `helm template` for app-policy checks and, approved 5 November 2026, explicit profile-pinned `helm pull` for the check cache ([contract](#chart-acquisition-approved-5-november-2026)): no cluster reads, install, upgrade, implicit dependency fetching or arbitrary command runner. The Copier exception, approved 9 November 2026, is [one pinned render of a public stack template](#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026), with no credential in its environment or arguments. The checked allowlist admits exactly the four adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm and Copier invocations. The signal exception starts nothing: a pod's replacement sends SIGTERM, and the console takes no new job and waits up to 840 seconds for the ones it runs, inside the pod's 900. |
@@ -619,7 +619,22 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 
 **Verification (24 October 2026, working tree before commit):** each rule has a test on a small module written to a temporary directory, showing what it catches and what it leaves alone (a parameter that shadows a package variable, a test that starts a process); breaking a check on purpose makes those tests fail. On v2 the code rules pass; two phase-1 functions are over budget and listed. End to end, three runs of pi (Haiku 5.5, a throwaway copy of the repository, the extension loaded with `-e`): an agent asked to add a counter to the kernel got the `pure` failure on its edit, reverted it, re-ran the check and offered compliant alternatives without touching a baseline; a change made through the shell, which the edit hook does not see, was caught when the agent tried to finish, handed back once, and fixed; an agent told never to fix it got two attempts and then a message for the operator, after which the run ended. Not exercised: interactive mode after `/trust`.
 
-**CI (dependency bootstrap updated 4 November 2026):** Validate's tooling job sets up Go with `actions/setup-go@v7` from `v2/go.mod` (module cache keyed by `v2/go.sum`), explicitly runs `make v2-deps` to download the pinned parser with checksum verification and runs `make check-v2` after the code graph tests, with `REQUIRE_HELM=1` and the chart the v2 profile pins fetched into the chart cache first, so the [compiler's](#2-phase-1-model-and-contract) manifest check runs; a failure there holds the console deploy like any other check. First run on the push of `be041cf4` ([current state](current-state.md#v2-and-code-graph-push-24-october-2026)): `go1.26.0 linux/amd64`, all four packages passed; Go setup took 7 s and the check 11 s. `actionlint` was not run (not installed here).
+**CI (dependency bootstrap updated 4 November 2026):** Validate's tooling job sets up Go with `actions/setup-go@v7` from `v2/go.mod` (module cache keyed by `v2/go.sum`), explicitly runs `make v2-deps` to download the approved modules with checksum verification and runs `make check-v2` after the code graph tests, with `REQUIRE_HELM=1` and the chart the v2 profile pins fetched into the chart cache first, so the [compiler's](#2-phase-1-model-and-contract) manifest check runs; a failure there holds the console deploy like any other check. First run on the push of `be041cf4` ([current state](current-state.md#v2-and-code-graph-push-24-october-2026)): `go1.26.0 linux/amd64`, all four packages passed; Go setup took 7 s and the check 11 s. `actionlint` was not run (not installed here).
+
+#### Third-party modules
+
+The pure model (layer 0) uses the standard library alone. An adapter may use a library when the library owns a
+protocol or format v2 would otherwise write and keep correct by hand (connection lifecycles, wire framing, request
+signing); a thin JSON-over-HTTPS client stays on `net/http`. Each module is the operator's approval first, then an
+entry in `Modules` ([`v2/archtest/rules_test.go`](../v2/archtest/rules_test.go)): its version, the adapters whose
+source may import it and the directories whose tests may. Modules that come only as another's requirement are listed
+with no importer, so `go.mod` holds nothing unreviewed. A version bump edits `go.mod` and that entry together.
+
+| Module | Imported by | Approved | Why |
+| --- | --- | --- | --- |
+| `go.yaml.in/yaml/v3` | `adapters/helm`, `adapters/appsource`, `adapters/manifests`, `adapters/copier` | 4 November 2026 (`appsource` 5 November, [`manifests` 8 November](#17-check-repo-in-go-the-decisions-not-the-subprocesses-approved-8-november-2026), [`copier` 9 November](#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)) | Chart values, app sources, the checkout's manifests and a template's `copier.yml`; not kubeconfigs |
+| `github.com/nats-io/nats.go`, `github.com/nats-io/nkeys` | `adapters/nats` | 16 November 2026 | The flag store's client: keep-alive and reconnect, so the console's long-lived connection survives the server dropping it |
+| `github.com/nats-io/nats-server/v2` | `adapters/nats` tests only | 16 November 2026 | An embedded server at the cluster's version, under the console's rendered permissions, for the adapter's contract test |
 
 #### Change report
 
@@ -658,7 +673,7 @@ What each kind of change touches, so a change can be checked against it rather t
 | New adapter | `adapters/<name>/` at layer 1, as below | `places`, `adapter-complete`; the wiring line by review |
 | New command | `cmd/<name>/` as `package main` at layer 2, declared in `Layers`; wiring only | `places`, `layers` |
 | New exported function or type | `archtest/api.txt`, with the reason in the change | `public-api` |
-| New dependency | The operator's approval first | `stdlib-only` |
+| New dependency | The operator's approval first, then an entry in `Modules` | `approved-modules` |
 
 A new adapter, for example one that reads Git:
 
@@ -683,7 +698,7 @@ An external-effect adapter needs separate approval; a read-only integration is c
 
 ### Offline CLI and build
 
-Prerequisites: Go **1.26.0** and the pinned parser downloaded with **`make v2-deps`** from the repository root (network access to the Go proxy and checksum database). `make check-v2` runs the format, vet and test steps below, [guardrails](#guardrails) included. The following disables automatic dependency access and C dependencies. `go.mod` and `go.sum` pin the one approved parser. Bootstrap downloads it explicitly with `GOTOOLCHAIN=go1.26.0`, `GOPROXY=https://proxy.golang.org` and `GOSUMDB=sum.golang.org`; missing cached dependencies fail offline builds/checks rather than enabling a network fallback. Every v2 CI job and the console image build bootstrap before an offline build; the image caches the module download separately from source. CI runs them through `make check-v2`; `make check` does **not** include them.
+Prerequisites: Go **1.26.0** and the [approved modules](#third-party-modules) downloaded with **`make v2-deps`** from the repository root (network access to the Go proxy and checksum database). `make check-v2` runs the format, vet and test steps below, [guardrails](#guardrails) included. The following disables automatic dependency access and C dependencies. `go.mod` and `go.sum` pin the approved modules. Bootstrap downloads them explicitly with `GOTOOLCHAIN=go1.26.0`, `GOPROXY=https://proxy.golang.org` and `GOSUMDB=sum.golang.org`; missing cached dependencies fail offline builds/checks rather than enabling a network fallback. Every v2 CI job and the console image build bootstrap before an offline build; the image caches the module download separately from source. CI runs them through `make check-v2`; `make check` does **not** include them.
 
 **Run with `!`**, from the repository root:
 
@@ -1933,18 +1948,19 @@ the adapter's external effect included, on 8 November 2026.
   whether a stored value fits its declaration; the form's text as the declared type; and the report's rows from
   a declaration, its overrides and an explicit time. Exported names move out of `users.go` unchanged in meaning
   (`FlagsBucket`, `FlagsStream`, `FlagSubject`, `ConsoleInbox`) so that no reader restates them.
-- `kernel/nkey.go` gains the decode beside the encode it already has — `DecodeUserSeed(text) ([32]byte, error)`
-  and `Sign(seed [32]byte, data []byte) []byte` — because the base32 alphabet, the prefixes and the CRC-16 the
-  seed is written with are the kernel's. Nothing else of the seed is used; it is never printed, recorded or put
-  in an error.
+- The seed is read and the server's nonce signed by `nkeys` inside the adapter (until 16 November 2026 the kernel
+  decoded and signed it itself); the kernel keeps only the encoding `mint` writes. The seed is never printed,
+  recorded or put in an error.
 - `adapters/nats` (layer 1) is the protocol, and only the protocol: `Open(ctx, url, seed, inbox) (KV, error)`,
   then `KV.Keys(ctx, stream, prefix)`, `KV.Get(ctx, stream, key)` and `KV.Put(ctx, subject, value, headers)`, and
   `Close()`. The inbox is the caller's, because the user's permissions are what name it, and `Keys` is the
-  listing named for what it returns rather than for the API's verb. The standard library covers it
-  (`crypto/ed25519`, `encoding/base32`, `net`), so `stdlib-only` is untouched. One connection per `Open`, no
-  pool, the same 5 s timeout: the console opens one per request, as it does today. Sign-in signs the server's
-  nonce with the seed; `no_responders`, headers and protocol 1 are asked for as now, and a `503` answer means
-  nothing listens on the subject (the bucket is missing).
+  listing named for what it returns rather than for the API's verb. Since 16 November 2026 it wraps the official
+  client ([`nats.go`, an approved module](#third-party-modules)): the first sign-in is bounded by the caller's
+  deadline or 5 s and its failure is `Open`'s error; after that the client answers the server's keep-alives and
+  reconnects without end, a call made while it is down fails at once with the reason, and the store is safe for
+  concurrent use. The console therefore opens one store and keeps it. The hand-written client it replaces did
+  none of this, so a console idle for a few minutes held a connection NATS had closed, and every card said
+  `broken pipe` until the pod restarted. A missing stream or no responder means the bucket is missing.
 - `orchestration/flags.go` (layer 2): records → declaration → overrides → rows, and the same decision once more
   for one write before anything is published. It prints nothing, chooses no exit status, and takes the time and
   the store as arguments.
@@ -1995,7 +2011,7 @@ swhurl-v2 flags … --clear old-banner  /  … --json
 - The browser's text is typed and checked in Go, so the route no longer carries a second copy of the rules.
 
 **Deletions.** `tools/swhurl/console/flagstore.py` (237 lines) and `tests/test_flagstore.py`, whose fake NATS
-server becomes `adapters/nats`'s raw fixtures and scripted-server contract test; `flagstore` from the
+server became `adapters/nats`'s contract test (since 16 November 2026 against an embedded NATS server); `flagstore` from the
 console's context, server and app-page route and their fakes; `apps/nkeys.py`'s console use (the module stays
 while the live tests and `model/write.py` still sign in with it, and leaves with them).
 

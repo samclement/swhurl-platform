@@ -30,9 +30,9 @@ type Rule struct {
 }
 
 var Rules = []Rule{
-	{"stdlib-only", "v2 imports only the Go standard library and its own packages except pinned YAML in adapters/helm, adapters/appsource, adapters/manifests and adapters/copier",
-		"remove the import; only adapters/helm, adapters/appsource, adapters/manifests and adapters/copier may import go.yaml.in/yaml/v3 v3.0.6",
-		"kubernetes-the-api-server-not-kubectl"},
+	{"approved-modules", "v2 imports only the Go standard library, its own packages and the approved modules in Modules, each from the adapters it was approved for; go.mod requires exactly those modules at their approved versions",
+		"remove the import, or ask the operator to approve the module and add it to Modules (archtest/rules_test.go) with the adapters that may import it",
+		"third-party-modules"},
 	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers",
 		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down",
 		"4-development-layers-and-adapters"},
@@ -159,10 +159,34 @@ var pureBannedCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "time.N
 // Where each layer lives: adapters under adapters/, use cases under orchestration/, commands under cmd/.
 const adapterRoot, orchestrationRoot, commandRoot = "adapters/", "orchestration/", "cmd/"
 
-// yamlImporters are the only directories that may import the pinned YAML module: chart values, app sources, the
-// checkout's Kubernetes manifests and a stack template's copier.yml. Each was approved with its slice
-// (docs/iteration-2-plan.md#guardrails).
-var yamlImporters = []string{"adapters/helm", "adapters/appsource", "adapters/manifests", "adapters/copier"}
+// ApprovedModule is one approved third-party module at its one approved version. Importers are the directories whose
+// source may import its packages, and Tests the directories whose tests may; a module with neither comes only as
+// another's requirement. Pure packages import none: rule pure allows them standard packages alone.
+type ApprovedModule struct {
+	Path, Version    string
+	Importers, Tests []string
+}
+
+// Modules are the approved third-party modules (docs/iteration-2-plan.md#third-party-modules). Each was approved
+// with its slice; a new entry, a new importer or a new version is the operator's approval first.
+var Modules = []ApprovedModule{
+	// Chart values, app sources, the checkout's Kubernetes manifests and a stack template's copier.yml.
+	{"go.yaml.in/yaml/v3", "v3.0.6", []string{"adapters/helm", "adapters/appsource", "adapters/manifests", "adapters/copier"}, nil},
+	// The flag store: the official client keeps the console's connection alive and reconnects it, and its tests run
+	// against an embedded server under the console's rendered permissions.
+	{"github.com/nats-io/nats.go", "v1.55.0", []string{"adapters/nats"}, []string{"adapters/nats"}},
+	{"github.com/nats-io/nkeys", "v0.4.16", []string{"adapters/nats"}, []string{"adapters/nats"}},
+	{"github.com/nats-io/nats-server/v2", "v2.15.2", nil, []string{"adapters/nats"}},
+	{"github.com/nats-io/nuid", "v1.0.1", nil, nil},
+	{"github.com/nats-io/jwt/v2", "v2.8.2", nil, nil},
+	{"github.com/klauspost/compress", "v1.20.3", nil, nil},
+	{"github.com/minio/highwayhash", "v1.0.4", nil, nil},
+	{"github.com/google/go-tpm", "v0.9.8", nil, nil},
+	{"github.com/antithesishq/antithesis-sdk-go", "v0.8.0-default-no-op", nil, nil},
+	{"golang.org/x/crypto", "v0.58.0", nil, nil},
+	{"golang.org/x/sys", "v0.49.0", nil, nil},
+	{"golang.org/x/time", "v0.16.0", nil, nil},
+}
 
 var subprocessImports = []string{"os/exec"}
 var subprocessCalls = []string{"os.StartProcess"}
@@ -353,14 +377,14 @@ func selector(call *ast.CallExpr) string {
 
 // ---- Rules ----
 
-func checkStdlibOnly(m *Module) []Violation {
+func checkApprovedModules(m *Module) []Violation {
 	var found []Violation
 	found = append(found, checkModuleRequirements(m.GoMod)...)
 	for _, dir := range m.Dirs() {
 		for _, file := range m.Packages[dir].Files {
 			for _, spec := range file.AST.Imports {
-				if path := importPath(spec); !isStd(path) && m.local(path) == "" && !(slices.Contains(yamlImporters, dir) && path == "go.yaml.in/yaml/v3") {
-					found = append(found, Violation{"stdlib-only", m.at(file, spec.Pos()), "imports " + path})
+				if path := importPath(spec); !isStd(path) && m.local(path) == "" && !importApproved(path, dir, file.Test) {
+					found = append(found, Violation{"approved-modules", m.at(file, spec.Pos()), "imports " + path})
 				}
 			}
 		}
@@ -368,10 +392,21 @@ func checkStdlibOnly(m *Module) []Violation {
 	return found
 }
 
-// Keep this deliberately small: one exact approved module/version, with no replace/exclude/tool escape hatch.
+// importApproved is whether a directory's source, or its tests, may import a package of an approved module.
+func importApproved(path, dir string, test bool) bool {
+	for _, module := range Modules {
+		if path == module.Path || strings.HasPrefix(path, module.Path+"/") {
+			return slices.Contains(module.Importers, dir) || test && slices.Contains(module.Tests, dir)
+		}
+	}
+	return false
+}
+
+// checkModuleRequirements keeps go.mod to the approved modules at their approved versions, each once, with no
+// replace/exclude/tool escape hatch.
 func checkModuleRequirements(text string) []Violation {
 	var found []Violation
-	inRequire, seen := false, false
+	inRequire, seen := false, map[string]bool{}
 	for _, line := range strings.Split(text, "\n") {
 		line, _, _ = strings.Cut(line, "//")
 		fields := strings.Fields(line)
@@ -392,15 +427,24 @@ func checkModuleRequirements(text string) []Violation {
 		if fields[0] == "require" {
 			fields = fields[1:]
 		} else if !inRequire {
-			found = append(found, Violation{"stdlib-only", "go.mod", "unapproved module directive"})
+			found = append(found, Violation{"approved-modules", "go.mod", "unapproved module directive"})
 			continue
 		}
-		if len(fields) != 2 || fields[0] != "go.yaml.in/yaml/v3" || fields[1] != "v3.0.6" || seen {
-			found = append(found, Violation{"stdlib-only", "go.mod", "requires an unapproved module or version"})
+		if len(fields) != 2 || !requirementApproved(fields[0], fields[1]) || seen[fields[0]] {
+			found = append(found, Violation{"approved-modules", "go.mod", "requires an unapproved module or version"})
 		}
-		seen = true
+		if len(fields) > 0 {
+			seen[fields[0]] = true
+		}
 	}
 	return found
+}
+
+// requirementApproved is whether go.mod may require a module at a version.
+func requirementApproved(path, version string) bool {
+	return slices.ContainsFunc(Modules, func(module ApprovedModule) bool {
+		return module.Path == path && module.Version == version
+	})
 }
 
 func checkLayers(m *Module) []Violation {

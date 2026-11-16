@@ -53,15 +53,15 @@ func expect(t *testing.T, found []Violation, want ...string) {
 	}
 }
 
-func TestCheckStdlibOnly(t *testing.T) {
+func TestCheckApprovedModules(t *testing.T) {
 	m := fixture(t, map[string]string{
 		"kernel/a.go":      "package kernel\n\nimport (\n\t\"strings\"\n\t\"example.com/v2/other\"\n)\n",
 		"kernel/a_test.go": "package kernel\n\nimport \"github.com/x/assert\"\n",
 	})
 	m.GoMod += "require github.com/x/assert v1.0.0\n"
-	expect(t, checkStdlibOnly(m),
-		"stdlib-only go.mod: requires an unapproved module or version",
-		"stdlib-only kernel/a_test.go:3: imports github.com/x/assert")
+	expect(t, checkApprovedModules(m),
+		"approved-modules go.mod: requires an unapproved module or version",
+		"approved-modules kernel/a_test.go:3: imports github.com/x/assert")
 }
 
 func TestCheckLayers(t *testing.T) {
@@ -324,29 +324,54 @@ func TestYAMLApprovalIsNarrow(t *testing.T) {
 	for _, dir := range []string{"kernel", "adapters/kube", "adapters/helm/helmtest", "adapters/appsource/appsourcetest", "adapters/appsource/other",
 		"adapters/manifests/manifeststest", "checkrepo", "cmd/swhurl-v2"} {
 		m := fixture(t, map[string]string{dir + "/a.go": "package probe\nimport \"go.yaml.in/yaml/v3\"\n"})
-		if len(checkStdlibOnly(m)) != 1 {
+		if len(checkApprovedModules(m)) != 1 {
 			t.Errorf("YAML escaped into %s", dir)
 		}
 	}
 	m := fixture(t, map[string]string{"adapters/helm/a.go": "package helm\nimport \"go.yaml.in/yaml/v3\"\n"})
 	m.GoMod += "require go.yaml.in/yaml/v3 v3.0.6\n"
-	expect(t, checkStdlibOnly(m))
+	expect(t, checkApprovedModules(m))
 	for _, dir := range []string{"adapters/appsource", "adapters/manifests"} {
 		approved := fixture(t, map[string]string{dir + "/a.go": "package probe\nimport \"go.yaml.in/yaml/v3\"\n"})
 		approved.GoMod += "require go.yaml.in/yaml/v3 v3.0.6\n"
-		expect(t, checkStdlibOnly(approved))
+		expect(t, checkApprovedModules(approved))
 	}
 	for _, requirement := range []string{
 		"require go.yaml.in/yaml/v3 v3.0.5", "require example.com/other v1.0.0",
 		"require (\n go.yaml.in/yaml/v3 v3.0.6\n example.com/other v1.0.0\n)",
 		"replace go.yaml.in/yaml/v3 => example.com/fork v3.0.6", "exclude go.yaml.in/yaml/v3 v3.0.6",
 		"require go.yaml.in/yaml/v3 v3.0.6\nrequire go.yaml.in/yaml/v3 v3.0.6",
+		"require github.com/nats-io/nats.go v1.54.0",
 	} {
 		if len(checkModuleRequirements(requirement)) == 0 {
 			t.Errorf("accepted %s", requirement)
 		}
 	}
-	expect(t, checkModuleRequirements("require (\n go.yaml.in/yaml/v3 v3.0.6\n)\n"))
+	expect(t, checkModuleRequirements("require (\n go.yaml.in/yaml/v3 v3.0.6\n github.com/nats-io/nuid v1.0.1 // indirect\n)\n"))
+}
+
+// The NATS client is the flag store's alone, and the embedded server only its tests': a requirement that comes with
+// a module is never an import of its own.
+func TestNATSApprovalIsNarrow(t *testing.T) {
+	cases := []struct {
+		path, imports string
+		violations    int
+	}{
+		{"adapters/nats/a.go", "github.com/nats-io/nats.go/jetstream", 0},
+		{"adapters/nats/a_test.go", "github.com/nats-io/nats-server/v2/server", 0},
+		{"adapters/nats/a.go", "github.com/nats-io/nats-server/v2/server", 1},
+		{"adapters/nats/natstest/a.go", "github.com/nats-io/nats.go", 1},
+		{"orchestration/a.go", "github.com/nats-io/nats.go", 1},
+		{"cmd/swhurl-v2/a_test.go", "github.com/nats-io/nats-server/v2/server", 1},
+		{"adapters/nats/a.go", "golang.org/x/crypto/ed25519", 1},
+		{"adapters/nats/a.go", "github.com/nats-io/nats.gofake", 1},
+	}
+	for _, c := range cases {
+		m := fixture(t, map[string]string{c.path: "package probe\nimport \"" + c.imports + "\"\n"})
+		if found := checkApprovedModules(m); len(found) != c.violations {
+			t.Errorf("%s importing %s: %v", c.path, c.imports, found)
+		}
+	}
 }
 
 func TestHelmSubprocessApprovalDoesNotLeak(t *testing.T) {

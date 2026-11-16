@@ -1,13 +1,9 @@
 package nats_test
 
 import (
-	"bufio"
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
-	"fmt"
-	"io"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,283 +13,277 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats-server/v2/server"
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+	"github.com/nats-io/nkeys"
+
 	"github.com/samclement/swhurl-platform/v2/adapters/nats"
 	"github.com/samclement/swhurl-platform/v2/adapters/nats/natstest"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// testSeed is the seed the scripted server knows: the pair the server matches against, and the nonce it signs.
-var testSeed [32]byte
+// The console signs in with one key and the test sets the bucket up with another, as the stream controller does.
+var (
+	console = kernel.NewUserKey([32]byte{1})
+	admin   = kernel.NewUserKey([32]byte{2})
+)
 
-func init() { copy(testSeed[:], "a seed that is never a credential") }
-
-// greeting is the INFO frame every client is greeted with, and its nonce is what a sign-in signs.
-func greeting(t *testing.T) (frame []byte, nonce string) {
-	t.Helper()
-	frame = fixture(t, "info.json")
-	var said struct {
-		Nonce string `json:"nonce"`
-	}
-	if err := json.Unmarshal(frame, &said); err != nil {
-		t.Fatal(err)
-	}
-	return frame, said.Nonce
+// broker is one embedded NATS server with JetStream: its address, and what it needs to start again where it stopped.
+type broker struct {
+	server *server.Server
+	opts   *server.Options
 }
 
-// fixture reads one raw frame the scripted server answers with.
-func fixture(t *testing.T, name string) []byte {
+// start runs a server whose users are the console, with the permissions the platform renders for it, and an
+// administrator; a port of -1 is any free one.
+func start(t *testing.T, port int, storeDir string) *broker {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", name))
+	opts := &server.Options{Host: "127.0.0.1", Port: port, JetStream: true, StoreDir: storeDir, NoLog: true,
+		NoSigs: true, Nkeys: []*server.NkeyUser{consoleUser(t), {Nkey: admin.Public}}}
+	running, err := server.NewServer(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return data
+	running.Start()
+	if !running.ReadyForConnections(5 * time.Second) {
+		t.Fatal("the embedded NATS server did not start")
+	}
+	t.Cleanup(running.Shutdown)
+	return &broker{server: running, opts: opts}
 }
 
-// serve starts the scripted server on the loopback interface and is its address.
-func serve(t *testing.T) string {
+// url is where the broker listens.
+func (b *broker) url() string { return b.server.ClientURL() }
+
+// consoleUser is the console's entry in the user list the platform renders: the test signs in under the
+// permissions production grants, so a subject the adapter needs and the list lacks fails here.
+func consoleUser(t *testing.T) *server.NkeyUser {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	rendered, err := kernel.RenderUsers(kernel.NATSUsers{ControllerKey: admin.Public, ConsoleKey: console.Public})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { listener.Close() })
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go converse(t, conn)
+	var object struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal(rendered.Files[0].Document, &object); err != nil {
+		t.Fatal(err)
+	}
+	var values struct {
+		Config struct {
+			Merge struct {
+				Authorization struct {
+					Users []struct {
+						NKey        string `json:"nkey"`
+						Permissions struct {
+							Publish   struct{ Allow []string } `json:"publish"`
+							Subscribe struct{ Allow []string } `json:"subscribe"`
+						} `json:"permissions"`
+					} `json:"users"`
+				} `json:"authorization"`
+			} `json:"merge"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal([]byte(object.Data["values.yaml"]), &values); err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range values.Config.Merge.Authorization.Users {
+		if user.NKey == console.Public {
+			return &server.NkeyUser{Nkey: user.NKey, Permissions: &server.Permissions{
+				Publish:   &server.SubjectPermission{Allow: user.Permissions.Publish.Allow},
+				Subscribe: &server.SubjectPermission{Allow: user.Permissions.Subscribe.Allow}}}
 		}
-	}()
-	return listener.Addr().String()
+	}
+	t.Fatal("the rendered user list has no console")
+	return nil
 }
 
-// open is the contract's store: one connection to the scripted server, signed in with the known seed.
+// bucket creates staging's flag bucket as the administrator, as the stream controller does in the cluster, from
+// testdata/bucket.json: the staging KeyValue's spec in platform/flags/buckets.yaml, in the API's own words.
+func bucket(t *testing.T, url string) {
+	t.Helper()
+	pair, err := natsgoPair(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := natsgo.Connect(url, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	stream, err := jetstream.New(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := os.ReadFile(filepath.Join("testdata", "bucket.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config jetstream.KeyValueConfig
+	if err := json.Unmarshal(document, &config); err != nil || config.Bucket != kernel.FlagsBucket("staging") {
+		t.Fatalf("the bucket fixture: %+v, %v", config, err)
+	}
+	if _, err := stream.CreateKeyValue(context.Background(), config); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// natsgoPair signs in as one kernel key: the seed the kernel mints is one nkeys reads.
+func natsgoPair(key kernel.UserKey) (natsgo.Option, error) {
+	pair, err := nkeys.FromSeed([]byte(key.Seed))
+	if err != nil {
+		return nil, err
+	}
+	return natsgo.Nkey(key.Public, pair.Sign), nil
+}
+
+// open is the contract's store: the console signed in to a fresh broker that holds staging's bucket.
 func open(t *testing.T) nats.KV {
 	t.Helper()
-	store, err := nats.Open(context.Background(), "nats://"+serve(t), kernel.NewUserKey(testSeed).Seed,
-		kernel.ConsoleInbox)
+	running := start(t, -1, t.TempDir())
+	bucket(t, running.url())
+	return signIn(t, running.url())
+}
+
+// signIn is the console's store at url.
+func signIn(t *testing.T, url string) nats.KV {
+	t.Helper()
+	store, err := nats.Open(context.Background(), url, console.Seed, kernel.ConsoleInbox)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { store.Close() })
 	return store
 }
 
-// TestContract is the real adapter against the raw frames: sign-in, a listing, a stored value, a clear, absence, the
-// keys under a prefix and a closed connection.
+// TestContract is the real adapter against a real server, under the console's rendered permissions: a stored value,
+// a clear, absence, the keys under a prefix and a closed connection.
 func TestContract(t *testing.T) { natstest.Contract(t, open) }
 
-// converse is one client's session: the INFO it is greeted with, the CONNECT it must prove, and one answer per
-// request. Its bucket is its own, so the contract's sequence holds: nothing stored, then a value, then a clear.
-func converse(t *testing.T, conn net.Conn) {
-	defer conn.Close()
-	hello, nonce := greeting(t)
-	if _, err := conn.Write([]byte("INFO " + string(hello) + "\r\n")); err != nil {
-		return
+// A bucket the server does not hold is named as missing, never read as empty.
+func TestAMissingBucketIsNotAnEmptyOne(t *testing.T) {
+	store := open(t)
+	if _, err := store.Keys(context.Background(), kernel.FlagsStream("prod"), kernel.FlagsPrefix("prod", "demo-shop")); err == nil ||
+		!strings.Contains(err.Error(), "is the bucket there?") {
+		t.Fatalf("a missing bucket: %v", err)
 	}
-	reader := bufio.NewReaderSize(conn, 1<<16)
-	bucket := &bucket{t: t, cleared: map[string]bool{}}
+}
+
+// The store survives the server going away: while it is down a call fails at once and says so, and once it is back
+// the same store reads what was stored before. A long-lived caller, the console, never holds a dead connection.
+func TestTheStoreReconnectsAfterTheServerRestarts(t *testing.T) {
+	dir := t.TempDir()
+	port := freePort(t)
+	running := start(t, port, dir)
+	bucket(t, running.url())
+	store := signIn(t, running.url())
+	if err := store.Put(context.Background(), natstest.StoredKey, []byte("true"), nil); err != nil {
+		t.Fatal(err)
+	}
+	running.server.Shutdown()
+	running.server.WaitForShutdown()
+	time.Sleep(200 * time.Millisecond) // the client reads the closed socket on its own goroutine
+	began := time.Now()
+	if _, err := store.Get(context.Background(), natstest.Stream, natstest.StoredKey); err == nil ||
+		!strings.Contains(err.Error(), "NATS is not connected") || time.Since(began) > time.Second {
+		t.Fatalf("a call while the server is down: %v after %s", err, time.Since(began))
+	}
+	start(t, port, dir)
+	deadline := time.Now().Add(15 * time.Second)
 	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
+		message, err := store.Get(context.Background(), natstest.Stream, natstest.StoredKey)
+		if err == nil {
+			if string(message.Value) != "true" {
+				t.Fatalf("after the restart: %+v", message)
+			}
 			return
 		}
-		verb, rest, _ := strings.Cut(strings.TrimRight(line, "\r\n"), " ")
-		switch verb {
-		case "CONNECT":
-			if !signedIn(t, rest, nonce) {
-				conn.Write([]byte(strings.TrimSpace(string(fixture(t, "sign-in-refused.txt"))) + "\r\n"))
-				return
-			}
-		case "PING":
-			conn.Write([]byte("PONG\r\n"))
-		case "PUB", "HPUB":
-			found, err := read(reader, verb, rest)
-			if err != nil {
-				return
-			}
-			if !strings.HasPrefix(found.reply, kernel.ConsoleInbox+".") {
-				t.Errorf("a request without the console's inbox: %s", found.reply)
-			}
-			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-			if _, err := conn.Write(bucket.reply(found)); err != nil {
-				return
-			}
+		if time.Now().After(deadline) {
+			t.Fatalf("the store did not reconnect: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// Requests from many handlers at once share one store, and each gets its own answer.
+func TestConcurrentCallsGetTheirOwnAnswers(t *testing.T) {
+	store := open(t)
+	ctx := context.Background()
+	for i := range 8 {
+		if err := store.Put(ctx, natstest.Prefix+"flag-"+strconv.Itoa(i), []byte(strconv.Itoa(i)), nil); err != nil {
+			t.Fatal(err)
 		}
 	}
-}
-
-// bucket is what the scripted server holds in one session: the subjects it stored, and which of them were cleared.
-type bucket struct {
-	t       *testing.T
-	cleared map[string]bool
-}
-
-// reply is the one answer a request gets, as a raw MSG or HMSG frame.
-func (b *bucket) reply(found request) []byte {
-	switch {
-	case strings.HasPrefix(found.subject, "$JS.API.STREAM.INFO."):
-		prefix := strings.TrimSuffix(requested(b.t, found.body, "subjects_filter"), "*")
-		return msgFrame(found.reply, b.listing(prefix))
-	case strings.HasPrefix(found.subject, "$JS.API.STREAM.MSG.GET."):
-		return msgFrame(found.reply, b.read(requested(b.t, found.body, "last_by_subj")))
-	case strings.HasPrefix(found.subject, "$KV."):
-		b.write(found)
-		return msgFrame(found.reply, fixture(b.t, "ack.json"))
+	var wait sync.WaitGroup
+	failures := make(chan string, 64)
+	for round := range 64 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			i := strconv.Itoa(round % 8)
+			message, err := store.Get(ctx, natstest.Stream, natstest.Prefix+"flag-"+i)
+			if err != nil || string(message.Value) != i {
+				failures <- "flag-" + i + ": " + string(message.Value)
+			}
+		}()
 	}
-	return hmsgFrame(found.reply, []byte("NATS/1.0 503\r\n\r\n"))
-}
-
-// write stores one value, remembering a clear by the operation header the frame carries.
-func (b *bucket) write(found request) {
-	b.cleared[found.subject] = strings.Contains(string(found.head), "KV-Operation: DEL")
-}
-
-// read is the newest message at a key: the stored value's own frame, a clear's, or the 404 a missing key gets.
-func (b *bucket) read(key string) []byte {
-	switch operation, stored := b.cleared[key]; {
-	case !stored:
-		return fixture(b.t, "absent.json")
-	case operation:
-		return fixture(b.t, "cleared.json")
+	wait.Wait()
+	close(failures)
+	for failure := range failures {
+		t.Error(failure)
 	}
-	return fixture(b.t, "msg.json")
-}
-
-// listing is the stream's answer: the fixture's own fields, with the subjects this bucket holds under a prefix.
-func (b *bucket) listing(prefix string) []byte {
-	var answer map[string]any
-	if err := json.Unmarshal(fixture(b.t, "stream-info.json"), &answer); err != nil {
-		b.t.Fatal(err)
-	}
-	subjects := map[string]int{}
-	for key := range b.cleared {
-		if strings.HasPrefix(key, prefix) {
-			subjects[key] = 1
-		}
-	}
-	answer["state"].(map[string]any)["subjects"] = subjects
-	encoded, err := json.Marshal(answer)
-	if err != nil {
-		b.t.Fatal(err)
-	}
-	return encoded
-}
-
-// signedIn is the CONNECT the server accepts: the known public key, and a signature over the nonce it sent.
-func signedIn(t *testing.T, line, nonce string) bool {
-	var connect struct{ NKey, Sig string }
-	if err := json.Unmarshal([]byte(line), &connect); err != nil {
-		t.Errorf("CONNECT: %v", err)
-		return false
-	}
-	if connect.NKey != kernel.NewUserKey(testSeed).Public {
-		return false
-	}
-	signature, err := base64.RawURLEncoding.DecodeString(connect.Sig)
-	if err != nil {
-		return false
-	}
-	return ed25519.Verify(ed25519.NewKeyFromSeed(testSeed[:]).Public().(ed25519.PublicKey), []byte(nonce), signature)
-}
-
-// request is one PUB or HPUB as the server reads it: its subject, its reply subject, its head and its body.
-type request struct {
-	verb, subject, reply string
-	head, body           []byte
-}
-
-// read is the request whose first line was just read: the frame's size words name its body.
-func read(reader *bufio.Reader, verb, rest string) (request, error) {
-	words := strings.Fields(rest)
-	need := 3
-	if verb == "HPUB" {
-		need = 4
-	}
-	if len(words) < need {
-		return request{}, fmt.Errorf("a frame this server cannot read: %s %s", verb, rest)
-	}
-	headSize, size := 0, 0
-	if verb == "HPUB" {
-		headSize, _ = strconv.Atoi(words[2])
-		size, _ = strconv.Atoi(words[3])
-	} else {
-		size, _ = strconv.Atoi(words[2])
-	}
-	framed := make([]byte, size+2)
-	if _, err := io.ReadFull(reader, framed); err != nil {
-		return request{}, err
-	}
-	return request{verb: verb, subject: words[0], reply: words[1], head: framed[:headSize], body: framed[headSize:size]}, nil
-}
-
-// requested is one field of a JetStream request body.
-func requested(t *testing.T, payload []byte, field string) string {
-	t.Helper()
-	var body text
-	if err := json.Unmarshal(payload, &body); err != nil {
-		t.Errorf("a request body: %v", err)
-	}
-	return body[field]
-}
-
-// text is a JetStream request's flat body.
-type text map[string]string
-
-// msgFrame is one answer without a head, delivered to the inbox: the server sends MSG subject sid size, never the
-// reply-to a publisher set.
-func msgFrame(reply string, body []byte) []byte {
-	return []byte(fmt.Sprintf("MSG %s 1 %d\r\n%s\r\n", reply, len(body), body))
-}
-
-// hmsgFrame is one answer whose status line is its whole head.
-func hmsgFrame(reply string, head []byte) []byte {
-	return []byte(fmt.Sprintf("HMSG %s 1 %d %d\r\n%s\r\n", reply, len(head), len(head), head))
 }
 
 // A seed the server does not know is refused, and the refusal says so: a failed sign-in is never an empty store.
-func TestOpenRefusesAStoreThatRefusesTheSignIn(t *testing.T) {
-	server := serve(t)
-	other := [32]byte{}
-	other[0] = 9
-	if _, err := nats.Open(context.Background(), "nats://"+server, kernel.NewUserKey(other).Seed,
-		kernel.ConsoleInbox); err == nil || !strings.Contains(err.Error(), "refused the sign-in") {
+// A value that is not a seed is refused without repeating it.
+func TestOpenRefusesWhatCannotSignIn(t *testing.T) {
+	running := start(t, -1, t.TempDir())
+	stranger := kernel.NewUserKey([32]byte{9})
+	if _, err := nats.Open(context.Background(), running.url(), stranger.Seed, kernel.ConsoleInbox); err == nil ||
+		!strings.Contains(strings.ToLower(err.Error()), "authorization violation") {
 		t.Fatalf("a refused sign-in: %v", err)
 	}
-	if _, err := nats.Open(context.Background(), "nats://"+server, "not-a-seed", kernel.ConsoleInbox); err == nil {
-		t.Fatal("a value that is not a seed was accepted")
+	if _, err := nats.Open(context.Background(), running.url(), "SUnot-a-seed", kernel.ConsoleInbox); err == nil ||
+		strings.Contains(err.Error(), "not-a-seed") {
+		t.Fatalf("a value that is not a seed: %v", err)
 	}
-	if _, err := nats.Open(context.Background(), "nats://127.0.0.1:1", kernel.NewUserKey(testSeed).Seed,
+	if _, err := nats.Open(context.Background(), "nats://127.0.0.1:"+strconv.Itoa(freePort(t)), console.Seed,
 		kernel.ConsoleInbox); err == nil || !strings.Contains(err.Error(), "cannot reach NATS at") {
 		t.Fatalf("a store that is not there: %v", err)
 	}
 }
 
-// A server that stays silent times out, and does not answer with absence.
+// A server that accepts the connection and stays silent times out within the caller's deadline.
 func TestASilentServerTimesOut(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	var held sync.WaitGroup
-	held.Add(1)
 	go func() {
-		defer held.Done()
 		conn, err := listener.Accept()
-		if err != nil {
-			return
+		if err == nil {
+			time.Sleep(time.Second) // longer than the deadline the caller states
+			conn.Close()
 		}
-		time.Sleep(time.Second) // longer than the deadline the caller states
-		conn.Close()
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	_, err = nats.Open(ctx, "nats://"+listener.Addr().String(), kernel.NewUserKey(testSeed).Seed, kernel.ConsoleInbox)
-	if err == nil || !strings.Contains(err.Error(), "did not answer in time") {
-		t.Fatalf("a silent server: %v", err)
+	began := time.Now()
+	_, err = nats.Open(ctx, "nats://"+listener.Addr().String(), console.Seed, kernel.ConsoleInbox)
+	if err == nil || errors.Is(err, nats.ErrAbsent) || time.Since(began) > 900*time.Millisecond {
+		t.Fatalf("a silent server: %v after %s", err, time.Since(began))
 	}
-	held.Wait()
+}
+
+// freePort is a loopback port nothing listens on now, so a restarted server can take the same one.
+func freePort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port
 }

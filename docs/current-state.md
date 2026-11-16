@@ -23,8 +23,14 @@ What has been verified on the live cluster, and when: current facts first, then 
   spec; a restarted server is reconnected to and its stored value read back; 64 concurrent reads each get their own
   answer (`go test -race -count=3`). `make check-v2` and `make check` passed; `make check-docs` passes on the
   committed tree.
-- **Not yet exercised:** the live console on the new image, and a page load after an idle stretch of more than a
-  few minutes.
+- **Live** (`95bf6643`, console image `src-876bb17d6720d916`, pod `console-99d45b547-95sbj`, 08:50 UTC): Validate
+  passed and deployed the console; `make verify-platform` passed; `make app-status APP=swhurl-try-10 ENV=staging`
+  reconciled and ready. Through a port-forward with a test identity, the swhurl-try-10 staging card read its
+  overrides; setting `shout` to `false` and clearing it each returned 303 and wrote an audit line
+  (`= false`, then `cleared`), the first read back from NATS. After six idle minutes (08:51 to 08:57) the card
+  read its overrides again, and the console's log held no NATS error.
+- **Not yet exercised:** a signed-in browser through oauth2-proxy on this image, and a `nats-0` restart under the
+  live console (the embedded-server test covers the reconnect).
 
 ## Console traces and metrics (14 November 2026)
 

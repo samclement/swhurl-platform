@@ -3,11 +3,11 @@
   "application": "demo-notifier",
   "source": {
     "repository": "samclement/demo-notifier",
-    "commit": "e5db6596fb89d2f5bc6c62e4525221e88caff0bf"
+    "commit": "447ca38d224a3667de3c7f34cfa0e82bdd022238"
   },
   "artifact": {
     "image": "ghcr.io/samclement/demo-notifier",
-    "digest": "sha256:04be1a98f75d1efcf63172f0a47be21de37aa3c05353f31b0b5bc438e3e9dd90",
+    "digest": "sha256:c66ea6f3ca4132eb8a197c8afdc6898ace151be12b7d188b61a2b73b3f7b9da1",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -22,5 +22,5 @@
   "documents": [
     "events"
   ],
-  "releaseId": "rel-sha256:6a2119e0c7c5accdf9394d1abcd824cce7274cf0f8afbee26e2eeef393fb7220"
+  "releaseId": "rel-sha256:3e39ba58ea9ed9f3300aadc9d6b1e960b3c9557ea83c167ac333f8411b4d3577"
 }

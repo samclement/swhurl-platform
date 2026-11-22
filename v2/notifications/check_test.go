@@ -1,4 +1,4 @@
-package orchestration_test
+package notifications_test
 
 import (
 	"context"
@@ -15,10 +15,10 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/notifysvc/notifysvctest"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy/ntfytest"
+	"github.com/samclement/swhurl-platform/v2/notifications"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/incident"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 const checkerNow = 1791028800.0
@@ -40,9 +40,9 @@ func (s *checkerStore) SetConfigMapKey(ctx context.Context, namespace, name, key
 	s.saved = append(s.saved, value)
 	return s.Fake.SetConfigMapKey(ctx, namespace, name, key, value, manager)
 }
-func checkerRig(t *testing.T) (orchestration.CheckerPorts, *checkerStore, *ntfytest.Fake, *notifysvctest.Fake, orchestration.CheckOptions) {
+func checkerRig(t *testing.T) (notifications.CheckerPorts, *checkerStore, *ntfytest.Fake, *notifysvctest.Fake, notifications.CheckOptions) {
 	t.Helper()
-	raw, err := os.ReadFile("../notifications/rules/incident/testdata/snapshot.json")
+	raw, err := os.ReadFile("rules/incident/testdata/snapshot.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,10 +80,10 @@ func checkerRig(t *testing.T) (orchestration.CheckerPorts, *checkerStore, *ntfyt
 	}
 	store := &checkerStore{Fake: f}
 	platform, copies := ntfytest.New(), &notifysvctest.Fake{}
-	options := orchestration.CheckOptions{Now: checkerNow, Base: checkerBase, PlatformAddress: "https://ntfy.example.test/synthetic-topic", NotifyAddress: "http://notify.example.test", Token: "synthetic-token"}
-	return orchestration.CheckerPorts{Cluster: f, Data: store, Platform: platform, Copies: copies}, store, platform, copies, options
+	options := notifications.CheckOptions{Now: checkerNow, Base: checkerBase, PlatformAddress: "https://ntfy.example.test/synthetic-topic", NotifyAddress: "http://notify.example.test", Token: "synthetic-token"}
+	return notifications.CheckerPorts{Cluster: f, Data: store, Platform: platform, Copies: copies}, store, platform, copies, options
 }
-func seedChecker(t *testing.T, store *checkerStore, options orchestration.CheckOptions, entries ...map[string]any) {
+func seedChecker(t *testing.T, store *checkerStore, options notifications.CheckOptions, entries ...map[string]any) {
 	t.Helper()
 	raw, _ := json.Marshal(map[string]any{"version": 1, "started": options.Now - 1, "last_success": 0, "instances": map[string]any{}, "seen": map[string]any{}, "monitor": map[string]any{}, "pending": entries})
 	// A nil variadic slice must encode an empty array, not null.
@@ -120,7 +120,7 @@ func TestCheckerSavedBeforeSendingAndAfterEachAcceptance(t *testing.T) {
 			t.Fatal("outbox acknowledged before acceptance")
 		}
 	}}
-	report, err := orchestration.CheckNotifications(context.Background(), ports, options)
+	report, err := notifications.CheckNotifications(context.Background(), ports, options)
 	if err != nil || len(report.Offered) != 2 || len(platform.Sent) != 1 || len(copies.Sent) != 1 {
 		t.Fatalf("pass: %+v %v", report, err)
 	}
@@ -143,7 +143,7 @@ func TestCheckerPlatformFailureAndRestart(t *testing.T) {
 	ports, store, platform, _, options := checkerRig(t)
 	seedChecker(t, store, options, pendingChecker("platform", false))
 	platform.Fail = errors.New("synthetic transport failure")
-	if _, err := orchestration.CheckNotifications(context.Background(), ports, options); err == nil {
+	if _, err := notifications.CheckNotifications(context.Background(), ports, options); err == nil {
 		t.Fatal("platform failure succeeded")
 	}
 	failed := storedChecker(t, store.saved[len(store.saved)-1])
@@ -151,7 +151,7 @@ func TestCheckerPlatformFailureAndRestart(t *testing.T) {
 		t.Fatal("failed send acknowledged")
 	}
 	platform.Fail = nil
-	report, err := orchestration.CheckNotifications(context.Background(), ports, options)
+	report, err := notifications.CheckNotifications(context.Background(), ports, options)
 	if err != nil || len(report.State.Pending()) != 0 || len(platform.Sent) != 1 {
 		t.Fatalf("restart: %+v %v", report, err)
 	}
@@ -161,12 +161,12 @@ func TestCheckerCheckpointFailureStopsNetwork(t *testing.T) {
 		ports, store, platform, _, options := checkerRig(t)
 		seedChecker(t, store, options, pendingChecker("one", false), pendingChecker("two", false))
 		store.failAt = failAt
-		_, err := orchestration.CheckNotifications(context.Background(), ports, options)
+		_, err := notifications.CheckNotifications(context.Background(), ports, options)
 		if err == nil || platform.Attempts != failAt-1 {
 			t.Fatalf("checkpoint %d: sends %d, %v", failAt, platform.Attempts, err)
 		}
 		store.failAt = 0
-		report, err := orchestration.CheckNotifications(context.Background(), ports, options)
+		report, err := notifications.CheckNotifications(context.Background(), ports, options)
 		if err != nil || len(report.State.Pending()) != 0 || platform.Attempts != failAt+1 {
 			t.Fatalf("checkpoint restart must replay only uncheckpointed work: %d %+v %v", platform.Attempts, report, err)
 		}
@@ -177,7 +177,7 @@ func TestCheckerRetriesSurviveEveryCheckpointAndLaterFailure(t *testing.T) {
 	seedChecker(t, store, options, pendingChecker("copy-one", true), pendingChecker("platform-one", false), pendingChecker("copy-two", true), pendingChecker("platform-two", false))
 	copies.Fail = &notifysvc.Error{Reason: "refused"}
 	store.failAt = 4 // initial save, retry copy, platform accepted, then next checkpoint fails
-	_, err := orchestration.CheckNotifications(context.Background(), ports, options)
+	_, err := notifications.CheckNotifications(context.Background(), ports, options)
 	if err == nil || len(copies.Sent) != 1 || len(platform.Sent) != 1 {
 		t.Fatalf("partial pass: %d %d %v", len(copies.Sent), len(platform.Sent), err)
 	}
@@ -191,12 +191,12 @@ func TestCheckerRetriesSurviveEveryCheckpointAndLaterFailure(t *testing.T) {
 		}
 	}
 	store.failAt = 0
-	report, err := orchestration.CheckNotifications(context.Background(), ports, options)
+	report, err := notifications.CheckNotifications(context.Background(), ports, options)
 	if err != nil || len(report.State.Pending()) != 2 || len(copies.Sent) != 2 {
 		t.Fatalf("restart retries: %+v %v", report, err)
 	}
 	options.Now += incident.History
-	report, err = orchestration.CheckNotifications(context.Background(), ports, options)
+	report, err = notifications.CheckNotifications(context.Background(), ports, options)
 	if err != nil || hasCheckerCopy(report.State) {
 		t.Fatalf("retry expiry: %+v %v", report, err)
 	}
@@ -212,7 +212,7 @@ func TestCheckerCopyServiceFailureAndImmediateRecovery(t *testing.T) {
 	copies.Fail = &notifysvc.Error{Reason: "unreachable"}
 	for i := 0; i < 7; i++ {
 		options.Now = checkerNow + float64(i*60)
-		if _, err := orchestration.CheckNotifications(context.Background(), ports, options); err != nil {
+		if _, err := notifications.CheckNotifications(context.Background(), ports, options); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -224,12 +224,12 @@ func TestCheckerCopyServiceFailureAndImmediateRecovery(t *testing.T) {
 	}
 	copies.Fail = nil
 	options.Now += 60
-	report, err := orchestration.CheckNotifications(context.Background(), ports, options)
+	report, err := notifications.CheckNotifications(context.Background(), ports, options)
 	if err != nil || len(report.State.Pending()) != 1 || report.State.Pending()[0].Title() != "notify service recovered" {
 		t.Fatalf("recovery: %+v %v", report, err)
 	}
 	options.Now += 60
-	if _, err := orchestration.CheckNotifications(context.Background(), ports, options); err != nil {
+	if _, err := notifications.CheckNotifications(context.Background(), ports, options); err != nil {
 		t.Fatal(err)
 	}
 	if len(platform.Sent) != 2 {
@@ -241,7 +241,7 @@ func TestCheckerDryRunAndUnknownSnapshot(t *testing.T) {
 	seedChecker(t, store, options, pendingChecker("one", false))
 	before := store.ConfigMapData[incident.Namespace][0].Data[incident.StateKey]
 	options.DryRun = true
-	report, err := orchestration.CheckNotifications(context.Background(), ports, options)
+	report, err := notifications.CheckNotifications(context.Background(), ports, options)
 	if err != nil || len(report.State.Pending()) != 1 || len(store.saved) != 0 || platform.Attempts != 0 || len(copies.Sent) != 0 {
 		t.Fatal("dry-run effects")
 	}
@@ -249,7 +249,7 @@ func TestCheckerDryRunAndUnknownSnapshot(t *testing.T) {
 		t.Fatal("dry-run changed state")
 	}
 	options.DryRun = false
-	report, err = orchestration.CheckNotifications(context.Background(), ports, options)
+	report, err = notifications.CheckNotifications(context.Background(), ports, options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +260,7 @@ func TestCheckerDryRunAndUnknownSnapshot(t *testing.T) {
 	store.Answers.ListReason = observe.ReasonForbidden
 	for _, offset := range []float64{1, 301} {
 		options.Now = checkerNow + offset
-		report, err = orchestration.CheckNotifications(context.Background(), ports, options)
+		report, err = notifications.CheckNotifications(context.Background(), ports, options)
 		if err == nil {
 			t.Fatal("unknown snapshot succeeded")
 		}
@@ -283,7 +283,7 @@ func TestCheckerDryRunAndUnknownSnapshot(t *testing.T) {
 func TestCheckerStateReadFailureStopsBeforeSnapshot(t *testing.T) {
 	ports, store, platform, _, options := checkerRig(t)
 	store.Failing = map[string]error{"get notification-state": errors.New("forbidden")}
-	if _, err := orchestration.CheckNotifications(context.Background(), ports, options); err == nil {
+	if _, err := notifications.CheckNotifications(context.Background(), ports, options); err == nil {
 		t.Fatal("state read failure succeeded")
 	}
 	if !reflect.DeepEqual(store.Calls, []string{"get notification-state"}) || len(store.Reads) != 0 || platform.Attempts != 0 {
@@ -314,7 +314,7 @@ func TestCheckerRefusesInvalidAndOversizedStateBeforeEffects(t *testing.T) {
 	for _, raw := range []string{`{"version":999}`, strings.Repeat(" ", incident.MaxStateBytes) + `{}`} {
 		ports, store, platform, copies, options := checkerRig(t)
 		store.ConfigMapData[incident.Namespace][0].Data[incident.StateKey] = raw
-		if _, err := orchestration.CheckNotifications(context.Background(), ports, options); err == nil {
+		if _, err := notifications.CheckNotifications(context.Background(), ports, options); err == nil {
 			t.Fatal("invalid/oversized state accepted")
 		}
 		if len(store.saved) > 0 || platform.Attempts > 0 || len(copies.Sent) > 0 || len(store.Reads) > 0 {
@@ -344,7 +344,7 @@ func TestCheckerMalformedHistoryStopsBeforeAllEffects(t *testing.T) {
 			}
 			before := string(raw)
 			store.ConfigMapData[incident.Namespace][0].Data[incident.StateKey] = before
-			report, err := orchestration.CheckNotifications(context.Background(), ports, options)
+			report, err := notifications.CheckNotifications(context.Background(), ports, options)
 			if err == nil || report.State != nil {
 				t.Fatal("malformed history was evaluated instead of refused")
 			}

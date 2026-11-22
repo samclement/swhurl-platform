@@ -20,9 +20,9 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy/ntfytest"
+	"github.com/samclement/swhurl-platform/v2/notifications"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // The notify service's scenario, as the Python service's tests state it: orders-staging belongs to team payments,
@@ -110,9 +110,9 @@ func newNotifyHarness(t *testing.T, scenario notifyScenario) *notifyHarness {
 	t.Helper()
 	h := &notifyHarness{fake: scenario.cluster(t), published: ntfytest.New(), log: &lockedBuffer{},
 		now: time.Unix(1_800_000_000, 0)}
-	connect := func() (orchestration.NotifyCluster, error) {
+	connect := func() (notifications.NotifyCluster, error) {
 		h.connects++
-		return orchestration.NotifyCluster{Reviewer: h.fake, Data: h.fake, Reader: h.fake}, nil
+		return notifications.NotifyCluster{Reviewer: h.fake, Data: h.fake, Reader: h.fake}, nil
 	}
 	h.service = newNotifyService(connect, h.published, h.log, func() time.Time { return h.now },
 		func() string { return notifyRandom })
@@ -328,8 +328,8 @@ func TestATokenThatCannotBeCheckedIsNotTrusted(t *testing.T) {
 		notify.CannotReview+` (failed: tokenreview: forbidden)"`) {
 		t.Fatalf("the failure is logged: %s", h.log)
 	}
-	h.service.connect = func() (orchestration.NotifyCluster, error) {
-		return orchestration.NotifyCluster{}, errors.New("invalid: in-cluster: token is not mounted")
+	h.service.connect = func() (notifications.NotifyCluster, error) {
+		return notifications.NotifyCluster{}, errors.New("invalid: in-cluster: token is not mounted")
 	}
 	if status, body := h.message(t, "checker-token", notifyBody); status != 503 || body != refusal(notify.CannotReview) {
 		t.Fatalf("no connection: %d %s", status, body)

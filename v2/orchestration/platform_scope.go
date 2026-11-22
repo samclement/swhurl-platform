@@ -282,6 +282,23 @@ func readChannels(ctx context.Context, inputs PlatformAllInputs, scope *observe.
 	return nil
 }
 
+// channelAddresses is each ntfy channel's address, from the Secrets labelled for the ntfy transport: channel-<name>
+// with an address. (Copied from notifications/notify.go; the copies merge at slice 5.)
+func channelAddresses(ctx context.Context, data kube.Data) (map[string]string, error) {
+	secrets, err := data.Secrets(ctx, notify.Namespace, kube.Selector{Labels: notify.TransportLabel + "=ntfy"})
+	if err != nil {
+		return nil, err
+	}
+	found := map[string]string{}
+	for _, secret := range secrets {
+		channel, ok := notify.ChannelOf(secret.Name)
+		if address := secret.Data[notify.AddressKey]; ok && len(address) > 0 {
+			found[channel] = string(address)
+		}
+	}
+	return found, nil
+}
+
 // wantedRoutes is the routes document the registry renders, or why it renders none.
 func wantedRoutes(teams []byte) ([]byte, string) {
 	registry, problem := teamsOf(teams)
@@ -310,6 +327,10 @@ func routesDocument(configMap []byte) ([]byte, string) {
 	}
 	return []byte(document.Data[notify.RoutesKey]), ""
 }
+
+// errNoRoutesKey is a routes ConfigMap without its document. (Copied from notifications/notify.go; the copies merge
+// at slice 5.)
+var errNoRoutesKey = errors.New("the routes ConfigMap has no " + notify.RoutesKey)
 
 // liveRoutes is the routes document the cluster's routes ConfigMap holds: nil when there is no ConfigMap, and a
 // failed read when the ConfigMap has no document.

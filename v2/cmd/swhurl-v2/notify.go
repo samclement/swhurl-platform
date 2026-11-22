@@ -14,8 +14,8 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
+	"github.com/samclement/swhurl-platform/v2/notifications"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // defaultListen is where notify-serve listens unless --listen says otherwise: the port its Service targets.
@@ -49,36 +49,36 @@ func (c cli) notifyServe(r request) int {
 
 // notifyCluster is a new connection from the pod's ServiceAccount, its token read again, so each request and pass
 // follows the kubelet's rotation of it. The error is the reason the mount could not be used.
-func (c cli) notifyCluster() (orchestration.NotifyCluster, error) {
+func (c cli) notifyCluster() (notifications.NotifyCluster, error) {
 	var why strings.Builder
 	quiet := c
 	quiet.diagnostic = &why
 	connection, _, status := quiet.serviceAccount()
 	if status != 0 {
-		return orchestration.NotifyCluster{}, errors.New(strings.TrimSpace(why.String()))
+		return notifications.NotifyCluster{}, errors.New(strings.TrimSpace(why.String()))
 	}
 	return notifyClusterOf(connection)
 }
 
 // notifyClusterOf is the three ports over one pass/request-owned client. API round trips are bounded even when
 // delivery uses a background context, and idle connections cannot outlive this short-lived client.
-func notifyClusterOf(connection kube.Connection) (orchestration.NotifyCluster, error) {
+func notifyClusterOf(connection kube.Connection) (notifications.NotifyCluster, error) {
 	return notifyClusterWithTimeout(connection, 10*time.Second)
 }
 
-func notifyClusterWithTimeout(connection kube.Connection, timeout time.Duration) (orchestration.NotifyCluster, error) {
+func notifyClusterWithTimeout(connection kube.Connection, timeout time.Duration) (notifications.NotifyCluster, error) {
 	client, err := kube.Client(connection.Credentials)
 	if err != nil {
-		return orchestration.NotifyCluster{}, err
+		return notifications.NotifyCluster{}, err
 	}
 	client.Timeout = timeout
 	// kube.Client constructs this transport; only notify opts out of connection reuse.
 	client.Transport.(*http.Transport).DisableKeepAlives = true
 	api, err := kube.NewAPI(connection.Endpoint, client, connection.Token)
 	if err != nil {
-		return orchestration.NotifyCluster{}, err
+		return notifications.NotifyCluster{}, err
 	}
-	return orchestration.NotifyCluster{Reviewer: api, Data: api, Reader: api}, nil
+	return notifications.NotifyCluster{Reviewer: api, Data: api, Reader: api}, nil
 }
 
 // randomKey is the key of an app's message that gives none: 32 lowercase hex characters.
@@ -91,27 +91,27 @@ func randomKey() string {
 // notifyService is the notify service's server: the use cases' notifier, how it connects, the clock and the random
 // key it gives them, its log, and the signal that wakes the delivery loop.
 type notifyService struct {
-	notifier  *orchestration.Notifier
-	connect   orchestration.NotifyConnect
+	notifier  *notifications.Notifier
+	connect   notifications.NotifyConnect
 	now       func() time.Time
 	randomKey func() string
 	log       *jsonLog
 	wake      chan struct{}
 }
 
-func newNotifyService(connect orchestration.NotifyConnect, publisher ntfy.Publisher, log io.Writer,
+func newNotifyService(connect notifications.NotifyConnect, publisher ntfy.Publisher, log io.Writer,
 	now func() time.Time, random func() string) *notifyService {
-	return &notifyService{notifier: orchestration.NewNotifier(publisher), connect: connect, now: now,
+	return &notifyService{notifier: notifications.NewNotifier(publisher), connect: connect, now: now,
 		randomKey: random, log: &jsonLog{out: log, now: now, name: "notify"}, wake: make(chan struct{}, 1)}
 }
 
 // handler is the service's endpoints: POST /v1/notify, POST /v1/alert and GET /healthz.
 func (s *notifyService) handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/notify", s.endpoint("a message", func(r *http.Request, body []byte) (orchestration.Accepted, error) {
+	mux.HandleFunc("POST /v1/notify", s.endpoint("a message", func(r *http.Request, body []byte) (notifications.Accepted, error) {
 		return s.notifier.AcceptMessage(r.Context(), s.connect, r.Header.Get("Authorization"), body, s.now(), s.randomKey())
 	}))
-	mux.HandleFunc("POST /v1/alert", s.endpoint("an alert", func(r *http.Request, body []byte) (orchestration.Accepted, error) {
+	mux.HandleFunc("POST /v1/alert", s.endpoint("an alert", func(r *http.Request, body []byte) (notifications.Accepted, error) {
 		return s.notifier.AcceptAlert(r.Context(), s.connect, body, s.now())
 	}))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -123,10 +123,10 @@ func (s *notifyService) handler() http.Handler {
 
 // endpoint answers one POST: 202 with the channels a copy was queued for, waking the delivery loop when there are
 // any, or the refusal's status and reason. Both are logged.
-func (s *notifyService) endpoint(what string, accept func(*http.Request, []byte) (orchestration.Accepted, error)) http.HandlerFunc {
+func (s *notifyService) endpoint(what string, accept func(*http.Request, []byte) (notifications.Accepted, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(io.LimitReader(r.Body, notify.MaxBody+1))
-		var accepted orchestration.Accepted
+		var accepted notifications.Accepted
 		if err == nil {
 			accepted, err = accept(r, body)
 		}
@@ -151,7 +151,7 @@ func (s *notifyService) endpoint(what string, accept func(*http.Request, []byte)
 }
 
 // refused logs a refusal: by the caller's name once Kubernetes has said it, and with the failure behind a 503.
-func (s *notifyService) refused(what string, accepted orchestration.Accepted, refusal *notify.Refusal) {
+func (s *notifyService) refused(what string, accepted notifications.Accepted, refusal *notify.Refusal) {
 	message := "Refused " + what
 	if accepted.Caller != "" {
 		message += " from " + accepted.Caller

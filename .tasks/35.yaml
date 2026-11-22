@@ -11,6 +11,8 @@ scope:
   - v2/delivery/fluxwait*.go
   - v2/adapters/github/*.go
   - v2/orchestration/platform*.go
+  - v2/orchestration/console.go
+  - v2/orchestration/dashboards.go
   - v2/archtest/rules_test.go
   - v2/archtest/api.txt
   - docs/v2-status.md
@@ -25,3 +27,18 @@ notes:
   - at: 2026-11-22T15:17:17.084Z
     commit: 73add754a641
     text: "Approved health slice: move observe/platform*.go and their tests unchanged into health/rules (package rules); alias recovery/rules as recoveryrules where needed. Move shared StagingEnvironment and AppLabel vocabulary to kernel (approved owner), update consumers within scope. Keep Checkout*, CompiledInstance, ClickStack helpers in health/rules. Point github adapter Hook types to health/rules. Delivery Flux-units read locator stays delivery-owned, not a health dependency. Add health/rules as pure layer 0 and required recovery/rules pure edge; retain observe existing edges. Regenerate public API only with archtest TestPublicAPI -update. Preserve platform document kind/version/field order and all command behavior; no duplicated verdicts. Workflow allowlist remains empty at this stage. If consumers outside scope need changes, release with precise missing paths, do not edit outside scope."
+  - at: 2026-11-22T15:32:19.919Z
+    commit: 2df34ebbfaec
+    text: "Blocked before edits: approved move removes observe.PlatformUnits, observe.AppLabel, observe.ClickStackSelector and observe.ClickStackPod, but required consumers are outside scope: v2/orchestration/console.go:374 (collector.ListNamespace(ctx, observe.PlatformUnits)); v2/orchestration/dashboards.go:138 (observe.AppLabel), :474 (observe.ClickStackSelector), :482 (observe.ClickStackPod). Add both paths to scope: console should use a delivery-owned Flux-unit locator rather than importing health merely for that locator; dashboards needs kernel.AppLabel and health/rules ClickStack helpers. No files changed or checks run. Re-read actual consumers and approved locator direction when resuming."
+  - at: 2026-11-22T15:32:32.267Z
+    commit: 2df34ebbfaec
+    text: "Clarification: the console.go locator replacement needs the operator's scope/ownership confirmation; previous note's delivery-owned consumer suggestion is not an additional approved design decision. Confirm whether ConsoleUnits should use a delivery-owned locator or health/rules.PlatformUnits. Missing paths remain v2/orchestration/console.go and v2/orchestration/dashboards.go."
+  - at: 2026-11-22T15:32:32.404Z
+    commit: 2df34ebbfaec
+    text: "released: Approved notes require release for missing consumer paths: v2/orchestration/console.go and v2/orchestration/dashboards.go need scope additions before the platform rules move can compile. No implementation edits made."
+  - at: 2026-11-22T15:32:40.208Z
+    commit: 2df34ebbfaec
+    text: Exact AppLabel consumer location is v2/orchestration/dashboards.go:137 (not :138). Required missing paths verified by static scan of moved exported symbols and shared AppLabel/StagingEnvironment consumers. Working tree remains unchanged; no machine-intensive checks started because scope blocks implementation.
+  - at: 2026-11-22T15:34:54.796Z
+    commit: 2df34ebbfaec
+    text: Missing console.go/dashboard.go consumers and console locator owner? -> Operator approved adding v2/orchestration/console.go and v2/orchestration/dashboards.go to task scope. Console uses health/rules.PlatformUnits as the pure read locator (not a delivery workflow dependency). Dashboards uses kernel.AppLabel and moved health/rules ClickStack helpers. No other scope expansion.

@@ -10,6 +10,10 @@ scope:
   - v2/kernel/declaration_test.go
   - v2/kernel/alloc.go
   - v2/kernel/alloc_test.go
+  - v2/provisioning/provisioning.go
+  - v2/orchestration/remove.go
+  - v2/recovery/restore.go
+  - v2/cmd/swhurl-v2/backup_test.go
   - v2/connectivity/rules/*.go
   - v2/provisioning/rules/compile.go
   - v2/provisioning/rules/compile_test.go
@@ -44,3 +48,6 @@ notes:
   - at: 2026-11-22T18:38:23.081Z
     commit: 11a0213ff12f
     text: "Task can't meet checks in scope; shape? -> Option 1 (settled by title and operator note: only readers move): kernel keeps the document types as model types (connection types in kernel/declaration.go, EgressDocument/EgressAllocation in kernel/alloc.go); readers DecodeEgressDocument/EncodeEgressDocument/EgressOf/ConnectionsOf/SubscribersOf/InstanceEgress move to connectivity/rules; kernel.Declare takes decoded documents, decoded in compile.go; zero values keep 'no document' semantics. Conductor added v2/kernel/declaration.go, declaration_test.go, alloc.go, alloc_test.go to scope."
+  - at: 2026-11-22T18:38:44.367Z
+    commit: 7ce1b67be28e
+    text: "Option 1 needs 4 more paths (renames kernel.X -> connectivity rules only)? -> yes: conductor added v2/provisioning/provisioning.go, v2/orchestration/remove.go, v2/recovery/restore.go, v2/cmd/swhurl-v2/backup_test.go to scope; renames only."

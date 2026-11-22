@@ -1,6 +1,6 @@
 id: 49
 title: Connectivity owns the declaration-change workflow (console connect settings)
-state: ready
+state: done
 scope:
   - v2/connectivity/*.go
   - v2/orchestration/console_connect.go
@@ -23,3 +23,12 @@ notes:
   - at: 2026-11-22T18:19:36.403Z
     commit: 8aba040c99aa
     text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."
+  - at: 2026-11-22T18:53:19.912Z
+    commit: 8e301d16f927
+    text: "done: orchestration/console_connect.go moved to new layer-2 package v2/connectivity (ConnectionSettings, AllowSettings, own Refusal; same error text); swhurl-v2 change calls it. archtest: Layers/Orchestration register it, a fixture test refuses edges to or from it; api.txt updated; v2-status row 94 names it. Offline only; no live check."
+  - at: 2026-11-22T18:53:19.912Z
+    commit: 8e301d16f927
+    text: "followup: kernel.MergeDeclarations (v2/kernel/edit.go) is used only by connectivity's declaration change; move it and its test (now in connectivity_test.go) into v2/connectivity in a slice whose scope includes kernel."
+  - at: 2026-11-22T18:55:11.184Z
+    commit: 8e301d16f927
+    text: branch dsa/01M829B8E1VVC06YVSD3D91V42/task-49

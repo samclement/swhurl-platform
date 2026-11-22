@@ -1,6 +1,6 @@
 id: 12
 title: The promotion-readiness verdict moves to delivery/rules and observe reports it
-state: ready
+state: cancelled
 scope:
   - v2/delivery/rules/readiness.go
   - v2/delivery/rules/readiness_test.go
@@ -20,7 +20,7 @@ checks:
   - "! grep -q 'reviewed_digest' v2/observe/live.go"
 after:
   - 11
-reason: null
+reason: re-created to wait on task 16, which replaces task 11
 notes:
   - at: 2026-11-22T12:07:52.347Z
     commit: 7f70a48d5699

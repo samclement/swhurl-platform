@@ -1,6 +1,6 @@
 id: 11
 title: The landed-revision verdict (currentness and its comparison evidence) moves to delivery/rules
-state: ready
+state: cancelled
 scope:
   - v2/delivery/rules/changes.go
   - v2/delivery/rules/changes_test.go
@@ -31,7 +31,7 @@ checks:
   - "! grep -rq 'observe.Currentness\\|observe.Changes\\|observe.Comparison\\|observe.ChangeScope\\|observe.DecodeChanges' v2"
 after:
   - 6
-reason: null
+reason: re-created with v2/observe/report_test.go in scope (tk cannot widen scope); work is in worktree .dsa/01M81M5YMT9K5WW9JHJ0J6YMJB/task-11
 notes:
   - at: 2026-11-22T12:07:51.994Z
     commit: 7f70a48d5699
@@ -39,3 +39,12 @@ notes:
   - at: 2026-11-22T12:13:43.649Z
     commit: 7d41be75d68d
     text: "From task 6: observe.Error formats as field/reason, delivery/rules.Error as 'code: field: reason'. Moving DecodeChanges must keep the error text commands and documents print today (commands keep their output); if that is impossible without a shim, release and say why."
+  - at: 2026-11-22T12:38:57.036Z
+    commit: acf86f205705
+    text: "Question from worker: where do the Explain-level currentness tests and TestPromotionReadiness... go once observe/changes_test.go is deleted? -> Option 1: observe/report_test.go (task 12 owns it and moves TestPromotionReadiness from there); task re-created with v2/observe/report_test.go in scope because tk cannot widen scope."
+  - at: 2026-11-22T12:43:16.166Z
+    commit: acf86f205705
+    text: "Work is done and uncommitted in this worktree; all five checks plus the three greps pass (make check-v2 exit 0). Placement: observe/changes.go moved to delivery/rules/changes.go (package rules, reusing rules.go's invalid/repositoryPath/containsField/appliedCommit/unitReason; ChangeScope.validate exported as Validate because observe's Target.validate calls it; changeScopeOf stays in observe/explain.go). Pure tests (CurrentnessOf table, DecodeChanges strictness, malformed-proof refusal, endpoint mismatch) are in delivery/rules/changes_test.go. Explain-level tests (unaffectedReport, TestUnaffectedNeverWaivesUnhealthyEvidence, TestExplainRefusesInvalidProof…, TestPromotionReadinessUsesReviewedSelectedAndRunningDigest, TestPromotionReadinessNeedsTheReviewedDigestRunning) moved to observe/report_test.go per operator option 1, so task 12 moves TestPromotionReadiness* from report_test.go, not changes_test.go. Outside packages import delivery/rules as deliveryrules (recovery/rules already owns the name rules). Error text unchanged: rules.Error with Code invalid prints 'invalid: field: reason' like observe.Error; cmd status_all_test asserts 'invalid: changes:'. JSON unchanged (Version 5)."
+  - at: 2026-11-22T12:43:16.303Z
+    commit: acf86f205705
+    text: "released: needs v2/observe/report_test.go in scope for the Explain-level currentness tests and TestPromotionReadiness… (work complete and uncommitted in the worktree; checks pass)"

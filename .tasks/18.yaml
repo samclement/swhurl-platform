@@ -1,0 +1,36 @@
+id: 18
+title: Record slice 2 in the plan, status, evidence and registry
+state: ready
+scope:
+  - docs/iteration-2-plan.md
+  - docs/v2-status.md
+  - docs/current-state.md
+  - docs/workstreams.md
+  - AGENTS.md
+checks:
+  - make check-v2
+  - "grep -q 'Slice 2: delivery' docs/iteration-2-plan.md"
+  - grep -q 'Delivery is the second capability package' docs/current-state.md
+  - grep -q 'delivery, whose verdict' docs/v2-status.md
+  - grep -q 'capability slice 2, delivery' docs/workstreams.md
+  - "! grep -q 'Gate: review capability slice 1' docs/v2-status.md"
+  - "! grep -q 'delivery, notifications, health and the rest not started' docs/v2-status.md"
+after:
+  - 8
+  - 14
+  - 10
+  - 17
+reason: null
+notes:
+  - at: 2026-11-22T12:44:11.722Z
+    commit: acf86f205705
+    text: |-
+      Replaces task 15 (re-created to wait on task 17, which replaces task 12). Notes carried over:
+      Replaces task 13 (re-created to wait on task 14, which replaces task 9). Notes carried over:
+      Slice 2 (delivery), plan block 7. Decisions (operator, 2026-11-22): 1A copy the write plumbing promote/deploy share into v2/delivery/write.go, each copy naming its origin, and record 'two copies until slice 5' in the plan; 2A move only SelectPromotion, kernel.SelectRelease stays (deferred to apps/provisioning); 3A move Currentness/Changes and PromotionReadiness to delivery/rules now, observation document keeps Version 5 and the same JSON. Task 7 also records in the plan's deferred list that observe/explain.go's 'unit applied this revision' rule duplicates the currentness rule. Commands keep flags, output and effects; delete the old copies, no shims. make check-docs is not a check (fails on an uncommitted tree). Planner's pointers: mirror the slice-1 block: a `**Slice 2: delivery.**` layout tree, "Stays put" (`kernel/select.go` and the compiler's release checks, `orchestration/orchestration.go`'s own write plumbing, `observe/explain.go`'s revision finding), the archtest entries, the acceptance (promote/deploy/flux-wait command tests pass with type names only; report document Version 5 unchanged) and the decided questions recorded as decisions with the date. Update the §36 slice table's delivery row's State cell. `docs/v2-status.md`: the `Capability layout` row (`:96`, currently "recovery moved to ...; delivery, notifications, health and the rest not started"), the `Gate:` line (`:4`) and the standing summary; keep the page under 250 lines and overwrite rows rather than appending. `docs/current-state.md`: one new dated `##` entry above `## One archive verdict`, with Change/Checks/Not exercised, naming what is now delivery's, that `make check-v2` passes, and that nothing live changed. `docs/workstreams.md:11`: overwrite the Go replacement row's state and next gate. `AGENTS.md` needs no change — its layer sentence (`:18`) is already generic ("each capability's root, such as `v2/recovery`"); if the worker does touch it, say why in the commit. Do not run `make check-docs` (it fails on an uncommitted tree).
+      ---
+      From task 7: also record in docs/iteration-2-plan.md 'two copies of the write plumbing (orchestration and delivery/write.go) until slice 5'.
+      ---
+      From task 8: docs/iteration-2-plan.md:221 and :324 still name kernel.SelectPromotion / kernel/promote.go; update to delivery/rules.SelectPromotion.
+      ---
+      From tasks 10/14: docs/iteration-2-plan.md:324 still lists orchestration/flux_wait.go as delivery's; absentOrUnavailable is now copied in orchestration/flux.go and delivery/fluxwait.go (another copy to merge at slice 5).

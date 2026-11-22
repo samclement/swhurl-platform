@@ -1,10 +1,11 @@
 id: 36
 title: "Health: move platform collectors and wire verify and console"
-state: ready
+state: done
 scope:
   - v2/orchestration/platform*.go
   - v2/health/*.go
   - v2/cmd/swhurl-v2/verify.go
+  - v2/cmd/swhurl-v2/verify_test.go
   - v2/cmd/swhurl-v2/verify_checkout.go
   - v2/cmd/swhurl-v2/console.go
   - v2/orchestration/console.go
@@ -12,6 +13,7 @@ scope:
   - v2/orchestration/bootstrap.go
   - v2/orchestration/teamscenario.go
   - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
   - v2/archtest/api.txt
   - docs/v2-status.md
 checks:
@@ -25,3 +27,15 @@ notes:
   - at: 2026-11-22T15:17:17.373Z
     commit: 73add754a641
     text: "Approved: move platform collectors/tests from orchestration to health unchanged, importing health/rules; wire verify and verify_checkout. Add health as workflow layer 2. Specifically approve directional orchestration->health in WorkflowDependencies so ConsoleChecks retains composition rather than moving business sequencing into CLI. Keep only justified edge, reject reverse/cycles. This transitional edge is reconsidered when console moves in slice 5. Preserve flags, effects, report/JSON/output/error/exit semantics; test verify and console behavior. Shared legacy effect-helper ownership is not being redesigned in this slice; use minimal move-local plumbing only, no compatibility shims/new workflow edges; surface any scope/ownership conflict. Regenerate public API using archtest update command. Status touch as required."
+  - at: 2026-11-22T15:56:28.753Z
+    commit: d0dfcc753740
+    text: Add missing directional-edge and verify/console regression test paths? -> Operator approved v2/archtest/checks_test.go and v2/cmd/swhurl-v2/verify_test.go. Scope updated. v2/health/console_test.go is already in v2/health/*.go; external health_test package may test orchestration.ConsoleChecks without adding a production reverse dependency. No other expansion.
+  - at: 2026-11-22T16:02:34.350Z
+    commit: d0dfcc753740
+    text: Health now owns all nine former orchestration/platform*.go files; byte comparison against HEAD confirms package declaration is their only change. ConsoleChecks retains business composition in orchestration through the sole approved orchestration->health edge. Legacy ClickStack constants and clickstackRef remain local in dashboards.go for dashboard/bootstrap/team consumers; no reverse edge, new helper abstraction or compatibility shim. Added external health_test ConsoleChecks success-with-bad-evidence/refusal coverage, CLI failed-read JSON and malformed-credential coverage, and production-edge/reverse/cycle architecture fixtures. Regenerated API with go test ./archtest -run TestPublicAPI -update. Passed baseline and post-move targeted suites, new tests before/after move, architecture suite, make check-v2 (gofmt/vet/all tests; renders 172 and 27 files, zero differences), git diff --check, and move-path check; expensive checks held machine. No live operations or live verification. docs/v2-status.md ownership row/uncommitted paths updated; task 38 retains integration docs/current-state/workstreams work. Reconsider transitional edge at console slice 5. Changes remain uncommitted.
+  - at: 2026-11-22T16:02:34.594Z
+    commit: d0dfcc753740
+    text: "done: Moved platform collectors/tests unchanged to health; verify calls health and ConsoleChecks retains composition via the sole approved directional edge. Added verify/console and architecture regressions, regenerated API, updated status. Targeted suites, make check-v2 and move-path check passed; live behavior not exercised. Uncommitted; integration docs remain task 38."
+  - at: 2026-11-22T16:04:34.068Z
+    commit: d0dfcc753740
+    text: branch dsa/01M81ZCZ2KDR16F410AN383A28/task-36

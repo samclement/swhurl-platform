@@ -1,6 +1,6 @@
 id: 43
 title: "Docs: record slice 5 (status capability, restore owned by recovery) and name the next gate"
-state: ready
+state: done
 scope:
   - docs/v2-status.md
   - docs/workstreams.md
@@ -26,3 +26,12 @@ notes:
   - at: 2026-11-22T17:41:06.039Z
     commit: 158ad0eb3525
     text: "Carry followups into this scope: task 42 asks for the workstream row and a dated current-state entry for the restore move (recovery.Prepare owns observe->refuse->plan->archive sequencing; CLI wires apps.Status as a port). Slice 5 as landed: tasks 39 (registry row), 40 (delivery/rules deployment-health verdict, incident imports it), 44 (new pure provisioning/rules: Inputs/Compile/Declare; Declare now reports release error before profile when both malformed), 41 (apps owns Status/StatusAll; orchestration->apps edge; console stays in orchestration with health and apps edges), 42 (restore sequencing in recovery). Still deferred: delivery/write.go copied documents()/write decisions -> provisioning slice; status adopting the delivery/rules verdict -> operator decision. docs/v2-status.md is near its 250-line cap: edit rows rather than add lines. Do not claim post-merge or live checks."
+  - at: 2026-11-22T17:46:11.226Z
+    commit: 5e0b5dc9b500
+    text: "done: Recorded slice 5's first part: v2-status gate/row/migration text, new deferred row for status's own health judgement; workstreams row and gate; dated current-state entry; plan capability map, slice table, slice 5 subsection, workflow edges. check-repo, check-v2, check-docs pass. contributing.md unchanged (nothing stale). Nothing live verified."
+  - at: 2026-11-22T17:46:11.226Z
+    commit: 5e0b5dc9b500
+    text: "followup: docs/iteration-2-plan.md slice 2 'Stays put' still says the copies stay 'until slice 5'; reword to 'until provisioning's writers move' when that slice is approved."
+  - at: 2026-11-22T17:48:00.114Z
+    commit: 5e0b5dc9b500
+    text: branch dsa/01M825HWGADQZY2K7WQBGGY20F/task-43

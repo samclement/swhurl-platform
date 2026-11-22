@@ -76,30 +76,3 @@ func fluxFacts(f fact) FluxFacts {
 	}
 	return result
 }
-
-// PromotionDecision is a submission-time decision, not a promise about a later manual merge.
-type PromotionDecision struct {
-	Ready  bool   `json:"ready"`
-	Reason string `json:"reason"`
-}
-
-// PromotionReadiness requires fresh selected content to match the review and a healthy, current
-// observation that proves that content running. No external provider or Python judgement is needed.
-func PromotionReadiness(report Report, reviewedDigest string) PromotionDecision {
-	if !digestPattern().MatchString(reviewedDigest) {
-		return PromotionDecision{Reason: "reviewed_digest_invalid"}
-	}
-	if report.Target.Digest != reviewedDigest {
-		return PromotionDecision{Reason: "reviewed_digest_changed"}
-	}
-	if report.Currentness.State != Applied && report.Currentness.State != "unaffected" {
-		return PromotionDecision{Reason: "revision_not_current"}
-	}
-	if report.State.Name != StateHealthy {
-		return PromotionDecision{Reason: "instance_not_healthy"}
-	}
-	if report.Live.Running.Status != Present || len(report.Live.Running.Digests) != 1 || report.Live.Running.Digests[0] != reviewedDigest {
-		return PromotionDecision{Reason: "reviewed_digest_not_running"}
-	}
-	return PromotionDecision{Ready: true, Reason: "ready"}
-}

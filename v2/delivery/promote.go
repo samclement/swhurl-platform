@@ -1,4 +1,4 @@
-package orchestration
+package delivery
 
 import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
@@ -60,8 +60,7 @@ func newPromotionRequest(inputs PromoteInputs) (promotionRequest, error) {
 	if request.profile, err = kernel.DecodeProfile(inputs.Profile); err != nil {
 		return promotionRequest{}, err
 	}
-	request.connections, request.egress, err = documents(Inputs{Calls: inputs.Calls, Egress: inputs.Egress},
-		request.spec.Application, request.spec.Environment)
+	request.connections, request.egress, err = documents(inputs.Calls, inputs.Egress, request.spec.Application, request.spec.Environment)
 	return request, err
 }
 

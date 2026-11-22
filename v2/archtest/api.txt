@@ -681,6 +681,12 @@ delivery/rules: const WrongRelease Code = "wrong_release"
 delivery/rules: func (*Error) Error() string
 delivery/rules: type Code string
 delivery/rules: type Error struct {Code Code Field string Reason string}
+delivery: func (*Refusal) Error() string
+delivery: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
+delivery: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
+delivery: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}
+delivery: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
+delivery: type Refusal struct {Subject, Reason string}
 events: const ConsumerCollision = "consumer_collision"
 events: const InvalidSubscription = "invalid_subscription"
 events: const NotPublished = "not_published"
@@ -1408,7 +1414,6 @@ orchestration: func NewNotifier(publisher ntfy.Publisher) *Notifier
 orchestration: func NotificationsHeartbeat(ctx context.Context, ports HeartbeatPorts, options HeartbeatOptions) ([]HeartbeatOutcome, error)
 orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformReport, error)
 orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.PlatformReport, error)
-orchestration: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
 orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
 orchestration: func ReadStackContract(data []byte) (StackContract, error)
 orchestration: func ReadTree(content []byte, prefixed bool) ([]files.TreeFile, error)
@@ -1492,8 +1497,6 @@ orchestration: type NotifyConnect func() (NotifyCluster, error)
 orchestration: type PlatformAllInputs struct {PlatformInputs GitHub github.Reader GitHubToken string Data kube.Data Issuer kube.Issuer Executor kube.Executor Registries func(image string) (registry.Reader, error) Objects func(bucket string) (s3.Reader, error) Checkout Checkout ConsoleTag string MaxAge time.Duration Heartbeat observe.HeartbeatEvidence}
 orchestration: type PlatformInputs struct {Reader kube.Reader Source string Now func() time.Time}
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
-orchestration: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}
-orchestration: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
 orchestration: type PublishInputs struct {Change pages.ConsoleChange Name, Env string Identity string Revision string Before []files.TreeFile After []files.TreeFile Commands []string Preface string Repository string Token string DryRun bool}
 orchestration: type Published struct {Branch string Paths []string Status map[string]string URL string}
 orchestration: type RecordedInstance struct {Application, Environment string Release []byte}

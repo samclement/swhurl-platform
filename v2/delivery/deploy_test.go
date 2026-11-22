@@ -1,12 +1,10 @@
-package orchestration
+package delivery
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -22,16 +20,6 @@ const (
 	newDigest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	newCommit = "dddddddddddddddddddddddddddddddddddddddd"
 )
-
-// fixture reads one document from the kernel's own fixtures.
-func fixture(t *testing.T, name string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "testdata", name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
-}
 
 // declarationLabel is an image's declaration, as the build writes it into its config labels.
 func declarationLabel(change func(map[string]any)) string {

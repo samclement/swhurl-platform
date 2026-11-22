@@ -30,3 +30,6 @@ notes:
   - at: 2026-11-22T14:10:55.505Z
     commit: 157cd3b02597
     text: "From task 25's review: dead links after the incident move — docs/iteration-2-plan.md:1412, docs/current-state.md:1757, docs/services.md:242 still link ../v2/incident/testdata/README.md, and docs/iteration-2-plan.md:2906 and docs/current-state.md:422 still name v2/incident. Fix these too (they are in your scope). Also task 25's followup: docs/workstreams.md and docs/v2-status.md need the notifications capability row."
+  - at: 2026-11-22T14:14:54.043Z
+    commit: 1d635e876809
+    text: "From task 26: docs/iteration-2-plan.md:1601, docs/current-state.md:1618 and docs/operations.md:246 link v2/heartbeat/testdata/README.md and v2/heartbeat/heartbeat.go, which no longer exist; fix in your scope."

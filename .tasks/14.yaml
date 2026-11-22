@@ -1,6 +1,6 @@
 id: 14
 title: Deploy moves into v2/delivery
-state: ready
+state: done
 scope:
   - v2/delivery/deploy.go
   - v2/delivery/deploy_test.go
@@ -32,3 +32,15 @@ notes:
       Question from worker: where do create's declarationOf/revisionOf live once orchestration/deploy.go is deleted? -> Option 1: move them verbatim into orchestration/create.go, delivery/deploy.go keeps its own copy naming its origin (decision 1A); task re-created with v2/orchestration/create.go in scope because tk cannot widen scope.
       ---
       Option 1 approved (decision 1A): move declarationOf/revisionOf verbatim from orchestration/deploy.go into orchestration/create.go (their only other user), and keep delivery/deploy.go's own copy naming its origin. deploy_test.go's helpers are used by no other orchestration test, so deleting it is safe. No edits were made in this attempt.
+  - at: 2026-11-22T12:29:46.829Z
+    commit: eb3d9764ba45
+    text: "done: Deploy (DeployImage/DeployInputs/Deploy, same names and fields) moved to v2/delivery/deploy.go with its test; orchestration/deploy.go and its test deleted; declarationOf/revisionOf moved verbatim into orchestration/create.go, delivery keeps a copy naming its origin; cmd imports swapped; api.txt updated. Unit tests only; no live deploy run."
+  - at: 2026-11-22T12:29:46.829Z
+    commit: eb3d9764ba45
+    text: "followup: v2/delivery/write.go:143 says instanceDocuments was copied from orchestration/deploy.go, which no longer exists; it is now delivery's only copy, so drop the origin note."
+  - at: 2026-11-22T12:29:46.829Z
+    commit: eb3d9764ba45
+    text: "followup: v2/delivery/fixtures_test.go:9 names orchestration/deploy_test.go as its origin, now deleted; drop or update the note."
+  - at: 2026-11-22T12:31:21.862Z
+    commit: eb3d9764ba45
+    text: branch dsa/01M81KH8H7E4VTZJXQZEHGT840/task-14

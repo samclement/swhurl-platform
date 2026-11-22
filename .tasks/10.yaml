@@ -1,6 +1,6 @@
 id: 10
 title: flux-wait and the unit rollout verdict move to delivery and delivery/rules
-state: ready
+state: done
 scope:
   - v2/delivery/fluxwait.go
   - v2/delivery/fluxwait_test.go
@@ -27,3 +27,18 @@ notes:
   - at: 2026-11-22T12:07:51.651Z
     commit: 7f70a48d5699
     text: "Slice 2 (delivery), plan block 4. Decisions (operator, 2026-11-22): 1A copy the write plumbing promote/deploy share into v2/delivery/write.go, each copy naming its origin, and record 'two copies until slice 5' in the plan; 2A move only SelectPromotion, kernel.SelectRelease stays (deferred to apps/provisioning); 3A move Currentness/Changes and PromotionReadiness to delivery/rules now, observation document keeps Version 5 and the same JSON. Task 7 also records in the plan's deferred list that observe/explain.go's 'unit applied this revision' rule duplicates the currentness rule. Commands keep flags, output and effects; delete the old copies, no shims. make check-docs is not a check (fails on an uncommitted tree). Planner's pointers: split it along the layer boundary the plan names: `observe/flux_wait.go:3,9-95` (the `FluxSource`/`FluxProgress`/`FluxUnitState` vocabulary and `FluxUnitAt`'s decision) becomes `delivery/rules/unit.go`, and `orchestration/flux_wait.go` becomes `delivery/fluxwait.go` calling it. `delivery/fluxwait.go` needs `fluxRefOf`'s equivalent — call `kube.RefOf(fluxSourceGroup, \"GitRepository\", \"flux-system\", rules.FluxSource)` (`orchestration/flux.go:262`) with its own private group constant — plus `fluxNamespace`, its own `fluxState` decode (`orchestration/flux.go:311-330`), and `absentOrUnavailable`/`unavailable`/`reasonOf` (task 1's `write.go` provides the last two). `orchestration/flux.go` (unit actions) keeps everything it uses; do not move it. Lines, levels and `make flux-reconcile`'s tail are unchanged: `cmd/swhurl-v2/flux_wait.go` swaps imports only (`:30-33`)."
+  - at: 2026-11-22T12:36:01.388Z
+    commit: 8ab1b1cd0889
+    text: "done: FluxUnitAt and its vocabulary moved observe -> delivery/rules/unit.go; FluxWait moved orchestration -> delivery/fluxwait.go with its own flux-system/source-group constants, GitRepository decode and absentOrUnavailable copy; cmd swaps import only; api.txt updated. Tests moved unchanged. Not verified live (offline only)."
+  - at: 2026-11-22T12:36:01.388Z
+    commit: 8ab1b1cd0889
+    text: "followup: docs/iteration-2-plan.md:324 capability map still lists orchestration/flux_wait.go as delivery's source file; update it to delivery/fluxwait.go and delivery/rules/unit.go when the slice's docs are written."
+  - at: 2026-11-22T12:36:01.388Z
+    commit: 8ab1b1cd0889
+    text: "followup: absentOrUnavailable now exists in both orchestration/flux.go and delivery/fluxwait.go (copy named in its comment); fold with the other write.go copies at slice 5."
+  - at: 2026-11-22T12:36:01.388Z
+    commit: 8ab1b1cd0889
+    text: "followup: adapters/kube TestExecCancellationWhileWaitingForUpgrade flaked once under load (exec_test.go:408, 1s wait for server-side cancellation); passed 20/20 on rerun. Consider a longer bound."
+  - at: 2026-11-22T12:37:23.863Z
+    commit: 8ab1b1cd0889
+    text: branch dsa/01M81KTVYJ01SABQ4DT5015Z80/task-10

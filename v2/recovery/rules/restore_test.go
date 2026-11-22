@@ -221,6 +221,31 @@ func TestInstanceArchiveRefusesWhatItCannotConfine(t *testing.T) {
 	}
 }
 
+// A platform backup is judged by the same verdict under the prefix its job states, not an instance's: archives
+// with the caller's suffix and their metadata beside them. Without a suffix every object would be an archive.
+func TestNewestArchiveTakesTheSuffix(t *testing.T) {
+	now, _ := time.Parse(time.RFC3339, observedAt)
+	at := func(key string, age time.Duration) rules.Archive {
+		return rules.Archive{Key: "clickstack-mongodb/" + key, LastModified: now.Add(-age)}
+	}
+	listed := rules.ArchiveList{Query: rules.ArchiveQuery{Bucket: query().Bucket, Prefix: "clickstack-mongodb/"},
+		Status: rules.Present, Objects: []rules.Archive{
+			at("clickstack-mongodb-20261026T081400Z.archive.gz.age", time.Hour),
+			at("clickstack-mongodb-20261026T081400Z.json", time.Hour),
+			at("sqlite-20261026T091000Z.db.age", 4*time.Minute),
+			at("sqlite-20261026T091000Z.json", 4*time.Minute),
+		}}
+	report, err := rules.NewestArchive(listed, ".archive.gz.age", 26*time.Hour, now)
+	if err != nil || report.State != rules.BackupCurrent ||
+		report.Newest != "clickstack-mongodb/clickstack-mongodb-20261026T081400Z.archive.gz.age" || report.Age != time.Hour {
+		t.Fatalf("report %+v %v", report, err)
+	}
+	if _, err := rules.NewestArchive(listed, "", 26*time.Hour, now); err == nil ||
+		err.Error() != "invalid: archive.suffix: expected_a_suffix" {
+		t.Fatalf("no suffix: %v", err)
+	}
+}
+
 // A backup location is an s3://<bucket>/<prefix>/ URI: a bucket S3 accepts, and a directory, never one object.
 func TestBackupLocation(t *testing.T) {
 	for uri, ok := range map[string]bool{"s3://bucket/p/": true, "s3://bucket/": true, "s3://bucket/p": false, "bucket/p/": false, "s3:///p/": false} {

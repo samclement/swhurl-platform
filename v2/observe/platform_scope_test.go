@@ -43,10 +43,9 @@ func compiledHello() CompiledInstance {
 const readyStatus = `"status":{"conditions":[{"type":"Ready","status":"True"}]}`
 
 func healthyScope() ScopeEvidence {
-	backupStamp := platformNow.Add(-time.Hour).Format("20060102T150405Z")
 	listing := func(prefix, name, suffix string) rules.ArchiveList {
-		return rules.ArchiveList{Status: Present, Objects: []rules.Archive{{Key: prefix + name + "-" + backupStamp + suffix},
-			{Key: prefix + name + "-" + backupStamp + ".json"}}}
+		return rules.ArchiveList{Status: Present, Objects: []rules.Archive{backupAt(prefix+name, suffix, time.Hour),
+			backupAt(prefix+name, ".json", time.Hour)}}
 	}
 	push, images, tokens := healthyGitHub()
 	return ScopeEvidence{
@@ -89,6 +88,12 @@ func healthyScope() ScopeEvidence {
 		Credentials: true,
 		MaxAge:      26 * time.Hour,
 	}
+}
+
+// backupAt is a backup job's object, <name>-<UTC stamp><suffix>, as S3 lists it: written the age before platformNow.
+func backupAt(name, suffix string, age time.Duration) rules.Archive {
+	taken := platformNow.Add(-age)
+	return rules.Archive{Key: name + "-" + taken.Format("20060102T150405Z") + suffix, LastModified: taken}
 }
 
 func mongoJob(uri string) string {
@@ -354,31 +359,39 @@ func TestChannels(t *testing.T) {
 }
 
 func TestMongoBackups(t *testing.T) {
-	old := platformNow.Add(-33 * time.Hour).Format("20060102T150405Z")
-	newer := platformNow.Add(-8 * time.Hour).Format("20060102T150405Z")
-	listed := func(names ...string) rules.ArchiveList {
-		list := rules.ArchiveList{Status: Present}
-		for _, name := range names {
-			list.Objects = append(list.Objects, rules.Archive{Key: "clickstack-mongodb/clickstack-mongodb-" + name})
-		}
-		return list
+	const name = "clickstack-mongodb/clickstack-mongodb"
+	listed := func(objects ...rules.Archive) rules.ArchiveList {
+		return rules.ArchiveList{Status: Present, Objects: objects}
 	}
+	old, newer := 33*time.Hour, 8*time.Hour
 	runScopeCases(t, "backups", []scopeCase{
 		{"a fresh backup passes", unchanged, CheckOK, "newest MongoDB backup in s3://bucket-a/clickstack-mongodb/ is 1.0 h old"},
-		{"a stale backup fails", func(s *ScopeEvidence) { s.Backups.Listing = listed(old+".archive.gz.age", old+".json") },
-			CheckBad, "newest MongoDB backup in s3://bucket-a/clickstack-mongodb/ is 33 h old; check: kubectl -n observability get jobs -l platform.swhurl.com/backup=true"},
+		{"a stale backup fails", func(s *ScopeEvidence) {
+			s.Backups.Listing = listed(backupAt(name, ".archive.gz.age", old), backupAt(name, ".json", old))
+		}, CheckBad, "newest MongoDB backup in s3://bucket-a/clickstack-mongodb/ is 33 h old; check: kubectl -n observability get jobs -l platform.swhurl.com/backup=true"},
 		{"no backup fails", func(s *ScopeEvidence) { s.Backups.Listing = listed() },
 			CheckBad, "no MongoDB backup in s3://bucket-a/clickstack-mongodb/ (run: make backup-mongodb)"},
 		{"an archive without its metadata does not count", func(s *ScopeEvidence) {
-			s.Backups.Listing = listed(newer+".archive.gz.age", old+".archive.gz.age", old+".json")
+			s.Backups.Listing = listed(backupAt(name, ".archive.gz.age", newer), backupAt(name, ".archive.gz.age", old),
+				backupAt(name, ".json", old))
 		}, CheckBad, "is 33 h old"},
+		{"the bucket's time ages a backup, not its name", func(s *ScopeEvidence) {
+			fresh := backupAt(name, ".archive.gz.age", time.Hour)
+			fresh.LastModified = platformNow.Add(-old)
+			s.Backups.Listing = listed(fresh, backupAt(name, ".json", time.Hour))
+		}, CheckBad, "is 33 h old"},
+		{"an archive without a time cannot be judged", func(s *ScopeEvidence) {
+			undated := backupAt(name, ".archive.gz.age", time.Hour)
+			undated.LastModified = time.Time{}
+			s.Backups.Listing = listed(undated, backupAt(name, ".json", time.Hour))
+		}, CheckBad, "cannot judge the MongoDB backups in s3://bucket-a/clickstack-mongodb/ (invalid: archive: malformed)"},
 		{"an unlistable prefix fails", func(s *ScopeEvidence) {
 			s.Backups.Listing = rules.ArchiveList{Status: Unavailable, Reason: ReasonForbidden}
 		},
 			CheckBad, "cannot list backups in s3://bucket-a/clickstack-mongodb/: forbidden"},
 		{"a tighter limit fails", func(s *ScopeEvidence) {
 			s.MaxAge = 6 * time.Hour
-			s.Backups.Listing = listed(newer+".archive.gz.age", newer+".json")
+			s.Backups.Listing = listed(backupAt(name, ".archive.gz.age", newer), backupAt(name, ".json", newer))
 		}, CheckBad, "is 8 h old"},
 		{"no credentials is not supplied", func(s *ScopeEvidence) { s.Credentials = false },
 			CheckBad, "cannot list backups in s3://bucket-a/clickstack-mongodb/: AWS credentials not supplied"},
@@ -396,6 +409,15 @@ func TestSQLiteBackups(t *testing.T) {
 		{"a fresh backup passes", unchanged, CheckOK, "hello-prod: newest SQLite backup in s3://bucket-a/app-sqlite/hello-prod/ is 1.0 h old"},
 		{"no backup fails", func(s *ScopeEvidence) { s.Databases.Databases[0].Listing = rules.ArchiveList{Status: Present} },
 			CheckBad, "hello-prod: no SQLite backup in s3://bucket-a/app-sqlite/hello-prod/ (run: make backup-sqlite)"},
+		{"a stale backup fails", func(s *ScopeEvidence) {
+			s.Databases.Databases[0].Listing = rules.ArchiveList{Status: Present, Objects: []rules.Archive{
+				backupAt("app-sqlite/hello-prod/sqlite", ".db.age", 30*time.Hour), backupAt("app-sqlite/hello-prod/sqlite", ".json", 30*time.Hour)}}
+		}, CheckBad, "hello-prod: newest SQLite backup in s3://bucket-a/app-sqlite/hello-prod/ is 30 h old; check: kubectl -n hello-prod get jobs -l platform.swhurl.com/backup=true"},
+		{"an unlistable prefix fails", func(s *ScopeEvidence) {
+			s.Databases.Databases[0].Listing = rules.ArchiveList{Status: Unavailable, Reason: ReasonForbidden}
+		}, CheckBad, "hello-prod: cannot list backups in s3://bucket-a/app-sqlite/hello-prod/: forbidden"},
+		{"a location the instance is not confined to cannot be judged", func(s *ScopeEvidence) { s.Databases.Location.Prefix = "" },
+			CheckBad, "hello-prod: cannot judge the SQLite backups in s3://bucket-a/hello-prod/ (invalid: archive.prefix: not_confined_to_the_instance)"},
 		{"no credentials is not supplied", func(s *ScopeEvidence) { s.Credentials = false },
 			CheckBad, "hello-prod: cannot list backups in s3://bucket-a/app-sqlite/hello-prod/: AWS credentials not supplied"},
 		{"no database says so", func(s *ScopeEvidence) { s.Databases.Databases = nil }, CheckOK, "no app has a SQLite database"},
@@ -428,27 +450,6 @@ func TestConsole(t *testing.T) {
 	if entries := platformConsole(Read{Status: Unavailable}, healthyScope().Console); entries[0].Level != CheckBad ||
 		!strings.Contains(entries[0].Message, "cannot read the console HelmRelease image tag (console/console)") {
 		t.Fatalf("an unread release: %+v", entries)
-	}
-}
-
-// The backup set's names: only <name>-<stamp><suffix> is an archive, and only with <name>-<stamp>.json beside it.
-func TestBackupNames(t *testing.T) {
-	set := backupSet{name: "sqlite", suffix: ".db.age"}
-	present := map[string]bool{"sqlite-20260929T033000Z.db.age": true, "sqlite-20260929T033000Z.json": true,
-		"sqlite-20260930T033000Z.db.age": true, "other-20261001T033000Z.db.age": true, "other-20261001T033000Z.json": true,
-		"sqlite-2026.db.age": true}
-	taken, found := set.newest(func() []rules.Archive {
-		objects := []rules.Archive{}
-		for name := range present {
-			objects = append(objects, rules.Archive{Key: "p/" + name})
-		}
-		return append(objects, rules.Archive{Key: "elsewhere/sqlite-20261002T033000Z.db.age"})
-	}(), "p/")
-	if !found || taken != time.Date(2026, 9, 29, 3, 30, 0, 0, time.UTC) {
-		t.Fatalf("%v %v", taken, found)
-	}
-	if _, found := set.newest([]rules.Archive{{Key: "p/sqlite-20260929T033000Z.json"}, {Key: "p/notes.txt"}}, "p/"); found {
-		t.Fatal("a metadata file alone is a backup")
 	}
 }
 

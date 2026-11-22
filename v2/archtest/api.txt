@@ -1811,6 +1811,7 @@ recovery/rules: func ArchiveMetadataOf(document []byte) (ArchiveMetadata, error)
 recovery/rules: func BackupLocation(uri string) (ArchiveQuery, bool)
 recovery/rules: func InstanceArchive(listed ArchiveList, namespace string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
 recovery/rules: func MetadataKey(archive string) string
+recovery/rules: func NewestArchive(listed ArchiveList, suffix string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
 recovery/rules: func RestoreOf(input RestoreInput) RestorePlan
 recovery/rules: func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
 recovery/rules: type Archive struct {Key string LastModified time.Time}

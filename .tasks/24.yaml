@@ -1,0 +1,27 @@
+id: 24
+title: Record slice 3 in the plan, status, evidence and registry
+state: ready
+scope:
+  - docs/iteration-2-plan.md
+  - docs/v2-status.md
+  - docs/current-state.md
+  - docs/workstreams.md
+  - docs/services.md
+  - docs/operations.md
+  - GLOSSARY.md
+checks:
+  - make check-v2
+  - "grep -q 'Slice 3: notifications' docs/iteration-2-plan.md"
+  - grep -q 'Notifications is the third capability package' docs/current-state.md
+  - grep -q 'notifications, whose incident lifecycle' docs/v2-status.md
+  - grep -q 'capability slice 3, notifications' docs/workstreams.md
+  - "grep -q 'Gate: approve and deliver capability slice 4 (health)' docs/v2-status.md"
+  - "test \"$(grep -m1 '^Gate: ' docs/v2-status.md | sed 's/^Gate: //')\" = \"$(awk -F'|' '/^\\| Go replacement \\(v2\\)/ {gsub(/^ +| +$/, \"\", $6); print $6}' docs/workstreams.md)\""
+  - "\"! grep -rqE '\\\\]\\\\((\\\\.\\\\./)?v2/(notify|incident|heartbeat|orchestration/notify|orchestration/notifications)' docs GLOSSARY.md\""
+after:
+  - 23
+reason: null
+notes:
+  - at: 2026-11-22T13:28:57.272Z
+    commit: f0ce9efde7f9
+    text: "Slice 2 (delivery), plan block 4. Decision (conductor, operator approved running slice 3 on the planner's recommendations, 2026-11-22): Q1 subpackages: incident, heartbeat and notify move unchanged as notifications/rules/{incident,heartbeat,notify} (package names unchanged); v2/notifications is the one layer-2 use-case package. Per slice 2's decision 1A, a small helper two use-case packages need is copied with a comment naming its origin; use-case packages don't import each other. Commands keep flags, output and effects; delete old copies, no shims. You may regenerate api.txt with 'go test ./archtest -run TestPublicAPI$ -update' (only that test, so budgets.json is untouched). make check-docs is not a check (fails on an uncommitted tree). If a file outside scope must change, release the task saying which file. Planner's pointers: Add `**Slice 3: notifications.**` after the Slice 2 decisions paragraph (ends `docs/iteration-2-plan.md:3094`) with the layout tree (`v2/notifications/`, `v2/notifications/rules/{incident,heartbeat,notify}/`, unchanged `adapters/ntfy`, `adapters/notifysvc` and command), Stays put (the three pure packages move unchanged; the health rule in what becomes `notifications/rules/incident` stays), Checks (`notifications` layer 2/`Orchestration`; the three rules packages layer 0/`Pure`; no new `PureDependencies`; fixtures show the clock refused and a use-case package may not import another), Acceptance (flags/documents/stderr/effects unchanged, command tests pass except package/type names, `make check-v2` passes, orchestration no longer defines the notifier/checker/heartbeat use cases, navigation points to `notifications/rules/*`), and the layout decision. Update the slice-table row (`:3021`) State to \"code moved, offline\", and the capability-map notifications row (`:329`) to `notifications/` and `notifications/rules/{incident,heartbeat,notify}`. In `docs/v2-status.md` change the `Gate:` line (`:4`) to exactly `Gate: approve and deliver capability slice 4 (health): verify-platform's report assembling other capabilities' verdicts`, and overwrite the capability-layout row (`:96`) to say notifications moved, with a link to the new evidence. In `docs/workstreams.md:11` overwrite the Go replacement row's Current slice, Next gate (the identical slice-4 text), Needs (\"operator approval of slice 4's scope\") and evidence links. Add one new top `## Notifications is the third capability package, offline (DATE)` entry to `docs/current-state.md` with Change/Checks/Not exercised (nothing live changed), and use its anchor in both status pages. Update the stale canonical references: plan §12/§13/§14 boundary tables (`notify` → `notifications/rules/notify`, `incident` → `notifications/rules/incident`, `heartbeat` → `notifications/rules/heartbeat`, `orchestration` → `notifications`) and the old links at `docs/iteration-2-plan.md:1367,1373,1412,1601`, `docs/services.md:242,308`, `docs/operations.md:246`, `GLOSSARY.md:13`, and the moved-testdata links in `docs/current-state.md` (`:1618,1757,2035,2036,2099,2100,2144`). Do not run `make check-docs` (it fails on an uncommitted tree); the gate-equality check above is the substitute."

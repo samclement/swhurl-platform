@@ -1,0 +1,29 @@
+id: 21
+title: Move the heartbeat rules to notifications/rules/heartbeat
+state: ready
+scope:
+  - v2/heartbeat/**
+  - v2/notifications/rules/heartbeat/**
+  - v2/orchestration/notifications_heartbeat.go
+  - v2/orchestration/notifications_heartbeat_test.go
+  - v2/cmd/swhurl-v2/notifications_heartbeat.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+  - v2/notifications/**
+  - v2/adapters/ntfy/**
+  - v2/adapters/notifysvc/**
+checks:
+  - make check-v2
+  - cd v2 && go test ./notifications/... ./orchestration/... ./cmd/swhurl-v2/... -count=1
+  - cd v2 && go test ./archtest -run TestPublicAPI
+  - test -f v2/notifications/rules/heartbeat/heartbeat.go
+  - '"! test -e v2/heartbeat"'
+  - "\"! grep -rq 'swhurl-platform/v2/heartbeat\\\"' v2 --include=*.go\""
+after:
+  - 20
+reason: null
+notes:
+  - at: 2026-11-22T13:28:55.501Z
+    commit: f0ce9efde7f9
+    text: "Slice 2 (delivery), plan block 1. Decision (conductor, operator approved running slice 3 on the planner's recommendations, 2026-11-22): Q1 subpackages: incident, heartbeat and notify move unchanged as notifications/rules/{incident,heartbeat,notify} (package names unchanged); v2/notifications is the one layer-2 use-case package. Per slice 2's decision 1A, a small helper two use-case packages need is copied with a comment naming its origin; use-case packages don't import each other. Commands keep flags, output and effects; delete old copies, no shims. You may regenerate api.txt with 'go test ./archtest -run TestPublicAPI$ -update' (only that test, so budgets.json is untouched). make check-docs is not a check (fails on an uncommitted tree). If a file outside scope must change, release the task saying which file. Planner's pointers: `v2/heartbeat` is already layer 0 (`v2/archtest/rules_test.go:81,155`). `git mv` every file, `testdata/` included, to `v2/notifications/rules/heartbeat/`; package name stays `heartbeat`, so imports change only. Update `v2/orchestration/notifications_heartbeat.go:10`, `v2/orchestration/notifications_heartbeat_test.go:16`, and `v2/cmd/swhurl-v2/notifications_heartbeat.go:17`; the cmd test does not import `heartbeat`. archtest: remove `\"heartbeat\": 0` from `Layers` and `\"heartbeat\"` from `Pure`, add `\"notifications/rules/heartbeat\": 0` and `\"notifications/rules/heartbeat\"`; in `TestCheckPure` (`v2/archtest/checks_test.go:117`) move the fixture to `notifications/rules/heartbeat/a.go`. In `api.txt` move the 19 `heartbeat:` lines (`:738-756`) to `notifications/rules/heartbeat:`, which sorts before the new `notifications/rules/incident` block. The use-case workflow stays in `orchestration` until task 3; only the pure package moves here. Testdata relative reads (`testdata/state-v1.json` etc.) keep working because the directory moves with the package."

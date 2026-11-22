@@ -1,0 +1,29 @@
+id: 20
+title: Create the notifications use-case package and move incident's rules to notifications/rules/incident
+state: ready
+scope:
+  - v2/notifications/notifications.go
+  - v2/incident/**
+  - v2/notifications/rules/incident/**
+  - v2/orchestration/notifications_check.go
+  - v2/orchestration/notifications_check_test.go
+  - v2/cmd/swhurl-v2/notifications_check_test.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+  - v2/notifications/**
+  - v2/adapters/ntfy/**
+  - v2/adapters/notifysvc/**
+checks:
+  - make check-v2
+  - cd v2 && go test ./notifications/... ./orchestration/... ./cmd/swhurl-v2/... -count=1
+  - cd v2 && go test ./archtest -run TestPublicAPI
+  - test -f v2/notifications/rules/incident/incident.go
+  - '"! test -e v2/incident"'
+  - "\"! grep -rq 'swhurl-platform/v2/incident\\\"' v2 --include=*.go\""
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T13:28:55.027Z
+    commit: f0ce9efde7f9
+    text: "Slice 2 (delivery), plan block 0. Decision (conductor, operator approved running slice 3 on the planner's recommendations, 2026-11-22): Q1 subpackages: incident, heartbeat and notify move unchanged as notifications/rules/{incident,heartbeat,notify} (package names unchanged); v2/notifications is the one layer-2 use-case package. Per slice 2's decision 1A, a small helper two use-case packages need is copied with a comment naming its origin; use-case packages don't import each other. Commands keep flags, output and effects; delete old copies, no shims. You may regenerate api.txt with 'go test ./archtest -run TestPublicAPI$ -update' (only that test, so budgets.json is untouched). make check-docs is not a check (fails on an uncommitted tree). If a file outside scope must change, release the task saying which file. Planner's pointers: Slice 3 layout decision: the three pure packages move under `notifications/rules/` as their own subpackages (package names stay `incident`, `heartbeat`, `notify`), so no exported name or test changes, and `notifications` becomes the single layer-2 use-case package. `v2/incident` is already layer 0 (`v2/archtest/rules_test.go:79,81,83,155`), so this is a path move, not a layer change. Create `v2/notifications/notifications.go` with only the package doc (the notify service, checker and host-heartbeat use cases; decisions live in `notifications/rules/...`); `git mv` every `v2/incident` file, including `testdata/`, to `v2/notifications/rules/incident/`. Update importers: `v2/orchestration/notifications_check.go:11`; `v2/orchestration/notifications_check_test.go:18` and its `os.ReadFile(\"../incident/testdata/snapshot.json\")` at `:45` (now `../notifications/rules/incident/testdata/snapshot.json`); `v2/cmd/swhurl-v2/notifications_check_test.go:14`. archtest `v2/archtest/rules_test.go`: in `Layers` (`:68`) remove `\"incident\": 0`, add `\"notifications\": 2` and `\"notifications/rules/incident\": 0`; append `\"notifications\"` to `Orchestration` (`:147`); replace `\"incident\"` with `\"notifications/rules/incident\"` in `Pure` (`:155`). In `v2/archtest/checks_test.go` `TestCheckPure` (`:121`) move the fixture to `notifications/rules/incident/a.go`. `v2/archtest/api.txt` is sorted by full line: move the 29 `incident:` lines (`:757-785`) to the new key `notifications/rules/incident:` in sorted position (before the old `notify:` block); never run `-update`. `PureDependencies` needs no new edge: these rules import no other pure package."

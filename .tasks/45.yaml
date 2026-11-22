@@ -1,6 +1,6 @@
 id: 45
 title: Status adopts delivery's one health verdict; observe.StateOf deleted; report Version 6
-state: active
+state: done
 scope:
   - v2/apps/*.go
   - v2/delivery/rules/health.go
@@ -51,3 +51,12 @@ notes:
   - at: 2026-11-22T19:34:53.598Z
     commit: ce0367a7a3fc
     text: "Approved CSS changes alter embedded asset hash -> Option 1: added v2/cmd/swhurl-v2/console_test.go to scope solely for TestAssetHash's pinned hash assertion. Derive expected hash from final approved assets; keep hash regression check and HTML goldens intact. Run the affected test and registered checks."
+  - at: 2026-11-22T19:40:51.956Z
+    commit: be1d44248aaf
+    text: "done: Apps status and status-all now compose delivery health/currentness into one state; removed observe.StateOf, added machine-readable rollback qualifier and rolled back/stalled UI states, and raised reports to Version 6. Registered offline checks pass, including incident rollback regressions. No live checks; changes left uncommitted."
+  - at: 2026-11-22T19:40:51.956Z
+    commit: be1d44248aaf
+    text: "followup: Record task 45's dated offline evidence in docs/current-state.md with slice 5 acceptance; that page is outside this task's scope. Broader deferred-row cleanup remains task 55."
+  - at: 2026-11-22T19:43:00.983Z
+    commit: 347b1764bb82
+    text: branch dsa/01M82BHJRKK1X12P82N7FJQ9C9/task-45

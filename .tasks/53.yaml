@@ -1,6 +1,6 @@
 id: 53
 title: Fold the duplicated status fixture into teamscenario_test.go
-state: ready
+state: done
 scope:
   - v2/orchestration/status_variant_test.go
   - v2/orchestration/teamscenario_test.go
@@ -14,3 +14,9 @@ notes:
   - at: 2026-11-22T18:19:37.652Z
     commit: 8aba040c99aa
     text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."
+  - at: 2026-11-22T18:21:56.206Z
+    commit: 776752bc0ac9
+    text: "done: Moved statusVariant from status_variant_test.go (deleted) into teamscenario_test.go, its only caller. Dropped the unused database/exposed parameters and branches (the one call passed false,false). go test ./orchestration and make check-v2 pass; no live checks."
+  - at: 2026-11-22T18:22:55.446Z
+    commit: 776752bc0ac9
+    text: branch dsa/01M827RWZ54H4F8FT7QK8YKM1Z/task-53

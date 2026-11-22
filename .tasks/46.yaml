@@ -1,6 +1,6 @@
 id: 46
 title: One provisioning workflow owns writing; delete delivery/write.go and orchestration's copies
-state: ready
+state: active
 scope:
   - v2/provisioning/*.go
   - v2/orchestration/orchestration.go

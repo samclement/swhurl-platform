@@ -666,6 +666,11 @@ datadestroy: type Refusal struct {Message string}
 datadestroy: type Target struct {Kind Kind Namespace, Name string Text string}
 datadestroy: var ErrUsage = errors.New(Usage)
 delivery/rules: const Absent = "absent"
+delivery/rules: const FluxFailed FluxProgress = "failed"
+delivery/rules: const FluxReady FluxProgress = "ready"
+delivery/rules: const FluxSource = "swhurl-platform"
+delivery/rules: const FluxSuspended FluxProgress = "suspended"
+delivery/rules: const FluxWaiting FluxProgress = "waiting"
 delivery/rules: const Invalid Code = "invalid"
 delivery/rules: const NotRead = "not_read"
 delivery/rules: const Present = "present"
@@ -679,15 +684,27 @@ delivery/rules: const Unsupported Code = "unsupported"
 delivery/rules: const WrongApplication Code = "wrong_application"
 delivery/rules: const WrongRelease Code = "wrong_release"
 delivery/rules: func (*Error) Error() string
+delivery/rules: func FluxUnitAt(object []byte, revision string) (FluxUnitState, error)
 delivery/rules: func SelectPromotion(staging, target kernel.InstanceSpec, current, candidate kernel.ReleaseBundle, expected kernel.InstanceRevision) (kernel.InstanceSpec, error)
 delivery/rules: type Code string
 delivery/rules: type Error struct {Code Code Field string Reason string}
+delivery/rules: type FluxProgress string
+delivery/rules: type FluxUnitState struct {Name string Progress FluxProgress Message string}
+delivery: const FluxWaitBad FluxWaitLevel = "bad"
+delivery: const FluxWaitHeading FluxWaitLevel = "heading"
+delivery: const FluxWaitInfo FluxWaitLevel = "info"
+delivery: const FluxWaitOK FluxWaitLevel = "ok"
+delivery: const FluxWaitWarn FluxWaitLevel = "warn"
 delivery: func (*Refusal) Error() string
 delivery: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
+delivery: func FluxWait(ctx context.Context, inputs FluxWaitInputs) (bool, error)
 delivery: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
 delivery: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 delivery: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
 delivery: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
+delivery: type FluxWaitInputs struct {Reader kube.Reader Timeout time.Duration Poll time.Duration Now func() time.Time Sleep func(time.Duration) Progress func(FluxWaitLine)}
+delivery: type FluxWaitLevel string
+delivery: type FluxWaitLine struct {Level FluxWaitLevel Text string}
 delivery: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}
 delivery: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
 delivery: type Refusal struct {Subject, Reason string}
@@ -1130,11 +1147,6 @@ observe: const CheckoutProfile = "v2/testdata/profile.json"
 observe: const CheckoutRecords = "v2-records"
 observe: const CheckoutTeams = "v2-records/teams.json"
 observe: const Different = "different"
-observe: const FluxFailed FluxProgress = "failed"
-observe: const FluxReady FluxProgress = "ready"
-observe: const FluxSource = "swhurl-platform"
-observe: const FluxSuspended FluxProgress = "suspended"
-observe: const FluxWaiting FluxProgress = "waiting"
 observe: const IsNotRunning Verdict = "not_running"
 observe: const IsRunning Verdict = "running"
 observe: const NotApplied = "not_applied"
@@ -1222,7 +1234,6 @@ observe: func EncodeReport(report Report) ([]byte, error)
 observe: func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error)
 observe: func EventNamespaces(compiled []CompiledInstance) []string
 observe: func Explain(target Target, evidence Evidence) (Report, error)
-observe: func FluxUnitAt(object []byte, revision string) (FluxUnitState, error)
 observe: func GitHubRepository(repository string) bool
 observe: func ImagePolicies(list List) []ImagePolicy
 observe: func IndexCandidates(lists []List) (Candidates, error)
@@ -1270,9 +1281,7 @@ observe: type Evidence struct {Source string ObservedAt string Objects []Read Po
 observe: type Finding struct {Field, Outcome, Reason string}
 observe: type FluxEvidence struct {Settings FluxSettings Problem string Deployments map[string]Read}
 observe: type FluxFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` Suspended *bool `json:"suspended"` Conditions []Condition `json:"conditions"`}
-observe: type FluxProgress string
 observe: type FluxSettings struct {Version string `json:"version"` ExtraComponents []string `json:"extraComponents"` RemovedComponents []string `json:"removedComponents"` Args map[string][]string `json:"args"`}
-observe: type FluxUnitState struct {Name string Progress FluxProgress Message string}
 observe: type HeartbeatEvidence struct {Supplied bool Text string}
 observe: type Hook struct {Active bool Events []string Host string Code *int Message string}
 observe: type HookListing struct {Hooks []Hook MissingToken bool Problem string}
@@ -1341,11 +1350,6 @@ orchestration: const BootstrapWarn BootstrapLevel = "warn"
 orchestration: const FluxReconcile FluxAction = "reconcile"
 orchestration: const FluxResume FluxAction = "resume"
 orchestration: const FluxSuspend FluxAction = "suspend"
-orchestration: const FluxWaitBad FluxWaitLevel = "bad"
-orchestration: const FluxWaitHeading FluxWaitLevel = "heading"
-orchestration: const FluxWaitInfo FluxWaitLevel = "info"
-orchestration: const FluxWaitOK FluxWaitLevel = "ok"
-orchestration: const FluxWaitWarn FluxWaitLevel = "warn"
 orchestration: const NoFlagsProblem = "This console has no NATS key (console-nats Secret), so overrides cannot be read or set."
 orchestration: const StaleDays = 14
 orchestration: func (*ConsoleBundle) Cached(revision string) bool
@@ -1407,7 +1411,6 @@ orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]b
 orchestration: func FlagDeclaration(document []byte) ([]producer.Flag, string)
 orchestration: func Flags(ctx context.Context, store nats.KV, environment, application string, flags []producer.Flag, declarationProblem string, now time.Time) FlagCard
 orchestration: func Flux(ctx context.Context, inputs FluxInputs) error
-orchestration: func FluxWait(ctx context.Context, inputs FluxWaitInputs) (bool, error)
 orchestration: func ImageDeclaration(reader appsource.Reader, root string) (string, error)
 orchestration: func LifecycleTest(ctx context.Context, inputs LifecycleTestInputs) ([]lifecycletest.Line, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
@@ -1474,9 +1477,6 @@ orchestration: type FlagRow struct {Name string Flag producer.Flag Undeclared bo
 orchestration: type FluxAction string
 orchestration: type FluxInputs struct {Action FluxAction Unit string Release *FluxRelease Cluster Cluster Now func() time.Time Sleep func(time.Duration) Progress func(string)}
 orchestration: type FluxRelease struct {Namespace string Name string}
-orchestration: type FluxWaitInputs struct {Reader kube.Reader Timeout time.Duration Poll time.Duration Now func() time.Time Sleep func(time.Duration) Progress func(FluxWaitLine)}
-orchestration: type FluxWaitLevel string
-orchestration: type FluxWaitLine struct {Level FluxWaitLevel Text string}
 orchestration: type HeartbeatOptions struct {Now float64 Jobs []heartbeat.Job StatePath string DryRun bool}
 orchestration: type HeartbeatOutcome struct {Job heartbeat.Job Decision heartbeat.Decision Notice heartbeat.Notice Due, Sent bool Err error}
 orchestration: type HeartbeatPorts struct {Cluster kube.Reader Data kube.Data Platform ntfy.Publisher State hoststate.Store}

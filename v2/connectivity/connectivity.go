@@ -1,13 +1,18 @@
-package orchestration
+// Package connectivity is the connectivity capability's use cases: a change to what an instance connects to, asked for
+// as a delta — what to connect and what to disconnect, applied to the list the pinned record states. The console's
+// reader shows what the cluster holds now, and a change that was merged but not yet applied is not in it; asking for
+// additions and removals instead of a whole list is what keeps that change from being silently undone by the next
+// one, whichever way round the two arrive. Its pure resolvers and its reading of the documents live in rules.
+package connectivity
 
 import (
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// A declaration change asked for as a delta: what to connect and what to disconnect, applied to the list the pinned
-// record states. The console's reader shows what the cluster holds now, and a change that was merged but not yet
-// applied is not in it; asking for additions and removals instead of a whole list is what keeps that change from
-// being silently undone by the next one, whichever way round the two arrive.
+// Refusal is the use case's own refusal: it will not start, and nothing was changed.
+type Refusal struct{ Subject, Reason string }
+
+func (r *Refusal) Error() string { return "refused: " + r.Subject + ": " + r.Reason }
 
 // ConnectionSettings is the settings a connect or a disconnect writes, in v2's own words: the calls list and then the
 // subscriptions one, and only those the change alters. A change that alters neither is refused before any file is

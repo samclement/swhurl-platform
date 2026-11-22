@@ -168,6 +168,22 @@ func TestAppsWorkflowDependency(t *testing.T) {
 	}
 }
 
+// The command is the declaration change's only caller: connectivity's use case reads kernel's record alone, and no
+// workflow — orchestration's console included — reaches it, nor it them, nor its own rules it.
+func TestConnectivityWorkflowHasNoEdges(t *testing.T) {
+	m := fixture(t, map[string]string{
+		"connectivity/connectivity.go":  "package connectivity\n\nimport \"example.com/v2/kernel\"\n",
+		"connectivity/peer.go":          "package connectivity\n\nimport \"example.com/v2/provisioning\"\n",
+		"connectivity/rules/up.go":      "package rules\n\nimport \"example.com/v2/connectivity\"\n",
+		"orchestration/console.go":      "package orchestration\n\nimport \"example.com/v2/connectivity\"\n",
+		"cmd/swhurl-v2/change_steps.go": "package main\n\nimport \"example.com/v2/connectivity\"\n",
+	})
+	expect(t, checkLayers(m, WorkflowDependencies),
+		"layers connectivity/peer.go:3: connectivity (layer 2) imports provisioning (layer 2)",
+		"layers connectivity/rules/up.go:3: connectivity/rules (layer 0) imports connectivity (layer 2)",
+		"layers orchestration/console.go:3: orchestration (layer 2) imports connectivity (layer 2)")
+}
+
 func TestWorkflowDependencyRegistry(t *testing.T) {
 	for _, endpoint := range []string{"kernel", "adapters/s3", "cmd/swhurl-v2", "unknown"} {
 		t.Run(endpoint, func(t *testing.T) {

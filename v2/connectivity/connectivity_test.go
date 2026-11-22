@@ -1,11 +1,11 @@
-package orchestration_test
+package connectivity_test
 
 import (
 	"strings"
 	"testing"
 
+	"github.com/samclement/swhurl-platform/v2/connectivity"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // A declaration change is a delta on the record's own list: what the record keeps, then what was asked for.
@@ -26,7 +26,7 @@ func TestConnectionSettingsAreADelta(t *testing.T) {
 			want: "nothing_changed"},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			got, err := orchestration.ConnectionSettings(current, scenario.calls, scenario.subscriptions,
+			got, err := connectivity.ConnectionSettings(current, scenario.calls, scenario.subscriptions,
 				scenario.dropCalls, scenario.dropSubscriptions)
 			if strings.Contains(scenario.want, "nothing_changed") {
 				if err == nil || !strings.Contains(err.Error(), "nothing_changed") {
@@ -47,10 +47,10 @@ func TestConnectionSettingsAreADelta(t *testing.T) {
 // A connect with nothing to add is refused before a command runs, and so is an empty change.
 func TestConnectionSettingsRefusals(t *testing.T) {
 	current := kernel.InstanceSpec{Calls: []string{"orders"}}
-	if _, err := orchestration.ConnectionSettings(current, nil, nil, nil, nil); err != nil {
+	if _, err := connectivity.ConnectionSettings(current, nil, nil, nil, nil); err != nil {
 		t.Errorf("an empty change is the caller's to refuse before this: %v", err)
 	}
-	if _, err := orchestration.ConnectionSettings(current, []string{"orders"}, nil, nil, nil); err == nil {
+	if _, err := connectivity.ConnectionSettings(current, []string{"orders"}, nil, nil, nil); err == nil {
 		t.Error("a change that alters no list was not refused")
 	}
 }
@@ -59,21 +59,21 @@ func TestConnectionSettingsRefusals(t *testing.T) {
 // written.
 func TestAllowSettings(t *testing.T) {
 	current := kernel.InstanceSpec{Allows: []string{"web", "team:payments"}}
-	got, err := orchestration.AllowSettings(current, []string{"billing"}, []string{"web"})
+	got, err := connectivity.AllowSettings(current, []string{"billing"}, []string{"web"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(got, ",") != "allows=team:payments,billing" {
 		t.Errorf("settings = %v", got)
 	}
-	if got, err := orchestration.AllowSettings(current, nil, nil); err != nil || got != nil {
+	if got, err := connectivity.AllowSettings(current, nil, nil); err != nil || got != nil {
 		t.Errorf("an empty change = %v, %v", got, err)
 	}
 	// removing a grant the record does not state is nothing, and nothing is a refusal
-	if _, err := orchestration.AllowSettings(current, nil, []string{"billing"}); err == nil {
+	if _, err := connectivity.AllowSettings(current, nil, []string{"billing"}); err == nil {
 		t.Error("a change that removes an absent grant was not refused")
 	}
-	if got, err := orchestration.AllowSettings(current, []string{"billing"}, []string{"billing"}); err != nil ||
+	if got, err := connectivity.AllowSettings(current, []string{"billing"}, []string{"billing"}); err != nil ||
 		strings.Join(got, ",") != "allows=web,team:payments,billing" {
 		t.Errorf("an addition beside its own removal = %v, %v", got, err)
 	}

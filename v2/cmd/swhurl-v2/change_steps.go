@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/samclement/swhurl-platform/v2/connectivity"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
@@ -122,7 +123,7 @@ func (c cli) connectionSteps(tree changeTree, s *changeSpec, revision string) ([
 	if err != nil {
 		return nil, err
 	}
-	settings, err := orchestration.ConnectionSettings(current, s.calls, s.subscriptions, s.dropCalls, s.dropSubscriptions)
+	settings, err := connectivity.ConnectionSettings(current, s.calls, s.subscriptions, s.dropCalls, s.dropSubscriptions)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +136,7 @@ func (c cli) allowSteps(tree changeTree, s *changeSpec, revision string) ([]chan
 	if err != nil {
 		return nil, err
 	}
-	settings, err := orchestration.AllowSettings(current, s.allows, s.disallows)
+	settings, err := connectivity.AllowSettings(current, s.allows, s.disallows)
 	if err != nil {
 		return nil, err
 	}

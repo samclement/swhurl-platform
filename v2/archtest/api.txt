@@ -600,6 +600,10 @@ connectivity/rules: func DecodeEgressDocument(data []byte) (kernel.EgressDocumen
 connectivity/rules: func EncodeEgressDocument(document kernel.EgressDocument) ([]byte, error)
 connectivity/rules: func InstanceEgress(document []byte, application, environment string) (*kernel.Egress, error)
 connectivity/rules: func SubscribersOf(data []byte, application, environment string) ([]string, error)
+connectivity: func (*Refusal) Error() string
+connectivity: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
+connectivity: func ConnectionSettings(current kernel.InstanceSpec, calls, subscriptions, dropCalls, dropSubscriptions []string) ([]string, error)
+connectivity: type Refusal struct {Subject, Reason string}
 dashboards: const AlertPrefix = "swhurl:"
 dashboards: const AlertsAnnotation = "platform.swhurl.com/alerts"
 dashboards: const Create Action = "create"
@@ -1408,7 +1412,6 @@ orchestration: func (ConsoleSourceOf) Tree(ctx context.Context, revision string)
 orchestration: func (StackContract) Stack(name string) (Stack, bool)
 orchestration: func (StackContract) Type(key string) (AppType, bool)
 orchestration: func AcquireChart(profile kernel.PlatformProfile, repositories []byte, cache string, acquirer helm.Acquirer) (string, error)
-orchestration: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
 orchestration: func AppHooks(ctx context.Context, inputs AppHooksInputs) ([]AppHookOutcome, error)
 orchestration: func AppRepo(ctx context.Context, inputs AppRepoInputs) (AppRepository, error)
 orchestration: func AppTemplateTest(ctx context.Context, inputs AppTemplateTestInputs) ([]apptemplatetest.Line, error)
@@ -1420,7 +1423,6 @@ orchestration: func CheckSecrets(root string, reader git.Reader, decrypter sops.
 orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)
 orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, application, name string) error
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
-orchestration: func ConnectionSettings(current kernel.InstanceSpec, calls, subscriptions, dropCalls, dropSubscriptions []string) ([]string, error)
 orchestration: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads ChangeReads, others bool) ([]pages.ChangeRow, string)
 orchestration: func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now func() time.Time) (pages.Checks, error)
 orchestration: func ConsoleDashboards(ctx context.Context, data kube.Data) map[string]string

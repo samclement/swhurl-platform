@@ -139,9 +139,10 @@ var Layers = map[string]int{
 	// The apps capability: its status use cases, comparing the cluster with an instance's records.
 	"apps": 2,
 
-	// The connectivity capability: its pure resolvers of which calls and event subscriptions connect, and its reading
-	// of the resolution and allocation documents.
-	"connectivity/rules": 0, "connectivity/rules/calls": 0, "connectivity/rules/events": 0,
+	// The connectivity capability: its declaration-change use case (what a connect, disconnect or allow writes), its
+	// pure resolvers of which calls and event subscriptions connect, and its reading of the resolution and allocation
+	// documents.
+	"connectivity": 2, "connectivity/rules": 0, "connectivity/rules/calls": 0, "connectivity/rules/events": 0,
 }
 
 // PureDependencies are the pure-to-pure imports allowed, by importer: each is a pure type or decision whose owner
@@ -166,7 +167,7 @@ var PureDependencies = map[string][]string{
 // capability's own use-case package. They sequence pure decisions and the effects a use case performs, are held
 // to OrchestrationImports and OrchestrationCalls, and import another use-case package only through
 // a named directional edge in WorkflowDependencies.
-var Orchestration = []string{"orchestration", "recovery", "delivery", "notifications", "health", "apps", "provisioning"}
+var Orchestration = []string{"orchestration", "recovery", "delivery", "notifications", "health", "apps", "provisioning", "connectivity"}
 
 // WorkflowDependencies are the reviewed workflow-to-workflow imports allowed, by importer. Reuse the
 // owner's pure verdict first; add an edge only when a use case needs the owner's workflow. Endpoints

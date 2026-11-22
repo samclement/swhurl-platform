@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/apps"
 	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 func (c cli) statusAll(r request) int {
@@ -30,7 +30,7 @@ func (c cli) statusAll(r request) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
-	result, err := orchestration.StatusAll(ctx, inputs, instances)
+	result, err := apps.StatusAll(ctx, inputs, instances)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -124,8 +124,8 @@ func (c cli) statusSharedDocuments(inputs provisioningrules.Inputs) int {
 	return 0
 }
 
-func (c cli) liveStatusInputs(r request, profile []byte, maxAge time.Duration) (orchestration.StatusInputs, int) {
-	inputs := orchestration.StatusInputs{Revision: r.revision, Now: time.Now, MaxAge: maxAge}
+func (c cli) liveStatusInputs(r request, profile []byte, maxAge time.Duration) (apps.StatusInputs, int) {
+	inputs := apps.StatusInputs{Revision: r.revision, Now: time.Now, MaxAge: maxAge}
 	if !commitRevision.MatchString(r.revision) {
 		return inputs, fail(c.diagnostic, fmt.Errorf("invalid: revision: expected_a_commit"))
 	}
@@ -153,7 +153,7 @@ func (c cli) liveStatusInputs(r request, profile []byte, maxAge time.Duration) (
 
 // statusChanges maps extraction paths back to the repository namespace explicitly, never guessing a
 // basename or a v1 path. Outside-root inputs cannot prove relevance and are refused with --changes.
-func (c cli) statusChanges(r request, inputs *orchestration.StatusInputs) int {
+func (c cli) statusChanges(r request, inputs *apps.StatusInputs) int {
 	if r.changes == "" {
 		return 0
 	}

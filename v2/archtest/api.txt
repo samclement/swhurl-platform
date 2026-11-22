@@ -476,6 +476,9 @@ adapters/sops: type DecryptError struct {Reason string}
 adapters/sops: type Decrypter interface {Decrypt(path, keyFile string) ([]byte, error)}
 adapters/sops: type Encrypter interface {Encrypt(document []byte, recipient string) ([]byte, error)}
 adapters/sops: type Error struct {Reason string}
+apps: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
+apps: func StatusAll(ctx context.Context, inputs StatusInputs, instances []provisioningrules.Inputs) (observe.Collection, error)
+apps: type StatusInputs struct {provisioningrules.Inputs Revision string RecordsRoot string SharedPaths []string Changes *deliveryrules.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)}
 apptemplatetest: const AppLabel = "platform.swhurl.com/app"
 apptemplatetest: const Bad Level = "bad"
 apptemplatetest: const Claim = Web
@@ -1455,8 +1458,6 @@ orchestration: func RenderPath(root string, reader git.Reader, decoder manifests
 orchestration: func SetCertIssuer(inputs CertIssuerInputs, issuer string, dryRun bool, root string, decoder manifests.Decoder, writer files.Writer) (certissuer.Outcome, error)
 orchestration: func SetFlag(ctx context.Context, store nats.KV, environment, application, name, text string, flags []producer.Flag) error
 orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
-orchestration: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
-orchestration: func StatusAll(ctx context.Context, inputs StatusInputs, instances []provisioningrules.Inputs) (observe.Collection, error)
 orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, options DashboardOptions) (DashboardReport, error)
 orchestration: func TeamScenario(ctx context.Context, inputs TeamScenarioInputs) ([]teamscenario.Line, error)
 orchestration: func UnreachableFlags(environment string, flags []producer.Flag, declarationProblem string, reason error, now time.Time) FlagCard
@@ -1520,7 +1521,6 @@ orchestration: type RemovalInputs struct {Instance, Release []byte Calls [][]byt
 orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
 orchestration: type Stack struct {Name, Repository, Revision, Description string}
 orchestration: type StackContract struct {Copier string Stacks []Stack Types []AppType}
-orchestration: type StatusInputs struct {provisioningrules.Inputs Revision string RecordsRoot string SharedPaths []string Changes *deliveryrules.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
 orchestration: type TeamScenarioInputs struct {Instances []provisioningrules.Inputs Environment string Executor kube.Executor}

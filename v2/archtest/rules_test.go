@@ -137,6 +137,9 @@ var Layers = map[string]int{
 
 	// The provisioning capability: its pure compilation of an instance's records.
 	"provisioning/rules": 0,
+
+	// The apps capability: its status use cases, comparing the cluster with an instance's records.
+	"apps": 2,
 }
 
 // PureDependencies are the pure-to-pure imports allowed, by importer: each is a pure type or decision whose owner
@@ -159,14 +162,15 @@ var PureDependencies = map[string][]string{
 // capability's own use-case package. They sequence pure decisions and the effects a use case performs, are held
 // to OrchestrationImports and OrchestrationCalls, and import another use-case package only through
 // a named directional edge in WorkflowDependencies.
-var Orchestration = []string{"orchestration", "recovery", "delivery", "notifications", "health"}
+var Orchestration = []string{"orchestration", "recovery", "delivery", "notifications", "health", "apps"}
 
 // WorkflowDependencies are the reviewed workflow-to-workflow imports allowed, by importer. Reuse the
 // owner's pure verdict first; add an edge only when a use case needs the owner's workflow. Endpoints
-// must be declared use-case packages; self edges and cycles are forbidden. ConsoleChecks retains its
-// composition in orchestration while invoking health's collector; reconsider this edge in the console slice.
+// must be declared use-case packages; self edges and cycles are forbidden. The console's composition stays in
+// orchestration: ConsoleChecks invokes health's collector and ConsoleStatus apps' status of every instance;
+// reconsider these edges in the console slice.
 var WorkflowDependencies = map[string][]string{
-	"orchestration": {"health"},
+	"orchestration": {"health", "apps"},
 }
 
 // OrchestrationImports are the packages a use case may not import: arguments, printing and process exit are

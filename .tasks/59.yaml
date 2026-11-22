@@ -25,3 +25,6 @@ notes:
   - at: 2026-11-22T20:45:25.356Z
     commit: 5831a1fe35c3
     text: "Post-completion guardrail reported TestExecCancellationWhileWaitingForUpgrade: withheld upgrade not cancelled (exec_test.go:408). Rechecked under machine lease: go test -count=50 ./adapters/kube -run ^TestExecCancellationWhileWaitingForUpgrade$ passed, then make check-v2 passed including render comparisons. No baseline or extra files changed. Possible pre-handler 50ms timeout is unproven; exec_test.go is outside task 59 scope and remains an intermittent-test follow-up if it recurs. Recheck run: 01M82G133SF5GQ7CRB5ZS6YJZF."
+  - at: 2026-11-22T20:45:47.452Z
+    commit: f076152635eb
+    text: branch dsa/01M82FQRT5EK1B2MP31V9FJ487/task-59

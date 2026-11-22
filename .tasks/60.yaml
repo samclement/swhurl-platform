@@ -1,0 +1,24 @@
+id: 60
+title: Consolidate image-metadata interpretation in delivery rules
+state: ready
+scope:
+  - v2/delivery/rules/*.go
+  - v2/delivery/deploy.go
+  - v2/delivery/deploy_test.go
+  - v2/apps/create.go
+  - v2/apps/create_test.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./delivery/... ./apps/... ./archtest/... -count=1
+  - make check-v2
+  - "! grep -rn 'Copied from orchestration/create.go' v2/delivery"
+after:
+  - 58
+reason: null
+notes:
+  - at: 2026-11-22T20:38:35.433Z
+    commit: 13a140feece9
+    text: "Operator approved recommendations and task scopes. Use openai/gpt-6.1-sol or deepseek/deepseek-flash only; do not use Claude until operator confirms availability. Offline only: no live/deployment commands, pushes or worktree removal. Preserve Version 6 reports, composed apps status, healthy rollback/no alert behavior, exit codes and cluster-read counts. Console capability slice is NOT approved. Docs deferred to task 61; status page cap 250 lines. Workers do not commit."
+  - at: 2026-11-22T20:38:36.434Z
+    commit: 13a140feece9
+    text: "Approved option 1: pure delivery/rules image acceptance primitives taking tag/label strings, never registry.Image or adapter imports. Keep capability-local refusal translation explicit and preserve declaration-before-revision validation order, error text and CLI exits. No new apps-to-delivery workflow edge. Delete duplicate policy/stale copied comments; add direct rule and entry-point regression coverage. Keep copied Refusal/reasonOf/unavailable helpers capability-local; no shared error machinery."

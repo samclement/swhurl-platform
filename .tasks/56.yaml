@@ -1,0 +1,22 @@
+id: 56
+title: Consolidate provisioning document validation
+state: ready
+scope:
+  - v2/provisioning/provisioning.go
+  - v2/provisioning/rules/*.go
+  - v2/delivery/deploy.go
+  - v2/delivery/promote.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./provisioning/... ./delivery/... ./archtest/... -count=1
+  - make check-v2
+  - "! grep -rn 'func Documents(' v2/provisioning/provisioning.go"
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T20:38:34.811Z
+    commit: 13a140feece9
+    text: "Operator approved recommendations and task scopes. Use openai/gpt-6.1-sol or deepseek/deepseek-flash only; do not use Claude until operator confirms availability. Offline only: no live/deployment commands, pushes or worktree removal. Preserve Version 6 reports, composed apps status, healthy rollback/no alert behavior, exit codes and cluster-read counts. Console capability slice is NOT approved. Docs deferred to task 61; status page cap 250 lines. Workers do not commit."
+  - at: 2026-11-22T20:38:35.753Z
+    commit: 13a140feece9
+    text: Export byte-slice-based provisioning/rules.Documents, migrate compilation and delivery callers, delete root duplicate without forwarding shim. Table-test absent/malformed/wrong-instance documents and preserve nil/error semantics. Update API snapshot intentionally.

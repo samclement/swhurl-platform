@@ -1,0 +1,22 @@
+id: 57
+title: Move declaration-list merging into connectivity
+state: ready
+scope:
+  - v2/kernel/edit.go
+  - v2/connectivity/connectivity.go
+  - v2/connectivity/connectivity_test.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./connectivity/... ./kernel/... ./archtest/... -count=1
+  - make check-v2
+  - "! grep -rn 'MergeDeclarations' v2/kernel"
+after:
+  - 56
+reason: null
+notes:
+  - at: 2026-11-22T20:38:34.963Z
+    commit: 13a140feece9
+    text: "Operator approved recommendations and task scopes. Use openai/gpt-6.1-sol or deepseek/deepseek-flash only; do not use Claude until operator confirms availability. Offline only: no live/deployment commands, pushes or worktree removal. Preserve Version 6 reports, composed apps status, healthy rollback/no alert behavior, exit codes and cluster-read counts. Console capability slice is NOT approved. Docs deferred to task 61; status page cap 250 lines. Workers do not commit."
+  - at: 2026-11-22T20:38:35.909Z
+    commit: 13a140feece9
+    text: Move only MergeDeclarations to a private connectivity helper; retain order/deduplication/removal coverage. Keep record transformations and document model types in kernel.

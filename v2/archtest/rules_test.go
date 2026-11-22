@@ -33,8 +33,8 @@ var Rules = []Rule{
 	{"approved-modules", "v2 imports only the Go standard library, its own packages and the approved modules in Modules, each from the adapters it was approved for; go.mod requires exactly those modules at their approved versions",
 		"remove the import, or ask the operator to approve the module and add it to Modules (archtest/rules_test.go) with the adapters that may import it",
 		"third-party-modules"},
-	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, or a pure package PureDependencies lists for it",
-		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down; a pure type another capability needs is imported from its owner through a PureDependencies entry, never a shared model package",
+	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, a pure package PureDependencies lists for it, or a workflow package WorkflowDependencies lists for it",
+		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down; reuse owner pure verdicts through PureDependencies before requesting a named directional WorkflowDependencies edge; workflow edges must join use-case packages without self edges or cycles",
 		"4-development-layers-and-adapters"},
 	{"pure", "pure packages import only allowlisted standard packages, print nothing and keep no mutable package state",
 		"pass the value in as a parameter (time, identifiers, snapshots) or move the effect into an adapter",
@@ -62,7 +62,8 @@ var Rules = []Rule{
 		"guardrails"},
 }
 
-// Layers: a package may import v2 packages only from lower layers. 0 is the pure model, 1 adapters
+// Layers: a package may import v2 packages only from lower layers, except the named edges in
+// PureDependencies and WorkflowDependencies. 0 is the pure model, 1 adapters
 // (one per external dependency, speaking domain terms), 2 the use cases, 3 the command that wires them. A
 // capability's pure rules are layer 0 (recovery/rules) and its use cases layer 2 (recovery).
 var Layers = map[string]int{
@@ -144,8 +145,14 @@ var PureDependencies = map[string][]string{
 
 // Orchestration is the published list of packages that run use cases (layer 2): orchestration, and each
 // capability's own use-case package. They sequence pure decisions and the effects a use case performs, are held
-// to OrchestrationImports and OrchestrationCalls, and never import one another.
+// to OrchestrationImports and OrchestrationCalls, and import another use-case package only through
+// a named directional edge in WorkflowDependencies.
 var Orchestration = []string{"orchestration", "recovery", "delivery", "notifications"}
+
+// WorkflowDependencies are the reviewed workflow-to-workflow imports allowed, by importer. Reuse the
+// owner's pure verdict first; add an edge only when a use case needs the owner's workflow. Endpoints
+// must be declared use-case packages; self edges and cycles are forbidden. No edges are needed yet.
+var WorkflowDependencies = map[string][]string{}
 
 // OrchestrationImports are the packages a use case may not import: arguments, printing and process exit are
 // the command's business, and a mutable package variable would make a use case's result depend on history.
@@ -470,8 +477,8 @@ func requirementApproved(path, version string) bool {
 	})
 }
 
-func checkLayers(m *Module) []Violation {
-	var found []Violation
+func checkLayers(m *Module, workflows map[string][]string) []Violation {
+	found := checkWorkflowDependencies(workflows)
 	for _, dir := range m.Dirs() {
 		source := m.Packages[dir].Source()
 		if len(source) == 0 {
@@ -491,12 +498,75 @@ func checkLayers(m *Module) []Violation {
 				if isFake(dir) && target == path.Dir(dir) {
 					continue // a fake asserts it satisfies the adapter it fakes; the recipe requires it
 				}
-				if other, ok := Layers[target]; !ok || (other >= layer && !pureDependency(dir, target)) {
+				if other, ok := Layers[target]; !ok || (other >= layer && !pureDependency(dir, target) && !workflowDependency(workflows, dir, target)) {
 					found = append(found, Violation{"layers", m.at(file, spec.Pos()),
 						fmt.Sprintf("%s (layer %d) imports %s (layer %s)", dir, layer, target, layerName(target))})
 				}
 			}
 		}
+	}
+	return found
+}
+
+// workflowPackage requires both the layer and the use-case registry, not a name or path convention.
+func workflowPackage(dir string) bool {
+	return Layers[dir] == 2 && slices.Contains(Orchestration, dir)
+}
+
+func workflowDependency(workflows map[string][]string, dir, target string) bool {
+	return dir != target && workflowPackage(dir) && workflowPackage(target) && slices.Contains(workflows[dir], target)
+}
+
+// checkWorkflowDependencies validates the registry even when an edge is not yet imported.
+func checkWorkflowDependencies(workflows map[string][]string) []Violation {
+	var found []Violation
+	var importers []string
+	for dir := range workflows {
+		importers = append(importers, dir)
+	}
+	slices.Sort(importers)
+	valid := map[string][]string{}
+	for _, dir := range importers {
+		if !workflowPackage(dir) {
+			found = append(found, Violation{"layers", "archtest/rules_test.go", "WorkflowDependencies importer " + dir + " is not a declared workflow package"})
+		}
+		for _, target := range workflows[dir] {
+			switch {
+			case !workflowPackage(target):
+				found = append(found, Violation{"layers", "archtest/rules_test.go", "WorkflowDependencies target " + target + " is not a declared workflow package"})
+			case dir == target:
+				found = append(found, Violation{"layers", "archtest/rules_test.go", "WorkflowDependencies self edge: " + dir + " -> " + target})
+			case workflowPackage(dir):
+				valid[dir] = append(valid[dir], target)
+			}
+		}
+	}
+	return append(found, workflowCycles(valid, importers)...)
+}
+
+func workflowCycles(workflows map[string][]string, importers []string) []Violation {
+	var found []Violation
+	visited := map[string]bool{}
+	var stack []string
+	var visit func(string)
+	visit = func(dir string) {
+		if at := slices.Index(stack, dir); at >= 0 {
+			cycle := append(slices.Clone(stack[at:]), dir)
+			found = append(found, Violation{"layers", "archtest/rules_test.go", "WorkflowDependencies cycle: " + strings.Join(cycle, " -> ")})
+			return
+		}
+		if visited[dir] {
+			return
+		}
+		visited[dir] = true
+		stack = append(stack, dir)
+		for _, target := range workflows[dir] {
+			visit(target)
+		}
+		stack = stack[:len(stack)-1]
+	}
+	for _, dir := range importers {
+		visit(dir)
 	}
 	return found
 }

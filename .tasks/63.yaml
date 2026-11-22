@@ -1,6 +1,6 @@
 id: 63
 title: Correct two stale refactor and console documentation statements
-state: ready
+state: done
 scope:
   - docs/current-state.md
   - docs/v2-status.md
@@ -13,3 +13,9 @@ notes:
   - at: 2026-11-22T22:30:43.484Z
     commit: ff22d768ca5a
     text: "Operator approved docs-only cleanup identified by read-only scout: current-state.md around lines 70-72 still says helper duplication remains deferred despite completion; qualify/remove obsolete statement while preserving dated evidence. v2-status.md around line 171 says console repository creation, seed images and historical Activity are absent despite completed rows/current implementation; correct against existing acceptance evidence. Exactly these contradictions only: no code changes, features, console migration, cancellation work, wholesale docs rewrite or historical evidence inflation. Keep status <=250 lines; preserve intentional capability-local mechanical helpers. Use Sol or DeepSeek only; no Claude, live actions, pushes or worktree removal. Worker does not commit. Branch checks only; no post-merge claims."
+  - at: 2026-11-22T22:32:03.203Z
+    commit: 54a9c5ff7598
+    text: "done: Qualified the older helper-duplication statement with the completed offline ownership follow-ups, retaining intentional capability-local refusal helpers. Removed the obsolete console repository/seed-image/historical-Activity deferral; existing acceptance evidence and console migration gate remain. check-docs, check-repo and diff checks passed; no live or post-merge verification. No commit."
+  - at: 2026-11-22T22:33:44.198Z
+    commit: 54a9c5ff7598
+    text: "branch dsa/01M82P4QKJBR06E250MCVX0MZ2/task-63; integrate linearly per operator preference: rebase task branch onto main task-metadata commit, then fast-forward main."

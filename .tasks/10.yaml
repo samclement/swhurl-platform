@@ -1,0 +1,29 @@
+id: 10
+title: flux-wait and the unit rollout verdict move to delivery and delivery/rules
+state: ready
+scope:
+  - v2/delivery/fluxwait.go
+  - v2/delivery/fluxwait_test.go
+  - v2/delivery/rules/unit.go
+  - v2/delivery/rules/unit_test.go
+  - v2/orchestration/flux_wait.go
+  - v2/orchestration/flux_wait_test.go
+  - v2/observe/flux_wait.go
+  - v2/observe/flux_wait_test.go
+  - v2/cmd/swhurl-v2/flux_wait.go
+  - v2/archtest/api.txt
+checks:
+  - make check-v2
+  - cd v2 && go test ./delivery/... -count=1
+  - cd v2 && go test ./archtest -run TestPublicAPI
+  - "! test -e v2/observe/flux_wait.go"
+  - "! test -e v2/orchestration/flux_wait.go"
+  - "! test -e v2/orchestration/flux_wait_test.go"
+  - "! grep -rq 'observe.FluxUnitAt\\|observe.FluxSource\\|observe.FluxProgress\\|orchestration.FluxWait' v2"
+after:
+  - 7
+reason: null
+notes:
+  - at: 2026-11-22T12:07:51.651Z
+    commit: 7f70a48d5699
+    text: "Slice 2 (delivery), plan block 4. Decisions (operator, 2026-11-22): 1A copy the write plumbing promote/deploy share into v2/delivery/write.go, each copy naming its origin, and record 'two copies until slice 5' in the plan; 2A move only SelectPromotion, kernel.SelectRelease stays (deferred to apps/provisioning); 3A move Currentness/Changes and PromotionReadiness to delivery/rules now, observation document keeps Version 5 and the same JSON. Task 7 also records in the plan's deferred list that observe/explain.go's 'unit applied this revision' rule duplicates the currentness rule. Commands keep flags, output and effects; delete the old copies, no shims. make check-docs is not a check (fails on an uncommitted tree). Planner's pointers: split it along the layer boundary the plan names: `observe/flux_wait.go:3,9-95` (the `FluxSource`/`FluxProgress`/`FluxUnitState` vocabulary and `FluxUnitAt`'s decision) becomes `delivery/rules/unit.go`, and `orchestration/flux_wait.go` becomes `delivery/fluxwait.go` calling it. `delivery/fluxwait.go` needs `fluxRefOf`'s equivalent — call `kube.RefOf(fluxSourceGroup, \"GitRepository\", \"flux-system\", rules.FluxSource)` (`orchestration/flux.go:262`) with its own private group constant — plus `fluxNamespace`, its own `fluxState` decode (`orchestration/flux.go:311-330`), and `absentOrUnavailable`/`unavailable`/`reasonOf` (task 1's `write.go` provides the last two). `orchestration/flux.go` (unit actions) keeps everything it uses; do not move it. Lines, levels and `make flux-reconcile`'s tail are unchanged: `cmd/swhurl-v2/flux_wait.go` swaps imports only (`:30-33`)."

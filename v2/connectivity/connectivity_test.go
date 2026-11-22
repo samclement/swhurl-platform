@@ -79,19 +79,35 @@ func TestAllowSettings(t *testing.T) {
 	}
 }
 
-// A declaration the record states in one order is written back in that order, so an unchanged list is no diff.
-func TestMergeDeclarationsKeepsOrder(t *testing.T) {
-	current := []string{"b", "a", "c"}
-	if got := kernel.MergeDeclarations(current, []string{"d", "a"}, []string{"c"}); strings.Join(got, ",") != "b,a,d" {
-		t.Errorf("merged = %v", got)
-	}
-	if got := kernel.MergeDeclarations(current, nil, nil); strings.Join(got, ",") != "b,a,c" {
-		t.Errorf("an untouched list = %v", got)
-	}
-	if got := kernel.MergeDeclarations(nil, []string{"a"}, nil); got[0] != "a" || len(got) != 1 {
-		t.Errorf("a first declaration = %v", got)
-	}
-	if got := kernel.MergeDeclarations(nil, nil, []string{"a"}); got != nil {
-		t.Errorf("a list emptied = %v, want nothing at all", got)
+// Declaration deltas preserve the record's order, deduplicate additions, and apply removals before additions.
+func TestConnectionSettingsMergeDeclarations(t *testing.T) {
+	for _, scenario := range []struct {
+		name                 string
+		current, adds, drops []string
+		want                 string
+		refused              bool
+	}{
+		{name: "keep order and existing additions", current: []string{"b", "a", "c"}, adds: []string{"d", "a", "d"}, drops: []string{"c"}, want: "calls=b,a,d"},
+		{name: "untouched list", current: []string{"b", "a", "c"}},
+		{name: "first declaration", adds: []string{"a", "a"}, want: "calls=a"},
+		{name: "remove every declaration", current: []string{"a", "b"}, drops: []string{"a", "b"}, want: "calls="},
+		{name: "remove absent declaration", current: []string{"a"}, drops: []string{"b"}, refused: true},
+		{name: "remove from empty list", drops: []string{"a"}, refused: true},
+		{name: "existing addition changes nothing", current: []string{"b", "a"}, adds: []string{"a"}, refused: true},
+		{name: "addition wins over removal", current: []string{"a", "b"}, adds: []string{"a"}, drops: []string{"a"}, want: "calls=b,a"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			before := strings.Join(scenario.current, ",")
+			got, err := connectivity.ConnectionSettings(kernel.InstanceSpec{Calls: scenario.current}, scenario.adds, nil, scenario.drops, nil)
+			if (err != nil) != scenario.refused {
+				t.Fatalf("settings = %v, error = %v, want refused = %v", got, err, scenario.refused)
+			}
+			if strings.Join(got, ",") != scenario.want {
+				t.Errorf("settings = %v, want %q", got, scenario.want)
+			}
+			if strings.Join(scenario.current, ",") != before {
+				t.Errorf("current declarations were mutated: %v", scenario.current)
+			}
+		})
 	}
 }

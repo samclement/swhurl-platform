@@ -6,6 +6,8 @@
 package connectivity
 
 import (
+	"slices"
+
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
@@ -44,11 +46,32 @@ func declarationSetting(name string, current, adds, drops []string) ([]string, e
 	if len(adds) == 0 && len(drops) == 0 {
 		return nil, nil
 	}
-	merged := kernel.MergeDeclarations(current, adds, drops)
+	merged := mergeDeclarations(current, adds, drops)
 	if equalDeclaration(merged, current) {
 		return nil, &Refusal{"change", "nothing_changed: " + name + " already states exactly that"}
 	}
 	return []string{name + "=" + joinList(merged)}, nil
+}
+
+// mergeDeclarations is one declaration list after additions and removals: the list's own order is kept, an addition
+// already present is not repeated, and removing something absent is nothing. A console change asks for a delta and
+// never for a whole list, so a change that was merged but is not yet applied is not undone by the next one.
+func mergeDeclarations(current, adds, drops []string) []string {
+	merged := make([]string, 0, len(current)+len(adds))
+	for _, name := range current {
+		if !slices.Contains(drops, name) {
+			merged = append(merged, name)
+		}
+	}
+	for _, name := range adds {
+		if !slices.Contains(merged, name) {
+			merged = append(merged, name)
+		}
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	return merged
 }
 
 // equalDeclaration is whether two declaration lists state the same names in the same order.

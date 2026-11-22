@@ -979,7 +979,6 @@ kernel: func ImagePolicyName(application string) string
 kernel: func ImageRepository(image string) string
 kernel: func ImageRepositoryName(application string) string
 kernel: func InstanceFolder(application, environment string, profile PlatformProfile) string
-kernel: func MergeDeclarations(current, adds, drops []string) []string
 kernel: func NamespaceOf(application, environment string) string
 kernel: func NewUserKey(seed [32]byte) UserKey
 kernel: func NewestTag(tags []string) (ImageTag, bool)

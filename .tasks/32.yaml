@@ -1,6 +1,6 @@
 id: 32
 title: Record slice 3 in the plan, status, evidence and registry
-state: ready
+state: done
 scope:
   - docs/iteration-2-plan.md
   - docs/v2-status.md
@@ -41,3 +41,9 @@ notes:
   - at: 2026-11-22T14:37:25.200Z
     commit: 8542b00e440a
     text: "released: workflow budget reached (usageBudget hit) before tk done; docs edits present in worktree"
+  - at: 2026-11-22T14:40:54.630Z
+    commit: 8542b00e440a
+    text: "done: Recorded slice 3 (notifications): plan §36 block, layout tree, decisions, slice-table and capability-map rows; v2-status gate now slice 4 and its capability-layout row; workstreams row; a top current-state entry; every stale v2/{notify,incident,heartbeat} and orchestration/notify link repointed. make check-v2 passes; check-docs clean except the uncommitted-tree error. Nothing verified live."
+  - at: 2026-11-22T14:42:11.912Z
+    commit: 5217b3d651e5
+    text: branch dsa/01M81TT09NCZ2HN91ZZDNA4PS1/task-32

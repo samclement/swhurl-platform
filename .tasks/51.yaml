@@ -1,10 +1,11 @@
 id: 51
 title: Apps owns editing and SetTeam
-state: ready
+state: active
 scope:
   - v2/apps/edit*.go
   - v2/orchestration/edit.go
   - v2/orchestration/edit_test.go
+  - v2/orchestration/remove.go
   - v2/cmd/swhurl-v2/edit.go
   - v2/cmd/swhurl-v2/edit_test.go
   - v2/archtest/rules_test.go
@@ -24,3 +25,6 @@ notes:
   - at: 2026-11-22T18:19:37.007Z
     commit: 8aba040c99aa
     text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."
+  - at: 2026-11-22T19:05:34.772Z
+    commit: 1fbef00bbce2
+    text: "remove.go calls decodePair from edit.go, which must be deleted? -> Option 1: conductor added v2/orchestration/remove.go to scope; move decodePair unchanged to the bottom of remove.go; apps/edit.go keeps its own copy. Task 52 then deletes remove.go's copy and uses apps' one."

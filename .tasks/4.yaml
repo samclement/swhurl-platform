@@ -1,0 +1,21 @@
+id: 4
+title: sqlite-backups and backups reuse recovery's verdict; delete observe's duplicate rule
+state: ready
+scope:
+  - v2/observe/platform_store.go
+  - v2/observe/platform_scope_test.go
+  - v2/cmd/swhurl-v2/verify_test.go
+  - v2/archtest/api.txt
+  - v2/recovery/rules/**
+checks:
+  - make check-v2
+  - cd v2 && go test -count=1 ./observe/... ./recovery/... -run 'Backups|SQLite|ScopeChecks|Archive'
+  - cd v2 && go test -count=1 ./cmd/swhurl-v2/... -run 'VerifyPlatform|BackupMaxAge'
+  - cd v2 && go test ./archtest -run TestPublicAPI
+  - "! grep -q backupSet v2/observe/platform_store.go"
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T11:33:08.923Z
+    commit: 15078dc9dd19
+    text: "Replaces task 2 (cancelled for scope; read task 2's notes). Decision D1 option 1: one archive rule, owned by v2/recovery/rules; platform verification reuses it. Add one exported, namespace-unconfined entry point in v2/recovery/rules/archive.go that takes the archive suffix from the caller (internal newestArchive/metadataKey already take one). platformDatabases (SQLite, namespace-confined: rules.InstanceArchive fits) and platformBackups (MongoDB clickstack-mongodb/, .archive.gz.age) in v2/observe/platform_store.go both use recovery's verdict; delete backupSet and its 'second answer / decision D1' comment. Keep entry text, levels and their order, and credentials/listing-failure messages the tests assert. Fixtures in platform_scope_test.go must give archives a LastModified, since the check now ages by S3 time; the rule's error for an archive with no time must become an entry in the observe check. Regenerate api.txt with 'go test ./archtest -run TestPublicAPI -update'."

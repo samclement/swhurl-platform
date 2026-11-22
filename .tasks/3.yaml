@@ -1,6 +1,6 @@
 id: 3
 title: record D1 as decided (metadata rule for both) and the behaviour change it makes
-state: ready
+state: cancelled
 scope:
   - docs/iteration-2-plan.md
   - docs/v2-status.md
@@ -13,7 +13,7 @@ checks:
 after:
   - 1
   - 2
-reason: null
+reason: re-created to wait on the re-scoped task 2
 notes:
   - at: 2026-11-22T11:21:24.768Z
     commit: 4cb85004843e

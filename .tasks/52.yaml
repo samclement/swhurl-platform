@@ -26,3 +26,6 @@ notes:
   - at: 2026-11-22T19:05:34.998Z
     commit: 1fbef00bbce2
     text: "From task 51: orchestration/remove.go holds a temporary copy of decodePair (apps/edit.go has the owned one). When remove.go moves into apps, delete the copy and reuse apps' decodePair; no duplicate may remain."
+  - at: 2026-11-22T19:06:15.649Z
+    commit: fad0b284e26e
+    text: "From task 51: orchestration/remove_test.go also holds a temporary copy of the testdata(t, name) helper; when removal moves into apps, delete it and reuse apps' test helper."

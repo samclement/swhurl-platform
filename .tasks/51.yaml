@@ -6,6 +6,7 @@ scope:
   - v2/orchestration/edit.go
   - v2/orchestration/edit_test.go
   - v2/orchestration/remove.go
+  - v2/orchestration/remove_test.go
   - v2/cmd/swhurl-v2/edit.go
   - v2/cmd/swhurl-v2/edit_test.go
   - v2/archtest/rules_test.go
@@ -28,3 +29,6 @@ notes:
   - at: 2026-11-22T19:05:34.772Z
     commit: 1fbef00bbce2
     text: "remove.go calls decodePair from edit.go, which must be deleted? -> Option 1: conductor added v2/orchestration/remove.go to scope; move decodePair unchanged to the bottom of remove.go; apps/edit.go keeps its own copy. Task 52 then deletes remove.go's copy and uses apps' one."
+  - at: 2026-11-22T19:06:15.163Z
+    commit: fad0b284e26e
+    text: "remove_test.go uses testdata helper from edit_test.go? -> Option 1: conductor added v2/orchestration/remove_test.go to scope; move the 8-line testdata helper unchanged to its bottom, no other change."

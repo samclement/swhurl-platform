@@ -38,3 +38,6 @@ notes:
   - at: 2026-11-22T14:33:19.413Z
     commit: e0c6888cb5fd
     text: "From task 31: stale links to ../v2/orchestration/notify.go (docs/services.md) and ../v2/orchestration/notify_test.go (docs/iteration-2-plan.md, docs/current-state.md); docs/v2-status.md and docs/workstreams.md need the slice-3 row (check-docs says 'v2/... changed without docs/v2-status.md'). All in your scope."
+  - at: 2026-11-22T14:37:25.200Z
+    commit: 8542b00e440a
+    text: "released: workflow budget reached (usageBudget hit) before tk done; docs edits present in worktree"

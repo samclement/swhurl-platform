@@ -1,4 +1,4 @@
-package orchestration
+package delivery
 
 import (
 	"cmp"
@@ -10,7 +10,15 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	"github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
+)
+
+// Where the platform's units and their GitRepository live, and the GitRepository's API group.
+// (Copied from orchestration/flux.go.)
+const (
+	fluxNamespace   = "flux-system"
+	fluxSourceGroup = "source.toolkit.fluxcd.io"
 )
 
 // The wait make flux-reconcile ends with. cluster-stack does not wait for the units it defines, so a slow or failing
@@ -55,7 +63,7 @@ func FluxWait(ctx context.Context, inputs FluxWaitInputs) (bool, error) {
 		return false, err
 	}
 	if revision == "" {
-		run.say(FluxWaitBad, "GitRepository %s has no artifact yet", observe.FluxSource)
+		run.say(FluxWaitBad, "GitRepository %s has no artifact yet", rules.FluxSource)
 		return false, nil
 	}
 	run.say(FluxWaitHeading, "Flux units at %s", revision)
@@ -106,10 +114,10 @@ func (r *fluxWaitRun) follow(ctx context.Context, revision string) (string, erro
 
 // report reports each unit that has finished since the last poll, once, and returns whether none failed and the
 // names of those still waiting.
-func (r *fluxWaitRun) report(units []observe.FluxUnitState) (bool, []string) {
+func (r *fluxWaitRun) report(units []rules.FluxUnitState) (bool, []string) {
 	passed, waiting := true, []string{}
 	for _, unit := range units {
-		if unit.Progress == observe.FluxWaiting {
+		if unit.Progress == rules.FluxWaiting {
 			waiting = append(waiting, unit.Name)
 			continue
 		}
@@ -118,9 +126,9 @@ func (r *fluxWaitRun) report(units []observe.FluxUnitState) (bool, []string) {
 		}
 		r.seen[unit.Name] = true
 		switch unit.Progress {
-		case observe.FluxReady:
+		case rules.FluxReady:
 			r.say(FluxWaitOK, "%s (%.0fs)", unit.Name, r.inputs.Now().Sub(r.start).Seconds())
-		case observe.FluxSuspended:
+		case rules.FluxSuspended:
 			r.say(FluxWaitWarn, "%s is suspended; skipped", unit.Name)
 		default:
 			r.say(FluxWaitBad, "%s failed: %s", unit.Name, cmp.Or(unit.Message, "no message"))
@@ -132,7 +140,7 @@ func (r *fluxWaitRun) report(units []observe.FluxUnitState) (bool, []string) {
 
 // fluxSourceRevision is the revision the platform's GitRepository last fetched, or "" before its first artifact.
 func fluxSourceRevision(ctx context.Context, reader kube.Reader) (string, error) {
-	ref, err := fluxRefOf("GitRepository", fluxNamespace, observe.FluxSource)
+	ref, err := kube.RefOf(fluxSourceGroup, "GitRepository", fluxNamespace, rules.FluxSource)
 	if err != nil {
 		return "", err
 	}
@@ -141,17 +149,17 @@ func fluxSourceRevision(ctx context.Context, reader kube.Reader) (string, error)
 		return "", err
 	}
 	if read.Status != observe.Present {
-		return "", absentOrUnavailable("GitRepository", observe.FluxSource, read)
+		return "", absentOrUnavailable("GitRepository", rules.FluxSource, read)
 	}
-	var source fluxState
+	var source fluxSource
 	if err := json.Unmarshal(read.Object, &source); err != nil {
-		return "", unavailable("GitRepository "+observe.FluxSource, observe.ReasonMalformed)
+		return "", unavailable("GitRepository "+rules.FluxSource, observe.ReasonMalformed)
 	}
 	return source.Status.Artifact.Revision, nil
 }
 
 // fluxUnitsAt is every unit in flux-system and where it stands at revision, by name.
-func fluxUnitsAt(ctx context.Context, reader kube.Reader, revision string) ([]observe.FluxUnitState, error) {
+func fluxUnitsAt(ctx context.Context, reader kube.Reader, revision string) ([]rules.FluxUnitState, error) {
 	list, err := reader.ListNamespace(ctx, observe.PlatformUnits)
 	if err != nil {
 		return nil, err
@@ -159,9 +167,9 @@ func fluxUnitsAt(ctx context.Context, reader kube.Reader, revision string) ([]ob
 	if list.Status != observe.Present {
 		return nil, unavailable("Flux units", list.Reason)
 	}
-	units := make([]observe.FluxUnitState, 0, len(list.Items))
+	units := make([]rules.FluxUnitState, 0, len(list.Items))
 	for _, item := range list.Items {
-		unit, err := observe.FluxUnitAt(item, revision)
+		unit, err := rules.FluxUnitAt(item, revision)
 		if err != nil {
 			return nil, unavailable("Flux units", observe.ReasonMalformed)
 		}
@@ -169,4 +177,22 @@ func fluxUnitsAt(ctx context.Context, reader kube.Reader, revision string) ([]ob
 	}
 	sort.Slice(units, func(i, j int) bool { return units[i].Name < units[j].Name })
 	return units, nil
+}
+
+// fluxSource is the one fact a wait reads from the GitRepository: the revision of its newest artifact.
+type fluxSource struct {
+	Status struct {
+		Artifact struct {
+			Revision string `json:"revision"`
+		} `json:"artifact"`
+	} `json:"status"`
+}
+
+// absentOrUnavailable is the refusal a missing object and a failed read each state. (Copied from
+// orchestration/flux.go.)
+func absentOrUnavailable(kind, name string, read observe.Read) error {
+	if read.Status == observe.Absent {
+		return fmt.Errorf("no %s named '%s'", kind, name)
+	}
+	return unavailable(kind+" "+name, reasonOf(read))
 }

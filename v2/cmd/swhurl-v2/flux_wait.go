@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/delivery"
 )
 
 // The bound make flux-reconcile's wait has always had, and how often it reads.
@@ -27,10 +27,10 @@ func (c cli) fluxWait(r request) int {
 	if sleep == nil {
 		sleep = time.Sleep
 	}
-	passed, err := orchestration.FluxWait(context.Background(), orchestration.FluxWaitInputs{Reader: cluster.Reader,
+	passed, err := delivery.FluxWait(context.Background(), delivery.FluxWaitInputs{Reader: cluster.Reader,
 		Timeout: fluxWaitTimeout, Poll: fluxWaitPoll, Now: time.Now, Sleep: sleep,
-		Progress: func(line orchestration.FluxWaitLine) {
-			if line.Level == orchestration.FluxWaitHeading {
+		Progress: func(line delivery.FluxWaitLine) {
+			if line.Level == delivery.FluxWaitHeading {
 				fmt.Fprintf(c.out, "\n== %s ==\n", line.Text)
 				return
 			}

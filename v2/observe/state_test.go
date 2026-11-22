@@ -3,6 +3,7 @@ package observe_test
 import (
 	"testing"
 
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -57,7 +58,7 @@ func TestStateTable(t *testing.T) {
 		// revision, so a unit that has applied none yet is updating.
 		{"v1 no applied revision", base, func(e observe.Evidence) observe.Evidence {
 			return withRead(e, present(base.Unit, fluxDocument(t, flux{generation: 3})))
-		}, observe.State{observe.StateUpdating, "unit.revision", observe.ReasonNotAppliedRev}},
+		}, observe.State{observe.StateUpdating, "unit.revision", deliveryrules.ReasonNotAppliedRev}},
 		{"v1 no workload is unknown", base, func(e observe.Evidence) observe.Evidence {
 			return withRead(e, absent(base.Workload))
 		}, observe.State{observe.StateUnknown, "workload", observe.ReasonNotFound}},

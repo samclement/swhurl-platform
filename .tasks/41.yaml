@@ -1,6 +1,6 @@
 id: 41
 title: "Apps: move the status and status-all use cases out of orchestration and wire CLI and console"
-state: ready
+state: done
 scope:
   - v2/apps/*.go
   - v2/orchestration/status*.go
@@ -40,3 +40,12 @@ notes:
   - at: 2026-11-22T17:19:48.739Z
     commit: 717e897c4e82
     text: "Task 44 merged (717e897c): use provisioningrules.Inputs/Compile/Declare from v2/provisioning/rules; edge orchestration -> apps for the console. The earlier task-41 worktree was removed; this run starts fresh from main."
+  - at: 2026-11-22T17:25:30.879Z
+    commit: c790d08c725f
+    text: "done: Moved Status/StatusAll (status.go, status_all.go, status_scope.go + tests) from orchestration to new use-case package v2/apps; CLI status/status-all call apps, ConsoleStatus via new orchestration->apps edge (archtest registry, edge test, api.txt). statusVariant copy kept in orchestration for teamscenario_test. No behaviour change; nothing live."
+  - at: 2026-11-22T17:25:30.879Z
+    commit: c790d08c725f
+    text: "followup: orchestration/status_variant_test.go keeps a copy of statusVariant only for teamscenario_test.go (outside this scope); rename it to an instance-variant fixture or move it into teamscenario_test.go"
+  - at: 2026-11-22T17:27:28.990Z
+    commit: c790d08c725f
+    text: branch dsa/01M824B1Q308KN67V5P76VGTMD/task-41

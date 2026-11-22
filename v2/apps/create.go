@@ -61,7 +61,7 @@ func Create(ctx context.Context, inputs CreateInputs, images func(image string) 
 	if err != nil {
 		return Created{}, err
 	}
-	secret, err := encryptedSeed(spec, pair, profile, encrypter)
+	secret, err := provisioning.EncryptedSeed(spec, pair, profile, encrypter)
 	if err != nil {
 		return Created{}, err
 	}
@@ -137,28 +137,6 @@ func createdRecords(inputs CreateInputs, spec kernel.InstanceSpec, app kernel.Ap
 	}
 	return provisioning.RecordFiles(inputs.RecordsRoot, spec.Application, spec.Environment, appDocument, releaseDocument,
 		instanceDocument, secret, declaration.OfferedFiles()), nil
-}
-
-// encryptedSeed is the new instance's seed Secret, encrypted to the platform's recipient and checked as far as v2 can
-// check a ciphertext it never decrypts. It is written before the record that states the key, so a failure leaves no
-// record that states an identity without its seed. (Copied from orchestration/mint.go.)
-func encryptedSeed(spec kernel.InstanceSpec, pair kernel.UserKey, profile kernel.PlatformProfile,
-	encrypter sops.Encrypter) ([]byte, error) {
-	if profile.SOPS.Recipient == "" {
-		return nil, &Refusal{"sops", "the_profile_states_no_recipient"}
-	}
-	plaintext, err := kernel.EventsSecret(spec, pair)
-	if err != nil {
-		return nil, err
-	}
-	encrypted, err := encrypter.Encrypt(plaintext, profile.SOPS.Recipient)
-	if err != nil {
-		return nil, err
-	}
-	if err := kernel.CheckEncryptedSeed(encrypted, pair.Seed); err != nil {
-		return nil, err
-	}
-	return encrypted, nil
 }
 
 // revisionOf reads the commit an image states it was built from. A tag alone never supplies it: the platform's tag

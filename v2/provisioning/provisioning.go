@@ -1,5 +1,6 @@
-// Package provisioning is the provisioning capability's use cases: writing an instance's folder and its records. It
-// compiles with provisioning/rules, adds the declared inputs the compiler lists or never sees, writes them through the
+// Package provisioning is the provisioning capability's use cases: constructing encrypted seeds and writing an
+// instance's folder and records. It compiles with provisioning/rules, adds the declared inputs the compiler lists or
+// never sees, writes them through the
 // files adapter, and prunes what the records no longer render. Every use case that writes an instance's files —
 // render, create, edit, deploy and promote — writes them here, so a folder is either complete or refused.
 package provisioning

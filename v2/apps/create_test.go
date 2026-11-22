@@ -3,6 +3,7 @@ package apps
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"regexp"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/registry/registrytest"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops/sopstest"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 const (
@@ -138,6 +140,15 @@ func TestCreateWritesTheRecordsAnImageStates(t *testing.T) {
 	if len(encrypter.Calls) != 1 || !strings.Contains(string(encrypter.Calls[0].Document), "SWHURL_EVENTS_SEED") {
 		t.Errorf("the seed was not encrypted: %+v", encrypter.Calls)
 	}
+	pair := kernel.NewUserKey(createInputs(t).Seed)
+	for path, document := range writer.Contents {
+		if strings.Contains(string(document), pair.Seed) {
+			t.Fatalf("%s holds the plaintext seed", path)
+		}
+	}
+	if string(writer.Contents["v2-records/demo-orders/staging/events.sops.yaml"]) != string(encrypter.Output) {
+		t.Fatal("the seed file is not the encrypter's output")
+	}
 }
 
 // A reference the registry cannot read, a label without a declaration, a revision the tag does not abbreviate and a
@@ -167,12 +178,53 @@ func TestCreateRefusesBeforeItWrites(t *testing.T) {
 		}, reason: "the_profile_states_no_recipient"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			created, writer, _, err := create(t, tt.label, tt.change)
+			created, writer, encrypter, err := create(t, tt.label, tt.change)
 			if err == nil || !strings.Contains(err.Error(), tt.reason) {
 				t.Fatalf("error = %v, want it to name %q", err, tt.reason)
 			}
+			if tt.reason == "the_profile_states_no_recipient" {
+				if _, ok := err.(*provisioning.Refusal); !ok || err.Error() != "refused: sops: the_profile_states_no_recipient" {
+					t.Fatalf("missing recipient must surface provisioning's refusal unchanged: %T %v", err, err)
+				}
+			}
+			if len(encrypter.Calls) != 0 {
+				t.Fatal("a refused create encrypted a seed")
+			}
 			if writer.Writes != 0 || len(created.Written) != 0 {
 				t.Errorf("a refused create wrote %+v", created.Written)
+			}
+		})
+	}
+}
+
+// Encryption failures and unsafe ciphertext never reach the record writer.
+func TestCreateStopsBeforeWritingAnUnsafeSeed(t *testing.T) {
+	inputs := createInputs(t)
+	failure := errors.New("encryption failed")
+	for _, tt := range []struct {
+		name   string
+		output []byte
+		err    error
+		reason string
+	}{
+		{name: "encryption failed", err: failure, reason: failure.Error()},
+		{name: "plaintext seed even with encrypted values", output: []byte("ENC[fake] " + kernel.NewUserKey(inputs.Seed).Seed), reason: "plaintext seed"},
+		{name: "no encrypted value", output: []byte("not encrypted"), reason: "no encrypted value"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			writer, encrypter := filestest.New(), sopstest.New()
+			encrypter.Output, encrypter.Err = tt.output, tt.err
+			images := createRepository(createLabel(t, nil))
+			created, err := Create(context.Background(), inputs, func(string) (registry.Reader, error) { return images, nil },
+				t.TempDir(), writer, encrypter)
+			if err == nil || !strings.Contains(err.Error(), tt.reason) {
+				t.Fatalf("error = %v, want %q", err, tt.reason)
+			}
+			if tt.err != nil && !errors.Is(err, tt.err) {
+				t.Fatalf("encryption error was not propagated: %v", err)
+			}
+			if len(encrypter.Calls) != 1 || writer.Writes != 0 || len(created.Written) != 0 {
+				t.Fatal("an unsafe seed reached the writer or was not encrypted once")
 			}
 		})
 	}

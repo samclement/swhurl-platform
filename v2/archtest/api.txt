@@ -1808,6 +1808,7 @@ provisioning: const RecordsRoot = "v2-records"
 provisioning: func (*Refusal) Error() string
 provisioning: func CompileInto(inputs rules.Inputs, destination string, writer files.Writer) (Result, error)
 provisioning: func Complete(inputs rules.Inputs) (kernel.Compilation, []kernel.File, error)
+provisioning: func EncryptedSeed(spec kernel.InstanceSpec, pair kernel.UserKey, profile kernel.PlatformProfile, encrypter sops.Encrypter) ([]byte, error)
 provisioning: func InstanceDocuments(spec kernel.InstanceSpec, release kernel.ReleaseBundle, compiled kernel.Compilation, offers []kernel.File) ([]kernel.File, error)
 provisioning: func RecordFiles(root, application, environment string, app, release, instance, eventsSecret []byte, offers []kernel.File) []kernel.File
 provisioning: func WriteCompiled(destination string, compiled kernel.Compilation, written []kernel.File, writer files.Writer) ([]files.Outcome, error)

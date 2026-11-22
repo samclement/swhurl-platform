@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files/filestest"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops/sopstest"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 // mintInstance is one v2-owned instance with no broker identity, as its record states it.
@@ -137,22 +139,45 @@ func TestMintNeedsARecipient(t *testing.T) {
 	inputs := mintInputs(t, 1, false)
 	inputs.Profile = mintProfile(t, false)
 	_, err := Mint(inputs, t.TempDir(), writer, encrypter)
-	if err == nil || !strings.Contains(err.Error(), "the_profile_states_no_recipient") {
+	if err == nil || err.Error() != "refused: sops: the_profile_states_no_recipient" {
 		t.Fatalf("no recipient: %v", err)
 	}
-	if len(writer.Contents) != 0 || len(encrypter.Calls) != 0 {
+	if _, ok := err.(*provisioning.Refusal); !ok {
+		t.Fatalf("missing recipient must surface provisioning's refusal directly: %T %v", err, err)
+	}
+	if writer.Writes != 0 || len(encrypter.Calls) != 0 {
 		t.Fatal("a refused mint generated or wrote something")
 	}
 }
 
-// An encrypter that hands back the plaintext is refused, so a broken adapter cannot put a seed in Git.
-func TestMintRefusesAPlaintextCiphertext(t *testing.T) {
+// Encryption failures and unsafe ciphertext never reach the record writer.
+func TestMintStopsBeforeWritingAnUnsafeSeed(t *testing.T) {
 	inputs := mintInputs(t, 1, false)
-	encrypter := sopstest.New()
-	encrypter.Output = []byte("stringData: {SWHURL_EVENTS_SEED: " + kernel.NewUserKey(inputs.Seed).Seed + "}")
-	_, err := Mint(inputs, t.TempDir(), filestest.New(), encrypter)
-	if err == nil || !strings.Contains(err.Error(), "plaintext seed") {
-		t.Fatalf("a plaintext ciphertext: %v", err)
+	failure := errors.New("encryption failed")
+	for _, tt := range []struct {
+		name   string
+		output []byte
+		err    error
+		reason string
+	}{
+		{name: "encryption failed", err: failure, reason: failure.Error()},
+		{name: "plaintext seed even with encrypted values", output: []byte("ENC[fake] " + kernel.NewUserKey(inputs.Seed).Seed), reason: "plaintext seed"},
+		{name: "no encrypted value", output: []byte("not encrypted"), reason: "no encrypted value"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			writer, encrypter := filestest.New(), sopstest.New()
+			encrypter.Output, encrypter.Err = tt.output, tt.err
+			outcome, err := Mint(inputs, t.TempDir(), writer, encrypter)
+			if err == nil || !strings.Contains(err.Error(), tt.reason) {
+				t.Fatalf("error = %v, want %q", err, tt.reason)
+			}
+			if tt.err != nil && !errors.Is(err, tt.err) {
+				t.Fatalf("encryption error was not propagated: %v", err)
+			}
+			if len(encrypter.Calls) != 1 || writer.Writes != 0 || len(outcome.Written) != 0 {
+				t.Fatal("an unsafe seed reached the writer or was not encrypted once")
+			}
+		})
 	}
 }
 

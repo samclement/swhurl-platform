@@ -177,8 +177,8 @@ var Orchestration = []string{"orchestration", "recovery", "delivery", "notificat
 // orchestration: ConsoleChecks invokes health's collector and ConsoleStatus apps' status of every instance;
 // reconsider these edges in the console slice. Recovery's restore takes apps' status as a port the command wires,
 // so it needs no edge. Provisioning owns writing an instance's folder and records: apps' create, edit and SetTeam
-// and delivery's deploy and promote write through it. Orchestration still uses provisioning's records-root constant
-// when minting an instance's seed.
+// and delivery's deploy and promote write through it. Apps' create and orchestration's mint also use provisioning's
+// encrypted seed construction; mint keeps its identity workflow and uses provisioning's records-root constant.
 var WorkflowDependencies = map[string][]string{
 	"orchestration": {"health", "apps", "provisioning"},
 	"delivery":      {"provisioning"},

@@ -1,23 +1,44 @@
-package kernel
+package rules
 
 import (
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
 // promoteFixture is the fixture staging instance and the release it selects, and production's own pair.
-func promoteFixture(t *testing.T) (staging, prod InstanceSpec, current, candidate ReleaseBundle) {
+func promoteFixture(t *testing.T) (staging, prod kernel.InstanceSpec, current, candidate kernel.ReleaseBundle) {
 	t.Helper()
 	staging, prod = instance(t, "staging.json"), instance(t, "prod.json")
-	candidate, current = release(t), mustRelease(t, "r41.json")
+	candidate, current = mustRelease(t, "r42.json"), mustRelease(t, "r41.json")
 	return staging, prod, current, candidate
 }
 
-func mustRelease(t *testing.T, name string) ReleaseBundle {
+func fixture(t *testing.T, name string) []byte {
 	t.Helper()
-	r, err := DecodeRelease(fixture(t, name))
+	b, err := os.ReadFile("../../testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func instance(t *testing.T, name string) kernel.InstanceSpec {
+	t.Helper()
+	s, err := kernel.DecodeInstance(fixture(t, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func mustRelease(t *testing.T, name string) kernel.ReleaseBundle {
+	t.Helper()
+	r, err := kernel.DecodeRelease(fixture(t, name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +75,7 @@ func TestSelectPromotionRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	refuse := func(name string, staging, target InstanceSpec, current, candidate ReleaseBundle, want Code, field string) {
+	refuse := func(name string, staging, target kernel.InstanceSpec, current, candidate kernel.ReleaseBundle, want Code, field string) {
 		t.Helper()
 		t.Run(name, func(t *testing.T) {
 			_, err := SelectPromotion(staging, target, current, candidate, revision)
@@ -82,7 +103,7 @@ func TestSelectPromotionRefusals(t *testing.T) {
 	refuse("a release for another application", foreign, prod, current, foreignRelease, WrongApplication, "application")
 
 	withVolume, reuser := prod, candidate
-	withVolume.Storage = Storage{SizeMiB: 1024}
+	withVolume.Storage = kernel.Storage{SizeMiB: 1024}
 	reuser.Runtime.UID, reuser.ReleaseID = 1000, ""
 	if reuser.ReleaseID, err = reuser.ID(); err != nil {
 		t.Fatal(err)
@@ -130,9 +151,10 @@ func TestSelectPromotionKeepsSelectionAndStaleness(t *testing.T) {
 	if kept.Release != candidate.ReleaseID {
 		t.Fatalf("the second promotion changed the release to %s", kept.Release)
 	}
-	_, err = SelectPromotion(staging, prod, current, candidate, InstanceRevision("inst-sha256:"+strings.Repeat("0", 64)))
-	var refused *Error
-	if !errors.As(err, &refused) || refused.Code != StaleInstance {
+	_, err = SelectPromotion(staging, prod, current, candidate,
+		kernel.InstanceRevision("inst-sha256:"+strings.Repeat("0", 64)))
+	var refused *kernel.Error // staleness is selection's refusal, in its own vocabulary
+	if !errors.As(err, &refused) || refused.Code != kernel.StaleInstance {
 		t.Fatalf("err %v, want a stale refusal", err)
 	}
 }

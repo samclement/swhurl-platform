@@ -20,6 +20,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	"github.com/samclement/swhurl-platform/v2/apps"
 	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/health"
 	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
@@ -299,10 +300,10 @@ func ConsoleStatus(ctx context.Context, inputs ConsoleRecords, revision string, 
 	if err != nil {
 		return observe.Collection{}, err
 	}
-	status := StatusInputs{Inputs: inputs.Shared, Revision: revision, RecordsRoot: consoleRecords,
+	status := apps.StatusInputs{Inputs: inputs.Shared, Revision: revision, RecordsRoot: consoleRecords,
 		SharedPaths: []string{consoleProfile, consoleCalls, consoleEgress}, Changes: changes, Reader: reader,
 		Source: source, Now: now, MaxAge: 26 * time.Hour}
-	result, err := StatusAll(ctx, status, inputs.Instances)
+	result, err := apps.StatusAll(ctx, status, inputs.Instances)
 	if err != nil {
 		return observe.Collection{}, fmt.Errorf("Go status unavailable: %w", err)
 	}

@@ -1,4 +1,4 @@
-package orchestration
+package apps
 
 import (
 	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"

@@ -14,9 +14,9 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
+	"github.com/samclement/swhurl-platform/v2/apps"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
@@ -117,7 +117,7 @@ func (c cli) observeLive(r request, inputs provisioningrules.Inputs, maxAge time
 	request.Inputs = inputs
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
-	report, err := orchestration.Status(ctx, request)
+	report, err := apps.Status(ctx, request)
 	if err != nil {
 		return observe.Report{}, fail(c.diagnostic, err)
 	}

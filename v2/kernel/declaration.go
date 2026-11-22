@@ -78,10 +78,11 @@ const (
 )
 
 // Declare states one instance as its records describe it. The resolution and the allocation are the committed
-// documents the renderer wrote; a caller that supplies neither gets declarations without outcomes and a zero
-// egress, which is a fact the page states rather than a guessed connection.
+// documents the renderer wrote, as connectivity read them; a caller that supplies neither passes the empty
+// documents and gets declarations without outcomes and a zero egress, which is a fact the page states rather than
+// a guessed connection.
 func Declare(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile,
-	resolution, allocation []byte) (Declared, error) {
+	resolution ConnectionsDocument, allocation EgressDocument) Declared {
 	declared := Declared{
 		Team: app.Team, Kind: release.Runtime.Kind, Exposure: spec.Grants.Exposure, Port: release.Runtime.Port,
 		Hosts:    []string{},
@@ -99,18 +100,10 @@ func Declare(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile Plat
 	declared.Address = declaredAddress(spec, release.Runtime.Kind, release.Runtime.Port)
 	declared.Database.Path = declaredPath(release.Database)
 	declared.Offers, declared.API = declaredOffers(release, declared.Hosts)
-	egress, err := declaredEgress(allocation, spec.Application, spec.Environment)
-	if err != nil {
-		return Declared{}, err
-	}
-	declared.Egress = egress
-	document, err := declaredResolution(resolution)
-	if err != nil {
-		return Declared{}, err
-	}
-	declared.Callers = declaredCallers(document, spec)
-	declared.Connections = declaredRows(spec, release, document, declared.Egress.Grants)
-	return declared, nil
+	declared.Egress = declaredEgress(allocation, spec.Application, spec.Environment)
+	declared.Callers = declaredCallers(resolution, spec)
+	declared.Connections = declaredRows(spec, release, resolution, declared.Egress.Grants)
+	return declared
 }
 
 // declaredAddress is where an instance's own Service listens, as the variables the compiler writes name it. A
@@ -146,29 +139,13 @@ func declaredOffers(release ReleaseBundle, hosts []string) (commit, api string) 
 }
 
 // declaredEgress is the instance's allocation: its port, whether or not it may reach anything, and the hosts the
-// allocation grants. A caller that supplies no allocation gets a zero egress.
-func declaredEgress(allocation []byte, application, environment string) (DeclaredEgress, error) {
-	if allocation == nil {
-		return DeclaredEgress{Grants: []string{}}, nil
-	}
-	document, err := DecodeEgressDocument(allocation)
+// allocation grants. An allocation that does not name the instance, the empty one included, gives a zero egress.
+func declaredEgress(allocation EgressDocument, application, environment string) DeclaredEgress {
+	own, err := allocation.EgressOf(application, environment)
 	if err != nil {
-		return DeclaredEgress{}, err
+		return DeclaredEgress{Grants: []string{}}
 	}
-	own, err := document.EgressOf(application, environment)
-	if err != nil {
-		return DeclaredEgress{Grants: []string{}}, nil // the document does not name this instance
-	}
-	return DeclaredEgress{Port: own.Port, Grants: clones(own.Grants)}, nil
-}
-
-// declaredResolution reads the committed resolution. A caller that supplies none gets an empty document, so every
-// declared relationship is a row without an outcome instead of a connection nobody agreed to.
-func declaredResolution(document []byte) (ConnectionsDocument, error) {
-	if document == nil {
-		return ConnectionsDocument{}, nil
-	}
-	return resolution(document)
+	return DeclaredEgress{Port: own.Port, Grants: clones(own.Grants)}
 }
 
 // declaredCallers is who may call this instance, in the resolution's order.
@@ -294,4 +271,61 @@ func clones(list []string) []string {
 		return []string{}
 	}
 	return append([]string{}, list...)
+}
+
+// The resolution document is the resolver's answer, one per commit: connectivity reads its bytes
+// (connectivity/rules), and the kernel keeps its shape because a declaration states each relationship's outcome from it.
+
+// ConnectionsDocument is the resolution: every connected pair, every declaration that waits, every refusal.
+type ConnectionsDocument struct {
+	Kind     string               `json:"kind"`
+	Version  int                  `json:"version"`
+	Revision string               `json:"revision"`
+	Pairs    []ConnectionsPair    `json:"pairs"`
+	Waiting  []ConnectionsWaiting `json:"waiting"`
+	Refused  []ConnectionsRefusal `json:"refused"`
+	// Subscriptions are the event subscriptions that connected. They sit in the same document as the pairs
+	// because they are the same decision — which relationships an instance takes part in — and a compilation
+	// takes one document rather than two.
+	Subscriptions []ConnectionsSubscription `json:"subscriptions"`
+	// EventWaiting and EventRefused are the events' own answers, beside the calls': a subscription whose publisher
+	// is not there yet waits, and one whose publisher does not publish the event is refused.
+	EventWaiting []ConnectionsWaiting `json:"eventWaiting"`
+	EventRefused []ConnectionsRefusal `json:"eventRefused"`
+}
+
+// ConnectionsSubscription is one connected subscription with every name a stream, a consumer and a user's
+// permission need, so no reader derives one the resolver did not agree with.
+type ConnectionsSubscription struct {
+	Subscriber  string `json:"subscriber"`
+	Publisher   string `json:"publisher"`
+	Event       string `json:"event"`
+	Environment string `json:"environment"`
+	Stream      string `json:"stream"`
+	Consumer    string `json:"consumer"`
+	Subject     string `json:"subject"`
+	Object      string `json:"object"`
+}
+
+// ConnectionsPair is one connected pair: the callee's port is the caller's fact, so a caller renders its
+// address and its rule from the pair alone.
+type ConnectionsPair struct {
+	Caller      string `json:"caller"`
+	Callee      string `json:"callee"`
+	Environment string `json:"environment"`
+	Port        int32  `json:"port"`
+}
+
+type ConnectionsWaiting struct {
+	Caller      string `json:"caller"`
+	Callee      string `json:"callee"`
+	Environment string `json:"environment"`
+	Reason      string `json:"reason"`
+}
+
+type ConnectionsRefusal struct {
+	Application string `json:"application"`
+	Callee      string `json:"callee"`
+	Environment string `json:"environment"`
+	Reason      string `json:"reason"`
 }

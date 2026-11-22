@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
@@ -54,7 +55,7 @@ func (c cli) allocation(path, what string) (kernel.EgressDocument, int) {
 	if status != 0 {
 		return kernel.EgressDocument{}, status
 	}
-	document, err := kernel.DecodeEgressDocument(data)
+	document, err := connectivityrules.DecodeEgressDocument(data)
 	if err != nil {
 		return kernel.EgressDocument{}, fail(c.diagnostic, err)
 	}

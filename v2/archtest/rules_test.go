@@ -139,8 +139,9 @@ var Layers = map[string]int{
 	// The apps capability: its status use cases, comparing the cluster with an instance's records.
 	"apps": 2,
 
-	// The connectivity capability: its pure resolvers of which calls and event subscriptions connect.
-	"connectivity/rules/calls": 0, "connectivity/rules/events": 0,
+	// The connectivity capability: its pure resolvers of which calls and event subscriptions connect, and its reading
+	// of the resolution and allocation documents.
+	"connectivity/rules": 0, "connectivity/rules/calls": 0, "connectivity/rules/events": 0,
 }
 
 // PureDependencies are the pure-to-pure imports allowed, by importer: each is a pure type or decision whose owner
@@ -149,12 +150,14 @@ var Layers = map[string]int{
 // verdict and archive types and delivery's currentness and promotion readiness; health reports observed facts
 // and recovery's archive verdict, using kernel's shared app vocabulary; delivery's promotion rule refines
 // kernel's release selection; incident raises faults from delivery's deployment health verdict; provisioning
-// assembles an instance's records into kernel's compiler and declaration (docs/iteration-2-plan.md#capability-map).
+// assembles an instance's records and connectivity's reading of its documents into kernel's compiler and
+// declaration; connectivity reads its documents into kernel's model types (docs/iteration-2-plan.md#capability-map).
 var PureDependencies = map[string][]string{
 	"observe":            {"recovery/rules", "delivery/rules"},
 	"health/rules":       {"observe", "recovery/rules", "kernel"},
 	"delivery/rules":     {"kernel"},
-	"provisioning/rules": {"kernel"},
+	"provisioning/rules": {"kernel", "connectivity/rules"},
+	"connectivity/rules": {"kernel"},
 
 	"notifications/rules/incident": {"delivery/rules"},
 }
@@ -183,7 +186,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"health/rules", "notifications/rules/incident", "notifications/rules/heartbeat", "notifications/rules/notify", "apptemplatetest", "certissuer", "checkrepo", "dashboards", "datadestroy", "kernel", "lifecycletest", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules", "provisioning/rules", "connectivity/rules/calls", "connectivity/rules/events"}
+var Pure = []string{"health/rules", "notifications/rules/incident", "notifications/rules/heartbeat", "notifications/rules/notify", "apptemplatetest", "certissuer", "checkrepo", "dashboards", "datadestroy", "kernel", "lifecycletest", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules", "provisioning/rules", "connectivity/rules", "connectivity/rules/calls", "connectivity/rules/events"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,

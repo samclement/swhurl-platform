@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
@@ -139,7 +140,7 @@ func (r *rendering) compileInstances(profile []byte, folders []recordsEdit) erro
 	if err != nil {
 		return err
 	}
-	egress, err := kernel.EncodeEgressDocument(r.allocation)
+	egress, err := connectivityrules.EncodeEgressDocument(r.allocation)
 	if err != nil {
 		return err
 	}
@@ -375,7 +376,7 @@ func (r rendering) documents(callsRevision, allocationRevision string) ([]kernel
 	if err != nil {
 		return nil, err
 	}
-	egress, err := kernel.EncodeEgressDocument(allocation)
+	egress, err := connectivityrules.EncodeEgressDocument(allocation)
 	if err != nil {
 		return nil, err
 	}

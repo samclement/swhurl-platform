@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/apps"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
@@ -112,12 +113,12 @@ func (c cli) statusShared(r request) (provisioningrules.Inputs, int) {
 
 func (c cli) statusSharedDocuments(inputs provisioningrules.Inputs) int {
 	if inputs.Calls != nil {
-		if _, err := kernel.ConnectionsOf(inputs.Calls, "", ""); err != nil {
+		if _, err := connectivityrules.DecodeConnectionsDocument(inputs.Calls); err != nil {
 			return fail(c.diagnostic, err)
 		}
 	}
 	if inputs.Egress != nil {
-		if _, err := kernel.DecodeEgressDocument(inputs.Egress); err != nil {
+		if _, err := connectivityrules.DecodeEgressDocument(inputs.Egress); err != nil {
 			return fail(c.diagnostic, err)
 		}
 	}

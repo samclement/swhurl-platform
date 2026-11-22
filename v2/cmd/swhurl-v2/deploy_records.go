@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/delivery"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
@@ -133,7 +134,7 @@ func (c cli) recordsEgress(r request) ([]byte, int) {
 	if status != 0 {
 		return nil, status
 	}
-	if _, err := kernel.DecodeEgressDocument(egress); err != nil {
+	if _, err := connectivityrules.DecodeEgressDocument(egress); err != nil {
 		return nil, fail(c.diagnostic, err)
 	}
 	return egress, 0

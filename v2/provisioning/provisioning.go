@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
@@ -94,13 +95,13 @@ func Documents(calls, egressDocument []byte, application, environment string) (k
 	error) {
 	connections := kernel.Connections{}
 	if calls != nil {
-		read, err := kernel.ConnectionsOf(calls, application, environment)
+		read, err := connectivityrules.ConnectionsOf(calls, application, environment)
 		if err != nil {
 			return kernel.Connections{}, nil, err
 		}
 		connections = read
 	}
-	egress, err := kernel.InstanceEgress(egressDocument, application, environment)
+	egress, err := connectivityrules.InstanceEgress(egressDocument, application, environment)
 	if err != nil {
 		return kernel.Connections{}, nil, err
 	}

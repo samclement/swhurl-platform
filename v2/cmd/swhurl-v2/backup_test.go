@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
@@ -121,7 +122,7 @@ func committedFile(t *testing.T, path string) []byte {
 // own generator's output here; from the cutover, v2's render is the authority, so a changed grant, port or
 // profile fact that is not re-rendered fails this check instead of waiting to be noticed in the cluster.
 func TestCommittedProxyIsWhatTheAllocationRenders(t *testing.T) {
-	allocation, err := kernel.DecodeEgressDocument(committedFile(t, "platform/egress/allocation.json"))
+	allocation, err := connectivityrules.DecodeEgressDocument(committedFile(t, "platform/egress/allocation.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

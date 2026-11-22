@@ -1,4 +1,4 @@
-package orchestration_test
+package notifications_test
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy/ntfytest"
+	"github.com/samclement/swhurl-platform/v2/notifications"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/heartbeat"
 	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // beatNow is 3 October 2026, 12:00 UTC, the Python tests' clock; beatURL is a destination that must never be logged.
@@ -56,11 +56,11 @@ func newBeat(cronjobs map[heartbeat.Job][]byte) *beat {
 	return &beat{cluster, ntfytest.New(), hoststatetest.New()}
 }
 
-func (b *beat) run(t *testing.T, dry bool, jobs ...heartbeat.Job) []orchestration.HeartbeatOutcome {
+func (b *beat) run(t *testing.T, dry bool, jobs ...heartbeat.Job) []notifications.HeartbeatOutcome {
 	t.Helper()
-	ports := orchestration.HeartbeatPorts{Cluster: b.cluster, Data: b.cluster, Platform: b.platform, State: b.state}
-	outcomes, err := orchestration.NotificationsHeartbeat(context.Background(), ports,
-		orchestration.HeartbeatOptions{Now: beatNow, Jobs: jobs, StatePath: beatState, DryRun: dry})
+	ports := notifications.HeartbeatPorts{Cluster: b.cluster, Data: b.cluster, Platform: b.platform, State: b.state}
+	outcomes, err := notifications.NotificationsHeartbeat(context.Background(), ports,
+		notifications.HeartbeatOptions{Now: beatNow, Jobs: jobs, StatePath: beatState, DryRun: dry})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,9 +247,9 @@ func TestHeartbeatInvalidStateStopsBeforeAnyJob(t *testing.T) {
 		b := newBeat(map[heartbeat.Job][]byte{checker: beatCronJob(checker, 601)})
 		b.state.Files[beatState] = []byte(tt.document)
 		b.state.Unreadable[beatState] = tt.unreadable
-		ports := orchestration.HeartbeatPorts{Cluster: b.cluster, Data: b.cluster, Platform: b.platform, State: b.state}
-		outcomes, err := orchestration.NotificationsHeartbeat(context.Background(), ports,
-			orchestration.HeartbeatOptions{Now: beatNow, Jobs: []heartbeat.Job{checker}, StatePath: beatState})
+		ports := notifications.HeartbeatPorts{Cluster: b.cluster, Data: b.cluster, Platform: b.platform, State: b.state}
+		outcomes, err := notifications.NotificationsHeartbeat(context.Background(), ports,
+			notifications.HeartbeatOptions{Now: beatNow, Jobs: []heartbeat.Job{checker}, StatePath: beatState})
 		if !errors.Is(err, tt.want) || outcomes != nil || len(b.cluster.Reads) != 0 || len(b.state.Replaced) != 0 {
 			t.Fatalf("%q: %v %+v, reads %v", tt.document, err, outcomes, b.cluster.Reads)
 		}

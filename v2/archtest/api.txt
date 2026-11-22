@@ -1145,6 +1145,24 @@ notifications/rules/notify: type Sender struct {Instance}
 notifications/rules/notify: type State struct {Seen map[string]float64 Pending []Entry}
 notifications/rules/notify: var ErrInvalidOutbox = errors.New("the outbox is invalid; refusing to reset delivery history")
 notifications/rules/notify: var ErrOutboxTooLarge = errors.New("the outbox exceeds its bounded size")
+notifications: func (*Notifier) AcceptAlert(ctx context.Context, connect NotifyConnect, body []byte, now time.Time) (Accepted, error)
+notifications: func (*Notifier) AcceptMessage(ctx context.Context, connect NotifyConnect, authorization string, body []byte, now time.Time, randomKey string) (Accepted, error)
+notifications: func (*Notifier) Deliver(ctx context.Context, connect NotifyConnect, now time.Time) ([]Delivered, error)
+notifications: func CheckNotifications(ctx context.Context, ports CheckerPorts, options CheckOptions) (CheckReport, error)
+notifications: func NewNotifier(publisher ntfy.Publisher) *Notifier
+notifications: func NotificationsHeartbeat(ctx context.Context, ports HeartbeatPorts, options HeartbeatOptions) ([]HeartbeatOutcome, error)
+notifications: type Accepted struct {Request notify.Request Caller string Channels []string Failure error}
+notifications: type CheckOptions struct {Now float64 Base, PlatformAddress, NotifyAddress, Token string DryRun bool}
+notifications: type CheckReport struct {State *incident.State Offered []CheckerDelivery}
+notifications: type CheckerDelivery struct {Entry incident.Entry Err error Retry bool}
+notifications: type CheckerPorts struct {Cluster kube.Collector Data kube.Data Platform ntfy.Publisher Copies notifysvc.Sender}
+notifications: type Delivered struct {Entry notify.Entry Err error Retry bool}
+notifications: type HeartbeatOptions struct {Now float64 Jobs []heartbeat.Job StatePath string DryRun bool}
+notifications: type HeartbeatOutcome struct {Job heartbeat.Job Decision heartbeat.Decision Notice heartbeat.Notice Due, Sent bool Err error}
+notifications: type HeartbeatPorts struct {Cluster kube.Reader Data kube.Data Platform ntfy.Publisher State hoststate.Store}
+notifications: type Notifier struct {}
+notifications: type NotifyCluster struct {Reviewer kube.Reviewer Data kube.Data Reader kube.Reader}
+notifications: type NotifyConnect func() (NotifyCluster, error)
 observe: const Absent = "absent"
 observe: const AppLabel = "platform.swhurl.com/app"
 observe: const Applied = "applied"
@@ -1365,9 +1383,6 @@ orchestration: func (*Jobs) Get(ctx context.Context, id int) (pages.Job, bool)
 orchestration: func (*Jobs) Reach(ctx context.Context, id int)
 orchestration: func (*Jobs) Recent(ctx context.Context) []pages.Job
 orchestration: func (*Jobs) Start(ctx context.Context, action, target, identity string, resume map[string]any, work JobWork) (pages.Job, error)
-orchestration: func (*Notifier) AcceptAlert(ctx context.Context, connect NotifyConnect, body []byte, now time.Time) (Accepted, error)
-orchestration: func (*Notifier) AcceptMessage(ctx context.Context, connect NotifyConnect, authorization string, body []byte, now time.Time, randomKey string) (Accepted, error)
-orchestration: func (*Notifier) Deliver(ctx context.Context, connect NotifyConnect, now time.Time) ([]Delivered, error)
 orchestration: func (*Refusal) Error() string
 orchestration: func (ConsoleSourceOf) Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)
 orchestration: func (ConsoleSourceOf) Revision(ctx context.Context) (string, error)
@@ -1381,7 +1396,6 @@ orchestration: func AppRepo(ctx context.Context, inputs AppRepoInputs) (AppRepos
 orchestration: func AppTemplateTest(ctx context.Context, inputs AppTemplateTestInputs) ([]apptemplatetest.Line, error)
 orchestration: func BootstrapClickStack(ctx context.Context, ports BootstrapPorts, options BootstrapOptions) (BootstrapReport, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
-orchestration: func CheckNotifications(ctx context.Context, ports CheckerPorts, options CheckOptions) (CheckReport, error)
 orchestration: func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
 orchestration: func CheckRepo(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error)) (checkrepo.Report, error)
 orchestration: func CheckSecrets(root string, reader git.Reader, decrypter sops.Decrypter, decoder manifests.Decoder, keyFile string) (secretcheck.Report, error)
@@ -1418,8 +1432,6 @@ orchestration: func ImageDeclaration(reader appsource.Reader, root string) (stri
 orchestration: func LifecycleTest(ctx context.Context, inputs LifecycleTestInputs) ([]lifecycletest.Line, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
-orchestration: func NewNotifier(publisher ntfy.Publisher) *Notifier
-orchestration: func NotificationsHeartbeat(ctx context.Context, ports HeartbeatPorts, options HeartbeatOptions) ([]HeartbeatOutcome, error)
 orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformReport, error)
 orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.PlatformReport, error)
 orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
@@ -1438,7 +1450,6 @@ orchestration: func TeamScenario(ctx context.Context, inputs TeamScenarioInputs)
 orchestration: func UnreachableFlags(environment string, flags []producer.Flag, declarationProblem string, reason error, now time.Time) FlagCard
 orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
 orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
-orchestration: type Accepted struct {Request notify.Request Caller string Channels []string Failure error}
 orchestration: type AppHookOutcome struct {Application, Repository string State kernel.ImageHookState Problem string}
 orchestration: type AppHooksInputs struct {Staging map[string][]byte Owner, HookHost string GitHubToken, HookToken string DryRun bool Repos github.RepositoryWriter}
 orchestration: type AppRepoInputs struct {Name, Type, Stack, Description string Owner, Identity, PlatformRepository string Settings []string Resume, DryRun bool Contract []byte Work string Token, ReposToken, HookToken, HookHost string Source github.Console Renderer copier.Renderer Repos github.RepositoryWriter Images func(image string) (registry.Reader, error) Now func() time.Time Sleep func(time.Duration) Note func(string)}
@@ -1452,10 +1463,6 @@ orchestration: type BootstrapPorts struct {Data kube.Data Installer clickstack.I
 orchestration: type BootstrapReport struct {Lines []BootstrapLine}
 orchestration: type CertIssuerInputs struct {Issuers []files.TreeFile Settings []byte}
 orchestration: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(ctx context.Context, commit string, units []string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Cached func(commit string, units []string) bool Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
-orchestration: type CheckOptions struct {Now float64 Base, PlatformAddress, NotifyAddress, Token string DryRun bool}
-orchestration: type CheckReport struct {State *incident.State Offered []CheckerDelivery}
-orchestration: type CheckerDelivery struct {Entry incident.Entry Err error Retry bool}
-orchestration: type CheckerPorts struct {Cluster kube.Collector Data kube.Data Platform ntfy.Publisher Copies notifysvc.Sender}
 orchestration: type Checkout struct {Profile, Teams, Allocation []byte FluxSettings []byte Apps, Releases map[string][]byte Compiled []observe.CompiledInstance}
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type ConsoleBundle struct {Source ConsoleSource Max int}
@@ -1469,7 +1476,6 @@ orchestration: type DashboardLine struct {Changed bool Text string}
 orchestration: type DashboardOptions struct {FromRecords bool Records []RecordedInstance DryRun bool}
 orchestration: type DashboardPorts struct {Reader kube.Reader Data kube.Data ClickStack clickstack.Opener}
 orchestration: type DashboardReport struct {Lines []DashboardLine}
-orchestration: type Delivered struct {Entry notify.Entry Err error Retry bool}
 orchestration: type DestroyInputs struct {Reader kube.Reader Writer kube.Writer Secrets kube.SecretNamer Target datadestroy.Target DryRun bool Now func() time.Time Sleep func(time.Duration)}
 orchestration: type DestroyOutcome struct {Volume string Made []datadestroy.Change}
 orchestration: type Editable struct {InstanceInputs Change string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}
@@ -1480,9 +1486,6 @@ orchestration: type FlagRow struct {Name string Flag producer.Flag Undeclared bo
 orchestration: type FluxAction string
 orchestration: type FluxInputs struct {Action FluxAction Unit string Release *FluxRelease Cluster Cluster Now func() time.Time Sleep func(time.Duration) Progress func(string)}
 orchestration: type FluxRelease struct {Namespace string Name string}
-orchestration: type HeartbeatOptions struct {Now float64 Jobs []heartbeat.Job StatePath string DryRun bool}
-orchestration: type HeartbeatOutcome struct {Job heartbeat.Job Decision heartbeat.Decision Notice heartbeat.Notice Due, Sent bool Err error}
-orchestration: type HeartbeatPorts struct {Cluster kube.Reader Data kube.Data Platform ntfy.Publisher State hoststate.Store}
 orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 orchestration: type InstanceInputs struct {Inputs InstancePath string}
 orchestration: type JobEvent struct {ID int Action string Target string Identity string State string Link string Duration time.Duration}
@@ -1494,9 +1497,6 @@ orchestration: type LifecycleTestInputs struct {Cluster Cluster Secrets kube.Sec
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
 orchestration: type Named struct {Name, Value string}
-orchestration: type Notifier struct {}
-orchestration: type NotifyCluster struct {Reviewer kube.Reviewer Data kube.Data Reader kube.Reader}
-orchestration: type NotifyConnect func() (NotifyCluster, error)
 orchestration: type PlatformAllInputs struct {PlatformInputs GitHub github.Reader GitHubToken string Data kube.Data Issuer kube.Issuer Executor kube.Executor Registries func(image string) (registry.Reader, error) Objects func(bucket string) (s3.Reader, error) Checkout Checkout ConsoleTag string MaxAge time.Duration Heartbeat observe.HeartbeatEvidence}
 orchestration: type PlatformInputs struct {Reader kube.Reader Source string Now func() time.Time}
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}

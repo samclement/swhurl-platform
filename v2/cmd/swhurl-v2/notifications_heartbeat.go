@@ -14,8 +14,8 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/hoststate"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
+	"github.com/samclement/swhurl-platform/v2/notifications"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/heartbeat"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // heartbeatTimeout bounds one pass well inside the timer's five minutes.
@@ -71,11 +71,11 @@ func (c cli) notificationsHeartbeat(r request) int {
 		return 1
 	}
 	maxAge, _ := heartbeatMaxAge(r.maxAge)
-	options := orchestration.HeartbeatOptions{Now: float64(time.Now().UnixNano()) / 1e9, Jobs: heartbeatJobs(maxAge),
+	options := notifications.HeartbeatOptions{Now: float64(time.Now().UnixNano()) / 1e9, Jobs: heartbeatJobs(maxAge),
 		StatePath: path, DryRun: r.dryRun}
 	ctx, cancel := context.WithTimeout(context.Background(), heartbeatTimeout)
 	defer cancel()
-	outcomes, err := orchestration.NotificationsHeartbeat(ctx, ports, options)
+	outcomes, err := notifications.NotificationsHeartbeat(ctx, ports, options)
 	if err != nil {
 		logger.write("ERROR", err.Error())
 		return 1
@@ -107,23 +107,23 @@ func heartbeatJobs(maxAge float64) []heartbeat.Job {
 }
 
 // heartbeatPorts is the pass's reads from the API server, ntfy (the one given, else over HTTPS) and the state file.
-func heartbeatPorts(connection kube.Connection, platform ntfy.Publisher) (orchestration.HeartbeatPorts, error) {
+func heartbeatPorts(connection kube.Connection, platform ntfy.Publisher) (notifications.HeartbeatPorts, error) {
 	reader, err := connection.Reader()
 	if err != nil {
-		return orchestration.HeartbeatPorts{}, err
+		return notifications.HeartbeatPorts{}, err
 	}
 	data, err := connection.Data()
 	if err != nil {
-		return orchestration.HeartbeatPorts{}, err
+		return notifications.HeartbeatPorts{}, err
 	}
 	if platform == nil {
 		platform = ntfy.New(nil)
 	}
-	return orchestration.HeartbeatPorts{Cluster: reader, Data: data, Platform: platform, State: hoststate.New()}, nil
+	return notifications.HeartbeatPorts{Cluster: reader, Data: data, Platform: platform, State: hoststate.New()}, nil
 }
 
 // logHeartbeat writes one line per job, in Python's words, and is 1 when any job failed.
-func logHeartbeat(log *jsonLog, outcomes []orchestration.HeartbeatOutcome) int {
+func logHeartbeat(log *jsonLog, outcomes []notifications.HeartbeatOutcome) int {
 	status := 0
 	for _, outcome := range outcomes {
 		switch {

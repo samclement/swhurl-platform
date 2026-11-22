@@ -11,7 +11,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/notifysvc"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/notifications"
 )
 
 // checkerNamed requires exactly one explicit credential; it never guesses which cluster to contact.
@@ -48,8 +48,8 @@ func (c cli) notificationsCheck(r request) int {
 	if !options.DryRun && options.NotifyAddress != "" {
 		options.Token = checkerToken(os.Getenv)
 	}
-	ports := orchestration.CheckerPorts{Cluster: cluster.Reader.(kube.Collector), Data: cluster.Data, Platform: ntfy.New(nil), Copies: notifysvc.New(nil)}
-	report, err := orchestration.CheckNotifications(context.Background(), ports, options)
+	ports := notifications.CheckerPorts{Cluster: cluster.Reader.(kube.Collector), Data: cluster.Data, Platform: ntfy.New(nil), Copies: notifysvc.New(nil)}
+	report, err := notifications.CheckNotifications(context.Background(), ports, options)
 	logChecker(logger, report, r.dryRun)
 	if err != nil {
 		logger.write("ERROR", err.Error())
@@ -61,10 +61,10 @@ func (c cli) notificationsCheck(r request) int {
 
 // checkerOptions reads only the explicit environment. Unlike Python, the standalone Go command requires
 // CONSOLE_URL: no checkout YAML parser or cluster-specific default is needed.
-func checkerOptions(dry bool, getenv func(string) string) orchestration.CheckOptions {
+func checkerOptions(dry bool, getenv func(string) string) notifications.CheckOptions {
 	base := strings.TrimRight(getenv("CONSOLE_URL"), "/")
 
-	return orchestration.CheckOptions{Base: base, PlatformAddress: getenv("NTFY_PLATFORM_URL"), NotifyAddress: getenv("SWHURL_NOTIFY_URL"), DryRun: dry}
+	return notifications.CheckOptions{Base: base, PlatformAddress: getenv("NTFY_PLATFORM_URL"), NotifyAddress: getenv("SWHURL_NOTIFY_URL"), DryRun: dry}
 }
 
 // checkerToken is read afresh per pass, following projected-token rotation. Failure is reported as an unavailable
@@ -76,7 +76,7 @@ func checkerToken(getenv func(string) string) string {
 	}
 	return strings.TrimSpace(string(raw))
 }
-func logChecker(log *jsonLog, report orchestration.CheckReport, dry bool) {
+func logChecker(log *jsonLog, report notifications.CheckReport, dry bool) {
 	for _, offered := range report.Offered {
 		if offered.Err == nil {
 			log.write("INFO", "Notification delivered: "+offered.Entry.Title())

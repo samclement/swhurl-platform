@@ -76,11 +76,14 @@ func TestCheckLayers(t *testing.T) {
 		// The same holds for delivery's rules: observe reports them, and they never import observe.
 		"observe/d.go":        "package observe\n\nimport \"example.com/v2/delivery/rules\"\n",
 		"delivery/rules/r.go": "package rules\n\nimport \"example.com/v2/observe\"\n",
+		// A capability's use cases are layer 2 like orchestration, and the two never import each other.
+		"notifications/n.go": "package notifications\n\nimport \"example.com/v2/orchestration\"\n",
 	})
 	expect(t, checkLayers(m),
 		"layers delivery/rules/r.go:3: delivery/rules (layer 0) imports observe (layer 0)",
 		"layers kernel/a.go:3: kernel (layer 0) imports cmd/swhurl-v2 (layer 3)",
 		"layers newpkg/b.go: package newpkg has no declared layer",
+		"layers notifications/n.go:3: notifications (layer 2) imports orchestration (layer 2)",
 		"layers recovery/rules/r.go:3: recovery/rules (layer 0) imports observe (layer 0)")
 }
 

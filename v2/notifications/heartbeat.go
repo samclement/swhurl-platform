@@ -1,4 +1,4 @@
-package orchestration
+package notifications
 
 import (
 	"context"
@@ -131,6 +131,14 @@ func heartbeatSend(ctx context.Context, ports HeartbeatPorts, notice heartbeat.N
 	}
 	return nil
 }
+
+// Where the heartbeat reads the platform topic, each by name, as the dashboards pass reads it. (Copied from
+// orchestration/dashboards.go; the copies merge at slice 5.)
+const (
+	ntfyNamespace   = "console"
+	ntfySecret      = "notification-ntfy"
+	ntfyPlatformKey = "NTFY_PLATFORM_URL"
+)
 
 // heartbeatDestination is the platform topic's address. A Secret that is absent, unreadable or without the key is
 // unavailable; one whose value is empty says so.

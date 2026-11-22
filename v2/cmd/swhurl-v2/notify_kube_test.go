@@ -15,8 +15,8 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy/ntfytest"
+	"github.com/samclement/swhurl-platform/v2/notifications"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // notifyAPI returns Kubernetes wire documents, including the whole patched ConfigMap, not just a status.
@@ -97,9 +97,9 @@ func TestDeliveryOfALegalHeavilyEscapedOutbox(t *testing.T) {
 	server := httptest.NewTLSServer(api)
 	defer server.Close()
 	connection := notifyConnection(t, server)
-	connect := func() (orchestration.NotifyCluster, error) { return notifyClusterOf(connection) }
+	connect := func() (notifications.NotifyCluster, error) { return notifyClusterOf(connection) }
 	published := ntfytest.New()
-	done, err := orchestration.NewNotifier(published).Deliver(context.Background(), connect, now)
+	done, err := notifications.NewNotifier(published).Deliver(context.Background(), connect, now)
 	if err != nil || len(done) != 85 || len(published.Sent) != 85 {
 		t.Fatalf("delivery must reach the publisher: done %d, sent %d, error %v", len(done), len(published.Sent), err)
 	}
@@ -186,7 +186,7 @@ func TestStalledNotifyAPICallsReleaseDeliveryAndAllowHealthyRequests(t *testing.
 			if mode == "caller cancellation" {
 				timeout = time.Hour
 			}
-			connect := func() (orchestration.NotifyCluster, error) { return notifyClusterWithTimeout(connection, timeout) }
+			connect := func() (notifications.NotifyCluster, error) { return notifyClusterWithTimeout(connection, timeout) }
 			published := ntfytest.New()
 			now := time.Unix(1_800_000_000, 0)
 			service := newNotifyService(connect, published, io.Discard, func() time.Time { return now }, func() string { return notifyRandom })

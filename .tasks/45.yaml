@@ -12,6 +12,8 @@ scope:
   - v2/observe/report_test.go
   - v2/observe/explain_test.go
   - v2/observe/verdict_internal_test.go
+  - v2/observe/batch_test.go
+  - v2/observe/route_test.go
   - v2/pages/pages.go
   - v2/pages/apps.go
   - v2/orchestration/console_rows.go
@@ -42,3 +44,6 @@ notes:
   - at: 2026-11-22T19:28:13.234Z
     commit: be1d44248aaf
     text: "How to distinguish rollback? -> Option 1: expose a machine-readable rollback distinction in delivery/rules, not by parsing human-readable Detail. Conductor added health.go and health_test.go to scope. This implements the already recorded rolled-back state. Preserve incident's existing rollback-is-healthy/no-alert behaviour; if consumers need changes outside scope, ask with exact paths before editing."
+  - at: 2026-11-22T19:30:52.120Z
+    commit: fbbed9383a3d
+    text: "Report migration regression tests outside scope? -> Option 1: added v2/observe/batch_test.go and v2/observe/route_test.go. Update Version 5 assertions to the approved Version 6 contract; route_test must reflect that observe gathers evidence and apps owns the composed state. Preserve equivalent failing-state coverage through apps' entry point; do not merely delete coverage."

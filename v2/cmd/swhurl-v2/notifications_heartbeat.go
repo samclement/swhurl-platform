@@ -14,7 +14,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/hoststate"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
-	"github.com/samclement/swhurl-platform/v2/heartbeat"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/heartbeat"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 

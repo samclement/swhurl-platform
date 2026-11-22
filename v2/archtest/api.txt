@@ -735,25 +735,6 @@ events: type Declaration struct {Application, Environment string Publishes []str
 events: type Error struct {Application, Environment, Field, Reason string}
 events: type Resolved struct {Connected []Subscription Pending []string}
 events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
-heartbeat: const Alert Action = "alert"
-heartbeat: const None Action = "none"
-heartbeat: const Recover Action = "recover"
-heartbeat: const Remind Action = "remind"
-heartbeat: const ReminderSeconds = 3600
-heartbeat: func (Decision) Notice(job Job) (Notice, bool)
-heartbeat: func (Job) Key() string
-heartbeat: func (State) Encode() []byte
-heartbeat: func Decide(cronjob []byte, flag Flag, now, maxAge float64) (Decision, error)
-heartbeat: func DecodeState(document []byte) (State, error)
-heartbeat: func Watched() []Job
-heartbeat: type Action string
-heartbeat: type Decision struct {Action Action Reason string Next Flag}
-heartbeat: type Flag struct {Alerting bool Since, LastAlert float64}
-heartbeat: type Job struct {Label string Namespace, Name string MaxAge float64}
-heartbeat: type Notice struct {Title, Message string Priority int Tag string}
-heartbeat: type State map[string]Flag
-heartbeat: var ErrInvalid = errors.New("heartbeat state is invalid; leaving it unchanged")
-heartbeat: var ErrUnreadable = errors.New("heartbeat state cannot be read; leaving it unchanged")
 kernel: const AddTeam TeamAction = "add"
 kernel: const AppRecordName = "app.json"
 kernel: const AppTree = "apps"
@@ -1048,6 +1029,25 @@ lifecycletest: type DeletionPolicy string
 lifecycletest: type Level string
 lifecycletest: type Line struct {Level Level Text string}
 lifecycletest: type Preflight struct {Reason string}
+notifications/rules/heartbeat: const Alert Action = "alert"
+notifications/rules/heartbeat: const None Action = "none"
+notifications/rules/heartbeat: const Recover Action = "recover"
+notifications/rules/heartbeat: const Remind Action = "remind"
+notifications/rules/heartbeat: const ReminderSeconds = 3600
+notifications/rules/heartbeat: func (Decision) Notice(job Job) (Notice, bool)
+notifications/rules/heartbeat: func (Job) Key() string
+notifications/rules/heartbeat: func (State) Encode() []byte
+notifications/rules/heartbeat: func Decide(cronjob []byte, flag Flag, now, maxAge float64) (Decision, error)
+notifications/rules/heartbeat: func DecodeState(document []byte) (State, error)
+notifications/rules/heartbeat: func Watched() []Job
+notifications/rules/heartbeat: type Action string
+notifications/rules/heartbeat: type Decision struct {Action Action Reason string Next Flag}
+notifications/rules/heartbeat: type Flag struct {Alerting bool Since, LastAlert float64}
+notifications/rules/heartbeat: type Job struct {Label string Namespace, Name string MaxAge float64}
+notifications/rules/heartbeat: type Notice struct {Title, Message string Priority int Tag string}
+notifications/rules/heartbeat: type State map[string]Flag
+notifications/rules/heartbeat: var ErrInvalid = errors.New("heartbeat state is invalid; leaving it unchanged")
+notifications/rules/heartbeat: var ErrUnreadable = errors.New("heartbeat state cannot be read; leaving it unchanged")
 notifications/rules/incident: const ConsoleGrace = 600
 notifications/rules/incident: const FieldManager = "notification-check"
 notifications/rules/incident: const Grace = 300

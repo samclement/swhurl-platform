@@ -77,7 +77,6 @@ var Layers = map[string]int{
 	"apptemplatetest":                    0,
 	"dashboards":                         0,
 	"events":                             0,
-	"heartbeat":                          0,
 	"kernel":                             0,
 	"notify":                             0,
 	"observe":                            0,
@@ -126,8 +125,8 @@ var Layers = map[string]int{
 	"recovery/rules":                     0,
 	"cmd/swhurl-v2":                      3,
 
-	// The notifications capability: its use cases and its pure incident rules.
-	"notifications": 2, "notifications/rules/incident": 0,
+	// The notifications capability: its use cases and its pure rules.
+	"notifications": 2, "notifications/rules/incident": 0, "notifications/rules/heartbeat": 0,
 
 	// The delivery capability: its use cases and its pure rules.
 	"delivery": 2, "delivery/rules": 0,
@@ -154,7 +153,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"notifications/rules/incident", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "heartbeat", "kernel", "lifecycletest", "notify", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules"}
+var Pure = []string{"notifications/rules/incident", "notifications/rules/heartbeat", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "kernel", "lifecycletest", "notify", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,

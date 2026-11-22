@@ -1,6 +1,6 @@
 id: 55
 title: "Docs: record slice 5 complete, name the console gate, fix the plan's slice-2 wording"
-state: ready
+state: done
 scope:
   - docs/v2-status.md
   - docs/iteration-2-plan.md
@@ -45,3 +45,9 @@ notes:
   - at: 2026-11-22T19:43:01.549Z
     commit: 347b1764bb82
     text: "Carry task 45 followup: add dated offline evidence in current-state.md for single composed status state, deleted observe.StateOf, machine-readable rollback qualifier, rolled back/stalled UI and report Version 6. Registered checks passed on task branch including incident rollback regressions; no live or conductor post-merge checks."
+  - at: 2026-11-22T19:54:25.832Z
+    commit: bb01b776b3fa
+    text: "done: Recorded slice 5 complete offline, updated provisioning/connectivity/apps ownership and observation Version 6, removed resolved deferrals, corrected slice-2 wording, and aligned the separate console approval gate. check-repo, check-v2, check-docs and absence checks passed. No live or post-merge verification."
+  - at: 2026-11-22T19:56:07.702Z
+    commit: bb01b776b3fa
+    text: branch dsa/01M82CVF291CRP94JFE5PQDHHV/task-55

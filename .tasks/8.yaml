@@ -1,6 +1,6 @@
 id: 8
 title: Promotion's own rule becomes delivery/rules.SelectPromotion
-state: ready
+state: done
 scope:
   - v2/delivery/rules/promote.go
   - v2/delivery/rules/promote_test.go
@@ -23,3 +23,12 @@ notes:
   - at: 2026-11-22T12:07:50.960Z
     commit: 7f70a48d5699
     text: "Slice 2 (delivery), plan block 2. Decisions (operator, 2026-11-22): 1A copy the write plumbing promote/deploy share into v2/delivery/write.go, each copy naming its origin, and record 'two copies until slice 5' in the plan; 2A move only SelectPromotion, kernel.SelectRelease stays (deferred to apps/provisioning); 3A move Currentness/Changes and PromotionReadiness to delivery/rules now, observation document keeps Version 5 and the same JSON. Task 7 also records in the plan's deferred list that observe/explain.go's 'unit applied this revision' rule duplicates the currentness rule. Commands keep flags, output and effects; delete the old copies, no shims. make check-docs is not a check (fails on an uncommitted tree). Planner's pointers: `kernel/promote.go:11` moves whole; it returns `kernel.InstanceSpec` and calls `kernel.SelectRelease` (`kernel/select.go:8`), so `delivery/rules` imports `kernel` — allowed only by the `PureDependencies` entry task 0 added. `kernel.SelectRelease` stays in `kernel`: the compiler refuses the same relationship itself (`kernel/compile.go:196-199`), `swhurl-v2 select-release` (`cmd/swhurl-v2/main.go:1312`) and the compile/edit use cases call it, and the plan names only `kernel/promote.go`. Keep the refusal *words* identical (`invalid: environment: a promotion takes staging's release`, `unsupported: runtime.uid: ...`, `wrong_release`, `wrong_application`) using `delivery/rules`' own `Code`/`Error` from task 0, so command output is unchanged; rewrite `kernel/promote_test.go`'s assertions from `kernel.Code` to the rules' code type, and carry its fixture helpers (`instance`, `release`, `mustRelease`, `code` live in `kernel/kernel_test.go`) in the new test file with `../../testdata` paths."
+  - at: 2026-11-22T12:21:48.710Z
+    commit: 84509b3859c2
+    text: "done: kernel.SelectPromotion moved whole to delivery/rules.SelectPromotion (git mv of rule and test); its own refusals now use rules.Code/Error with identical words, selection's (stale, ID) stay kernel's. delivery.Promote calls the new rule; api.txt updated. make check-v2 passes. Command output not exercised live; only offline tests."
+  - at: 2026-11-22T12:21:48.710Z
+    commit: 84509b3859c2
+    text: "followup: docs/iteration-2-plan.md:221 and :324 still name kernel.SelectPromotion / kernel/promote.go; update to delivery/rules.SelectPromotion when the slice's docs are written."
+  - at: 2026-11-22T12:23:10.903Z
+    commit: 84509b3859c2
+    text: branch dsa/01M81K3YAEM2PFRCJH4DQPV6AH/task-8

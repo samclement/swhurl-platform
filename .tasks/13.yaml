@@ -28,3 +28,6 @@ notes:
   - at: 2026-11-22T12:18:50.071Z
     commit: 93260292450c
     text: "From task 7: also record in docs/iteration-2-plan.md 'two copies of the write plumbing (orchestration and delivery/write.go) until slice 5'."
+  - at: 2026-11-22T12:23:17.172Z
+    commit: 73c882572f87
+    text: "From task 8: docs/iteration-2-plan.md:221 and :324 still name kernel.SelectPromotion / kernel/promote.go; update to delivery/rules.SelectPromotion."

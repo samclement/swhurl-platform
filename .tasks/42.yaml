@@ -1,6 +1,6 @@
 id: 42
 title: "Recovery: move restore's observation-plan-restore sequencing, refusals and report mutation out of the CLI"
-state: ready
+state: done
 scope:
   - v2/recovery/**
   - v2/cmd/swhurl-v2/restore.go
@@ -19,3 +19,18 @@ notes:
   - at: 2026-11-22T16:53:51.769Z
     commit: 38e75d59d737
     text: "Operator-approved principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold verdicts shared across capabilities; prefer cheap visible pure->pure edges over cross-capability use-case edges. No live checks; conductor runs no post-merge checks. Restore sequencing owner is recovery, not apps/status (overrides task 38's deferred-row owner). CLI keeps only flags and rendering; flags, report document and effects unchanged."
+  - at: 2026-11-22T17:39:25.612Z
+    commit: a6fca63a95e0
+    text: "Decision: recovery.Prepare takes apps' status as an injected Observe port wired by the CLI, so there is no recovery->apps workflow edge (archtest fixture now refuses one). recovery.Plan/PlanInputs unexported into Prepare (no other caller). Observe+plan share a 2*readTimeout context; observation still narrowed to readTimeout. make check-docs reports 'Uncommitted says none' only while the tree is uncommitted."
+  - at: 2026-11-22T17:39:25.763Z
+    commit: a6fca63a95e0
+    text: "done: recovery.Prepare owns restore's observe->refuse-no-database->plan->archive-in-observation sequence; Prepared.Confirm the confirm/readiness refusals. CLI wires apps.Status as a port; flags, document, errors unchanged. recovery.Plan unexported. New recovery table tests, archtest fixture refuses recovery->apps. No live run; make check-docs fails only on uncommitted tree."
+  - at: 2026-11-22T17:39:25.763Z
+    commit: a6fca63a95e0
+    text: "followup: docs/workstreams.md and docs/current-state.md were outside scope: AGENTS.md asks a v2 change to update the workstream row and add a dated current-state entry for this restore move."
+  - at: 2026-11-22T17:39:25.763Z
+    commit: a6fca63a95e0
+    text: "followup: cmd/swhurl-v2/status.go archiveQuery/archiveOf (restore's presign path) re-read --profile and duplicate the Archives port's query+reader construction; could reuse it once status.go is in scope."
+  - at: 2026-11-22T17:40:56.074Z
+    commit: a6fca63a95e0
+    text: branch dsa/01M824S52J8KY0Z2HGS3T2NBFD/task-42 (run hit its workflow token budget after tk done; conductor stopped it and committed the scope)

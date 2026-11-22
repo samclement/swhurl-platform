@@ -1,0 +1,21 @@
+id: 44
+title: "Provisioning rules: move instance compilation (Inputs, Compile, documents, declaredInstance as Declare) out of orchestration into pure provisioning/rules"
+state: ready
+scope:
+  - v2/provisioning/rules/**
+  - v2/orchestration/**
+  - v2/cmd/swhurl-v2/**
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+  - docs/v2-status.md
+checks:
+  - cd v2 && go test ./provisioning/... ./orchestration/... ./cmd/swhurl-v2/... ./archtest/... -count=1
+  - make check-v2
+  - test -d v2/provisioning/rules && ! grep -rn '^func Compile(' v2/orchestration/
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T17:09:40.553Z
+    commit: dcc9bcc69a5f
+    text: "Operator chose option 1 to break the apps<->orchestration cycle found in task 41: move compilation (Inputs, Compile, documents(), declaredInstance exported as Declare) into a new pure package v2/provisioning/rules (layer 0) that both orchestration and apps import, registered in archtest. Pure move, no behaviour change; callers in orchestration and cmd updated. Do not move status use cases (task 41 does that afterwards) and do not touch delivery/write.go (later provisioning slice). No live checks."

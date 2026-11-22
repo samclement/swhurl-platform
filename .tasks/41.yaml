@@ -27,3 +27,9 @@ notes:
   - at: 2026-11-22T17:06:06.240Z
     commit: a873f7e4a60c
     text: "Task 40 put the deployment-health verdict in delivery/rules. Should status adopt it here? -> No: this task has no behaviour change; status keeps its current health judgement. Adopting the verdict is an operator follow-up decision."
+  - at: 2026-11-22T17:09:33.310Z
+    commit: dcc9bcc69a5f
+    text: "No edits made in this worktree. Blocker: apps.Status/StatusAll need orchestration.Inputs+Compile (orchestration/orchestration.go:23,45) while orchestration/console.go ConsoleStatus calls StatusAll -> apps<->orchestration cycle. Operator chose option 1: a prerequisite task moves Inputs, Compile, documents() and declaredInstance (exported as Declare; teamscenario.go:28 uses it) to pure provisioning/rules; then this task moves status*.go to apps with edge orchestration->apps only."
+  - at: 2026-11-22T17:09:33.736Z
+    commit: dcc9bcc69a5f
+    text: "released: blocked: apps<->orchestration cycle; operator chose option 1, prerequisite task moves compilation to provisioning/rules"

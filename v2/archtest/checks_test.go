@@ -76,15 +76,102 @@ func TestCheckLayers(t *testing.T) {
 		// The same holds for delivery's rules: observe reports them, and they never import observe.
 		"observe/d.go":        "package observe\n\nimport \"example.com/v2/delivery/rules\"\n",
 		"delivery/rules/r.go": "package rules\n\nimport \"example.com/v2/observe\"\n",
-		// A capability's use cases are layer 2 like orchestration, and the two never import each other.
+		// A capability's use cases are layer 2 like orchestration; unlisted peer imports are forbidden.
 		"notifications/n.go": "package notifications\n\nimport \"example.com/v2/orchestration\"\n",
+		"orchestration/o.go": "package orchestration\n\nimport \"example.com/v2/notifications\"\n",
+		"kernel/effect.go":   "package kernel\n\nimport \"example.com/v2/adapters/s3\"\n",
+		"recovery/up.go":     "package recovery\n\nimport \"example.com/v2/cmd/swhurl-v2\"\n",
 	})
-	expect(t, checkLayers(m),
+	expect(t, checkLayers(m, nil),
 		"layers delivery/rules/r.go:3: delivery/rules (layer 0) imports observe (layer 0)",
 		"layers kernel/a.go:3: kernel (layer 0) imports cmd/swhurl-v2 (layer 3)",
+		"layers kernel/effect.go:3: kernel (layer 0) imports adapters/s3 (layer 1)",
 		"layers newpkg/b.go: package newpkg has no declared layer",
 		"layers notifications/n.go:3: notifications (layer 2) imports orchestration (layer 2)",
+		"layers orchestration/o.go:3: orchestration (layer 2) imports notifications (layer 2)",
+		"layers recovery/up.go:3: recovery (layer 2) imports cmd/swhurl-v2 (layer 3)",
 		"layers recovery/rules/r.go:3: recovery/rules (layer 0) imports observe (layer 0)")
+}
+
+func TestWorkflowDependencies(t *testing.T) {
+	m := fixture(t, map[string]string{
+		"orchestration/o.go":  "package orchestration\n\nimport \"example.com/v2/recovery\"\n",
+		"recovery/r.go":       "package recovery\n\nimport \"example.com/v2/orchestration\"\n",
+		"delivery/d.go":       "package delivery\n\nimport \"example.com/v2/recovery\"\n",
+		"kernel/k.go":         "package kernel\n\nimport \"example.com/v2/recovery\"\n",
+		"kernel/effect.go":    "package kernel\n\nimport \"example.com/v2/adapters/s3\"\n",
+		"recovery/command.go": "package recovery\n\nimport \"example.com/v2/cmd/swhurl-v2\"\n",
+		"recovery/rules/r.go": "package rules\n\nimport \"example.com/v2/observe\"\n",
+		// Ordinary downward imports and the existing pure exception stay allowed.
+		"observe/o.go":               "package observe\n\nimport \"example.com/v2/recovery/rules\"\n",
+		"recovery/down.go":           "package recovery\n\nimport (\n\"example.com/v2/recovery/rules\"\n\"example.com/v2/adapters/s3\"\n)\n",
+		"adapters/s3/s3test/fake.go": "package s3test\n\nimport \"example.com/v2/adapters/s3\"\n",
+	})
+	// This local registry allows only orchestration -> recovery; it changes no global policy.
+	workflows := map[string][]string{"orchestration": {"recovery"}}
+	expect(t, checkLayers(m, workflows),
+		"layers delivery/d.go:3: delivery (layer 2) imports recovery (layer 2)",
+		"layers kernel/effect.go:3: kernel (layer 0) imports adapters/s3 (layer 1)",
+		"layers kernel/k.go:3: kernel (layer 0) imports recovery (layer 2)",
+		"layers recovery/command.go:3: recovery (layer 2) imports cmd/swhurl-v2 (layer 3)",
+		"layers recovery/r.go:3: recovery (layer 2) imports orchestration (layer 2)",
+		"layers recovery/rules/r.go:3: recovery/rules (layer 0) imports observe (layer 0)")
+	// Without the local exception the same import fails again.
+	if !slices.Contains(lines(checkLayers(m, nil)), "layers orchestration/o.go:3: orchestration (layer 2) imports recovery (layer 2)") {
+		t.Fatal("checking a listed edge changed the default policy")
+	}
+}
+
+func TestWorkflowDependencyRegistry(t *testing.T) {
+	for _, endpoint := range []string{"kernel", "adapters/s3", "cmd/swhurl-v2", "unknown"} {
+		t.Run(endpoint, func(t *testing.T) {
+			m := fixture(t, map[string]string{})
+			expect(t, checkLayers(m, map[string][]string{endpoint: {"recovery"}}),
+				"layers archtest/rules_test.go: WorkflowDependencies importer "+endpoint+" is not a declared workflow package")
+			expect(t, checkLayers(m, map[string][]string{"recovery": {endpoint}}),
+				"layers archtest/rules_test.go: WorkflowDependencies target "+endpoint+" is not a declared workflow package")
+		})
+	}
+	for _, tc := range []struct {
+		name      string
+		workflows map[string][]string
+		want      string
+	}{
+		{"empty", nil, ""},
+		{"directional", map[string][]string{"orchestration": {"recovery"}}, ""},
+		{"diamond", map[string][]string{"orchestration": {"delivery", "notifications"}, "delivery": {"recovery"}, "notifications": {"recovery"}}, ""},
+		{"self", map[string][]string{"recovery": {"recovery"}}, "WorkflowDependencies self edge: recovery -> recovery"},
+		{"two-cycle", map[string][]string{"orchestration": {"recovery"}, "recovery": {"orchestration"}}, "WorkflowDependencies cycle: orchestration -> recovery -> orchestration"},
+		{"three-cycle", map[string][]string{"delivery": {"orchestration"}, "orchestration": {"recovery"}, "recovery": {"delivery"}}, "WorkflowDependencies cycle: delivery -> orchestration -> recovery -> delivery"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := fixture(t, map[string]string{})
+			var want []string
+			if tc.want != "" {
+				want = []string{"layers archtest/rules_test.go: " + tc.want}
+			}
+			expect(t, checkLayers(m, tc.workflows), want...)
+		})
+	}
+}
+
+// An invalid registry cannot authorise an otherwise prohibited dependency, even before
+// considering its configuration violation. In particular it cannot make pure code effectful.
+func TestWorkflowDependenciesDoNotOverrideLayers(t *testing.T) {
+	for _, edge := range [][2]string{
+		{"kernel", "recovery"}, {"kernel", "adapters/s3"},
+		{"adapters/s3", "recovery"}, {"adapters/s3", "adapters/kube"},
+		{"recovery", "cmd/swhurl-v2"}, {"recovery/rules", "observe"},
+	} {
+		t.Run(edge[0]+"->"+edge[1], func(t *testing.T) {
+			m := fixture(t, map[string]string{edge[0] + "/a.go": "package p\n\nimport \"example.com/v2/" + edge[1] + "\"\n"})
+			without := lines(checkLayers(m, nil))
+			with := lines(checkLayers(m, map[string][]string{edge[0]: {edge[1]}}))
+			if len(without) != 1 || !slices.Contains(with, without[0]) || len(with) <= len(without) {
+				t.Fatalf("invalid entry must fail validation and preserve the import violation; without: %v; with: %v", without, with)
+			}
+		})
+	}
 }
 
 func TestCheckPure(t *testing.T) {

@@ -177,7 +177,10 @@ operator decides against it.
 Rules that constrain the next change, one line each. The reasoning stays in Git and current-state.
 
 - Navigate by capability, depend by kind: a capability's rules are pure and its own, other pure packages reach
-  them only through `PureDependencies`, and no new shared type goes into `kernel` (22 November 2026).
+  them only through `PureDependencies`, and no new shared type goes into `kernel`; workflow imports require
+  [named directional edges](iteration-2-plan.md#workflow-dependency-policy-approved-22-november-2026)
+  (`WorkflowDependencies`, initially empty), never copied business verdicts or command-owned sequencing
+  (22 November 2026).
 - One writer per fact, no compatibility layers, records are v2 JSON only, unused features stay on the
   backlog, promotion is one-way, and `edit` is the one settings primitive (31 October 2026).
 - A rollback is a promotion of an older release. A release from before declaration label version 2 is

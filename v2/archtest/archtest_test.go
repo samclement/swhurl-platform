@@ -49,7 +49,7 @@ func readRepo(t *testing.T, path string) string {
 }
 
 func TestApprovedModules(t *testing.T) { report(t, checkApprovedModules(module(t))) }
-func TestLayers(t *testing.T)          { report(t, checkLayers(module(t))) }
+func TestLayers(t *testing.T)          { report(t, checkLayers(module(t), WorkflowDependencies)) }
 func TestPure(t *testing.T)            { report(t, checkPure(module(t))) }
 func TestOrchestration(t *testing.T)   { report(t, checkOrchestration(module(t), Orchestration)) }
 func TestNoSubprocess(t *testing.T)    { report(t, checkNoSubprocess(module(t))) }

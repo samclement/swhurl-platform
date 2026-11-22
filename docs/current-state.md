@@ -68,8 +68,9 @@ What has been verified on the live cluster, and when: current facts first, then 
   [create](../v2/apps/create_test.go), [edit/team](../v2/apps/edit_test.go) and
   [remove](../v2/apps/remove_test.go) regressions cover the completed ownership moves.
   This documentation change overwrites the capability row, removes the resolved copied-writer deferral,
-  corrects the plan's slice-2 wording and aligns the registry's gate. Remaining helper duplication is not
-  claimed resolved; it is recorded in the [deferred list](v2-status.md#deferred-features).
+  corrects the plan's slice-2 wording and aligns the registry's gate. Helper ownership follow-ups were
+  subsequently [completed offline](#ownership-follow-ups-and-job-test-synchronization-offline-22-november-2026);
+  mechanical refusal helpers intentionally remain capability-local.
 - **Checks:** `make check-repo`, `make check-v2` and `make check-docs` pass on this task tree.
   The two task-specific absence checks (obsolete slice-2 wording and resolved status-page deferrals) and
   `git diff --check` pass. No post-merge checks are claimed.

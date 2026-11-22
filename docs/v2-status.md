@@ -168,7 +168,6 @@ The one list of unmodelled features and known ownership violations. A row leaves
 | Observation breadth | The unit, release, workload, pods (readiness and failing containers), the expected Ingress and Certificates by name, and the backup; no foreign ownership, no other kind | A consumer needs them |
 | A YAML kubeconfig | Kubeconfig JSON, or an explicit `status --in-cluster` using the pod's mounted ServiceAccount; no YAML | A consumer needs YAML |
 | Live ownership of foreign objects | The bridge reads the repository's own claims; another owner's objects are not read | A migration needs the wider inventory |
-| Console: repository creation, seed images, historical Activity | None | Later |
 | Feature-flag state in the records | Overrides only: the console writes one to NATS with an audit line, and no record holds a flag's state or renders it | A record must own a flag's state |
 
 ## Durable decisions

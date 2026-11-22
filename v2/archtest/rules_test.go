@@ -67,7 +67,6 @@ var Rules = []Rule{
 // (one per external dependency, speaking domain terms), 2 the use cases, 3 the command that wires them. A
 // capability's pure rules are layer 0 (recovery/rules) and its use cases layer 2 (recovery).
 var Layers = map[string]int{
-	"calls":                              0,
 	"certissuer":                         0,
 	"checkrepo":                          0,
 	"datadestroy":                        0,
@@ -77,7 +76,6 @@ var Layers = map[string]int{
 	"lifecycletest":                      0,
 	"apptemplatetest":                    0,
 	"dashboards":                         0,
-	"events":                             0,
 	"kernel":                             0,
 	"observe":                            0,
 	"pages":                              0,
@@ -140,6 +138,9 @@ var Layers = map[string]int{
 
 	// The apps capability: its status use cases, comparing the cluster with an instance's records.
 	"apps": 2,
+
+	// The connectivity capability: its pure resolvers of which calls and event subscriptions connect.
+	"connectivity/rules/calls": 0, "connectivity/rules/events": 0,
 }
 
 // PureDependencies are the pure-to-pure imports allowed, by importer: each is a pure type or decision whose owner
@@ -182,7 +183,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"health/rules", "notifications/rules/incident", "notifications/rules/heartbeat", "notifications/rules/notify", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "kernel", "lifecycletest", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules", "provisioning/rules"}
+var Pure = []string{"health/rules", "notifications/rules/incident", "notifications/rules/heartbeat", "notifications/rules/notify", "apptemplatetest", "certissuer", "checkrepo", "dashboards", "datadestroy", "kernel", "lifecycletest", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules", "provisioning/rules", "connectivity/rules/calls", "connectivity/rules/events"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,

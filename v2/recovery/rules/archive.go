@@ -63,7 +63,17 @@ func InstanceArchive(listed ArchiveList, namespace string, maxAge time.Duration,
 	if err := validateArchiveQuery(listed.Query, namespace); err != nil {
 		return ArchiveReport{}, err
 	}
-	return SelectArchive(listed, listed.Query.Prefix, "", maxAge, now)
+	return NewestArchive(listed, archiveSuffix, maxAge, now)
+}
+
+// NewestArchive is the newest complete archive under the listing's prefix whose name ends with the suffix, judged
+// against the oldest one allowed. It is the same verdict as InstanceArchive without confining the prefix to a
+// namespace: for a platform backup, such as MongoDB's `.archive.gz.age`, whose prefix its own job states.
+func NewestArchive(listed ArchiveList, suffix string, maxAge time.Duration, now time.Time) (ArchiveReport, error) {
+	if suffix == "" {
+		return ArchiveReport{}, invalid("archive.suffix", "expected_a_suffix")
+	}
+	return selectArchive(listed, listed.Query.Prefix, suffix, "", maxAge, now)
 }
 
 // SelectArchive is one archive out of a listing: the newest complete one, or the one the operator names. An
@@ -72,6 +82,11 @@ func InstanceArchive(listed ArchiveList, namespace string, maxAge time.Duration,
 // bucket does not hold is `chosen_archive_absent`, not the newest by default: a restore is a point-in-time
 // choice.
 func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error) {
+	return selectArchive(listed, prefix, archiveSuffix, key, maxAge, now)
+}
+
+// selectArchive is SelectArchive for archives whose names end with the suffix.
+func selectArchive(listed ArchiveList, prefix, suffix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error) {
 	report := ArchiveReport{Bucket: listed.Query.Bucket, Prefix: prefix, MaxAge: maxAge}
 	switch listed.Status {
 	case Present:
@@ -82,13 +97,13 @@ func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration,
 		report.State, report.Reason = BackupNotAssessed, NotRead
 		return report, nil
 	}
-	return judgeArchive(report, listed.Objects, key, now)
+	return judgeArchive(report, listed.Objects, suffix, key, now)
 }
 
 // judgeArchive states which archive was chosen, how old it is, and whether that is recent enough. A named key
 // that is not in the listing is no archive at all.
-func judgeArchive(report ArchiveReport, objects []Archive, key string, now time.Time) (ArchiveReport, error) {
-	newest, found, err := newestArchive(objects, report.Prefix, archiveSuffix, key)
+func judgeArchive(report ArchiveReport, objects []Archive, suffix, key string, now time.Time) (ArchiveReport, error) {
+	newest, found, err := newestArchive(objects, report.Prefix, suffix, key)
 	if err != nil {
 		return ArchiveReport{}, err
 	}

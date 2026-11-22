@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Notifications is the third capability package, offline (22 November 2026)
+
+- **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026) slice 3.
+  `v2/notifications` owns the notify service's accept and delivery use cases, the checker's pass and the host
+  heartbeat's pass (from `orchestration/{notify,notifications_check,notifications_heartbeat}.go` with their tests).
+  `v2/notifications/rules/{incident,heartbeat,notify}` (pure) own the incident transitions and the health rule with
+  the state document, freshness and its transitions, and a message's validation, the sender rule, the outbox and
+  routes; each moved unchanged with its testdata and kept its package name. `orchestration/platform_scope.go` takes
+  copies of `channelAddresses` and `errNoRoutesKey` from `notifications/notify.go`, each naming its origin, until
+  slice 5. `archtest`: `notifications` is a listed use-case package, the three `notifications/rules/*` packages are
+  pure, and `PureDependencies` gained no edge.
+- **Checks:** `make check-v2` passes; `swhurl-v2 notify-serve`, `notifications-check` and `notifications-heartbeat`
+  command tests pass with only package and type names changed; the moved rules' tests pass in
+  `notifications/rules`; new archtest fixtures show `notifications/rules/incident` and
+  `notifications/rules/heartbeat` reading the clock refused and `notifications` importing `orchestration` refused.
+- **Not exercised:** no live run was made on the moved code: no message, checker pass or heartbeat after the move
+  was observed. The behaviour is unchanged, and so are the commands, their flags, documents, logs and effects.
+
 ## Delivery is the second capability package, offline (22 November 2026)
 
 - **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026) slice 2.
@@ -419,7 +437,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   ([§33](iteration-2-plan.md#33-live-test-app-template-in-go-over-instances-v2-renders-approved-13-november-2026)).
   The render is committed; `make v2-render` writes it and `make check-v2` fails while it is stale. A new read-only
   adapter, `adapters/route`, makes the one HTTPS request for the sign-in redirect. `tools/swhurl/livetests/`,
-  `tests/fixtures/apps` and its `.sops.yaml` rule are deleted, and `v2/incident` no longer accepts the old fixture
+  `tests/fixtures/apps` and its `.sops.yaml` rule are deleted, and `v2/notifications/rules/incident` no longer accepts the old fixture
   root.
 - **Dropped:** the two Secret checks (a declared secret without a value; SOPS decrypted and injected): v2 refuses
   `secrets`, and they return with that [deferred feature](v2-status.md#deferred-features).
@@ -1615,7 +1633,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   notifications-heartbeat`; the installed unit is unchanged until the operator reinstalls it; nothing was pushed or
   run against the cluster or ntfy.
 - **Offline evidence:** 35 new Go tests (12 pure, 6 adapter and fake, 11 use case, 6 command); all 13 Python
-  heartbeat cases and the heartbeat's use of the notice tests are [mapped](../v2/heartbeat/testdata/README.md).
+  heartbeat cases and the heartbeat's use of the notice tests are [mapped](../v2/notifications/rules/heartbeat/testdata/README.md).
   Three state files written by Python's own `save_state` round-trip byte for byte, and the live state file has the
   shape of one of them. `make check-v2` and `make check` pass.
 - **Review:** an independent read-only review found nothing blocking; it confirmed Go-written files read back in
@@ -1754,7 +1772,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   for newly discovered apps, not claim that Python had already observed them.
 - **Offline evidence:** the Go implementation is present with a 42-case map (40 retained cases, two scheduled-job
   cases omitted), 139 frozen Python evaluations and Python-produced version-1 round-trip fixtures
-  ([fixture contract](../v2/incident/testdata/README.md)). After the review fix, `make check-v2`, `make check`
+  ([fixture contract](../v2/notifications/rules/incident/testdata/README.md)). After the review fix, `make check-v2`, `make check`
   (612 Python tests, 98 codegraph tests, 32 schema-validation entrypoints), focused tests, `git diff --check` and
   139 Python→Go→Python persisted-state/resume comparisons passed. All 157 generated files are unchanged.
   The parent reran `make check-v2` and `make check-docs` successfully; shell syntax checks also passed.
@@ -2032,8 +2050,8 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Boundary checks:** the new command-inventory regression test was first observed failing against the Python
   entry, then passed after deletion; it checks that the module and internal command are absent, the obsolete
   Python CLI refuses `notify-serve`, and the HelmRelease selects Go. The existing ClickStack webhook-template
-  test now compares the producer's firing/recovered output with a [shared fixture](../v2/notify/testdata/clickstack-alerts.json);
-  [Go tests](../v2/notify/alert_test.go) consume those same bodies and verify the resulting messages. No Python
+  test now compares the producer's firing/recovered output with a [shared fixture](../v2/notifications/rules/notify/testdata/clickstack-alerts.json);
+  [Go tests](../v2/notifications/rules/notify/alert_test.go) consume those same bodies and verify the resulting messages. No Python
   service parser or replacement public CLI was kept just for that test.
 - **Offline verification:** `make check` passed (671 tooling tests, 98 codegraph tests; docs zero errors and
   warnings); `make check-v2`, host/fixture shell syntax and `git diff HEAD --check` passed. Focused command,
@@ -2096,8 +2114,8 @@ What has been verified on the live cluster, and when: current facts first, then 
   ConfigMap/Secret ports; the HTTPS ntfy publisher; locked acceptance/delivery use cases; and
   `swhurl-v2 notify-serve` with HTTP handlers, JSON logs and the 30-second delivery loop. Each request and pass
   opens a fresh ServiceAccount connection. Routes, team labels and Secrets are not retained between uses.
-- **Evidence:** [pure tests](../v2/notify/notify_test.go), [outbox tests](../v2/notify/outbox_test.go),
-  [handler tests](../v2/cmd/swhurl-v2/notify_test.go) and [delivery tests](../v2/orchestration/notify_test.go)
+- **Evidence:** [pure tests](../v2/notifications/rules/notify/notify_test.go), [outbox tests](../v2/notifications/rules/notify/outbox_test.go),
+  [handler tests](../v2/cmd/swhurl-v2/notify_test.go) and [delivery tests](../v2/notifications/notify_test.go)
   port the Python service's cases. Kubernetes Reviewer/Data and ntfy contracts run against both httptest
   adapters and their fakes. The API baseline deliberately adds the notify domain, those adapters and their
   contract helpers, the orchestration entry points and `kube.NewAPI` for a single owned service client;
@@ -2141,7 +2159,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   healthy**; the console runs the new image and both scheduled jobs (`console-dashboards`,
   `console-notifications`) succeeded on it at 14:58 UTC. Nothing else on the cluster changed: this slice
   moves only offline checks.
-- **Not in this commit:** the notify service port's paused step 1 (`v2/notify/`, the kube `Data`/`Reviewer`
+- **Not in this commit:** the notify service port's paused step 1 (`v2/notifications/rules/notify/`, the kube `Data`/`Reviewer`
   ports, their archtest entries and plan section 12) stays uncommitted in the operator's checkout, so its
   untested API is not admitted to the baseline. There, local `make check-v2` and `check-docs` report it until
   it is finished.

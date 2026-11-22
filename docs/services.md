@@ -239,7 +239,7 @@ Its state read is a **named GET**, matching the named get/patch-only Role. Faile
 **every** saved checkpoint while later platform messages proceed. The Python checker and its entry point are
 retired after live deployed/uninstalled readback on both the platform and team destinations
 ([acceptance](current-state.md#notification-checker-lifecycle-acceptance-and-python-retirement-7-november-2026)).
-The [fixture/case map](../v2/incident/testdata/README.md) records retained behavior and intentional differences.
+The [fixture/case map](../v2/notifications/rules/incident/testdata/README.md) records retained behavior and intentional differences.
 
 ```mermaid
 flowchart LR
@@ -305,7 +305,7 @@ flowchart LR
 
 ### Notify service
 
-One small service, `notify` in the `notify` namespace, turns a message about an app into deliveries to the channels of the app's team. It runs `swhurl-v2 notify-serve` from the console's image ([Go command](../v2/cmd/swhurl-v2/notify.go), [use cases](../v2/orchestration/notify.go)); its callers are the notification checker, the [apps themselves](apps.md#notifications) and ClickStack, for every app's [default alerts](apps.md#alerts).
+One small service, `notify` in the `notify` namespace, turns a message about an app into deliveries to the channels of the app's team. It runs `swhurl-v2 notify-serve` from the console's image ([Go command](../v2/cmd/swhurl-v2/notify.go), [use cases](../v2/notifications/notify.go)); its callers are the notification checker, the [apps themselves](apps.md#notifications) and ClickStack, for every app's [default alerts](apps.md#alerts).
 
 ```
 POST http://notify.notify.svc.cluster.local:8080/v1/notify      Authorization: Bearer <token for the audience notify>

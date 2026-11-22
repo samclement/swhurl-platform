@@ -4,6 +4,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 // PromoteInputs is one promotion's documents: the two instances v2 owns — staging, whose release moves, and
@@ -61,7 +62,7 @@ func newPromotionRequest(inputs PromoteInputs) (promotionRequest, error) {
 	if request.profile, err = kernel.DecodeProfile(inputs.Profile); err != nil {
 		return promotionRequest{}, err
 	}
-	request.connections, request.egress, err = documents(inputs.Calls, inputs.Egress, request.spec.Application, request.spec.Environment)
+	request.connections, request.egress, err = provisioning.Documents(inputs.Calls, inputs.Egress, request.spec.Application, request.spec.Environment)
 	return request, err
 }
 
@@ -91,11 +92,11 @@ func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Pro
 	if err != nil {
 		return result, err
 	}
-	documents, err := instanceDocuments(selected, request.candidate, compiled, inputs.Offers)
+	documents, err := provisioning.InstanceDocuments(selected, request.candidate, compiled, inputs.Offers)
 	if err != nil {
 		return result, err
 	}
 	result.Compilation, result.Release, result.Changed = compiled, request.candidate, true
-	result.Written, err = writeCompiled(destination, compiled, documents, writer)
+	result.Written, err = provisioning.WriteCompiled(destination, compiled, documents, writer)
 	return result, err
 }

@@ -1,6 +1,6 @@
 id: 30
 title: Move the notify rules to notifications/rules/notify
-state: ready
+state: done
 scope:
   - v2/notify/**
   - v2/notifications/rules/notify/**
@@ -41,3 +41,12 @@ notes:
       Replaces task 27 (rerun on current main (its branch conflicted: worktree was cut before task 26 merged)). Notes carried over:
       Replaces task 22 (correct quoted checks; dependency replaces 21). Notes carried over:
       Slice 2 (delivery), plan block 2. Decision (conductor, operator approved running slice 3 on the planner's recommendations, 2026-11-22): Q1 subpackages: incident, heartbeat and notify move unchanged as notifications/rules/{incident,heartbeat,notify} (package names unchanged); v2/notifications is the one layer-2 use-case package. Per slice 2's decision 1A, a small helper two use-case packages need is copied with a comment naming its origin; use-case packages don't import each other. Commands keep flags, output and effects; delete old copies, no shims. You may regenerate api.txt with 'go test ./archtest -run TestPublicAPI$ -update' (only that test, so budgets.json is untouched). make check-docs is not a check (fails on an uncommitted tree). If a file outside scope must change, release the task saying which file. Planner's pointers: `v2/notify` is already layer 0 (`v2/archtest/rules_test.go:83,155`). `git mv` every file, `testdata/` included, to `v2/notifications/rules/notify/`; package name stays `notify`, so only import paths change. Importers: `v2/adapters/ntfy/ntfy.go:18`, `ntfy_test.go:19`, `ntfytest/fake.go:13`, `ntfytest/fake_test.go:10`; `v2/orchestration/notify.go:11`, `notify_test.go:15`, `notifications_check.go:12`, `notifications_check_test.go:19`, `notifications_heartbeat.go:11`, `platform_scope.go:18`; `v2/cmd/swhurl-v2/notify.go:17`, `notify_test.go:23`, `notify_kube_test.go:18`; `v2/dashboards/alerts_test.go:180` reads `../notify/testdata/clickstack-alerts.json` and must read `../notifications/rules/notify/testdata/clickstack-alerts.json`. archtest: remove `"notify": 0` from `Layers` and `"notify"` from `Pure`, add `"notifications/rules/notify": 0` and its `Pure` entry; in `TestCheckPure` (`v2/archtest/checks_test.go:122`) move the fixture to `notifications/rules/notify/notify.go`. In `api.txt` move the 68 `notify:` lines (`:1080-1147`) to `notifications/rules/notify:`, after `notifications/rules/incident` and before `notifications:`. The workflow file in `orchestration` stays until task 3; `platform_scope.go` keeps using the package name `notify`.
+  - at: 2026-11-22T14:24:57.605Z
+    commit: c527174143bc
+    text: "done: Moved v2/notify to v2/notifications/rules/notify (git mv, package name unchanged): 13 importer files and the dashboards testdata path updated; archtest Layers/Pure entries added beside heartbeat's, with the TestCheckPure fixture; api.txt regenerated (68 lines, prefix only). Verified: make check-v2 (gofmt, vet, all tests, rendered checks) plus explicit TestPublicAPI, file and grep checks pass."
+  - at: 2026-11-22T14:24:57.605Z
+    commit: c527174143bc
+    text: "followup: docs/iteration-2-plan.md (line 1367), docs/current-state.md (2035, 2099, 2144) and GLOSSARY.md (13) still link ../v2/notify; task 32's docs pass must repoint them to v2/notifications/rules/notify."
+  - at: 2026-11-22T14:26:36.582Z
+    commit: c527174143bc
+    text: branch dsa/01M81T3SHGK9H2WFD1RG16JZ02/task-30

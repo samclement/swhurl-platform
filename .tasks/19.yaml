@@ -1,6 +1,6 @@
 id: 19
 title: "v2 gate: slices 1-2 are on main; the next gate is capability slice 3 (notifications)"
-state: ready
+state: done
 scope:
   - docs/v2-status.md
   - docs/workstreams.md
@@ -14,3 +14,9 @@ notes:
   - at: 2026-11-22T13:12:25.352Z
     commit: 43db256a21af
     text: "Operator request: slices 1 (recovery) and 2 (delivery) are merged to main (merge 43db256a, not yet pushed). make check fails on check-docs only: '[BAD] docs/v2-status.md: Gate is \"review capability slices 1 (recovery) and 2 (delivery) on the v2-recovery-slice branch and merge them to main\" but the registry says \"review capability slices 1 (recovery) and 2 (delivery) and merge them to main\"'. Set the v2 Gate line in docs/v2-status.md and the Go replacement row's next gate in docs/workstreams.md to the same text, naming the next step from docs/iteration-2-plan.md §36: capability slice 3 (notifications). Overwrite, don't append. Run make check-docs if useful, but it reports uncommitted work while your edits are uncommitted; the conductor runs make check after merging."
+  - at: 2026-11-22T13:15:58.990Z
+    commit: d6272bfee8e1
+    text: "done: v2 Gate (v2-status.md) and the Go replacement row's next gate (workstreams.md) now both read: approve and deliver capability slice 3 (notifications); the row's current slice says slices 1-2 are merged to main and Needs is operator approval of slice 3's scope. make check-v2 passed; check-docs' only error is the expected uncommitted-work one."
+  - at: 2026-11-22T13:17:15.680Z
+    commit: d6272bfee8e1
+    text: branch dsa/01M81P648TQQE39PNYVP1SHNMJ/task-19

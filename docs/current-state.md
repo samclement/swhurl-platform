@@ -2,6 +2,35 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Slice 5 begins: provisioning rules, apps status and restore sequencing, offline (22 November 2026)
+
+- **Change:** the first part of [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)
+  slice 5, under the operator's principle that a capability owns its decisions and sequencing and a pure rules
+  package holds a verdict shared across capabilities. `delivery/rules/health.go` owns the one deployment-health
+  verdict (`DeploymentHealthOf`, `ReleaseHealthOf`, `RequestedImage`), judged on the Flux unit, HelmRelease and
+  owned workloads and pods; `notifications/rules/incident/health.go` is deleted and incident maps the verdict to
+  its persisted faults through a new `incident` → `delivery/rules` pure edge, with its 138 legacy goldens unchanged.
+  New pure `provisioning/rules` owns an instance's compilation (`Inputs`, `Compile`, `Declare`), moved from
+  `orchestration/orchestration.go`; `Declare` now reports a malformed release before a malformed profile when both
+  are. `apps/` owns the status and status-all use cases (from `orchestration/status*.go`): `swhurl-v2 status` and
+  `status-all` call it, and `orchestration.ConsoleStatus` reaches it through the second registered workflow edge,
+  `orchestration` → `apps`; console composition stays in `orchestration`. `recovery.Prepare` owns restore's
+  observe → refuse an instance with no database → plan → the plan's archive in the observation, and
+  `Prepared.Confirm` its confirmation and readiness refusals; `swhurl-v2 restore` wires `apps.Status` in as a port,
+  so there is no `recovery` → `apps` edge (an archtest fixture refuses one), and keeps its flags, document and errors.
+  The deferred incident deployment-health and restore CLI sequencing rows are resolved and removed. Still
+  [deferred](v2-status.md#deferred-features): `delivery/write.go`'s copied write decisions, for provisioning's
+  writers, and status's own health judgement (`observe.StateOf`), which does not use delivery's verdict: adopting it
+  would change status's behaviour and is the operator's decision.
+- **Checks:** `make check-v2` and `make check-repo` pass on the integrated tree. The Go suite includes the new
+  `delivery/rules` table test over every health branch, the moved compilation and status tests, recovery's new
+  `Prepare` table tests, public API snapshots and the workflow-edge fixtures. `make check-docs` passes on this
+  documentation change (registry, gate agreement, progress shape and size).
+- **Not exercised:** no cluster, bucket, console, status, restore, incident or notification run was made on the
+  moved code; nothing live was changed or verified. **Next gate:** the operator approves the rest of slice 5
+  (provisioning's writers, connectivity, apps' creation, editing and removal, and console) and decides whether
+  status adopts delivery's deployment-health verdict.
+
 ## Health is the fourth capability package, offline (22 November 2026)
 
 - **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)

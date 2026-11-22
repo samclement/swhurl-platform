@@ -1,6 +1,7 @@
 package orchestration_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -115,4 +116,14 @@ func TestRemoveRefusesADoubledRegistration(t *testing.T) {
 	if writer.Removals != 0 {
 		t.Error("a refused removal deleted something")
 	}
+}
+
+// testdata is one of the module's raw fixtures.
+func testdata(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile("../testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

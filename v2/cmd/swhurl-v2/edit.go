@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/apps"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // editDocument is the versioned report `edit` writes: the named change, the instance's revision before and after it,
@@ -126,7 +126,7 @@ func teamSetting(value string) (editChange, error) {
 // notModelled refuses a named setting v2 has no record field or document for.
 func notModelled(name string) func(string) (editChange, error) {
 	return func(string) (editChange, error) {
-		return editChange{}, &orchestration.Refusal{Subject: name, Reason: "not_modelled"}
+		return editChange{}, &apps.Refusal{Subject: name, Reason: "not_modelled"}
 	}
 }
 
@@ -176,8 +176,8 @@ func (c cli) edit(r request) int {
 	if status != 0 {
 		return status
 	}
-	result, err := orchestration.Edit(orchestration.Editable{
-		InstanceInputs: orchestration.InstanceInputs{Inputs: inputs, InstancePath: one.instancePath},
+	result, err := apps.Edit(apps.Editable{
+		InstanceInputs: apps.InstanceInputs{Inputs: inputs, InstancePath: one.instancePath},
 		Change:         change.name,
 		Apply:          change.apply,
 	}, r.out, c.writer)
@@ -214,7 +214,7 @@ func (c cli) setTeam(r request, change editChange) int {
 	if status != 0 {
 		return status
 	}
-	inputs := orchestration.TeamInputs{App: app, AppPath: appPath, Team: change.team}
+	inputs := apps.TeamInputs{App: app, AppPath: appPath, Team: change.team}
 	for _, environment := range environments {
 		one, status := c.recordsEdit(r.out, r.records, r.app, environment)
 		if status != 0 {
@@ -225,9 +225,9 @@ func (c cli) setTeam(r request, change editChange) int {
 			return status
 		}
 		inputs.Instances = append(inputs.Instances,
-			orchestration.InstanceInputs{Inputs: instanceInputs, InstancePath: one.instancePath})
+			apps.InstanceInputs{Inputs: instanceInputs, InstancePath: one.instancePath})
 	}
-	result, err := orchestration.SetTeam(inputs, r.out, c.writer)
+	result, err := apps.SetTeam(inputs, r.out, c.writer)
 	if err != nil {
 		return c.wrote(result.Written, err)
 	}
@@ -337,7 +337,7 @@ func appEnvironments(root, application string) ([]string, error) {
 }
 
 // encodeEdit is the report of one applied change.
-func encodeEdit(result orchestration.Edition) ([]byte, error) {
+func encodeEdit(result apps.Edition) ([]byte, error) {
 	before, err := result.Before.Revision()
 	if err != nil {
 		return nil, err
@@ -360,7 +360,7 @@ func encodeEdit(result orchestration.Edition) ([]byte, error) {
 }
 
 // encodeTeam is the report of one applied app-level change.
-func encodeTeam(result orchestration.TeamChange) ([]byte, error) {
+func encodeTeam(result apps.TeamChange) ([]byte, error) {
 	previous, err := result.Before.ID()
 	if err != nil {
 		return nil, err

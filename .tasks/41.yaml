@@ -19,6 +19,7 @@ checks:
   - test -f v2/apps/status.go && ! test -e v2/orchestration/status.go
 after:
   - 40
+  - 44
 reason: null
 notes:
   - at: 2026-11-22T16:53:51.451Z
@@ -33,3 +34,6 @@ notes:
   - at: 2026-11-22T17:09:33.736Z
     commit: dcc9bcc69a5f
     text: "released: blocked: apps<->orchestration cycle; operator chose option 1, prerequisite task moves compilation to provisioning/rules"
+  - at: 2026-11-22T17:09:57.814Z
+    commit: 4ed4f2823575
+    text: "Conductor added after: 44 (operator option 1: compilation moves to provisioning/rules first; then status moves to apps with edge orchestration -> apps). Relaunch reuses this task's worktree with its partial work; rebase/merge main after 44 lands."

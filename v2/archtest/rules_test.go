@@ -141,11 +141,14 @@ var Layers = map[string]int{
 // a package everyone imports is the shared model this list exists to prevent. observe reports recovery's backup
 // verdict and archive types and delivery's currentness and promotion readiness; health reports observed facts
 // and recovery's archive verdict, using kernel's shared app vocabulary; delivery's promotion rule refines
-// kernel's release selection (docs/iteration-2-plan.md#capability-map).
+// kernel's release selection; incident raises faults from delivery's deployment health verdict
+// (docs/iteration-2-plan.md#capability-map).
 var PureDependencies = map[string][]string{
 	"observe":        {"recovery/rules", "delivery/rules"},
 	"health/rules":   {"observe", "recovery/rules", "kernel"},
 	"delivery/rules": {"kernel"},
+
+	"notifications/rules/incident": {"delivery/rules"},
 }
 
 // Orchestration is the published list of packages that run use cases (layer 2): orchestration, and each

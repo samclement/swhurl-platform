@@ -666,6 +666,12 @@ datadestroy: type Refusal struct {Message string}
 datadestroy: type Target struct {Kind Kind Namespace, Name string Text string}
 datadestroy: var ErrUsage = errors.New(Usage)
 delivery/rules: const Absent = "absent"
+delivery/rules: const DeploymentHealthy DeploymentHealth = "healthy"
+delivery/rules: const DeploymentStalled DeploymentHealth = "stalled"
+delivery/rules: const DeploymentStopped DeploymentHealth = "stopped"
+delivery/rules: const DeploymentSuspended DeploymentHealth = "suspended"
+delivery/rules: const DeploymentUnhealthy DeploymentHealth = "unhealthy"
+delivery/rules: const DeploymentUnjudged DeploymentHealth = "unjudged"
 delivery/rules: const FluxFailed FluxProgress = "failed"
 delivery/rules: const FluxReady FluxProgress = "ready"
 delivery/rules: const FluxSource = "swhurl-platform"
@@ -688,14 +694,20 @@ delivery/rules: func (ChangeScope) Validate() error
 delivery/rules: func (Changes) Validate() error
 delivery/rules: func CurrentnessOf(expected, literal, availability string, scope ChangeScope, changes *Changes) (Currentness, error)
 delivery/rules: func DecodeChanges(data []byte) (Changes, error)
+delivery/rules: func DeploymentHealthOf(d Deployment) DeploymentVerdict
 delivery/rules: func FluxUnitAt(object []byte, revision string) (FluxUnitState, error)
 delivery/rules: func PromotionReadiness(input Readiness) PromotionDecision
+delivery/rules: func ReleaseHealthOf(d Deployment) DeploymentVerdict
+delivery/rules: func RequestedImage(release map[string]any) string
 delivery/rules: func SelectPromotion(staging, target kernel.InstanceSpec, current, candidate kernel.ReleaseBundle, expected kernel.InstanceRevision) (kernel.InstanceSpec, error)
 delivery/rules: type ChangeScope struct {Files, Folders []string}
 delivery/rules: type Changes struct {Kind string `json:"kind"` Version int `json:"version"` Comparisons []Comparison `json:"comparisons"`}
 delivery/rules: type Code string
 delivery/rules: type Comparison struct {From string `json:"from"` To string `json:"to"` Status string `json:"status"` Paths []string `json:"paths"`}
 delivery/rules: type Currentness struct {State string `json:"state"` Reason string `json:"reason"` AppliedRevision string `json:"appliedRevision"`}
+delivery/rules: type Deployment struct {Namespace, Name string Unit, Release map[string]any Workloads, Pods []map[string]any}
+delivery/rules: type DeploymentHealth string
+delivery/rules: type DeploymentVerdict struct {Health DeploymentHealth Detail string}
 delivery/rules: type Error struct {Code Code Field string Reason string}
 delivery/rules: type FluxProgress string
 delivery/rules: type FluxUnitState struct {Name string Progress FluxProgress Message string}

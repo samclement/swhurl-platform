@@ -754,35 +754,6 @@ heartbeat: type Notice struct {Title, Message string Priority int Tag string}
 heartbeat: type State map[string]Flag
 heartbeat: var ErrInvalid = errors.New("heartbeat state is invalid; leaving it unchanged")
 heartbeat: var ErrUnreadable = errors.New("heartbeat state cannot be read; leaving it unchanged")
-incident: const ConsoleGrace = 600
-incident: const FieldManager = "notification-check"
-incident: const Grace = 300
-incident: const History = 7200
-incident: const MaxStateBytes = 700_000
-incident: const Namespace = "console"
-incident: const Recovery = 120
-incident: const Reminder = 3600
-incident: const StateKey = "state.json"
-incident: const StateName = "notification-state"
-incident: func (*State) CopyHealth(accepted, refused int, now float64, base string)
-incident: func (*State) Encode() (string, error)
-incident: func (*State) Held() []string
-incident: func (*State) Instances() int
-incident: func (*State) Pending() []Entry
-incident: func (*State) Settle(sent bool, now float64) bool
-incident: func (Entry) About() []string
-incident: func (Entry) Click() string
-incident: func (Entry) Key() string
-incident: func (Entry) Message() string
-incident: func (Entry) Priority() int
-incident: func (Entry) Title() string
-incident: func DecodeState(raw string) (*State, error)
-incident: func Evaluate(previous *State, data Snapshot, now float64, base string, copies bool) (*State, error)
-incident: func Unknown(previous *State, now float64, base string) *State
-incident: type Entry struct {}
-incident: type Object = map[string]any
-incident: type Snapshot struct {Units []Object `json:"units"` Releases []Object `json:"releases"` Workloads []Object `json:"workloads"` Pods []Object `json:"pods"` Events []Object `json:"events"`}
-incident: type State struct {}
 kernel: const AddTeam TeamAction = "add"
 kernel: const AppRecordName = "app.json"
 kernel: const AppTree = "apps"
@@ -1077,6 +1048,35 @@ lifecycletest: type DeletionPolicy string
 lifecycletest: type Level string
 lifecycletest: type Line struct {Level Level Text string}
 lifecycletest: type Preflight struct {Reason string}
+notifications/rules/incident: const ConsoleGrace = 600
+notifications/rules/incident: const FieldManager = "notification-check"
+notifications/rules/incident: const Grace = 300
+notifications/rules/incident: const History = 7200
+notifications/rules/incident: const MaxStateBytes = 700_000
+notifications/rules/incident: const Namespace = "console"
+notifications/rules/incident: const Recovery = 120
+notifications/rules/incident: const Reminder = 3600
+notifications/rules/incident: const StateKey = "state.json"
+notifications/rules/incident: const StateName = "notification-state"
+notifications/rules/incident: func (*State) CopyHealth(accepted, refused int, now float64, base string)
+notifications/rules/incident: func (*State) Encode() (string, error)
+notifications/rules/incident: func (*State) Held() []string
+notifications/rules/incident: func (*State) Instances() int
+notifications/rules/incident: func (*State) Pending() []Entry
+notifications/rules/incident: func (*State) Settle(sent bool, now float64) bool
+notifications/rules/incident: func (Entry) About() []string
+notifications/rules/incident: func (Entry) Click() string
+notifications/rules/incident: func (Entry) Key() string
+notifications/rules/incident: func (Entry) Message() string
+notifications/rules/incident: func (Entry) Priority() int
+notifications/rules/incident: func (Entry) Title() string
+notifications/rules/incident: func DecodeState(raw string) (*State, error)
+notifications/rules/incident: func Evaluate(previous *State, data Snapshot, now float64, base string, copies bool) (*State, error)
+notifications/rules/incident: func Unknown(previous *State, now float64, base string) *State
+notifications/rules/incident: type Entry struct {}
+notifications/rules/incident: type Object = map[string]any
+notifications/rules/incident: type Snapshot struct {Units []Object `json:"units"` Releases []Object `json:"releases"` Workloads []Object `json:"workloads"` Pods []Object `json:"pods"` Events []Object `json:"events"`}
+notifications/rules/incident: type State struct {}
 notify: const AddressKey = "address"
 notify: const AlertSecret = "notify-alerts"
 notify: const AlertSecretKey = "secret"

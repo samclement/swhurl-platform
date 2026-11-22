@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samclement/swhurl-platform/v2/incident"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/incident"
 )
 
 // checkerAPI is an RBAC-shaped API endpoint: state supports named GET/PATCH only, never a ConfigMap list, and

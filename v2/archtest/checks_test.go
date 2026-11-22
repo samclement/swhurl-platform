@@ -118,7 +118,6 @@ func f(count int) int {
 		"teamscenario/a.go":    "package teamscenario\n",
 		"lifecycletest/a.go":   "package lifecycletest\n",
 		"apptemplatetest/a.go": "package apptemplatetest\n",
-		"incident/a.go":        "package incident\n",
 		"notify/notify.go":     "package notify\n",
 		"observe/explain.go":   "package observe\n",
 		"pages/a.go":           "package pages\n",
@@ -127,10 +126,12 @@ func f(count int) int {
 		"telemetry/a.go":       "package telemetry\n",
 		"workstreams/a.go":     "package workstreams\n",
 		// A capability's rules are held to the same rule: the clock is an argument there too.
-		"recovery/rules/a.go": "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
-		"delivery/rules/a.go": "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
+		"recovery/rules/a.go":               "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
+		"delivery/rules/a.go":               "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
+		"notifications/rules/incident/a.go": "package incident\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 	})
 	expect(t, checkPure(m),
+		"pure notifications/rules/incident/a.go:5: calls time.Now",
 		"pure kernel/a.go:5: imports os, which is not in PureImports",
 		"pure kernel/a.go:15: assigns package variable table",
 		"pure kernel/a.go:16: calls fmt.Println",

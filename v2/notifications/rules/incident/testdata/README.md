@@ -2,7 +2,7 @@
 
 This is a test-fixture contract, not a progress log. The checker runs only Go; the Python implementation
 and tests are retired. Their frozen captures and the case map below remain the retained-behavior evidence. See
-[current notification behavior](../../../docs/services.md#current-notification-behavior).
+[current notification behavior](../../../../../docs/services.md#current-notification-behavior).
 
 ## Provenance and boundaries
 
@@ -19,9 +19,9 @@ and tests are retired. Their frozen captures and the case map below remain the r
   failure-retry scenario, with synthetic notify-service incident and unknown nested fields added for round-trip tests.
   It is **not a live-cluster state export**. Times, release UID and failure key agree with the scenario. The unknown large
   integer proves unknown values do not round through float64. Actual live-document decoding and scheduled continuation
-  were verified separately at [cutover](../../../docs/current-state.md#notification-checker-scheduled-in-go-7-november-2026).
+  were verified separately at [cutover](../../../../../docs/current-state.md#notification-checker-scheduled-in-go-7-november-2026).
 
-Domain tests are under `v2/incident`; effect sequencing/failure/restart tests under `v2/orchestration`; command/environment
+Domain tests are under `v2/notifications/rules/incident`; effect sequencing/failure/restart tests under `v2/orchestration`; command/environment
 and scheduled Git wiring tests under `v2/cmd/swhurl-v2`. The Kubernetes and notify-service adapters run shared HTTP/fake
 contracts over raw fixtures. ntfy's existing shared contract remains unchanged. Go tests need no Python process. A one-off offline differential check also fed all 139 Go-encoded results back through
 Python's actual `read_state` and next-pass `evaluate`; every resumed result agreed, and Python read/saved the unknown-field

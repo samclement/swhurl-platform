@@ -15,7 +15,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/notifysvc/notifysvctest"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy/ntfytest"
-	"github.com/samclement/swhurl-platform/v2/incident"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/incident"
 	"github.com/samclement/swhurl-platform/v2/notify"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
@@ -42,7 +42,7 @@ func (s *checkerStore) SetConfigMapKey(ctx context.Context, namespace, name, key
 }
 func checkerRig(t *testing.T) (orchestration.CheckerPorts, *checkerStore, *ntfytest.Fake, *notifysvctest.Fake, orchestration.CheckOptions) {
 	t.Helper()
-	raw, err := os.ReadFile("../incident/testdata/snapshot.json")
+	raw, err := os.ReadFile("../notifications/rules/incident/testdata/snapshot.json")
 	if err != nil {
 		t.Fatal(err)
 	}

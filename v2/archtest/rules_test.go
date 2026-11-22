@@ -76,7 +76,6 @@ var Layers = map[string]int{
 	"lifecycletest":                      0,
 	"apptemplatetest":                    0,
 	"dashboards":                         0,
-	"incident":                           0,
 	"events":                             0,
 	"heartbeat":                          0,
 	"kernel":                             0,
@@ -127,6 +126,9 @@ var Layers = map[string]int{
 	"recovery/rules":                     0,
 	"cmd/swhurl-v2":                      3,
 
+	// The notifications capability: its use cases and its pure incident rules.
+	"notifications": 2, "notifications/rules/incident": 0,
+
 	// The delivery capability: its use cases and its pure rules.
 	"delivery": 2, "delivery/rules": 0,
 }
@@ -144,7 +146,7 @@ var PureDependencies = map[string][]string{
 // Orchestration is the published list of packages that run use cases (layer 2): orchestration, and each
 // capability's own use-case package. They sequence pure decisions and the effects a use case performs, are held
 // to OrchestrationImports and OrchestrationCalls, and never import one another.
-var Orchestration = []string{"orchestration", "recovery", "delivery"}
+var Orchestration = []string{"orchestration", "recovery", "delivery", "notifications"}
 
 // OrchestrationImports are the packages a use case may not import: arguments, printing and process exit are
 // the command's business, and a mutable package variable would make a use case's result depend on history.
@@ -152,7 +154,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"incident", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "heartbeat", "kernel", "lifecycletest", "notify", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules"}
+var Pure = []string{"notifications/rules/incident", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "heartbeat", "kernel", "lifecycletest", "notify", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,

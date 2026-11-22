@@ -275,9 +275,13 @@ func (c cli) presignedRead(r request, target observe.Target, plan rules.RestoreP
 
 // archiveOf is the instance's own prefix and the reader the operator's credentials make.
 func (c cli) archiveOf(r request, target observe.Target) (s3.Reader, rules.ArchiveQuery, int) {
-	query, status := c.archiveQuery(r, target)
+	profile, status := c.read(r.profile, "profile")
 	if status != 0 {
 		return nil, rules.ArchiveQuery{}, status
+	}
+	query, err := archiveQueryOf(profile, target.Namespace)
+	if err != nil {
+		return nil, rules.ArchiveQuery{}, fail(c.diagnostic, err)
 	}
 	reader, err := c.archives(query.Bucket, r.region)
 	if err != nil {

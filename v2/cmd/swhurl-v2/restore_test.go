@@ -410,3 +410,60 @@ func TestTheBackupSelectorExcludesTheRestorePodLabel(t *testing.T) {
 		t.Fatalf("the backup selector is %q, want it to exclude %q", derived.Selector, want)
 	}
 }
+
+// Preparing a signed download reads the profile before constructing a reader, and stops at the first
+// failure. The query is the same namespace-scoped one used when listing archives for status and planning.
+func TestRestoreArchiveReader(t *testing.T) {
+	profile := fixture(t, "profile.json")
+	readerFailure := &s3.Error{Code: s3.RefusedRequest, Subject: "credentials", Reason: "missing"}
+	for _, tt := range []struct {
+		name       string
+		profile    []byte
+		readErr    error
+		readerErr  error
+		wantStatus int
+		wantReader bool
+		wantError  string
+	}{
+		{"ready", profile, nil, nil, 0, true, ""},
+		{"unreadable profile", nil, os.ErrNotExist, nil, 1, false, "io: profile: cannot read input file"},
+		{"malformed profile", []byte("{"), nil, nil, 2, false, "invalid"},
+		{"invalid backup URI", bytes.Replace(profile, []byte("s3://"), []byte("https://"), 1), nil, nil, 2, false, "backup.s3Uri"},
+		{"reader refused", profile, nil, readerFailure, 2, true, readerFailure.Error()},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var diagnostic bytes.Buffer
+			reads, readers := 0, 0
+			fake := s3test.New(s3test.Scenario{})
+			c := cli{diagnostic: &diagnostic,
+				readFile: func(path string) ([]byte, error) {
+					reads++
+					if path != "profile.json" {
+						t.Fatalf("read %q", path)
+					}
+					return tt.profile, tt.readErr
+				},
+				archives: func(bucket, region string) (s3.Reader, error) {
+					readers++
+					if bucket != "swhurl-platform-backups-110927251694" || region != "eu-west-2" {
+						t.Fatalf("reader for %q in %q", bucket, region)
+					}
+					return fake, tt.readerErr
+				}}
+			reader, query, status := c.archiveOf(request{profile: "profile.json", region: "eu-west-2"},
+				observe.Target{Namespace: "notes-prod"})
+			if status != tt.wantStatus || reads != 1 || (readers == 1) != tt.wantReader {
+				t.Fatalf("exit %d, reads %d, readers %d: %s", status, reads, readers, diagnostic.String())
+			}
+			if status != 0 {
+				if reader != nil || query != (rules.ArchiveQuery{}) || !strings.Contains(diagnostic.String(), tt.wantError) {
+					t.Fatalf("reader %v, query %v: %s", reader, query, diagnostic.String())
+				}
+				return
+			}
+			if reader != fake || query != (rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "app-sqlite/notes-prod/"}) || diagnostic.Len() != 0 {
+				t.Fatalf("reader %v, query %v: %s", reader, query, diagnostic.String())
+			}
+		})
+	}
+}

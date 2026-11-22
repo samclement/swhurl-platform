@@ -1,6 +1,6 @@
 id: 47
 title: "Connectivity owns its pure resolvers: events and calls move under v2/connectivity/rules"
-state: ready
+state: done
 scope:
   - v2/events/**
   - v2/calls/**
@@ -27,3 +27,12 @@ notes:
   - at: 2026-11-22T18:19:39.326Z
     commit: 8aba040c99aa
     text: "Operator: events and calls physically move under v2/connectivity/rules (by the change-locality test)."
+  - at: 2026-11-22T18:34:23.949Z
+    commit: 13cc0bb8d0b3
+    text: "done: Moved v2/events and v2/calls (package names unchanged) to v2/connectivity/rules/{events,calls}; rewired resolve.go and users.go; archtest Layers/Pure/fixtures now list the connectivity rules; api.txt regenerated (paths only). go tests and make check-v2 pass. No behaviour change; nothing live."
+  - at: 2026-11-22T18:34:23.949Z
+    commit: 13cc0bb8d0b3
+    text: "followup: docs/iteration-2-plan.md capability map (line ~327) and layout paragraph (~354) still name the packages as calls/events; update to connectivity/rules/calls and connectivity/rules/events."
+  - at: 2026-11-22T18:36:25.185Z
+    commit: 13cc0bb8d0b3
+    text: branch dsa/01M828CW2SZSAWDK36RT45BCYK/task-47

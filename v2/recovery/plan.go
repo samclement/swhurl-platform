@@ -3,7 +3,6 @@ package recovery
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
@@ -44,7 +43,7 @@ func Plan(ctx context.Context, inputs PlanInputs) (rules.RestorePlan, error) {
 // metadata reads the record the backup job published beside one archive, and says why it could not when it
 // could not: an incomplete upload is not an unreachable bucket.
 func metadata(ctx context.Context, reader s3.Reader, query rules.ArchiveQuery, key string) (*rules.ArchiveMetadata, string) {
-	body, err := reader.Get(ctx, query, strings.TrimSuffix(key, ".db.age")+".json")
+	body, err := reader.Get(ctx, query, rules.MetadataKey(key))
 	switch {
 	case err == nil:
 		metadata, err := rules.ArchiveMetadataOf(body)

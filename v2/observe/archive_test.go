@@ -45,7 +45,7 @@ func protected(t *testing.T, listed rules.ArchiveList, maxAge time.Duration) obs
 func TestArchiveIsCurrentWhenTheNewestIsRecent(t *testing.T) {
 	report := explainBackup(t, backed(target()), protected(t, listing(t,
 		archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z"),
-		archive(t, "sqlite-20261026T071500Z.db.age.json", "2026-10-26T07:15:10Z"),
+		archive(t, "sqlite-20261026T071500Z.json", "2026-10-26T07:15:10Z"),
 	), 26*time.Hour))
 	got := report.Backup.Archive
 	if got.State != rules.BackupCurrent || got.Reason != "" {
@@ -66,8 +66,9 @@ func TestArchiveIsCurrentWhenTheNewestIsRecent(t *testing.T) {
 // `sqlite-*.db.age` counts, whatever order the bucket lists them in.
 func TestArchiveUsesTheNewestDbFile(t *testing.T) {
 	report := explainBackup(t, backed(target()), protected(t, listing(t,
-		archive(t, "sqlite-20261026T071500Z.db.age.json", "2026-10-26T09:00:00Z"),
+		archive(t, "sqlite-20261026T071500Z.json", "2026-10-26T09:00:00Z"),
 		archive(t, "sqlite-20261025T035800Z.db.age", "2026-10-25T03:58:40Z"),
+		archive(t, "sqlite-20261025T035800Z.json", "2026-10-25T03:58:41Z"),
 		archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z"),
 	), 26*time.Hour))
 	if report.Backup.Archive.Newest != prefix+"sqlite-20261026T071500Z.db.age" ||
@@ -76,9 +77,23 @@ func TestArchiveUsesTheNewestDbFile(t *testing.T) {
 	}
 }
 
+// A newest archive without its metadata is half-uploaded: the report judges the complete one before it.
+func TestArchiveSkipsAHalfUploadedNewest(t *testing.T) {
+	report := explainBackup(t, backed(target()), protected(t, listing(t,
+		archive(t, "sqlite-20261025T035800Z.db.age", "2026-10-25T03:58:40Z"),
+		archive(t, "sqlite-20261025T035800Z.json", "2026-10-25T03:58:41Z"),
+		archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z"),
+	), 26*time.Hour))
+	if report.Backup.Archive.Newest != prefix+"sqlite-20261025T035800Z.db.age" ||
+		report.Backup.Archive.State != rules.BackupStale || report.Backup.Archive.Reason != rules.ReasonArchiveOld {
+		t.Fatalf("archive %+v", report.Backup.Archive)
+	}
+}
+
 // The threshold is the same one the job is judged by, and the boundary counts as current.
 func TestArchiveAgeIsJudgedAgainstTheThreshold(t *testing.T) {
-	objects := []rules.Archive{archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z")}
+	objects := []rules.Archive{archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z"),
+		archive(t, "sqlite-20261026T071500Z.json", "2026-10-26T07:15:10Z")}
 	// The observation is at 09:14:00Z, so the archive is 1h58m51s old.
 	if report := explainBackup(t, backed(target()), protected(t, listing(t, objects...), 2*time.Hour)); report.Backup.Archive.State != rules.BackupCurrent {
 		t.Fatalf("two hours: %+v", report.Backup.Archive)
@@ -104,7 +119,7 @@ func TestArchiveAbsent(t *testing.T) {
 		t.Fatalf("empty prefix: %+v", report.Backup.Archive)
 	}
 	report = explainBackup(t, backed(target()), protected(t, listing(t,
-		archive(t, "sqlite-20261026T071500Z.db.age.json", "2026-10-26T07:15:10Z")), 26*time.Hour))
+		archive(t, "sqlite-20261026T071500Z.json", "2026-10-26T07:15:10Z")), 26*time.Hour))
 	if report.Backup.Archive.State != rules.BackupStale || report.Backup.Archive.Reason != rules.ReasonNoArchive {
 		t.Fatalf("metadata only: %+v", report.Backup.Archive)
 	}
@@ -134,7 +149,8 @@ func TestArchiveAndJobAnswerSeparately(t *testing.T) {
 	evidence := protection(t, 26*time.Hour, cronJob(t, false, "2026-10-26T03:35:00Z", "2026-10-26T03:36:12Z"),
 		backupPod(t, "hello-backup-2-def", "2026-10-26T09:00:00Z", "hello-backup-2"),
 		job(t, "hello-backup-2", "2026-10-26T09:00:00Z", "2026-10-26T09:04:00Z", observe.RunFailed))
-	listed := listing(t, archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z"))
+	listed := listing(t, archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z"),
+		archive(t, "sqlite-20261026T071500Z.json", "2026-10-26T07:15:10Z"))
 	evidence.Backup.Archive = &listed
 	report := explainBackup(t, backed(target()), evidence)
 	if report.Backup.State != rules.BackupFailing || report.Backup.Archive.State != rules.BackupCurrent {

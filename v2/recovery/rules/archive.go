@@ -14,8 +14,15 @@ const (
 	ReasonConfined       = "not_confined_to_the_instance"
 )
 
-// archiveSuffix is what a complete SQLite archive is called: the job publishes `sqlite-<UTC>.db.age`.
+// archiveSuffix is what a SQLite archive is called: the job publishes `sqlite-<UTC>.db.age`, then its metadata
+// `sqlite-<UTC>.json` beside it.
 const archiveSuffix = ".db.age"
+
+// MetadataKey is where the backup job publishes a SQLite archive's metadata: beside it, `sqlite-<UTC>.json`.
+func MetadataKey(archive string) string { return metadataKey(archive, archiveSuffix) }
+
+// metadataKey is the metadata beside an archive whose name ends with the suffix.
+func metadataKey(archive, suffix string) string { return strings.TrimSuffix(archive, suffix) + ".json" }
 
 // ArchiveQuery is the bucket prefix one instance's archives live under. The prefix is the instance's own
 // directory, never the bucket's root: the caller states it, and this layer refuses one that is not.
@@ -59,8 +66,11 @@ func InstanceArchive(listed ArchiveList, namespace string, maxAge time.Duration,
 	return SelectArchive(listed, listed.Query.Prefix, "", maxAge, now)
 }
 
-// SelectArchive is one archive out of a listing: the newest, or the one the operator names. A named archive
-// the bucket does not hold is `no_archive`, not the newest by default: a restore is a point-in-time choice.
+// SelectArchive is one archive out of a listing: the newest complete one, or the one the operator names. An
+// archive is complete once its metadata is listed beside it, so a half-uploaded newest gives way to the one
+// before it. A named archive is chosen without that test, so a restore can say its metadata is absent; one the
+// bucket does not hold is `chosen_archive_absent`, not the newest by default: a restore is a point-in-time
+// choice.
 func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error) {
 	report := ArchiveReport{Bucket: listed.Query.Bucket, Prefix: prefix, MaxAge: maxAge}
 	switch listed.Status {
@@ -78,7 +88,7 @@ func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration,
 // judgeArchive states which archive was chosen, how old it is, and whether that is recent enough. A named key
 // that is not in the listing is no archive at all.
 func judgeArchive(report ArchiveReport, objects []Archive, key string, now time.Time) (ArchiveReport, error) {
-	newest, found, err := newestArchive(objects, report.Prefix, key)
+	newest, found, err := newestArchive(objects, report.Prefix, archiveSuffix, key)
 	if err != nil {
 		return ArchiveReport{}, err
 	}
@@ -122,20 +132,25 @@ func validateArchiveQuery(query ArchiveQuery, namespace string) error {
 	return nil
 }
 
-// newestArchive is the newest complete archive among the listed objects. A key under another prefix, or an
-// object whose time was not read, is a refusal: this layer judges the objects it was given, and both would
-// make that judgement wrong.
-func newestArchive(objects []Archive, prefix, key string) (Archive, bool, error) {
+// newestArchive is the newest complete archive among the listed objects, aged by the bucket's own time: an
+// archive with the suffix whose metadata is listed beside it, or the named key whatever is beside it. An
+// archive whose time was not read is a refusal: this layer judges the objects it was given, and it would make
+// that judgement wrong.
+func newestArchive(objects []Archive, prefix, suffix, key string) (Archive, bool, error) {
+	listed := map[string]bool{}
+	for _, object := range objects {
+		listed[object.Key] = true
+	}
 	newest, found := Archive{}, false
 	for _, object := range objects {
-		if !strings.HasPrefix(object.Key, prefix) || !strings.HasSuffix(object.Key, archiveSuffix) {
-			continue
-		}
-		if key != "" && object.Key != key {
+		if !candidate(object.Key, prefix, suffix, key) {
 			continue
 		}
 		if object.LastModified.IsZero() {
 			return Archive{}, false, invalid("archive", ReasonMalformed)
+		}
+		if key == "" && !listed[metadataKey(object.Key, suffix)] {
+			continue
 		}
 		if found && !object.LastModified.After(newest.LastModified) {
 			continue
@@ -143,6 +158,12 @@ func newestArchive(objects []Archive, prefix, key string) (Archive, bool, error)
 		newest, found = object, true
 	}
 	return newest, found, nil
+}
+
+// candidate is whether a listed key is an archive the choice weighs: under the prefix, with the suffix, and the
+// named key when one is named.
+func candidate(listed, prefix, suffix, key string) bool {
+	return strings.HasPrefix(listed, prefix) && strings.HasSuffix(listed, suffix) && (key == "" || listed == key)
 }
 
 // bucketPattern is a DNS-compatible bucket name, which is what S3 accepts.

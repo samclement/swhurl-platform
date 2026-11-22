@@ -624,7 +624,8 @@ func TestStatusReadsTheArchiveWhenAsked(t *testing.T) {
 	snapshot := s3test.Scenario{
 		Query: rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: prefix},
 		Objects: []rules.Archive{{Key: prefix + "sqlite-20261026T071500Z.db.age",
-			LastModified: time.Now().UTC().Add(-2 * time.Hour)}},
+			LastModified: time.Now().UTC().Add(-2 * time.Hour)},
+			{Key: prefix + "sqlite-20261026T071500Z.json", LastModified: time.Now().UTC().Add(-2 * time.Hour)}},
 		Forbidden: rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "app-sqlite/refused/"},
 	}
 	fake := s3test.New(snapshot)

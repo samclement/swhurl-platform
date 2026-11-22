@@ -117,7 +117,9 @@ func TestRestoreStates(t *testing.T) {
 func TestSelectArchiveChoosesWhatWasAsked(t *testing.T) {
 	listed := rules.ArchiveList{Query: query(), Status: rules.Present, Objects: []rules.Archive{
 		archive(t, "sqlite-20261025T035800Z.db.age", "2026-10-25T03:58:40Z"),
+		archive(t, "sqlite-20261025T035800Z.json", "2026-10-25T03:58:41Z"),
 		archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z"),
+		archive(t, "sqlite-20261026T071500Z.json", "2026-10-26T07:15:10Z"),
 	}}
 	now, _ := time.Parse(time.RFC3339, observedAt)
 	newest, err := rules.SelectArchive(listed, prefix, "", 26*time.Hour, now)
@@ -140,6 +142,45 @@ func TestSelectArchiveChoosesWhatWasAsked(t *testing.T) {
 	if report, err := rules.SelectArchive(down, prefix, "", 26*time.Hour, now); err != nil ||
 		report.State != rules.BackupUnavailable {
 		t.Fatalf("unavailable: %+v %v", report, err)
+	}
+}
+
+// An archive counts as the newest only with its metadata listed beside it: a half-uploaded newest gives way to
+// the complete one before it, and a prefix of half-uploads holds no archive. A named archive is chosen whatever
+// is beside it, so the restore can say its metadata is absent.
+func TestSelectArchiveCountsOnlyCompleteArchives(t *testing.T) {
+	now, _ := time.Parse(time.RFC3339, observedAt)
+	for _, tt := range []struct {
+		name    string
+		objects []rules.Archive
+		key     string
+		newest  string
+		reason  string
+	}{
+		{"the newest is half-uploaded", []rules.Archive{
+			archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z"),
+			archive(t, "sqlite-20261026T031500Z.db.age", "2026-10-26T03:15:09Z"),
+			archive(t, "sqlite-20261026T031500Z.json", "2026-10-26T03:15:10Z"),
+		}, "", "sqlite-20261026T031500Z.db.age", ""},
+		{"metadata beside another archive", []rules.Archive{
+			archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z"),
+			archive(t, "sqlite-20261026T031500Z.json", "2026-10-26T03:15:10Z"),
+		}, "", "", rules.ReasonNoArchive},
+		{"named without metadata", []rules.Archive{
+			archive(t, "sqlite-20261026T071500Z.db.age", "2026-10-26T07:15:09Z"),
+		}, prefix + "sqlite-20261026T071500Z.db.age", "sqlite-20261026T071500Z.db.age", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			listed := rules.ArchiveList{Query: query(), Status: rules.Present, Objects: tt.objects}
+			report, err := rules.SelectArchive(listed, prefix, tt.key, 26*time.Hour, now)
+			want := ""
+			if tt.newest != "" {
+				want = prefix + tt.newest
+			}
+			if err != nil || report.Newest != want || report.Reason != tt.reason {
+				t.Fatalf("report %+v %v, want %q %q", report, err, want, tt.reason)
+			}
+		})
 	}
 }
 
@@ -173,7 +214,7 @@ func TestInstanceArchiveRefusesWhatItCannotConfine(t *testing.T) {
 		t.Fatalf("a bucket-wide prefix: %v", err)
 	}
 	undated := rules.ArchiveList{Query: query(), Status: rules.Present,
-		Objects: []rules.Archive{{Key: prefix + "sqlite-1.db.age"}}}
+		Objects: []rules.Archive{{Key: prefix + "sqlite-1.db.age"}, archive(t, "sqlite-1.json", observedAt)}}
 	if _, err := rules.InstanceArchive(undated, "hello-staging", 26*time.Hour, now); err == nil ||
 		err.Error() != "invalid: archive: malformed" {
 		t.Fatalf("an object without a time: %v", err)

@@ -27,13 +27,11 @@ What has been verified on the live cluster, and when: current facts first, then 
   presentation cases (comparison proof, no proof, malformed/short revision), public API snapshots and
   architecture fixtures for pure clock refusal and directional workflow edges/reverse edges/cycles. Rendered
   comparisons remain unchanged. Read-only documentation checks confirm gate/status alignment, local links
-  and removal of the deleted operational/contributing paths; `git diff --check` passes. Broader `make check-docs`
-  reports one remaining error: `docs/workload-identity-status.md` says `Uncommitted: none` while that
-  workstream’s broad registry scope includes these documentation edits. Status/gate agreement and progress
-  shape/size checks pass. The unrelated registry/page is outside this task’s scope; the full check is not green.
+  and removal of the deleted operational/contributing paths; `git diff --check` passes. Status/gate agreement
+  and progress shape/size checks pass. `make check-docs` passes now that the workload-identity row's Paths
+  name only its own page, so documentation edits elsewhere no longer count against its `Uncommitted: none`.
 - **Not exercised:** no cluster, bucket, console, restore, deployment, promotion, notification or live verify
-  run was performed for this integration; nothing live was changed or verified. Documentation changes are
-  uncommitted for review. **Next gate: operator approval of slice 5** (connectivity, provisioning, apps and
+  run was performed for this integration; nothing live was changed or verified. **Next gate: operator approval of slice 5** (connectivity, provisioning, apps and
   console), including the named ownership corrections; no slice-5 implementation is approved by this record.
 
 ## Notifications is the third capability package, offline (22 November 2026)

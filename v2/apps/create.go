@@ -6,6 +6,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
@@ -99,12 +100,12 @@ func publishedFor(ctx context.Context, inputs CreateInputs,
 	if err != nil {
 		return publishedImage{}, err
 	}
-	declaration, err := declarationOf(published)
+	declaration, commit, err := deliveryrules.ImageMetadataOf(tag, published.Labels[kernel.DeclarationLabel],
+		published.Labels[kernel.RevisionLabel])
 	if err != nil {
-		return publishedImage{}, err
-	}
-	commit, err := revisionOf(tag, published)
-	if err != nil {
+		if missing, ok := err.(*deliveryrules.Error); ok {
+			return publishedImage{}, &Refusal{missing.Field, missing.Reason}
+		}
 		return publishedImage{}, err
 	}
 	repository := kernel.ImageRepository(image)
@@ -137,24 +138,4 @@ func createdRecords(inputs CreateInputs, spec kernel.InstanceSpec, app kernel.Ap
 	}
 	return provisioning.RecordFiles(inputs.RecordsRoot, spec.Application, spec.Environment, appDocument, releaseDocument,
 		instanceDocument, secret, declaration.OfferedFiles()), nil
-}
-
-// revisionOf reads the commit an image states it was built from. A tag alone never supplies it: the platform's tag
-// carries an abbreviation, and the release states a full commit.
-func revisionOf(tag kernel.ImageTag, published registry.Image) (string, error) {
-	revision := published.Labels[kernel.RevisionLabel]
-	if revision == "" {
-		return "", &Refusal{"source", "revision_absent"}
-	}
-	return kernel.RevisionOf(tag, revision)
-}
-
-// declarationOf reads the image's declaration label. An image without one is refused rather than guessed:
-// the platform cannot apply facts the build did not state.
-func declarationOf(published registry.Image) (kernel.Declaration, error) {
-	value, found := published.Labels[kernel.DeclarationLabel]
-	if !found || value == "" {
-		return kernel.Declaration{}, &Refusal{"declaration", "absent"}
-	}
-	return kernel.DecodeDeclaration([]byte(value))
 }

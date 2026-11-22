@@ -740,6 +740,7 @@ delivery/rules: func CurrentnessOf(expected, literal, availability string, scope
 delivery/rules: func DecodeChanges(data []byte) (Changes, error)
 delivery/rules: func DeploymentHealthOf(d Deployment) DeploymentVerdict
 delivery/rules: func FluxUnitAt(object []byte, revision string) (FluxUnitState, error)
+delivery/rules: func ImageMetadataOf(tag kernel.ImageTag, declarationLabel, revisionLabel string) (kernel.Declaration, string, error)
 delivery/rules: func PromotionReadiness(input Readiness) PromotionDecision
 delivery/rules: func ReleaseHealthOf(d Deployment) DeploymentVerdict
 delivery/rules: func RequestedImage(release map[string]any) string

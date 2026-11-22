@@ -1,5 +1,6 @@
-// Package rules is delivery's pure decisions: which release a promotion carries, whether it may go ahead,
-// whether a requested revision has landed, and whether a deployed release is healthy. It owns the vocabulary those decisions share. Every fact is supplied;
+// Package rules is delivery's pure decisions: which image metadata a release accepts, which release a promotion
+// carries, whether it may go ahead, whether a requested revision has landed, and whether a deployed release is healthy.
+// It owns the vocabulary those decisions share. Every fact is supplied;
 // nothing here reads a store, the clock included.
 package rules
 

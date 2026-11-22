@@ -229,3 +229,75 @@ func TestCreateStopsBeforeWritingAnUnsafeSeed(t *testing.T) {
 		})
 	}
 }
+
+// Image acceptance checks the declaration before the revision and never writes on rejection.
+func TestCreateImageMetadataRefusals(t *testing.T) {
+	valid := createLabel(t, nil)
+	for _, tt := range []struct {
+		name   string
+		labels map[string]string
+		want   string
+		local  bool
+	}{
+		{"no labels", nil, "refused: declaration: absent", true},
+		{"missing declaration", map[string]string{kernel.RevisionLabel: createCommit}, "refused: declaration: absent", true},
+		{"empty declaration", map[string]string{kernel.DeclarationLabel: ""}, "refused: declaration: absent", true},
+		{"malformed declaration before missing revision", map[string]string{kernel.DeclarationLabel: "{"}, "invalid: document: expected one valid UTF-8 JSON document", false},
+		{"unsupported declaration before missing revision", map[string]string{kernel.DeclarationLabel: strings.Replace(valid, `"schemaVersion":2`, `"schemaVersion":3`, 1)}, "unsupported: schemaVersion: only version 2 is supported", false},
+		{"missing revision", map[string]string{kernel.DeclarationLabel: valid}, "refused: source: revision_absent", true},
+		{"empty revision", map[string]string{kernel.DeclarationLabel: valid, kernel.RevisionLabel: ""}, "refused: source: revision_absent", true},
+		{"abbreviated revision", map[string]string{kernel.DeclarationLabel: valid, kernel.RevisionLabel: createCommit[:7]}, "invalid: source.revision: invalid format", false},
+		{"malformed revision", map[string]string{kernel.DeclarationLabel: valid, kernel.RevisionLabel: strings.Repeat("z", 40)}, "invalid: source.revision: invalid format", false},
+		{"mismatched revision", map[string]string{kernel.DeclarationLabel: valid, kernel.RevisionLabel: strings.Repeat("e", 40)}, "invalid: source.revision: the tag's suffix does not abbreviate the revision", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			inputs := createInputs(t)
+			images := registrytest.New(registrytest.Scenario{Images: map[string]registry.Image{
+				createTag: {Digest: createDigest, MediaType: kernel.ManifestMediaType, Labels: tt.labels},
+			}})
+			writer, encrypter := filestest.New(), sopstest.New()
+			result, err := Create(context.Background(), inputs, func(string) (registry.Reader, error) { return images, nil },
+				t.TempDir(), writer, encrypter)
+			if len(encrypter.Calls) != 0 {
+				t.Fatal("a refused image reached encryption")
+			}
+			if err == nil || err.Error() != tt.want {
+				t.Fatalf("error = %T %v, want %q", err, err, tt.want)
+			}
+			if tt.local {
+				var refusal *Refusal
+				if !errors.As(err, &refusal) {
+					t.Fatalf("missing evidence must remain a capability-local refusal, got %T", err)
+				}
+			} else {
+				var refusal *kernel.Error
+				if !errors.As(err, &refusal) {
+					t.Fatalf("invalid evidence must retain the kernel error, got %T", err)
+				}
+			}
+			if writer.Writes != 0 || len(result.Written) != 0 {
+				t.Fatal("a refused image reached the writer")
+			}
+		})
+	}
+}
+
+func TestCreateTakesTheFullRevisionFromAnAbbreviatedTag(t *testing.T) {
+	inputs := createInputs(t)
+	short := "43-" + createCommit[:7]
+	inputs.Image = createImage + ":" + short
+	images := createRepository(createLabel(t, nil))
+	images.Images[short] = images.Images[createTag]
+	writer, encrypter := filestest.New(), sopstest.New()
+	created, err := Create(context.Background(), inputs, func(string) (registry.Reader, error) { return images, nil },
+		t.TempDir(), writer, encrypter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Release.Source.Commit != createCommit || created.Tag != short || writer.Writes != 1 {
+		t.Fatalf("create = %+v, writes = %d", created, writer.Writes)
+	}
+	if images.TagCalls != 0 || len(images.Described) != 1 || images.Described[0] != short {
+		t.Fatalf("creation must describe only the requested tag: %+v", images)
+	}
+}

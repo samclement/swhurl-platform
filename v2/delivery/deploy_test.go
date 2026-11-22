@@ -328,3 +328,74 @@ func TestDeployTakesWhatTheImageStatesAboutItself(t *testing.T) {
 		t.Fatalf("stated %s, content is %s", result.Release.ReleaseID, id)
 	}
 }
+
+// Image acceptance checks the declaration before the revision and never writes on rejection.
+func TestDeployImageMetadataRefusals(t *testing.T) {
+	valid := declarationLabel(nil)
+	for _, tt := range []struct {
+		name   string
+		labels map[string]string
+		want   string
+		local  bool
+	}{
+		{"no labels", nil, "refused: declaration: absent", true},
+		{"missing declaration", map[string]string{kernel.RevisionLabel: newCommit}, "refused: declaration: absent", true},
+		{"empty declaration", map[string]string{kernel.DeclarationLabel: ""}, "refused: declaration: absent", true},
+		{"malformed declaration before missing revision", map[string]string{kernel.DeclarationLabel: "{"}, "invalid: document: expected one valid UTF-8 JSON document", false},
+		{"unsupported declaration before missing revision", map[string]string{kernel.DeclarationLabel: strings.Replace(valid, `"schemaVersion":2`, `"schemaVersion":3`, 1)}, "unsupported: schemaVersion: only version 2 is supported", false},
+		{"missing revision", map[string]string{kernel.DeclarationLabel: valid}, "refused: source: revision_absent", true},
+		{"empty revision", map[string]string{kernel.DeclarationLabel: valid, kernel.RevisionLabel: ""}, "refused: source: revision_absent", true},
+		{"abbreviated revision", map[string]string{kernel.DeclarationLabel: valid, kernel.RevisionLabel: newCommit[:7]}, "invalid: source.revision: invalid format", false},
+		{"malformed revision", map[string]string{kernel.DeclarationLabel: valid, kernel.RevisionLabel: strings.Repeat("z", 40)}, "invalid: source.revision: invalid format", false},
+		{"mismatched revision", map[string]string{kernel.DeclarationLabel: valid, kernel.RevisionLabel: strings.Repeat("e", 40)}, "invalid: source.revision: the tag's suffix does not abbreviate the revision", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			name := tag(43, newCommit)
+			images := registrytest.New(registrytest.Scenario{Tags: []string{name}, Images: map[string]registry.Image{
+				name: {Digest: newDigest, MediaType: kernel.ManifestMediaType, Labels: tt.labels},
+			}})
+			writer := filestest.New()
+			result, err := DeployImage(context.Background(), stagingInputs(t), images, t.TempDir(), writer)
+			if err == nil || err.Error() != tt.want {
+				t.Fatalf("error = %T %v, want %q", err, err, tt.want)
+			}
+			if tt.local {
+				var refusal *Refusal
+				if !errors.As(err, &refusal) {
+					t.Fatalf("missing evidence must remain a capability-local refusal, got %T", err)
+				}
+			} else {
+				var refusal *kernel.Error
+				if !errors.As(err, &refusal) {
+					t.Fatalf("invalid evidence must retain the kernel error, got %T", err)
+				}
+			}
+			if writer.Writes != 0 || len(result.Written) != 0 {
+				t.Fatal("a refused image reached the writer")
+			}
+		})
+	}
+}
+
+func TestDeployAlreadySelectedDigestDoesNotRequireImageMetadata(t *testing.T) {
+	inputs := stagingInputs(t)
+	current, err := kernel.DecodeRelease(inputs.Release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := tag(43, newCommit)
+	images := registrytest.New(registrytest.Scenario{Tags: []string{name}, Images: map[string]registry.Image{
+		name: {Digest: current.Artifact.Digest, MediaType: kernel.ManifestMediaType},
+	}})
+	writer := filestest.New()
+	result, err := DeployImage(context.Background(), inputs, images, t.TempDir(), writer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Changed || writer.Writes != 0 || result.Release.Source.Commit != current.Source.Commit {
+		t.Fatalf("already-selected release changed: %+v, writes = %d", result, writer.Writes)
+	}
+	if images.TagCalls != 1 || len(images.Described) != 1 || images.Described[0] != name {
+		t.Fatalf("deployment must list and describe once: %+v", images)
+	}
+}

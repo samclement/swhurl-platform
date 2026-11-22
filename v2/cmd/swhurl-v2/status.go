@@ -218,19 +218,7 @@ func (c cli) archiveLister(r request, profile []byte) func(context.Context, stri
 	}
 }
 
-// archiveQuery is the instance's own prefix: the profile's root and the instance's namespace.
-func (c cli) archiveQuery(r request, target observe.Target) (rules.ArchiveQuery, int) {
-	profile, status := c.read(r.profile, "profile")
-	if status != 0 {
-		return rules.ArchiveQuery{}, status
-	}
-	query, err := archiveQueryOf(profile, target.Namespace)
-	if err != nil {
-		return rules.ArchiveQuery{}, fail(c.diagnostic, err)
-	}
-	return query, 0
-}
-
+// archiveQueryOf is the instance's own prefix: the profile's root and the instance's namespace.
 func archiveQueryOf(document []byte, namespace string) (rules.ArchiveQuery, error) {
 	profile, err := kernel.DecodeProfile(document)
 	if err != nil {

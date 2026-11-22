@@ -1,0 +1,19 @@
+id: 62
+title: Diagnose exec upgrade cancellation flake without code changes
+state: ready
+scope:
+  - v2/adapters/kube/exec_test.go
+checks:
+  - git diff --exit-code && test -z "$(git ls-files --others --exclude-standard)"
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T21:17:26.968Z
+    commit: 31823e689a47
+    text: "Operator authorized investigation only. Scope path is required by tk but confers NO editing authority: do not modify production code, tests, docs or add a report file. Record results in tk notes. No live/deployment commands, pushes, worktree removal or Claude. Use Sol or DeepSeek Flash only. Tasks 56-61 remain closed."
+  - at: 2026-11-22T21:17:27.127Z
+    commit: 31823e689a47
+    text: Inspect exec_test.go:394-410, exec.go:45-58,104-114, exec fixtures and pinned websocket/net/http cancellation. A 50ms test deadline starts before handler entry; only handler cancellation closes done. Determine whether expiry before handler entry explains failure versus cancellation failing after handler entry. Record revision, commands, counts/timings and evidenced interleaving. Distinguish proof from hypotheses. No hidden sleeps/retries; repeated runs are diagnostic evidence, not a substitute for a fix.
+  - at: 2026-11-22T21:17:27.288Z
+    commit: 31823e689a47
+    text: "Run both diagnostic commands under machine lease and record their actual exits even if failing: (1) pi-durable-subagents hold machine -- bash -lc 'cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off CGO_ENABLED=0 go test -v -count=100 -timeout=3m ./adapters/kube -run \"^TestExecCancellationWhileWaitingForUpgrade$\"'; (2) pi-durable-subagents hold machine -- bash -lc 'cd v2 && GOTOOLCHAIN=go1.26.0 GOPROXY=off GOSUMDB=off go test -race -v -count=50 -timeout=3m ./adapters/kube -run \"^TestExecCancellationWhileWaitingForUpgrade$\"'. These are investigation experiments, not acceptance demands that an existing flake pass. tk done requires evidence recorded and no code changes. If unchanged code cannot distinguish hypotheses, record evidence gap and exact proposed instrumentation for approval. Propose bounded later fix paths/checks only; do not implement."

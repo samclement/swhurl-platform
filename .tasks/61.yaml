@@ -1,6 +1,6 @@
 id: 61
 title: Document follow-up ownership changes and offline verification
-state: ready
+state: done
 scope:
   - docs/iteration-2-plan.md
   - docs/v2-status.md
@@ -23,3 +23,18 @@ notes:
   - at: 2026-11-22T20:38:36.594Z
     commit: 13a140feece9
     text: Canonical docs reflect tasks 56-60, including test synchronization and explicitly offline evidence. Keep status <=250 lines by replacing existing rows. Record separate console approval gate, local refusal ownership retained, delivery/rules image acceptance, provisioning encryption refusal contract. Do not claim post-merge checks or live verification. Check task 59 status before documenting its completion.
+  - at: 2026-11-22T21:09:21.075Z
+    commit: 837a4b265f1a
+    text: "Task 59 follow-up retained in dated evidence: unrelated TestExecCancellationWhileWaitingForUpgrade intermittently failed the post-completion guardrail, then its machine-leased 50 repetitions and make check-v2 passed (01M82G133SF5GQ7CRB5ZS6YJZF). No proven defect, authorized extra task, or kube code change. Code clarified task 56 shorthand: valid documents for other instances yield no facts, not refusal; malformed supplied documents are refused. Console capability slice remains unapproved; local mechanical refusal helpers are deliberately retained."
+  - at: 2026-11-22T21:09:21.781Z
+    commit: 837a4b265f1a
+    text: "done: Updated four canonical docs for tasks 56–60: shared document/image validation, connectivity merging, encrypted-seed/refusal ownership and test synchronization. Removed resolved duplication deferral; status is 247 lines. Task 59 intermittent kube guardrail/rechecks recorded without a proven defect. Offline checks passed; no live verification, commits or console-slice approval."
+  - at: 2026-11-22T21:12:51.590Z
+    commit: 837a4b265f1a
+    text: tk done passed make check-repo, make check-v2 and make check-docs (run 01M82HF5CP1WRDV1ZD44KNS1F8), marking task done. A separate guardrail subsequently reported make check-v2 exceeded its 180s limit, without a test diagnostic. Re-running make check-v2 under a machine lease; no rule baseline or code changes justified by timeout alone. Final recheck result remains to be recorded.
+  - at: 2026-11-22T21:13:59.782Z
+    commit: 837a4b265f1a
+    text: Final machine-leased make check-v2 recheck passed (run 01M82HNJWN94E441QSD96TZ40B, exit 0, both render comparisons unchanged). The separate guardrail then reported TestExecCancellationWhileWaitingForUpgrade failing again at exec_test.go:408 (withheld upgrade not cancelled). This is a recurrence of task 59's unrelated intermittent test, not a diagnosed production defect; no baselines or kube files changed. Task 61's registered checks passed and documentation remains the only worktree change. Investigating/fixing adapters/kube/exec_test.go requires a separately approved scope; asking operator rather than silently extending this docs task.
+  - at: 2026-11-22T21:14:28.437Z
+    commit: 837a4b265f1a
+    text: branch dsa/01M82H53ED75ESV2FJ7SCZ3W49/task-61

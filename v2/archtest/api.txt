@@ -689,6 +689,7 @@ delivery/rules: func (Changes) Validate() error
 delivery/rules: func CurrentnessOf(expected, literal, availability string, scope ChangeScope, changes *Changes) (Currentness, error)
 delivery/rules: func DecodeChanges(data []byte) (Changes, error)
 delivery/rules: func FluxUnitAt(object []byte, revision string) (FluxUnitState, error)
+delivery/rules: func PromotionReadiness(input Readiness) PromotionDecision
 delivery/rules: func SelectPromotion(staging, target kernel.InstanceSpec, current, candidate kernel.ReleaseBundle, expected kernel.InstanceRevision) (kernel.InstanceSpec, error)
 delivery/rules: type ChangeScope struct {Files, Folders []string}
 delivery/rules: type Changes struct {Kind string `json:"kind"` Version int `json:"version"` Comparisons []Comparison `json:"comparisons"`}
@@ -698,6 +699,9 @@ delivery/rules: type Currentness struct {State string `json:"state"` Reason stri
 delivery/rules: type Error struct {Code Code Field string Reason string}
 delivery/rules: type FluxProgress string
 delivery/rules: type FluxUnitState struct {Name string Progress FluxProgress Message string}
+delivery/rules: type PromotionDecision struct {Ready bool `json:"ready"` Reason string `json:"reason"`}
+delivery/rules: type Readiness struct {ReviewedDigest, SelectedDigest string Currency string Healthy bool Running Running}
+delivery/rules: type Running struct {Status string Digests []string}
 delivery: const FluxWaitBad FluxWaitLevel = "bad"
 delivery: const FluxWaitHeading FluxWaitLevel = "heading"
 delivery: const FluxWaitInfo FluxWaitLevel = "info"
@@ -1253,7 +1257,6 @@ observe: func ParseRegistration(output []byte, failed bool) RegistrationEvidence
 observe: func PlatformChecks(e PlatformEvidence) []PlatformCheck
 observe: func PlatformScopeChecks(e PlatformEvidence, s ScopeEvidence) []PlatformCheck
 observe: func PlatformText(r PlatformReport) string
-observe: func PromotionReadiness(report Report, reviewedDigest string) PromotionDecision
 observe: func RouteTargetOf(ingress []byte) (RouteTarget, error)
 observe: func StateOf(report Report) State
 observe: func SystemLogTTL(output []byte, failed bool) PlatformEntry
@@ -1304,7 +1307,6 @@ observe: type PlatformEntry struct {Level CheckLevel `json:"level"` Message stri
 observe: type PlatformEvidence struct {Units, Alerts, Providers List Traefik, Notify, Console, Dashboards, Notifications Read Now time.Time}
 observe: type PlatformReport struct {Source string ObservedAt string Checks []PlatformCheck}
 observe: type Problem struct {Pod, Container, Reason, Message string}
-observe: type PromotionDecision struct {Ready bool `json:"ready"` Reason string `json:"reason"`}
 observe: type Read struct {Ref Ref Status string Reason string Object []byte}
 observe: type Ref struct {APIVersion, Kind, Namespace, Name string}
 observe: type RegistrationEvidence struct {Readable, TeamExists bool}

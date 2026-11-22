@@ -74,24 +74,47 @@ func TestEncodeReportKeepsEmptyLists(t *testing.T) {
 	}
 }
 
+// The document carries delivery's readiness decision for the digest it was asked about: the selected one
+// for a page, the reviewed one for a submission.
 func TestReportEncodesGoPromotionDecision(t *testing.T) {
 	report := explain(t, healthy(t))
-	for _, reviewed := range []string{report.Target.Digest, "sha256:" + strings.Repeat("a", 64), ""} {
-		data, err := observe.EncodeReviewedReport(report, reviewed)
+	for _, test := range []struct{ reviewed, reason string }{
+		{report.Target.Digest, "ready"},
+		{"sha256:" + strings.Repeat("a", 64), "reviewed_digest_changed"},
+		{"", "reviewed_digest_invalid"},
+	} {
+		data, err := observe.EncodeReviewedReport(report, test.reviewed)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var document struct {
 			Version   int
-			Promotion observe.PromotionDecision
+			Promotion deliveryrules.PromotionDecision
 		}
 		if err := json.Unmarshal(data, &document); err != nil {
 			t.Fatal(err)
 		}
-		if document.Version != 5 || document.Promotion != observe.PromotionReadiness(report, reviewed) {
-			t.Fatalf("%+v", document)
+		want := deliveryrules.PromotionDecision{Ready: test.reason == "ready", Reason: test.reason}
+		if document.Version != 5 || document.Promotion != want {
+			t.Fatalf("%q: %+v", test.reviewed, document)
 		}
 	}
+}
+
+// promotion is the readiness decision a reviewed report's document carries.
+func promotion(t *testing.T, report observe.Report, reviewed string) deliveryrules.PromotionDecision {
+	t.Helper()
+	data, err := observe.EncodeReviewedReport(report, reviewed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Promotion deliveryrules.PromotionDecision
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	return document.Promotion
 }
 
 func comparisons(paths ...string) *deliveryrules.Changes {
@@ -139,26 +162,26 @@ func TestUnaffectedNeverWaivesUnhealthyEvidence(t *testing.T) {
 
 func TestPromotionReadinessUsesReviewedSelectedAndRunningDigest(t *testing.T) {
 	report := unaffectedReport(t, healthy(t))
-	if got := observe.PromotionReadiness(report, digest); !got.Ready {
+	if got := promotion(t, report, digest); !got.Ready {
 		t.Fatalf("%+v", got)
 	}
-	if got := observe.PromotionReadiness(report, "sha256:"+strings.Repeat("a", 64)); got.Ready || got.Reason != "reviewed_digest_changed" {
+	if got := promotion(t, report, "sha256:"+strings.Repeat("a", 64)); got.Ready || got.Reason != "reviewed_digest_changed" {
 		t.Fatalf("%+v", got)
 	}
 	for _, state := range []string{observe.StateUnknown, observe.StateFailing, observe.StateSuspended, observe.StateUpdating, observe.StateStopped} {
 		unready := report
 		unready.State.Name = state
-		if got := observe.PromotionReadiness(unready, digest); got.Ready {
+		if got := promotion(t, unready, digest); got.Ready {
 			t.Fatalf("accepted %s", state)
 		}
 	}
 	report.Currentness.State = "unknown"
-	if got := observe.PromotionReadiness(report, digest); got.Ready {
+	if got := promotion(t, report, digest); got.Ready {
 		t.Fatal("unknown currency accepted")
 	}
 	report.Currentness.State = "applied"
 	report.Live.Running.Digests = []string{}
-	if got := observe.PromotionReadiness(report, digest); got.Ready {
+	if got := promotion(t, report, digest); got.Ready {
 		t.Fatal("missing running proof accepted")
 	}
 }
@@ -176,7 +199,7 @@ func TestExplainRefusesInvalidProofInsteadOfTreatingItAsUnavailable(t *testing.T
 func TestPromotionReadinessNeedsTheReviewedDigestRunning(t *testing.T) {
 	report := unaffectedReport(t, healthy(t))
 	report.Live.Running.Digests = []string{"sha256:" + strings.Repeat("a", 64)}
-	if decision := observe.PromotionReadiness(report, digest); decision.Ready || decision.Reason != "reviewed_digest_not_running" {
+	if decision := promotion(t, report, digest); decision.Ready || decision.Reason != "reviewed_digest_not_running" {
 		t.Fatalf("%+v", decision)
 	}
 }

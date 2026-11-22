@@ -1,6 +1,6 @@
 id: 60
 title: Consolidate image-metadata interpretation in delivery rules
-state: ready
+state: done
 scope:
   - v2/delivery/rules/*.go
   - v2/delivery/deploy.go
@@ -22,3 +22,12 @@ notes:
   - at: 2026-11-22T20:38:36.434Z
     commit: 13a140feece9
     text: "Approved option 1: pure delivery/rules image acceptance primitives taking tag/label strings, never registry.Image or adapter imports. Keep capability-local refusal translation explicit and preserve declaration-before-revision validation order, error text and CLI exits. No new apps-to-delivery workflow edge. Delete duplicate policy/stale copied comments; add direct rule and entry-point regression coverage. Keep copied Refusal/reasonOf/unavailable helpers capability-local; no shared error machinery."
+  - at: 2026-11-22T21:01:16.436Z
+    commit: 51ef833e0ac7
+    text: "done: Centralized image acceptance in delivery/rules.ImageMetadataOf; creation/deployment translate missing evidence locally and retain kernel errors. Removed duplicated helpers/copied comments; added rule and entry-point regressions for validation order, exact refusals, short tags and unchanged digests. Task checks passed; offline only, no live validation or commits. Docs deferred to task 61."
+  - at: 2026-11-22T21:02:40.317Z
+    commit: 51ef833e0ac7
+    text: "Handoff for task 61: delivery/rules.ImageMetadataOf is now the image-acceptance owner (prevalidated kernel.ImageTag plus declaration/revision label strings; no registry dependency). It returns delivery rule errors only for missing evidence; apps/create.go and delivery/deploy.go explicitly translate those to their own Refusal, preserving kernel errors for malformed evidence. Only archtest/api.txt gained this public primitive; no workflow dependency edge changed. Verified under machine lease: go test ./delivery/... ./apps/... ./archtest/... -count=1, make check-v2, copied-comment grep; git diff --check also passed. Documentation deliberately untouched per approved deferral; changes remain uncommitted. No live behavior exercised."
+  - at: 2026-11-22T21:03:33.266Z
+    commit: 51ef833e0ac7
+    text: branch dsa/01M82GSGAPXTRQGX8R7MDJK6QN/task-60

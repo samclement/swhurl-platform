@@ -1,6 +1,6 @@
 id: 54
 title: One archive-prefix helper in the command (status and restore)
-state: ready
+state: done
 scope:
   - v2/cmd/swhurl-v2/status.go
   - v2/cmd/swhurl-v2/restore.go
@@ -17,3 +17,9 @@ notes:
   - at: 2026-11-22T18:19:37.981Z
     commit: 8aba040c99aa
     text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."
+  - at: 2026-11-22T19:45:46.483Z
+    commit: a243278e33c2
+    text: "done: Removed the CLI archiveQuery wrapper; status listing, restore planning and restore signing now use archiveQueryOf directly. Added prefix/namespace and failure-path tests; focused regression tests and all registered task checks pass. No live checks or changes; status-doc cleanup remains with task 55."
+  - at: 2026-11-22T19:48:33.168Z
+    commit: a243278e33c2
+    text: branch dsa/01M82CHBJ5MQVPV9NNG5XRW3SQ/task-54

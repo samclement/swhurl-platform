@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 )
 
 // target is a managed instance identity discovered from a Flux unit, plus that unit's observation.
@@ -129,6 +131,36 @@ func (s *State) fault(record Object, fault, title, detail string, grace, now flo
 	record["last_notice"], record["notified"] = clockValue(now), true
 }
 func known(s string) *string { return &s }
+
+// health is delivery's verdict on the target's deployment as an incident fault, nil when unjudged, and its detail.
+// With unit, the Flux unit must be Ready too.
+func health(entry target, release Object, data Snapshot, unit bool) (*string, string) {
+	deployment := deliveryrules.Deployment{Namespace: text(entry.record, "namespace"), Name: text(entry.record, "name"),
+		Unit: entry.unit, Release: release, Workloads: data.Workloads, Pods: data.Pods}
+	verdict := deliveryrules.ReleaseHealthOf(deployment)
+	if unit {
+		verdict = deliveryrules.DeploymentHealthOf(deployment)
+	}
+	return fault(verdict.Health), verdict.Detail
+}
+
+// fault is the incident fault a deployment verdict raises: empty when healthy, nil when unjudged. The faults are
+// persisted state, so they are spelled here rather than taken from delivery's names.
+func fault(health deliveryrules.DeploymentHealth) *string {
+	switch health {
+	case deliveryrules.DeploymentHealthy:
+		return known("")
+	case deliveryrules.DeploymentStopped:
+		return known("stopped")
+	case deliveryrules.DeploymentSuspended:
+		return known("suspended")
+	case deliveryrules.DeploymentUnhealthy:
+		return known("unhealthy")
+	case deliveryrules.DeploymentStalled:
+		return known("deployment stalled")
+	}
+	return nil
+}
 
 // Evaluate advances an owned copy, preserving previous and snapshot. Invalid event time is unavailable evidence,
 // not health. A baseline remembers its start so existing Events are not replayed.

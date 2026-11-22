@@ -3,6 +3,8 @@ package incident
 import (
 	"fmt"
 	"slices"
+
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 )
 
 func action(reason string) string {
@@ -179,10 +181,20 @@ func requestedImageText(event Object, reason string, release Object) string {
 	if release == nil || (reason != "InstallSucceeded" && reason != "UpgradeSucceeded") {
 		return ""
 	}
-	if text(condition(release, "Ready"), "message") != text(event, "message") {
+	if readyMessage(release) != text(event, "message") {
 		return ""
 	}
-	return " Requested image: " + desiredImage(release) + "."
+	return " Requested image: " + deliveryrules.RequestedImage(release) + "."
+}
+
+// readyMessage is the message of a release's first Ready condition, empty without one.
+func readyMessage(release Object) string {
+	for _, item := range array(object(release, "status"), "conditions") {
+		if c, _ := item.(map[string]any); text(c, "type") == "Ready" {
+			return text(c, "message")
+		}
+	}
+	return ""
 }
 
 func (s *State) combineRollback(e evidence) {

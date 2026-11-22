@@ -1,0 +1,22 @@
+id: 43
+title: "Docs: record slice 5 (status capability, restore owned by recovery) and name the next gate"
+state: ready
+scope:
+  - docs/v2-status.md
+  - docs/workstreams.md
+  - docs/current-state.md
+  - docs/iteration-2-plan.md
+  - docs/contributing.md
+checks:
+  - make check-repo
+  - make check-v2
+  - "! grep -n 'Incident deployment-health ownership\\|Restore CLI business sequencing' docs/v2-status.md"
+after:
+  - 41
+  - 42
+  - 39
+reason: null
+notes:
+  - at: 2026-11-22T16:53:52.075Z
+    commit: 38e75d59d737
+    text: "Operator-approved principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold verdicts shared across capabilities; prefer cheap visible pure->pure edges over cross-capability use-case edges. No live checks; conductor runs no post-merge checks. Record slice 5 = status capability. Correct the restore deferred row's owner to recovery and mark it resolved. delivery/write.go copied write decisions stay deferred to a later provisioning slice (out of slice 5). Console stays in orchestration. make check-docs not registered (fails on uncommitted docs by design); operator runs it post-merge."

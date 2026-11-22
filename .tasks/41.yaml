@@ -1,0 +1,26 @@
+id: 41
+title: "Apps: move the status and status-all use cases out of orchestration and wire CLI and console"
+state: ready
+scope:
+  - v2/apps/*.go
+  - v2/orchestration/status*.go
+  - v2/orchestration/console.go
+  - v2/cmd/swhurl-v2/status.go
+  - v2/cmd/swhurl-v2/status_test.go
+  - v2/cmd/swhurl-v2/status_all.go
+  - v2/cmd/swhurl-v2/status_all_test.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+  - docs/v2-status.md
+checks:
+  - cd v2 && go test ./apps/... ./orchestration/... ./cmd/swhurl-v2/... ./archtest/... -count=1
+  - make check-v2
+  - test -f v2/apps/status.go && ! test -e v2/orchestration/status.go
+after:
+  - 40
+reason: null
+notes:
+  - at: 2026-11-22T16:53:51.451Z
+    commit: 38e75d59d737
+    text: "Operator-approved principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold verdicts shared across capabilities; prefer cheap visible pure->pure edges over cross-capability use-case edges. No live checks; conductor runs no post-merge checks. Console and connectivity stay in orchestration (legitimate composition; the named orchestration->health edge is the accepted compromise). Move only status/status-all use cases into apps; console calls them. No behaviour change."

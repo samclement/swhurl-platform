@@ -1,0 +1,21 @@
+id: 42
+title: "Recovery: move restore's observation-plan-restore sequencing, refusals and report mutation out of the CLI"
+state: ready
+scope:
+  - v2/recovery/**
+  - v2/cmd/swhurl-v2/restore.go
+  - v2/cmd/swhurl-v2/restore_test.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+  - docs/v2-status.md
+checks:
+  - cd v2 && go test ./recovery/... ./cmd/swhurl-v2/... ./archtest/... -count=1
+  - make check-v2
+  - "! grep -n 'report.Backup.Archive\\|unsupported: instance' v2/cmd/swhurl-v2/restore.go"
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T16:53:51.769Z
+    commit: 38e75d59d737
+    text: "Operator-approved principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold verdicts shared across capabilities; prefer cheap visible pure->pure edges over cross-capability use-case edges. No live checks; conductor runs no post-merge checks. Restore sequencing owner is recovery, not apps/status (overrides task 38's deferred-row owner). CLI keeps only flags and rendering; flags, report document and effects unchanged."

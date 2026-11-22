@@ -1,0 +1,21 @@
+id: 40
+title: "Deployment health: one pure verdict owned beside the data it judges; incident reuses it"
+state: ready
+scope:
+  - v2/delivery/rules/**
+  - v2/apps/rules/**
+  - v2/notifications/rules/incident/**
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+  - docs/v2-status.md
+checks:
+  - cd v2 && go test ./apps/... ./delivery/... ./notifications/... ./archtest/... -count=1
+  - make check-v2
+  - "! test -e v2/notifications/rules/incident/health.go"
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T16:53:51.156Z
+    commit: 38e75d59d737
+    text: "Operator-approved principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold verdicts shared across capabilities; prefer cheap visible pure->pure edges over cross-capability use-case edges. No live checks; conductor runs no post-merge checks. Owner rule: place the deployment-health verdict beside the data it judges: delivery/rules if derived from delivery's landed-release state (next to that verdict), apps/rules only if inputs are apps' own documents. One verdict; incident and apps/status import it. Record which owner you chose and why in a note."

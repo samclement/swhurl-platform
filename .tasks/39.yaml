@@ -1,0 +1,16 @@
+id: 39
+title: "Docs: scope the workload-identity registry row to its own page, clear stale check-docs claims"
+state: ready
+scope:
+  - docs/workstreams.md
+  - docs/current-state.md
+checks:
+  - make check-repo
+  - grep -F '[status page](workload-identity-status.md)' docs/workstreams.md | grep -qF 'docs/workload-identity-status.md'
+  - "! grep -n 'one remaining error\\|Documentation changes are uncommitted' docs/current-state.md"
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T16:53:50.875Z
+    commit: 38e75d59d737
+    text: "Operator-approved principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold verdicts shared across capabilities; prefer cheap visible pure->pure edges over cross-capability use-case edges. No live checks; conductor runs no post-merge checks. Registry rows scope Paths to what the row owns (a page under edit listing itself as uncommitted is accepted; no checker exemption, do not weaken the checker). make check-docs is intentionally not a registered check (cannot pass on an uncommitted branch); operator runs it post-merge."

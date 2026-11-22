@@ -1,6 +1,6 @@
 id: 48
 title: Connectivity owns the connection and egress documents; kernel keeps only its model types
-state: active
+state: done
 scope:
   - v2/kernel/documents.go
   - v2/kernel/documents_test.go
@@ -51,3 +51,15 @@ notes:
   - at: 2026-11-22T18:38:44.367Z
     commit: 7ce1b67be28e
     text: "Option 1 needs 4 more paths (renames kernel.X -> connectivity rules only)? -> yes: conductor added v2/provisioning/provisioning.go, v2/orchestration/remove.go, v2/recovery/restore.go, v2/cmd/swhurl-v2/backup_test.go to scope; renames only."
+  - at: 2026-11-22T18:45:24.054Z
+    commit: 11a0213ff12f
+    text: "done: New pure package v2/connectivity/rules reads the egress allocation and resolution documents (Decode/Encode, ConnectionsOf, SubscribersOf, InstanceEgress). Kernel keeps the document types (alloc.go, declaration.go). kernel.Declare now takes decoded documents and returns no error. Callers renamed, archtest layers and API updated. Offline only, not verified live."
+  - at: 2026-11-22T18:45:24.054Z
+    commit: 11a0213ff12f
+    text: "followup: docs/iteration-2-plan.md:327 still says connectivity's rules live in kernel; task 55 should record that document reading moved to v2/connectivity/rules (docs/v2-status.md left untouched for task 55)"
+  - at: 2026-11-22T18:45:24.054Z
+    commit: 11a0213ff12f
+    text: "followup: docs/current-state.md:127 names kernel.InstanceEgress in a dated entry; now connectivity/rules.InstanceEgress (historical entry, left as is)"
+  - at: 2026-11-22T18:47:17.779Z
+    commit: 92a9053edd5f
+    text: branch dsa/01M828QFMXWD75CZ543FSDE8KZ/task-48

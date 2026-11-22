@@ -36,3 +36,6 @@ notes:
   - at: 2026-11-22T18:36:35.182Z
     commit: da9887ae45b5
     text: "Carry task 47 followup: iteration-2-plan.md capability map (~line 327) and layout paragraph (~354) still name calls/events; now v2/connectivity/rules/calls and v2/connectivity/rules/events."
+  - at: 2026-11-22T18:47:18.080Z
+    commit: 92a9053edd5f
+    text: "Carry task 48 followup: iteration-2-plan.md:327 says connectivity's rules live in kernel; now v2/connectivity/rules reads the egress allocation and resolution documents, kernel keeps their types. Dated current-state entries stay historical."

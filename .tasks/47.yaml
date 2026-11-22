@@ -1,0 +1,29 @@
+id: 47
+title: "Connectivity owns its pure resolvers: events and calls move under v2/connectivity/rules"
+state: ready
+scope:
+  - v2/events/**
+  - v2/calls/**
+  - v2/connectivity/rules/**
+  - v2/cmd/swhurl-v2/resolve.go
+  - v2/cmd/swhurl-v2/resolve_test.go
+  - v2/cmd/swhurl-v2/users.go
+  - v2/cmd/swhurl-v2/users_test.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./connectivity/... ./cmd/swhurl-v2/... ./archtest/... -count=1
+  - make check-v2
+  - test -d v2/connectivity/rules/events && test -d v2/connectivity/rules/calls
+  - "! test -e v2/events && ! test -e v2/calls"
+after:
+  - 46
+reason: null
+notes:
+  - at: 2026-11-22T18:19:35.796Z
+    commit: 8aba040c99aa
+    text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."
+  - at: 2026-11-22T18:19:39.326Z
+    commit: 8aba040c99aa
+    text: "Operator: events and calls physically move under v2/connectivity/rules (by the change-locality test)."

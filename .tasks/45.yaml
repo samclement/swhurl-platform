@@ -1,0 +1,39 @@
+id: 45
+title: Status adopts delivery's one health verdict; observe.StateOf deleted; report Version 6
+state: ready
+scope:
+  - v2/apps/*.go
+  - v2/observe/state.go
+  - v2/observe/state_test.go
+  - v2/observe/explain.go
+  - v2/observe/report.go
+  - v2/observe/report_test.go
+  - v2/observe/explain_test.go
+  - v2/observe/verdict_internal_test.go
+  - v2/pages/pages.go
+  - v2/pages/apps.go
+  - v2/orchestration/console_rows.go
+  - v2/cmd/swhurl-v2/console/static/console.css
+  - v2/cmd/swhurl-v2/status.go
+  - v2/cmd/swhurl-v2/status_test.go
+  - v2/cmd/swhurl-v2/status_all_test.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+  - docs/v2-status.md
+  - docs/iteration-2-plan.md
+checks:
+  - cd v2 && go test ./apps/... ./observe/... ./pages/... ./orchestration/... ./delivery/... ./cmd/swhurl-v2/... ./archtest/... -count=1
+  - make check-v2
+  - "! grep -rq 'func StateOf' v2/observe"
+  - "grep -Eq 'Version: +6' v2/observe/report.go"
+  - grep -q stalled v2/pages/pages.go
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T18:19:35.192Z
+    commit: 8aba040c99aa
+    text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."
+  - at: 2026-11-22T18:19:38.665Z
+    commit: 8aba040c99aa
+    text: "Decision: ONE status state, computed in one apps function from delivery/rules' deployment-health verdict (DeploymentHealthOf/ReleaseHealthOf) composed with delivery's revision currentness (task 37); no second side-by-side field. observe.StateOf's judgement is deleted, not kept. Status keeps 'unknown' for facts it could not read. A rollback (delivery's healthy-after-rollback) gets its own state value 'rolled back' (not 'updating'); a rollout in progress stays 'updating'; a stuck/retrying release or unit not Ready is 'stalled'. Report document Version 6; console rows/pages labels/CSS handle new states; exit codes unchanged; no new cluster reads. Table test covers the disagreement cases: rollback, Retrying/InstallFailed, unit not Ready, suspended+unready workload, unreadable workload, deleting release."

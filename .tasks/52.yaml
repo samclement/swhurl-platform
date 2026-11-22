@@ -1,0 +1,25 @@
+id: 52
+title: Apps owns removal
+state: ready
+scope:
+  - v2/apps/remove*.go
+  - v2/orchestration/remove.go
+  - v2/orchestration/remove_test.go
+  - v2/cmd/swhurl-v2/remove.go
+  - v2/cmd/swhurl-v2/remove_test.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+  - docs/v2-status.md
+checks:
+  - cd v2 && go test ./apps/... ./orchestration/... ./cmd/swhurl-v2/... ./archtest/... -count=1
+  - make check-v2
+  - test -f v2/apps/remove.go
+  - "! test -e v2/orchestration/remove.go"
+after:
+  - 50
+reason: null
+notes:
+  - at: 2026-11-22T18:19:37.326Z
+    commit: 8aba040c99aa
+    text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."

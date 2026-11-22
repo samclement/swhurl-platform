@@ -1,0 +1,32 @@
+id: 55
+title: "Docs: record slice 5 complete, name the console gate, fix the plan's slice-2 wording"
+state: ready
+scope:
+  - docs/v2-status.md
+  - docs/iteration-2-plan.md
+  - docs/workstreams.md
+  - docs/current-state.md
+checks:
+  - make check-repo
+  - make check-v2
+  - "! grep -n 'until slice 5' docs/iteration-2-plan.md"
+  - "! grep -n 'Copied delivery write decisions\\|Status.s deployment health\\|Status keeps its own health judgement' docs/v2-status.md"
+after:
+  - 45
+  - 46
+  - 47
+  - 48
+  - 49
+  - 50
+  - 51
+  - 52
+  - 53
+  - 54
+reason: null
+notes:
+  - at: 2026-11-22T18:19:38.314Z
+    commit: 8aba040c99aa
+    text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."
+  - at: 2026-11-22T18:19:40.017Z
+    commit: 8aba040c99aa
+    text: "Fold in: plan slice-2 'until slice 5' wording -> provisioning writers moved; remove resolved deferred rows (copied write decisions, status deployment health); record status's one composed state (rolled back/stalled), connectivity and apps lifecycle owners, console slice as next gate. Do not claim post-merge or live checks."

@@ -1,0 +1,16 @@
+id: 53
+title: Fold the duplicated status fixture into teamscenario_test.go
+state: ready
+scope:
+  - v2/orchestration/status_variant_test.go
+  - v2/orchestration/teamscenario_test.go
+checks:
+  - cd v2 && go test ./orchestration/... -count=1
+  - "! test -e v2/orchestration/status_variant_test.go"
+  - grep -q 'func statusVariant' v2/orchestration/teamscenario_test.go
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T18:19:37.652Z
+    commit: 8aba040c99aa
+    text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."

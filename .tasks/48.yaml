@@ -1,0 +1,39 @@
+id: 48
+title: Connectivity owns the connection and egress documents; kernel keeps only its model types
+state: ready
+scope:
+  - v2/kernel/documents.go
+  - v2/kernel/documents_test.go
+  - v2/kernel/edit.go
+  - v2/kernel/edit_test.go
+  - v2/connectivity/rules/*.go
+  - v2/provisioning/rules/compile.go
+  - v2/provisioning/rules/compile_test.go
+  - v2/cmd/swhurl-v2/egress.go
+  - v2/cmd/swhurl-v2/render.go
+  - v2/cmd/swhurl-v2/status_all.go
+  - v2/cmd/swhurl-v2/deploy_records.go
+  - v2/cmd/swhurl-v2/render_test.go
+  - v2/cmd/swhurl-v2/deploy_records_test.go
+  - v2/health/platform_scope.go
+  - v2/health/platform_scope_test.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+  - docs/v2-status.md
+checks:
+  - cd v2 && go test ./connectivity/... ./kernel/... ./provisioning/... ./health/... ./cmd/swhurl-v2/... ./archtest/... -count=1
+  - make check-v2
+  - "! test -e v2/kernel/documents.go"
+  - grep -rq 'func DecodeEgressDocument\|func ConnectionsOf' v2/connectivity/rules
+after:
+  - 47
+  - 46
+reason: null
+notes:
+  - at: 2026-11-22T18:19:36.095Z
+    commit: 8aba040c99aa
+    text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."
+  - at: 2026-11-22T18:19:39.700Z
+    commit: 8aba040c99aa
+    text: "Operator: proxy manifest assembly (kernel/proxy.go) and allocation (kernel/alloc.go) stay in kernel this slice; do not export kernel internals or add kernel->connectivity/rules. Move only connection/egress document reading rules."

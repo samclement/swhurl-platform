@@ -1,0 +1,33 @@
+id: 46
+title: One provisioning workflow owns writing; delete delivery/write.go and orchestration's copies
+state: ready
+scope:
+  - v2/provisioning/*.go
+  - v2/orchestration/orchestration.go
+  - v2/orchestration/orchestration_test.go
+  - v2/orchestration/records.go
+  - v2/orchestration/create.go
+  - v2/orchestration/edit.go
+  - v2/orchestration/mint.go
+  - v2/delivery/*.go
+  - v2/cmd/swhurl-v2/render.go
+  - v2/cmd/swhurl-v2/main.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./provisioning/... ./orchestration/... ./delivery/... ./cmd/swhurl-v2/... ./archtest/... -count=1
+  - make check-v2
+  - cd v2 && go list ./provisioning
+  - "! test -e v2/delivery/write.go"
+  - "! test -e v2/orchestration/records.go"
+  - "! grep -rn 'func WithOffers\\|func prune(' v2/orchestration v2/delivery"
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T18:19:35.474Z
+    commit: 8aba040c99aa
+    text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."
+  - at: 2026-11-22T18:19:38.976Z
+    commit: 8aba040c99aa
+    text: "One layer-2 provisioning workflow owns writing (documents/WithOffers/prune/instanceDocuments/recordFiles); delivery/write.go copy deleted. No docs edit here: task 55 removes the 'Copied delivery write decisions' row (operator accepted)."

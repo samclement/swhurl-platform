@@ -1,0 +1,22 @@
+id: 38
+title: "Docs: record health slice, architecture compromise and deferred ownership corrections"
+state: ready
+scope:
+  - docs/iteration-2-plan.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+  - docs/current-state.md
+  - docs/operations.md
+  - docs/contributing.md
+  - GLOSSARY.md
+checks:
+  - make check-v2
+  - make check-repo
+  - "! grep -n 'v2/observe/platform' docs/operations.md docs/contributing.md"
+after:
+  - 37
+reason: null
+notes:
+  - at: 2026-11-22T15:17:17.992Z
+    commit: 73add754a641
+    text: "Approved completion documentation: health is fourth capability; record health and health/rules ownership/layout, checks, offline-only evidence, stays-put, and next gate slice 5 approval consistently across canonical docs/status/workstreams. Correct operational/contributing moved paths and slice-3 promise about incident health if unused. Record architecture compromise, named orchestration->health edge and shared kernel vocabulary. Explicitly defer incident deployment-health owner to slice 5 apps/status; defer restore CLI observation->plan->restore sequencing/refusal/report mutation (cmd restore.go) to apps/status; defer delivery/write.go duplicated write decisions to apps/provisioning owner. Do not claim these deferred violations compliant or live verification. No change needed to channelAddresses read-loop copy; no duplicated business verdict found there. GLOSSARY only if term changes. Conductor runs no post-merge checks; do not require it to run make check-docs after committing. Surface documentation checker precommit limits honestly and ensure registered task checks pass on your branch."

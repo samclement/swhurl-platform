@@ -1,0 +1,18 @@
+id: 34
+title: "Notifications: one pure owner for the platform notification destination"
+state: ready
+scope:
+  - v2/notifications/rules/notify/**
+  - v2/notifications/heartbeat.go
+  - v2/orchestration/dashboards.go
+  - docs/v2-status.md
+checks:
+  - cd v2 && go test ./notifications/... ./orchestration/... -count=1
+  - make check-v2
+after:
+  - 33
+reason: null
+notes:
+  - at: 2026-11-22T15:17:16.793Z
+    commit: 73add754a641
+    text: "Approved correction from slice 3: heartbeat.go and orchestration/dashboards.go duplicate console/notification-ntfy/NTFY_PLATFORM_URL destination facts. notifications/rules/notify already owns notification vocabulary: give these facts exported names there, consume from both callers, delete copies. Values and behavior unchanged; no workflow edge. Verify no duplicate destination literals remain outside pure owner. Update status only as required."

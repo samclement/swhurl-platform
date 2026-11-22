@@ -1,0 +1,18 @@
+id: 37
+title: "Observe: report delivery currentness instead of duplicating the revision verdict"
+state: ready
+scope:
+  - v2/observe/explain.go
+  - v2/observe/explain_test.go
+  - v2/observe/state_test.go
+  - docs/v2-status.md
+checks:
+  - cd v2 && go test ./observe/... ./delivery/... -count=1
+  - make check-v2
+after:
+  - 36
+reason: null
+notes:
+  - at: 2026-11-22T15:17:17.678Z
+    commit: 73add754a641
+    text: "Approved duplicate-verdict correction: revisionFindings already obtains deliveryrules.CurrentnessOf; derive unit.revision from that result, delete observe revision parser/appliedCommit/unitReason and duplicate reasons. Mapping: applied=>Applied/empty; unaffected=>Unaffected/complete_comparison_unaffected; pending+revision_not_applied=>NotApplied/reason; pending+relevant_path_changed=>Different/empty; unknown/not_assessed=>NotAssessed/delivery reason. Use exported delivery reason constants. Preserve finding order index 1, observation Version 5, JSON and error text. Existing state/report tests must pass without weakening; add table cases for unaffected/pending/unknown. No new pure edge needed."

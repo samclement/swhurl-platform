@@ -1,0 +1,27 @@
+id: 36
+title: "Health: move platform collectors and wire verify and console"
+state: ready
+scope:
+  - v2/orchestration/platform*.go
+  - v2/health/*.go
+  - v2/cmd/swhurl-v2/verify.go
+  - v2/cmd/swhurl-v2/verify_checkout.go
+  - v2/cmd/swhurl-v2/console.go
+  - v2/orchestration/console.go
+  - v2/orchestration/dashboards.go
+  - v2/orchestration/bootstrap.go
+  - v2/orchestration/teamscenario.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/api.txt
+  - docs/v2-status.md
+checks:
+  - cd v2 && go test ./health/... ./orchestration/... ./cmd/swhurl-v2/... -count=1
+  - make check-v2
+  - test -f v2/health/platform.go && ! test -e v2/orchestration/platform.go
+after:
+  - 35
+reason: null
+notes:
+  - at: 2026-11-22T15:17:17.373Z
+    commit: 73add754a641
+    text: "Approved: move platform collectors/tests from orchestration to health unchanged, importing health/rules; wire verify and verify_checkout. Add health as workflow layer 2. Specifically approve directional orchestration->health in WorkflowDependencies so ConsoleChecks retains composition rather than moving business sequencing into CLI. Keep only justified edge, reject reverse/cycles. This transitional edge is reconsidered when console moves in slice 5. Preserve flags, effects, report/JSON/output/error/exit semantics; test verify and console behavior. Shared legacy effect-helper ownership is not being redesigned in this slice; use minimal move-local plumbing only, no compatibility shims/new workflow edges; surface any scope/ownership conflict. Regenerate public API using archtest update command. Status touch as required."

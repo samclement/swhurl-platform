@@ -1,0 +1,27 @@
+id: 35
+title: "Health rules: move the pure platform model and checks out of observe"
+state: ready
+scope:
+  - v2/observe/platform*.go
+  - v2/health/rules/**
+  - v2/kernel/*.go
+  - v2/cmd/swhurl-v2/verify.go
+  - v2/cmd/swhurl-v2/verify_checkout.go
+  - v2/cmd/swhurl-v2/apphooks.go
+  - v2/delivery/fluxwait*.go
+  - v2/adapters/github/*.go
+  - v2/orchestration/platform*.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/api.txt
+  - docs/v2-status.md
+checks:
+  - cd v2 && go test ./health/... ./observe/... ./delivery/... ./adapters/github/... ./orchestration/... ./cmd/swhurl-v2/... -count=1
+  - make check-v2
+  - test -f v2/health/rules/platform.go && ! test -e v2/observe/platform.go
+after:
+  - 34
+reason: null
+notes:
+  - at: 2026-11-22T15:17:17.084Z
+    commit: 73add754a641
+    text: "Approved health slice: move observe/platform*.go and their tests unchanged into health/rules (package rules); alias recovery/rules as recoveryrules where needed. Move shared StagingEnvironment and AppLabel vocabulary to kernel (approved owner), update consumers within scope. Keep Checkout*, CompiledInstance, ClickStack helpers in health/rules. Point github adapter Hook types to health/rules. Delivery Flux-units read locator stays delivery-owned, not a health dependency. Add health/rules as pure layer 0 and required recovery/rules pure edge; retain observe existing edges. Regenerate public API only with archtest TestPublicAPI -update. Preserve platform document kind/version/field order and all command behavior; no duplicated verdicts. Workflow allowlist remains empty at this stage. If consumers outside scope need changes, release with precise missing paths, do not edit outside scope."

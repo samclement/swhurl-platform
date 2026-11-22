@@ -1,0 +1,19 @@
+id: 33
+title: "Architecture: explicit directional workflow dependencies and business ownership"
+state: ready
+scope:
+  - docs/iteration-2-plan.md
+  - docs/v2-status.md
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/archtest_test.go
+checks:
+  - cd v2 && go test ./archtest -count=1
+  - make check-v2
+  - make check-repo
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T15:16:54.798Z
+    commit: 73add754a641
+    text: "Approved policy: one owner/implementation per business verdict; reuse owner pure verdicts before invoking workflows. CLI wires dependencies, invokes use cases, maps output; no business sequencing/decisions. Allow only explicit named directional workflow edges, never blanket peer permission. Add WorkflowDependencies (initially empty); preserve existing layers rule ID and pure dependency rules. Validate endpoints are workflow packages, reject self edges/cycles; regression fixtures must reject unlisted edges and invalid entries and accept a listed edge without mutating globals. Keep pure-to-effect and all other prohibited edges forbidden. Update canonical architecture prose/table and dated decision; status page touch only as required. No speculative edges: orchestration->health is approved for later task 36 when health exists. Do not implement health yet."

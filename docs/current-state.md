@@ -2,6 +2,42 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Slice 5 complete: status, provisioning, connectivity and apps lifecycle, offline (22 November 2026)
+
+- **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)
+  slice 5 is complete offline (tasks 45–54). Apps composes delivery's deployment-health verdict and revision
+  currentness into one status state: a healthy rollback is `rolled back`, a stuck/retrying release or blocked
+  unit is `stalled`, an active rollout is `updating`, and unreadable facts are `unknown`. Known unready
+  workloads remain `failing`, including when suspended. `DeploymentVerdict.RolledBack` qualifies health without
+  making incident alert on a healthy rollback. `observe.StateOf` is deleted; `observe.Explain` supplies facts
+  and findings, not a second state judgement. Observation documents are Version 6; console labels and CSS handle
+  both new states. Flags, exit codes and API read counts are unchanged.
+- **Owners:** `provisioning` owns `CompileInto`, `WriteCompiled`, `Documents`, `InstanceDocuments` and
+  `RecordFiles`, including optional-document validation, offers placement/refusals and instance-folder prune
+  scope. `delivery/write.go` is deleted; delivery and apps write through provisioning. `connectivity/rules`
+  owns optional-document readers and the calls/events resolvers, while kernel retains their document types;
+  `connectivity.ConnectionSettings` and `AllowSettings` own declaration deltas called by `swhurl-v2 change`.
+  Apps owns creation, editing, SetTeam and removal, in addition to single/bulk status. Creation writes records
+  only; edits and team changes re-render through provisioning. Removal refuses connected instances and updates
+  registrations before deletion, leaving platform-wide regeneration to `make v2-render`. Recovery owns restore
+  sequencing and refusals, taking apps' status as a command-wired port rather than importing apps.
+- **Evidence:** [status regressions](../v2/apps/status_state_test.go),
+  [delivery health cases](../v2/delivery/rules/health_test.go),
+  [writer contracts](../v2/provisioning/provisioning_test.go),
+  [connectivity deltas](../v2/connectivity/connectivity_test.go), and apps'
+  [create](../v2/apps/create_test.go), [edit/team](../v2/apps/edit_test.go) and
+  [remove](../v2/apps/remove_test.go) regressions cover the completed ownership moves.
+  This documentation change overwrites the capability row, removes the resolved copied-writer deferral,
+  corrects the plan's slice-2 wording and aligns the registry's gate. Remaining helper duplication is not
+  claimed resolved; it is recorded in the [deferred list](v2-status.md#deferred-features).
+- **Checks:** `make check-repo`, `make check-v2` and `make check-docs` pass on this task tree.
+  The two task-specific absence checks (obsolete slice-2 wording and resolved status-page deferrals) and
+  `git diff --check` pass. No post-merge checks are claimed.
+- **Not exercised:** no cluster, bucket, browser, deployment, promotion, restore or notification run was made
+  for this completion record; nothing live was changed or verified. Console composition remains in
+  `orchestration`. **Next gate:** operator approval of the separate console capability slice's scope and
+  offline acceptance criteria, not further slice-5 implementation.
+
 ## Slice 5 begins: provisioning rules, apps status and restore sequencing, offline (22 November 2026)
 
 - **Change:** the first part of [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)

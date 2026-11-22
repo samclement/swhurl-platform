@@ -321,10 +321,10 @@ An ownership map, not a directory list: a capability's directory earns a package
 
 | Capability | Owns | Code today (until its slice moves it) |
 | --- | --- | --- |
-| apps | App and environment records, instance lifecycle, the intent to run a selected release, and an instance's status | `apps/` status and status-all; creation, editing, removal and instance records in `kernel` and `orchestration` |
+| apps | App and environment records, instance lifecycle, the intent to run a selected release, and an instance's status | `apps/` creation, editing, SetTeam, removal, status and status-all; pure instance records and lifecycle rules remain in `kernel` |
 | delivery | Release identity and selection, staging-to-production promotion, deployment, the evidence that the requested revision landed, and a deployment's health | `delivery/` and `delivery/rules/` (including the deployment-health verdict, `health.go`); release selection in `kernel/select.go`; `observe/explain.go` presents delivery’s currentness as `unit.revision`, without its own revision parser |
-| provisioning | Translating declared intent into platform configuration: resource generation, allocation and validation of rendered objects | an instance's compilation and declaration in `provisioning/rules`; the compiler and rendering in `kernel`, the writers in `orchestration`, egress allocation, `policy` |
-| connectivity | What an app may call, publish, subscribe to or reach: the meaning of those declarations and grants | `calls`, `events`, their rules in `kernel`; provisioning turns them into enforcement |
+| provisioning | Translating declared intent into platform configuration: resource generation, allocation and validation of rendered objects | an instance's compilation and declaration in `provisioning/rules`; its folder and record writers in `provisioning/`; the compiler and whole-tree rendering in `kernel`, egress allocation, `policy` |
+| connectivity | What an app may call, publish, subscribe to or reach: the meaning of those declarations and grants | `connectivity/` declaration-change workflow; `connectivity/rules` document readers and `connectivity/rules/{calls,events}` resolvers; `kernel` retains document types and rendering; provisioning turns declarations into enforcement |
 | recovery | Backup eligibility and freshness, archive selection, restore sequencing and verification of the recovered data | `recovery/` and `recovery/rules/`; the backup job's verdict in `observe/backup.go`; the restore Job's rendering in `kernel/restore.go` |
 | health | Operational checks and their verdicts, and the report that assembles them for the operator | `health/` collectors and `health/rules/` platform model, catalogue and checks; service health checks elsewhere await their owning slices |
 | notifications | Incident lifecycle, routing, delivery, retry and deduplication | `notifications/` and `notifications/rules/{incident,heartbeat,notify}` |
@@ -335,7 +335,7 @@ Two ownership contracts matter more than the directory names:
 - **Delivery owns "did this release land?"** Health may report that verdict and notifications may act on it; neither may re-derive it. A healthy rollback leaves the route available while the requested deployment remains failed, and that distinction must have one implementation: `delivery/rules.DeploymentHealthOf`, which incident imports. Apps status composes this shared verdict with delivery's revision currentness into one state; `observe.Explain` supplies facts and findings, not a second health judgement.
 - **Recovery owns "can we restore this database?"** It decides what makes an archive eligible and what evidence constitutes a successful restore. Health may surface the archive's age and the last restore result by reporting recovery's verdict, never by judging archives itself.
 
-What stays shared: the command (`cmd/swhurl-v2`) remains the one entry point, and the external-system adapters stay together under `adapters/` (`kube`, `git`, `s3`, ...): each has one reason to change and several capabilities use it. Do not recreate `kernel` as a shared model package: a pure type shared between capabilities lives with the capability that owns its meaning, and other pure packages import it through a named exception (`PureDependencies` in `archtest`). Workflow packages may import one another only through explicit, named, directional entries in `WorkflowDependencies`; both endpoints must be declared layer-2 packages in `Orchestration`, and self edges and cycles are forbidden. The registered edges are `orchestration` → `health` and `orchestration` → `apps`, so `ConsoleChecks` and `ConsoleStatus` keep console composition while invoking health’s collector and apps’ status; reconsider them when console moves. Recovery takes apps’ status as a port the command wires, not an edge. There is no blanket permission for peer imports. Prefer reusing the owner's pure verdict through `PureDependencies`; request a workflow edge only when the caller needs the owner's sequencing and effects. A small mechanical helper both need (such as formatting a refusal or translating a read failure) may be local to each rather than shared through a third package; a business verdict is never copied to avoid a dependency rule.
+What stays shared: the command (`cmd/swhurl-v2`) remains the one entry point, and the external-system adapters stay together under `adapters/` (`kube`, `git`, `s3`, ...): each has one reason to change and several capabilities use it. Do not recreate `kernel` as a shared model package: a pure type shared between capabilities lives with the capability that owns its meaning, and other pure packages import it through a named exception (`PureDependencies` in `archtest`). Workflow packages may import one another only through explicit, named, directional entries in `WorkflowDependencies`; both endpoints must be declared layer-2 packages in `Orchestration`, and self edges and cycles are forbidden. The [registered edges](#workflow-dependency-policy-approved-22-november-2026) let `ConsoleChecks` and `ConsoleStatus` keep console composition while invoking health’s collector and apps’ status, and let apps and delivery reuse provisioning’s writers; reconsider console’s edges when it moves. Recovery takes apps’ status as a port the command wires, not an edge. There is no blanket permission for peer imports. Prefer reusing the owner's pure verdict through `PureDependencies`; request a workflow edge only when the caller needs the owner's sequencing and effects. A small mechanical helper both need (such as formatting a refusal or translating a read failure) may be local to each rather than shared through a third package; a business verdict is never copied to avoid a dependency rule.
 
 Slice 4 retains the approved shared app vocabulary `kernel.AppLabel` and `kernel.StagingEnvironment`;
 `health/rules` reaches it through its named pure dependency. This is not permission to add a shared model to
@@ -351,7 +351,7 @@ v2/adapters/<system>/     shared external-system adapters (layer 1)
 v2/cmd/swhurl-v2/         the entry point: flags, wiring and output (layer 3)
 ```
 
-The responsibility model above has been the checked layout since 26 October 2026: **layer 0** the pure model (`kernel`, `calls`, `observe`, and each capability's `rules/`), **layer 1** one adapter per dependency (`adapters/files`, `adapters/kube`), **layer 2** the use cases (the packages `Orchestration` lists: `orchestration`, and each moved capability's root, such as `recovery`), **layer 3** the command (`cmd/swhurl-v2`). A package imports only lower layers, except a pure-to-pure edge listed in `PureDependencies` or a workflow-to-workflow edge listed in `WorkflowDependencies`; neither exception permits pure-to-effect dependencies. A use-case package assembles the inputs a use case needs, calls the pure decisions in order, performs the use case's one effect through an adapter, and reports either the result or where it stopped; it parses no arguments, prints nothing, chooses no exit status and holds no mutable state (the `orchestration-wires` rule). A command is then flags, dependency wiring, use-case invocation, I/O, exit codes and output mapping, never business sequencing or decisions. Boundaries are still revised only where a use case needs it, not for the numbers' own sake.
+The responsibility model above has been the checked layout since 26 October 2026: **layer 0** the pure model (`kernel`, `observe`, and each capability's `rules/`, including `connectivity/rules/{calls,events}`), **layer 1** one adapter per dependency (`adapters/files`, `adapters/kube`), **layer 2** the use cases (the packages `Orchestration` lists: `orchestration`, and each moved capability's root, such as `recovery`), **layer 3** the command (`cmd/swhurl-v2`). A package imports only lower layers, except a pure-to-pure edge listed in `PureDependencies` or a workflow-to-workflow edge listed in `WorkflowDependencies`; neither exception permits pure-to-effect dependencies. A use-case package assembles the inputs a use case needs, calls the pure decisions in order, performs the use case's one effect through an adapter, and reports either the result or where it stopped; it parses no arguments, prints nothing, chooses no exit status and holds no mutable state (the `orchestration-wires` rule). A command is then flags, dependency wiring, use-case invocation, I/O, exit codes and output mapping, never business sequencing or decisions. Boundaries are still revised only where a use case needs it, not for the numbers' own sake.
 
 ### The pure model
 
@@ -3033,7 +3033,8 @@ and effects unchanged and its existing tests moved with the code they test.
 | 2 | delivery | `swhurl-v2 promote`; one "did this release land?" verdict that health and notifications report | code moved; health reports the verdict, offline |
 | 3 | notifications | incident, heartbeat and notify workflows | code moved, offline |
 | 4 | health | `verify-platform`: the report assembling other capabilities' verdicts | code moved; delivery currentness reported without a duplicate parser, offline |
-| 5 | connectivity, provisioning, apps, console | split from `kernel` and `orchestration` as their slices need | begun: deployment health, compilation, status and restore sequencing moved, offline; the rest proposed |
+| 5 | connectivity, provisioning, apps | compilation and writers, declaration changes, app lifecycle and status; restore sequencing in recovery | complete offline; status uses delivery’s shared verdict, observation Version 6 |
+| next | console | view models, presentation and interaction flows, currently composed in `orchestration` | separate slice awaiting operator approval of scope and offline acceptance |
 
 **Slice 1: recovery.**
 
@@ -3073,29 +3074,27 @@ v2/cmd/swhurl-v2/       restore's flags, reading the operator's files, wiring an
 
 ```text
 v2/delivery/            promotion, deployment and flux-wait (layer 2), from orchestration/{promote,deploy,flux_wait}.go
-                        with their tests; write.go holds the write plumbing promotion and deployment share
+                        with their tests; provisioning now owns their shared writers (slice 5)
 v2/delivery/rules/      promotion's own rule (SelectPromotion, from kernel/promote.go), a unit's rollout verdict
                         (FluxUnitAt, from observe/flux_wait.go), the landed-revision verdict (Currentness and its
                         comparison evidence, from observe/changes.go) and promotion readiness (from observe/live.go),
                         with their tests and the vocabulary they share (layer 0)
-v2/observe/             reports delivery's currentness and readiness in the instance report, document Version 5
+v2/observe/             reports delivery's currentness and readiness; Version 5 at this slice, Version 6 after slice 5
 v2/cmd/swhurl-v2/       promote's, deploy's and flux-wait's flags, reading the operator's files, wiring and output only
 ```
 
-- **Stays put.** `kernel/select.go` (`kernel.SelectRelease`) and the compiler's release checks: selection is shared
-  by creation and deployment and moves with apps or provisioning in slice 5. `orchestration/orchestration.go`'s own
-  write plumbing, which creation, editing and removal still use: `delivery/write.go` copies the parts promotion and
-  deployment need, each declaration naming its origin, and `absentOrUnavailable` is copied in
-  `delivery/fluxwait.go` from `orchestration/flux.go`; the **two copies stay until slice 5** moves the rest of
-  orchestration’s writers. This includes copied write decisions, not just mechanical helpers; their
-  apps/provisioning owner must resolve the violation of the one-verdict rule in slice 5
-  ([deferred list](v2-status.md#deferred-features)). `observe/explain.go` keeps presentation of `unit.revision`,
-  now derived from `delivery/rules.CurrentnessOf` without its duplicate parser or reason constants (slice 4).
+- **Current ownership after slice 5.** `kernel/select.go` (`kernel.SelectRelease`) and the compiler's release
+  checks remain pure kernel rules. `provisioning` now owns the instance-folder and record writers used by
+  delivery and apps, including optional-document validation, offers placement/refusals and prune scope;
+  `delivery/write.go` is deleted. `delivery/fluxwait.go` still has the small `absentOrUnavailable` helper copied
+  from `orchestration/flux.go`; this is not a second write-decision owner. `observe/explain.go` presents
+  `unit.revision` from `delivery/rules.CurrentnessOf` without a duplicate parser or reason constants (slice 4).
 - **Checks.** `archtest` recognises the new paths: `delivery` is layer 2 and listed in `Orchestration`,
   `delivery/rules` is layer 0 and in `Pure`, and `PureDependencies` names two edges: `observe` → `delivery/rules`
   (health reporting delivery's verdicts) and `delivery/rules` → `kernel` (promotion refines kernel's selection).
   Fixtures show `delivery/rules` reading the clock is refused and `delivery/rules` → `observe` is refused while
-  `observe` → `delivery/rules` is allowed. `delivery` imports no other use-case package.
+  `observe` → `delivery/rules` is allowed. Delivery now writes through the named `delivery` → `provisioning`
+  workflow edge (slice 5).
 - **Acceptance.** `swhurl-v2 promote`, `deploy` and `flux-wait` keep their flags, documents, stderr and effects: their
   command tests pass unmodified, and only type names changed in the callers; the moved rules' tests pass in
   `delivery/rules`; the instance report keeps `Version` 5 and its JSON, `promotion:{ready,reason}` included, and
@@ -3104,8 +3103,8 @@ v2/cmd/swhurl-v2/       promote's, deploy's and flux-wait's flags, reading the o
   `wrong_release` refusal, a `flux-wait` failure or a report saying `revision_not_current` points to
   `delivery/rules` for the contract, its implementation and its tests.
 - **Decisions, 22 November 2026.** (1A) Copy the write plumbing promotion and deployment share into
-  `delivery/write.go` rather than export it from `orchestration` or move creation's writers early; the copies name
-  their origin and merge at slice 5. (2A) Move only promotion's rule, `SelectPromotion`; `kernel.SelectRelease` stays
+  `delivery/write.go` for the initial move; slice 5 replaced those copies with provisioning's writers and deleted
+  that file. (2A) Move only promotion's rule, `SelectPromotion`; `kernel.SelectRelease` stays
   for apps or provisioning. (3A) Move currentness, its change evidence and promotion readiness to `delivery/rules`
   now, with readiness taking its own `Readiness` input instead of observe's report, and keep the observation
   document's `Version` 5 and JSON unchanged. No behaviour changed.
@@ -3161,16 +3160,17 @@ v2/cmd/swhurl-v2/       verify and verify_checkout wire health; flags, output an
   ClickStack helpers belong to `health/rules`; console uses its pure `PlatformUnits` locator, while delivery’s
   Flux-unit locator stays local. Legacy effect helpers remain local to their consumers, without a new shared
   abstraction. The business-ownership violations this move left (incident deployment health, restore’s CLI
-  sequencing and copied delivery write decisions) were not excused by it; slice 5 resolved the first two, and the
-  rest live in [v2’s deferred list](v2-status.md#deferred-features).
+  sequencing and copied delivery write decisions) were not excused by it; slice 5 resolved all three. Remaining
+  limitations live in [v2’s deferred list](v2-status.md#deferred-features).
 - **Checks.** `health` is layer 2 and in `Orchestration`; `health/rules` is layer 0 and in `Pure`, with named
   pure edges to `observe`, `recovery/rules` and `kernel`. Existing observe edges to recovery and delivery remain.
-  `WorkflowDependencies` registers only `orchestration` → `health` for `ConsoleChecks`. Architecture fixtures
+  Slice 4 registered `orchestration` → `health` for `ConsoleChecks`; later edges are in the
+  [current policy](#workflow-dependency-policy-approved-22-november-2026). Architecture fixtures
   reject clock reads in health’s pure rules, reverse/unlisted workflow edges and cycles; API snapshots record
   the move, not aliases at old paths.
 - **Acceptance.** `make check-v2` passes, including verify/console success, bad-evidence and refusal/failure
   regressions. Platform document kind `v2-platform-checks`, version 1, field order, report text, errors and exit
-  semantics are preserved. Instance observation keeps Version 5 and JSON/error formats. Its revision finding
+  semantics are preserved. Instance observation kept Version 5 at this slice (Version 6 after slice 5). Its revision finding
   presents delivery’s verdict without a second parser: exact applied and proved-unaffected remain positive;
   a recognised difference without comparison/relevance proof stays `Different`/`Updating`; a short digest is
   `unrecognised_revision` and unassessed, rather than the old duplicate parser’s known difference.
@@ -3180,7 +3180,7 @@ v2/cmd/swhurl-v2/       verify and verify_checkout wire health; flags, output an
   rules and collectors moved without behaviour changes; the malformed short-digest presentation correction
   is explicit above. All evidence is [offline](current-state.md#health-is-the-fourth-capability-package-offline-22-november-2026).
 
-**Slice 5, first part: deployment health, compilation, status and restore sequencing.**
+**Slice 5 complete offline: deployment health, provisioning, connectivity, apps and restore sequencing.**
 
 ```text
 v2/delivery/rules/      health.go: the one deployment-health verdict (DeploymentHealthOf, ReleaseHealthOf,
@@ -3188,22 +3188,36 @@ v2/delivery/rules/      health.go: the one deployment-health verdict (Deployment
                         notifications/rules/incident/health.go (layer 0)
 v2/provisioning/rules/  an instance's compilation and declaration (Inputs, Compile, Declare), from
                         orchestration/orchestration.go (layer 0)
-v2/apps/                the status and status-all use cases, from orchestration/status*.go (layer 2)
+v2/provisioning/        CompileInto, WriteCompiled, Documents, InstanceDocuments and RecordFiles (layer 2),
+                        replacing orchestration's writers and delivery/write.go
+v2/connectivity/        ConnectionSettings and AllowSettings: declaration changes (layer 2)
+v2/connectivity/rules/  optional-document readers and calls/ and events/ resolvers (layer 0)
+v2/apps/                creation, editing, SetTeam, removal, status and status-all use cases (layer 2)
 v2/recovery/            Prepare and Prepared.Confirm: restore's observe → refuse → plan sequencing, from
                         cmd/swhurl-v2/restore.go
 v2/cmd/swhurl-v2/       status's, status-all's and restore's flags, wiring and output only
 ```
 
-- **Stays put.** Console composition (`ConsoleChecks`, `ConsoleStatus`) and connectivity stay in `orchestration`;
-  so do creation, editing and removal, whose writers `delivery/write.go` still copies decisions from (moves with
-  provisioning's writers). Status uses delivery’s shared health verdict; `observe.StateOf` is deleted.
-- **Checks.** `provisioning/rules` is layer 0 and in `Pure` with a `kernel` edge; `notifications/rules/incident`
-  gains a `delivery/rules` edge; `apps` is layer 2 and in `Orchestration`; `WorkflowDependencies` gains
-  `orchestration` → `apps` and a fixture refuses `recovery` → `apps`. API snapshots record the moves.
-- **Acceptance.** Incident's legacy goldens are unchanged and a table test covers every deployment-health branch;
-  `status`, `status-all` and `restore` keep their flags and errors; status documents advance to Version 6 (`Declare` now reports a malformed
-  release before a malformed profile when both are); `make check-v2` passes. The navigation test: an incident's
-  `stalled` fault points to `delivery/rules`, a status failure to `apps`, a restore refusal to `recovery`.
+- **Owners and boundaries.** Apps owns `Create`, `Edit`, `SetTeam`, `Remove`, `Status` and `StatusAll`.
+  Creation writes records only; edits and team changes re-render through provisioning. Removal refuses connected
+  instances and updates registrations before deleting files; platform-wide regeneration remains `make v2-render`.
+  Provisioning owns optional-document validation, offers placement/refusals, record files and instance-folder
+  writes/pruning. Connectivity owns calls/events resolution, optional-document readers and declaration deltas
+  used by `swhurl-v2 change`. Kernel retains document types, lifecycle rules and resource generation.
+- **Stays put.** Console composition (`ConsoleChecks`, `ConsoleStatus` and interaction flows) stays in
+  `orchestration` for a separately approved console slice; it is not unfinished slice-5 scope.
+- **Checks.** `provisioning/rules` and `connectivity/rules` (including calls/events) are pure; `apps`,
+  `provisioning` and `connectivity` are layer-2 use-case packages. Pure dependencies include
+  `provisioning/rules` → `connectivity/rules` → `kernel` and incident → `delivery/rules`.
+  Named workflow edges are listed in the [policy below](#workflow-dependency-policy-approved-22-november-2026).
+  Restore still takes apps' status as a port, with a fixture refusing `recovery` → `apps`; API snapshots record
+  the moves without old-path aliases.
+- **Acceptance.** The moved workflows and pure rules have success, refusal and failure regressions;
+  `make check-v2` passes on this task tree. Incident keeps healthy-rollback semantics; apps composes one status
+  state with `rolled back` and `stalled` labels, and observation documents advance to Version 6. Commands retain
+  their flags, exit semantics and API read counts. `Declare` reports a malformed release before a malformed
+  profile when both are. The navigation test now points to apps for lifecycle/status failures, provisioning for
+  instance-folder writes, connectivity for declaration changes and recovery for restore refusals.
 - **Decisions, 22 November 2026.** The operator's principle: a capability owns its decisions and sequencing, a
   pure rules package holds a verdict shared across capabilities, and a visible pure edge is preferred over a
   workflow edge. Deployment health sits beside the landed-release data it judges, in `delivery/rules`, not a new
@@ -3218,25 +3232,27 @@ v2/cmd/swhurl-v2/       status's, status-all's and restore's flags, wiring and o
   [single/bulk regression cases](../v2/apps/status_state_test.go) cover these differences and prove an unaffected
   revision cannot waive unhealthy facts; [delivery's cases](../v2/delivery/rules/health_test.go) preserve incident's
   rollback semantics. All evidence is
-  [offline](current-state.md#slice-5-begins-provisioning-rules-apps-status-and-restore-sequencing-offline-22-november-2026).
-  **Next gate:** console ownership and the rest of slice 5's offline acceptance; status adoption is implemented
-  offline, not accepted live.
+  [offline](current-state.md#slice-5-complete-status-provisioning-connectivity-and-apps-lifecycle-offline-22-november-2026).
+  **Next gate:** operator approval of the separate console capability slice and its offline acceptance.
+  Slice 5 is complete offline, not verified live; remaining helper duplication is recorded in the
+  [canonical deferred list](v2-status.md#deferred-features).
 
 ### Workflow dependency policy (approved 22 November 2026)
 
 The architecture now permits only reviewed, named, directional workflow dependencies, rather than forbidding
 all workflow imports and pushing shared business sequencing into commands or duplicate implementations.
 The [ownership and dependency contract](#capability-map) and the existing `layers` rule are canonical;
-`WorkflowDependencies` contains only `orchestration` → `health` and `orchestration` → `apps`: the approved
-transitional compromise keeps `ConsoleChecks` and `ConsoleStatus` composition in a workflow rather than moving it
-into the CLI or duplicating health collection or status. The reverses and all unlisted peer imports remain
-forbidden. Reconsider the edges when console moves.
+`WorkflowDependencies` contains `orchestration` → `health`, `apps`, `provisioning`; `delivery` → `provisioning`;
+and `apps` → `provisioning`. The first two orchestration edges keep `ConsoleChecks` and `ConsoleStatus`
+composition in a workflow rather than in the CLI or duplicate implementations; reconsider them when console
+moves. Orchestration also uses provisioning's records-root constant for seed minting. Apps and delivery reuse
+provisioning's record and instance-folder writers. The reverses and all unlisted peer imports remain forbidden.
 `PureDependencies` separately records the reviewed pure owners; all other layer restrictions stay unchanged.
 The policy requires one owner per business verdict; callers reuse its pure verdict before requesting its workflow.
 Commands must only wire dependencies, invoke use cases and map output, without business sequencing or decisions.
 
 The registry check rejects non-workflow endpoints, self edges and cycles even when the declared edge is not
 imported. Regression fixtures accept a locally supplied named edge without changing global policy, reject its
-reverse and unlisted peers, and keep pure-to-effect and all other prohibited imports forbidden. This changes
-the policy and the registered health dependency; it does not prove business ownership compliance. The remaining
+reverse and unlisted peers, and keep pure-to-effect and all other prohibited imports forbidden. These named edges
+do not prove business ownership compliance. The remaining
 known violations are in the [canonical deferred list](v2-status.md#deferred-features). Verification is offline, not a live-effect claim.

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
@@ -83,7 +82,7 @@ func (c cli) stagingReleases(records string) (map[string][]byte, int) {
 		if !entry.IsDir() {
 			continue
 		}
-		data, status := c.checkoutFile(filepath.Join(records, entry.Name(), observe.StagingEnvironment, kernel.ReleaseRecordName))
+		data, status := c.checkoutFile(filepath.Join(records, entry.Name(), kernel.StagingEnvironment, kernel.ReleaseRecordName))
 		if status != 0 {
 			return nil, status
 		}

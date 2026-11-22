@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
-	"github.com/samclement/swhurl-platform/v2/observe"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 )
 
 // Call records a read's operation, repository and explicit credential for boundary assertions.
@@ -16,7 +16,7 @@ type Call struct{ Operation, Repository, Token string }
 
 // Fake answers hooks per repository and acceptance per token. Fail applies to both reads.
 type Fake struct {
-	Repositories map[string][]observe.Hook
+	Repositories map[string][]healthrules.Hook
 	Tokens       map[string]github.Acceptance
 	Denied       map[string]bool
 	Fail         error
@@ -27,11 +27,11 @@ var _ github.Reader = (*Fake)(nil)
 
 // New returns an empty read-only GitHub inventory.
 func New() *Fake {
-	return &Fake{Repositories: map[string][]observe.Hook{}, Tokens: map[string]github.Acceptance{}}
+	return &Fake{Repositories: map[string][]healthrules.Hook{}, Tokens: map[string]github.Acceptance{}}
 }
 
 func (f *Fake) read(operation, repository, token string) error {
-	if !observe.GitHubRepository(repository) {
+	if !healthrules.GitHubRepository(repository) {
 		return &github.Error{Reason: "invalid repository"}
 	}
 	if strings.TrimSpace(token) == "" {
@@ -42,14 +42,14 @@ func (f *Fake) read(operation, repository, token string) error {
 }
 
 // Hooks returns owned facts, without ever writing the repository.
-func (f *Fake) Hooks(_ context.Context, repository, token string) ([]observe.Hook, error) {
+func (f *Fake) Hooks(_ context.Context, repository, token string) ([]healthrules.Hook, error) {
 	if err := f.read("hooks", repository, token); err != nil {
 		return nil, err
 	}
 	if f.Denied[token] {
 		return nil, &github.Error{Reason: "HTTP 401"}
 	}
-	found := []observe.Hook{}
+	found := []healthrules.Hook{}
 	for _, hook := range f.Repositories[repository] {
 		hook.Events = slices.Clone(hook.Events)
 		if hook.Code != nil {

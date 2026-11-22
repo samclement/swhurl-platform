@@ -1,4 +1,4 @@
-package observe
+package rules
 
 import (
 	"bytes"
@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // IngestionEvidence contains only presence/equality/error facts, never key or URI bytes.
@@ -97,7 +99,7 @@ func platformRegistration(e RegistrationEvidence) []PlatformEntry {
 
 // ClickStackSelector reads the installed Deployment's selector, never guesses pod names. Invalid or
 // absent selectors fail closed. Both matchLabels and Kubernetes set/existence expressions are supported.
-func ClickStackSelector(deployment Read) string {
+func ClickStackSelector(deployment observe.Read) string {
 	var doc struct {
 		Spec struct {
 			Selector struct {
@@ -109,7 +111,7 @@ func ClickStackSelector(deployment Read) string {
 			} `json:"selector"`
 		} `json:"spec"`
 	}
-	if deployment.Status != Present || json.Unmarshal(deployment.Object, &doc) != nil {
+	if deployment.Status != observe.Present || json.Unmarshal(deployment.Object, &doc) != nil {
 		return ""
 	}
 	terms := []string{}
@@ -173,8 +175,8 @@ func (p clickstackPod) ready() bool {
 	return ready && app
 }
 
-func ClickStackPod(pods List) string {
-	if pods.Status != Present {
+func ClickStackPod(pods observe.List) string {
+	if pods.Status != observe.Present {
 		return ""
 	}
 	selected := ""
@@ -191,19 +193,19 @@ func ClickStackPod(pods List) string {
 }
 
 // MongoVolumeName is the bound volume a successfully read PVC states, or empty when it cannot be read.
-func MongoVolumeName(claim Read) string {
+func MongoVolumeName(claim observe.Read) string {
 	var doc struct{ Spec struct{ VolumeName string } }
-	if claim.Status != Present || json.Unmarshal(claim.Object, &doc) != nil {
+	if claim.Status != observe.Present || json.Unmarshal(claim.Object, &doc) != nil {
 		return ""
 	}
 	return doc.Spec.VolumeName
 }
 
-func retainedMongoVolume(volume Read) PlatformEntry {
+func retainedMongoVolume(volume observe.Read) PlatformEntry {
 	var doc struct {
 		Spec struct{ PersistentVolumeReclaimPolicy string }
 	}
-	if volume.Status == Present && json.Unmarshal(volume.Object, &doc) == nil && doc.Spec.PersistentVolumeReclaimPolicy == "Retain" {
+	if volume.Status == observe.Present && json.Unmarshal(volume.Object, &doc) == nil && doc.Spec.PersistentVolumeReclaimPolicy == "Retain" {
 		return ok("ClickStack MongoDB data volume is Retain (outlives its claim)")
 	}
 	return bad("ClickStack MongoDB data volume is not Retain; its storage class must be local-path-retain")
@@ -212,7 +214,7 @@ func retainedMongoVolume(volume Read) PlatformEntry {
 // RetentionEvidence holds already judged, credential-free query entries and volume evidence.
 type RetentionEvidence struct {
 	Telemetry, SystemLogs, Merges PlatformEntry
-	Volume                        Read
+	Volume                        observe.Read
 }
 
 func platformRetention(e RetentionEvidence) []PlatformEntry {

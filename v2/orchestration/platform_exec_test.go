@@ -12,6 +12,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -37,7 +38,7 @@ func podInputs(t *testing.T) (PlatformAllInputs, *kubetest.Fake, *kubetest.Execu
 
 func TestPodChecksShareReadsAndUseOnlyFixedReadQueries(t *testing.T) {
 	inputs, fake, executor := podInputs(t)
-	scope := observe.ScopeEvidence{}
+	scope := healthrules.ScopeEvidence{}
 	if err := readPodChecks(context.Background(), inputs, &scope); err != nil {
 		t.Fatal(err)
 	}
@@ -69,8 +70,8 @@ func TestPodChecksShareReadsAndUseOnlyFixedReadQueries(t *testing.T) {
 	if !slices.Equal(fake.Selectors, []string{"app.kubernetes.io/name=clickstack-app"}) {
 		t.Fatalf("%v", fake.Selectors)
 	}
-	for _, entry := range []observe.PlatformEntry{scope.Retention.Telemetry, scope.Retention.SystemLogs, scope.Retention.Merges} {
-		if entry.Level != observe.CheckOK {
+	for _, entry := range []healthrules.PlatformEntry{scope.Retention.Telemetry, scope.Retention.SystemLogs, scope.Retention.Merges} {
+		if entry.Level != healthrules.CheckOK {
 			t.Fatalf("%+v", entry)
 		}
 	}
@@ -116,11 +117,11 @@ func TestPodCheckFailuresNeverSerializeCredentialMaterial(t *testing.T) {
 			if err != nil {
 				t.Fatal("failed external read stopped report")
 			}
-			encoded, err := observe.EncodePlatformReport(report)
+			encoded, err := healthrules.EncodePlatformReport(report)
 			if err != nil {
 				t.Fatal(err)
 			}
-			text := observe.PlatformText(report) + string(encoded)
+			text := healthrules.PlatformText(report) + string(encoded)
 			for _, key := range []string{execKey, execURI, base64.StdEncoding.EncodeToString([]byte(execKey)), "other-key"} {
 				if strings.Contains(text, key) {
 					t.Fatal("credential in report")
@@ -128,7 +129,7 @@ func TestPodCheckFailuresNeverSerializeCredentialMaterial(t *testing.T) {
 			}
 			if test.name == "collector absent" || test.name == "invalid base64 or denied" {
 				for _, check := range groupsNamed(report, "runtime-secrets", "ingestion-key") {
-					if len(check.Entries) != 1 || check.Entries[0].Level != observe.CheckBad {
+					if len(check.Entries) != 1 || check.Entries[0].Level != healthrules.CheckBad {
 						t.Fatal("both ingestion groups must fail")
 					}
 				}
@@ -161,7 +162,7 @@ func TestRegistrationUnavailableNeverExecutesAnUnreadyPod(t *testing.T) {
 			case "pod unready":
 				fake.Collections[clickstackRef("Pod", "")][0] = []byte(`{"metadata":{"name":"unready"},"status":{"phase":"Running"}}`)
 			}
-			scope := observe.ScopeEvidence{}
+			scope := healthrules.ScopeEvidence{}
 			if err := readRegistration(context.Background(), inputs, &scope); err != nil {
 				t.Fatal(err)
 			}
@@ -206,13 +207,13 @@ func TestMongoVolumeMissingAndFailedReadsRemainBad(t *testing.T) {
 			}
 			// Retention on its own: the first three answers are the independent SQL responses.
 			executor.Answers = executor.Answers[2:]
-			scope := observe.ScopeEvidence{}
+			scope := healthrules.ScopeEvidence{}
 			if err := readRetention(context.Background(), inputs, &scope); err != nil {
 				t.Fatal(err)
 			}
-			report := observe.PlatformReport{Checks: observe.PlatformScopeChecks(observe.PlatformEvidence{}, scope)}
+			report := healthrules.PlatformReport{Checks: healthrules.PlatformScopeChecks(healthrules.PlatformEvidence{}, scope)}
 			entries := groupsNamed(report, "retention")[0].Entries
-			if len(entries) != 4 || entries[3].Level != observe.CheckBad || len(executor.Requests) != 3 {
+			if len(entries) != 4 || entries[3].Level != healthrules.CheckBad || len(executor.Requests) != 3 {
 				t.Fatal("retention failed to report volume independently")
 			}
 			if strings.HasPrefix(which, "claim") && slices.Contains(fake.Reads, volume) {
@@ -224,8 +225,8 @@ func TestMongoVolumeMissingAndFailedReadsRemainBad(t *testing.T) {
 
 // groupsNamed are the report's groups with these names, in the order asked for: a group is found by its name, never
 // by its position, so a new group elsewhere in the catalogue cannot silently change what a test reads.
-func groupsNamed(report observe.PlatformReport, names ...string) []observe.PlatformCheck {
-	found := []observe.PlatformCheck{}
+func groupsNamed(report healthrules.PlatformReport, names ...string) []healthrules.PlatformCheck {
+	found := []healthrules.PlatformCheck{}
 	for _, name := range names {
 		for _, check := range report.Checks {
 			if check.Name == name {

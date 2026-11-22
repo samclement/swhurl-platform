@@ -20,6 +20,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/registry/registrytest"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
@@ -182,7 +183,7 @@ func platformReport(t *testing.T, stdout string) map[string][]struct{ Level, Mes
 		names = append(names, check.Name)
 	}
 	catalogued := []string{}
-	for _, entry := range observe.PlatformCatalogue {
+	for _, entry := range healthrules.PlatformCatalogue {
 		catalogued = append(catalogued, entry.Name)
 	}
 	if strings.Join(names, " ") != strings.Join(catalogued, " ") {

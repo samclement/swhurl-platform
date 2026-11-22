@@ -12,7 +12,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
-	"github.com/samclement/swhurl-platform/v2/observe"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
@@ -37,7 +37,7 @@ func (c cli) verify(r request) int {
 		source = r.source
 	}
 	inputs := orchestration.PlatformInputs{Reader: reader, Source: source, Now: time.Now}
-	var report observe.PlatformReport
+	var report healthrules.PlatformReport
 	if r.scope == "platform" {
 		report, status = c.verifyPlatform(r, connection, inputs)
 	} else {
@@ -46,9 +46,9 @@ func (c cli) verify(r request) int {
 	if status != 0 {
 		return status
 	}
-	document := []byte(observe.PlatformText(report))
+	document := []byte(healthrules.PlatformText(report))
 	if r.json {
-		if document, err = observe.EncodePlatformReport(report); err != nil {
+		if document, err = healthrules.EncodePlatformReport(report); err != nil {
 			return fail(c.diagnostic, err)
 		}
 	}
@@ -58,7 +58,7 @@ func (c cli) verify(r request) int {
 	return 1
 }
 
-func (c cli) verifyCluster(inputs orchestration.PlatformInputs) (observe.PlatformReport, int) {
+func (c cli) verifyCluster(inputs orchestration.PlatformInputs) (healthrules.PlatformReport, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
 	report, err := orchestration.Platform(ctx, inputs)
@@ -71,7 +71,7 @@ func (c cli) verifyCluster(inputs orchestration.PlatformInputs) (observe.Platfor
 // verifyPlatform runs every check: the connection's other ports, the anonymous registry, the object store with the
 // operator's credentials when they are set, GitHub with explicit operator/console credentials, the checkout
 // at --root, and the tag and host heartbeat facts the caller supplied.
-func (c cli) verifyPlatform(r request, connection kube.Connection, cluster orchestration.PlatformInputs) (observe.PlatformReport, int) {
+func (c cli) verifyPlatform(r request, connection kube.Connection, cluster orchestration.PlatformInputs) (healthrules.PlatformReport, int) {
 	inputs := orchestration.PlatformAllInputs{PlatformInputs: cluster, Registries: c.registries, ConsoleTag: r.consoleTag,
 		Heartbeat: c.heartbeatFacts(r.heartbeat)}
 	inputs.GitHub, inputs.GitHubToken = c.github, strings.TrimSpace(os.Getenv("GH_TOKEN"))
@@ -80,20 +80,20 @@ func (c cli) verifyPlatform(r request, connection kube.Connection, cluster orche
 	}
 	var status int
 	if inputs.MaxAge, status = c.backupMaxAge(); status != 0 {
-		return observe.PlatformReport{}, status
+		return healthrules.PlatformReport{}, status
 	}
 	if inputs.Checkout, status = c.readCheckout(r.root); status != 0 {
-		return observe.PlatformReport{}, status
+		return healthrules.PlatformReport{}, status
 	}
 	var err error
 	if inputs.Data, err = connection.Data(); err != nil {
-		return observe.PlatformReport{}, fail(c.diagnostic, err)
+		return healthrules.PlatformReport{}, fail(c.diagnostic, err)
 	}
 	if inputs.Issuer, err = connection.Issuer(); err != nil {
-		return observe.PlatformReport{}, fail(c.diagnostic, err)
+		return healthrules.PlatformReport{}, fail(c.diagnostic, err)
 	}
 	if inputs.Executor, err = connection.Executor(); err != nil {
-		return observe.PlatformReport{}, fail(c.diagnostic, err)
+		return healthrules.PlatformReport{}, fail(c.diagnostic, err)
 	}
 	if _, supplied := awsCredentials(); supplied {
 		inputs.Objects = func(bucket string) (s3.Reader, error) { return c.archives(bucket, "") }
@@ -109,15 +109,15 @@ func (c cli) verifyPlatform(r request, connection kube.Connection, cluster orche
 
 // heartbeatFacts are the host heartbeat units as the caller read them: no --heartbeat is facts not supplied, and a
 // file this run cannot read is facts it could not read, which the check reports. Neither stops the other checks.
-func (c cli) heartbeatFacts(path string) observe.HeartbeatEvidence {
+func (c cli) heartbeatFacts(path string) healthrules.HeartbeatEvidence {
 	if path == "" {
-		return observe.HeartbeatEvidence{}
+		return healthrules.HeartbeatEvidence{}
 	}
 	data, err := c.readFile(path)
 	if err != nil {
-		return observe.HeartbeatEvidence{Supplied: true}
+		return healthrules.HeartbeatEvidence{Supplied: true}
 	}
-	return observe.HeartbeatEvidence{Supplied: true, Text: string(data)}
+	return healthrules.HeartbeatEvidence{Supplied: true, Text: string(data)}
 }
 
 // backupMaxAge is how old the newest complete backup may be: BACKUP_MAX_AGE_HOURS, or 26 hours.

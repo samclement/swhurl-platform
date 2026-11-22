@@ -9,15 +9,16 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // The use case reads the eight things the checks name through the adapter's own refs, so a kind or version the
 // adapter does not read is refused here and never reaches the cluster.
 func TestPlatformReadsWhatTheChecksName(t *testing.T) {
-	for _, ref := range []observe.Ref{observe.PlatformUnits, observe.PlatformAlerts, observe.PlatformProviders,
-		observe.PlatformTraefik, observe.PlatformNotify, observe.PlatformConsole, observe.PlatformDashboards,
-		observe.PlatformNotifications} {
+	for _, ref := range []observe.Ref{healthrules.PlatformUnits, healthrules.PlatformAlerts, healthrules.PlatformProviders,
+		healthrules.PlatformTraefik, healthrules.PlatformNotify, healthrules.PlatformConsole, healthrules.PlatformDashboards,
+		healthrules.PlatformNotifications} {
 		group, _, _ := strings.Cut(ref.APIVersion, "/")
 		stated, err := kube.RefOf(group, ref.Kind, ref.Namespace, ref.Name)
 		if err != nil || stated != ref {
@@ -26,7 +27,7 @@ func TestPlatformReadsWhatTheChecksName(t *testing.T) {
 	}
 	fake := kubetest.New(kubetest.Answers{})
 	fake.Objects = map[observe.Ref][]byte{}
-	fake.Collections = map[observe.Ref][][]byte{observe.PlatformUnits: {}, observe.PlatformAlerts: {}, observe.PlatformProviders: {}}
+	fake.Collections = map[observe.Ref][][]byte{healthrules.PlatformUnits: {}, healthrules.PlatformAlerts: {}, healthrules.PlatformProviders: {}}
 	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.FixedZone("x", 3600))
 	report, err := Platform(context.Background(), PlatformInputs{Reader: fake, Source: "test", Now: func() time.Time { return now }})
 	if err != nil {

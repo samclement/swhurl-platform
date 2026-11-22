@@ -15,15 +15,16 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/registry/registrytest"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3/s3test"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // Every object and collection the scope reads is one the adapter states, at the version it states.
 func TestPlatformScopeReadsWhatTheAdapterStates(t *testing.T) {
-	for _, ref := range []observe.Ref{observe.PlatformImagePolicies, observe.PlatformNamespaces, observe.PlatformQuotas,
-		observe.PlatformNetworkPolicies, observe.PlatformNATS, observe.PlatformNATSController, observe.PlatformStreams,
-		observe.PlatformConsumers, observe.PlatformEgress, observe.PlatformMongoBackup} {
+	for _, ref := range []observe.Ref{healthrules.PlatformImagePolicies, healthrules.PlatformNamespaces, healthrules.PlatformQuotas,
+		healthrules.PlatformNetworkPolicies, healthrules.PlatformNATS, healthrules.PlatformNATSController, healthrules.PlatformStreams,
+		healthrules.PlatformConsumers, healthrules.PlatformEgress, healthrules.PlatformMongoBackup} {
 		group, _, _ := strings.Cut(ref.APIVersion, "/")
 		if !strings.Contains(ref.APIVersion, "/") {
 			group = ""
@@ -43,14 +44,14 @@ func scopeCluster(t *testing.T) (*kubetest.Fake, PlatformAllInputs) {
 	fake.Objects = map[observe.Ref][]byte{}
 	in := func(ref observe.Ref, namespace string) observe.Ref { ref.Namespace = namespace; return ref }
 	fake.Collections = map[observe.Ref][][]byte{
-		observe.PlatformUnits: {}, observe.PlatformAlerts: {}, observe.PlatformProviders: {},
-		observe.PlatformImagePolicies: {[]byte(`{"metadata":{"name":"hello-staging","namespace":"flux-system","labels":` +
+		healthrules.PlatformUnits: {}, healthrules.PlatformAlerts: {}, healthrules.PlatformProviders: {},
+		healthrules.PlatformImagePolicies: {[]byte(`{"metadata":{"name":"hello-staging","namespace":"flux-system","labels":` +
 			`{"platform.swhurl.com/app":"hello"}},"status":{"conditions":[{"type":"Ready","status":"True"}],"latestRef":{"tag":"42-abc1234"}}}`)},
-		observe.PlatformNamespaces:                           {},
-		in(observe.PlatformQuotas, "hello-staging"):          {},
-		in(observe.PlatformNetworkPolicies, "hello-staging"): {},
-		in(observe.PlatformStreams, "hello-staging"):         {},
-		in(observe.PlatformConsumers, "hello-staging"):       {},
+		healthrules.PlatformNamespaces:                           {},
+		in(healthrules.PlatformQuotas, "hello-staging"):          {},
+		in(healthrules.PlatformNetworkPolicies, "hello-staging"): {},
+		in(healthrules.PlatformStreams, "hello-staging"):         {},
+		in(healthrules.PlatformConsumers, "hello-staging"):       {},
 	}
 	fake.Signing = kube.SigningKeys{Issuer: "https://kubernetes.default.svc.cluster.local", Keys: []byte(`{"keys":[]}`)}
 	fake.SecretData = map[string][]kube.Secret{"notify": {{Name: "channel-platform",
@@ -69,7 +70,7 @@ func scopeCluster(t *testing.T) (*kubetest.Fake, PlatformAllInputs) {
 	}
 	checkout := Checkout{Profile: profile, FluxSettings: []byte(`{"version":"2.8.1","extraComponents":["image-reflector-controller"]}`),
 		Releases: map[string][]byte{"hello/staging": release, "hello/prod": database},
-		Compiled: []observe.CompiledInstance{{Application: "hello", Environment: "staging", Files: map[string][]byte{
+		Compiled: []healthrules.CompiledInstance{{Application: "hello", Environment: "staging", Files: map[string][]byte{
 			"namespace.json": []byte(`{"kind":"Namespace","metadata":{"name":"hello-staging"}}`),
 			"stream.json":    []byte(`{"kind":"Stream","metadata":{"name":"staging-hello","namespace":"hello-staging"}}`)}}}}
 	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)

@@ -14,6 +14,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 	"github.com/samclement/swhurl-platform/v2/observe"
@@ -28,7 +29,7 @@ type Checkout struct {
 	FluxSettings []byte
 	// Apps are the app records, by app; Releases the release records, by "<app>/<env>".
 	Apps, Releases map[string][]byte
-	Compiled       []observe.CompiledInstance
+	Compiled       []healthrules.CompiledInstance
 }
 
 // PlatformAllInputs is one run of every platform check: the cluster checks' inputs, the cluster's other ports, the
@@ -49,45 +50,45 @@ type PlatformAllInputs struct {
 	ConsoleTag string
 	MaxAge     time.Duration
 	// Heartbeat is the host heartbeat facts the caller supplied, or that it supplied none.
-	Heartbeat observe.HeartbeatEvidence
+	Heartbeat healthrules.HeartbeatEvidence
 }
 
 // scopeStep makes one check's reads into the scope's evidence.
-type scopeStep func(context.Context, PlatformAllInputs, *observe.ScopeEvidence) error
+type scopeStep func(context.Context, PlatformAllInputs, *healthrules.ScopeEvidence) error
 
 // PlatformAll reads what every platform check needs — the cluster checks' reads, then each scope check's from the
 // cluster, the checkout, the registry and the object store — and reports their verdicts. As for Platform, a failed
 // read is evidence and a request an adapter refuses to make is an error, with no report.
-func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.PlatformReport, error) {
+func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (healthrules.PlatformReport, error) {
 	evidence, err := platformEvidence(ctx, inputs.Reader)
 	if err != nil {
-		return observe.PlatformReport{}, err
+		return healthrules.PlatformReport{}, err
 	}
-	scope := observe.ScopeEvidence{Compiled: inputs.Checkout.Compiled, Credentials: inputs.Objects != nil,
+	scope := healthrules.ScopeEvidence{Compiled: inputs.Checkout.Compiled, Credentials: inputs.Objects != nil,
 		MaxAge: inputs.MaxAge, Heartbeat: inputs.Heartbeat}
 	for _, step := range []scopeStep{readImages, readIsolation, readSigning, readEvents, readEgress, readChannels,
 		readMongoBackups, readDatabases, readConsole, readGitHub, readPodChecks, readFluxControllers, readJetStream} {
 		if err := step(ctx, inputs, &scope); err != nil {
-			return observe.PlatformReport{}, err
+			return healthrules.PlatformReport{}, err
 		}
 	}
 	now := inputs.Now().UTC()
 	evidence.Now = now
-	return observe.PlatformReport{Source: inputs.Source, ObservedAt: now.Format(time.RFC3339),
-		Checks: observe.PlatformScopeChecks(evidence, scope)}, nil
+	return healthrules.PlatformReport{Source: inputs.Source, ObservedAt: now.Format(time.RFC3339),
+		Checks: healthrules.PlatformScopeChecks(evidence, scope)}, nil
 }
 
 // readImages lists the apps' ImagePolicies and, for each Ready one, reads its app's staging record and asks the
 // registry, anonymously, which digest the policy's newest tag names.
-func readImages(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
-	policies, err := inputs.Reader.List(ctx, observe.PlatformImagePolicies, observe.AppLabel)
+func readImages(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
+	policies, err := inputs.Reader.List(ctx, healthrules.PlatformImagePolicies, kernel.AppLabel)
 	if err != nil {
 		return err
 	}
-	scope.Images = observe.ImageEvidence{Policies: policies, Records: map[string]observe.StagingRecord{},
-		Newest: map[string]observe.NewestImage{}}
-	for _, policy := range observe.ImagePolicies(policies) {
-		data, found := inputs.Checkout.Releases[policy.App+"/"+observe.StagingEnvironment]
+	scope.Images = healthrules.ImageEvidence{Policies: policies, Records: map[string]healthrules.StagingRecord{},
+		Newest: map[string]healthrules.NewestImage{}}
+	for _, policy := range healthrules.ImagePolicies(policies) {
+		data, found := inputs.Checkout.Releases[policy.App+"/"+kernel.StagingEnvironment]
 		if !policy.Ready() || !found {
 			continue
 		}
@@ -100,44 +101,44 @@ func readImages(ctx context.Context, inputs PlatformAllInputs, scope *observe.Sc
 	return nil
 }
 
-func stagingRecord(data []byte) observe.StagingRecord {
+func stagingRecord(data []byte) healthrules.StagingRecord {
 	release, err := kernel.DecodeRelease(data)
 	if err != nil {
-		return observe.StagingRecord{Problem: err.Error()}
+		return healthrules.StagingRecord{Problem: err.Error()}
 	}
-	return observe.StagingRecord{Image: release.Artifact.Image, Digest: release.Artifact.Digest}
+	return healthrules.StagingRecord{Image: release.Artifact.Image, Digest: release.Artifact.Digest}
 }
 
-func newestImage(ctx context.Context, registries func(string) (registry.Reader, error), image, tag string) observe.NewestImage {
+func newestImage(ctx context.Context, registries func(string) (registry.Reader, error), image, tag string) healthrules.NewestImage {
 	reader, err := registries(image)
 	if err != nil {
-		return observe.NewestImage{Problem: err.Error()}
+		return healthrules.NewestImage{Problem: err.Error()}
 	}
 	found, err := reader.Describe(ctx, tag)
 	if err != nil {
-		return observe.NewestImage{Problem: err.Error()}
+		return healthrules.NewestImage{Problem: err.Error()}
 	}
-	return observe.NewestImage{Digest: found.Digest}
+	return healthrules.NewestImage{Digest: found.Digest}
 }
 
 // readIsolation lists the app namespaces and, in each compiled instance's namespace, its ResourceQuotas and
 // NetworkPolicies, and reads the team registry.
-func readIsolation(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
-	namespaces, err := inputs.Reader.List(ctx, observe.PlatformNamespaces, observe.AppLabel)
+func readIsolation(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
+	namespaces, err := inputs.Reader.List(ctx, healthrules.PlatformNamespaces, kernel.AppLabel)
 	if err != nil {
 		return err
 	}
-	scope.Isolation = observe.IsolationEvidence{Namespaces: namespaces, Quotas: map[string]observe.List{},
+	scope.Isolation = healthrules.IsolationEvidence{Namespaces: namespaces, Quotas: map[string]observe.List{},
 		Policies: map[string]observe.List{}, Teams: map[string]bool{}}
 	for _, instance := range inputs.Checkout.Compiled {
 		namespace := instance.Namespace()
 		if namespace == "" {
 			continue
 		}
-		if scope.Isolation.Quotas[namespace], err = listIn(ctx, inputs.Reader, observe.PlatformQuotas, namespace); err != nil {
+		if scope.Isolation.Quotas[namespace], err = listIn(ctx, inputs.Reader, healthrules.PlatformQuotas, namespace); err != nil {
 			return err
 		}
-		if scope.Isolation.Policies[namespace], err = listIn(ctx, inputs.Reader, observe.PlatformNetworkPolicies, namespace); err != nil {
+		if scope.Isolation.Policies[namespace], err = listIn(ctx, inputs.Reader, healthrules.PlatformNetworkPolicies, namespace); err != nil {
 			return err
 		}
 	}
@@ -158,7 +159,7 @@ func listIn(ctx context.Context, reader kube.Reader, kind observe.Ref, namespace
 // teamsOf is the checkout's team registry, or why it has none.
 func teamsOf(data []byte) (kernel.TeamRegistry, string) {
 	if data == nil {
-		return kernel.TeamRegistry{}, "the checkout has no " + observe.CheckoutTeams
+		return kernel.TeamRegistry{}, "the checkout has no " + healthrules.CheckoutTeams
 	}
 	registry, err := kernel.DecodeTeams(data)
 	if err != nil {
@@ -168,13 +169,13 @@ func teamsOf(data []byte) (kernel.TeamRegistry, string) {
 }
 
 // readSigning reads the cluster's token issuer and signing keys, and what the profile's auth block states.
-func readSigning(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+func readSigning(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
 	keys, err := inputs.Issuer.SigningKeys(ctx)
 	unread, err := failedRead(err)
 	if err != nil {
 		return err
 	}
-	scope.Signing = observe.SigningEvidence{Issuer: keys.Issuer, Keys: keys.Keys, Unread: unread}
+	scope.Signing = healthrules.SigningEvidence{Issuer: keys.Issuer, Keys: keys.Keys, Unread: unread}
 	profile, problem := profileOf(inputs.Checkout.Profile)
 	scope.Signing.StatedIssuer, scope.Signing.StatedKeys, scope.Signing.Unstated = profile.Auth.Issuer, profile.Auth.Keys, problem
 	return nil
@@ -195,7 +196,7 @@ func failedRead(err error) (string, error) {
 // profileOf is the checkout's platform profile, or why it has none.
 func profileOf(data []byte) (kernel.PlatformProfile, string) {
 	if data == nil {
-		return kernel.PlatformProfile{}, "the checkout has no " + observe.CheckoutProfile
+		return kernel.PlatformProfile{}, "the checkout has no " + healthrules.CheckoutProfile
 	}
 	profile, err := kernel.DecodeProfile(data)
 	if err != nil {
@@ -205,20 +206,20 @@ func profileOf(data []byte) (kernel.PlatformProfile, string) {
 }
 
 // readEvents reads NATS and its controller, and the streams and consumers in every namespace an instance declares one.
-func readEvents(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
-	events := observe.EventEvidence{Streams: map[string]observe.List{}, Consumers: map[string]observe.List{}}
+func readEvents(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
+	events := healthrules.EventEvidence{Streams: map[string]observe.List{}, Consumers: map[string]observe.List{}}
 	var err error
-	if events.Server, err = inputs.Reader.Read(ctx, observe.PlatformNATS); err != nil {
+	if events.Server, err = inputs.Reader.Read(ctx, healthrules.PlatformNATS); err != nil {
 		return err
 	}
-	if events.Controller, err = inputs.Reader.Read(ctx, observe.PlatformNATSController); err != nil {
+	if events.Controller, err = inputs.Reader.Read(ctx, healthrules.PlatformNATSController); err != nil {
 		return err
 	}
-	for _, namespace := range observe.EventNamespaces(inputs.Checkout.Compiled) {
-		if events.Streams[namespace], err = listIn(ctx, inputs.Reader, observe.PlatformStreams, namespace); err != nil {
+	for _, namespace := range healthrules.EventNamespaces(inputs.Checkout.Compiled) {
+		if events.Streams[namespace], err = listIn(ctx, inputs.Reader, healthrules.PlatformStreams, namespace); err != nil {
 			return err
 		}
-		if events.Consumers[namespace], err = listIn(ctx, inputs.Reader, observe.PlatformConsumers, namespace); err != nil {
+		if events.Consumers[namespace], err = listIn(ctx, inputs.Reader, healthrules.PlatformConsumers, namespace); err != nil {
 			return err
 		}
 	}
@@ -228,22 +229,22 @@ func readEvents(ctx context.Context, inputs PlatformAllInputs, scope *observe.Sc
 
 // readJetStream asks the NATS server's local monitoring port how much of JetStream's file store is reserved, and by
 // which streams. It runs after the other pod reads, so their order is unchanged.
-func readJetStream(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+func readJetStream(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
 	output, failed := podOutput(ctx, inputs.Executor, kube.ExecRequest{Namespace: natsNamespace, Pod: natsPod, Container: "nats",
 		Command: []string{"wget", "-qO-", "http://127.0.0.1:8222/jsz?accounts=true&streams=true&config=true"}})
-	scope.Events.Storage = observe.JetStreamStorage{Output: output, Failed: failed}
+	scope.Events.Storage = healthrules.JetStreamStorage{Output: output, Failed: failed}
 	return nil
 }
 
 // readEgress reads the egress proxy and the checkout's allocation of its ports.
-func readEgress(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
-	proxy, err := inputs.Reader.Read(ctx, observe.PlatformEgress)
+func readEgress(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
+	proxy, err := inputs.Reader.Read(ctx, healthrules.PlatformEgress)
 	if err != nil {
 		return err
 	}
-	scope.Egress = observe.EgressEvidence{Proxy: proxy}
+	scope.Egress = healthrules.EgressEvidence{Proxy: proxy}
 	if inputs.Checkout.Allocation == nil {
-		scope.Egress.Problem = "the checkout has no " + observe.CheckoutAllocation
+		scope.Egress.Problem = "the checkout has no " + healthrules.CheckoutAllocation
 		return nil
 	}
 	allocation, err := kernel.DecodeEgressDocument(inputs.Checkout.Allocation)
@@ -252,7 +253,7 @@ func readEgress(ctx context.Context, inputs PlatformAllInputs, scope *observe.Sc
 		return nil
 	}
 	for _, allocated := range allocation.Instances {
-		scope.Egress.Ports = append(scope.Egress.Ports, observe.InstancePort{Application: allocated.Application,
+		scope.Egress.Ports = append(scope.Egress.Ports, healthrules.InstancePort{Application: allocated.Application,
 			Environment: allocated.Environment, Port: allocated.Port})
 	}
 	return nil
@@ -260,8 +261,8 @@ func readEgress(ctx context.Context, inputs PlatformAllInputs, scope *observe.Sc
 
 // readChannels renders the routes the team registry states, reads the routes and channel Secrets the notify service
 // reads, and which team owns each app. The Secrets' addresses are kept from the evidence: only their channels go on.
-func readChannels(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
-	channels := observe.ChannelEvidence{Owners: appOwners(inputs.Checkout.Apps)}
+func readChannels(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
+	channels := healthrules.ChannelEvidence{Owners: appOwners(inputs.Checkout.Apps)}
 	channels.Wanted, channels.Problem = wantedRoutes(inputs.Checkout.Teams)
 	live, unread, err := liveRoutes(ctx, inputs.Data)
 	if err != nil {
@@ -371,13 +372,13 @@ func sortedKeys(documents map[string][]byte) []string {
 }
 
 // readMongoBackups reads the MongoDB backup CronJob and lists where its BACKUP_S3_URI says the backups are.
-func readMongoBackups(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
-	job, err := inputs.Reader.Read(ctx, observe.PlatformMongoBackup)
+func readMongoBackups(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
+	job, err := inputs.Reader.Read(ctx, healthrules.PlatformMongoBackup)
 	if err != nil {
 		return err
 	}
-	scope.Backups = observe.MongoBackupEvidence{Job: job}
-	if location, found := observe.BackupJobLocation(job); found && inputs.Objects != nil {
+	scope.Backups = healthrules.MongoBackupEvidence{Job: job}
+	if location, found := healthrules.BackupJobLocation(job); found && inputs.Objects != nil {
 		scope.Backups.Listing = listArchives(ctx, inputs.Objects, location)
 	}
 	return nil
@@ -399,18 +400,18 @@ func listArchives(ctx context.Context, objects func(string) (s3.Reader, error), 
 
 // readDatabases finds the instances whose release declares a SQLite database and lists each one's prefix of the
 // profile's backup location.
-func readDatabases(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+func readDatabases(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
 	instances, problem := databaseInstances(inputs.Checkout.Releases)
 	location, found := rules.ArchiveQuery{}, false
 	if problem == "" {
 		location, found, problem = databaseLocation(inputs.Checkout.Profile)
 	}
-	scope.Databases = observe.DatabaseEvidence{Problem: problem, Location: location}
+	scope.Databases = healthrules.DatabaseEvidence{Problem: problem, Location: location}
 	if !found {
 		return nil
 	}
 	for _, instance := range instances {
-		database := observe.DatabaseBackup{Namespace: kernel.NamespaceOf(instance[0], instance[1])}
+		database := healthrules.DatabaseBackup{Namespace: kernel.NamespaceOf(instance[0], instance[1])}
 		if inputs.Objects != nil {
 			prefix := location
 			prefix.Prefix += database.Namespace + "/"
@@ -428,7 +429,7 @@ func databaseInstances(releases map[string][]byte) ([][2]string, string) {
 	for _, key := range sortedKeys(releases) {
 		release, err := kernel.DecodeRelease(releases[key])
 		if err != nil {
-			return nil, fmt.Sprintf("%s/%s/release.json: cannot read it: %v", observe.CheckoutRecords, key, err)
+			return nil, fmt.Sprintf("%s/%s/release.json: cannot read it: %v", healthrules.CheckoutRecords, key, err)
 		}
 		if application, environment, _ := strings.Cut(key, "/"); release.Database == "sqlite" {
 			found = append(found, [2]string{application, environment})
@@ -441,30 +442,30 @@ func databaseInstances(releases map[string][]byte) ([][2]string, string) {
 func databaseLocation(data []byte) (rules.ArchiveQuery, bool, string) {
 	profile, problem := profileOf(data)
 	if problem != "" {
-		return rules.ArchiveQuery{}, false, observe.CheckoutProfile + ": cannot read backup.s3Uri (" + problem + ")"
+		return rules.ArchiveQuery{}, false, healthrules.CheckoutProfile + ": cannot read backup.s3Uri (" + problem + ")"
 	}
 	location, found := rules.BackupLocation(profile.Backup.S3URI)
 	if !found {
-		return rules.ArchiveQuery{}, false, observe.CheckoutProfile + ": the backup location must be s3://<bucket>/<prefix>/"
+		return rules.ArchiveQuery{}, false, healthrules.CheckoutProfile + ": the backup location must be s3://<bucket>/<prefix>/"
 	}
 	return location, true, ""
 }
 
 // readFluxControllers reads the settings the checkout installs Flux with and each controller's live Deployment.
 // Settings it cannot read leave the version unchecked rather than guessed.
-func readFluxControllers(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+func readFluxControllers(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
 	if inputs.Checkout.FluxSettings == nil {
-		scope.Flux = observe.FluxEvidence{Problem: "the checkout has no such file"}
+		scope.Flux = healthrules.FluxEvidence{Problem: "the checkout has no such file"}
 		return nil
 	}
-	settings, err := observe.DecodeFluxSettings(inputs.Checkout.FluxSettings)
+	settings, err := healthrules.DecodeFluxSettings(inputs.Checkout.FluxSettings)
 	if err != nil {
-		scope.Flux = observe.FluxEvidence{Problem: err.Error()}
+		scope.Flux = healthrules.FluxEvidence{Problem: err.Error()}
 		return nil
 	}
-	scope.Flux = observe.FluxEvidence{Settings: settings, Deployments: map[string]observe.Read{}}
+	scope.Flux = healthrules.FluxEvidence{Settings: settings, Deployments: map[string]observe.Read{}}
 	for _, name := range settings.Controllers() {
-		controller := observe.PlatformFluxController
+		controller := healthrules.PlatformFluxController
 		controller.Name = name
 		read, err := inputs.Reader.Read(ctx, controller)
 		if err != nil {
@@ -476,13 +477,13 @@ func readFluxControllers(ctx context.Context, inputs PlatformAllInputs, scope *o
 }
 
 // readConsole reads whether the console's job record exists; its HelmRelease is the cluster checks' read.
-func readConsole(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+func readConsole(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
 	found, err := inputs.Data.ConfigMaps(ctx, consoleNamespace, kube.Selector{Name: consoleJobs})
 	unread, err := failedRead(err)
 	if err != nil {
 		return err
 	}
-	scope.Console = observe.ConsoleEvidence{Jobs: len(found) > 0, JobsUnread: unread, Tag: inputs.ConsoleTag}
+	scope.Console = healthrules.ConsoleEvidence{Jobs: len(found) > 0, JobsUnread: unread, Tag: inputs.ConsoleTag}
 	return nil
 }
 

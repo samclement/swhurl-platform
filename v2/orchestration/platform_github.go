@@ -8,13 +8,14 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // readGitHub reads installed settings and receivers, then hooks with the operator's token and acceptance
 // with each console token. Credential bytes never enter the observation evidence.
-func readGitHub(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+func readGitHub(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
 	host, domainProblem, err := installedWebhookHost(ctx, inputs.Data)
 	if err != nil {
 		return err
@@ -23,13 +24,13 @@ func readGitHub(ctx context.Context, inputs PlatformAllInputs, scope *observe.Sc
 	if err != nil {
 		return err
 	}
-	push := observe.WebhookEvidence{Host: host, Repository: repository, Problem: domainProblem,
-		Listing: observe.HookListing{MissingToken: inputs.GitHubToken == ""}}
+	push := healthrules.WebhookEvidence{Host: host, Repository: repository, Problem: domainProblem,
+		Listing: healthrules.HookListing{MissingToken: inputs.GitHubToken == ""}}
 	if push.Problem == "" {
 		push.Problem = repoProblem
 	}
-	images := observe.WebhookEvidence{Host: host, Problem: domainProblem,
-		Listing: observe.HookListing{MissingToken: inputs.GitHubToken == ""}}
+	images := healthrules.WebhookEvidence{Host: host, Problem: domainProblem,
+		Listing: healthrules.HookListing{MissingToken: inputs.GitHubToken == ""}}
 	if push.Receiver, err = inputs.Reader.Read(ctx, receiverRef("github")); err != nil {
 		return err
 	}
@@ -57,7 +58,7 @@ func installedWebhookHost(ctx context.Context, data kube.Data) (string, string, 
 	if len(found) != 1 {
 		return "", "flux-system/platform-settings is missing", nil
 	}
-	host, problem := observe.WebhookHost(found[0].Data["BASE_DOMAIN"])
+	host, problem := healthrules.WebhookHost(found[0].Data["BASE_DOMAIN"])
 	return host, problem, nil
 }
 
@@ -82,34 +83,34 @@ func installedPlatformRepository(ctx context.Context, inputs PlatformAllInputs) 
 	if json.Unmarshal(found.Object, &document) != nil {
 		return "", "installed platform GitRepository is malformed", nil
 	}
-	repository, problem := observe.InstalledRepository(document.Spec.URL)
+	repository, problem := healthrules.InstalledRepository(document.Spec.URL)
 	return repository, problem, nil
 }
 
-func readHooks(ctx context.Context, inputs PlatformAllInputs, repository string) observe.HookListing {
+func readHooks(ctx context.Context, inputs PlatformAllInputs, repository string) healthrules.HookListing {
 	if inputs.GitHubToken == "" {
-		return observe.HookListing{MissingToken: true}
+		return healthrules.HookListing{MissingToken: true}
 	}
 	hooks, err := inputs.GitHub.Hooks(ctx, repository, inputs.GitHubToken)
-	return observe.HookListing{Hooks: hooks, Problem: github.SafeProblem(err)}
+	return healthrules.HookListing{Hooks: hooks, Problem: github.SafeProblem(err)}
 }
 
 // appHookRepositories reuses the release decoder: only staging and the platform image exactly qualify.
 // Invalid records remain failed evidence, not a fabricated owner/repository or a silently empty catalogue.
-func appHookRepositories(releases map[string][]byte) []observe.RepositoryHooks {
-	found := []observe.RepositoryHooks{}
+func appHookRepositories(releases map[string][]byte) []healthrules.RepositoryHooks {
+	found := []healthrules.RepositoryHooks{}
 	for _, key := range sortedKeys(releases) {
 		app, environment, _ := strings.Cut(key, "/")
-		if environment != observe.StagingEnvironment {
+		if environment != kernel.StagingEnvironment {
 			continue
 		}
 		release, err := kernel.DecodeRelease(releases[key])
-		fact := observe.RepositoryHooks{App: app}
+		fact := healthrules.RepositoryHooks{App: app}
 		if err != nil {
-			fact.Problem = observe.CheckoutRecords + "/" + key + "/release.json: cannot read release"
+			fact.Problem = healthrules.CheckoutRecords + "/" + key + "/release.json: cannot read release"
 		} else if release.Artifact.Image != "ghcr.io/samclement/"+app {
 			continue
-		} else if !observe.GitHubRepository(release.Source.Repository) {
+		} else if !healthrules.GitHubRepository(release.Source.Repository) {
 			fact.Problem = app + ": release has no valid source repository"
 		} else {
 			fact.Repository = release.Source.Repository
@@ -119,20 +120,20 @@ func appHookRepositories(releases map[string][]byte) []observe.RepositoryHooks {
 	return found
 }
 
-func readConsoleTokens(ctx context.Context, inputs PlatformAllInputs, repository, repoProblem string) (observe.ConsoleTokenEvidence, error) {
+func readConsoleTokens(ctx context.Context, inputs PlatformAllInputs, repository, repoProblem string) (healthrules.ConsoleTokenEvidence, error) {
 	found, err := inputs.Data.Secrets(ctx, "console", kube.Selector{Name: "console-github"})
 	if unread, err := failedRead(err); err != nil || unread != "" {
-		return observe.ConsoleTokenEvidence{Problem: "cannot read console/console-github (" + unread + ")"}, err
+		return healthrules.ConsoleTokenEvidence{Problem: "cannot read console/console-github (" + unread + ")"}, err
 	}
 	if repoProblem != "" {
-		return observe.ConsoleTokenEvidence{Problem: repoProblem}, nil
+		return healthrules.ConsoleTokenEvidence{Problem: repoProblem}, nil
 	}
 	data := map[string][]byte{}
 	if len(found) == 1 {
 		data = found[0].Data
 	}
-	evidence := observe.ConsoleTokenEvidence{}
-	for _, fact := range []observe.TokenEvidence{{Key: "GITHUB_TOKEN", Label: "console token", Required: true},
+	evidence := healthrules.ConsoleTokenEvidence{}
+	for _, fact := range []healthrules.TokenEvidence{{Key: "GITHUB_TOKEN", Label: "console token", Required: true},
 		{Key: "APP_REPOS_TOKEN", Label: "console repository token"}} {
 		token := strings.TrimSpace(string(data[fact.Key]))
 		fact.Missing = token == "" || token == "REPLACE_ME" || !utf8.Valid(data[fact.Key])
@@ -145,7 +146,7 @@ func readConsoleTokens(ctx context.Context, inputs PlatformAllInputs, repository
 	return evidence, nil
 }
 
-func readAppHooks(ctx context.Context, inputs PlatformAllInputs, problem string) []observe.RepositoryHooks {
+func readAppHooks(ctx context.Context, inputs PlatformAllInputs, problem string) []healthrules.RepositoryHooks {
 	apps := appHookRepositories(inputs.Checkout.Releases)
 	if problem != "" || inputs.GitHubToken == "" {
 		return apps

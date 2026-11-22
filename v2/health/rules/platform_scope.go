@@ -1,4 +1,4 @@
-package observe
+package rules
 
 // The platform scope: every verify-platform check that reads beyond the six cluster checks — more of the cluster, the
 // checkout the operator runs from, the registry, the object store, and inputs the caller supplied. Each check is one
@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // The checkout's files the checks compare the cluster with, relative to its root.
@@ -24,25 +26,19 @@ const (
 	checkoutRoutes     = "platform/notify/routes.json"
 )
 
-// StagingEnvironment is the environment that follows each app's newest image.
-const StagingEnvironment = "staging"
-
 // The cluster objects the platform scope reads by name, and the collections it reads.
 var (
-	PlatformImagePolicies   = Ref{APIVersion: "image.toolkit.fluxcd.io/v1", Kind: "ImagePolicy", Namespace: "flux-system"}
-	PlatformNamespaces      = Ref{APIVersion: "v1", Kind: "Namespace"}
-	PlatformQuotas          = Ref{APIVersion: "v1", Kind: "ResourceQuota"}
-	PlatformNetworkPolicies = Ref{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"}
-	PlatformNATS            = Ref{APIVersion: "apps/v1", Kind: "StatefulSet", Namespace: "messaging", Name: "nats"}
-	PlatformNATSController  = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "messaging", Name: "nats-controller"}
-	PlatformStreams         = Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Stream"}
-	PlatformConsumers       = Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Consumer"}
-	PlatformEgress          = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "egress", Name: "egress"}
-	PlatformMongoBackup     = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "observability", Name: "backup-mongodb"}
+	PlatformImagePolicies   = observe.Ref{APIVersion: "image.toolkit.fluxcd.io/v1", Kind: "ImagePolicy", Namespace: "flux-system"}
+	PlatformNamespaces      = observe.Ref{APIVersion: "v1", Kind: "Namespace"}
+	PlatformQuotas          = observe.Ref{APIVersion: "v1", Kind: "ResourceQuota"}
+	PlatformNetworkPolicies = observe.Ref{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"}
+	PlatformNATS            = observe.Ref{APIVersion: "apps/v1", Kind: "StatefulSet", Namespace: "messaging", Name: "nats"}
+	PlatformNATSController  = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "messaging", Name: "nats-controller"}
+	PlatformStreams         = observe.Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Stream"}
+	PlatformConsumers       = observe.Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Consumer"}
+	PlatformEgress          = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "egress", Name: "egress"}
+	PlatformMongoBackup     = observe.Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "observability", Name: "backup-mongodb"}
 )
-
-// AppLabel names the app an app namespace or ImagePolicy belongs to; its presence selects them.
-const AppLabel = "platform.swhurl.com/app"
 
 // ScopeEvidence is what the platform scope's checks read, beyond the cluster checks' PlatformEvidence.
 type ScopeEvidence struct {

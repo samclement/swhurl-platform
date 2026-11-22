@@ -129,6 +129,9 @@ var Layers = map[string]int{
 	"notifications": 2, "notifications/rules/incident": 0, "notifications/rules/heartbeat": 0,
 	"notifications/rules/notify": 0,
 
+	// The health capability: its pure platform report and checks.
+	"health/rules": 0,
+
 	// The delivery capability: its use cases and its pure rules.
 	"delivery": 2, "delivery/rules": 0,
 }
@@ -136,10 +139,12 @@ var Layers = map[string]int{
 // PureDependencies are the pure-to-pure imports allowed, by importer: each is a pure type or decision whose owner
 // is the imported package, reported by the importer rather than re-derived. A new entry is a reviewed change, and
 // a package everyone imports is the shared model this list exists to prevent. observe reports recovery's backup
-// verdict and archive types and delivery's currentness and promotion readiness; delivery's promotion rule refines
+// verdict and archive types and delivery's currentness and promotion readiness; health reports observed facts
+// and recovery's archive verdict, using kernel's shared app vocabulary; delivery's promotion rule refines
 // kernel's release selection (docs/iteration-2-plan.md#capability-map).
 var PureDependencies = map[string][]string{
 	"observe":        {"recovery/rules", "delivery/rules"},
+	"health/rules":   {"observe", "recovery/rules", "kernel"},
 	"delivery/rules": {"kernel"},
 }
 
@@ -160,7 +165,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"notifications/rules/incident", "notifications/rules/heartbeat", "notifications/rules/notify", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "kernel", "lifecycletest", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules"}
+var Pure = []string{"health/rules", "notifications/rules/incident", "notifications/rules/heartbeat", "notifications/rules/notify", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "kernel", "lifecycletest", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,

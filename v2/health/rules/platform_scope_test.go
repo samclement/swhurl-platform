@@ -1,4 +1,4 @@
-package observe
+package rules
 
 import (
 	"fmt"
@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samclement/swhurl-platform/v2/recovery/rules"
+	"github.com/samclement/swhurl-platform/v2/observe"
+	recoveryrules "github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // The platform scope's checks, case by case: each table names the evidence that changes from a healthy platform's and
@@ -43,15 +44,15 @@ func compiledHello() CompiledInstance {
 const readyStatus = `"status":{"conditions":[{"type":"Ready","status":"True"}]}`
 
 func healthyScope() ScopeEvidence {
-	listing := func(prefix, name, suffix string) rules.ArchiveList {
-		return rules.ArchiveList{Status: Present, Objects: []rules.Archive{backupAt(prefix+name, suffix, time.Hour),
+	listing := func(prefix, name, suffix string) recoveryrules.ArchiveList {
+		return recoveryrules.ArchiveList{Status: observe.Present, Objects: []recoveryrules.Archive{backupAt(prefix+name, suffix, time.Hour),
 			backupAt(prefix+name, ".json", time.Hour)}}
 	}
 	push, images, tokens := healthyGitHub()
 	return ScopeEvidence{
 		Ingestion:    IngestionEvidence{CollectorPresent: true, TeamAvailable: true, Equal: true},
 		Registration: RegistrationEvidence{Readable: true, TeamExists: true},
-		Retention:    RetentionEvidence{Telemetry: TelemetryTTL([]byte("9\t9"), false), SystemLogs: SystemLogTTL([]byte("0"), false), Merges: MergeFailures([]byte("0\t"), false), Volume: Read{Status: Present, Object: []byte(`{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}`)}},
+		Retention:    RetentionEvidence{Telemetry: TelemetryTTL([]byte("9\t9"), false), SystemLogs: SystemLogTTL([]byte("0"), false), Merges: MergeFailures([]byte("0\t"), false), Volume: observe.Read{Status: observe.Present, Object: []byte(`{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}`)}},
 		PushWebhook:  push, ImageWebhooks: images, ConsoleTokens: tokens,
 		Compiled: []CompiledInstance{compiledHello()},
 		Images: ImageEvidence{
@@ -62,16 +63,16 @@ func healthyScope() ScopeEvidence {
 		Isolation: IsolationEvidence{
 			Namespaces: collectionOf(PlatformNamespaces, `{"metadata":{"name":"hello-staging","labels":{"platform.swhurl.com/app":"hello",`+
 				`"platform.swhurl.com/team":"demo","kubernetes.io/metadata.name":"hello-staging"}}}`),
-			Quotas:   map[string]List{"hello-staging": collectionOf(PlatformQuotas, `{"metadata":{"name":"hello"},"spec":{"hard":{"pods":"10"}}}`)},
-			Policies: map[string]List{"hello-staging": collectionOf(PlatformNetworkPolicies, `{"metadata":{"name":"hello"},"spec":{"podSelector":{"matchLabels":{"app":"hello"}}}}`)},
+			Quotas:   map[string]observe.List{"hello-staging": collectionOf(PlatformQuotas, `{"metadata":{"name":"hello"},"spec":{"hard":{"pods":"10"}}}`)},
+			Policies: map[string]observe.List{"hello-staging": collectionOf(PlatformNetworkPolicies, `{"metadata":{"name":"hello"},"spec":{"podSelector":{"matchLabels":{"app":"hello"}}}}`)},
 			Teams:    map[string]bool{"demo": true},
 		},
 		Signing: SigningEvidence{Issuer: issuer, Keys: []byte(keySet), StatedIssuer: issuer, StatedKeys: `{"keys": [{"kty":"RSA","kid":"a"}]}`},
 		Events: EventEvidence{
 			Server:     presentRead(PlatformNATS, `{"status":{"readyReplicas":1}}`),
 			Controller: presentRead(PlatformNATSController, `{"status":{"readyReplicas":1}}`),
-			Streams:    map[string]List{"hello-staging": collectionOf(PlatformStreams, `{"metadata":{"name":"staging-hello"},`+readyStatus+`}`)},
-			Consumers:  map[string]List{"hello-staging": collectionOf(PlatformConsumers, `{"metadata":{"name":"world-ev"},`+readyStatus+`}`)},
+			Streams:    map[string]observe.List{"hello-staging": collectionOf(PlatformStreams, `{"metadata":{"name":"staging-hello"},`+readyStatus+`}`)},
+			Consumers:  map[string]observe.List{"hello-staging": collectionOf(PlatformConsumers, `{"metadata":{"name":"world-ev"},`+readyStatus+`}`)},
 			Storage:    JetStreamStorage{Output: jetStream(1024, 65, "staging-hello", "KV_flags-staging")},
 		},
 		Egress: EgressEvidence{Proxy: presentRead(PlatformEgress, `{"spec":{"replicas":2},"status":{"readyReplicas":2}}`),
@@ -80,7 +81,7 @@ func healthyScope() ScopeEvidence {
 			Secrets: []string{"platform"}, Owners: map[string][]string{"demo": {"hello"}}},
 		Backups: MongoBackupEvidence{Job: presentRead(PlatformMongoBackup, mongoJob("s3://bucket-a/clickstack-mongodb/")),
 			Listing: listing("clickstack-mongodb/", "clickstack-mongodb", ".archive.gz.age")},
-		Databases: DatabaseEvidence{Location: rules.ArchiveQuery{Bucket: "bucket-a", Prefix: "app-sqlite/"},
+		Databases: DatabaseEvidence{Location: recoveryrules.ArchiveQuery{Bucket: "bucket-a", Prefix: "app-sqlite/"},
 			Databases: []DatabaseBackup{{"hello-prod", listing("app-sqlite/hello-prod/", "sqlite", ".db.age")}}},
 		Console:     ConsoleEvidence{Jobs: true, Tag: "src-abc"},
 		Flux:        healthyFlux(),
@@ -91,9 +92,9 @@ func healthyScope() ScopeEvidence {
 }
 
 // backupAt is a backup job's object, <name>-<UTC stamp><suffix>, as S3 lists it: written the age before platformNow.
-func backupAt(name, suffix string, age time.Duration) rules.Archive {
+func backupAt(name, suffix string, age time.Duration) recoveryrules.Archive {
 	taken := platformNow.Add(-age)
-	return rules.Archive{Key: name + "-" + taken.Format("20060102T150405Z") + suffix, LastModified: taken}
+	return recoveryrules.Archive{Key: name + "-" + taken.Format("20060102T150405Z") + suffix, LastModified: taken}
 }
 
 func mongoJob(uri string) string {
@@ -185,7 +186,9 @@ func TestImageAutomation(t *testing.T) {
 			s.Images.Policies = collectionOf(PlatformImagePolicies, policyItem("hello-staging", "hello", "False", "no tags match", "1.27-alpine"))
 		}, CheckBad, "ImagePolicy hello-staging is not Ready, so staging gets no new images: no tags match (kubectl -n flux-system " +
 			"describe imagerepository hello; make reconcile UNIT=app-hello-staging)"},
-		{"a failed list fails", func(s *ScopeEvidence) { s.Images.Policies = List{Status: Unavailable, Reason: ReasonForbidden} },
+		{"a failed list fails", func(s *ScopeEvidence) {
+			s.Images.Policies = observe.List{Status: observe.Unavailable, Reason: observe.ReasonForbidden}
+		},
 			CheckBad, "cannot read the apps' ImagePolicies, so no staging deploy can be checked"},
 		{"no policy says so", func(s *ScopeEvidence) { s.Images.Policies = collectionOf(PlatformImagePolicies) },
 			CheckOK, "no app has an ImagePolicy"},
@@ -214,7 +217,9 @@ func TestIsolation(t *testing.T) {
 		}, CheckBad, "no ResourceQuota as Git declares it"},
 		{"an unreadable compiled object fails", func(s *ScopeEvidence) { delete(s.Compiled[0].Files, "namespace.json") },
 			CheckBad, "v2-apps/instances/hello/staging: its compiled objects cannot be read (namespace.json is missing)"},
-		{"a failed list fails", func(s *ScopeEvidence) { s.Isolation.Quotas["hello-staging"] = List{Status: Unavailable} },
+		{"a failed list fails", func(s *ScopeEvidence) {
+			s.Isolation.Quotas["hello-staging"] = observe.List{Status: observe.Unavailable}
+		},
 			CheckBad, "cannot read app namespaces, ResourceQuotas or NetworkPolicies, so app isolation is unchecked (kubectl get namespaces -l platform.swhurl.com/app)"},
 		{"an unreadable registry fails", func(s *ScopeEvidence) { s.Isolation.TeamsProblem = "invalid: teams" },
 			CheckBad, "v2-records/teams.json cannot be read (invalid: teams)"},
@@ -231,7 +236,7 @@ func TestSigningKeys(t *testing.T) {
 				"put the cluster's key set in its auth block and render platform/auth from it (docs/operations.md#signing-keys)"},
 		{"another issuer fails", func(s *ScopeEvidence) { s.Signing.Issuer = "https://elsewhere" },
 			CheckBad, "token issuer is https://elsewhere, but the profile states " + issuer},
-		{"a failed read fails", func(s *ScopeEvidence) { s.Signing = SigningEvidence{Unread: ReasonForbidden} },
+		{"a failed read fails", func(s *ScopeEvidence) { s.Signing = SigningEvidence{Unread: observe.ReasonForbidden} },
 			CheckBad, "cannot read the cluster's token issuer or signing keys (kubectl get --raw /openid/v1/jwks)"},
 		{"a profile with no keys fails", func(s *ScopeEvidence) { s.Signing.StatedKeys = "" },
 			CheckBad, "v2/testdata/profile.json states no signing keys"},
@@ -248,7 +253,7 @@ func TestEvents(t *testing.T) {
 		{"every declaration exists", unchanged, CheckOK, "2 declared stream(s) and consumer(s) exist in NATS"},
 		{"NATS not running fails", func(s *ScopeEvidence) { s.Events.Server = presentRead(PlatformNATS, `{"status":{}}`) },
 			CheckBad, "NATS is not running: no events are published or delivered (make reconcile UNIT=platform-nats)"},
-		{"NATS absent fails", func(s *ScopeEvidence) { s.Events.Server = Read{Ref: PlatformNATS, Status: Absent} },
+		{"NATS absent fails", func(s *ScopeEvidence) { s.Events.Server = observe.Read{Ref: PlatformNATS, Status: observe.Absent} },
 			CheckBad, "NATS is missing"},
 		{"a consumer NATS lacks fails", func(s *ScopeEvidence) { s.Events.Consumers["hello-staging"] = collectionOf(PlatformConsumers) },
 			CheckBad, "Consumer hello-staging/world-ev is what Git declares, but NATS has no such consumer (make reconcile UNIT=platform-nats; " +
@@ -257,9 +262,9 @@ func TestEvents(t *testing.T) {
 			s.Events.Consumers["hello-staging"] = collectionOf(PlatformConsumers, notReady)
 		}, CheckBad, "Consumer hello-staging/world-ev is not Ready, so its events are not kept or delivered: stream not found " +
 			"(kubectl -n hello-staging describe consumer world-ev)"},
-		{"a failed list fails", func(s *ScopeEvidence) { s.Events.Streams["hello-staging"] = List{Status: Unavailable} },
+		{"a failed list fails", func(s *ScopeEvidence) { s.Events.Streams["hello-staging"] = observe.List{Status: observe.Unavailable} },
 			CheckBad, "cannot read NATS, its controller, or the streams and consumers (make reconcile UNIT=platform-nats)"},
-		{"a failed read fails", func(s *ScopeEvidence) { s.Events.Controller = Read{Status: Unavailable} },
+		{"a failed read fails", func(s *ScopeEvidence) { s.Events.Controller = observe.Read{Status: observe.Unavailable} },
 			CheckBad, "cannot read NATS, its controller"},
 		{"room for another stream", unchanged, CheckOK, "JetStream has 959 of 1024 MiB unreserved"},
 		{"no room for another stream warns", func(s *ScopeEvidence) {
@@ -300,9 +305,9 @@ func TestEgress(t *testing.T) {
 			s.Egress.Proxy = presentRead(PlatformEgress, `{"spec":{"replicas":2},"status":{}}`)
 		},
 			CheckBad, "the egress proxy is not running: apps cannot reach outside the cluster"},
-		{"a failed read fails", func(s *ScopeEvidence) { s.Egress.Proxy = Read{Status: Unavailable} },
+		{"a failed read fails", func(s *ScopeEvidence) { s.Egress.Proxy = observe.Read{Status: observe.Unavailable} },
 			CheckBad, "cannot read the egress proxy (egress/egress): apps cannot reach outside the cluster (make reconcile UNIT=platform-egress)"},
-		{"an absent proxy fails", func(s *ScopeEvidence) { s.Egress.Proxy = Read{Status: Absent} }, CheckBad, "the egress proxy (egress/egress) is missing"},
+		{"an absent proxy fails", func(s *ScopeEvidence) { s.Egress.Proxy = observe.Read{Status: observe.Absent} }, CheckBad, "the egress proxy (egress/egress) is missing"},
 		{"a proxy user with no port fails", func(s *ScopeEvidence) { proxied("staging", 30100)(s); s.Egress.Ports = nil },
 			CheckBad, "hello/staging reaches the proxy on port 30100, which the allocation does not give it: its records render the allocation (docs/services.md#egress-proxy)"},
 		{"a proxy user on another port fails", proxied("staging", 30101),
@@ -342,7 +347,7 @@ func TestChannels(t *testing.T) {
 			CheckBad, "the team routes in the cluster are not those of platform/notify/routes.json: a team or channel change " +
 				"rewrites them, so commit, push and make flux-reconcile"},
 		{"no routes fail", func(s *ScopeEvidence) { s.Channels.Live = nil }, CheckBad, "the team routes in the cluster are not"},
-		{"a failed read fails", func(s *ScopeEvidence) { s.Channels.Unread = ReasonForbidden },
+		{"a failed read fails", func(s *ScopeEvidence) { s.Channels.Unread = observe.ReasonForbidden },
 			CheckBad, "could not read the notification routes and channels (make reconcile UNIT=platform-notify)"},
 		{"a channel without the Secret the service reads fails", func(s *ScopeEvidence) { s.Channels.Secrets = nil },
 			CheckBad, "channel platform has no Secret in the cluster: its teams get no notifications (make reconcile UNIT=platform-notify)"},
@@ -360,8 +365,8 @@ func TestChannels(t *testing.T) {
 
 func TestMongoBackups(t *testing.T) {
 	const name = "clickstack-mongodb/clickstack-mongodb"
-	listed := func(objects ...rules.Archive) rules.ArchiveList {
-		return rules.ArchiveList{Status: Present, Objects: objects}
+	listed := func(objects ...recoveryrules.Archive) recoveryrules.ArchiveList {
+		return recoveryrules.ArchiveList{Status: observe.Present, Objects: objects}
 	}
 	old, newer := 33*time.Hour, 8*time.Hour
 	runScopeCases(t, "backups", []scopeCase{
@@ -386,7 +391,7 @@ func TestMongoBackups(t *testing.T) {
 			s.Backups.Listing = listed(undated, backupAt(name, ".json", time.Hour))
 		}, CheckBad, "cannot judge the MongoDB backups in s3://bucket-a/clickstack-mongodb/ (invalid: archive: malformed)"},
 		{"an unlistable prefix fails", func(s *ScopeEvidence) {
-			s.Backups.Listing = rules.ArchiveList{Status: Unavailable, Reason: ReasonForbidden}
+			s.Backups.Listing = recoveryrules.ArchiveList{Status: observe.Unavailable, Reason: observe.ReasonForbidden}
 		},
 			CheckBad, "cannot list backups in s3://bucket-a/clickstack-mongodb/: forbidden"},
 		{"a tighter limit fails", func(s *ScopeEvidence) {
@@ -395,9 +400,11 @@ func TestMongoBackups(t *testing.T) {
 		}, CheckBad, "is 8 h old"},
 		{"no credentials is not supplied", func(s *ScopeEvidence) { s.Credentials = false },
 			CheckBad, "cannot list backups in s3://bucket-a/clickstack-mongodb/: AWS credentials not supplied"},
-		{"an absent backup job fails", func(s *ScopeEvidence) { s.Backups.Job = Read{Status: Absent} },
+		{"an absent backup job fails", func(s *ScopeEvidence) { s.Backups.Job = observe.Read{Status: observe.Absent} },
 			CheckBad, "the MongoDB backup job (observability/backup-mongodb) is missing"},
-		{"a failed read fails", func(s *ScopeEvidence) { s.Backups.Job = Read{Status: Unavailable, Reason: ReasonForbidden} },
+		{"a failed read fails", func(s *ScopeEvidence) {
+			s.Backups.Job = observe.Read{Status: observe.Unavailable, Reason: observe.ReasonForbidden}
+		},
 			CheckBad, "cannot read the MongoDB backup job (observability/backup-mongodb) (forbidden)"},
 		{"a job with no location fails", func(s *ScopeEvidence) { s.Backups.Job = presentRead(PlatformMongoBackup, mongoJob("")) },
 			CheckBad, "states no BACKUP_S3_URI of the form s3://<bucket>/<prefix>/"},
@@ -407,14 +414,16 @@ func TestMongoBackups(t *testing.T) {
 func TestSQLiteBackups(t *testing.T) {
 	runScopeCases(t, "sqlite-backups", []scopeCase{
 		{"a fresh backup passes", unchanged, CheckOK, "hello-prod: newest SQLite backup in s3://bucket-a/app-sqlite/hello-prod/ is 1.0 h old"},
-		{"no backup fails", func(s *ScopeEvidence) { s.Databases.Databases[0].Listing = rules.ArchiveList{Status: Present} },
+		{"no backup fails", func(s *ScopeEvidence) {
+			s.Databases.Databases[0].Listing = recoveryrules.ArchiveList{Status: observe.Present}
+		},
 			CheckBad, "hello-prod: no SQLite backup in s3://bucket-a/app-sqlite/hello-prod/ (run: make backup-sqlite)"},
 		{"a stale backup fails", func(s *ScopeEvidence) {
-			s.Databases.Databases[0].Listing = rules.ArchiveList{Status: Present, Objects: []rules.Archive{
+			s.Databases.Databases[0].Listing = recoveryrules.ArchiveList{Status: observe.Present, Objects: []recoveryrules.Archive{
 				backupAt("app-sqlite/hello-prod/sqlite", ".db.age", 30*time.Hour), backupAt("app-sqlite/hello-prod/sqlite", ".json", 30*time.Hour)}}
 		}, CheckBad, "hello-prod: newest SQLite backup in s3://bucket-a/app-sqlite/hello-prod/ is 30 h old; check: kubectl -n hello-prod get jobs -l platform.swhurl.com/backup=true"},
 		{"an unlistable prefix fails", func(s *ScopeEvidence) {
-			s.Databases.Databases[0].Listing = rules.ArchiveList{Status: Unavailable, Reason: ReasonForbidden}
+			s.Databases.Databases[0].Listing = recoveryrules.ArchiveList{Status: observe.Unavailable, Reason: observe.ReasonForbidden}
 		}, CheckBad, "hello-prod: cannot list backups in s3://bucket-a/app-sqlite/hello-prod/: forbidden"},
 		{"a location the instance is not confined to cannot be judged", func(s *ScopeEvidence) { s.Databases.Location.Prefix = "" },
 			CheckBad, "hello-prod: cannot judge the SQLite backups in s3://bucket-a/hello-prod/ (invalid: archive.prefix: not_confined_to_the_instance)"},
@@ -438,7 +447,7 @@ func TestConsole(t *testing.T) {
 		{"no tag supplied fails", release(""), CheckBad, "this checkout's console content tag was not supplied, so console image src-abc is unchecked"},
 		{"a missing job record fails", func(s *ScopeEvidence) { s.Console.Jobs = false },
 			CheckBad, "console/console-jobs is missing: the console forgets its jobs on restart (make reconcile UNIT=platform-console)"},
-		{"an unread job record fails", func(s *ScopeEvidence) { s.Console.JobsUnread = ReasonForbidden },
+		{"an unread job record fails", func(s *ScopeEvidence) { s.Console.JobsUnread = observe.ReasonForbidden },
 			CheckBad, "cannot read console/console-jobs (forbidden)"},
 	})
 	commit := healthy()
@@ -447,7 +456,7 @@ func TestConsole(t *testing.T) {
 		"with this checkout: it is not a content tag (src-…)") {
 		t.Fatalf("a commit tag: %+v", entries)
 	}
-	if entries := platformConsole(Read{Status: Unavailable}, healthyScope().Console); entries[0].Level != CheckBad ||
+	if entries := platformConsole(observe.Read{Status: observe.Unavailable}, healthyScope().Console); entries[0].Level != CheckBad ||
 		!strings.Contains(entries[0].Message, "cannot read the console HelmRelease image tag (console/console)") {
 		t.Fatalf("an unread release: %+v", entries)
 	}

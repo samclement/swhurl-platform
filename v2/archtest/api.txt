@@ -124,7 +124,7 @@ adapters/github/githubtest: func (*ConsoleFake) PublicFile(_ context.Context, re
 adapters/github/githubtest: func (*ConsoleFake) Pull(_ context.Context, repository, token string, number int) (github.Pull, error)
 adapters/github/githubtest: func (*ConsoleFake) Revision(_ context.Context, repository, token string) (string, error)
 adapters/github/githubtest: func (*ConsoleFake) Tarball(_ context.Context, repository, token, revision string) ([]byte, error)
-adapters/github/githubtest: func (*Fake) Hooks(_ context.Context, repository, token string) ([]observe.Hook, error)
+adapters/github/githubtest: func (*Fake) Hooks(_ context.Context, repository, token string) ([]healthrules.Hook, error)
 adapters/github/githubtest: func (*Fake) Token(_ context.Context, repository, token string) (github.Acceptance, error)
 adapters/github/githubtest: func (*PublisherFake) BaseTree(_ context.Context, repository, token, commit string) (string, error)
 adapters/github/githubtest: func (*PublisherFake) Blob(_ context.Context, repository, token string, content []byte) (string, error)
@@ -155,7 +155,7 @@ adapters/github/githubtest: type Call struct {Operation, Repository, Token strin
 adapters/github/githubtest: type ConsoleFake struct {Commit string Files map[string]string History map[string]map[string]string AppFiles map[string]string Public map[string]string Archive []byte Changed []string Contains bool Pulls []github.Pull ByNumber map[int]github.Pull Err error Reads []string}
 adapters/github/githubtest: type ConsoleFixture struct {Revision string File string Body string AppFile string AppBody string Changed []string Pulls []github.Pull Merged github.Pull Template string TemplateBody string}
 adapters/github/githubtest: type CreatedRepository struct {Owner, Name, Description string}
-adapters/github/githubtest: type Fake struct {Repositories map[string][]observe.Hook Tokens map[string]github.Acceptance Denied map[string]bool Fail error Calls []Call}
+adapters/github/githubtest: type Fake struct {Repositories map[string][]healthrules.Hook Tokens map[string]github.Acceptance Denied map[string]bool Fail error Calls []Call}
 adapters/github/githubtest: type FirstWrite struct {Repository, Parent, Message string Files []github.NewFile}
 adapters/github/githubtest: type PublisherFake struct {Scene PublisherFixture FailAt string Blobs [][]byte Trees []TreeWrite Commits []github.NewCommit Refs []BranchWrite Pulls []github.NewPull}
 adapters/github/githubtest: type PublisherFixture struct {Blob, Tree, Commit string Base string Branch string PullNumber int PullURL string}
@@ -167,7 +167,7 @@ adapters/github: func (*API) AppFile(ctx context.Context, repository, token, fil
 adapters/github: func (*API) CommitFiles(ctx context.Context, repository, token, revision string, paths []string) (map[string][]byte, error)
 adapters/github: func (*API) Compare(ctx context.Context, repository, token, from, to string) ([]string, bool, error)
 adapters/github: func (*API) Contents(ctx context.Context, repository, token, revision, path string) ([]byte, bool, error)
-adapters/github: func (*API) Hooks(ctx context.Context, repository, token string) ([]observe.Hook, error)
+adapters/github: func (*API) Hooks(ctx context.Context, repository, token string) ([]healthrules.Hook, error)
 adapters/github: func (*API) OpenPulls(ctx context.Context, repository, token string) ([]Pull, error)
 adapters/github: func (*API) PublicFile(ctx context.Context, repository, revision, file string) ([]byte, bool, error)
 adapters/github: func (*API) Pull(ctx context.Context, repository, token string, number int) (Pull, error)
@@ -190,7 +190,7 @@ adapters/github: type NewFile struct {Path string Executable bool Body []byte}
 adapters/github: type NewPull struct {Title string Head string Base string Body string}
 adapters/github: type Publisher interface {// Blob stores one file's bytes and returns their identity. Blob(ctx context.Context, repository, token string, content []byte) (string, error) // BaseTree is the tree one commit names: what a new tree is written over. BaseTree(ctx context.Context, repository, token, commit string) (string, error) // Tree writes entries over a base tree and returns the new tree's identity. Tree(ctx context.Context, repository, token, base string, entries []TreeEntry) (string, error) // Commit creates one commit and returns its identity. Commit(ctx context.Context, repository, token string, commit NewCommit) (string, error) // Branch creates one reference, and refuses any name outside console/: nothing else is the console's to write. Branch(ctx context.Context, repository, token, name, commit string) error // OpenPull opens the pull request and returns it as the console shows it. OpenPull(ctx context.Context, repository, token string, pull NewPull) (Pull, error)}
 adapters/github: type Pull struct {Number int Title string URL string Branch string Opened string Body string Head string Checks string ChecksURL string State string MergedAt string ClosedAt string MergeCommit string}
-adapters/github: type Reader interface {Hooks(context.Context, string, string) ([]observe.Hook, error) Token(context.Context, string, string) (Acceptance, error)}
+adapters/github: type Reader interface {Hooks(context.Context, string, string) ([]healthrules.Hook, error) Token(context.Context, string, string) (Acceptance, error)}
 adapters/github: type RepositoryHook struct {URL string Secret string Events []string Active bool}
 adapters/github: type RepositoryWriter interface {// Exists asks whether the repository is there at all. Exists(ctx context.Context, repository, token string) (bool, error) // Create makes the public repository, with one initial commit, and returns its page. Create(ctx context.Context, token, owner, name, description string) (string, error) // Head is the commit main names, so the first commit has a parent. ErrNoMainBranch means GitHub has not // finished creating the repository. Head(ctx context.Context, repository, token string) (string, error) // FirstCommit replaces the initial commit's tree with every file and moves main to the new commit. It is only // for a repository the caller just created. FirstCommit(ctx context.Context, repository, token, parent, message string, files []NewFile) (string, error) // Hooks lists the repository's webhooks. Hooks(ctx context.Context, repository, token string) ([]Hook, error) // CreateHook adds one webhook. CreateHook(ctx context.Context, repository, token string, hook RepositoryHook) error // UpdateHook changes the webhook with this id. UpdateHook(ctx context.Context, repository, token string, id int, hook RepositoryHook) error}
 adapters/github: type Signature struct {Name string Email string}
@@ -735,7 +735,98 @@ events: type Declaration struct {Application, Environment string Publishes []str
 events: type Error struct {Application, Environment, Field, Reason string}
 events: type Resolved struct {Connected []Subscription Pending []string}
 events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
+health/rules: const CheckBad CheckLevel = "bad"
+health/rules: const CheckOK CheckLevel = "ok"
+health/rules: const CheckWarn CheckLevel = "warn"
+health/rules: const CheckoutAllocation = "platform/egress/allocation.json"
+health/rules: const CheckoutCompiled = "v2-apps/instances"
+health/rules: const CheckoutFluxSettings = "clusters/home/flux-system/install/flux.json"
+health/rules: const CheckoutProfile = "v2/testdata/profile.json"
+health/rules: const CheckoutRecords = "v2-records"
+health/rules: const CheckoutTeams = "v2-records/teams.json"
+health/rules: const PlatformKind = "v2-platform-checks"
+health/rules: const PlatformVersion = 1
+health/rules: func (CompiledInstance) Namespace() string
+health/rules: func (FluxSettings) Controllers() []string
+health/rules: func (ImagePolicy) Ready() bool
+health/rules: func (PlatformReport) Passed() bool
+health/rules: func BackupJobLocation(job observe.Read) (recoveryrules.ArchiveQuery, bool)
+health/rules: func ClickStackPod(pods observe.List) string
+health/rules: func ClickStackSelector(deployment observe.Read) string
+health/rules: func CompareIngestion(collector []byte, collectorFailed bool, teamOutput []byte, teamFailed bool) IngestionEvidence
+health/rules: func CompiledObject(name string) bool
+health/rules: func DecodeFluxSettings(data []byte) (FluxSettings, error)
+health/rules: func EncodePlatformReport(r PlatformReport) ([]byte, error)
+health/rules: func EventNamespaces(compiled []CompiledInstance) []string
+health/rules: func GitHubRepository(repository string) bool
+health/rules: func ImagePolicies(list observe.List) []ImagePolicy
+health/rules: func InstalledRepository(value string) (string, string)
+health/rules: func MergeFailures(output []byte, failed bool) PlatformEntry
+health/rules: func MongoVolumeName(claim observe.Read) string
+health/rules: func ParseRegistration(output []byte, failed bool) RegistrationEvidence
+health/rules: func PlatformChecks(e PlatformEvidence) []PlatformCheck
+health/rules: func PlatformScopeChecks(e PlatformEvidence, s ScopeEvidence) []PlatformCheck
+health/rules: func PlatformText(r PlatformReport) string
+health/rules: func SystemLogTTL(output []byte, failed bool) PlatformEntry
+health/rules: func TelemetryTTL(output []byte, failed bool) PlatformEntry
+health/rules: func WebhookHost(domain string) (string, string)
+health/rules: type ChannelEvidence struct {Wanted []byte Problem string Live []byte Unread string Secrets []string Owners map[string][]string}
+health/rules: type CheckLevel string
+health/rules: type CompiledInstance struct {Application, Environment string Files map[string][]byte}
+health/rules: type ConsoleEvidence struct {Jobs bool JobsUnread string Tag string}
+health/rules: type ConsoleTokenEvidence struct {Problem string Tokens []TokenEvidence}
+health/rules: type DatabaseBackup struct {Namespace string Listing recoveryrules.ArchiveList}
+health/rules: type DatabaseEvidence struct {Problem string Location recoveryrules.ArchiveQuery Databases []DatabaseBackup}
+health/rules: type EgressEvidence struct {Proxy observe.Read Ports []InstancePort Problem string}
+health/rules: type EventEvidence struct {Server, Controller observe.Read Streams, Consumers map[string]observe.List Storage JetStreamStorage}
+health/rules: type FluxEvidence struct {Settings FluxSettings Problem string Deployments map[string]observe.Read}
+health/rules: type FluxSettings struct {Version string `json:"version"` ExtraComponents []string `json:"extraComponents"` RemovedComponents []string `json:"removedComponents"` Args map[string][]string `json:"args"`}
+health/rules: type HeartbeatEvidence struct {Supplied bool Text string}
+health/rules: type Hook struct {Active bool Events []string Host string Code *int Message string}
+health/rules: type HookListing struct {Hooks []Hook MissingToken bool Problem string}
+health/rules: type ImageEvidence struct {Policies observe.List Records map[string]StagingRecord Newest map[string]NewestImage}
+health/rules: type ImagePolicy struct {Name, App, Status, Message, Tag string}
+health/rules: type IngestionEvidence struct {CollectorPresent, CollectorFailed, TeamAvailable, Equal bool}
+health/rules: type InstancePort struct {Application, Environment string Port int32}
+health/rules: type IsolationEvidence struct {Namespaces observe.List Quotas, Policies map[string]observe.List Teams map[string]bool TeamsProblem string}
+health/rules: type JetStreamStorage struct {Output []byte Failed bool}
+health/rules: type MongoBackupEvidence struct {Job observe.Read Listing recoveryrules.ArchiveList}
+health/rules: type NewestImage struct {Digest, Problem string}
+health/rules: type PlatformCatalogueEntry struct {Name, Section, Passes, Reads string}
+health/rules: type PlatformCheck struct {Name string `json:"name"` Section string `json:"section"` Entries []PlatformEntry `json:"entries"`}
+health/rules: type PlatformEntry struct {Level CheckLevel `json:"level"` Message string `json:"message"`}
+health/rules: type PlatformEvidence struct {Units, Alerts, Providers observe.List Traefik, Notify, Console, Dashboards, Notifications observe.Read Now time.Time}
+health/rules: type PlatformReport struct {Source string ObservedAt string Checks []PlatformCheck}
+health/rules: type RegistrationEvidence struct {Readable, TeamExists bool}
+health/rules: type RepositoryHooks struct {App, Repository, Problem string Listing HookListing}
+health/rules: type RetentionEvidence struct {Telemetry, SystemLogs, Merges PlatformEntry Volume observe.Read}
+health/rules: type ScopeEvidence struct {Compiled []CompiledInstance Images ImageEvidence Isolation IsolationEvidence Signing SigningEvidence Events EventEvidence Egress EgressEvidence Channels ChannelEvidence Backups MongoBackupEvidence Databases DatabaseEvidence Console ConsoleEvidence PushWebhook, ImageWebhooks WebhookEvidence ConsoleTokens ConsoleTokenEvidence Ingestion IngestionEvidence Registration RegistrationEvidence Retention RetentionEvidence Flux FluxEvidence Heartbeat HeartbeatEvidence Credentials bool MaxAge time.Duration}
+health/rules: type SigningEvidence struct {Issuer string Keys []byte Unread string StatedIssuer, StatedKeys, Unstated string}
+health/rules: type StagingRecord struct {Image, Digest, Problem string}
+health/rules: type TokenEvidence struct {Key, Label string Required, Missing bool Problem string Status int Expiry string}
+health/rules: type WebhookEvidence struct {Receiver observe.Read Host, Repository, Problem string Listing HookListing Apps []RepositoryHooks}
+health/rules: var PlatformAlerts = observe.Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Alert", Namespace: "flux-system"}
+health/rules: var PlatformCatalogue = []PlatformCatalogueEntry{{"flux-units", "Flux Kustomizations", "Every Flux unit is Ready", "Cluster (read), `swhurl-v2 verify`"}, {"ingress", "Ingress", "Traefik redirects HTTP to HTTPS", "Cluster (read), `swhurl-v2 verify`"}, {"alerts", "Alerts", "The Flux failure Alert exists and its provider does (a missing Alert warns)", "Cluster (read), `swhurl-v2 verify`"}, {"notify-service", "Notify service", "The notify service runs, on the console's image (another image warns)", "Cluster (read), `swhurl-v2 verify`"}, {"dashboards", "App dashboards and alerts", "The platform webhook, dashboard and alert sync succeeded within five minutes", "Cluster (read), `swhurl-v2 verify`"}, {"notifications", "Notifications", "The notification checker succeeded within five minutes", "Cluster (read), `swhurl-v2 verify`"}, {"image-automation", "Image Automation", "Every app's ImagePolicy is Ready and staging runs the image its record states (warns otherwise)", "Cluster (read), this checkout, registry (read), `swhurl-v2 verify`"}, {"isolation", "App isolation", "Every instance v2 compiled has its namespace, a registered team, the platform quota and a NetworkPolicy", "Cluster (read), this checkout, `swhurl-v2 verify`"}, {"signing-keys", "Call identity", "The signing keys and token issuer apps were given are the cluster's", "Cluster (read), this checkout, `swhurl-v2 verify`"}, {"events", "Events", "NATS and its controller run, every stream and consumer v2 rendered is Ready, and JetStream has room for one more stream (warns otherwise, and names streams no instance declares)", "Cluster (read), this checkout, `swhurl-v2 verify`"}, {"egress", "Egress proxy", "The egress proxy runs both replicas, and each instance that reaches it does so on a port of its own from the allocation", "Cluster (read), this checkout, `swhurl-v2 verify`"}, {"channels", "Notification channels", "The team routes are Git's and every channel has its Secret (a team without a channel warns)", "Cluster (read), this checkout, Secrets (read), `swhurl-v2 verify`"}, {"backups", "Backups", "The newest MongoDB backup in S3, archive and metadata, is younger than `BACKUP_MAX_AGE_HOURS` (26)", "Cluster (read), S3 (list), `swhurl-v2 verify`"}, {"sqlite-backups", "App SQLite backups", "Each instance whose release declares a SQLite database has a backup in S3 as young", "this checkout, S3 (list), `swhurl-v2 verify`"}, {"console", "Console", "The console image is built from this checkout's tooling (warns otherwise) and its job record exists", "Cluster (read), this checkout, `swhurl-v2 verify`"}, {"push-webhook", "Push Webhook", "Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise)", "Cluster (read), this checkout, GitHub (read), `swhurl-v2 verify`"}, {"image-webhooks", "Image Webhooks", "The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise)", "Cluster (read), this checkout, GitHub (read), `swhurl-v2 verify`"}, {"console-token", "Console GitHub Token", "GitHub accepts the console's tokens and none expires within 14 days (warns)", "Cluster (read), this checkout, Secrets (read), GitHub (read), `swhurl-v2 verify`"}, {"flux-controllers", "Flux Controllers", "The Flux controllers run the pinned version with the settings in Git (warns otherwise)", "Cluster (read), this checkout (`flux.json`), `swhurl-v2 verify`"}, {"runtime-secrets", "Runtime Secrets", "The collector ingestion key Secret is present and nonempty", "Cluster (read), Secrets (read), `swhurl-v2 verify`"}, {"ingestion-key", "Ingestion Key Sync", "The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed", "Cluster (read), Secrets (read), commands in pods, `swhurl-v2 verify`"}, {"registration", "ClickStack Sign-up", "A HyperDX team exists, so registration is closed", "Cluster (read), commands in pods, `swhurl-v2 verify`"}, {"retention", "Retention", "Telemetry expires after 30 days and ClickHouse system logs after 7, no merge failed in the last hour, and the MongoDB volume is retained", "Cluster (read), commands in pods, `swhurl-v2 verify`"}, {"notification-heartbeat", "Notification heartbeat", "The host heartbeat timer is active and its service's last run succeeded within 15 minutes", "this host (`--heartbeat`), `swhurl-v2 verify`"},}
+health/rules: var PlatformConsole = observe.Ref{APIVersion: "helm.toolkit.fluxcd.io/v2", Kind: "HelmRelease", Namespace: "console", Name: "console"}
+health/rules: var PlatformConsumers = observe.Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Consumer"}
+health/rules: var PlatformDashboards = observe.Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-dashboards"}
+health/rules: var PlatformEgress = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "egress", Name: "egress"}
+health/rules: var PlatformFluxController = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "flux-system"}
+health/rules: var PlatformImagePolicies = observe.Ref{APIVersion: "image.toolkit.fluxcd.io/v1", Kind: "ImagePolicy", Namespace: "flux-system"}
+health/rules: var PlatformMongoBackup = observe.Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "observability", Name: "backup-mongodb"}
+health/rules: var PlatformNATS = observe.Ref{APIVersion: "apps/v1", Kind: "StatefulSet", Namespace: "messaging", Name: "nats"}
+health/rules: var PlatformNATSController = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "messaging", Name: "nats-controller"}
+health/rules: var PlatformNamespaces = observe.Ref{APIVersion: "v1", Kind: "Namespace"}
+health/rules: var PlatformNetworkPolicies = observe.Ref{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"}
+health/rules: var PlatformNotifications = observe.Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-notifications"}
+health/rules: var PlatformNotify = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "notify", Name: "notify"}
+health/rules: var PlatformProviders = observe.Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Provider", Namespace: "flux-system"}
+health/rules: var PlatformQuotas = observe.Ref{APIVersion: "v1", Kind: "ResourceQuota"}
+health/rules: var PlatformStreams = observe.Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Stream"}
+health/rules: var PlatformTraefik = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "kube-system", Name: "traefik"}
+health/rules: var PlatformUnits = observe.Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization", Namespace: "flux-system"}
 kernel: const AddTeam TeamAction = "add"
+kernel: const AppLabel = "platform.swhurl.com/app"
 kernel: const AppRecordName = "app.json"
 kernel: const AppTree = "apps"
 kernel: const ChannelTaken Code = "channel_taken"
@@ -778,6 +869,7 @@ kernel: const RolePublishes = "publishes"
 kernel: const RoleReaches = "reaches"
 kernel: const RoleSubscriber = "subscriber"
 kernel: const RoleSubscribes = "subscribes"
+kernel: const StagingEnvironment = "staging"
 kernel: const StaleInstance Code = "stale_instance"
 kernel: const TeamExists Code = "team_exists"
 kernel: const TeamInUse Code = "team_in_use"
@@ -1167,18 +1259,8 @@ notifications: type Notifier struct {}
 notifications: type NotifyCluster struct {Reviewer kube.Reviewer Data kube.Data Reader kube.Reader}
 notifications: type NotifyConnect func() (NotifyCluster, error)
 observe: const Absent = "absent"
-observe: const AppLabel = "platform.swhurl.com/app"
 observe: const Applied = "applied"
 observe: const AsIntended = "as_intended"
-observe: const CheckBad CheckLevel = "bad"
-observe: const CheckOK CheckLevel = "ok"
-observe: const CheckWarn CheckLevel = "warn"
-observe: const CheckoutAllocation = "platform/egress/allocation.json"
-observe: const CheckoutCompiled = "v2-apps/instances"
-observe: const CheckoutFluxSettings = "clusters/home/flux-system/install/flux.json"
-observe: const CheckoutProfile = "v2/testdata/profile.json"
-observe: const CheckoutRecords = "v2-records"
-observe: const CheckoutTeams = "v2-records/teams.json"
 observe: const Different = "different"
 observe: const IsNotRunning Verdict = "not_running"
 observe: const IsRunning Verdict = "running"
@@ -1189,8 +1271,6 @@ observe: const NotReady = "not_ready"
 observe: const NotReconciled = "not_reconciled"
 observe: const NotRunning = "not_running"
 observe: const NotSettled = "not_settled"
-observe: const PlatformKind = "v2-platform-checks"
-observe: const PlatformVersion = 1
 observe: const Present = "present"
 observe: const Ready = "ready"
 observe: const ReasonContainers = "container_not_ready"
@@ -1233,7 +1313,6 @@ observe: const RunRunning = "running"
 observe: const RunUnknown = "unknown"
 observe: const Running = "running"
 observe: const Settled = "settled"
-observe: const StagingEnvironment = "staging"
 observe: const StateFailing = "failing"
 observe: const StateHealthy = "healthy"
 observe: const StateStopped = "stopped"
@@ -1246,128 +1325,49 @@ observe: const Unknown Verdict = "unknown"
 observe: func (*Error) Error() string
 observe: func (Candidates) EvidenceFor(target Target) Evidence
 observe: func (Candidates) Removed(targets []Target) []Removed
-observe: func (CompiledInstance) Namespace() string
-observe: func (FluxSettings) Controllers() []string
-observe: func (ImagePolicy) Ready() bool
-observe: func (PlatformReport) Passed() bool
-observe: func BackupJobLocation(job Read) (rules.ArchiveQuery, bool)
 observe: func BackupTargetOf(cronJob []byte) (BackupTarget, error)
 observe: func BulkPlan(targets []Target) []ListRequest
-observe: func ClickStackPod(pods List) string
-observe: func ClickStackSelector(deployment Read) string
-observe: func CompareIngestion(collector []byte, collectorFailed bool, teamOutput []byte, teamFailed bool) IngestionEvidence
-observe: func CompiledObject(name string) bool
-observe: func DecodeFluxSettings(data []byte) (FluxSettings, error)
 observe: func EncodeCollection(collection Collection) ([]byte, error)
-observe: func EncodePlatformReport(r PlatformReport) ([]byte, error)
 observe: func EncodeReport(report Report) ([]byte, error)
 observe: func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error)
-observe: func EventNamespaces(compiled []CompiledInstance) []string
 observe: func Explain(target Target, evidence Evidence) (Report, error)
-observe: func GitHubRepository(repository string) bool
-observe: func ImagePolicies(list List) []ImagePolicy
 observe: func IndexCandidates(lists []List) (Candidates, error)
-observe: func InstalledRepository(value string) (string, string)
 observe: func InstanceOfNamespace(namespace string) (application, environment string, ok bool)
 observe: func InstanceOfUnit(name string) (application, environment string, ok bool)
 observe: func IsPositive(outcome string) bool
-observe: func MergeFailures(output []byte, failed bool) PlatformEntry
-observe: func MongoVolumeName(claim Read) string
 observe: func NewestRun(items [][]byte) (string, bool, error)
-observe: func ParseRegistration(output []byte, failed bool) RegistrationEvidence
-observe: func PlatformChecks(e PlatformEvidence) []PlatformCheck
-observe: func PlatformScopeChecks(e PlatformEvidence, s ScopeEvidence) []PlatformCheck
-observe: func PlatformText(r PlatformReport) string
 observe: func RouteTargetOf(ingress []byte) (RouteTarget, error)
 observe: func StateOf(report Report) State
-observe: func SystemLogTTL(output []byte, failed bool) PlatformEntry
 observe: func TargetOf(helmRelease []byte, unit Ref, revision string) (Target, error)
-observe: func TelemetryTTL(output []byte, failed bool) PlatformEntry
 observe: func UnitRef(unit []byte) (Ref, error)
-observe: func WebhookHost(domain string) (string, string)
 observe: type BackupEvidence struct {CronJob Read Pods List Run *Read Archive *rules.ArchiveList MaxAge time.Duration}
 observe: type BackupReport struct {State string Reason string Schedule string LastScheduledAt string LastSucceededAt string MaxAge time.Duration NewestRun *RunReport Archive rules.ArchiveReport}
 observe: type BackupTarget struct {CronJob Ref Pods Ref Selector string Schedule string}
 observe: type Candidates struct {}
 observe: type Certificate struct {Name string Outcome string Reason string}
-observe: type ChannelEvidence struct {Wanted []byte Problem string Live []byte Unread string Secrets []string Owners map[string][]string}
-observe: type CheckLevel string
 observe: type Collection struct {Source, ObservedAt, Revision string Instances []InstanceReport Removing []Removed}
-observe: type CompiledInstance struct {Application, Environment string Files map[string][]byte}
 observe: type Condition struct {Type string `json:"type"` Status string `json:"status"` Reason string `json:"reason"` ObservedGeneration *int64 `json:"observedGeneration"`}
-observe: type ConsoleEvidence struct {Jobs bool JobsUnread string Tag string}
-observe: type ConsoleTokenEvidence struct {Problem string Tokens []TokenEvidence}
-observe: type DatabaseBackup struct {Namespace string Listing rules.ArchiveList}
-observe: type DatabaseEvidence struct {Problem string Location rules.ArchiveQuery Databases []DatabaseBackup}
-observe: type EgressEvidence struct {Proxy Read Ports []InstancePort Problem string}
 observe: type Error struct {Field, Reason string}
-observe: type EventEvidence struct {Server, Controller Read Streams, Consumers map[string]List Storage JetStreamStorage}
 observe: type Evidence struct {Source string ObservedAt string Objects []Read Pods []List Backup *BackupEvidence Changes *deliveryrules.Changes}
 observe: type Finding struct {Field, Outcome, Reason string}
-observe: type FluxEvidence struct {Settings FluxSettings Problem string Deployments map[string]Read}
 observe: type FluxFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` Suspended *bool `json:"suspended"` Conditions []Condition `json:"conditions"`}
-observe: type FluxSettings struct {Version string `json:"version"` ExtraComponents []string `json:"extraComponents"` RemovedComponents []string `json:"removedComponents"` Args map[string][]string `json:"args"`}
-observe: type HeartbeatEvidence struct {Supplied bool Text string}
-observe: type Hook struct {Active bool Events []string Host string Code *int Message string}
-observe: type HookListing struct {Hooks []Hook MissingToken bool Problem string}
-observe: type ImageEvidence struct {Policies List Records map[string]StagingRecord Newest map[string]NewestImage}
-observe: type ImagePolicy struct {Name, App, Status, Message, Tag string}
-observe: type IngestionEvidence struct {CollectorPresent, CollectorFailed, TeamAvailable, Equal bool}
-observe: type InstancePort struct {Application, Environment string Port int32}
 observe: type InstanceReport struct {Application, Environment string Report Report Inventory json.RawMessage}
-observe: type IsolationEvidence struct {Namespaces List Quotas, Policies map[string]List Teams map[string]bool TeamsProblem string}
-observe: type JetStreamStorage struct {Output []byte Failed bool}
 observe: type List struct {Ref Ref Selector string Status string Reason string Items [][]byte}
 observe: type ListRequest struct {Ref Ref Selector string}
 observe: type LiveFacts struct {Unit FluxFacts `json:"unit"` Release FluxFacts `json:"release"` Workload WorkloadFacts `json:"workload"` Running RunningFacts `json:"running"`}
-observe: type MongoBackupEvidence struct {Job Read Listing rules.ArchiveList}
-observe: type NewestImage struct {Digest, Problem string}
-observe: type PlatformCatalogueEntry struct {Name, Section, Passes, Reads string}
-observe: type PlatformCheck struct {Name string `json:"name"` Section string `json:"section"` Entries []PlatformEntry `json:"entries"`}
-observe: type PlatformEntry struct {Level CheckLevel `json:"level"` Message string `json:"message"`}
-observe: type PlatformEvidence struct {Units, Alerts, Providers List Traefik, Notify, Console, Dashboards, Notifications Read Now time.Time}
-observe: type PlatformReport struct {Source string ObservedAt string Checks []PlatformCheck}
 observe: type Problem struct {Pod, Container, Reason, Message string}
 observe: type Read struct {Ref Ref Status string Reason string Object []byte}
 observe: type Ref struct {APIVersion, Kind, Namespace, Name string}
-observe: type RegistrationEvidence struct {Readable, TeamExists bool}
 observe: type Removed struct {Application, Environment, Reason string}
 observe: type Report struct {Target Target Currentness deliveryrules.Currentness Live LiveFacts Source string ObservedAt string Findings []Finding Verdict Verdict Backup BackupReport Problems []Problem Routes []Route Certificates []Certificate State State Assessed []string Unassessed []string NotCovered []string}
-observe: type RepositoryHooks struct {App, Repository, Problem string Listing HookListing}
-observe: type RetentionEvidence struct {Telemetry, SystemLogs, Merges PlatformEntry Volume Read}
 observe: type Route struct {Name string Outcome string Reason string Hosts []string}
 observe: type RouteTarget struct {Ingress Ref Certificates []Ref}
 observe: type RunReport struct {Name string CreatedAt string CompletedAt string Outcome string}
 observe: type RunningFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` Digests []string `json:"digests"`}
-observe: type ScopeEvidence struct {Compiled []CompiledInstance Images ImageEvidence Isolation IsolationEvidence Signing SigningEvidence Events EventEvidence Egress EgressEvidence Channels ChannelEvidence Backups MongoBackupEvidence Databases DatabaseEvidence Console ConsoleEvidence PushWebhook, ImageWebhooks WebhookEvidence ConsoleTokens ConsoleTokenEvidence Ingestion IngestionEvidence Registration RegistrationEvidence Retention RetentionEvidence Flux FluxEvidence Heartbeat HeartbeatEvidence Credentials bool MaxAge time.Duration}
-observe: type SigningEvidence struct {Issuer string Keys []byte Unread string StatedIssuer, StatedKeys, Unstated string}
-observe: type StagingRecord struct {Image, Digest, Problem string}
 observe: type State struct {Name, Field, Reason string}
 observe: type Target struct {Namespace string Unit Ref Release Ref Workload Ref Pods Ref Selector string Container string Digest string Replicas int32 Revision string Backup *BackupTarget Route *RouteTarget Scope *deliveryrules.ChangeScope}
-observe: type TokenEvidence struct {Key, Label string Required, Missing bool Problem string Status int Expiry string}
 observe: type Verdict string
-observe: type WebhookEvidence struct {Receiver Read Host, Repository, Problem string Listing HookListing Apps []RepositoryHooks}
 observe: type WorkloadFacts struct {Status string `json:"status"` Reason string `json:"reason,omitempty"` ReadyReplicas *int64 `json:"readyReplicas"`}
-observe: var PlatformAlerts = Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Alert", Namespace: "flux-system"}
-observe: var PlatformCatalogue = []PlatformCatalogueEntry{{"flux-units", "Flux Kustomizations", "Every Flux unit is Ready", "Cluster (read), `swhurl-v2 verify`"}, {"ingress", "Ingress", "Traefik redirects HTTP to HTTPS", "Cluster (read), `swhurl-v2 verify`"}, {"alerts", "Alerts", "The Flux failure Alert exists and its provider does (a missing Alert warns)", "Cluster (read), `swhurl-v2 verify`"}, {"notify-service", "Notify service", "The notify service runs, on the console's image (another image warns)", "Cluster (read), `swhurl-v2 verify`"}, {"dashboards", "App dashboards and alerts", "The platform webhook, dashboard and alert sync succeeded within five minutes", "Cluster (read), `swhurl-v2 verify`"}, {"notifications", "Notifications", "The notification checker succeeded within five minutes", "Cluster (read), `swhurl-v2 verify`"}, {"image-automation", "Image Automation", "Every app's ImagePolicy is Ready and staging runs the image its record states (warns otherwise)", "Cluster (read), this checkout, registry (read), `swhurl-v2 verify`"}, {"isolation", "App isolation", "Every instance v2 compiled has its namespace, a registered team, the platform quota and a NetworkPolicy", "Cluster (read), this checkout, `swhurl-v2 verify`"}, {"signing-keys", "Call identity", "The signing keys and token issuer apps were given are the cluster's", "Cluster (read), this checkout, `swhurl-v2 verify`"}, {"events", "Events", "NATS and its controller run, every stream and consumer v2 rendered is Ready, and JetStream has room for one more stream (warns otherwise, and names streams no instance declares)", "Cluster (read), this checkout, `swhurl-v2 verify`"}, {"egress", "Egress proxy", "The egress proxy runs both replicas, and each instance that reaches it does so on a port of its own from the allocation", "Cluster (read), this checkout, `swhurl-v2 verify`"}, {"channels", "Notification channels", "The team routes are Git's and every channel has its Secret (a team without a channel warns)", "Cluster (read), this checkout, Secrets (read), `swhurl-v2 verify`"}, {"backups", "Backups", "The newest MongoDB backup in S3, archive and metadata, is younger than `BACKUP_MAX_AGE_HOURS` (26)", "Cluster (read), S3 (list), `swhurl-v2 verify`"}, {"sqlite-backups", "App SQLite backups", "Each instance whose release declares a SQLite database has a backup in S3 as young", "this checkout, S3 (list), `swhurl-v2 verify`"}, {"console", "Console", "The console image is built from this checkout's tooling (warns otherwise) and its job record exists", "Cluster (read), this checkout, `swhurl-v2 verify`"}, {"push-webhook", "Push Webhook", "Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise)", "Cluster (read), this checkout, GitHub (read), `swhurl-v2 verify`"}, {"image-webhooks", "Image Webhooks", "The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise)", "Cluster (read), this checkout, GitHub (read), `swhurl-v2 verify`"}, {"console-token", "Console GitHub Token", "GitHub accepts the console's tokens and none expires within 14 days (warns)", "Cluster (read), this checkout, Secrets (read), GitHub (read), `swhurl-v2 verify`"}, {"flux-controllers", "Flux Controllers", "The Flux controllers run the pinned version with the settings in Git (warns otherwise)", "Cluster (read), this checkout (`flux.json`), `swhurl-v2 verify`"}, {"runtime-secrets", "Runtime Secrets", "The collector ingestion key Secret is present and nonempty", "Cluster (read), Secrets (read), `swhurl-v2 verify`"}, {"ingestion-key", "Ingestion Key Sync", "The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed", "Cluster (read), Secrets (read), commands in pods, `swhurl-v2 verify`"}, {"registration", "ClickStack Sign-up", "A HyperDX team exists, so registration is closed", "Cluster (read), commands in pods, `swhurl-v2 verify`"}, {"retention", "Retention", "Telemetry expires after 30 days and ClickHouse system logs after 7, no merge failed in the last hour, and the MongoDB volume is retained", "Cluster (read), commands in pods, `swhurl-v2 verify`"}, {"notification-heartbeat", "Notification heartbeat", "The host heartbeat timer is active and its service's last run succeeded within 15 minutes", "this host (`--heartbeat`), `swhurl-v2 verify`"},}
-observe: var PlatformConsole = Ref{APIVersion: "helm.toolkit.fluxcd.io/v2", Kind: "HelmRelease", Namespace: "console", Name: "console"}
-observe: var PlatformConsumers = Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Consumer"}
-observe: var PlatformDashboards = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-dashboards"}
-observe: var PlatformEgress = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "egress", Name: "egress"}
-observe: var PlatformFluxController = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "flux-system"}
-observe: var PlatformImagePolicies = Ref{APIVersion: "image.toolkit.fluxcd.io/v1", Kind: "ImagePolicy", Namespace: "flux-system"}
-observe: var PlatformMongoBackup = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "observability", Name: "backup-mongodb"}
-observe: var PlatformNATS = Ref{APIVersion: "apps/v1", Kind: "StatefulSet", Namespace: "messaging", Name: "nats"}
-observe: var PlatformNATSController = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "messaging", Name: "nats-controller"}
-observe: var PlatformNamespaces = Ref{APIVersion: "v1", Kind: "Namespace"}
-observe: var PlatformNetworkPolicies = Ref{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"}
-observe: var PlatformNotifications = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-notifications"}
-observe: var PlatformNotify = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "notify", Name: "notify"}
-observe: var PlatformProviders = Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Provider", Namespace: "flux-system"}
-observe: var PlatformQuotas = Ref{APIVersion: "v1", Kind: "ResourceQuota"}
-observe: var PlatformStreams = Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Stream"}
-observe: var PlatformTraefik = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "kube-system", Name: "traefik"}
-observe: var PlatformUnits = Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization", Namespace: "flux-system"}
 orchestration: const BootstrapInfo BootstrapLevel = "info"
 orchestration: const BootstrapOK BootstrapLevel = "ok"
 orchestration: const BootstrapWarn BootstrapLevel = "warn"
@@ -1435,8 +1435,8 @@ orchestration: func ImageDeclaration(reader appsource.Reader, root string) (stri
 orchestration: func LifecycleTest(ctx context.Context, inputs LifecycleTestInputs) ([]lifecycletest.Line, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
-orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (observe.PlatformReport, error)
-orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (observe.PlatformReport, error)
+orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (healthrules.PlatformReport, error)
+orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (healthrules.PlatformReport, error)
 orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
 orchestration: func ReadStackContract(data []byte) (StackContract, error)
 orchestration: func ReadTree(content []byte, prefixed bool) ([]files.TreeFile, error)
@@ -1466,7 +1466,7 @@ orchestration: type BootstrapPorts struct {Data kube.Data Installer clickstack.I
 orchestration: type BootstrapReport struct {Lines []BootstrapLine}
 orchestration: type CertIssuerInputs struct {Issuers []files.TreeFile Settings []byte}
 orchestration: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(ctx context.Context, commit string, units []string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Cached func(commit string, units []string) bool Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
-orchestration: type Checkout struct {Profile, Teams, Allocation []byte FluxSettings []byte Apps, Releases map[string][]byte Compiled []observe.CompiledInstance}
+orchestration: type Checkout struct {Profile, Teams, Allocation []byte FluxSettings []byte Apps, Releases map[string][]byte Compiled []healthrules.CompiledInstance}
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type ConsoleBundle struct {Source ConsoleSource Max int}
 orchestration: type ConsoleEvidence struct {Bundle *ConsoleBundle Max int}
@@ -1500,7 +1500,7 @@ orchestration: type LifecycleTestInputs struct {Cluster Cluster Secrets kube.Sec
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
 orchestration: type Named struct {Name, Value string}
-orchestration: type PlatformAllInputs struct {PlatformInputs GitHub github.Reader GitHubToken string Data kube.Data Issuer kube.Issuer Executor kube.Executor Registries func(image string) (registry.Reader, error) Objects func(bucket string) (s3.Reader, error) Checkout Checkout ConsoleTag string MaxAge time.Duration Heartbeat observe.HeartbeatEvidence}
+orchestration: type PlatformAllInputs struct {PlatformInputs GitHub github.Reader GitHubToken string Data kube.Data Issuer kube.Issuer Executor kube.Executor Registries func(image string) (registry.Reader, error) Objects func(bucket string) (s3.Reader, error) Checkout Checkout ConsoleTag string MaxAge time.Duration Heartbeat healthrules.HeartbeatEvidence}
 orchestration: type PlatformInputs struct {Reader kube.Reader Source string Now func() time.Time}
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
 orchestration: type PublishInputs struct {Change pages.ConsoleChange Name, Env string Identity string Revision string Before []files.TreeFile After []files.TreeFile Commands []string Preface string Repository string Token string DryRun bool}

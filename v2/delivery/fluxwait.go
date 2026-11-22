@@ -21,6 +21,9 @@ const (
 	fluxSourceGroup = "source.toolkit.fluxcd.io"
 )
 
+// fluxUnits locates the namespace collection the delivery wait reads.
+var fluxUnits = observe.Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization", Namespace: fluxNamespace}
+
 // The wait make flux-reconcile ends with. cluster-stack does not wait for the units it defines, so a slow or failing
 // unit never holds it (or a new app's unit) back; this gives the operator the wait instead. It polls until every unit
 // reports Ready at the revision the GitRepository fetched, reporting each unit as it finishes, and stops at the first
@@ -160,7 +163,7 @@ func fluxSourceRevision(ctx context.Context, reader kube.Reader) (string, error)
 
 // fluxUnitsAt is every unit in flux-system and where it stands at revision, by name.
 func fluxUnitsAt(ctx context.Context, reader kube.Reader, revision string) ([]rules.FluxUnitState, error) {
-	list, err := reader.ListNamespace(ctx, observe.PlatformUnits)
+	list, err := reader.ListNamespace(ctx, fluxUnits)
 	if err != nil {
 		return nil, err
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -371,7 +372,7 @@ func commitOf(revision string) string {
 
 // ConsoleUnits reads the Flux units the platform pages list.
 func ConsoleUnits(ctx context.Context, collector kube.Collector) ([][]byte, error) {
-	list, err := collector.ListNamespace(ctx, observe.PlatformUnits)
+	list, err := collector.ListNamespace(ctx, healthrules.PlatformUnits)
 	if err != nil {
 		return nil, fmt.Errorf("Flux units unavailable: %w", err)
 	}

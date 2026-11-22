@@ -1,6 +1,6 @@
 id: 40
 title: "Deployment health: one pure verdict owned beside the data it judges; incident reuses it"
-state: active
+state: done
 scope:
   - v2/delivery/rules/**
   - v2/apps/rules/**
@@ -25,3 +25,15 @@ notes:
   - at: 2026-11-22T17:04:05.127Z
     commit: 93f9b489a54b
     text: Check 1 references ./apps/... but the verdict landed in delivery/rules (allowed by the owner rule) and v2/apps does not exist -> conductor dropped ./apps/... from check 1 (conductor's error in the original check); no empty package.
+  - at: 2026-11-22T17:04:19.422Z
+    commit: "111710431e28"
+    text: "done: delivery/rules/health.go owns the one deployment-health verdict (DeploymentHealthOf/ReleaseHealthOf/RequestedImage); incident's health.go deleted, incident maps verdicts to its persisted faults via a new PureDependencies edge. 138 legacy goldens unchanged; new table test covers every branch. Status (observe.StateOf) does not import it. No live check."
+  - at: 2026-11-22T17:04:19.422Z
+    commit: "111710431e28"
+    text: "followup: Status (observe.StateOf, moving to apps in task 41) still judges instance health from observe Findings independently of delivery/rules' deployment-health verdict; the operator note expected apps/status to import it, but that changes status behaviour, so a decision is needed."
+  - at: 2026-11-22T17:04:19.422Z
+    commit: "111710431e28"
+    text: "followup: docs/iteration-2-plan.md capability map should name delivery/rules as owner of deployment health (task 43 scope)."
+  - at: 2026-11-22T17:05:56.261Z
+    commit: "2e6004434782"
+    text: branch dsa/01M822VHV2FXADT5CVDV7SVQW9/task-40

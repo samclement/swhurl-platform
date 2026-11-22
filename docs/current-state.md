@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## One archive verdict: an archive counts only with its metadata, offline (22 November 2026)
+
+- **Change:** [D1](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026), decided by
+  the operator: `recovery/rules` alone decides whether an archive counts, and it counts only when its metadata is
+  listed beside it, aged by S3's `LastModified`. Restore and app status skip a half-uploaded newest archive for the
+  previous complete one (they used to choose it and then refuse the restore as `incomplete`); an archive named with
+  `--from` (`FROM=`) is still chosen without metadata and refused as `incomplete/archive_metadata_absent`.
+  `verify-platform`'s `sqlite-backups` check takes `rules.InstanceArchive` and its MongoDB backups check
+  `rules.NewestArchive` (the `.archive.gz.age` suffix), both now aged by S3's time rather than the stamp in the
+  archive's name; `observe`'s own rule (`backupSet`) is deleted. A backup location with an empty prefix
+  (`s3://bucket/`) now makes `sqlite-backups` report `not_confined_to_the_instance`, as the instance report already
+  did; the profile uses `app-sqlite/`.
+- **Checks:** `make check-v2` passes, including new `recovery/rules` tests (a newest archive without metadata falls
+  back, a named one is refused, one with no `LastModified` is malformed) and `observe`'s platform-check fixtures
+  with a `LastModified` per archive.
+- **Not exercised:** nothing live changed: no restore and no `make verify-platform` against the bucket were run on
+  the new rule, and the slice is not on `main`.
+
 ## Recovery is the first capability package, offline (22 November 2026)
 
 - **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026) slice 1.
@@ -15,8 +33,7 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Checks:** `make check-v2` passes; `swhurl-v2 restore`'s command tests pass with only type names changed; new
   archtest fixtures show a pure capability package reading the clock is refused and the reverse edge
   `recovery/rules` → `observe` is refused.
-- **Not exercised:** no live restore was run; nothing is deployed. D1 (one archive verdict for `verify-platform`'s
-  `sqlite-backups` check and restore) is open.
+- **Not exercised:** no live restore was run; nothing is deployed.
 
 ## S3 signing on AWS's signer (16 November 2026)
 

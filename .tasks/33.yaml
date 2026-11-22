@@ -1,6 +1,6 @@
 id: 33
 title: "Architecture: explicit directional workflow dependencies and business ownership"
-state: ready
+state: done
 scope:
   - docs/iteration-2-plan.md
   - docs/v2-status.md
@@ -17,3 +17,12 @@ notes:
   - at: 2026-11-22T15:16:54.798Z
     commit: 73add754a641
     text: "Approved policy: one owner/implementation per business verdict; reuse owner pure verdicts before invoking workflows. CLI wires dependencies, invokes use cases, maps output; no business sequencing/decisions. Allow only explicit named directional workflow edges, never blanket peer permission. Add WorkflowDependencies (initially empty); preserve existing layers rule ID and pure dependency rules. Validate endpoints are workflow packages, reject self edges/cycles; regression fixtures must reject unlisted edges and invalid entries and accept a listed edge without mutating globals. Keep pure-to-effect and all other prohibited edges forbidden. Update canonical architecture prose/table and dated decision; status page touch only as required. No speculative edges: orchestration->health is approved for later task 36 when health exists. Do not implement health yet."
+  - at: 2026-11-22T15:21:55.613Z
+    commit: 1a3b485831d1
+    text: "done: Added empty WorkflowDependencies registry to the existing layers rule, validating workflow endpoints and rejecting self edges/cycles. Fixtures cover listed/unlisted directional imports and preserved layer/pure restrictions without global mutation. Updated architecture ownership/CLI policy and v2 durable decision. All task checks passed; no live changes or health implementation."
+  - at: 2026-11-22T15:23:38.362Z
+    commit: 1a3b485831d1
+    text: "Handoff: task checks passed under pi-durable-subagents hold machine: cd v2 && go test ./archtest -count=1; make check-v2 (gofmt, vet, all Go tests, rendered comparison); make check-repo. git diff --check also passed. v2-status changes only its durable architecture decision; capability state/gate remain unchanged. Next dependency is health's later slice (task 36), which may register orchestration -> health only once health exists. Nothing live was exercised or changed; working-tree edits are uncommitted for conductor review."
+  - at: 2026-11-22T15:24:41.423Z
+    commit: 1a3b485831d1
+    text: branch dsa/01M81XATA7Z9TAV2WAKWVR3CDA/task-33

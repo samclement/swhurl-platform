@@ -679,6 +679,7 @@ delivery/rules: const Unsupported Code = "unsupported"
 delivery/rules: const WrongApplication Code = "wrong_application"
 delivery/rules: const WrongRelease Code = "wrong_release"
 delivery/rules: func (*Error) Error() string
+delivery/rules: func SelectPromotion(staging, target kernel.InstanceSpec, current, candidate kernel.ReleaseBundle, expected kernel.InstanceRevision) (kernel.InstanceSpec, error)
 delivery/rules: type Code string
 delivery/rules: type Error struct {Code Code Field string Reason string}
 delivery: func (*Refusal) Error() string
@@ -878,7 +879,6 @@ kernel: func RenderUsers(users NATSUsers) (ResourceSet, error)
 kernel: func Rendered(name string) bool
 kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func RevisionOf(tag ImageTag, revision string) (string, error)
-kernel: func SelectPromotion(staging, target InstanceSpec, current, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: func SplitImage(reference string) (string, ImageTag, error)
 kernel: func SubscribersOf(data []byte, application, environment string) ([]string, error)

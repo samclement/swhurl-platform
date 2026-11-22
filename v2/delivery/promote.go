@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
@@ -74,7 +75,7 @@ func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Pro
 		return Promotion{}, err
 	}
 	result := Promotion{Staging: request.candidate, Before: request.current, Release: request.current}
-	selected, err := kernel.SelectPromotion(request.staging, request.spec, request.current, request.candidate,
+	selected, err := rules.SelectPromotion(request.staging, request.spec, request.current, request.candidate,
 		inputs.Expected)
 	if err != nil {
 		return result, err

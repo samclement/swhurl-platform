@@ -1,6 +1,6 @@
 id: 57
 title: Move declaration-list merging into connectivity
-state: ready
+state: done
 scope:
   - v2/kernel/edit.go
   - v2/connectivity/connectivity.go
@@ -20,3 +20,9 @@ notes:
   - at: 2026-11-22T20:38:35.909Z
     commit: 13a140feece9
     text: Move only MergeDeclarations to a private connectivity helper; retain order/deduplication/removal coverage. Keep record transformations and document model types in kernel.
+  - at: 2026-11-22T20:47:35.244Z
+    commit: 220d39c771e3
+    text: "done: Moved declaration-list merging from kernel to private connectivity helper; removed its public API entry. Entry-point table tests preserve order, deduplication, removals, add/drop precedence, no-op refusals and input immutability. Pre/post targeted tests passed; all task checks passed. Offline only; no live verification, commits or pushes. Docs deferred to task 61."
+  - at: 2026-11-22T20:49:58.877Z
+    commit: 220d39c771e3
+    text: branch dsa/01M82G4DEB9HH8VJX5A7PWRPF6/task-57

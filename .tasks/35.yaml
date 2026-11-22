@@ -6,10 +6,13 @@ scope:
   - v2/health/rules/**
   - v2/kernel/*.go
   - v2/cmd/swhurl-v2/verify.go
+  - v2/cmd/swhurl-v2/verify_test.go
   - v2/cmd/swhurl-v2/verify_checkout.go
   - v2/cmd/swhurl-v2/apphooks.go
   - v2/delivery/fluxwait*.go
   - v2/adapters/github/*.go
+  - v2/adapters/github/githubtest/fake.go
+  - v2/adapters/github/githubtest/fake_test.go
   - v2/orchestration/platform*.go
   - v2/orchestration/console.go
   - v2/orchestration/dashboards.go
@@ -42,3 +45,12 @@ notes:
   - at: 2026-11-22T15:34:54.796Z
     commit: 2df34ebbfaec
     text: Missing console.go/dashboard.go consumers and console locator owner? -> Operator approved adding v2/orchestration/console.go and v2/orchestration/dashboards.go to task scope. Console uses health/rules.PlatformUnits as the pure read locator (not a delivery workflow dependency). Dashboards uses kernel.AppLabel and moved health/rules ClickStack helpers. No other scope expansion.
+  - at: 2026-11-22T15:37:40.198Z
+    commit: aaaba733d8e0
+    text: "Safe pre-edit release: exhaustive static scan of exported platform declarations and observe.<symbol> consumers found three more required paths outside current scope: v2/adapters/github/githubtest/fake.go:19,30,34,45,52 (observe.Hook and observe.GitHubRepository); v2/adapters/github/githubtest/fake_test.go:14 (observe.Hook); v2/cmd/swhurl-v2/verify_test.go: PlatformCatalogue consumer (see rg for current line). Add these exact three paths; migrate their moved symbols to health/rules, keeping fake Reader contract and catalogue assertions intact. Confirmed tk uses :(glob), so v2/adapters/github/*.go excludes githubtest/. No source edits or checks run; git status remains clean. Console/dashboard approval stands. Scan found no other out-of-scope qualified consumers. Moving platform_catalogue_test.go also requires changing operationsPage to ../../../docs/operations.md within the approved destination scope."
+  - at: 2026-11-22T15:37:40.342Z
+    commit: aaaba733d8e0
+    text: "released: Approved move still needs three unscoped consumers: v2/adapters/github/githubtest/fake.go, v2/adapters/github/githubtest/fake_test.go, and v2/cmd/swhurl-v2/verify_test.go. Stopped before edits per task notes; exact scope additions needed."
+  - at: 2026-11-22T15:39:59.687Z
+    commit: aaaba733d8e0
+    text: Three remaining mechanical consumers missing from scope? -> Operator approved adding v2/adapters/github/githubtest/fake.go, v2/adapters/github/githubtest/fake_test.go and v2/cmd/swhurl-v2/verify_test.go. Migrate moved Hook/GitHubRepository/PlatformCatalogue references only; preserve fake Reader contract and catalogue assertions. Prior console/dashboard decisions stand.

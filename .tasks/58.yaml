@@ -1,6 +1,6 @@
 id: 58
 title: Give provisioning ownership of encrypted seed construction
-state: ready
+state: done
 scope:
   - v2/provisioning/*.go
   - v2/apps/create.go
@@ -23,3 +23,9 @@ notes:
   - at: 2026-11-22T20:38:36.062Z
     commit: 13a140feece9
     text: "Share only encrypted seed construction in provisioning; no wholesale Mint migration. Approved: provisioning.Refusal surfaces directly for missing recipient, with unchanged text/CLI exits. Preserve no encryption/no writes without recipient, ciphertext safety and seed-before-record ordering. Update workflow-edge commentary and API snapshot."
+  - at: 2026-11-22T20:53:39.139Z
+    commit: 2e84b364b9f9
+    text: "done: Provisioning now owns EncryptedSeed; Create and Mint delegate without migrating Mint. Missing recipients surface provisioning.Refusal unchanged. Added safety/failure coverage, updated workflow commentary and API snapshot. Targeted tests, make check-v2 and duplicate-helper check passed. Offline only; no live/deployment verification; docs deferred to task 61."
+  - at: 2026-11-22T20:57:18.604Z
+    commit: 2e84b364b9f9
+    text: branch dsa/01M82GC3VMRTKKQWHH836R0WVB/task-58

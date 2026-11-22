@@ -1,6 +1,6 @@
 id: 17
 title: The promotion-readiness verdict moves to delivery/rules and observe reports it
-state: ready
+state: done
 scope:
   - v2/delivery/rules/readiness.go
   - v2/delivery/rules/readiness_test.go
@@ -30,3 +30,9 @@ notes:
   - at: 2026-11-22T12:44:10.633Z
     commit: acf86f205705
     text: "From task 11: TestPromotionReadinessUsesReviewedSelectedAndRunningDigest and TestPromotionReadinessNeedsTheReviewedDigestRunning now live in v2/observe/report_test.go (observe/changes_test.go is deleted). delivery/rules is imported as 'deliveryrules' outside delivery, since 'rules' means recovery/rules there."
+  - at: 2026-11-22T12:51:00.421Z
+    commit: a25721f4b0bc
+    text: "done: PromotionReadiness and PromotionDecision move to delivery/rules with their own Readiness/Running input (table test of every reason). observe/report.go maps its report into it; document keeps Version 5 and {ready,reason}. observe tests now judge via EncodeReviewedReport. api.txt updated. Offline only; not run live."
+  - at: 2026-11-22T12:52:32.189Z
+    commit: a25721f4b0bc
+    text: branch dsa/01M81MPS75FP15C9WXX52CEKY1/task-17

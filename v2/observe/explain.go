@@ -68,36 +68,31 @@ const (
 
 // The fixed reasons. A positive outcome carries none; every other outcome names why.
 const (
-	ReasonNotFound      = "not_found"
-	ReasonForbidden     = "forbidden"
-	ReasonTimedOut      = "timed_out"
-	ReasonTransport     = "transport"
-	ReasonStatus        = "status"
-	ReasonMalformed     = "malformed"
-	ReasonTooLarge      = "response_too_large"
-	ReasonIncomplete    = "incomplete_list"
-	ReasonSuspended     = "suspended"
-	ReasonNoCondition   = "condition_absent"
-	ReasonNotTrue       = "condition_not_ready"
-	ReasonFailed        = "condition_failed" // Flux states a failure, not work in progress
-	ReasonNotAvailable  = "condition_not_available"
-	ReasonStale         = "status_stale"
-	ReasonNotSupplied   = "revision_not_supplied"
-	ReasonNotAppliedRev = "revision_not_applied"
-	ReasonRevisionShape = "unrecognised_revision"
-	ReasonUnitGone      = "unit_absent"
-	ReasonUnitDown      = "unit_unavailable"
-	ReasonWorkloadGone  = "workload_absent"
-	ReasonWorkloadDown  = "workload_unavailable"
-	ReasonPodsDown      = "pods_unavailable"
-	ReasonNoReplicas    = "no_replicas_intended"
-	ReasonNoPods        = "no_pods"
-	ReasonNotPulled     = "not_pulled"
-	ReasonNoContainer   = "container_absent"
-	ReasonUnpinnedPod   = "unpinned_pod_image"
-	ReasonDigest        = "digest"
-	ReasonReplicas      = "available_replicas"
-	ReasonContainers    = "container_not_ready" // a container is not ready and says why
+	ReasonNotFound     = "not_found"
+	ReasonForbidden    = "forbidden"
+	ReasonTimedOut     = "timed_out"
+	ReasonTransport    = "transport"
+	ReasonStatus       = "status"
+	ReasonMalformed    = "malformed"
+	ReasonTooLarge     = "response_too_large"
+	ReasonIncomplete   = "incomplete_list"
+	ReasonSuspended    = "suspended"
+	ReasonNoCondition  = "condition_absent"
+	ReasonNotTrue      = "condition_not_ready"
+	ReasonFailed       = "condition_failed" // Flux states a failure, not work in progress
+	ReasonNotAvailable = "condition_not_available"
+	ReasonStale        = "status_stale"
+	ReasonWorkloadGone = "workload_absent"
+	ReasonWorkloadDown = "workload_unavailable"
+	ReasonPodsDown     = "pods_unavailable"
+	ReasonNoReplicas   = "no_replicas_intended"
+	ReasonNoPods       = "no_pods"
+	ReasonNotPulled    = "not_pulled"
+	ReasonNoContainer  = "container_absent"
+	ReasonUnpinnedPod  = "unpinned_pod_image"
+	ReasonDigest       = "digest"
+	ReasonReplicas     = "available_replicas"
+	ReasonContainers   = "container_not_ready" // a container is not ready and says why
 )
 
 // Read is one object read: what the source answered, including that it could not be read.
@@ -223,11 +218,7 @@ func revisionFindings(target Target, facts facts, changes *deliveryrules.Changes
 	if err != nil {
 		return nil, deliveryrules.Currentness{}, err
 	}
-	findings := findingsOf(target, facts)
-	if currentness.State == "unaffected" {
-		findings[1] = Finding{"unit.revision", Unaffected, "complete_comparison_unaffected"}
-	}
-	return findings, currentness, nil
+	return findingsOf(target, facts, currentness), currentness, nil
 }
 
 // changeScopeOf is the target's repository relevance, empty when it is not known.
@@ -240,10 +231,10 @@ func changeScopeOf(target Target) deliveryrules.ChangeScope {
 
 // findingsOf reports the target's facts in fixed order. Each finding answers one question, so a
 // fact that cannot be established leaves the others standing instead of erasing them.
-func findingsOf(target Target, facts facts) []Finding {
+func findingsOf(target Target, facts facts, currentness deliveryrules.Currentness) []Finding {
 	return []Finding{
 		fluxFinding("unit", facts.unit, Reconciled, NotReconciled),
-		revisionFinding(target, facts),
+		revisionFinding(currentness),
 		fluxFinding("release", facts.release, Settled, NotSettled),
 		presenceFinding("workload", facts.workload.read),
 		imageFinding(target, facts.workload.read, facts.pods),
@@ -306,56 +297,27 @@ func fluxReadiness(field string, conditions []condition, generation int64, posit
 	return Finding{field, positive, ""}
 }
 
-// revisionFinding compares the unit's applied revision with the intended commit, when one was supplied.
-// Flux states a source revision as `<ref>@<algo>:<commit>`, so the commit is the text after the last
-// colon; a revision in any other shape is not interpreted.
-func revisionFinding(target Target, facts facts) Finding {
+// revisionFinding presents delivery's currentness without interpreting revisions again. Unknown
+// comparison or relevance evidence grants no exemption from a known revision difference: status
+// stays conservative (Updating), while the report retains delivery's unknown currentness and reason.
+func revisionFinding(currentness deliveryrules.Currentness) Finding {
 	const field = "unit.revision"
-	if target.Revision == "" {
-		return Finding{field, NotAssessed, ReasonNotSupplied}
-	}
-	if facts.unit.read.Status != Present {
-		return Finding{field, NotAssessed, unitReason(facts.unit.read.Status)}
-	}
-	applied := facts.unit.flux.lastAppliedRevision
-	if applied == "" {
-		return Finding{field, NotApplied, ReasonNotAppliedRev}
-	}
-	commit, named := appliedCommit(applied)
-	switch {
-	case !named:
-		return Finding{field, NotAssessed, ReasonRevisionShape}
-	case commit == target.Revision:
+	switch currentness.State {
+	case "applied":
 		return Finding{field, Applied, ""}
+	case "unaffected":
+		return Finding{field, Unaffected, currentness.Reason}
+	case "pending":
+		if currentness.Reason == deliveryrules.ReasonNotAppliedRev {
+			return Finding{field, NotApplied, currentness.Reason}
+		}
+		return Finding{field, Different, ""}
+	case "unknown":
+		if strings.HasPrefix(currentness.Reason, "comparison_") || currentness.Reason == "relevance_unknown" {
+			return Finding{field, Different, ""}
+		}
 	}
-	return Finding{field, Different, ""}
-}
-
-// appliedCommit is the commit a Flux source revision names: `<ref>@<algo>:<commit>` yields the text
-// after its last colon, and anything without a digest part is not interpreted.
-func appliedCommit(revision string) (string, bool) {
-	at := strings.LastIndex(revision, "@")
-	if at < 0 {
-		return "", false
-	}
-	colon := strings.LastIndex(revision[at:], ":")
-	if colon < 0 {
-		return "", false
-	}
-	commit := revision[at+colon+1:]
-	return commit, commit != ""
-}
-
-// unitReason explains why the unit's own facts could not be read: the object is absent, the read
-// failed, or it was never made.
-func unitReason(status string) string {
-	switch status {
-	case Absent:
-		return ReasonUnitGone
-	case Unavailable:
-		return ReasonUnitDown
-	}
-	return NotRead
+	return Finding{field, NotAssessed, currentness.Reason}
 }
 
 // presenceFinding reports whether one object is there. Only a successful answer that it is not there

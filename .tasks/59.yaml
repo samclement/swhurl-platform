@@ -1,6 +1,6 @@
 id: 59
 title: Synchronize job-record assertions on terminal completion
-state: ready
+state: done
 scope:
   - v2/orchestration/jobs_test.go
 checks:
@@ -16,3 +16,12 @@ notes:
   - at: 2026-11-22T20:38:36.259Z
     commit: 13a140feece9
     text: "Approved test-only fix: signal terminal audit completion after final store save via test fixture channel, wait before persisted-record/audit assertions. No production changes, sleeps or retries. Best-effort persistence and in-memory terminal state contract unchanged. Scout race count=100 attempt timed out after 60s: no test result claimed. Run checks under machine lease: pi-durable-subagents hold machine -- <command>."
+  - at: 2026-11-22T20:40:57.202Z
+    commit: 5831a1fe35c3
+    text: "done: Test-only terminal-audit completion channel now gates persisted-record and audit assertions, including the failed-job audit path. Production state and best-effort persistence unchanged. Race repetition (20 runs), orchestration race suite and make check-v2 passed; no live behavior verified. Docs deferred to task 61."
+  - at: 2026-11-22T20:42:47.436Z
+    commit: 5831a1fe35c3
+    text: "Baseline targeted -race -count=20 passed (intermittent failure not reproduced). The fix follows finish ordering: terminal state is visible before save/audit; the fixture waits for the first terminal audit after the save attempt. tk done passed all three registered checks under the machine lease. Changes remain uncommitted; documentation/status updates belong to task 61."
+  - at: 2026-11-22T20:45:25.356Z
+    commit: 5831a1fe35c3
+    text: "Post-completion guardrail reported TestExecCancellationWhileWaitingForUpgrade: withheld upgrade not cancelled (exec_test.go:408). Rechecked under machine lease: go test -count=50 ./adapters/kube -run ^TestExecCancellationWhileWaitingForUpgrade$ passed, then make check-v2 passed including render comparisons. No baseline or extra files changed. Possible pre-handler 50ms timeout is unproven; exec_test.go is outside task 59 scope and remains an intermittent-test follow-up if it recurs. Recheck run: 01M82G133SF5GQ7CRB5ZS6YJZF."

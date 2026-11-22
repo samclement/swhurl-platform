@@ -1,6 +1,6 @@
 id: 56
 title: Consolidate provisioning document validation
-state: ready
+state: done
 scope:
   - v2/provisioning/provisioning.go
   - v2/provisioning/rules/*.go
@@ -20,3 +20,9 @@ notes:
   - at: 2026-11-22T20:38:35.753Z
     commit: 13a140feece9
     text: Export byte-slice-based provisioning/rules.Documents, migrate compilation and delivery callers, delete root duplicate without forwarding shim. Table-test absent/malformed/wrong-instance documents and preserve nil/error semantics. Update API snapshot intentionally.
+  - at: 2026-11-22T20:42:21.415Z
+    commit: 5831a1fe35c3
+    text: "done: Consolidated optional-document validation in provisioning/rules.Documents; compilation, deploy and promote share it. Deleted root duplicate without shim and updated API snapshot. Added 16 table cases preserving absent/nil, wrong-instance, malformed/error and ordering semantics. Targeted suites and make check-v2 passed; no live verification. Docs deferred to task 61; changes uncommitted."
+  - at: 2026-11-22T20:45:38.236Z
+    commit: 5831a1fe35c3
+    text: branch dsa/01M82FQJNMN4FMPNN1XG2QDRZM/task-56

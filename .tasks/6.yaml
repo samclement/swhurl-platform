@@ -1,6 +1,6 @@
 id: 6
 title: Skills packages for delivery and its rules, registered in archtest
-state: ready
+state: done
 scope:
   - v2/delivery/delivery.go
   - v2/delivery/rules/rules.go
@@ -22,3 +22,15 @@ notes:
   - at: 2026-11-22T12:07:50.302Z
     commit: 7f70a48d5699
     text: "Slice 2 (delivery), plan block 0. Decisions (operator, 2026-11-22): 1A copy the write plumbing promote/deploy share into v2/delivery/write.go, each copy naming its origin, and record 'two copies until slice 5' in the plan; 2A move only SelectPromotion, kernel.SelectRelease stays (deferred to apps/provisioning); 3A move Currentness/Changes and PromotionReadiness to delivery/rules now, observation document keeps Version 5 and the same JSON. Task 7 also records in the plan's deferred list that observe/explain.go's 'unit applied this revision' rule duplicates the currentness rule. Commands keep flags, output and effects; delete the old copies, no shims. make check-docs is not a check (fails on an uncommitted tree). Planner's pointers: `delivery.go` is the package doc only (\"delivery is the delivery capability's use cases: release selection, staging-to-production promotion, deployment, and the evidence that a requested revision landed. Its decisions are delivery/rules'; this package reads, sequences and writes.\"). `rules.go` lands the vocabulary its later users share, so parallel tasks cannot each declare it (a duplicate declaration will not compile): package doc, `type Code string` + `Error{Code, Field, Reason}` + `refuse`/`invalid` with the same text shapes as `kernel/records.go:11-29` (codes `invalid`, `unsupported`, `wrong_application`, `wrong_release`), read-status words `Present/Absent/Unavailable/NotRead` (as `recovery/rules/rules.go:36-40`), `revisionPattern`/`digestPattern` (`observe/explain.go:651,661`), `appliedCommit`/`unitReason` (`observe/explain.go:326,341`), `ReasonNotSupplied`/`ReasonNotAppliedRev`/`ReasonRevisionShape` (`observe/explain.go:83-85`), `repositoryPath`/`containsField` (`observe/changes.go:152,100`). All unexported, so api.txt should not change — confirm with `-update` producing no diff for those two packages. archtest: add `\"delivery\": 2`, `\"delivery/rules\": 0` to `Layers` beside `recovery` (`archtest/rules_test.go:126-127`), `\"delivery\"` to `Orchestration` (`:142`), `\"delivery/rules\"` to `Pure` (`:150`), `\"observe\": {\"recovery/rules\", \"delivery/rules\"}` and `\"delivery/rules\": {\"kernel\"}` to `PureDependencies` (`:136`); entries are allowances, so unused ones are harmless. Add fixtures to `archtest/checks_test.go` after the recovery ones (`:73-80`, `:126-135`): a `delivery/rules` file calling `time.Now` is refused, and `delivery/rules` importing `observe` is refused while `observe` importing `delivery/rules` is allowed."
+  - at: 2026-11-22T12:11:18.627Z
+    commit: 0c46f547d96f
+    text: "Exported, not unexported: the planner's note named Code/Error, Present/Absent/Unavailable/NotRead and ReasonNotSupplied/NotAppliedRev/RevisionShape (exported, as kernel and recovery/rules) but also said 'all unexported, api.txt unchanged'. Kept the names as given (tasks 8 and 11 use them) and added their 16 lines to api.txt; refuse/invalid, revisionPattern/digestPattern, appliedCommit/unitReason, repositoryPath/containsField are unexported. Added ReasonUnitGone/ReasonUnitDown, which unitReason needs. rules.Error prints 'code: field: reason'; observe.Error printed differently, so task 11 should check DecodeChanges error text stays unchanged."
+  - at: 2026-11-22T12:12:16.542Z
+    commit: 0c46f547d96f
+    text: "done: New v2/delivery (package doc only) and v2/delivery/rules (shared vocabulary: Code/Error, refuse/invalid, read-status words, revision reasons, patterns, appliedCommit/unitReason, repositoryPath/containsField). archtest: layers, Orchestration, Pure, PureDependencies entries plus fixtures; api.txt gains 16 delivery/rules lines (names are exported as briefed). Nothing live."
+  - at: 2026-11-22T12:12:16.542Z
+    commit: 0c46f547d96f
+    text: "followup: observe.Error formats as field/reason, delivery/rules.Error as 'code: field: reason': task 11 moving DecodeChanges must keep observe's error text or accept the change."
+  - at: 2026-11-22T12:13:36.607Z
+    commit: 0c46f547d96f
+    text: branch dsa/01M81JFYFZQ41B4NW6TQ77BNRQ/task-6
